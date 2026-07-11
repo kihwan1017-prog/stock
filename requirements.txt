@@ -1,0 +1,9 @@
+﻿psycopg[binary]
+sqlalchemy
+pydantic
+pydantic-settings
+python-dotenv
+httpx
+websockets
+tenacity
+structlog
