@@ -41,3 +41,11 @@ Thumbs.db
 # Local data
 data/
 temp/
+
+# OpenClaw local state
+openclaw-workspace-state.json
+# OpenClaw local/private state
+openclaw-workspace-state.json
+USER.md
+MEMORY.md
+memory/
