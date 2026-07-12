@@ -8,3 +8,7 @@ httpx
 websockets
 tenacity
 structlog
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+python-multipart
+orjson
