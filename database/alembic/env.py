@@ -3,6 +3,7 @@
 import sys
 from logging.config import fileConfig
 from pathlib import Path
+from typing import Any
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -16,6 +17,7 @@ if str(SRC_PATH) not in sys.path:
 
 from stock_platform.common.settings import get_settings
 from stock_platform.database.base import Base
+from stock_platform.markets import models as market_models  # noqa: F401
 
 
 config = context.config
@@ -24,12 +26,33 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
+
 config.set_main_option(
     "sqlalchemy.url",
     settings.database_url.replace("%", "%%"),
 )
 
 target_metadata = Base.metadata
+
+
+def include_object(
+    object_: Any,
+    name: str | None,
+    type_: str,
+    reflected: bool,
+    compare_to: Any,
+) -> bool:
+    """
+    Ignore existing database tables that are not managed by SQLAlchemy ORM.
+
+    This prevents Alembic from generating DROP TABLE statements for legacy
+    or manually managed tables.
+    """
+
+    if type_ == "table" and reflected and compare_to is None:
+        return False
+
+    return True
 
 
 def run_migrations_offline() -> None:
@@ -43,6 +66,8 @@ def run_migrations_offline() -> None:
         compare_type=True,
         compare_server_default=True,
         include_schemas=True,
+        include_object=include_object,
+        version_table="alembic_version",
         version_table_schema="operation",
     )
 
@@ -64,6 +89,8 @@ def run_migrations_online() -> None:
             compare_type=True,
             compare_server_default=True,
             include_schemas=True,
+            include_object=include_object,
+            version_table="alembic_version",
             version_table_schema="operation",
         )
 

@@ -2,6 +2,10 @@ from fastapi import FastAPI
 from fastapi.responses import ORJSONResponse
 
 from stock_platform.api.router import api_router
+from stock_platform.common.logger import configure_logging, logger
+
+configure_logging()
+logger.info("Stock Platform starting...")
 
 app = FastAPI(
     title="Stock Platform API",
