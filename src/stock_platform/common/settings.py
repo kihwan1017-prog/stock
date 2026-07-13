@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     kiwoom_timeout_seconds: float = 10.0
     kiwoom_max_requests_per_second: int = 5
 
+    upbit_base_url: str = "https://api.upbit.com"
+    upbit_timeout_seconds: float = 10.0
+    upbit_max_requests_per_second: int = 8
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
