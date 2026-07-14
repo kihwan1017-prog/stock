@@ -32,6 +32,7 @@ from stock_platform.operation import calendar_models as operation_calendar_model
 from stock_platform.operation import report_models as operation_report_models  # noqa: F401
 from stock_platform.backtest import persistence_models as backtest_models  # noqa: F401
 
+
 config = context.config
 
 if config.config_file_name is not None:
