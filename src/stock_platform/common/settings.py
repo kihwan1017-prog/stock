@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     dart_base_url: str = "https://opendart.fss.or.kr/api"
     dart_timeout_seconds: float = 20.0
 
+    naver_client_id: str = Field(default="")
+    naver_client_secret: str = Field(default="")
+    naver_news_base_url: str = (
+        "https://openapi.naver.com/v1/search/news.json"
+    )
+    naver_news_timeout_seconds: float = 15.0
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
@@ -78,6 +85,17 @@ class Settings(BaseSettings):
     def validate_dart_credentials(self) -> None:
         if not self.dart_api_key.strip():
             raise ValueError("Missing DART_API_KEY")
+
+    def validate_naver_credentials(self) -> None:
+        missing: list[str] = []
+        if not self.naver_client_id.strip():
+            missing.append("NAVER_CLIENT_ID")
+        if not self.naver_client_secret.strip():
+            missing.append("NAVER_CLIENT_SECRET")
+        if missing:
+            raise ValueError(
+                f"Missing Naver credentials: {', '.join(missing)}"
+            )
 
 
 @lru_cache
