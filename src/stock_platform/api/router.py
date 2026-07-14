@@ -12,6 +12,7 @@ from stock_platform.api.v1.health import router as health_router
 from stock_platform.api.v1.indicators import router as indicators_router
 from stock_platform.api.v1.kiwoom import router as kiwoom_router
 from stock_platform.api.v1.news import router as news_router
+from stock_platform.api.v1.paper_orders import router as paper_orders_router
 from stock_platform.api.v1.position_candidates import (
     router as position_candidates_router,
 )
@@ -44,3 +45,4 @@ api_router.include_router(ai_orchestration_router)
 api_router.include_router(risk_router)
 api_router.include_router(risk_policies_router)
 api_router.include_router(position_candidates_router)
+api_router.include_router(paper_orders_router)

@@ -24,6 +24,7 @@ from stock_platform.ai import analysis_models as ai_analysis_models  # noqa: F40
 from stock_platform.disclosure import models as disclosure_models  # noqa: F401
 from stock_platform.news import models as news_models  # noqa: F401
 from stock_platform.risk import persistence_models as risk_models  # noqa: F401
+from stock_platform.trading import models as trading_models  # noqa: F401
 
 
 config = context.config
