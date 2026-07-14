@@ -30,6 +30,7 @@ from stock_platform.api.v1.sync import router as sync_router
 from stock_platform.api.v1.trading_calendar import router as trading_calendar_router
 from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
+from stock_platform.api.v1.walk_forward import router as walk_forward_router
 
 
 api_router = APIRouter()
@@ -64,3 +65,4 @@ api_router.include_router(daily_reports_router)
 api_router.include_router(backtests_router)
 api_router.include_router(backtest_runs_router)
 api_router.include_router(backtest_grid_router)
+api_router.include_router(walk_forward_router)

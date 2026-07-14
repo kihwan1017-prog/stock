@@ -35,6 +35,19 @@ from stock_platform.backtest.strategy import (
     MovingAverageCrossStrategy,
     MovingAverageStrategyConfig,
 )
+from stock_platform.backtest.walk_forward_models import (
+    WalkForwardParameterSet,
+    WalkForwardResult,
+    WalkForwardSummary,
+    WalkForwardWindow,
+    WalkForwardWindowResult,
+)
+from stock_platform.backtest.walk_forward_report import (
+    WalkForwardReportBuilder,
+)
+from stock_platform.backtest.walk_forward_service import (
+    WalkForwardValidationService,
+)
 
 __all__ = [
     "BacktestComparisonItem",
@@ -56,4 +69,11 @@ __all__ = [
     "BacktestValidationError",
     "MovingAverageCrossStrategy",
     "MovingAverageStrategyConfig",
+    "WalkForwardParameterSet",
+    "WalkForwardReportBuilder",
+    "WalkForwardResult",
+    "WalkForwardSummary",
+    "WalkForwardValidationService",
+    "WalkForwardWindow",
+    "WalkForwardWindowResult",
 ]
