@@ -29,9 +29,18 @@ from stock_platform.trading.repository import (
 from stock_platform.trading.service import (
     PaperOrderService,
 )
+from stock_platform.trading.simulation_models import (
+    SimulatedFillResult,
+    SimulationRequest,
+)
+from stock_platform.trading.simulation_service import (
+    DailyCloseFillSimulator,
+    PaperFillSimulationError,
+)
 
 __all__ = [
     "AccountValuation",
+    "DailyCloseFillSimulator",
     "OrderFillApplicationResult",
     "OrderSide",
     "OrderStatus",
@@ -40,6 +49,7 @@ __all__ = [
     "PaperAccountError",
     "PaperAccountService",
     "PaperExecutionService",
+    "PaperFillSimulationError",
     "PaperOrder",
     "PaperOrderEngine",
     "PaperOrderRepository",
@@ -48,4 +58,6 @@ __all__ = [
     "PaperPosition",
     "PaperTrade",
     "PositionValuation",
+    "SimulatedFillResult",
+    "SimulationRequest",
 ]

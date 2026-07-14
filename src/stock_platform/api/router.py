@@ -23,6 +23,9 @@ from stock_platform.api.v1.paper_executions import (
 from stock_platform.api.v1.paper_orders import (
     router as paper_orders_router,
 )
+from stock_platform.api.v1.paper_simulation import (
+    router as paper_simulation_router,
+)
 from stock_platform.api.v1.position_candidates import (
     router as position_candidates_router,
 )
@@ -58,3 +61,4 @@ api_router.include_router(position_candidates_router)
 api_router.include_router(paper_orders_router)
 api_router.include_router(paper_accounts_router)
 api_router.include_router(paper_executions_router)
+api_router.include_router(paper_simulation_router)
