@@ -12,8 +12,11 @@ from stock_platform.database.session import (
 from stock_platform.realtime.execution_models import (
     RealtimeExecutionConfig,
 )
-from stock_platform.realtime.order_executor import (
-    RealtimePaperOrderExecutor,
+from stock_platform.realtime.safe_order_executor import (
+    SafeRealtimeOrderExecutor,
+)
+from stock_platform.realtime.safety_guard import (
+    RealtimeOrderSafetyGuard,
 )
 from stock_platform.realtime.signal_bus import (
     RealtimeSignalBus,
@@ -24,21 +27,24 @@ logger = structlog.get_logger(__name__)
 
 
 class RealtimeExecutionRunner:
-    """실시간 신호 버스를 구독해 모의 주문을 실행한다."""
+    """실시간 신호를 안전검사 후 주문으로 실행한다."""
 
     def __init__(
         self,
         *,
         signal_bus: RealtimeSignalBus,
         config: RealtimeExecutionConfig,
+        safety_guard: RealtimeOrderSafetyGuard,
         history_size: int = 500,
     ) -> None:
         self._signal_bus = signal_bus
         self._config = config
+        self._safety_guard = safety_guard
         self._task: asyncio.Task | None = None
         self._running = False
         self._processed_count = 0
         self._executed_count = 0
+        self._blocked_count = 0
         self._failed_count = 0
         self._last_error: str | None = None
         self._history: deque[dict[str, Any]] = deque(
@@ -66,12 +72,15 @@ class RealtimeExecutionRunner:
                 session = get_session_factory()()
 
                 try:
-                    result = RealtimePaperOrderExecutor(
+                    result = SafeRealtimeOrderExecutor(
                         session=session,
-                        config=self._config,
+                        execution_config=self._config,
+                        safety_guard=self._safety_guard,
                     ).execute(signal)
 
-                    if result.order_status != "SKIPPED":
+                    if result.order_status == "SKIPPED":
+                        self._blocked_count += 1
+                    else:
                         self._executed_count += 1
 
                     self._history.appendleft(
@@ -103,7 +112,6 @@ class RealtimeExecutionRunner:
             return
 
         self._task.cancel()
-
         try:
             await self._task
         except asyncio.CancelledError:
@@ -119,12 +127,13 @@ class RealtimeExecutionRunner:
             "order_amount": str(
                 self._config.order_amount
             ),
-            "auto_fill": self._config.auto_fill,
-            "allow_buy": self._config.allow_buy,
-            "allow_sell": self._config.allow_sell,
             "processed_count": self._processed_count,
             "executed_count": self._executed_count,
+            "blocked_count": self._blocked_count,
             "failed_count": self._failed_count,
+            "daily_realized_loss": str(
+                self._safety_guard.daily_realized_loss
+            ),
             "last_error": self._last_error,
         }
 
