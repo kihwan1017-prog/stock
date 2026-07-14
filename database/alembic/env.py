@@ -28,6 +28,7 @@ from stock_platform.trading import models as trading_models  # noqa: F401
 from stock_platform.trading import account_models as trading_account_models  # noqa: F401
 from stock_platform.operation import job_models as operation_job_models  # noqa: F401
 from stock_platform.operation import pipeline_models as operation_pipeline_models  # noqa: F401
+from stock_platform.operation import calendar_models as operation_calendar_models  # noqa: F401
 
 config = context.config
 

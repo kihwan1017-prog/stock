@@ -6,6 +6,7 @@ from stock_platform.api.v1.ai_orchestration import router as ai_orchestration_ro
 from stock_platform.api.v1.candidate_runs import router as candidate_runs_router
 from stock_platform.api.v1.candidates import router as candidates_router
 from stock_platform.api.v1.dart import router as dart_router
+from stock_platform.api.v1.guarded_pipeline import router as guarded_pipeline_router
 from stock_platform.api.v1.health import router as health_router
 from stock_platform.api.v1.indicators import router as indicators_router
 from stock_platform.api.v1.jobs import router as jobs_router
@@ -22,6 +23,7 @@ from stock_platform.api.v1.risk import router as risk_router
 from stock_platform.api.v1.risk_policies import router as risk_policies_router
 from stock_platform.api.v1.scheduler_admin import router as scheduler_admin_router
 from stock_platform.api.v1.sync import router as sync_router
+from stock_platform.api.v1.trading_calendar import router as trading_calendar_router
 from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
 
@@ -52,3 +54,5 @@ api_router.include_router(paper_simulation_router)
 api_router.include_router(jobs_router)
 api_router.include_router(scheduler_admin_router)
 api_router.include_router(pipelines_router)
+api_router.include_router(trading_calendar_router)
+api_router.include_router(guarded_pipeline_router)
