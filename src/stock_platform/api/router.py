@@ -35,6 +35,7 @@ from stock_platform.api.v1.portfolio_backtests import router as portfolio_backte
 from stock_platform.api.v1.portfolio_rebalancing_backtests import (router as portfolio_rebalancing_backtests_router,)
 from stock_platform.api.v1.realtime_quotes import (router as realtime_quotes_router,)
 from stock_platform.api.v1.realtime_strategy import (router as realtime_strategy_router,)
+from stock_platform.api.v1.realtime_execution import (router as realtime_execution_router,)
 
 api_router = APIRouter()
 
@@ -73,3 +74,4 @@ api_router.include_router(portfolio_backtests_router)
 api_router.include_router(portfolio_rebalancing_backtests_router)
 api_router.include_router(realtime_quotes_router)
 api_router.include_router(realtime_strategy_router)
+api_router.include_router(realtime_execution_router)
