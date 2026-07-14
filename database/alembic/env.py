@@ -26,6 +26,7 @@ from stock_platform.news import models as news_models  # noqa: F401
 from stock_platform.risk import persistence_models as risk_models  # noqa: F401
 from stock_platform.trading import models as trading_models  # noqa: F401
 from stock_platform.trading import account_models as trading_account_models  # noqa: F401
+from stock_platform.operation import job_models as operation_job_models  # noqa: F401
 
 
 config = context.config

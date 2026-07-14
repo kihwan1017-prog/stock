@@ -12,6 +12,7 @@ from stock_platform.api.v1.candidates import router as candidates_router
 from stock_platform.api.v1.dart import router as dart_router
 from stock_platform.api.v1.health import router as health_router
 from stock_platform.api.v1.indicators import router as indicators_router
+from stock_platform.api.v1.jobs import router as jobs_router
 from stock_platform.api.v1.kiwoom import router as kiwoom_router
 from stock_platform.api.v1.news import router as news_router
 from stock_platform.api.v1.paper_accounts import (
@@ -62,3 +63,4 @@ api_router.include_router(paper_orders_router)
 api_router.include_router(paper_accounts_router)
 api_router.include_router(paper_executions_router)
 api_router.include_router(paper_simulation_router)
+api_router.include_router(jobs_router)
