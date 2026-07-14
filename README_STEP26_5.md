@@ -78,14 +78,13 @@ python -m pytest `
 ```powershell
 git add `
     README_STEP26_5.md `
-    src\stock_platformacktest\portfolio_models.py `
-    src\stock_platformacktest\portfolio_service.py `
-    src\stock_platformacktest\portfolio_report.py `
-    src\stock_platformpi1\portfolio_backtests.py `
-    src\stock_platformpi
-outer.py `
-    tests	est_portfolio_backtest_service.py `
-    tests	est_walk_forward_validation_service.py
+    src\stock_platform\backtest\portfolio_models.py `
+    src\stock_platform\backtest\portfolio_service.py `
+    src\stock_platform\backtest\portfolio_report.py `
+    src\stock_platform\api\v1\portfolio_backtests.py `
+    src\stock_platform\api\router.py `
+    tests\test_portfolio_backtest_service.py `
+    tests\test_walk_forward_validation_service.py
 
 git commit -m "feat(backtest): add portfolio backtest"
 ```
