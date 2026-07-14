@@ -37,6 +37,7 @@ from stock_platform.api.v1.realtime_quotes import (router as realtime_quotes_rou
 from stock_platform.api.v1.realtime_strategy import (router as realtime_strategy_router,)
 from stock_platform.api.v1.realtime_execution import (router as realtime_execution_router,)
 from stock_platform.api.v1.realtime_safety import (router as realtime_safety_router,)
+from stock_platform.api.v1.realtime_sessions import (router as realtime_sessions_router,)
 
 api_router = APIRouter()
 
@@ -77,3 +78,4 @@ api_router.include_router(realtime_quotes_router)
 api_router.include_router(realtime_strategy_router)
 api_router.include_router(realtime_execution_router)
 api_router.include_router(realtime_safety_router)
+api_router.include_router(realtime_sessions_router)
