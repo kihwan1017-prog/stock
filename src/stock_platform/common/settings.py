@@ -10,8 +10,6 @@ ENV_FILE = Path(r"E:\StockTrading\secrets\stock-platform.env")
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from the external secrets file."""
-
     app_env: str = "local"
     app_name: str = "stock-platform"
     app_timezone: str = "Asia/Seoul"
@@ -38,6 +36,10 @@ class Settings(BaseSettings):
     ollama_temperature: float = 0.2
     ollama_keep_alive: str = "10m"
 
+    dart_api_key: str = Field(default="")
+    dart_base_url: str = "https://opendart.fss.or.kr/api"
+    dart_timeout_seconds: float = 20.0
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
@@ -49,7 +51,6 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         user = quote_plus(self.db_user)
         password = quote_plus(self.db_password)
-
         return (
             f"postgresql+psycopg://{user}:{password}"
             f"@{self.db_host}:{self.db_port}/{self.db_name}"
@@ -57,23 +58,26 @@ class Settings(BaseSettings):
 
     @property
     def kiwoom_base_url(self) -> str:
-        if self.kiwoom_use_mock:
-            return "https://mockapi.kiwoom.com"
-
-        return "https://api.kiwoom.com"
+        return (
+            "https://mockapi.kiwoom.com"
+            if self.kiwoom_use_mock
+            else "https://api.kiwoom.com"
+        )
 
     def validate_kiwoom_credentials(self) -> None:
         missing: list[str] = []
-
         if not self.kiwoom_app_key.strip():
             missing.append("KIWOOM_APP_KEY")
-
         if not self.kiwoom_secret_key.strip():
             missing.append("KIWOOM_SECRET_KEY")
-
         if missing:
-            joined = ", ".join(missing)
-            raise ValueError(f"Missing Kiwoom credentials: {joined}")
+            raise ValueError(
+                f"Missing Kiwoom credentials: {', '.join(missing)}"
+            )
+
+    def validate_dart_credentials(self) -> None:
+        if not self.dart_api_key.strip():
+            raise ValueError("Missing DART_API_KEY")
 
 
 @lru_cache

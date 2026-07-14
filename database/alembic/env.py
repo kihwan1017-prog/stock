@@ -21,6 +21,7 @@ from stock_platform.database.base import Base
 from stock_platform.markets import models as market_models  # noqa: F401
 from stock_platform.screener import persistence_models as screener_models  # noqa: F401
 from stock_platform.ai import analysis_models as ai_analysis_models  # noqa: F401
+from stock_platform.disclosure import models as disclosure_models  # noqa: F401
 
 
 config = context.config
