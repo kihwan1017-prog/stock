@@ -32,6 +32,7 @@ from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
 from stock_platform.api.v1.walk_forward import router as walk_forward_router
 from stock_platform.api.v1.portfolio_backtests import router as portfolio_backtests_router
+from stock_platform.api.v1.portfolio_rebalancing_backtests import (router as portfolio_rebalancing_backtests_router,)
 
 api_router = APIRouter()
 
@@ -67,3 +68,4 @@ api_router.include_router(backtest_runs_router)
 api_router.include_router(backtest_grid_router)
 api_router.include_router(walk_forward_router)
 api_router.include_router(portfolio_backtests_router)
+api_router.include_router(portfolio_rebalancing_backtests_router)
