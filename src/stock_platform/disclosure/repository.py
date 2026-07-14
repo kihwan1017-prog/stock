@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -32,3 +35,32 @@ class DartDisclosureRepository:
         result = self._session.execute(stmt)
         self._session.commit()
         return result.rowcount or len(rows)
+
+    def list_context(
+        self,
+        *,
+        stock_code: str,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        limit: int = 20,
+    ) -> list[DartDisclosure]:
+        stmt = select(DartDisclosure).where(
+            DartDisclosure.stock_code == stock_code
+        )
+
+        if start_date is not None:
+            stmt = stmt.where(
+                DartDisclosure.receipt_date >= start_date
+            )
+
+        if end_date is not None:
+            stmt = stmt.where(
+                DartDisclosure.receipt_date <= end_date
+            )
+
+        stmt = stmt.order_by(
+            DartDisclosure.receipt_date.desc(),
+            DartDisclosure.disclosure_id.desc(),
+        ).limit(limit)
+
+        return list(self._session.scalars(stmt))
