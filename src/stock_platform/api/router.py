@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from stock_platform.api.v1.ai_analysis import router as ai_analysis_router
 from stock_platform.api.v1.ai_candidates import router as ai_candidates_router
 from stock_platform.api.v1.ai_orchestration import router as ai_orchestration_router
+from stock_platform.api.v1.backtest_grid import router as backtest_grid_router
 from stock_platform.api.v1.backtest_runs import router as backtest_runs_router
 from stock_platform.api.v1.backtests import router as backtests_router
 from stock_platform.api.v1.candidate_runs import router as candidate_runs_router
@@ -62,3 +63,4 @@ api_router.include_router(guarded_pipeline_router)
 api_router.include_router(daily_reports_router)
 api_router.include_router(backtests_router)
 api_router.include_router(backtest_runs_router)
+api_router.include_router(backtest_grid_router)

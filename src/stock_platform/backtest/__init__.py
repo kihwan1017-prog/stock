@@ -6,6 +6,17 @@ from stock_platform.backtest.engine import (
     BacktestEngine,
     BacktestValidationError,
 )
+from stock_platform.backtest.grid_models import (
+    BacktestGridItem,
+    BacktestGridRequest,
+    BacktestGridResult,
+)
+from stock_platform.backtest.grid_report import (
+    BacktestGridReportBuilder,
+)
+from stock_platform.backtest.grid_service import (
+    BacktestGridService,
+)
 from stock_platform.backtest.models import (
     BacktestPrice,
     BacktestResult,
@@ -29,6 +40,11 @@ __all__ = [
     "BacktestComparisonItem",
     "BacktestComparisonService",
     "BacktestEngine",
+    "BacktestGridItem",
+    "BacktestGridReportBuilder",
+    "BacktestGridRequest",
+    "BacktestGridResult",
+    "BacktestGridService",
     "BacktestPersistenceService",
     "BacktestPrice",
     "BacktestRepository",
