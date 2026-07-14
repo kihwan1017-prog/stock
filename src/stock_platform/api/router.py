@@ -13,6 +13,7 @@ from stock_platform.api.v1.indicators import router as indicators_router
 from stock_platform.api.v1.kiwoom import router as kiwoom_router
 from stock_platform.api.v1.news import router as news_router
 from stock_platform.api.v1.prices import router as prices_router
+from stock_platform.api.v1.risk import router as risk_router
 from stock_platform.api.v1.sync import router as sync_router
 from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
@@ -34,3 +35,4 @@ api_router.include_router(ai_analysis_router)
 api_router.include_router(dart_router)
 api_router.include_router(news_router)
 api_router.include_router(ai_orchestration_router)
+api_router.include_router(risk_router)
