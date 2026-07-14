@@ -1,3 +1,18 @@
+from stock_platform.trading.account_models import (
+    PaperAccount,
+    PaperPosition,
+    PaperTrade,
+)
+from stock_platform.trading.account_service import (
+    AccountValuation,
+    PaperAccountError,
+    PaperAccountService,
+    PositionValuation,
+)
+from stock_platform.trading.execution_service import (
+    OrderFillApplicationResult,
+    PaperExecutionService,
+)
 from stock_platform.trading.models import (
     OrderSide,
     OrderStatus,
@@ -16,12 +31,21 @@ from stock_platform.trading.service import (
 )
 
 __all__ = [
+    "AccountValuation",
+    "OrderFillApplicationResult",
     "OrderSide",
     "OrderStatus",
     "OrderType",
+    "PaperAccount",
+    "PaperAccountError",
+    "PaperAccountService",
+    "PaperExecutionService",
     "PaperOrder",
     "PaperOrderEngine",
     "PaperOrderRepository",
     "PaperOrderService",
     "PaperOrderValidationError",
+    "PaperPosition",
+    "PaperTrade",
+    "PositionValuation",
 ]
