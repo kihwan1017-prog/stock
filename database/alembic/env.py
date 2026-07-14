@@ -7,6 +7,7 @@ from typing import Any
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+from stock_platform.screener import persistence_models as screener_models  # noqa: F401
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
