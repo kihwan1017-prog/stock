@@ -35,6 +35,9 @@ from stock_platform.api.v1.risk import router as risk_router
 from stock_platform.api.v1.risk_policies import (
     router as risk_policies_router,
 )
+from stock_platform.api.v1.scheduler_admin import (
+    router as scheduler_admin_router,
+)
 from stock_platform.api.v1.sync import router as sync_router
 from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
@@ -64,3 +67,4 @@ api_router.include_router(paper_accounts_router)
 api_router.include_router(paper_executions_router)
 api_router.include_router(paper_simulation_router)
 api_router.include_router(jobs_router)
+api_router.include_router(scheduler_admin_router)

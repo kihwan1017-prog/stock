@@ -14,3 +14,4 @@ python-multipart
 orjson
 pytest
 pytest-asyncio
+APScheduler

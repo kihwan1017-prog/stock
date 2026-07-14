@@ -47,6 +47,26 @@ class Settings(BaseSettings):
     )
     naver_news_timeout_seconds: float = 15.0
 
+    scheduler_enabled: bool = True
+    scheduler_timezone: str = "Asia/Seoul"
+    scheduler_candidate_hour: int = 16
+    scheduler_candidate_minute: int = 10
+    scheduler_ai_hour: int = 16
+    scheduler_ai_minute: int = 30
+    scheduler_position_hour: int = 17
+    scheduler_position_minute: int = 0
+
+    scheduler_exchange_code: str = "KRX"
+    scheduler_candidate_limit: int = 30
+    scheduler_minimum_score: float = 50.0
+    scheduler_ai_limit: int = 10
+    scheduler_position_limit: int = 5
+    scheduler_policy_id: int = 1
+    scheduler_portfolio_value: float = 10000000
+    scheduler_available_cash: float = 5000000
+    scheduler_minimum_ai_score: float = 70.0
+    scheduler_minimum_confidence: float = 0.5
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
