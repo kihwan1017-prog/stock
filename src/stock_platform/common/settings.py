@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     upbit_timeout_seconds: float = 10.0
     upbit_max_requests_per_second: int = 8
 
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen3.5:4b"
+    ollama_timeout_seconds: float = 120.0
+    ollama_temperature: float = 0.2
+    ollama_keep_alive: str = "10m"
+
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
         env_file_encoding="utf-8",
