@@ -49,6 +49,7 @@ from stock_platform.api.v1.live_trading_transition import (router as live_tradin
 from stock_platform.api.v1.realtime_risk_engine import (router as realtime_risk_engine_router,)
 from stock_platform.api.v1.realtime_risk_account import (router as realtime_risk_account_router,)
 from stock_platform.api.v1.kill_switch import (router as kill_switch_router,)
+from stock_platform.api.v1.daily_loss_monitor import (router as daily_loss_monitor_router,)
 
 
 api_router = APIRouter()
@@ -102,3 +103,4 @@ api_router.include_router(live_trading_transition_router)
 api_router.include_router(realtime_risk_engine_router)
 api_router.include_router(realtime_risk_account_router)
 api_router.include_router(kill_switch_router)
+api_router.include_router(daily_loss_monitor_router)

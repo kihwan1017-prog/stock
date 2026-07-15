@@ -36,6 +36,7 @@ from stock_platform.broker import pending_entities as broker_pending_entities  #
 from stock_platform.broker import recovery_entities as broker_recovery_entities  # noqa: F401
 from stock_platform.broker import live_transition_entities as live_transition_entities  # noqa: F401
 from stock_platform.risk_engine import kill_switch_entities as kill_switch_entities  # noqa: F401
+from stock_platform.risk_engine import risk_event_entities as risk_event_entities  # noqa: F401
 
 config = context.config
 

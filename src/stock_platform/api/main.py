@@ -10,6 +10,7 @@ from stock_platform.realtime.runtime import (realtime_execution_runner,realtime_
 from stock_platform.realtime.session_runtime import (realtime_trading_scheduler,)
 from stock_platform.broker.kiwoom.ws_manager import (kiwoom_order_websocket_manager,)
 from stock_platform.broker.recovery_runtime import (broker_recovery_manager,)
+from stock_platform.risk_engine.daily_loss_scheduler import (daily_loss_monitor_scheduler,)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -24,11 +25,14 @@ async def lifespan(app: FastAPI):
             "Broker recovery failed during startup"
         )
     
+    # 2. 스케줄러 시작
+    daily_loss_monitor_scheduler.start()
+
     yield
 
     # 서버 종료
     logger.info("Stopping realtime services...")
-
+    await daily_loss_monitor_scheduler.shutdown()
     await kiwoom_order_websocket_manager.stop()
     await realtime_trading_scheduler.shutdown()
     await realtime_execution_runner.stop()
