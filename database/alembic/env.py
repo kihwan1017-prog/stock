@@ -44,6 +44,7 @@ from stock_platform.performance import leaderboard_entities as leaderboard_entit
 from stock_platform.performance import selector_entities as selector_entities  # noqa: F401
 from stock_platform.strategy_deployment import entities as strategy_deployment_entities  # noqa: F401
 from stock_platform.strategy_deployment import switch_entities as strategy_switch_entities  # noqa: F401
+from stock_platform.strategy_deployment import policy_entities as strategy_policy_entities  # noqa: F401
 
 
 config = context.config
