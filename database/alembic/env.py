@@ -41,6 +41,8 @@ from stock_platform.risk_engine import position_limit_entities as position_limit
 from stock_platform.performance import entities as performance_entities  # noqa: F401
 from stock_platform.performance import walk_forward_entities as walk_forward_entities  # noqa: F401
 from stock_platform.performance import leaderboard_entities as leaderboard_entities  # noqa: F401
+from stock_platform.performance import selector_entities as selector_entities  # noqa: F401
+
 
 config = context.config
 
