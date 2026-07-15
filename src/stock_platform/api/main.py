@@ -15,6 +15,7 @@ from stock_platform.strategy_deployment.runtime_manager import (dynamic_strategy
 from stock_platform.strategy_deployment.reload_scheduler import (strategy_runtime_reload_scheduler,)
 from stock_platform.strategy_deployment.policy_scheduler import (strategy_approval_scheduler,)
 from stock_platform.strategy_deployment.pipeline_scheduler import (strategy_deployment_pipeline_scheduler,)
+from stock_platform.strategy_deployment.performance_monitor_scheduler import (deployment_performance_monitor_scheduler,)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,18 +52,16 @@ async def lifespan(app: FastAPI):
             "Initial strategy runtime load failed"
         )
 
-    strategy_runtime_reload_scheduler.start()    
-
+    strategy_runtime_reload_scheduler.start()
     strategy_approval_scheduler.start()
-
     strategy_deployment_pipeline_scheduler.start()
+    deployment_performance_monitor_scheduler.start()
 
     yield
 
+    await deployment_performance_monitor_scheduler.shutdown()
     await strategy_deployment_pipeline_scheduler.shutdown()
-
     await strategy_approval_scheduler.shutdown()
-
     await strategy_runtime_reload_scheduler.shutdown()
     await dynamic_strategy_runtime_manager.clear()
 
