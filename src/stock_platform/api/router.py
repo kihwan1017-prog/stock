@@ -44,6 +44,7 @@ from stock_platform.api.v1.broker_orders import (router as broker_orders_router,
 from stock_platform.api.v1.kiwoom_account_sync import (router as kiwoom_account_sync_router,)
 from stock_platform.api.v1.kiwoom_pending_orders import (router as kiwoom_pending_orders_router,)
 from stock_platform.api.v1.kiwoom_order_websocket import (router as kiwoom_order_websocket_router,)
+from stock_platform.api.v1.broker_recovery import (router as broker_recovery_router,)
 
 
 api_router = APIRouter()
@@ -92,3 +93,4 @@ api_router.include_router(broker_orders_router)
 api_router.include_router(kiwoom_account_sync_router)
 api_router.include_router(kiwoom_pending_orders_router)
 api_router.include_router(kiwoom_order_websocket_router)
+api_router.include_router(broker_recovery_router)

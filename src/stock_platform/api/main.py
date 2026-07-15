@@ -9,13 +9,21 @@ from stock_platform.realtime.manager import realtime_manager
 from stock_platform.realtime.runtime import (realtime_execution_runner,realtime_strategy_runner,)
 from stock_platform.realtime.session_runtime import (realtime_trading_scheduler,)
 from stock_platform.broker.kiwoom.ws_manager import (kiwoom_order_websocket_manager,)
+from stock_platform.broker.recovery_runtime import (broker_recovery_manager,)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     configure_logging()
     logger.info("Stock Platform starting...")
 
-    # 서버 시작
+    # 서버 시작 시 복구
+    try:
+        await broker_recovery_manager.recover()
+    except Exception:
+        logger.exception(
+            "Broker recovery failed during startup"
+        )
+    
     yield
 
     # 서버 종료
