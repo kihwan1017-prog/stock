@@ -12,8 +12,8 @@ from stock_platform.database.session import (
 from stock_platform.realtime.execution_models import (
     RealtimeExecutionConfig,
 )
-from stock_platform.realtime.safe_order_executor import (
-    SafeRealtimeOrderExecutor,
+from stock_platform.realtime.risk_integrated_order_executor import (
+    RiskIntegratedRealtimeOrderExecutor,
 )
 from stock_platform.realtime.safety_guard import (
     RealtimeOrderSafetyGuard,
@@ -27,7 +27,7 @@ logger = structlog.get_logger(__name__)
 
 
 class RealtimeExecutionRunner:
-    """실시간 신호를 안전검사 후 주문으로 실행한다."""
+    """실시간 신호를 Risk Engine과 Safety Guard를 거쳐 실행한다."""
 
     def __init__(
         self,
@@ -72,11 +72,13 @@ class RealtimeExecutionRunner:
                 session = get_session_factory()()
 
                 try:
-                    result = SafeRealtimeOrderExecutor(
-                        session=session,
-                        execution_config=self._config,
-                        safety_guard=self._safety_guard,
-                    ).execute(signal)
+                    result = (
+                        RiskIntegratedRealtimeOrderExecutor(
+                            session=session,
+                            execution_config=self._config,
+                            safety_guard=self._safety_guard,
+                        ).execute(signal)
+                    )
 
                     if result.order_status == "SKIPPED":
                         self._blocked_count += 1

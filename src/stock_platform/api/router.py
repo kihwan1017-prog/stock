@@ -47,7 +47,7 @@ from stock_platform.api.v1.kiwoom_order_websocket import (router as kiwoom_order
 from stock_platform.api.v1.broker_recovery import (router as broker_recovery_router,)
 from stock_platform.api.v1.live_trading_transition import (router as live_trading_transition_router,)
 from stock_platform.api.v1.realtime_risk_engine import (router as realtime_risk_engine_router,)
-
+from stock_platform.api.v1.realtime_risk_account import (router as realtime_risk_account_router,)
 
 
 api_router = APIRouter()
@@ -99,3 +99,4 @@ api_router.include_router(kiwoom_order_websocket_router)
 api_router.include_router(broker_recovery_router)
 api_router.include_router(live_trading_transition_router)
 api_router.include_router(realtime_risk_engine_router)
+api_router.include_router(realtime_risk_account_router)
