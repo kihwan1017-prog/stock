@@ -34,6 +34,7 @@ from stock_platform.backtest import persistence_models as backtest_models  # noq
 from stock_platform.broker import account_models as broker_account_models  # noqa: F401
 from stock_platform.broker import pending_entities as broker_pending_entities  # noqa: F401
 from stock_platform.broker import recovery_entities as broker_recovery_entities  # noqa: F401
+from stock_platform.broker import live_transition_entities as live_transition_entities  # noqa: F401
 
 config = context.config
 
