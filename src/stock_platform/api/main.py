@@ -8,6 +8,7 @@ from stock_platform.common.logger import configure_logging, logger
 from stock_platform.realtime.manager import realtime_manager
 from stock_platform.realtime.runtime import (realtime_execution_runner,realtime_strategy_runner,)
 from stock_platform.realtime.session_runtime import (realtime_trading_scheduler,)
+from stock_platform.broker.kiwoom.ws_manager import (kiwoom_order_websocket_manager,)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,6 +21,7 @@ async def lifespan(app: FastAPI):
     # 서버 종료
     logger.info("Stopping realtime services...")
 
+    await kiwoom_order_websocket_manager.stop()
     await realtime_trading_scheduler.shutdown()
     await realtime_execution_runner.stop()
     await realtime_strategy_runner.stop()
