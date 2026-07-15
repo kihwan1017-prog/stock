@@ -14,6 +14,7 @@ from stock_platform.risk_engine.daily_loss_scheduler import (daily_loss_monitor_
 from stock_platform.strategy_deployment.runtime_manager import (dynamic_strategy_runtime_manager,)
 from stock_platform.strategy_deployment.reload_scheduler import (strategy_runtime_reload_scheduler,)
 from stock_platform.strategy_deployment.policy_scheduler import (strategy_approval_scheduler,)
+from stock_platform.strategy_deployment.pipeline_scheduler import (strategy_deployment_pipeline_scheduler,)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -54,7 +55,11 @@ async def lifespan(app: FastAPI):
 
     strategy_approval_scheduler.start()
 
+    strategy_deployment_pipeline_scheduler.start()
+
     yield
+
+    await strategy_deployment_pipeline_scheduler.shutdown()
 
     await strategy_approval_scheduler.shutdown()
 
