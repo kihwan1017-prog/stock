@@ -31,7 +31,7 @@ from stock_platform.operation import pipeline_models as operation_pipeline_model
 from stock_platform.operation import calendar_models as operation_calendar_models  # noqa: F401
 from stock_platform.operation import report_models as operation_report_models  # noqa: F401
 from stock_platform.backtest import persistence_models as backtest_models  # noqa: F401
-
+from stock_platform.broker import account_models as broker_account_models  # noqa: F401
 
 config = context.config
 
