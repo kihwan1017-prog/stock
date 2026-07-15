@@ -39,6 +39,7 @@ from stock_platform.risk_engine import kill_switch_entities as kill_switch_entit
 from stock_platform.risk_engine import risk_event_entities as risk_event_entities  # noqa: F401
 from stock_platform.risk_engine import position_limit_entities as position_limit_entities  # noqa: F401
 from stock_platform.performance import entities as performance_entities  # noqa: F401
+from stock_platform.performance import walk_forward_entities as walk_forward_entities  # noqa: F401
 
 config = context.config
 
