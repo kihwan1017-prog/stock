@@ -11,6 +11,8 @@ from stock_platform.realtime.session_runtime import (realtime_trading_scheduler,
 from stock_platform.broker.kiwoom.ws_manager import (kiwoom_order_websocket_manager,)
 from stock_platform.broker.recovery_runtime import (broker_recovery_manager,)
 from stock_platform.risk_engine.daily_loss_scheduler import (daily_loss_monitor_scheduler,)
+from stock_platform.strategy_deployment.runtime_manager import (dynamic_strategy_runtime_manager,)
+from stock_platform.strategy_deployment.reload_scheduler import (strategy_runtime_reload_scheduler,)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,7 +30,32 @@ async def lifespan(app: FastAPI):
     # 2. 스케줄러 시작
     daily_loss_monitor_scheduler.start()
 
+    try:
+        await dynamic_strategy_runtime_manager.initialize(
+            market_code=os.getenv(
+                "REALTIME_STRATEGY_MARKET_CODE",
+                "KRX",
+            ),
+            symbol=(
+                os.getenv(
+                    "REALTIME_STRATEGY_SYMBOL",
+                    "",
+                ).strip()
+                or None
+            ),
+        )
+    except Exception:
+        logger.exception(
+            "Initial strategy runtime load failed"
+        )
+
+    strategy_runtime_reload_scheduler.start()    
+
     yield
+
+    await strategy_runtime_reload_scheduler.shutdown()
+    await dynamic_strategy_runtime_manager.clear()
+
 
     # 서버 종료
     logger.info("Stopping realtime services...")
