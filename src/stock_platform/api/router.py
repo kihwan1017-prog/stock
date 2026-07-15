@@ -53,6 +53,7 @@ from stock_platform.api.v1.daily_loss_monitor import (router as daily_loss_monit
 from stock_platform.api.v1.position_limits import (router as position_limits_router,)
 from stock_platform.api.v1.notifications import (router as notifications_router,)
 from stock_platform.api.v1.risk_dashboard import (router as risk_dashboard_router,)
+from stock_platform.api.v1.strategy_performance import (router as strategy_performance_router,)
 
 api_router = APIRouter()
 
@@ -109,3 +110,4 @@ api_router.include_router(daily_loss_monitor_router)
 api_router.include_router(position_limits_router)
 api_router.include_router(notifications_router)
 api_router.include_router(risk_dashboard_router)
+api_router.include_router(strategy_performance_router)
