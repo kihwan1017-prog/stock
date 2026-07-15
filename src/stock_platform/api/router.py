@@ -59,6 +59,7 @@ from stock_platform.api.v1.backtest_performance import (router as backtest_perfo
 from stock_platform.api.v1.walk_forward_performance import (router as walk_forward_performance_router,)
 from stock_platform.api.v1.strategy_leaderboard import (router as strategy_leaderboard_router,)
 from stock_platform.api.v1.strategy_selector import (router as strategy_selector_router,)
+from stock_platform.api.v1.strategy_performance_dashboard import (router as strategy_performance_dashboard_router,)
 
 api_router = APIRouter()
 
@@ -121,3 +122,4 @@ api_router.include_router(backtest_performance_router)
 api_router.include_router(walk_forward_performance_router)
 api_router.include_router(strategy_leaderboard_router)
 api_router.include_router(strategy_selector_router)
+api_router.include_router(strategy_performance_dashboard_router)
