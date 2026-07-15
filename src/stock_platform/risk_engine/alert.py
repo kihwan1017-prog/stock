@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from stock_platform.notification.runtime import (
+    risk_notification_sender,
+)
+
 
 class RiskAlertNotifier(Protocol):
     async def send(
@@ -14,14 +18,7 @@ class RiskAlertNotifier(Protocol):
         ...
 
 
-class LoggingRiskAlertNotifier:
-    """
-    STEP29-4 기본 알림 구현.
-
-    현재는 애플리케이션 로그에만 기록한다.
-    STEP29-6에서 Telegram·Slack Notifier를 연결한다.
-    """
-
+class CompositeRiskAlertNotifier:
     async def send(
         self,
         *,
@@ -29,11 +26,18 @@ class LoggingRiskAlertNotifier:
         message: str,
         detail: dict,
     ) -> None:
-        import structlog
-
-        structlog.get_logger(__name__).critical(
-            "risk_alert",
+        await risk_notification_sender.send(
             title=title,
             message=message,
             detail=detail,
         )
+
+
+class LoggingRiskAlertNotifier(
+    CompositeRiskAlertNotifier
+):
+    """
+    하위 호환용 이름.
+
+    STEP29-6부터 로그·Telegram·Slack 복합 알림을 사용한다.
+    """
