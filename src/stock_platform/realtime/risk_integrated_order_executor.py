@@ -18,6 +18,9 @@ from stock_platform.realtime.safety_guard import (
 from stock_platform.realtime.strategy_models import (
     RealtimeSignal,
 )
+from stock_platform.risk_engine.kill_switch_guard import (
+    PersistentKillSwitchGuard,
+)
 from stock_platform.risk_engine.order_guard import (
     DatabaseBackedRiskOrderGuard,
 )
@@ -25,7 +28,8 @@ from stock_platform.risk_engine.order_guard import (
 
 class RiskIntegratedRealtimeOrderExecutor:
     """
-    Risk Engine → 기존 Safety Guard → Paper 주문 실행 순서로 처리한다.
+    기본 설정 검증 → Persistent Kill Switch
+    → Risk Engine → Safety Guard → 주문 실행.
     """
 
     def __init__(
@@ -52,6 +56,19 @@ class RiskIntegratedRealtimeOrderExecutor:
             return self._skipped(
                 signal,
                 "RISK_ACCOUNT_NUMBER_MISSING",
+            )
+
+        try:
+            PersistentKillSwitchGuard(
+                self._session
+            ).require_order_allowed(
+                side=signal.action.value,
+                allow_sell=True,
+            )
+        except PermissionError:
+            return self._skipped(
+                signal,
+                "GLOBAL_KILL_SWITCH_ACTIVE",
             )
 
         quantity = (
@@ -96,6 +113,7 @@ class RiskIntegratedRealtimeOrderExecutor:
             RealtimePaperOrderExecutor
         )
         executor._config = self._execution_config
+
         return executor._skipped(
             signal=signal,
             reason_code=reason_code,
