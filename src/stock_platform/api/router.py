@@ -62,6 +62,7 @@ from stock_platform.api.v1.strategy_selector import (router as strategy_selector
 from stock_platform.api.v1.strategy_performance_dashboard import (router as strategy_performance_dashboard_router,)
 from stock_platform.api.v1.strategy_deployment import (router as strategy_deployment_router,)
 from stock_platform.api.v1.strategy_runtime import (router as strategy_runtime_router,)
+from stock_platform.api.v1.strategy_runtime_switch import (router as strategy_runtime_switch_router,)
 
 api_router = APIRouter()
 
@@ -127,3 +128,4 @@ api_router.include_router(strategy_selector_router)
 api_router.include_router(strategy_performance_dashboard_router)
 api_router.include_router(strategy_deployment_router)
 api_router.include_router(strategy_runtime_router)
+api_router.include_router(strategy_runtime_switch_router)
