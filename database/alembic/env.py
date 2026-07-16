@@ -47,6 +47,7 @@ from stock_platform.strategy_deployment import switch_entities as strategy_switc
 from stock_platform.strategy_deployment import policy_entities as strategy_policy_entities  # noqa: F401
 from stock_platform.strategy_deployment import pipeline_entities as strategy_pipeline_entities  # noqa: F401
 from stock_platform.strategy_deployment import performance_monitor_entities as deployment_performance_entities  # noqa: F401
+from stock_platform.order import entities as order_entities  # noqa: F401
 
 
 config = context.config

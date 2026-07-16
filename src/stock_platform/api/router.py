@@ -67,6 +67,8 @@ from stock_platform.api.v1.strategy_approval_policy import (router as strategy_a
 from stock_platform.api.v1.strategy_deployment_pipeline import (router as strategy_deployment_pipeline_router,)
 from stock_platform.api.v1.deployment_performance_monitor import (router as deployment_performance_monitor_router,)
 from stock_platform.api.v1.strategy_operations_dashboard import (router as strategy_operations_dashboard_router,)
+from stock_platform.api.v1.orders import router as orders_router
+
 
 api_router = APIRouter()
 
@@ -137,3 +139,4 @@ api_router.include_router(strategy_approval_policy_router)
 api_router.include_router(strategy_deployment_pipeline_router)
 api_router.include_router(deployment_performance_monitor_router)
 api_router.include_router(strategy_operations_dashboard_router)
+api_router.include_router(orders_router)
