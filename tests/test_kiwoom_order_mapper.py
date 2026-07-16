@@ -1,11 +1,37 @@
 from decimal import Decimal
-from stock_platform.broker.kiwoom.mapper import KiwoomOrderMapper
-from stock_platform.broker.models import BrokerOrderRequest, BrokerOrderSide, BrokerOrderType
+from stock_platform.broker.kiwoom.order_mapper import KiwoomOrderMapper
+from stock_platform.broker.models import BrokerOrderRequest
 
-def test_market_order_mapping():
-    req = BrokerOrderRequest("KRX", "005930", BrokerOrderSide.BUY, BrokerOrderType.MARKET, Decimal("10"), None, "x")
-    body = KiwoomOrderMapper.to_body(req, "MARKET_CODE", "LIMIT_CODE")
-    assert body["stk_cd"] == "005930"
-    assert body["ord_qty"] == "10"
-    assert body["ord_uv"] == ""
-    assert body["trde_tp"] == "MARKET_CODE"
+def request(side="BUY", order_type="LIMIT", tif="DAY", price=Decimal("70000")):
+    return BrokerOrderRequest(
+        client_order_id="ORD-1",
+        account_id=1,
+        exchange_code="KRX",
+        symbol="005930",
+        side=side,
+        order_type=order_type,
+        quantity=Decimal("2"),
+        price=price,
+        time_in_force=tif,
+    )
+
+def test_buy_limit_mapping():
+    req = request()
+    assert KiwoomOrderMapper.api_id(req.side) == "kt10000"
+    assert KiwoomOrderMapper.body(req) == {
+        "dmst_stex_tp": "KRX",
+        "stk_cd": "005930",
+        "ord_qty": "2",
+        "trde_tp": "0",
+        "ord_uv": "70000",
+    }
+
+def test_sell_api_id():
+    assert KiwoomOrderMapper.api_id("SELL") == "kt10001"
+
+def test_market_mapping_has_no_price():
+    body = KiwoomOrderMapper.body(
+        request(order_type="MARKET", price=None)
+    )
+    assert body["trde_tp"] == "3"
+    assert "ord_uv" not in body

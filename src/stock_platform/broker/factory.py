@@ -10,4 +10,6 @@ class BrokerAdapterFactory:
             return PaperBrokerAdapter()
         if environment == BrokerEnvironment.LIVE and broker_code.upper() == "KIWOOM":
             return KiwoomBrokerAdapter()
-        raise ValueError(f"Unsupported broker: environment={environment}, broker={broker_code}")
+        raise ValueError(
+            f"Unsupported broker: environment={environment}, broker={broker_code}"
+        )
