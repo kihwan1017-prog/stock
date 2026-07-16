@@ -3,16 +3,12 @@ from uuid import uuid4
 from stock_platform.broker.adapter import BrokerAdapter
 from stock_platform.broker.models import BrokerOrderRequest, BrokerOrderResult, BrokerOrderStatus
 
-class KiwoomBrokerAdapter(BrokerAdapter):
-    """
-    STEP32-3 mock adapter.
-    실제 키움 REST 호출은 다음 단계에서 연결한다.
-    """
+class PaperBrokerAdapter(BrokerAdapter):
     def submit_order(self, request: BrokerOrderRequest) -> BrokerOrderResult:
         return BrokerOrderResult(
             accepted=True,
             status=BrokerOrderStatus.ACCEPTED,
-            broker_order_id=f"KW-{uuid4().hex[:12].upper()}",
+            broker_order_id=f"PAPER-{uuid4().hex[:12].upper()}",
             submitted_at=datetime.now(timezone.utc),
         )
 

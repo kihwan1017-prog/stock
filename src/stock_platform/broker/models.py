@@ -1,59 +1,34 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
-
-class BrokerOrderSide(StrEnum):
-    BUY = "BUY"
-    SELL = "SELL"
-
-
-class BrokerOrderType(StrEnum):
-    MARKET = "MARKET"
-    LIMIT = "LIMIT"
-
+class BrokerEnvironment(StrEnum):
+    PAPER = "PAPER"
+    LIVE = "LIVE"
 
 class BrokerOrderStatus(StrEnum):
-    REQUESTED = "REQUESTED"
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
-    FILLED = "FILLED"
-    PARTIALLY_FILLED = "PARTIALLY_FILLED"
-    CANCELLED = "CANCELLED"
-
+    FAILED = "FAILED"
 
 @dataclass(frozen=True, slots=True)
 class BrokerOrderRequest:
+    client_order_id: str
+    account_id: int
     exchange_code: str
     symbol: str
-    side: BrokerOrderSide
-    order_type: BrokerOrderType
+    side: str
+    order_type: str
     quantity: Decimal
     price: Decimal | None
-    client_order_id: str
-
+    time_in_force: str
 
 @dataclass(frozen=True, slots=True)
-class BrokerOrderResponse:
-    broker_order_id: str
-    client_order_id: str
+class BrokerOrderResult:
+    accepted: bool
     status: BrokerOrderStatus
-    accepted_quantity: Decimal
-    filled_quantity: Decimal
-    average_fill_price: Decimal | None
-    message: str | None
-    requested_at: datetime
-    updated_at: datetime
-
-
-@dataclass(frozen=True, slots=True)
-class BrokerAccountSnapshot:
-    account_key: str
-    cash_balance: Decimal
-    available_cash: Decimal
-    total_asset_value: Decimal
-    currency_code: str
-    fetched_at: datetime
+    broker_order_id: str | None
+    submitted_at: datetime
+    reject_code: str | None = None
+    reject_message: str | None = None
