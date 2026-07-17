@@ -3,11 +3,7 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from fastapi import (
-    APIRouter,
-    HTTPException,
-    status,
-)
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from stock_platform.broker.models import (
@@ -44,6 +40,11 @@ class BrokerOrderApiRequest(BaseModel):
         default=None,
         gt=0,
     )
+    time_in_force: str = Field(
+        default="DAY",
+        min_length=1,
+        max_length=20,
+    )
     approval_id: str | None = None
     approval_token: str | None = None
 
@@ -66,25 +67,39 @@ async def place_broker_order(
             detail="price is required for LIMIT order",
         )
 
+    if (
+        request.order_type == BrokerOrderType.MARKET
+        and request.price is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="price must not be provided for MARKET order",
+        )
+
     try:
+        broker_request = BrokerOrderRequest(
+            client_order_id=str(uuid.uuid4()),
+            exchange_code=request.exchange_code,
+            symbol=request.symbol,
+            side=request.side,
+            order_type=request.order_type,
+            quantity=request.quantity,
+            price=request.price,
+            time_in_force=request.time_in_force,
+        )
+
         return await broker_order_service.place_order(
-            request=BrokerOrderRequest(
-                exchange_code=request.exchange_code,
-                symbol=request.symbol,
-                side=request.side,
-                order_type=request.order_type,
-                quantity=request.quantity,
-                price=request.price,
-                client_order_id=str(uuid.uuid4()),
-            ),
+            request=broker_request,
             approval_id=request.approval_id,
             approval_token=request.approval_token,
         )
+
     except PermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
+
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -98,8 +113,9 @@ async def get_broker_order(
 ):
     try:
         return await broker_order_adapter.get_order(
-            broker_order_id
+            broker_order_id,
         )
+
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -113,8 +129,9 @@ async def cancel_broker_order(
 ):
     try:
         return await broker_order_adapter.cancel_order(
-            broker_order_id
+            broker_order_id,
         )
+
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -124,6 +141,4 @@ async def cancel_broker_order(
 
 @router.get("/account")
 async def get_broker_account():
-    return await (
-        broker_order_adapter.get_account_snapshot()
-    )
+    return await broker_order_adapter.get_account_snapshot()

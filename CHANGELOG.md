@@ -1,12 +1,11 @@
 # CHANGELOG
 
-## STEP33 Market Data Engine Foundation
+## STEP34 Revised
 
-### Added
-- Market domain models
-- In-memory market repositories
-- Kiwoom and Upbit REST clients
-- Daily candle synchronization service
-- FastAPI market query routes
-- PostgreSQL market schema migration
-- Tests and documentation
+- 사용자 작업 체크리스트 추가
+- PowerShell 복사 및 설치 명령어 추가
+- 생성/수정 파일 목록 추가
+- Alembic 적용 절차 명확화
+- Router 등록 위치 설명 추가
+- 테스트 및 검증 문서 추가
+- Screener 테스트 추가

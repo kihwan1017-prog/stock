@@ -16,6 +16,7 @@ from stock_platform.strategy_deployment.reload_scheduler import (strategy_runtim
 from stock_platform.strategy_deployment.policy_scheduler import (strategy_approval_scheduler,)
 from stock_platform.strategy_deployment.pipeline_scheduler import (strategy_deployment_pipeline_scheduler,)
 from stock_platform.strategy_deployment.performance_monitor_scheduler import (deployment_performance_monitor_scheduler,)
+from stock_platform.api.v1.indicator_router import router as indicator_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -96,3 +97,4 @@ def root():
 
 
 app.include_router(api_router)
+app.include_router(indicator_router)

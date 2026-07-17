@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
@@ -14,7 +14,7 @@ from stock_platform.markets.service import (
     PriceDailyService,
 )
 from stock_platform.screener.models import CandidateScore
-from stock_platform.screener.service import CandidateService
+from stock_platform.screener.service import ScreenerService
 
 
 logger = structlog.get_logger(__name__)
@@ -31,14 +31,14 @@ class BatchScreeningResult:
 
 
 class CandidateBatchService:
-    """활성 종목을 일괄 평가해 점수순 후보를 반환한다."""
+    """?쒖꽦 醫낅ぉ???쇨큵 ?됯????먯닔???꾨낫瑜?諛섑솚?쒕떎."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
         price_service = PriceDailyService(
             PriceDailyRepository(session)
         )
-        self._candidate_service = CandidateService(price_service)
+        self._candidate_service = ScreenerService(price_service)
 
     def screen(
         self,
@@ -126,3 +126,4 @@ class CandidateBatchService:
             skipped_count=skipped_count,
             selected=selected,
         )
+

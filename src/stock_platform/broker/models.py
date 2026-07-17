@@ -1,28 +1,44 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+
 class BrokerEnvironment(StrEnum):
     PAPER = "PAPER"
     LIVE = "LIVE"
+
+
+class BrokerOrderSide(StrEnum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class BrokerOrderType(StrEnum):
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
+
 
 class BrokerOrderStatus(StrEnum):
     ACCEPTED = "ACCEPTED"
     REJECTED = "REJECTED"
     FAILED = "FAILED"
 
+
 @dataclass(frozen=True, slots=True)
 class BrokerOrderRequest:
     client_order_id: str
-    account_id: int
     exchange_code: str
     symbol: str
-    side: str
-    order_type: str
+    side: BrokerOrderSide
+    order_type: BrokerOrderType
     quantity: Decimal
-    price: Decimal | None
-    time_in_force: str
+    price: Decimal | None = None
+    account_id: int | None = None
+    time_in_force: str = "DAY"
+
 
 @dataclass(frozen=True, slots=True)
 class BrokerOrderResult:

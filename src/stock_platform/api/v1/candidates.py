@@ -18,7 +18,7 @@ from stock_platform.markets.service import (
 from stock_platform.screener.batch_service import (
     CandidateBatchService,
 )
-from stock_platform.screener.service import CandidateService
+from stock_platform.screener.service import ScreenerService
 
 
 router = APIRouter(
@@ -108,7 +108,7 @@ def evaluate_candidate(
     price_service = PriceDailyService(
         PriceDailyRepository(session)
     )
-    service = CandidateService(price_service)
+    service = ScreenerService(price_service)
 
     try:
         score = service.evaluate(
