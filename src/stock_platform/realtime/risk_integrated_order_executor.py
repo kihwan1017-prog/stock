@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import os
 from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from stock_platform.common.settings import get_settings
 from stock_platform.realtime.execution_models import (
     RealtimeExecutionConfig,
     RealtimeExecutionResult,
@@ -47,10 +47,9 @@ class RiskIntegratedRealtimeOrderExecutor:
         self,
         signal: RealtimeSignal,
     ) -> RealtimeExecutionResult:
-        account_number = os.getenv(
-            "KIWOOM_ACCOUNT_NUMBER",
-            "",
-        ).strip()
+        account_number = (
+            get_settings().kiwoom_account_number.strip()
+        )
 
         if not account_number:
             return self._skipped(

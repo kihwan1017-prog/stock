@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import os
-
+from stock_platform.common.settings import get_settings
 from stock_platform.notification.composite import (
     CompositeNotificationSender,
 )
@@ -16,38 +15,22 @@ from stock_platform.notification.telegram_sender import (
 )
 
 
-risk_notification_sender = CompositeNotificationSender(
-    [
-        LoggingNotificationSender(),
-        TelegramNotificationSender(
-            enabled=(
-                os.getenv(
-                    "TELEGRAM_ENABLED",
-                    "false",
-                ).lower()
-                == "true"
+def build_risk_notification_sender() -> CompositeNotificationSender:
+    settings = get_settings()
+    return CompositeNotificationSender(
+        [
+            LoggingNotificationSender(),
+            TelegramNotificationSender(
+                enabled=settings.telegram_enabled,
+                bot_token=settings.telegram_bot_token,
+                chat_id=settings.telegram_chat_id,
             ),
-            bot_token=os.getenv(
-                "TELEGRAM_BOT_TOKEN",
-                "",
+            SlackNotificationSender(
+                enabled=settings.slack_enabled,
+                webhook_url=settings.slack_webhook_url,
             ),
-            chat_id=os.getenv(
-                "TELEGRAM_CHAT_ID",
-                "",
-            ),
-        ),
-        SlackNotificationSender(
-            enabled=(
-                os.getenv(
-                    "SLACK_ENABLED",
-                    "false",
-                ).lower()
-                == "true"
-            ),
-            webhook_url=os.getenv(
-                "SLACK_WEBHOOK_URL",
-                "",
-            ),
-        ),
-    ]
-)
+        ]
+    )
+
+
+risk_notification_sender = build_risk_notification_sender()

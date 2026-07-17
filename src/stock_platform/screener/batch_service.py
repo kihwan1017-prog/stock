@@ -8,7 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from stock_platform.markets.models import Instrument
-from stock_platform.markets.repository import PriceDailyRepository
+from stock_platform.markets.repository import (
+    InstrumentRepository,
+    PriceDailyRepository,
+)
 from stock_platform.markets.service import (
     InstrumentNotFoundError,
     PriceDailyService,
@@ -31,21 +34,25 @@ class BatchScreeningResult:
 
 
 class CandidateBatchService:
-    """?쒖꽦 醫낅ぉ???쇨큵 ?됯????먯닔???꾨낫瑜?諛섑솚?쒕떎."""
+    """활성 종목을 일괄 평가해 상위 후보를 반환한다."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
+        instrument_repository = InstrumentRepository(session)
         price_service = PriceDailyService(
             PriceDailyRepository(session)
         )
-        self._candidate_service = ScreenerService(price_service)
+        self._candidate_service = ScreenerService(
+            price_service,
+            instrument_repository=instrument_repository,
+        )
 
     def screen(
         self,
         *,
         exchange_code: str,
         as_of_date: date,
-        limit: int = 30,
+        limit: int = 10,
         minimum_score: float = 0,
         require_all_rules: bool = False,
     ) -> BatchScreeningResult:
@@ -126,4 +133,3 @@ class CandidateBatchService:
             skipped_count=skipped_count,
             selected=selected,
         )
-

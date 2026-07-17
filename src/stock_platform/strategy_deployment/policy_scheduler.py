@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
@@ -38,21 +36,7 @@ class StrategyApprovalScheduler:
         )
 
     async def run_after_market(self) -> None:
-        market_code = os.getenv(
-            "REALTIME_STRATEGY_MARKET_CODE",
-            "KRX",
-        ).strip()
-        symbol = os.getenv(
-            "REALTIME_STRATEGY_SYMBOL",
-            "",
-        ).strip() or None
-        auto_deploy = (
-            os.getenv(
-                "STRATEGY_AUTO_DEPLOY_ENABLED",
-                "false",
-            ).lower()
-            == "true"
-        )
+        settings = get_settings()
 
         session = get_session_factory()()
 
@@ -60,10 +44,10 @@ class StrategyApprovalScheduler:
             StrategyAutoDeploymentService(
                 session=session
             ).evaluate_latest(
-                market_code=market_code,
-                symbol=symbol,
+                market_code=settings.realtime_strategy_market_code,
+                symbol=settings.realtime_strategy_symbol_or_none,
                 requested_by="SYSTEM_SCHEDULER",
-                auto_deploy=auto_deploy,
+                auto_deploy=settings.strategy_auto_deploy_enabled,
             )
         except Exception:
             session.rollback()

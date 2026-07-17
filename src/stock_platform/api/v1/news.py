@@ -64,7 +64,7 @@ async def sync_news(
     service, naver, ollama = await _build_service(session)
 
     try:
-        saved_count = await service.sync(
+        result = await service.sync_detailed(
             exchange_code=request.exchange_code,
             symbol=request.symbol,
             query=request.query,
@@ -79,7 +79,40 @@ async def sync_news(
         await naver.aclose()
         await ollama.aclose()
 
-    return {"saved_count": saved_count}
+    return {
+        "exchange_code": result.exchange_code,
+        "symbol": result.symbol,
+        "fetched_count": result.fetched_count,
+        "unique_count": result.unique_count,
+        "saved_count": result.saved_count,
+        "duplicate_skipped": result.duplicate_skipped,
+    }
+
+
+@router.get("/failures")
+def list_news_failures(
+    exchange_code: str | None = None,
+    symbol: str | None = None,
+    limit: int = 50,
+    session: Session = Depends(get_db_session),
+):
+    rows = NewsRepository(session).list_failures(
+        exchange_code=exchange_code,
+        symbol=symbol,
+        limit=limit,
+    )
+    return [
+        {
+            "failure_id": row.failure_id,
+            "exchange_code": row.exchange_code,
+            "symbol": row.symbol,
+            "query_text": row.query_text,
+            "source_code": row.source_code,
+            "error_message": row.error_message,
+            "failed_at": row.failed_at,
+        }
+        for row in rows
+    ]
 
 
 @router.post("/summarize")

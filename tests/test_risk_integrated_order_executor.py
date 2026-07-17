@@ -17,9 +17,9 @@ from stock_platform.realtime.strategy_models import (
 def test_blocks_when_account_number_missing(
     monkeypatch,
 ) -> None:
-    monkeypatch.delenv(
-        "KIWOOM_ACCOUNT_NUMBER",
-        raising=False,
+    monkeypatch.setattr(
+        "stock_platform.realtime.risk_integrated_order_executor.get_settings",
+        lambda: SimpleNamespace(kiwoom_account_number=""),
     )
 
     executor = (

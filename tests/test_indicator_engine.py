@@ -41,6 +41,11 @@ def test_calculates_major_indicators() -> None:
     assert latest.bollinger_lower is not None
     assert latest.atr14 is not None
     assert latest.volume_ma20 is not None
+    assert latest.status_code in {
+        "READY",
+        "PARTIAL",
+        "INSUFFICIENT",
+    }
 
 
 def test_empty_input_returns_empty_result() -> None:

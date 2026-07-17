@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from apscheduler.schedulers.asyncio import (
     AsyncIOScheduler,
 )
@@ -29,18 +27,11 @@ class StrategyRuntimeReloadScheduler:
         return self._scheduler
 
     async def reload_active_strategy(self) -> None:
-        market_code = os.getenv(
-            "REALTIME_STRATEGY_MARKET_CODE",
-            "KRX",
-        ).strip()
-        symbol = os.getenv(
-            "REALTIME_STRATEGY_SYMBOL",
-            "",
-        ).strip() or None
+        settings = get_settings()
 
         await dynamic_strategy_runtime_manager.reload(
-            market_code=market_code,
-            symbol=symbol,
+            market_code=settings.realtime_strategy_market_code,
+            symbol=settings.realtime_strategy_symbol_or_none,
             force=False,
         )
 

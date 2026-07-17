@@ -35,11 +35,18 @@ class CandidateAnalysisService:
         exchange_code: str,
         limit: int,
         contexts: dict[str, dict],
+        minimum_ai_score: float = 60,
+        minimum_confidence: float = 0.5,
     ):
+        from decimal import Decimal
+
         ranking = await self._ranker.rank_latest(
             exchange_code=exchange_code,
             limit=limit,
             contexts=contexts,
+            minimum_ai_score=Decimal(str(minimum_ai_score)),
+            minimum_confidence=Decimal(str(minimum_confidence)),
+            allow_fallback=True,
         )
 
         run = self._repository.replace_analysis(

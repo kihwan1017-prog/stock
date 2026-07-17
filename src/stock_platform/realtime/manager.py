@@ -5,7 +5,14 @@ from typing import Any
 
 from stock_platform.realtime.bus import RealtimeQuoteBus
 from stock_platform.realtime.cache import RealtimeQuoteCache
-from stock_platform.realtime.models import RealtimeQuote
+from stock_platform.realtime.models import (
+    RealtimeOrderbook,
+    RealtimeQuote,
+    RealtimeTrade,
+)
+from stock_platform.realtime.persistence import (
+    market_data_persistence_worker,
+)
 from stock_platform.realtime.upbit_client import (
     UpbitRealtimeClient,
 )
@@ -19,6 +26,7 @@ class RealtimeMarketDataManager:
         self.cache = RealtimeQuoteCache()
         self._clients: dict[str, Any] = {}
         self._tasks: dict[str, asyncio.Task] = {}
+        self.persistence = market_data_persistence_worker
 
     async def handle_quote(
         self,
@@ -26,11 +34,25 @@ class RealtimeMarketDataManager:
     ) -> None:
         await self.cache.set(quote)
         await self.bus.publish(quote)
+        self.persistence.enqueue_quote(quote)
+
+    async def handle_trade(
+        self,
+        trade: RealtimeTrade,
+    ) -> None:
+        self.persistence.enqueue_trade(trade)
+
+    async def handle_orderbook(
+        self,
+        orderbook: RealtimeOrderbook,
+    ) -> None:
+        self.persistence.enqueue_orderbook(orderbook)
 
     async def start_upbit(
         self,
         *,
         symbols: list[str],
+        channels: list[str] | None = None,
     ) -> dict:
         client_id = "UPBIT"
 
@@ -41,7 +63,11 @@ class RealtimeMarketDataManager:
 
         client = UpbitRealtimeClient(
             symbols=symbols,
-            handler=self.handle_quote,
+            quote_handler=self.handle_quote,
+            trade_handler=self.handle_trade,
+            orderbook_handler=self.handle_orderbook,
+            channels=channels
+            or ["ticker", "trade", "orderbook"],
         )
         task = asyncio.create_task(
             client.run_forever(),
@@ -83,6 +109,7 @@ class RealtimeMarketDataManager:
             },
             "cache": await self.cache.health(),
             "subscriber_count": self.bus.subscriber_count,
+            "persistence": self.persistence.status(),
         }
 
 

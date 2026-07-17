@@ -4,6 +4,10 @@ from stock_platform.operation.health_service import (
     check_database,
     check_ollama,
 )
+from stock_platform.realtime.manager import realtime_manager
+from stock_platform.realtime.persistence import (
+    market_data_persistence_worker,
+)
 
 router = APIRouter(
     prefix="/health",
@@ -12,24 +16,31 @@ router = APIRouter(
 
 
 @router.get("")
-def health():
-
+async def health():
     database = check_database()
-
     ollama = check_ollama()
+    realtime = await realtime_manager.status()
+    persistence = market_data_persistence_worker.status()
 
-    status = "UP"
+    status_code = "UP"
 
     if database["status"] != "UP":
-        status = "DEGRADED"
+        status_code = "DEGRADED"
 
     if ollama["status"] != "UP":
-        status = "DEGRADED"
+        status_code = "DEGRADED"
+
+    if persistence.get("failed", 0) > 0 and persistence.get(
+        "last_error"
+    ):
+        status_code = "DEGRADED"
 
     return {
-        "status": status,
+        "status": status_code,
         "components": {
             "database": database,
             "ollama": ollama,
+            "realtime": realtime,
+            "market_data_persistence": persistence,
         },
     }

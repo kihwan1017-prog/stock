@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 
 from stock_platform.ai.candidate_ranker import (
@@ -83,3 +84,30 @@ def test_rank_latest_filters_and_orders() -> None:
         "005930",
     ]
     assert result.candidates[0].rank == 1
+    assert result.used_fallback is False
+
+
+def test_rank_latest_falls_back_on_ai_error() -> None:
+    class BrokenOllama:
+        async def chat_structured(self, **kwargs):
+            raise RuntimeError("ollama down")
+
+    ranker = OllamaCandidateRanker.__new__(
+        OllamaCandidateRanker
+    )
+    ranker._repository = FakeRepository()
+    ranker._ollama_client = BrokenOllama()
+    ranker._model_name = "qwen3.5:4b"
+
+    result = asyncio.run(
+        ranker.rank_latest(
+            exchange_code="KRX",
+            limit=1,
+            minimum_ai_score=Decimal("50"),
+            allow_fallback=True,
+        )
+    )
+
+    assert result.used_fallback is True
+    assert result.candidates[0].selection_source == "RULE_FALLBACK"
+    assert result.candidates[0].symbol == "005930"

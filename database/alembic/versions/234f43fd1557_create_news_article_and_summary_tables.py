@@ -1,7 +1,9 @@
-"""create news article and summary tables
+"""create risk policy and position plan tables
 
 Revision ID: 234f43fd1557
 Revises: 9193f9b0bc0e
+
+NOTE: 파일명은 news이나 실제로는 strategy.risk_policy / strategy.position_plan 생성.
 Create Date: 2026-07-14 22:15:06.319779
 
 """

@@ -43,8 +43,13 @@ def test_rejects_when_maximum_positions_reached() -> None:
     engine = RiskManagementEngine()
     policy = RiskPolicy(
         position_sizing_mode=PositionSizingMode.FIXED_AMOUNT,
-        fixed_amount=Decimal("1000000"),
+        risk_per_trade_ratio=Decimal("0.01"),
+        stop_loss_ratio=Decimal("0.05"),
+        take_profit_ratio=Decimal("0.10"),
+        maximum_position_ratio=Decimal("0.20"),
         maximum_positions=5,
+        minimum_order_amount=Decimal("10000"),
+        fixed_amount=Decimal("1000000"),
     )
 
     plan = engine.create_position_plan(

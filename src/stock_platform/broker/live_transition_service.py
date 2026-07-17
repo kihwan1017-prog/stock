@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -18,6 +17,7 @@ from stock_platform.broker.live_transition_models import (
     LiveTransitionCheckStatus,
     LiveTransitionPlan,
 )
+from stock_platform.common.settings import get_settings
 
 
 class LiveTradingTransitionService:
@@ -40,67 +40,44 @@ class LiveTradingTransitionService:
         max_daily_loss: Decimal,
         paper_validation_approved: bool,
     ) -> LiveTransitionPlan:
+        settings = get_settings()
         checks: list[LiveTransitionCheckResult] = []
 
         self._add_bool_check(
             checks,
             LiveTransitionCheckCode.MOCK_MODE_DISABLED,
-            os.getenv("KIWOOM_USE_MOCK", "true").lower()
-            == "false",
+            settings.kiwoom_use_mock is False,
             "KIWOOM_USE_MOCK=false",
         )
         self._add_bool_check(
             checks,
             LiveTransitionCheckCode.LIVE_ORDER_ENABLED,
-            os.getenv(
-                "KIWOOM_LIVE_ORDER_ENABLED",
-                "false",
-            ).lower()
-            == "true",
+            settings.kiwoom_live_order_enabled is True,
             "KIWOOM_LIVE_ORDER_ENABLED=true",
         )
         self._add_bool_check(
             checks,
             LiveTransitionCheckCode.ACCOUNT_NUMBER_PRESENT,
-            bool(
-                os.getenv(
-                    "KIWOOM_ACCOUNT_NUMBER",
-                    "",
-                ).strip()
-            ),
+            bool(settings.kiwoom_account_number.strip()),
             "KIWOOM_ACCOUNT_NUMBER configured",
         )
         self._add_bool_check(
             checks,
             LiveTransitionCheckCode.APP_CREDENTIALS_PRESENT,
-            bool(os.getenv("KIWOOM_APP_KEY", "").strip())
-            and bool(
-                os.getenv(
-                    "KIWOOM_SECRET_KEY",
-                    "",
-                ).strip()
-            ),
+            bool(settings.kiwoom_app_key.strip())
+            and bool(settings.kiwoom_secret_key.strip()),
             "Kiwoom application credentials configured",
         )
         self._add_bool_check(
             checks,
             LiveTransitionCheckCode.WEBSOCKET_CONFIGURED,
-            bool(
-                os.getenv(
-                    "KIWOOM_ORDER_WS_SUBSCRIBE_JSON",
-                    "",
-                ).strip()
-            ),
+            bool(settings.kiwoom_order_ws_subscribe_json.strip()),
             "Kiwoom order WebSocket subscription configured",
         )
         self._add_bool_check(
             checks,
             LiveTransitionCheckCode.RECOVERY_TRADING_DISABLED,
-            os.getenv(
-                "KIWOOM_RECOVERY_START_TRADING",
-                "false",
-            ).lower()
-            == "false",
+            settings.kiwoom_recovery_start_trading is False,
             (
                 "Automatic strategy/order start remains disabled "
                 "during initial live validation"

@@ -2,6 +2,8 @@
 
 Revision ID: 86706db6ba99
 Revises: 8fe17ae5b326
+
+NOTE: no-op revision. 실제 job_run_history 생성은 8fe17ae5b326에서 수행됨.
 Create Date: 2026-07-14 23:18:25.449412
 
 """

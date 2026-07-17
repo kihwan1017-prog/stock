@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 from stock_platform.broker.kiwoom.auth import (
     KiwoomTokenProvider,
@@ -15,6 +14,7 @@ from stock_platform.broker.kiwoom.ws_client import (
 from stock_platform.broker.order_event_bus import (
     BrokerOrderEventBus,
 )
+from stock_platform.common.settings import get_settings
 
 
 kiwoom_order_event_bus = BrokerOrderEventBus()
@@ -23,39 +23,12 @@ kiwoom_order_event_bus = BrokerOrderEventBus()
 def build_kiwoom_order_websocket(
     handler,
 ) -> KiwoomOrderExecutionWebSocketClient:
-    use_mock = (
-        os.getenv(
-            "KIWOOM_USE_MOCK",
-            "true",
-        ).lower()
-        == "true"
-    )
-
-    config = KiwoomBrokerConfig(
-        app_key=os.getenv("KIWOOM_APP_KEY", ""),
-        secret_key=os.getenv(
-            "KIWOOM_SECRET_KEY",
-            "",
-        ),
-        use_mock=use_mock,
-        live_order_enabled=False,
-    )
+    settings = get_settings()
+    config = KiwoomBrokerConfig.from_settings()
     config.validate()
 
-    default_url = (
-        "wss://mockapi.kiwoom.com:10000"
-        if use_mock
-        else "wss://api.kiwoom.com:10000"
-    )
-
-    websocket_url = os.getenv(
-        "KIWOOM_ORDER_WS_URL",
-        default_url,
-    )
-    path = os.getenv(
-        "KIWOOM_ORDER_WS_PATH",
-        "",
-    ).strip()
+    websocket_url = settings.kiwoom_order_ws_url_resolved
+    path = settings.kiwoom_order_ws_path.strip()
 
     if path:
         websocket_url = (
@@ -64,11 +37,7 @@ def build_kiwoom_order_websocket(
             + path.lstrip("/")
         )
 
-    subscribe_raw = os.getenv(
-        "KIWOOM_ORDER_WS_SUBSCRIBE_JSON",
-        "",
-    )
-
+    subscribe_raw = settings.kiwoom_order_ws_subscribe_json.strip()
     if not subscribe_raw:
         raise ValueError(
             "KIWOOM_ORDER_WS_SUBSCRIBE_JSON must be "

@@ -63,6 +63,9 @@ class RealtimeTradingScheduler:
         )
 
     def start(self) -> None:
+        if self._scheduler.running:
+            return
+
         self.configure()
         self._scheduler.start()
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from apscheduler.schedulers.asyncio import (
     AsyncIOScheduler,
 )
@@ -41,18 +39,11 @@ class StrategyDeploymentPipelineScheduler:
         )
 
     async def run_after_market(self) -> None:
-        market_code = os.getenv(
-            "REALTIME_STRATEGY_MARKET_CODE",
-            "KRX",
-        ).strip()
-        symbol = os.getenv(
-            "REALTIME_STRATEGY_SYMBOL",
-            "",
-        ).strip() or None
+        settings = get_settings()
 
         await strategy_deployment_pipeline_manager.run(
-            market_code=market_code,
-            symbol=symbol,
+            market_code=settings.realtime_strategy_market_code,
+            symbol=settings.realtime_strategy_symbol_or_none,
             requested_by="SYSTEM_PIPELINE",
             sample_context={},
             allow_auto_deploy=None,

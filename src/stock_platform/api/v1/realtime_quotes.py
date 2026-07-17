@@ -23,6 +23,9 @@ class StartUpbitRequest(BaseModel):
         min_length=1,
         max_length=200,
     )
+    channels: list[str] = Field(
+        default_factory=lambda: ["ticker", "trade", "orderbook"],
+    )
 
 
 @router.post("/upbit/start")
@@ -31,7 +34,8 @@ async def start_upbit_realtime(
 ):
     try:
         return await realtime_manager.start_upbit(
-            symbols=request.symbols
+            symbols=request.symbols,
+            channels=request.channels,
         )
     except ValueError as exc:
         raise HTTPException(

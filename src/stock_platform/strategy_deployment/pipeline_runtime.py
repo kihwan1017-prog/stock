@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 from typing import Any
 
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import (
     get_session_factory,
 )
@@ -40,13 +40,7 @@ class StrategyDeploymentPipelineManager:
             auto_deploy = (
                 allow_auto_deploy
                 if allow_auto_deploy is not None
-                else (
-                    os.getenv(
-                        "STRATEGY_AUTO_DEPLOY_ENABLED",
-                        "false",
-                    ).lower()
-                    == "true"
-                )
+                else get_settings().strategy_auto_deploy_enabled
             )
 
             result = await EndToEndStrategyDeploymentPipeline(

@@ -57,4 +57,24 @@ def build_job_registry(
         handler=report_job.execute,
     )
 
+    registry.register(
+        name="upbit_krw_daily_sync",
+        group="MARKET",
+        description=(
+            "업비트 KRW 마켓 종목·일봉을 동기화합니다. "
+            "기본 lookback은 3년이며 resume을 지원합니다."
+        ),
+        handler=handlers.run_upbit_krw_daily_sync,
+    )
+
+    registry.register(
+        name="indicator_daily_batch",
+        group="MARKET",
+        description=(
+            "활성 종목의 일봉 지표(MA/EMA/RSI/52주 등)를 "
+            "계산해 market.indicator_daily에 저장합니다."
+        ),
+        handler=handlers.run_indicator_daily_batch,
+    )
+
     return registry

@@ -8,7 +8,10 @@ import structlog
 from stock_platform.collectors.upbit.daily_collector import (
     UpbitDailyCollector,
 )
-from stock_platform.markets.service import PriceDailyService
+from stock_platform.markets.service import (
+    InstrumentService,
+    PriceDailyService,
+)
 
 
 logger = structlog.get_logger(__name__)
@@ -31,9 +34,11 @@ class UpbitDailySyncService:
         self,
         collector: UpbitDailyCollector,
         price_service: PriceDailyService,
+        instrument_service: InstrumentService | None = None,
     ) -> None:
         self._collector = collector
         self._price_service = price_service
+        self._instrument_service = instrument_service
 
     async def sync(
         self,
@@ -48,6 +53,15 @@ class UpbitDailySyncService:
 
         if not normalized_market:
             raise ValueError("market is required")
+
+        if self._instrument_service is not None:
+            self._instrument_service.ensure(
+                exchange_code=exchange_code,
+                symbol=normalized_market,
+                name=normalized_market,
+                asset_type="CRYPTO",
+                currency_code="KRW",
+            )
 
         effective_start_date = start_date
 
@@ -86,6 +100,9 @@ class UpbitDailySyncService:
                 item.to_price_row()
                 for item in collected
             ],
+            ensure_instrument=True,
+            instrument_name=normalized_market,
+            asset_type="CRYPTO",
         )
 
         logger.info(

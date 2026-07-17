@@ -64,13 +64,15 @@ class UpbitQuotationClient:
             raise ValueError("endpoint must start with '/'")
 
         async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(3),
+            stop=stop_after_attempt(5),
             wait=wait_exponential(
-                multiplier=0.5,
-                min=0.5,
-                max=3.0,
+                multiplier=1.0,
+                min=1.0,
+                max=8.0,
             ),
-            retry=retry_if_exception_type(_RetryableUpbitError),
+            retry=retry_if_exception_type(
+                (_RetryableUpbitError, UpbitRateLimitError)
+            ),
             reraise=True,
         ):
             with attempt:
@@ -124,6 +126,41 @@ class UpbitQuotationClient:
         if not isinstance(result, list):
             raise UpbitRequestError(
                 "Upbit daily candle response was not a list"
+            )
+
+        return result
+
+    async def list_minute_candles(
+        self,
+        *,
+        market: str,
+        unit: int,
+        to: str | None = None,
+        count: int = 200,
+    ) -> list[dict[str, Any]]:
+        """업비트 분봉 조회. unit은 1/3/5/15만 허용."""
+
+        if unit not in (1, 3, 5, 15):
+            raise ValueError("unit must be one of 1, 3, 5, 15")
+
+        if not 1 <= count <= 200:
+            raise ValueError("count must be between 1 and 200")
+
+        params: dict[str, Any] = {
+            "market": market.upper(),
+            "count": count,
+        }
+        if to:
+            params["to"] = to
+
+        result = await self.get_json(
+            f"/v1/candles/minutes/{unit}",
+            params=params,
+        )
+
+        if not isinstance(result, list):
+            raise UpbitRequestError(
+                "Upbit minute candle response was not a list"
             )
 
         return result

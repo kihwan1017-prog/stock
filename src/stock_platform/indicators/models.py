@@ -34,3 +34,20 @@ class DailyIndicator:
     bollinger_lower: Decimal | None
     atr14: Decimal | None
     volume_ma20: Decimal | None
+    high_52w: Decimal | None = None
+    low_52w: Decimal | None = None
+    status_code: str = "PARTIAL"
+    missing_fields: tuple[str, ...] = ()
+
+
+# READY 판정에 필요한 핵심 지표
+REQUIRED_INDICATOR_FIELDS: tuple[str, ...] = (
+    "ma5",
+    "ma20",
+    "ma60",
+    "ema12",
+    "rsi14",
+    "volume_ma20",
+    "high_52w",
+    "low_52w",
+)

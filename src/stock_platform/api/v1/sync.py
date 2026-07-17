@@ -17,9 +17,13 @@ from stock_platform.collectors.kiwoom.sync_service import (
     KiwoomDailySyncService,
 )
 from stock_platform.database.session import get_db_session
-from stock_platform.markets.repository import PriceDailyRepository
+from stock_platform.markets.repository import (
+    InstrumentRepository,
+    PriceDailyRepository,
+)
 from stock_platform.markets.service import (
     InstrumentNotFoundError,
+    InstrumentService,
     PriceDailyService,
 )
 
@@ -56,8 +60,12 @@ async def sync_kiwoom_daily(
     request: KiwoomDailySyncRequest,
     session: Session = Depends(get_db_session),
 ) -> KiwoomDailySyncResult:
+    instrument_service = InstrumentService(
+        InstrumentRepository(session)
+    )
     price_service = PriceDailyService(
-        PriceDailyRepository(session)
+        PriceDailyRepository(session),
+        instrument_service=instrument_service,
     )
 
     try:
@@ -66,6 +74,7 @@ async def sync_kiwoom_daily(
             sync_service = KiwoomDailySyncService(
                 collector=collector,
                 price_service=price_service,
+                instrument_service=instrument_service,
             )
 
             return await sync_service.sync(

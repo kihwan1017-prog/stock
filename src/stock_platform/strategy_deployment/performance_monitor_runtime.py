@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import os
-
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import (
     get_session_factory,
 )
@@ -46,11 +45,7 @@ class DeploymentPerformanceMonitorManager:
 
             policy = DeploymentPerformancePolicy(
                 auto_stop_enabled=(
-                    os.getenv(
-                        "PAPER_STRATEGY_AUTO_STOP_ENABLED",
-                        "false",
-                    ).lower()
-                    == "true"
+                    get_settings().paper_strategy_auto_stop_enabled
                 )
             )
 

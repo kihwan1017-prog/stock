@@ -102,13 +102,12 @@ class KiwoomDailyCollector:
             if oldest_date is not None and oldest_date <= start_date:
                 break
 
-            if not response.has_more or not response.next_key:
-                break
-
-            continuation = ContinuationState(
+            continuation = ContinuationState.from_response(
                 has_more=response.has_more,
                 next_key=response.next_key,
             )
+            if not continuation.has_more:
+                break
         else:
             raise KiwoomDailyCollectionError(
                 f"Exceeded max_pages={max_pages} for {normalized_symbol}"

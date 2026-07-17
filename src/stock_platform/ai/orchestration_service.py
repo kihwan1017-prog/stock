@@ -39,13 +39,15 @@ class CandidateAnalysisOrchestrator:
         self,
         *,
         exchange_code: str,
-        limit: int = 10,
+        limit: int = 5,
         news_limit: int = 20,
         disclosure_limit: int = 20,
         lookback_days: int = 90,
+        minimum_ai_score: float = 60,
+        minimum_confidence: float = 0.5,
     ):
-        if not 1 <= limit <= 30:
-            raise ValueError("limit must be between 1 and 30")
+        if not 1 <= limit <= 10:
+            raise ValueError("limit must be between 1 and 10")
 
         normalized_exchange = exchange_code.strip().upper()
 
@@ -66,7 +68,8 @@ class CandidateAnalysisOrchestrator:
                 f"run_id={candidate_run.run_id}"
             )
 
-        selected_rows = candidate_rows[:limit]
+        # 규칙 상위 10 → AI 최종 limit(기본 5)
+        selected_rows = candidate_rows[:10]
         contexts: dict[str, dict] = {}
 
         for row in selected_rows:
@@ -83,6 +86,8 @@ class CandidateAnalysisOrchestrator:
             exchange_code=normalized_exchange,
             limit=limit,
             contexts=contexts,
+            minimum_ai_score=minimum_ai_score,
+            minimum_confidence=minimum_confidence,
         )
 
         return {

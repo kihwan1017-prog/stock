@@ -19,7 +19,7 @@ class CandidateRunService:
         *,
         exchange_code: str,
         as_of_date: date,
-        limit: int = 30,
+        limit: int = 10,
         minimum_score: Decimal = Decimal("0"),
         require_all_rules: bool = False,
         run_type: str = "DAILY",

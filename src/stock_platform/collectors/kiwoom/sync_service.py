@@ -8,7 +8,10 @@ import structlog
 from stock_platform.collectors.kiwoom.daily_collector import (
     KiwoomDailyCollector,
 )
-from stock_platform.markets.service import PriceDailyService
+from stock_platform.markets.service import (
+    InstrumentService,
+    PriceDailyService,
+)
 
 
 logger = structlog.get_logger(__name__)
@@ -31,9 +34,11 @@ class KiwoomDailySyncService:
         self,
         collector: KiwoomDailyCollector,
         price_service: PriceDailyService,
+        instrument_service: InstrumentService | None = None,
     ) -> None:
         self._collector = collector
         self._price_service = price_service
+        self._instrument_service = instrument_service
 
     async def sync(
         self,
@@ -53,6 +58,15 @@ class KiwoomDailySyncService:
 
         if start_date > end_date:
             raise ValueError("start_date must not be after end_date")
+
+        if self._instrument_service is not None:
+            self._instrument_service.ensure(
+                exchange_code=normalized_exchange,
+                symbol=normalized_symbol,
+                name=normalized_symbol,
+                asset_type="STOCK",
+                currency_code="KRW",
+            )
 
         effective_start_date = start_date
 
@@ -98,6 +112,9 @@ class KiwoomDailySyncService:
             symbol=normalized_symbol,
             source="KIWOOM",
             rows=rows,
+            ensure_instrument=True,
+            instrument_name=normalized_symbol,
+            asset_type="STOCK",
         )
 
         logger.info(

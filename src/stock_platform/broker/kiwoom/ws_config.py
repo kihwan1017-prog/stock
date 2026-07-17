@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
+
+from stock_platform.common.settings import get_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,49 +21,21 @@ class KiwoomWebSocketConfig:
 
     @classmethod
     def from_env(cls) -> "KiwoomWebSocketConfig":
-        use_mock = os.getenv(
-            "KIWOOM_USE_MOCK", "true"
-        ).lower() == "true"
-
-        default_url = (
-            "wss://mockapi.kiwoom.com:10000"
-            if use_mock
-            else "wss://api.kiwoom.com:10000"
-        )
-
+        settings = get_settings()
         return cls(
-            url=os.getenv(
-                "KIWOOM_WS_URL", default_url
+            url=settings.kiwoom_ws_url_resolved,
+            path=settings.kiwoom_ws_path,
+            service_type=settings.kiwoom_ws_execution_type,
+            reconnect_min_seconds=(
+                settings.kiwoom_ws_reconnect_min_seconds
             ),
-            path=os.getenv(
-                "KIWOOM_WS_PATH",
-                "/api/dostk/websocket",
+            reconnect_max_seconds=(
+                settings.kiwoom_ws_reconnect_max_seconds
             ),
-            service_type=os.getenv(
-                "KIWOOM_WS_EXECUTION_TYPE", "00"
+            ping_interval_seconds=(
+                settings.kiwoom_ws_ping_interval_seconds
             ),
-            reconnect_min_seconds=float(
-                os.getenv(
-                    "KIWOOM_WS_RECONNECT_MIN_SECONDS",
-                    "1",
-                )
-            ),
-            reconnect_max_seconds=float(
-                os.getenv(
-                    "KIWOOM_WS_RECONNECT_MAX_SECONDS",
-                    "30",
-                )
-            ),
-            ping_interval_seconds=float(
-                os.getenv(
-                    "KIWOOM_WS_PING_INTERVAL_SECONDS",
-                    "20",
-                )
-            ),
-            ping_timeout_seconds=float(
-                os.getenv(
-                    "KIWOOM_WS_PING_TIMEOUT_SECONDS",
-                    "10",
-                )
+            ping_timeout_seconds=(
+                settings.kiwoom_ws_ping_timeout_seconds
             ),
         )

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
 from stock_platform.markets.repository import (
+    InstrumentRepository,
     PriceDailyRepository,
 )
 from stock_platform.markets.service import (
@@ -28,21 +29,29 @@ router = APIRouter(
 
 
 class RuleResultResponse(BaseModel):
+    liquidity: bool
+    trade_value: bool
     volume_surge: bool
     trend_alignment: bool
     rsi_range: bool
+    week52_position: bool
+    atr_acceptable: bool
+    tradable: bool
     macd_positive: bool
     breakout: bool
-    atr_acceptable: bool
     passed_count: int
     passed: bool
+    rejection_reasons: list[str] = Field(default_factory=list)
 
 
 class ScoreBreakdownResponse(BaseModel):
+    liquidity: Decimal
+    trade_value: Decimal
     volume: Decimal
     trend: Decimal
     rsi: Decimal
     macd: Decimal
+    week52: Decimal
     breakout: Decimal
     volatility: Decimal
     total: Decimal
@@ -73,21 +82,15 @@ def _serialize_score(score) -> dict:
         "symbol": score.symbol,
         "trade_date": score.trade_date,
         "total_score": score.total_score,
-        "rules": {
-            "volume_surge": score.rules.volume_surge,
-            "trend_alignment": score.rules.trend_alignment,
-            "rsi_range": score.rules.rsi_range,
-            "macd_positive": score.rules.macd_positive,
-            "breakout": score.rules.breakout,
-            "atr_acceptable": score.rules.atr_acceptable,
-            "passed_count": score.rules.passed_count,
-            "passed": score.rules.passed,
-        },
+        "rules": score.rules.to_dict(),
         "breakdown": {
+            "liquidity": score.breakdown.liquidity,
+            "trade_value": score.breakdown.trade_value,
             "volume": score.breakdown.volume,
             "trend": score.breakdown.trend,
             "rsi": score.breakdown.rsi,
             "macd": score.breakdown.macd,
+            "week52": score.breakdown.week52,
             "breakout": score.breakdown.breakout,
             "volatility": score.breakdown.volatility,
             "total": score.breakdown.total,
@@ -108,7 +111,10 @@ def evaluate_candidate(
     price_service = PriceDailyService(
         PriceDailyRepository(session)
     )
-    service = ScreenerService(price_service)
+    service = ScreenerService(
+        price_service,
+        instrument_repository=InstrumentRepository(session),
+    )
 
     try:
         score = service.evaluate(
@@ -137,7 +143,7 @@ def evaluate_candidate(
 def get_top_candidates(
     exchange_code: str,
     as_of_date: date = Query(...),
-    limit: int = Query(default=30, ge=1, le=200),
+    limit: int = Query(default=10, ge=1, le=200),
     minimum_score: float = Query(
         default=0,
         ge=0,

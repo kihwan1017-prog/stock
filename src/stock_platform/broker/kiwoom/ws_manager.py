@@ -40,9 +40,10 @@ class KiwoomOrderWebSocketManager:
 
     async def start(self):
         if self._client is not None:
-            raise ValueError(
-                "Kiwoom order WebSocket is already running"
-            )
+            return {
+                "already_running": True,
+                **self.status(),
+            }
 
         self._client = build_kiwoom_order_websocket(
             self.handle_event

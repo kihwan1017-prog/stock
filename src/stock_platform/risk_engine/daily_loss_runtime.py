@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import os
-from decimal import Decimal
-
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import (
     get_session_factory,
 )
@@ -20,10 +18,7 @@ class DailyLossMonitorManager:
         self._last_error: str | None = None
 
     async def check_now(self):
-        account_number = os.getenv(
-            "KIWOOM_ACCOUNT_NUMBER",
-            "",
-        ).strip()
+        account_number = get_settings().kiwoom_account_number.strip()
 
         if not account_number:
             raise ValueError(

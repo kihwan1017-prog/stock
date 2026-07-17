@@ -71,23 +71,8 @@ class CandidateRunRepository:
                 total_score=candidate.total_score,
                 rules_passed_count=candidate.rules.passed_count,
                 all_rules_passed=candidate.rules.passed,
-                rule_result={
-                    "volume_surge": candidate.rules.volume_surge,
-                    "trend_alignment": candidate.rules.trend_alignment,
-                    "rsi_range": candidate.rules.rsi_range,
-                    "macd_positive": candidate.rules.macd_positive,
-                    "breakout": candidate.rules.breakout,
-                    "atr_acceptable": candidate.rules.atr_acceptable,
-                },
-                score_breakdown={
-                    "volume": str(candidate.breakdown.volume),
-                    "trend": str(candidate.breakdown.trend),
-                    "rsi": str(candidate.breakdown.rsi),
-                    "macd": str(candidate.breakdown.macd),
-                    "breakout": str(candidate.breakdown.breakout),
-                    "volatility": str(candidate.breakdown.volatility),
-                    "total": str(candidate.breakdown.total),
-                },
+                rule_result=candidate.rules.to_dict(),
+                score_breakdown=candidate.breakdown.to_dict(),
             ))
 
         self._session.commit()

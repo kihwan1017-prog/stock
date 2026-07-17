@@ -23,8 +23,38 @@ class Settings(BaseSettings):
     kiwoom_app_key: str = Field(default="")
     kiwoom_secret_key: str = Field(default="")
     kiwoom_use_mock: bool = True
+    kiwoom_live_order_enabled: bool = False
     kiwoom_timeout_seconds: float = 10.0
+    kiwoom_http_timeout_seconds: float = 10.0
     kiwoom_max_requests_per_second: int = 5
+    kiwoom_account_number: str = Field(default="")
+    kiwoom_recovery_start_ws: bool = True
+    kiwoom_recovery_start_trading: bool = False
+    kiwoom_recovery_start_scheduler: bool = True
+
+    # 키움 WebSocket (시세/주문체결)
+    kiwoom_ws_url: str = Field(default="")
+    kiwoom_ws_path: str = "/api/dostk/websocket"
+    kiwoom_ws_execution_type: str = "00"
+    kiwoom_ws_reconnect_min_seconds: float = 1.0
+    kiwoom_ws_reconnect_max_seconds: float = 30.0
+    kiwoom_ws_ping_interval_seconds: float = 20.0
+    kiwoom_ws_ping_timeout_seconds: float = 10.0
+    kiwoom_order_ws_url: str = Field(default="")
+    kiwoom_order_ws_path: str = Field(default="")
+    kiwoom_order_ws_subscribe_json: str = Field(default="")
+
+    realtime_strategy_market_code: str = "KRX"
+    realtime_strategy_symbol: str = Field(default="")
+    strategy_auto_deploy_enabled: bool = False
+    paper_strategy_auto_stop_enabled: bool = False
+
+    # 알림 (선택)
+    telegram_enabled: bool = False
+    telegram_bot_token: str = Field(default="")
+    telegram_chat_id: str = Field(default="")
+    slack_enabled: bool = False
+    slack_webhook_url: str = Field(default="")
 
     upbit_base_url: str = "https://api.upbit.com"
     upbit_timeout_seconds: float = 10.0
@@ -90,6 +120,37 @@ class Settings(BaseSettings):
             if self.kiwoom_use_mock
             else "https://api.kiwoom.com"
         )
+
+    @property
+    def kiwoom_ws_default_url(self) -> str:
+        if self.kiwoom_use_mock:
+            return "wss://mockapi.kiwoom.com:10000"
+        return "wss://api.kiwoom.com:10000"
+
+    @property
+    def kiwoom_ws_url_resolved(self) -> str:
+        return self.kiwoom_ws_url.strip() or self.kiwoom_ws_default_url
+
+    @property
+    def kiwoom_order_ws_url_resolved(self) -> str:
+        return (
+            self.kiwoom_order_ws_url.strip()
+            or self.kiwoom_ws_default_url
+        )
+
+    @property
+    def realtime_strategy_symbol_or_none(self) -> str | None:
+        symbol = self.realtime_strategy_symbol.strip()
+        return symbol or None
+
+    def validate_startup(self) -> None:
+        """서버 기동 시 필수 설정을 검증한다."""
+
+        if self.kiwoom_live_order_enabled and self.kiwoom_use_mock:
+            raise ValueError(
+                "KIWOOM_LIVE_ORDER_ENABLED cannot be true "
+                "when KIWOOM_USE_MOCK is true"
+            )
 
     def validate_kiwoom_credentials(self) -> None:
         missing: list[str] = []

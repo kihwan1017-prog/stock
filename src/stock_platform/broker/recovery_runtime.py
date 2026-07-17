@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any
 
 from stock_platform.broker.recovery_service import (
     BrokerRecoveryService,
 )
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import (
     get_session_factory,
 )
@@ -29,13 +29,11 @@ class BrokerRecoveryManager:
             self._running = True
             self._last_error = None
 
+            settings = get_settings()
             session = get_session_factory()()
 
             try:
-                account_number = os.getenv(
-                    "KIWOOM_ACCOUNT_NUMBER",
-                    "",
-                ).strip()
+                account_number = settings.kiwoom_account_number.strip()
 
                 if not account_number:
                     raise ValueError(
@@ -45,26 +43,12 @@ class BrokerRecoveryManager:
                 service = BrokerRecoveryService(
                     session=session,
                     account_number=account_number,
-                    start_websocket=(
-                        os.getenv(
-                            "KIWOOM_RECOVERY_START_WS",
-                            "true",
-                        ).lower()
-                        == "true"
-                    ),
+                    start_websocket=settings.kiwoom_recovery_start_ws,
                     start_realtime_runners=(
-                        os.getenv(
-                            "KIWOOM_RECOVERY_START_TRADING",
-                            "false",
-                        ).lower()
-                        == "true"
+                        settings.kiwoom_recovery_start_trading
                     ),
                     start_scheduler=(
-                        os.getenv(
-                            "KIWOOM_RECOVERY_START_SCHEDULER",
-                            "true",
-                        ).lower()
-                        == "true"
+                        settings.kiwoom_recovery_start_scheduler
                     ),
                 )
 

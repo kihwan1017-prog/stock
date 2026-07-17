@@ -44,6 +44,7 @@ class FakePriceService:
         symbol: str,
         source: str,
         rows: list[dict],
+        **kwargs,
     ) -> int:
         self.saved.append(
             {
@@ -51,6 +52,7 @@ class FakePriceService:
                 "symbol": symbol,
                 "source": source,
                 "rows": rows,
+                "kwargs": kwargs,
             }
         )
         return len(rows)

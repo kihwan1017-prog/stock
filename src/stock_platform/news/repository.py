@@ -4,7 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from stock_platform.news.models import NewsArticle, NewsSummary
+from stock_platform.news.models import (
+    NewsArticle,
+    NewsCollectionFailure,
+    NewsSummary,
+)
 
 
 class NewsRepository:
@@ -34,6 +38,51 @@ class NewsRepository:
         result = self._session.execute(stmt)
         self._session.commit()
         return result.rowcount or len(rows)
+
+    def record_failure(
+        self,
+        *,
+        exchange_code: str,
+        symbol: str,
+        query_text: str | None,
+        error_message: str,
+        source_code: str = "NAVER",
+        extra_data: dict | None = None,
+    ) -> NewsCollectionFailure:
+        entity = NewsCollectionFailure(
+            exchange_code=exchange_code,
+            symbol=symbol,
+            query_text=query_text,
+            source_code=source_code,
+            error_message=error_message,
+            extra_data=extra_data or {},
+        )
+        self._session.add(entity)
+        self._session.commit()
+        self._session.refresh(entity)
+        return entity
+
+    def list_failures(
+        self,
+        *,
+        exchange_code: str | None = None,
+        symbol: str | None = None,
+        limit: int = 50,
+    ) -> list[NewsCollectionFailure]:
+        stmt = select(NewsCollectionFailure)
+        if exchange_code:
+            stmt = stmt.where(
+                NewsCollectionFailure.exchange_code
+                == exchange_code.upper()
+            )
+        if symbol:
+            stmt = stmt.where(
+                NewsCollectionFailure.symbol == symbol.upper()
+            )
+        stmt = stmt.order_by(
+            NewsCollectionFailure.failed_at.desc()
+        ).limit(limit)
+        return list(self._session.scalars(stmt))
 
     def list_unsummarized(
         self,

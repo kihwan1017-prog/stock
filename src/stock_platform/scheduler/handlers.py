@@ -10,7 +10,30 @@ from stock_platform.ai.ollama_client import OllamaClient
 from stock_platform.ai.orchestration_service import (
     CandidateAnalysisOrchestrator,
 )
+from stock_platform.brokers.upbit.client import (
+    UpbitQuotationClient,
+)
+from stock_platform.collectors.upbit.batch_daily_sync_service import (
+    UpbitKrwDailyBatchSyncService,
+)
+from stock_platform.collectors.upbit.daily_collector import (
+    UpbitDailyCollector,
+)
+from stock_platform.collectors.upbit.instrument_sync_service import (
+    UpbitInstrumentSyncService,
+)
+from stock_platform.collectors.upbit.sync_service import (
+    UpbitDailySyncService,
+)
 from stock_platform.common.settings import get_settings
+from stock_platform.markets.repository import (
+    InstrumentRepository,
+    PriceDailyRepository,
+)
+from stock_platform.markets.service import (
+    InstrumentService,
+    PriceDailyService,
+)
 from stock_platform.risk.allocation_service import (
     CandidatePositionPlanService,
 )
@@ -38,7 +61,7 @@ class SchedulerHandlers:
             as_of_date=date.fromisoformat(
                 str(payload["as_of_date"])
             ),
-            limit=int(payload.get("limit", 30)),
+            limit=int(payload.get("limit", 10)),
             minimum_score=Decimal(
                 str(payload.get("minimum_score", 0))
             ),
@@ -172,3 +195,110 @@ class SchedulerHandlers:
                 result.remaining_cash
             ),
         }
+
+    async def run_upbit_krw_daily_sync(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """업비트 KRW 전체 일봉 동기화 스케줄 작업."""
+
+        instrument_service = InstrumentService(
+            InstrumentRepository(self._session)
+        )
+        price_service = PriceDailyService(
+            PriceDailyRepository(self._session),
+            instrument_service=instrument_service,
+        )
+
+        start_date = (
+            date.fromisoformat(str(payload["start_date"]))
+            if payload.get("start_date")
+            else None
+        )
+        end_date = (
+            date.fromisoformat(str(payload["end_date"]))
+            if payload.get("end_date")
+            else None
+        )
+        market_limit = payload.get("market_limit")
+
+        async with UpbitQuotationClient() as client:
+            result = await UpbitKrwDailyBatchSyncService(
+                instrument_sync=UpbitInstrumentSyncService(
+                    client=client,
+                    instrument_service=instrument_service,
+                ),
+                daily_sync=UpbitDailySyncService(
+                    collector=UpbitDailyCollector(client),
+                    price_service=price_service,
+                    instrument_service=instrument_service,
+                ),
+                instrument_service=instrument_service,
+            ).sync(
+                start_date=start_date,
+                end_date=end_date,
+                lookback_years=int(
+                    payload.get("lookback_years", 3)
+                ),
+                resume=bool(payload.get("resume", True)),
+                market_limit=(
+                    int(market_limit)
+                    if market_limit is not None
+                    else None
+                ),
+                max_retries=int(payload.get("max_retries", 2)),
+                sync_instruments=bool(
+                    payload.get("sync_instruments", True)
+                ),
+            )
+
+        return result.to_dict()
+
+    def run_indicator_daily_batch(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """일봉 지표 batch 계산·저장."""
+
+        from stock_platform.indicators.pipeline_service import (
+            IndicatorPipelineService,
+        )
+        from stock_platform.indicators.repository import (
+            IndicatorDailyRepository,
+        )
+
+        instrument_service = InstrumentService(
+            InstrumentRepository(self._session)
+        )
+        pipeline = IndicatorPipelineService(
+            price_service=PriceDailyService(
+                PriceDailyRepository(self._session),
+                instrument_service=instrument_service,
+            ),
+            indicator_repository=IndicatorDailyRepository(
+                self._session
+            ),
+            instrument_service=instrument_service,
+        )
+
+        symbol_limit = payload.get("symbol_limit")
+        result = pipeline.compute_batch(
+            start_date=date.fromisoformat(
+                str(payload["start_date"])
+            ),
+            end_date=date.fromisoformat(
+                str(payload["end_date"])
+            ),
+            exchange_code=(
+                str(payload["exchange_code"]).upper()
+                if payload.get("exchange_code")
+                else None
+            ),
+            symbol_limit=(
+                int(symbol_limit)
+                if symbol_limit is not None
+                else None
+            ),
+        )
+        return result.to_dict()
+

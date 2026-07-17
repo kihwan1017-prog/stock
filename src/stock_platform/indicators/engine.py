@@ -3,8 +3,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from decimal import Decimal, getcontext
 
-from stock_platform.indicators.models import DailyIndicator, PriceBar
-
+from stock_platform.indicators.models import (
+    REQUIRED_INDICATOR_FIELDS,
+    DailyIndicator,
+    PriceBar,
+)
 
 getcontext().prec = 28
 
@@ -254,6 +257,49 @@ def _atr_wilder(
     return result
 
 
+def _rolling_52w(
+    bars: Sequence[PriceBar],
+    lookback: int = 252,
+) -> tuple[list[Decimal | None], list[Decimal | None]]:
+    """약 252거래일 기준 52주 고저. 부족하면 None."""
+
+    highs: list[Decimal | None] = [None] * len(bars)
+    lows: list[Decimal | None] = [None] * len(bars)
+
+    for index in range(len(bars)):
+        if index + 1 < lookback:
+            continue
+
+        window = bars[index - lookback + 1:index + 1]
+        highs[index] = max(bar.high_price for bar in window)
+        lows[index] = min(bar.low_price for bar in window)
+
+    return highs, lows
+
+
+def _status_for_row(
+    *,
+    bar_count: int,
+    values: dict[str, Decimal | None],
+) -> tuple[str, tuple[str, ...]]:
+    if bar_count < 5:
+        return "INSUFFICIENT", REQUIRED_INDICATOR_FIELDS
+
+    missing = tuple(
+        name
+        for name in REQUIRED_INDICATOR_FIELDS
+        if values.get(name) is None
+    )
+
+    if not missing:
+        return "READY", ()
+
+    if all(values.get(name) is None for name in REQUIRED_INDICATOR_FIELDS):
+        return "INSUFFICIENT", missing
+
+    return "PARTIAL", missing
+
+
 class IndicatorEngine:
     """일봉 기반 기술적 지표 계산기."""
 
@@ -292,10 +338,26 @@ class IndicatorEngine:
         ) = _bollinger(closes, 20)
 
         atr14 = _atr_wilder(ordered_bars, 14)
+        high_52w, low_52w = _rolling_52w(ordered_bars)
 
         result: list[DailyIndicator] = []
 
         for index, bar in enumerate(ordered_bars):
+            field_values = {
+                "ma5": ma5[index],
+                "ma20": ma20[index],
+                "ma60": ma60[index],
+                "ema12": ema12[index],
+                "rsi14": rsi14[index],
+                "volume_ma20": volume_ma20[index],
+                "high_52w": high_52w[index],
+                "low_52w": low_52w[index],
+            }
+            status_code, missing_fields = _status_for_row(
+                bar_count=index + 1,
+                values=field_values,
+            )
+
             result.append(
                 DailyIndicator(
                     trade_date=bar.trade_date,
@@ -315,6 +377,10 @@ class IndicatorEngine:
                     bollinger_lower=bollinger_lower[index],
                     atr14=atr14[index],
                     volume_ma20=volume_ma20[index],
+                    high_52w=high_52w[index],
+                    low_52w=low_52w[index],
+                    status_code=status_code,
+                    missing_fields=missing_fields,
                 )
             )
 

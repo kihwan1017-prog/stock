@@ -18,6 +18,39 @@ def _settings() -> Settings:
     )
 
 
+def test_retries_on_rate_limit() -> None:
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["count"] += 1
+        if calls["count"] == 1:
+            return httpx.Response(429, json={"error": "too many"})
+
+        return httpx.Response(
+            200,
+            json=[{"market": "KRW-BTC"}],
+        )
+
+    async def run() -> None:
+        transport = httpx.MockTransport(handler)
+
+        async with httpx.AsyncClient(
+            transport=transport,
+        ) as http_client:
+            client = UpbitQuotationClient(
+                settings=_settings(),
+                http_client=http_client,
+            )
+            result = await client.list_day_candles(
+                market="KRW-BTC",
+                count=1,
+            )
+            assert result == [{"market": "KRW-BTC"}]
+
+    asyncio.run(run())
+    assert calls["count"] == 2
+
+
 def test_list_day_candles() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/v1/candles/days"

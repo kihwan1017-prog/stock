@@ -39,6 +39,12 @@ def test_build_combines_news_and_disclosures() -> None:
     )
     builder._news_repository = FakeNewsRepository()
     builder._dart_repository = FakeDartRepository()
+    builder._price_indicator_context = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: {"available": False}
+    )
+    builder._candidate_score_context = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: None
+    )
 
     result = builder.build(
         exchange_code="KRX",
@@ -49,6 +55,7 @@ def test_build_combines_news_and_disclosures() -> None:
     assert len(result["news"]) == 1
     assert len(result["disclosures"]) == 1
     assert result["metadata"]["symbol"] == "005930"
+    assert result["metadata"]["prompt_version"] == "context-v2"
 
 
 def test_upbit_does_not_query_dart() -> None:
@@ -57,6 +64,12 @@ def test_upbit_does_not_query_dart() -> None:
     )
     builder._news_repository = FakeNewsRepository()
     builder._dart_repository = FakeDartRepository()
+    builder._price_indicator_context = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: {"available": False}
+    )
+    builder._candidate_score_context = (  # type: ignore[method-assign]
+        lambda *args, **kwargs: None
+    )
 
     result = builder.build(
         exchange_code="UPBIT",

@@ -56,9 +56,10 @@ class RealtimeStrategyRunner:
 
     async def start(self) -> dict:
         if self._task is not None:
-            raise ValueError(
-                "Realtime strategy runner is already running"
-            )
+            return {
+                "already_running": True,
+                **self.status(),
+            }
 
         self._task = asyncio.create_task(
             self.run_forever(),

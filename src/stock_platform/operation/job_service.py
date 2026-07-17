@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timezone
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from time import perf_counter
 from typing import Any, TypeVar
 
@@ -84,13 +86,43 @@ class JobExecutionService:
             return {}
 
         if isinstance(result, dict):
-            return result
+            return JobExecutionService._json_safe(result)
+
+        if is_dataclass(result) and not isinstance(result, type):
+            return JobExecutionService._json_safe(asdict(result))
+
+        if hasattr(result, "to_dict") and callable(result.to_dict):
+            return JobExecutionService._json_safe(result.to_dict())
 
         if hasattr(result, "__dict__"):
-            return {
-                key: value
-                for key, value in vars(result).items()
-                if not key.startswith("_")
-            }
+            return JobExecutionService._json_safe(
+                {
+                    key: value
+                    for key, value in vars(result).items()
+                    if not key.startswith("_")
+                }
+            )
 
         return {"value": str(result)}
+
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: JobExecutionService._json_safe(item)
+                for key, item in value.items()
+            }
+
+        if isinstance(value, (list, tuple)):
+            return [
+                JobExecutionService._json_safe(item)
+                for item in value
+            ]
+
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+
+        if isinstance(value, Decimal):
+            return str(value)
+
+        return value

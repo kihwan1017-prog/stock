@@ -98,13 +98,15 @@ class KiwoomRestClient:
             raise ValueError("endpoint must start with '/'")
 
         async for attempt in AsyncRetrying(
-            stop=stop_after_attempt(3),
+            stop=stop_after_attempt(5),
             wait=wait_exponential(
-                multiplier=0.5,
-                min=0.5,
-                max=3.0,
+                multiplier=1.0,
+                min=1.0,
+                max=8.0,
             ),
-            retry=retry_if_exception_type(_RetryableKiwoomError),
+            retry=retry_if_exception_type(
+                (_RetryableKiwoomError, KiwoomRateLimitError)
+            ),
             reraise=True,
         ):
             with attempt:

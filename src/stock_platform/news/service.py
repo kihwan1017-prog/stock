@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import html
 import re
+from dataclasses import dataclass
 from datetime import datetime
-from email.utils import parsedate_to_datetime
 from decimal import Decimal
+from email.utils import parsedate_to_datetime
+from typing import Any
 
 from stock_platform.ai.ollama_client import OllamaClient
 from stock_platform.news.naver_client import NaverNewsClient
@@ -13,6 +15,7 @@ from stock_platform.news.repository import NewsRepository
 
 
 TAG_PATTERN = re.compile(r"<[^>]+>")
+WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 NEWS_SCHEMA = {
@@ -44,6 +47,16 @@ NEWS_SCHEMA = {
 }
 
 
+@dataclass(slots=True)
+class NewsSyncResult:
+    exchange_code: str
+    symbol: str
+    fetched_count: int
+    unique_count: int
+    saved_count: int
+    duplicate_skipped: int
+
+
 class NewsService:
     def __init__(
         self,
@@ -66,60 +79,114 @@ class NewsService:
         query: str,
         display: int = 100,
     ) -> int:
-        body = await self._naver_client.search(
+        result = await self.sync_detailed(
+            exchange_code=exchange_code,
+            symbol=symbol,
             query=query,
             display=display,
-            start=1,
-            sort="date",
         )
+        return result.saved_count
 
-        rows: list[dict] = []
+    async def sync_detailed(
+        self,
+        *,
+        exchange_code: str,
+        symbol: str,
+        query: str,
+        display: int = 100,
+    ) -> NewsSyncResult:
+        normalized_exchange = exchange_code.strip().upper()
+        normalized_symbol = symbol.strip().upper()
+
+        try:
+            body = await self._naver_client.search(
+                query=query,
+                display=display,
+                start=1,
+                sort="date",
+            )
+        except Exception as exc:
+            self._repository.record_failure(
+                exchange_code=normalized_exchange,
+                symbol=normalized_symbol,
+                query_text=query,
+                error_message=str(exc)[:2000],
+                source_code="NAVER",
+                extra_data={"display": display},
+            )
+            raise
+
+        rows: list[dict[str, Any]] = []
+        seen_hashes: set[str] = set()
+        seen_urls: set[str] = set()
+        seen_titles: set[str] = set()
+        duplicate_skipped = 0
 
         for item in body.get("items") or []:
-            title = self._clean_html(
-                str(item.get("title", ""))
-            )
+            title = self._clean_html(str(item.get("title", "")))
             description = self._clean_html(
                 str(item.get("description", ""))
             )
             original_link = (
-                str(item.get("originallink") or "").strip()
-                or None
+                str(item.get("originallink") or "").strip() or None
             )
             naver_link = (
-                str(item.get("link") or "").strip()
-                or None
+                str(item.get("link") or "").strip() or None
             )
+            link_key = (original_link or naver_link or "").lower()
+            title_key = self._normalize_title(title)
 
             content_hash = hashlib.sha256(
                 (
-                    title
+                    title_key
                     + "|"
-                    + str(original_link or naver_link or "")
+                    + link_key
                 ).encode("utf-8")
             ).hexdigest()
 
-            published_at = self._parse_pub_date(
-                item.get("pubDate")
-            )
+            # URL·제목·해시 기반 배치 내 중복 제거
+            if (
+                content_hash in seen_hashes
+                or (link_key and link_key in seen_urls)
+                or (title_key and title_key in seen_titles)
+            ):
+                duplicate_skipped += 1
+                continue
+
+            seen_hashes.add(content_hash)
+            if link_key:
+                seen_urls.add(link_key)
+            if title_key:
+                seen_titles.add(title_key)
 
             rows.append(
                 {
-                    "exchange_code": exchange_code.upper(),
-                    "symbol": symbol.upper(),
+                    "exchange_code": normalized_exchange,
+                    "symbol": normalized_symbol,
                     "query_text": query,
                     "title": title,
                     "description": description or None,
                     "original_link": original_link,
                     "naver_link": naver_link,
-                    "published_at": published_at,
+                    "published_at": self._parse_pub_date(
+                        item.get("pubDate")
+                    ),
                     "source_code": "NAVER",
                     "content_hash": content_hash,
                     "raw_data": item,
                 }
             )
 
-        return self._repository.upsert_articles(rows)
+        saved_count = self._repository.upsert_articles(rows)
+
+        return NewsSyncResult(
+            exchange_code=normalized_exchange,
+            symbol=normalized_symbol,
+            fetched_count=len(body.get("items") or []),
+            unique_count=len(rows),
+            saved_count=saved_count,
+            duplicate_skipped=duplicate_skipped,
+        )
 
     async def summarize(
         self,
@@ -157,9 +224,7 @@ class NewsService:
             self._repository.save_summary(
                 article_id=article.article_id,
                 model_name=self._model_name,
-                summary_text=str(
-                    response.get("summary", "")
-                ),
+                summary_text=str(response.get("summary", "")),
                 sentiment_score=Decimal(
                     str(response.get("sentiment_score", 0))
                 ),
@@ -197,6 +262,7 @@ class NewsService:
                         if article.published_at
                         else None
                     ),
+                    "collected_at": article.created_at.isoformat(),
                     "summary": (
                         summary.summary_text
                         if summary is not None
@@ -218,6 +284,7 @@ class NewsService:
                         else []
                     ),
                     "original_link": article.original_link,
+                    "symbol": article.symbol,
                 }
                 for article, summary in rows
             ]
@@ -225,9 +292,11 @@ class NewsService:
 
     @staticmethod
     def _clean_html(value: str) -> str:
-        return html.unescape(
-            TAG_PATTERN.sub("", value)
-        ).strip()
+        return html.unescape(TAG_PATTERN.sub("", value)).strip()
+
+    @staticmethod
+    def _normalize_title(value: str) -> str:
+        return WHITESPACE_PATTERN.sub(" ", value).strip().lower()
 
     @staticmethod
     def _parse_pub_date(value) -> datetime | None:
