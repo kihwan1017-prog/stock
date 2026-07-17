@@ -70,6 +70,7 @@ from stock_platform.api.v1.strategy_operations_dashboard import (router as strat
 from stock_platform.api.v1.orders import router as orders_router
 from stock_platform.api.v1.order_states import (router as order_states_router,)
 from stock_platform.api.v1.order_dispatch import router as order_dispatch_router
+from stock_platform.api.v1.order_cancel_replace import (router as order_cancel_replace_router,)
 
 api_router = APIRouter()
 
@@ -143,3 +144,6 @@ api_router.include_router(strategy_operations_dashboard_router)
 api_router.include_router(orders_router)
 api_router.include_router(order_states_router)
 api_router.include_router(order_dispatch_router)
+
+
+api_router.include_router(order_cancel_replace_router)
