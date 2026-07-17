@@ -30,6 +30,14 @@ class OrderStatus(StrEnum):
     REJECTED = "REJECTED"
     FAILED = "FAILED"
 
+TERMINAL_ORDER_STATUSES: frozenset[OrderStatus] = frozenset(
+    {
+        OrderStatus.FILLED,
+        OrderStatus.CANCELLED,
+        OrderStatus.REJECTED,
+    }
+)    
+
 @dataclass(frozen=True, slots=True)
 class CreateOrderCommand:
     account_id: int
