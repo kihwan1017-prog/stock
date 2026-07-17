@@ -72,7 +72,9 @@ from stock_platform.api.v1.order_states import (router as order_states_router,)
 from stock_platform.api.v1.order_dispatch import router as order_dispatch_router
 from stock_platform.api.v1.order_cancel_replace import (router as order_cancel_replace_router,)
 from stock_platform.api.v1.order_outbox import (router as order_outbox_router,)
-
+from stock_platform.api.v1.executions import (router as executions_router,)
+from stock_platform.api.v1.step32_router import router as step32_router
+from stock_platform.api.v1.market_data_router import router as market_data_router
 
 
 api_router = APIRouter()
@@ -151,3 +153,7 @@ api_router.include_router(order_dispatch_router)
 
 api_router.include_router(order_cancel_replace_router)
 api_router.include_router(order_outbox_router)
+api_router.include_router(executions_router)
+app.include_router(step32_router)
+
+app.include_router(market_data_router)

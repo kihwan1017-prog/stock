@@ -48,6 +48,9 @@ from stock_platform.strategy_deployment import policy_entities as strategy_polic
 from stock_platform.strategy_deployment import pipeline_entities as strategy_pipeline_entities  # noqa: F401
 from stock_platform.strategy_deployment import performance_monitor_entities as deployment_performance_entities  # noqa: F401
 from stock_platform.order import entities as order_entities  # noqa: F401
+from stock_platform.operation import idempotency_entities
+from stock_platform.order import outbox_entities
+from stock_platform.trading import execution_entities
 
 
 config = context.config

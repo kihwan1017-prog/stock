@@ -1,0 +1,7 @@
+1. 압축을 D:\Projects\stock-platform에 병합
+2. pip install -r requirements_step32_8.txt
+3. Alembic down_revision 확인
+4. alembic upgrade head
+5. api/router.py에 executions_router 등록
+6. FastAPI lifespan에 ExecutionRuntime 시작/종료 연결
+7. 모의투자에서 원본 WebSocket 주문체결 메시지를 확인해 FID 대조
