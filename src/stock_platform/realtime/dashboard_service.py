@@ -241,8 +241,8 @@ class RealtimeDashboardService:
             .select_from(PaperTrade)
             .where(
                 PaperTrade.account_id == account_id,
-                PaperTrade.executed_at >= start_at,
-                PaperTrade.executed_at <= end_at,
+                PaperTrade.traded_at >= start_at,
+                PaperTrade.traded_at <= end_at,
             )
         ) or 0
 
@@ -265,7 +265,7 @@ class RealtimeDashboardService:
                     == account_id
                 )
                 .order_by(
-                    PaperTrade.executed_at.desc(),
+                    PaperTrade.traded_at.desc(),
                     PaperTrade.trade_id.desc(),
                 )
                 .limit(recent_limit)
@@ -323,16 +323,16 @@ class RealtimeDashboardService:
                     "quantity": str(
                         item.quantity
                     ),
-                    "price": str(item.price),
-                    "gross_amount": str(
-                        item.gross_amount
+                    "fill_price": str(
+                        item.fill_price
                     ),
-                    "fee_amount": str(
-                        item.fee_amount
+                    "trade_amount": str(
+                        item.trade_amount
                     ),
-                    "executed_at": (
-                        item.executed_at
+                    "realized_profit_loss": str(
+                        item.realized_profit_loss
                     ),
+                    "traded_at": item.traded_at,
                 }
                 for item in trades
             ],

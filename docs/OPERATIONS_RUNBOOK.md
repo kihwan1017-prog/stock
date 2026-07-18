@@ -2,6 +2,8 @@
 
 ## 일일 점검 순서
 
+첫날이면 [PAPER_DAY1_CHECKLIST.md](PAPER_DAY1_CHECKLIST.md)를 먼저 보세요.
+
 1. `GET /health` — 전체 컴포넌트 상태 확인
 2. `GET /api/v1/system/dashboard` — 후보/AI/포지션/리스크 통합 확인
 3. `POST /api/v1/broker/kiwoom/account-state/sync` — 계좌·미체결 동기화
