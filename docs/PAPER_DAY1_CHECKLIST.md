@@ -36,9 +36,14 @@ Invoke-RestMethod http://127.0.0.1:8000/health | ConvertTo-Json -Depth 5
 # Dashboard
 Invoke-RestMethod "http://127.0.0.1:8000/api/v1/system/dashboard?account_id=1&exchange_code=KRX" | ConvertTo-Json -Depth 4
 
-# (선택) 키움 계좌상태 sync — 자격증명/모의 환경 준비된 경우만
-# Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/broker/kiwoom/account-state/sync
+# 키움 계좌상태 sync (mock 가능) — 일손실 모니터가 snapshot을 쓰려면 필요
+Invoke-RestMethod -Method Post http://127.0.0.1:8000/api/v1/broker/kiwoom/account-state/sync | ConvertTo-Json -Depth 4
 ```
+
+로그에 `strategy_runtime_reload_skipped` / `daily_loss_monitor_skipped` 가 **한 번**만 보이면 정상입니다.
+(활성 전략 배포·계좌 스냅샷이 아직 없을 때). `Active strategy deployment not found` traceback이 30초마다 반복되면 서버를 재시작해 최신 코드를 반영하세요.
+
+전략 자동매매까지는 **활성 PAPER 배포**가 DB에 있어야 합니다. Day-1에서는 배포 없이 API/헬스만 확인해도 됩니다.
 
 ## 4. 오늘 보면 되는 것
 
@@ -46,7 +51,7 @@ Invoke-RestMethod "http://127.0.0.1:8000/api/v1/system/dashboard?account_id=1&ex
 - [ ] live_trading = DISABLED
 - [ ] Kill Switch 상태 확인
 - [ ] dashboard에 에러 폭주 없음
-- [ ] (가능하면) 후보/AI/계좌 sync 한 번
+- [ ] (가능하면) 계좌 sync 한 번 — 이후 daily_loss skip 해소
 
 ## 5. 하지 말 것
 

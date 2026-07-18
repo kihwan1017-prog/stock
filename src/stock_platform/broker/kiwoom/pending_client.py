@@ -12,11 +12,17 @@ class KiwoomPendingOrderClient:
         self._client = client
 
     async def get_pending_orders(self, account_number: str) -> dict[str, Any]:
+        # ka10075 필수: all_stk_tp, trde_tp, stex_tp (dmst_stex_tp 아님)
+        # account_number는 토큰 계좌 기준이라 body에 필수는 아님
+        _ = account_number
         return await self._client.post(
             path=ACCOUNT_PATH,
             api_id=PENDING_ORDER_API_ID,
-            body={"acnt_no": account_number, "all_stk_tp": "0",
-                  "trde_tp": "0", "dmst_stex_tp": "KRX"},
+            body={
+                "all_stk_tp": "0",
+                "trde_tp": "0",
+                "stex_tp": "0",
+            },
         )
 
     async def modify_order(self, *, original_order_id: str, symbol: str,

@@ -93,8 +93,10 @@ class KiwoomOrderExecutionWebSocketClient:
             except Exception as exc:
                 self._connected = False
                 self._last_error = str(exc)
-                logger.exception(
+                # mock/로컬 재연결 루프는 traceback 대신 warning만
+                logger.warning(
                     "kiwoom_websocket_failed",
+                    error=str(exc),
                     retry_seconds=retry_seconds,
                 )
 

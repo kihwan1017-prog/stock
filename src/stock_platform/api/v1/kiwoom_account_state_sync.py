@@ -12,6 +12,7 @@ from stock_platform.broker.kiwoom.account_state_sync_service import (
 from stock_platform.broker.kiwoom.account_sync_service import (
     KiwoomAccountSyncService,
 )
+from stock_platform.broker.kiwoom.client import KiwoomRestError
 from stock_platform.broker.kiwoom.pending_factory import (
     build_kiwoom_pending_order_client,
 )
@@ -44,7 +45,7 @@ async def synchronize_kiwoom_account_state(
                 build_kiwoom_pending_order_client(),
             ),
         ).synchronize()
-    except (ValueError, RuntimeError) as exc:
+    except (ValueError, RuntimeError, KiwoomRestError) as exc:
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import structlog
 from sqlalchemy.orm import Session
 
 from stock_platform.broker.kiwoom.account_sync_service import (
@@ -11,6 +12,8 @@ from stock_platform.broker.kiwoom.account_sync_service import (
 from stock_platform.broker.kiwoom.pending_service import (
     KiwoomPendingOrderService,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,9 +53,25 @@ class KiwoomAccountStateSyncService:
     async def synchronize(self) -> AccountStateSyncResult:
         account = await self._account_sync.synchronize()
         account_number = str(account["account_number"])
-        pending = await self._pending_sync.synchronize(
-            account_number
-        )
+
+        # 미체결 실패해도 예수금/잔고 스냅샷은 유지 (Day-1/부분실패 허용)
+        try:
+            pending = await self._pending_sync.synchronize(
+                account_number
+            )
+        except Exception as exc:
+            logger.warning(
+                "kiwoom_pending_sync_failed",
+                account_number=account_number,
+                error=str(exc),
+            )
+            pending = {
+                "account_number": account_number,
+                "count": 0,
+                "items": [],
+                "error": str(exc),
+                "partial": True,
+            }
 
         # 키움 잔고 응답의 total_profit_loss는 평가손익 성격
         account = {
