@@ -290,6 +290,22 @@ class LiveTradingTransitionService:
             .limit(1)
         )
 
+    def list_history(
+        self,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> list[LiveTradingTransitionEntity]:
+        stmt = (
+            select(LiveTradingTransitionEntity)
+            .order_by(
+                LiveTradingTransitionEntity.created_at.desc()
+            )
+            .offset(max(0, offset))
+            .limit(max(1, min(limit, 100)))
+        )
+        return list(self._session.scalars(stmt))
+
     @staticmethod
     def _add_bool_check(
         checks: list[LiveTransitionCheckResult],

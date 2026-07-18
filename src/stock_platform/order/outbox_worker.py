@@ -115,6 +115,13 @@ class OrderOutboxWorker:
                             or "Broker rejected order"
                         )
 
+                    self._apply_order_broker_result(
+                        session=session,
+                        order_id=entity.order_id,
+                        result=result,
+                        event_type=entity.event_type,
+                    )
+
                     idempotency.complete(
                         idempotency_key=(
                             entity.idempotency_key
@@ -177,6 +184,54 @@ class OrderOutboxWorker:
             retried=retried,
             failed=failed,
         )
+
+    @staticmethod
+    def _apply_order_broker_result(
+        *,
+        session: Session,
+        order_id: int,
+        result: dict,
+        event_type: str,
+    ) -> None:
+        from stock_platform.order.models import OrderStatus
+        from stock_platform.order.outbox_models import (
+            OutboxEventType,
+        )
+        from stock_platform.order.repository import (
+            TradingOrderRepository,
+        )
+
+        if event_type != OutboxEventType.SUBMIT_ORDER.value:
+            return
+
+        repository = TradingOrderRepository(session)
+        order = repository.get(order_id)
+        if order is None:
+            return
+
+        broker_order_id = result.get("broker_order_id")
+        if broker_order_id:
+            order.broker_order_id = str(broker_order_id)
+
+        status = OrderStatus(order.status_code)
+        if status == OrderStatus.PENDING:
+            order = repository.change_status(
+                entity=order,
+                new_status=OrderStatus.SENT,
+                actor="OUTBOX_WORKER",
+                reason_code="BROKER_REQUEST_SENT",
+                commit=False,
+            )
+            status = OrderStatus.SENT
+
+        if status == OrderStatus.SENT:
+            repository.change_status(
+                entity=order,
+                new_status=OrderStatus.ACCEPTED,
+                actor="OUTBOX_WORKER",
+                reason_code="BROKER_ACCEPTED",
+                commit=False,
+            )
 
     @classmethod
     def _retry_delay(

@@ -323,3 +323,82 @@ class SellQuantityRule(RiskRule):
                 "sell_quantity": str(order.quantity),
             },
         )
+
+
+class MarketDataFreshnessRule(RiskRule):
+    def evaluate(self, *, order, account, policy):
+        if not getattr(
+            policy, "block_on_stale_market_data", True
+        ):
+            return RiskRuleResult(
+                rule_code="MARKET_DATA_FRESHNESS",
+                level=RiskDecisionLevel.PASS,
+                message="Stale market-data check disabled",
+            )
+        age = order.market_data_age_seconds
+        if age is None:
+            return RiskRuleResult(
+                rule_code="MARKET_DATA_FRESHNESS",
+                level=RiskDecisionLevel.PASS,
+                message="Market data age not provided",
+            )
+        limit = getattr(
+            policy, "max_market_data_age_seconds", 30
+        )
+        if age <= limit:
+            return RiskRuleResult(
+                rule_code="MARKET_DATA_FRESHNESS",
+                level=RiskDecisionLevel.PASS,
+                message="Market data is fresh",
+                detail={"age_seconds": age, "limit": limit},
+            )
+        return RiskRuleResult(
+            rule_code="MARKET_DATA_FRESHNESS",
+            level=RiskDecisionLevel.BLOCK,
+            message="Market data is stale",
+            detail={"age_seconds": age, "limit": limit},
+        )
+
+
+class BrokerHealthRule(RiskRule):
+    def evaluate(self, *, order, account, policy):
+        if not getattr(
+            policy, "block_on_broker_unstable", True
+        ):
+            return RiskRuleResult(
+                rule_code="BROKER_HEALTH",
+                level=RiskDecisionLevel.PASS,
+                message="Broker health check disabled",
+            )
+        rate = order.broker_error_rate
+        if rate is None:
+            return RiskRuleResult(
+                rule_code="BROKER_HEALTH",
+                level=RiskDecisionLevel.PASS,
+                message="Broker error rate not provided",
+            )
+        limit = getattr(
+            policy,
+            "max_broker_error_rate",
+            Decimal("0.5"),
+        )
+        if rate <= limit:
+            return RiskRuleResult(
+                rule_code="BROKER_HEALTH",
+                level=RiskDecisionLevel.PASS,
+                message="Broker is healthy",
+                detail={
+                    "error_rate": str(rate),
+                    "limit": str(limit),
+                },
+            )
+        return RiskRuleResult(
+            rule_code="BROKER_HEALTH",
+            level=RiskDecisionLevel.BLOCK,
+            message="Broker connection is unstable",
+            detail={
+                "error_rate": str(rate),
+                "limit": str(limit),
+            },
+        )
+

@@ -64,6 +64,47 @@ class TradingOrderRepository:
             )
         )
 
+    def get_by_broker_order_id(
+        self,
+        *,
+        broker_code: str,
+        broker_order_id: str,
+    ):
+        return self.session.scalar(
+            select(TradingOrderEntity).where(
+                TradingOrderEntity.broker_code
+                == broker_code.upper(),
+                TradingOrderEntity.broker_order_id
+                == broker_order_id,
+            )
+        )
+
+    def list_stale_open_orders(
+        self,
+        *,
+        older_than,
+        statuses: list[str] | None = None,
+        limit: int = 100,
+    ):
+        open_statuses = statuses or [
+            OrderStatus.PENDING.value,
+            OrderStatus.SENT.value,
+            OrderStatus.ACCEPTED.value,
+            OrderStatus.PARTIALLY_FILLED.value,
+        ]
+        stmt = (
+            select(TradingOrderEntity)
+            .where(
+                TradingOrderEntity.status_code.in_(
+                    open_statuses
+                ),
+                TradingOrderEntity.updated_at < older_than,
+            )
+            .order_by(TradingOrderEntity.updated_at.asc())
+            .limit(limit)
+        )
+        return list(self.session.scalars(stmt))
+
     def list(self, account_id=None, status_code=None, exchange_code=None, symbol=None, limit=100, offset=0):
         stmt = select(TradingOrderEntity)
         if account_id is not None:

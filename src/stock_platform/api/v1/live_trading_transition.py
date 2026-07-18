@@ -140,3 +140,19 @@ def get_active_live_transition(
     return LiveTradingTransitionService(
         session
     ).get_active()
+
+
+@router.get("/history")
+def list_live_transition_history(
+    limit: int = 20,
+    offset: int = 0,
+    session: Session = Depends(get_db_session),
+):
+    rows = LiveTradingTransitionService(
+        session
+    ).list_history(limit=limit, offset=offset)
+    return {
+        "items": rows,
+        "limit": limit,
+        "offset": offset,
+    }

@@ -46,6 +46,7 @@ class RiskPolicy:
     fixed_amount: Decimal | None = None
     portfolio_ratio: Decimal | None = None
     trailing_stop_ratio: Decimal | None = None
+    maximum_total_invested_ratio: Decimal = Decimal("1")
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +56,9 @@ class PositionSizingRequest:
     current_price: Decimal
     current_position_count: int
     policy: RiskPolicy
+    stop_price: Decimal | None = None
+    invested_amount: Decimal = Decimal("0")
+    apply_krx_lot_rounding: bool = True
 
 
 @dataclass(frozen=True, slots=True)

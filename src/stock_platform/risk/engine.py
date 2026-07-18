@@ -37,6 +37,22 @@ class RiskManagementEngine:
                 reason="MAXIMUM_POSITION_COUNT_REACHED",
             )
 
+        max_total_ratio = getattr(
+            policy,
+            "maximum_total_invested_ratio",
+            Decimal("1"),
+        )
+        if max_total_ratio < ONE:
+            invested = request.invested_amount
+            if (
+                invested / request.portfolio_value
+                >= max_total_ratio
+            ):
+                return self._rejected_plan(
+                    request=request,
+                    reason="MAXIMUM_TOTAL_INVESTED_REACHED",
+                )
+
         maximum_position_amount = (
             request.portfolio_value
             * policy.maximum_position_ratio
@@ -46,11 +62,23 @@ class RiskManagementEngine:
             request=request,
         )
 
+        remaining_investable = (
+            request.portfolio_value * max_total_ratio
+            - request.invested_amount
+        )
+        if remaining_investable < ZERO:
+            remaining_investable = ZERO
+
         order_amount = min(
             requested_amount,
             maximum_position_amount,
             request.available_cash,
         )
+        if max_total_ratio < ONE:
+            order_amount = min(
+                order_amount,
+                remaining_investable,
+            )
 
         if order_amount < policy.minimum_order_amount:
             return self._rejected_plan(
@@ -65,6 +93,13 @@ class RiskManagementEngine:
             rounding=ROUND_DOWN,
         )
 
+        if request.apply_krx_lot_rounding:
+            from stock_platform.position.lot_rounding import (
+                round_share_quantity,
+            )
+
+            quantity = round_share_quantity(quantity)
+
         actual_order_amount = (
             quantity * request.current_price
         ).quantize(
@@ -78,13 +113,22 @@ class RiskManagementEngine:
                 reason="QUANTITY_IS_ZERO",
             )
 
-        stop_loss_price = (
-            request.current_price
-            * (ONE - policy.stop_loss_ratio)
-        ).quantize(
-            Decimal("0.00000001"),
-            rounding=ROUND_DOWN,
-        )
+        if actual_order_amount < policy.minimum_order_amount:
+            return self._rejected_plan(
+                request=request,
+                reason="ORDER_AMOUNT_BELOW_MINIMUM",
+            )
+
+        if request.stop_price is not None and request.stop_price > ZERO:
+            stop_loss_price = request.stop_price
+        else:
+            stop_loss_price = (
+                request.current_price
+                * (ONE - policy.stop_loss_ratio)
+            ).quantize(
+                Decimal("0.00000001"),
+                rounding=ROUND_DOWN,
+            )
 
         take_profit_price = (
             request.current_price
@@ -94,13 +138,17 @@ class RiskManagementEngine:
             rounding=ROUND_DOWN,
         )
 
-        maximum_loss_amount = (
-            actual_order_amount
-            * policy.stop_loss_ratio
-        ).quantize(
-            Decimal("0.01"),
-            rounding=ROUND_DOWN,
+        risk_per_share = (
+            request.current_price - stop_loss_price
         )
+        if risk_per_share <= ZERO:
+            maximum_loss_amount = (
+                actual_order_amount * policy.stop_loss_ratio
+            ).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        else:
+            maximum_loss_amount = (
+                quantity * risk_per_share
+            ).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
 
         return PositionPlan(
             approved=True,
@@ -212,6 +260,26 @@ class RiskManagementEngine:
                 request.portfolio_value
                 * policy.risk_per_trade_ratio
             )
+            if (
+                request.stop_price is not None
+                and request.stop_price > ZERO
+                and request.stop_price < request.current_price
+            ):
+                risk_per_share = (
+                    request.current_price - request.stop_price
+                )
+                quantity = (
+                    risk_budget / risk_per_share
+                ).quantize(
+                    Decimal("0.00000001"),
+                    rounding=ROUND_DOWN,
+                )
+                return (
+                    quantity * request.current_price
+                ).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_DOWN,
+                )
 
             return risk_budget / policy.stop_loss_ratio
 
@@ -285,6 +353,16 @@ class RiskManagementEngine:
         if policy.minimum_order_amount < ZERO:
             raise RiskValidationError(
                 "minimum_order_amount must not be negative",
+            )
+
+        max_total = getattr(
+            policy,
+            "maximum_total_invested_ratio",
+            ONE,
+        )
+        if max_total <= ZERO or max_total > ONE:
+            raise RiskValidationError(
+                "maximum_total_invested_ratio must be between 0 and 1",
             )
 
     @staticmethod

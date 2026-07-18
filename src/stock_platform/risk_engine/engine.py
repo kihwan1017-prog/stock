@@ -11,8 +11,10 @@ from stock_platform.risk_engine.models import (
 )
 from stock_platform.risk_engine.rules import (
     AvailableCashRule,
+    BrokerHealthRule,
     DailyLossRule,
     EmergencyStopRule,
+    MarketDataFreshnessRule,
     MaximumInvestmentRatioRule,
     MaximumOpenPositionsRule,
     MaximumOrderAmountRule,
@@ -31,6 +33,8 @@ class RealtimeRiskEngine:
         self._rules = rules or [
             EmergencyStopRule(),
             TradingTimeRule(),
+            MarketDataFreshnessRule(),
+            BrokerHealthRule(),
             MaximumOrderAmountRule(),
             MaximumOrderQuantityRule(),
             AvailableCashRule(),
