@@ -1,6 +1,7 @@
 # Kiki Trade AI
 
-> AI 기반 주식 및 가상자산 투자 플랫폼
+> AI 기반 주식 및 가상자산 투자 플랫폼  
+> **Current release: v1.0.0**
 
 ---
 
@@ -9,6 +10,16 @@
 Kiki Trade AI는 국내 주식(키움증권 REST API)과 가상자산(Upbit API)을 하나의 플랫폼에서 분석하고 자동매매할 수 있는 AI 투자 플랫폼입니다.
 
 이 프로젝트는 단순한 자동매매 프로그램이 아니라 AI 기반 투자 운영체제(AI Investment Platform)를 목표로 합니다.
+
+## v1.0 빠른 시작
+
+1. [설치](docs/INSTALL.md)
+2. [설정](docs/CONFIGURATION.md)
+3. [운영 Runbook](docs/OPERATIONS_RUNBOOK.md)
+4. [실전 전환 체크리스트](docs/LIVE_TRADING_CHECKLIST.md)
+5. 릴리스 검증: `.\scripts\verify_release.ps1`
+
+실전 주문은 기본 차단입니다 (`KIWOOM_LIVE_ORDER_ENABLED=false`).
 
 ---
 

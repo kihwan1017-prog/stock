@@ -1,11 +1,19 @@
-# CHANGELOG
+# Changelog
 
-## STEP34 Revised
+## 1.0.0 — 2026-07-18
 
-- 사용자 작업 체크리스트 추가
-- PowerShell 복사 및 설치 명령어 추가
-- 생성/수정 파일 목록 추가
-- Alembic 적용 절차 명확화
-- Router 등록 위치 설명 추가
-- 테스트 및 검증 문서 추가
-- Screener 테스트 추가
+### Added
+- STEP35~39 운영 통합: API lifecycle, market/indicator, screener/AI, order pipeline, risk, ops health/dashboard/audit
+- `OrderExecutionService` 단일 주문 진입점 + Outbox
+- AI analysis 재현/metrics API
+- System health, operations dashboard, admin API key, Discord notifications
+- Operations runbooks and live trading checklist
+
+### Security
+- Live trading blocked by default (`KIWOOM_LIVE_ORDER_ENABLED=false`)
+- LIVE adapter requires DB transition approval
+- Admin-protected sensitive endpoints
+
+### Notes
+- PostgreSQL Windows service only (no Docker)
+- Alembic head: `a2b3c4d5e6f7`

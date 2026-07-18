@@ -1,15 +1,32 @@
-# STEP33 Architecture
+# 아키텍처 — stock-platform v1.0
 
 ```text
-Kiwoom REST ------+
-                  +--> Market Client --> Sync Service --> Repository --> PostgreSQL
-Upbit REST -------+                                          |
-                                                             +--> FastAPI
+FastAPI (lifespan)
+  ├─ Health / Dashboard / Audit
+  ├─ Market collectors (Kiwoom/Upbit)
+  ├─ Indicators / Screener / AI
+  ├─ OrderExecutionService
+  │    → Risk/KillSwitch/Sizing
+  │    → TradingOrder + Outbox
+  │    → OutboxWorker → BrokerAdapter
+  ├─ ExecutionSync / Recovery / Timeout
+  ├─ Risk Engine / Exit Monitor
+  └─ Notifications (Telegram/Slack/Discord)
+           │
+      PostgreSQL 17
 ```
 
-원칙:
-- 외부 API 모델과 내부 domain model 분리
-- 수집과 저장 분리
-- 일봉은 `(market, symbol, candle_date)` 기준 upsert
-- quote는 `(market, symbol)` 기준 최신 상태 유지
-- trade는 외부 trade ID 기준 중복 방지
+## 핵심 원칙
+
+1. 주문은 `OrderExecutionService` 단일 진입점만 사용한다.
+2. Broker 직접 호출 금지(Outbox Worker만 송신).
+3. 실전 주문은 환경 플래그 + DB 승인 모두 필요.
+4. 민감 API는 `X-Admin-API-Key`로 보호.
+5. Docker 없이 Windows 서비스형 PostgreSQL 사용.
+
+## 도메인 패키지
+
+- `markets`, `indicators`, `screener`, `ai`
+- `order`, `broker`, `trading`, `position`
+- `risk`, `risk_engine`, `realtime`
+- `operation`, `notification`, `scheduler`
