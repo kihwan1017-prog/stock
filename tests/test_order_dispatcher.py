@@ -1,53 +1,41 @@
-from datetime import datetime, timezone
-from types import SimpleNamespace
 from decimal import Decimal
+from unittest.mock import MagicMock
+
 from stock_platform.broker.dispatcher import OrderDispatcher
-from stock_platform.broker.models import BrokerOrderResult, BrokerOrderStatus
-from stock_platform.order.models import OrderStatus
+from stock_platform.order.execution_service import OrderExecutionResult
 
-class FakeAdapter:
-    def submit_order(self, request):
-        return BrokerOrderResult(
-            accepted=True,
-            status=BrokerOrderStatus.ACCEPTED,
-            broker_order_id="B001",
-            submitted_at=datetime.now(timezone.utc),
-        )
 
-class FakeRepository:
-    def __init__(self):
-        self.entity = SimpleNamespace(
-            order_id=1,
-            client_order_id="ORD-1",
-            account_id=1,
-            exchange_code="KRX",
-            symbol="005930",
-            side_code="BUY",
-            order_type_code="LIMIT",
-            order_quantity=Decimal("1"),
-            order_price=Decimal("70000"),
-            time_in_force_code="DAY",
-            status_code="CREATED",
-            broker_order_id=None,
-            reject_code=None,
-            reject_message=None,
-            failure_code=None,
-            failure_message=None,
-        )
-
-    def get(self, *, order_id):
-        return self.entity if order_id == 1 else None
-
-    def change_status(self, *, entity, new_status, **kwargs):
-        entity.status_code = new_status.value
-        return entity
-
-def test_dispatch_accepts_order():
+def test_order_dispatcher_enqueues_via_execution_service():
     dispatcher = OrderDispatcher.__new__(OrderDispatcher)
-    dispatcher.repository = FakeRepository()
-    dispatcher.adapter = FakeAdapter()
+    fake_service = MagicMock()
+    fake_service.enqueue_existing.return_value = (
+        OrderExecutionResult(
+            allowed=True,
+            reason_code="QUEUED",
+            order_id=1,
+            outbox_id=9,
+            status_code="PENDING",
+            client_order_id="ORD-1",
+            quantity=Decimal("1"),
+            price=Decimal("70000"),
+        )
+    )
+    fake_repo = MagicMock()
+    fake_repo.get.return_value = MagicMock(
+        order_id=1,
+        client_order_id="ORD-1",
+        status_code="PENDING",
+        broker_order_id=None,
+    )
+    dispatcher._execution_service = fake_service
+    dispatcher._repository = fake_repo
 
     result = dispatcher.dispatch(1)
 
-    assert result.status_code == OrderStatus.ACCEPTED.value
-    assert result.broker_order_id == "B001"
+    fake_service.enqueue_existing.assert_called_once_with(
+        order_id=1,
+        actor="ORDER_DISPATCHER",
+    )
+    assert result["status_code"] == "PENDING"
+    assert result["outbox_id"] == 9
+    assert result["reason_code"] == "QUEUED"

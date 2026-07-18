@@ -36,6 +36,9 @@ from stock_platform.api.v1.kiwoom import router as kiwoom_router
 from stock_platform.api.v1.kiwoom_account_sync import (
     router as kiwoom_account_sync_router,
 )
+from stock_platform.api.v1.kiwoom_account_state_sync import (
+    router as kiwoom_account_state_sync_router,
+)
 from stock_platform.api.v1.kiwoom_order_websocket import (
     router as kiwoom_order_websocket_router,
 )
@@ -55,6 +58,9 @@ from stock_platform.api.v1.order_cancel_replace import (
     router as order_cancel_replace_router,
 )
 from stock_platform.api.v1.order_dispatch import router as order_dispatch_router
+from stock_platform.api.v1.order_execution import (
+    router as order_execution_router,
+)
 from stock_platform.api.v1.order_outbox import router as order_outbox_router
 from stock_platform.api.v1.order_states import router as order_states_router
 from stock_platform.api.v1.orders import router as orders_router
@@ -211,12 +217,14 @@ _ROUTER_GROUPS = (
     realtime_risk_account_router,
     broker_orders_router,
     kiwoom_account_sync_router,
+    kiwoom_account_state_sync_router,
     kiwoom_pending_orders_router,
     kiwoom_order_websocket_router,
     broker_recovery_router,
     live_trading_transition_router,
     orders_router,
     order_states_router,
+    order_execution_router,
     order_dispatch_router,
     order_cancel_replace_router,
     order_outbox_router,

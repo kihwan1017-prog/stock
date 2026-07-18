@@ -1,8 +1,17 @@
+from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from stock_platform.order.entities import TradingOrderEntity, TradingOrderStatusHistoryEntity
+
+from stock_platform.order.entities import (
+    TradingOrderEntity,
+    TradingOrderStatusHistoryEntity,
+)
 from stock_platform.order.models import CreateOrderCommand, OrderStatus
+from stock_platform.order.state_machine import OrderStateMachine
+
 
 class TradingOrderRepository:
     def __init__(self, session: Session):
@@ -75,3 +84,60 @@ class TradingOrderRepository:
             .where(TradingOrderStatusHistoryEntity.order_id == order_id)
             .order_by(TradingOrderStatusHistoryEntity.order_status_history_id)
         ))
+
+    def change_status(
+        self,
+        *,
+        entity: TradingOrderEntity,
+        new_status: OrderStatus,
+        actor: str = "SYSTEM",
+        reason_code: str | None = None,
+        message: str | None = None,
+        detail_payload: dict[str, Any] | None = None,
+        validate_transition: bool = True,
+        commit: bool = True,
+    ) -> TradingOrderEntity:
+        current_status = OrderStatus(entity.status_code)
+        if validate_transition:
+            OrderStateMachine.validate_transition(
+                current=current_status,
+                target=new_status,
+            )
+
+        now = datetime.now(timezone.utc)
+        entity.status_code = new_status.value
+        entity.version_no = int(entity.version_no or 0) + 1
+        entity.updated_at = now
+
+        if new_status == OrderStatus.PENDING:
+            entity.requested_at = entity.requested_at or now
+        elif new_status == OrderStatus.SENT:
+            entity.sent_at = now
+        elif new_status == OrderStatus.ACCEPTED:
+            entity.accepted_at = now
+        elif new_status == OrderStatus.PARTIALLY_FILLED:
+            entity.first_filled_at = entity.first_filled_at or now
+        elif new_status == OrderStatus.FILLED:
+            entity.first_filled_at = entity.first_filled_at or now
+            entity.filled_at = now
+        elif new_status == OrderStatus.CANCELLED:
+            entity.cancelled_at = now
+        elif new_status == OrderStatus.REPLACED:
+            entity.replaced_at = now
+
+        self.session.add(
+            TradingOrderStatusHistoryEntity(
+                order_id=entity.order_id,
+                previous_status_code=current_status.value,
+                current_status_code=new_status.value,
+                reason_code=reason_code,
+                message=message,
+                actor=actor,
+                detail_payload=detail_payload or {},
+            )
+        )
+        self.session.flush()
+        if commit:
+            self.session.commit()
+            self.session.refresh(entity)
+        return entity
