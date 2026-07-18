@@ -87,6 +87,9 @@ class CandidateRunRepository:
             .limit(1)
         )
 
+    def get_run(self, run_id: int) -> CandidateRun | None:
+        return self._session.get(CandidateRun, run_id)
+
     def get_results(self, run_id: int) -> list[CandidateResult]:
         stmt = select(CandidateResult).where(CandidateResult.run_id == run_id).order_by(CandidateResult.rank_no.asc())
         return list(self._session.scalars(stmt))

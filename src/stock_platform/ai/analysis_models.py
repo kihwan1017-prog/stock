@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Identity,
@@ -23,17 +24,10 @@ from stock_platform.database.base import Base
 
 
 class CandidateAnalysisRun(Base):
-    """Ollama 후보 재평가 실행 이력."""
+    """Ollama 후보 재평가 실행 이력 (append-only)."""
 
     __tablename__ = "candidate_analysis_run"
-    __table_args__ = (
-        UniqueConstraint(
-            "source_candidate_run_id",
-            "model_name",
-            name="uq_candidate_analysis_run_source_model",
-        ),
-        {"schema": "ai"},
-    )
+    __table_args__ = ({"schema": "ai"},)
 
     analysis_run_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -81,7 +75,57 @@ class CandidateAnalysisRun(Base):
         server_default=text("'COMPLETED'"),
     )
 
+    prompt_version: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        server_default=text("'ranker-v2'"),
+    )
+
+    context_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    used_fallback: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+
+    duration_ms: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    error_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+
+    request_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+    )
+
+    parent_analysis_run_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "ai.candidate_analysis_run.analysis_run_id",
+            ondelete="SET NULL",
+            name="fk_candidate_analysis_run_parent",
+        ),
+        nullable=True,
+    )
+
     context_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+
+    metrics: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         server_default=text("'{}'::jsonb"),
@@ -169,6 +213,12 @@ class CandidateAnalysisResult(Base):
     )
 
     context_used: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+    )
+
+    rationale: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         server_default=text("'{}'::jsonb"),

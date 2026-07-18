@@ -10,7 +10,16 @@ from stock_platform.ai.candidate_ranker import (
 
 class FakeRepository:
     def get_latest_run(self, *, exchange_code: str):
-        return SimpleNamespace(run_id=7)
+        return SimpleNamespace(
+            run_id=7,
+            exchange_code=exchange_code,
+        )
+
+    def get_run(self, run_id: int):
+        return SimpleNamespace(
+            run_id=run_id,
+            exchange_code="KRX",
+        )
 
     def get_results(self, run_id: int):
         return [

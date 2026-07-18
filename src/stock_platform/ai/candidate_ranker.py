@@ -39,6 +39,9 @@ class CandidateRankingResult:
     candidates: list[RankedCandidate]
     used_fallback: bool = False
     prompt_version: str = "ranker-v2"
+    duration_ms: int | None = None
+    error_count: int = 0
+    request_count: int = 1
 
 
 RESPONSE_SCHEMA: dict[str, Any] = {
@@ -163,17 +166,7 @@ class OllamaCandidateRanker:
         minimum_confidence: Decimal = Decimal("0.5"),
         allow_fallback: bool = True,
     ) -> CandidateRankingResult:
-        if not 1 <= limit <= 10:
-            raise ValueError(
-                "limit must be between 1 and 10"
-            )
-
         normalized_exchange = exchange_code.strip().upper()
-        normalized_contexts = {
-            key.strip().upper(): value
-            for key, value in (contexts or {}).items()
-        }
-
         run = self._repository.get_latest_run(
             exchange_code=normalized_exchange
         )
@@ -182,6 +175,53 @@ class OllamaCandidateRanker:
                 f"Candidate run not found: "
                 f"{normalized_exchange}"
             )
+        return await self.rank_for_run(
+            source_run_id=run.run_id,
+            exchange_code=normalized_exchange,
+            limit=limit,
+            contexts=contexts,
+            minimum_ai_score=minimum_ai_score,
+            minimum_confidence=minimum_confidence,
+            allow_fallback=allow_fallback,
+        )
+
+    async def rank_for_run(
+        self,
+        *,
+        source_run_id: int,
+        exchange_code: str | None = None,
+        limit: int = 5,
+        contexts: dict[str, dict] | None = None,
+        minimum_ai_score: Decimal = Decimal("60"),
+        minimum_confidence: Decimal = Decimal("0.5"),
+        allow_fallback: bool = True,
+    ) -> CandidateRankingResult:
+        import time
+
+        if not 1 <= limit <= 10:
+            raise ValueError(
+                "limit must be between 1 and 10"
+            )
+
+        run = self._repository.get_run(source_run_id)
+        if run is None:
+            raise LookupError(
+                f"Candidate run not found: "
+                f"run_id={source_run_id}"
+            )
+
+        normalized_exchange = (
+            exchange_code or run.exchange_code
+        ).strip().upper()
+        if run.exchange_code.upper() != normalized_exchange:
+            raise ValueError(
+                "exchange_code does not match source run"
+            )
+
+        normalized_contexts = {
+            key.strip().upper(): value
+            for key, value in (contexts or {}).items()
+        }
 
         rows = self._repository.get_results(run.run_id)
         if not rows:
@@ -230,6 +270,8 @@ class OllamaCandidateRanker:
         )
 
         used_fallback = False
+        error_count = 0
+        started = time.perf_counter()
         try:
             response = (
                 await self._ollama_client.chat_structured(
@@ -248,6 +290,7 @@ class OllamaCandidateRanker:
                 minimum_confidence=minimum_confidence,
             )
         except Exception:
+            error_count = 1
             if not allow_fallback:
                 raise
             used_fallback = True
@@ -257,12 +300,18 @@ class OllamaCandidateRanker:
                 minimum_score=minimum_ai_score,
             )
 
+        duration_ms = int(
+            (time.perf_counter() - started) * 1000
+        )
         return CandidateRankingResult(
             exchange_code=normalized_exchange,
             source_run_id=run.run_id,
             model=self._model_name,
             candidates=ranked,
             used_fallback=used_fallback,
+            duration_ms=duration_ms,
+            error_count=error_count,
+            request_count=1,
         )
 
     @staticmethod
