@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from stock_platform.api.deps_admin import (
+    AuditLogService,
+    get_audit_service,
+    require_admin,
+)
 from stock_platform.scheduler.automatic import (
     AutomaticScheduler,
 )
@@ -14,9 +19,13 @@ router = APIRouter(
 
 
 @router.post("/run-now/{job_name}")
-async def run_scheduled_job_now(job_name: str):
+async def run_scheduled_job_now(
+    job_name: str,
+    _: str = Depends(require_admin),
+    audit: AuditLogService = Depends(get_audit_service),
+):
     try:
-        return await AutomaticScheduler().run_job_now(
+        result = await AutomaticScheduler().run_job_now(
             job_name
         )
     except LookupError as exc:
@@ -29,3 +38,10 @@ async def run_scheduled_job_now(job_name: str):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+    audit.record(
+        event_type="SCHEDULER_RUN_NOW",
+        actor="ADMIN",
+        detail={"job_name": job_name},
+    )
+    return result

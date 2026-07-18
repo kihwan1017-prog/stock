@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     telegram_chat_id: str = Field(default="")
     slack_enabled: bool = False
     slack_webhook_url: str = Field(default="")
+    discord_enabled: bool = False
+    discord_webhook_url: str = Field(default="")
+
+    # 관리 API 보호 (비어 있으면 로컬 개발 모드로 통과)
+    admin_api_key: str = Field(default="")
 
     upbit_base_url: str = "https://api.upbit.com"
     upbit_timeout_seconds: float = 10.0

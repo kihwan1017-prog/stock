@@ -314,6 +314,16 @@ class DailyOperationsReportService:
                     if analysis_run is not None
                     else None
                 ),
+                "rule_candidate_top_n": (
+                    selected_candidate_count
+                ),
+                "ai_selected_top_n": ai_candidate_count,
+                "next_trading_day_notes": [
+                    "장 개시 전 Kill Switch / 계좌 sync 확인",
+                    "전일 실패 Job 재실행 여부 검토",
+                    "실전 전환 활성화 상태 재확인",
+                    "시세 freshness와 Outbox 적체 확인",
+                ],
             },
         )
 

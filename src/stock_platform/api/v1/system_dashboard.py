@@ -10,8 +10,8 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
-from stock_platform.realtime.dashboard_service import (
-    RealtimeDashboardService,
+from stock_platform.operation.operations_dashboard_service import (
+    OperationsDashboardService,
 )
 
 
@@ -24,6 +24,7 @@ router = APIRouter(
 @router.get("")
 async def get_system_dashboard(
     account_id: int = Query(default=1, gt=0),
+    exchange_code: str = Query(default="KRX"),
     recent_limit: int = Query(
         default=20,
         ge=1,
@@ -32,10 +33,11 @@ async def get_system_dashboard(
     session: Session = Depends(get_db_session),
 ):
     try:
-        return await RealtimeDashboardService(
+        return await OperationsDashboardService(
             session
         ).build(
             account_id=account_id,
+            exchange_code=exchange_code,
             recent_limit=recent_limit,
         )
     except ValueError as exc:

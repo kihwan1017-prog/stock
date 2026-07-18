@@ -9,6 +9,11 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import (
+    AuditLogService,
+    get_audit_service,
+    require_admin,
+)
 from stock_platform.broker.live_transition_service import (
     LiveTradingTransitionService,
 )
@@ -73,9 +78,11 @@ def validate_live_transition(
 @router.post("/request")
 def request_live_transition(
     request: RequestTransitionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
-    return LiveTradingTransitionService(
+    result = LiveTradingTransitionService(
         session
     ).request_transition(
         requested_by=request.requested_by,
@@ -85,16 +92,28 @@ def request_live_transition(
             request.paper_validation_approved
         ),
     )
+    audit.record(
+        event_type="LIVE_TRANSITION_REQUEST",
+        actor=request.requested_by,
+        detail={
+            "max_order_amount": str(
+                request.max_order_amount
+            ),
+        },
+    )
+    return result
 
 
 @router.post("/{transition_id}/approve")
 def approve_live_transition(
     transition_id: int,
     request: ApproveTransitionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
     try:
-        return LiveTradingTransitionService(
+        result = LiveTradingTransitionService(
             session
         ).approve_transition(
             transition_id=transition_id,
@@ -112,15 +131,24 @@ def approve_live_transition(
             detail=str(exc),
         ) from exc
 
+    audit.record(
+        event_type="LIVE_TRANSITION_APPROVE",
+        actor=request.approved_by,
+        detail={"transition_id": transition_id},
+    )
+    return result
+
 
 @router.post("/{transition_id}/disable")
 def disable_live_transition(
     transition_id: int,
     request: DisableTransitionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
     try:
-        return LiveTradingTransitionService(
+        result = LiveTradingTransitionService(
             session
         ).disable_transition(
             transition_id=transition_id,
@@ -131,6 +159,16 @@ def disable_live_transition(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
+
+    audit.record(
+        event_type="LIVE_TRANSITION_DISABLE",
+        actor="ADMIN",
+        detail={
+            "transition_id": transition_id,
+            "reason": request.reason,
+        },
+    )
+    return result
 
 
 @router.get("/active")
@@ -146,6 +184,7 @@ def get_active_live_transition(
 def list_live_transition_history(
     limit: int = 20,
     offset: int = 0,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     rows = LiveTradingTransitionService(

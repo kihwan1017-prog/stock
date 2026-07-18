@@ -5,6 +5,11 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import (
+    AuditLogService,
+    get_audit_service,
+    require_admin,
+)
 from stock_platform.database.session import get_db_session
 from stock_platform.risk_engine.kill_switch_service import (
     KillSwitchService,
@@ -38,20 +43,36 @@ def get_kill_switch_state(
 @router.post("/activate")
 def activate_kill_switch(
     request: KillSwitchActionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
-    return KillSwitchService(session).activate(
+    result = KillSwitchService(session).activate(
         actor=request.actor,
         reason=request.reason,
     )
+    audit.record(
+        event_type="KILL_SWITCH_ACTIVATE",
+        actor=request.actor,
+        detail={"reason": request.reason},
+    )
+    return result
 
 
 @router.post("/deactivate")
 def deactivate_kill_switch(
     request: KillSwitchActionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
-    return KillSwitchService(session).deactivate(
+    result = KillSwitchService(session).deactivate(
         actor=request.actor,
         reason=request.reason,
     )
+    audit.record(
+        event_type="KILL_SWITCH_DEACTIVATE",
+        actor=request.actor,
+        detail={"reason": request.reason},
+    )
+    return result

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from stock_platform.database.session import (
     get_db_session,
 )
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.strategy_deployment.automation_service import (
     StrategyAutoDeploymentService,
 )
@@ -79,6 +80,7 @@ def evaluate_strategy_policy(
 def force_strategy_deployment(
     approval_run_id: int,
     request: StrategyPolicyActionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -99,6 +101,7 @@ def force_strategy_deployment(
 def reject_strategy_policy(
     approval_run_id: int,
     request: StrategyPolicyActionRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:

@@ -10,6 +10,7 @@ class NotificationChannel(StrEnum):
     LOG = "LOG"
     TELEGRAM = "TELEGRAM"
     SLACK = "SLACK"
+    DISCORD = "DISCORD"
 
 
 class NotificationSendStatus(StrEnum):

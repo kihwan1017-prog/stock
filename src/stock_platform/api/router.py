@@ -5,6 +5,7 @@ from collections import Counter
 from fastapi import APIRouter
 
 from stock_platform.api.v1.ai_analysis import router as ai_analysis_router
+from stock_platform.api.v1.audit import router as audit_router
 from stock_platform.api.v1.ai_candidates import router as ai_candidates_router
 from stock_platform.api.v1.ai_orchestration import router as ai_orchestration_router
 from stock_platform.api.v1.backtest_grid import router as backtest_grid_router
@@ -163,6 +164,7 @@ def collect_duplicate_operation_ids(router: APIRouter) -> list[str]:
 
 _ROUTER_GROUPS = (
     health_router,
+    audit_router,
     version_router,
     system_dashboard_router,
     prices_router,
