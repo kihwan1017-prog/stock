@@ -1,0 +1,55 @@
+:root {
+  --app-bg: #f5f7fb;
+  --app-fg: #1f1f1f;
+  --app-border: #e5e7eb;
+}
+
+html[data-theme="dark"] {
+  --app-bg: #0f1419;
+  --app-fg: #f3f4f6;
+  --app-border: #2a2f36;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100%;
+  color: var(--app-fg);
+  background: var(--app-bg);
+  font-family: "Pretendard", "Noto Sans KR", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mobile-only {
+  display: inline-flex !important;
+}
+
+.desktop-only {
+  display: none !important;
+}
+
+@media (min-width: 768px) {
+  .mobile-only {
+    display: none !important;
+  }
+
+  .desktop-only {
+    display: inline-flex !important;
+  }
+}
