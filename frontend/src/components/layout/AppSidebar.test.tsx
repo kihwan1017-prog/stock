@@ -19,7 +19,7 @@ describe("AppSidebar", () => {
     render(<AppSidebar collapsed={false} />);
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("KIKI AI Trading Platform")).toBeInTheDocument();
-    expect(screen.getByText("STEP41 · Admin")).toBeInTheDocument();
+    expect(screen.getByText("Admin Console")).toBeInTheDocument();
   });
 
   it("shows short brand when collapsed", () => {

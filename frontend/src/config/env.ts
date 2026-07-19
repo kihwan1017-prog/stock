@@ -8,7 +8,8 @@ const envSchema = z.object({
   NEXT_PUBLIC_ENABLE_REACT_QUERY_DEVTOOLS: z
     .enum(["true", "false"])
     .transform((value) => value === "true"),
-  NEXT_PUBLIC_AUTH_MODE: z.enum(["backend", "disabled"]),
+  // JWT 백엔드 인증만 지원 (개발 우회 모드 제거)
+  NEXT_PUBLIC_AUTH_MODE: z.enum(["backend"]).default("backend"),
 });
 
 const parsed = envSchema.safeParse({
@@ -18,7 +19,7 @@ const parsed = envSchema.safeParse({
   NEXT_PUBLIC_WS_BASE_URL: process.env.NEXT_PUBLIC_WS_BASE_URL,
   NEXT_PUBLIC_ENABLE_REACT_QUERY_DEVTOOLS:
     process.env.NEXT_PUBLIC_ENABLE_REACT_QUERY_DEVTOOLS,
-  NEXT_PUBLIC_AUTH_MODE: process.env.NEXT_PUBLIC_AUTH_MODE,
+  NEXT_PUBLIC_AUTH_MODE: process.env.NEXT_PUBLIC_AUTH_MODE ?? "backend",
 });
 
 if (!parsed.success) {

@@ -31,9 +31,9 @@ export function JsonPanel({
 }: JsonPanelProps) {
   return (
     <Card title={title} extra={extra} size="small">
-      {loading ? <Spin tip="불러오는 중..." /> : null}
+      {loading ? <Spin description="불러오는 중..." /> : null}
       {error ? (
-        <Alert type="error" showIcon message="API 오류" description={error.message} />
+        <Alert type="error" showIcon title="API 오류" description={error.message} />
       ) : null}
       {!loading && !error && (data === undefined || data === null) ? (
         <Empty description={emptyText} />

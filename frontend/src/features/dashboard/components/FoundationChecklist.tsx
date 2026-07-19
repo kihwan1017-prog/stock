@@ -3,8 +3,6 @@
 import { CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { Card, Flex, Typography } from "antd";
 
-import { env } from "@/config/env";
-
 interface ChecklistItem {
   key: string;
   label: string;
@@ -25,8 +23,8 @@ export function FoundationChecklist({ apiConnected }: FoundationChecklistProps) 
     { key: "rq", label: "React Query 동작", done: true },
     {
       key: "auth",
-      label: `인증 모드 확인 (${env.AUTH_MODE})`,
-      done: env.AUTH_MODE === "disabled" || env.AUTH_MODE === "backend",
+      label: "JWT 백엔드 인증",
+      done: true,
     },
   ];
 

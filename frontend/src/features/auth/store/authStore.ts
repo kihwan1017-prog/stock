@@ -1,56 +1,87 @@
 import { create } from "zustand";
 
 import type { AuthUser } from "@/features/auth/types/auth";
-import { clearToken, getToken, setToken } from "@/lib/storage/tokenStorage";
+import {
+  clearRefreshToken,
+  clearToken,
+  getRefreshToken,
+  getToken,
+  isRememberMeEnabled,
+  setRefreshToken,
+  setRememberMe,
+  setToken,
+} from "@/lib/storage/tokenStorage";
 
 interface AuthState {
   accessToken: string | null;
+  refreshToken: string | null;
   user: AuthUser | null;
   authenticated: boolean;
   hydrated: boolean;
-  setSession: (token: string, user: AuthUser) => void;
+  setSession: (
+    accessToken: string,
+    user: AuthUser,
+    refreshToken?: string,
+    rememberMe?: boolean,
+  ) => void;
   clearSession: () => void;
   hydrateFromStorage: () => void;
 }
 
-const DEV_USER_STORAGE_KEY = "kiki-admin-user";
+const USER_STORAGE_KEY = "kiki-admin-user";
 
 function readStoredUser(): AuthUser | null {
   if (typeof window === "undefined") {
     return null;
   }
-  const raw = window.sessionStorage.getItem(DEV_USER_STORAGE_KEY);
+  const raw =
+    window.localStorage.getItem(USER_STORAGE_KEY) ??
+    window.sessionStorage.getItem(USER_STORAGE_KEY);
   if (!raw) {
     return null;
   }
   try {
-    return JSON.parse(raw) as AuthUser;
+    const parsed = JSON.parse(raw) as AuthUser;
+    return {
+      ...parsed,
+      roles: parsed.roles ?? [],
+      permissions: parsed.permissions ?? [],
+    };
   } catch {
     return null;
   }
 }
 
-function writeStoredUser(user: AuthUser | null): void {
+function writeStoredUser(user: AuthUser | null, persist: boolean): void {
   if (typeof window === "undefined") {
     return;
   }
+  window.localStorage.removeItem(USER_STORAGE_KEY);
+  window.sessionStorage.removeItem(USER_STORAGE_KEY);
   if (!user) {
-    window.sessionStorage.removeItem(DEV_USER_STORAGE_KEY);
     return;
   }
-  window.sessionStorage.setItem(DEV_USER_STORAGE_KEY, JSON.stringify(user));
+  const store = persist ? window.localStorage : window.sessionStorage;
+  store.setItem(USER_STORAGE_KEY, JSON.stringify(user));
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   accessToken: null,
+  refreshToken: null,
   user: null,
   authenticated: false,
   hydrated: false,
-  setSession: (token, user) => {
-    setToken(token);
-    writeStoredUser(user);
+  setSession: (accessToken, user, refreshToken, rememberMe) => {
+    const persist = rememberMe ?? isRememberMeEnabled();
+    setRememberMe(persist);
+    setToken(accessToken, persist);
+    if (refreshToken) {
+      setRefreshToken(refreshToken, persist);
+    }
+    writeStoredUser(user, persist);
     set({
-      accessToken: token,
+      accessToken,
+      refreshToken: refreshToken ?? getRefreshToken(),
       user,
       authenticated: true,
       hydrated: true,
@@ -58,9 +89,11 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   clearSession: () => {
     clearToken();
-    writeStoredUser(null);
+    clearRefreshToken();
+    writeStoredUser(null, false);
     set({
       accessToken: null,
+      refreshToken: null,
       user: null,
       authenticated: false,
       hydrated: true,
@@ -68,10 +101,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
   hydrateFromStorage: () => {
     const token = getToken();
+    const refresh = getRefreshToken();
     const user = readStoredUser();
     if (token && user) {
       set({
         accessToken: token,
+        refreshToken: refresh,
         user,
         authenticated: true,
         hydrated: true,
@@ -80,6 +115,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     set({
       accessToken: null,
+      refreshToken: null,
       user: null,
       authenticated: false,
       hydrated: true,

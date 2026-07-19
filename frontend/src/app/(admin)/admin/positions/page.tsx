@@ -1,5 +1,8 @@
-import { ComingSoon } from "@/components/common/ComingSoon";
+import { redirect } from "next/navigation";
 
-export default function PositionsPage() {
-  return <ComingSoon title="Positions" description="포지션 현황 화면" />;
+import { adminRoutes } from "@/config/routes";
+
+/** 구 경로 호환 → 포트폴리오 */
+export default function AdminPositionsRedirectPage() {
+  redirect(adminRoutes.portfolio);
 }

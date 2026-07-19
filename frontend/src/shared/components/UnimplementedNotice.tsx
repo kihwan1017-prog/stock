@@ -24,7 +24,7 @@ export function UnimplementedNotice({
     <Alert
       type="warning"
       showIcon
-      message={`${feature} — 미구현`}
+      title={`${feature} — 미구현`}
       description={
         <div>
           <Typography.Paragraph style={{ marginBottom: relatedApis.length ? 8 : 0 }}>

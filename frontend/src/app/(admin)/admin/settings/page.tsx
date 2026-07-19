@@ -1,5 +1,8 @@
-import { ComingSoon } from "@/components/common/ComingSoon";
+import { redirect } from "next/navigation";
 
-export default function SettingsPage() {
-  return <ComingSoon title="Settings" description="설정 화면" />;
+import { adminRoutes } from "@/config/routes";
+
+/** 구 경로 호환 → 환경설정 */
+export default function AdminSettingsRedirectPage() {
+  redirect(adminRoutes.envSettings);
 }

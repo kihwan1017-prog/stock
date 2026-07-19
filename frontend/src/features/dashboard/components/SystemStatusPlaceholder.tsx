@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, Col, Row, Typography } from "antd";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { env } from "@/config/env";
 import type { HealthResponse } from "@/lib/api/apiTypes";
 import { rootClient } from "@/lib/api/rootClient";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -53,17 +52,14 @@ export function SystemStatusPlaceholder() {
       </Col>
       <Col xs={24} md={8}>
         <Card title="인증 상태">
-          <StatusBadge
-            status={env.AUTH_MODE === "disabled" ? "disabled" : "healthy"}
-            label={env.AUTH_MODE === "disabled" ? "AUTH DISABLED" : "BACKEND AUTH"}
-          />
+          <StatusBadge status="healthy" label="BACKEND AUTH (JWT)" />
         </Card>
       </Col>
       <Col xs={24} md={8}>
         <Card title="현재 모드">
-          <Typography.Text>{env.AUTH_MODE}</Typography.Text>
+          <Typography.Text>JWT Backend Auth</Typography.Text>
           <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
-            STEP42에서 계좌, 손익, AI 추천, 주문, 시스템 상태를 연결합니다.
+            회원가입·로그인 후 Access/Refresh Token 으로 API를 호출합니다.
           </Typography.Paragraph>
         </Card>
       </Col>

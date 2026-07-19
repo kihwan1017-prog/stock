@@ -24,19 +24,22 @@ export default function PortalPage() {
             {env.APP_NAME}
           </Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            투자자용 User Web과 관리자 Admin을 선택하세요. (JWT 회원 로그인은 아직 없습니다 —
-            개발 모드로 입장합니다.)
+            투자자용 User Web과 관리자 Admin을 선택하세요. 회원가입 후 로그인하거나,
+            기존 계정으로 로그인하세요.
           </Typography.Paragraph>
           <Flex gap={12} wrap>
             <Link href={`${userRoutes.login}?portal=user&next=${encodeURIComponent(userRoutes.dashboard)}`}>
               <Button type="primary" size="large">
-                User Web 입장
+                User 로그인
               </Button>
             </Link>
             <Link
               href={`${adminRoutes.login}?portal=admin&next=${encodeURIComponent(adminRoutes.dashboard)}`}
             >
-              <Button size="large">Admin 입장</Button>
+              <Button size="large">Admin 로그인</Button>
+            </Link>
+            <Link href="/signup">
+              <Button size="large">회원가입</Button>
             </Link>
           </Flex>
           <Typography.Text type="secondary">

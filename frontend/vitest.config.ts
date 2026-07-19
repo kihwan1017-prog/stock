@@ -15,7 +15,7 @@ export default defineConfig({
       NEXT_PUBLIC_API_PREFIX: "/api/v1",
       NEXT_PUBLIC_WS_BASE_URL: "ws://127.0.0.1:8000",
       NEXT_PUBLIC_ENABLE_REACT_QUERY_DEVTOOLS: "false",
-      NEXT_PUBLIC_AUTH_MODE: "disabled",
+      NEXT_PUBLIC_AUTH_MODE: "backend",
     },
   },
   resolve: {

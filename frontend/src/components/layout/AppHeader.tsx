@@ -1,22 +1,28 @@
 "use client";
 
 import {
+  ControlOutlined,
   DesktopOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
+  SettingOutlined,
   SunOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Button, Dropdown, Flex, Layout, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
-import { env } from "@/config/env";
-import { getRouteTitle } from "@/config/routes";
+import { adminRoutes, getRouteTitle, userRoutes } from "@/config/routes";
 import { useAuth } from "@/features/auth/hooks/useAuth";
+import {
+  canAccessAdminPortal,
+  primaryProductRole,
+} from "@/features/auth/utils/roles";
 import { useThemeMode } from "@/hooks/useThemeMode";
 import { useLayoutStore } from "@/stores/layoutStore";
 
@@ -50,7 +56,30 @@ export function AppHeader({
     },
   ];
 
+  const productRole = primaryProductRole(user?.roles);
+  const showAdminLink = canAccessAdminPortal(user?.roles);
+
   const userItems: MenuProps["items"] = [
+    {
+      key: "profile",
+      icon: <UserOutlined />,
+      label: <Link href={userRoutes.profile}>My Page</Link>,
+    },
+    {
+      key: "settings",
+      icon: <SettingOutlined />,
+      label: <Link href={userRoutes.settings}>설정</Link>,
+    },
+    ...(showAdminLink
+      ? [
+          {
+            key: "admin",
+            icon: <ControlOutlined />,
+            label: <Link href={adminRoutes.dashboard}>Admin 콘솔</Link>,
+          },
+        ]
+      : []),
+    { type: "divider" as const },
     {
       key: "logout",
       icon: <LogoutOutlined />,
@@ -63,6 +92,13 @@ export function AppHeader({
 
   const apiStatus =
     apiConnected === null ? "unknown" : apiConnected ? ("healthy" as const) : ("error" as const);
+
+  const roleColor =
+    productRole === "admin"
+      ? "red"
+      : productRole === "trader"
+        ? "blue"
+        : "default";
 
   return (
     <Header
@@ -109,7 +145,9 @@ export function AppHeader({
 
           <Tag color="processing">{tradingLabel}</Tag>
 
-          {env.AUTH_MODE === "disabled" ? <Tag color="warning">AUTH DISABLED</Tag> : null}
+          {user ? (
+            <Tag color={roleColor}>{productRole}</Tag>
+          ) : null}
 
           <Dropdown menu={{ items: themeItems, selectedKeys: [mode] }} placement="bottomRight">
             <Button type="text" icon={<DesktopOutlined />}>

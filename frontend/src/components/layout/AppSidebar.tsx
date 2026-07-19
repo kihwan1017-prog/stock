@@ -22,7 +22,7 @@ export function AppSidebar({
   collapsed,
   menuItems = adminMenuItems,
   brandLabel = env.APP_NAME,
-  footerLabel = "STEP41 · Admin",
+  footerLabel = "Admin Console",
 }: AppSidebarProps) {
   const sidebarCollapsed = useLayoutStore((state) => state.sidebarCollapsed);
   const isCollapsed = collapsed ?? sidebarCollapsed;

@@ -1,57 +1,157 @@
+import axios from "axios";
+
 import { env } from "@/config/env";
-import type { AuthUser, LoginRequest, LoginResponse } from "@/features/auth/types/auth";
+import { apiClient } from "@/lib/api/apiClient";
+import type {
+  AuthUser,
+  AvailabilityResult,
+  ChangePasswordRequest,
+  LoginRequest,
+  LoginResponse,
+  SignupRequest,
+} from "@/features/auth/types/auth";
+import {
+  clearRefreshToken,
+  getRefreshToken,
+  setRefreshToken,
+} from "@/lib/storage/tokenStorage";
 
-const DEV_DISABLED_TOKEN = "dev-disabled";
+/** refresh는 인터셉터 순환을 피하기 위해 별도 클라이언트 사용 */
+const authBareClient = axios.create({
+  baseURL: `${env.API_BASE_URL}${env.API_PREFIX}`,
+  timeout: 15_000,
+  headers: {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  },
+});
 
-/**
- * AUTH_MODE=disabled: 백엔드 호출 없이 개발 세션 생성
- * JWT/회원 API는 Backend에 없음 — 로컬 세션만 사용
- */
-export async function enterDevSession(
-  portal: "user" | "admin" = "admin",
-): Promise<LoginResponse> {
-  if (env.AUTH_MODE !== "disabled") {
-    throw new Error("enterDevSession은 AUTH_MODE=disabled 에서만 사용할 수 있습니다.");
-  }
-
-  const user: AuthUser =
-    portal === "user"
-      ? {
-          id: "dev-user",
-          username: "investor",
-          displayName: "Dev Investor",
-          roles: ["user"],
-        }
-      : {
-          id: "dev",
-          username: "dev",
-          displayName: "Dev Admin",
-          roles: ["admin"],
-        };
-
-  return {
-    accessToken: DEV_DISABLED_TOKEN,
-    user,
+interface BackendTokenResponse {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  expires_in: number;
+  user: {
+    id: string;
+    username: string;
+    email?: string | null;
+    display_name?: string | null;
+    roles: string[];
+    permissions?: string[];
   };
 }
 
-/**
- * Backend에 /auth/login 이 없어 실패한다. disabled 모드에서만 개발 세션으로 대체.
- */
+function mapUser(raw: BackendTokenResponse["user"]): AuthUser {
+  return {
+    id: raw.id,
+    username: raw.username,
+    email: raw.email ?? undefined,
+    displayName: raw.display_name ?? undefined,
+    roles: raw.roles ?? [],
+    permissions: raw.permissions ?? [],
+  };
+}
+
+function mapLogin(raw: BackendTokenResponse): LoginResponse {
+  return {
+    accessToken: raw.access_token,
+    refreshToken: raw.refresh_token,
+    expiresIn: raw.expires_in,
+    user: mapUser(raw.user),
+  };
+}
+
 export async function loginWithCredentials(
   payload: LoginRequest,
 ): Promise<LoginResponse> {
-  void payload;
+  const { data } = await apiClient.post<BackendTokenResponse>("/auth/login", {
+    username: payload.username,
+    password: payload.password,
+  });
+  return mapLogin(data);
+}
 
-  if (env.AUTH_MODE === "disabled") {
-    return enterDevSession("admin");
-  }
+export async function signupWithCredentials(
+  payload: SignupRequest,
+): Promise<LoginResponse> {
+  const { data } = await apiClient.post<BackendTokenResponse>("/auth/signup", {
+    name: payload.name,
+    username: payload.username,
+    email: payload.email,
+    password: payload.password,
+    password_confirm: payload.passwordConfirm,
+    terms_accepted: payload.termsAccepted,
+  });
+  return mapLogin(data);
+}
 
-  throw new Error(
-    "백엔드 인증 API가 아직 없습니다. NEXT_PUBLIC_AUTH_MODE=disabled 를 사용하세요.",
+export async function checkUsernameAvailable(
+  username: string,
+): Promise<AvailabilityResult> {
+  const { data } = await apiClient.get<AvailabilityResult>(
+    "/auth/check-username",
+    { params: { username } },
   );
+  return data;
+}
+
+export async function checkEmailAvailable(
+  email: string,
+): Promise<AvailabilityResult> {
+  const { data } = await apiClient.get<AvailabilityResult>("/auth/check-email", {
+    params: { email },
+  });
+  return data;
+}
+
+export async function refreshAccessToken(
+  refreshToken?: string,
+): Promise<LoginResponse> {
+  const token = refreshToken ?? getRefreshToken();
+  if (!token) {
+    throw new Error("Refresh 토큰이 없습니다.");
+  }
+  const { data } = await authBareClient.post<BackendTokenResponse>(
+    "/auth/refresh",
+    { refresh_token: token },
+  );
+  return mapLogin(data);
+}
+
+export async function fetchCurrentUser(): Promise<AuthUser> {
+  const { data } = await apiClient.get<{
+    id: string;
+    username: string;
+    email?: string | null;
+    display_name?: string | null;
+    roles: string[];
+    permissions?: string[];
+  }>("/auth/me");
+  return mapUser(data);
+}
+
+export async function changePassword(payload: ChangePasswordRequest): Promise<void> {
+  await apiClient.post("/auth/change-password", {
+    current_password: payload.currentPassword,
+    new_password: payload.newPassword,
+  });
 }
 
 export async function logoutRemote(): Promise<void> {
-  // Backend logout API 없음
+  const refreshToken = getRefreshToken();
+  try {
+    await apiClient.post("/auth/logout", {
+      refresh_token: refreshToken,
+    });
+  } finally {
+    clearRefreshToken();
+  }
+}
+
+export function persistRefreshToken(token: string | null): void {
+  if (!token) {
+    clearRefreshToken();
+    return;
+  }
+  setRefreshToken(token);
 }

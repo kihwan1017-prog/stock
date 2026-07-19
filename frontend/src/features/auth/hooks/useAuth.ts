@@ -1,14 +1,22 @@
 "use client";
 
 import { useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
-import { enterDevSession, loginWithCredentials, logoutRemote } from "@/features/auth/api/authApi";
+import {
+  loginWithCredentials,
+  logoutRemote,
+  persistRefreshToken,
+  signupWithCredentials,
+} from "@/features/auth/api/authApi";
 import { useAuthStore } from "@/features/auth/store/authStore";
-import type { LoginRequest } from "@/features/auth/types/auth";
+import type { LoginRequest, SignupRequest } from "@/features/auth/types/auth";
+import { resolvePostLoginPath } from "@/features/auth/utils/roles";
+import { authRoutes, userRoutes } from "@/config/routes";
 
 export function useAuth() {
   const router = useRouter();
+  const pathname = usePathname();
   const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);
   const authenticated = useAuthStore((state) => state.authenticated);
@@ -18,30 +26,48 @@ export function useAuth() {
   const hydrateFromStorage = useAuthStore((state) => state.hydrateFromStorage);
 
   const login = useCallback(
-    async (payload: LoginRequest, redirectTo = "/user/dashboard") => {
+    async (payload: LoginRequest, redirectTo?: string) => {
       const response = await loginWithCredentials(payload);
-      setSession(response.accessToken, response.user);
-      router.replace(redirectTo);
+      setSession(
+        response.accessToken,
+        response.user,
+        response.refreshToken,
+        payload.rememberMe ?? false,
+      );
+      persistRefreshToken(response.refreshToken);
+      const destination = resolvePostLoginPath(
+        response.user,
+        redirectTo ?? null,
+      );
+      router.replace(destination);
     },
     [router, setSession],
   );
 
-  const enterAsDev = useCallback(
-    async (portal: "user" | "admin" = "admin", redirectTo?: string) => {
-      const response = await enterDevSession(portal);
-      setSession(response.accessToken, response.user);
-      const target =
-        redirectTo ?? (portal === "user" ? "/user/dashboard" : "/admin/dashboard");
-      router.replace(target);
+  const signup = useCallback(
+    async (payload: SignupRequest, redirectTo = userRoutes.dashboard) => {
+      const response = await signupWithCredentials(payload);
+      setSession(
+        response.accessToken,
+        response.user,
+        response.refreshToken,
+        true,
+      );
+      persistRefreshToken(response.refreshToken);
+      router.replace(resolvePostLoginPath(response.user, redirectTo));
     },
     [router, setSession],
   );
 
   const logout = useCallback(async () => {
-    await logoutRemote();
-    clearSession();
-    router.replace("/login");
-  }, [clearSession, router]);
+    const portal = pathname?.startsWith("/user") ? "user" : "admin";
+    try {
+      await logoutRemote();
+    } finally {
+      clearSession();
+      router.replace(`${authRoutes.login}?portal=${portal}`);
+    }
+  }, [clearSession, pathname, router]);
 
   return {
     accessToken,
@@ -49,7 +75,7 @@ export function useAuth() {
     authenticated,
     hydrated,
     login,
-    enterAsDev,
+    signup,
     logout,
     hydrateFromStorage,
   };
