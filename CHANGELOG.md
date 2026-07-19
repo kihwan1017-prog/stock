@@ -3,10 +3,16 @@
 ## Unreleased
 
 ### Docs
-- 문서 체계 재편: `docs/README.md` 목차 추가
-- `README_STEPxx` · `01_`~`07_` → `docs/archive/`
-- 로드맵 → `docs/roadmaps/` · DB 규칙 → `docs/development/`
-- 루트 `README.md` / `PROJECT_STATUS.md`를 v1.0·STEP41 기준으로 갱신
+- Domain documentation refactor: `architecture/`, `backend/`, `frontend/`, `database/`, `deployment/`, `development/`, `trading/`, `ai/`, `reference/`, `archive/`
+- Added per-folder README indexes and refreshed [docs/README.md](docs/README.md)
+- Moved STEP34 apply pack to `docs/archive/obsolete/`
+- Added STEP01–STEP99 catalog in `docs/archive/steps/README.md`
+- Added `docs/reference/DOCUMENT_INVENTORY.md`
+- Root README becomes documentation portal
+- Fixed cross-links after moves (no markdown deletions)
+
+### Added (pending release notes)
+- STEP41 Admin frontend (`frontend/`) + CORS for `localhost:3000`
 
 ## 1.0.0 — 2026-07-18
 
