@@ -1,118 +1,155 @@
 # API 사용 매뉴얼
 
-기준: FastAPI OpenAPI (`Stock Platform API` v1.0.0)  
-대화형 문서: `http://127.0.0.1:8000/docs` · 스키마: `/openapi.json`
+관리 화면에 아직 없는 기능은 **API** 로 처리합니다.  
+이 문서는 **처음 여는 순서**부터 안내합니다.
 
-> Request/Response JSON 스키마의 **단일 소스 오브 트루스**는 OpenAPI입니다.  
-> 본 문서는 권한·예제·전체 엔드포인트 목록을 제공합니다. 본문에 없는 필드를 추측하지 마세요.
+대화형 설명서(추천): http://127.0.0.1:8000/docs  
+기계용 목록: http://127.0.0.1:8000/openapi.json
 
-## 목차
-
-1. [공통](#공통)
-2. [권한](#권한)
-3. [주요 예제](#주요-예제)
-4. [API 그룹 요약](#api-그룹-요약)
-5. [전체 엔드포인트 목록](#전체-엔드포인트-목록)
-
----
-
-## 공통
-
-| 항목 | 값 |
-|------|-----|
-| Base | `http://127.0.0.1:8000` |
-| Prefix | 대부분 `/api/v1/...` (`/health`, `/version`, `/` 예외) |
-| Content-Type | `application/json` |
-| CORS (Admin) | `http://localhost:3000`, `http://127.0.0.1:3000` |
+> **중요:** 각 API가 요구하는 입력칸(필드)의 정확한 이름은 `/docs` 에 있는 설명이 기준입니다.  
+> 이 문서에 없는 값을 추측해서 넣지 마세요.
 
 요약 표(일부): [../backend/API.md](../backend/API.md)
 
 ---
 
-## 권한
+## 목차 (사용 순서)
 
-| 구분 | 헤더 | 동작 |
-|------|------|------|
-| 일반 | 없음 | 대부분 공개 (네트워크 노출 주의) |
-| Admin | `X-Admin-API-Key: <ADMIN_API_KEY>` | `require_admin` 의존성 |
-| 키 미설정 | — | 개발 모드로 통과 (`DEV_OPEN`) |
-
-### Admin 보호 엔드포인트 (코드 기준)
-
-| Method | Path |
-|--------|------|
-| GET | `/api/v1/audit/events` |
-| POST | `/api/v1/scheduler-admin/run-now/{job_name}` |
-| POST | `/api/v1/orders/{order_id}/dispatch` |
-| POST | `/api/v1/risk/kill-switch/activate` |
-| POST | `/api/v1/risk/kill-switch/deactivate` |
-| POST | `/api/v1/broker/live-transition/request` |
-| POST | `/api/v1/broker/live-transition/{transition_id}/approve` |
-| POST | `/api/v1/broker/live-transition/{transition_id}/disable` |
-| GET | `/api/v1/broker/live-transition/history` |
-| POST | `/api/v1/strategy-policy/{approval_run_id}/force` |
-| POST | `/api/v1/strategy-policy/{approval_run_id}/reject` |
-
-그 외 엔드포인트는 OpenAPI에 인증 스키마가 없어도 **운영 네트워크에서 보호**해야 합니다.
+1. [API가 뭔가요?](#1-api가-뭔가요)
+2. [설명서 화면 열기](#2-설명서-화면-열기)
+3. [권한(관리 키)](#3-권한관리-키)
+4. [자주 쓰는 작업 따라 하기](#4-자주-쓰는-작업-따라-하기)
+5. [기능 그룹 한눈에 보기](#5-기능-그룹-한눈에-보기)
+6. [전체 주소 목록](#6-전체-주소-목록)
 
 ---
 
-## 주요 예제
+## 용어 설명
 
-### Health
+| 쉬운 말 | 전문 용어 | 뜻 |
+|---------|-----------|-----|
+| 서버 주소 | URL / Endpoint | 예: `/health`, `/api/v1/orders` |
+| 요청 방식 | Method (GET/POST…) | GET=조회, POST=실행·저장 |
+| 보내기 내용 | Request Body | POST 때 함께 보내는 JSON 데이터 |
+| 받기 결과 | Response | 서버가 돌려주는 답 |
+| API 설명서 | OpenAPI / Swagger | `/docs` 에서 버튼으로 시험 |
+| 관리 키 | `X-Admin-API-Key` | 위험한 작업용 비밀번호 헤더 |
+| JSON | — | `{ "키": "값" }` 형태의 데이터 글자 |
+
+---
+
+## 1. API가 뭔가요?
+
+API는 **서버에게 일을 시키는 리모컨 버튼**입니다.  
+관리 화면이 준비 중일 때도, `/docs` 에서 같은 일을 할 수 있습니다.
+
+기본 주소:
+
+```text
+http://127.0.0.1:8000
+```
+
+대부분의 기능은 `/api/v1/...` 로 시작합니다.  
+예외: `/health`, `/version`, `/`
+
+---
+
+## 2. 설명서 화면 열기
+
+1. 서버를 켭니다 ([운영매뉴얼.md](운영매뉴얼.md))  
+2. 브라우저에서 http://127.0.0.1:8000/docs 를 엽니다  
+3. 원하는 항목을 펼치고 **Try it out** → **Execute** 로 시험합니다
+
+**[스크린샷]** `/docs` 첫 화면  
+**[스크린샷]** 한 API를 펼쳐 Try it out 한 모습
+
+---
+
+## 3. 권한(관리 키)
+
+| 구분 | 어떻게? |
+|------|---------|
+| 일반 조회·많은 API | 키 없이 호출 가능 (이 PC 밖으로 열지 마세요) |
+| 관리 작업 | 요청 헤더에 `X-Admin-API-Key: (설정한 키)` |
+| 설정에 키가 비어 있음 | 이 PC에서는 통과 (개발용). **운영에서는 반드시 키를 넣으세요** |
+
+### 관리 키가 필요한 주소 (코드 기준)
+
+| 방식 | 주소 | 쉬운 설명 |
+|------|------|-----------|
+| GET | `/api/v1/audit/events` | 감사(누가 무엇을) 조회 |
+| POST | `/api/v1/scheduler-admin/run-now/{job_name}` | 스케줄 작업 즉시 실행 |
+| POST | `/api/v1/orders/{order_id}/dispatch` | 주문 전송 |
+| POST | `/api/v1/risk/kill-switch/activate` | 비상 정지 ON |
+| POST | `/api/v1/risk/kill-switch/deactivate` | 비상 정지 OFF |
+| POST | `/api/v1/broker/live-transition/request` | 실전 전환 요청 |
+| POST | `/api/v1/broker/live-transition/{id}/approve` | 실전 전환 승인 |
+| POST | `/api/v1/broker/live-transition/{id}/disable` | 실전 전환 해제 |
+| GET | `/api/v1/broker/live-transition/history` | 실전 전환 이력 |
+| POST | `/api/v1/strategy-policy/{id}/force` | 전략 정책 강제 |
+| POST | `/api/v1/strategy-policy/{id}/reject` | 전략 정책 거절 |
+
+**[스크린샷]** `/docs` 에서 Authorize 또는 헤더에 키를 넣는 방법(해당 UI가 있을 때)
+
+---
+
+## 4. 자주 쓰는 작업 따라 하기
+
+### 4-1. 서버가 살아 있는지 확인
 
 ```http
 GET /health
 ```
 
-응답 예(구조는 환경에 따라 다름): `status`, `components.database`, `ollama`, `live_trading` 등.
+브라우저에서도 열 수 있습니다: http://127.0.0.1:8000/health
 
-### System dashboard
+**[스크린샷]** health 결과 (database, ollama 등)
+
+### 4-2. 시스템 요약 보기
 
 ```http
 GET /api/v1/system/dashboard
 ```
 
-### Kill Switch 조회 / 활성화
+### 4-3. 비상 정지 상태 보기 / 켜기
 
 ```http
 GET /api/v1/risk/kill-switch
 
 POST /api/v1/risk/kill-switch/activate
-X-Admin-API-Key: <ADMIN_API_KEY>
+X-Admin-API-Key: (키)
 Content-Type: application/json
-
-{}
 ```
 
-Body 필드는 `/docs`에서 확인하세요.
+보낼 내용(Body)의 정확한 칸은 `/docs` 에서 확인하세요.
 
-### Scheduler 즉시 실행
+### 4-4. 스케줄 작업 한 번 실행
 
 ```http
 POST /api/v1/scheduler-admin/run-now/candidate_screening
-X-Admin-API-Key: <ADMIN_API_KEY>
+X-Admin-API-Key: (키)
 ```
 
-### Paper 주문 생성
+### 4-5. 모의(Paper) 주문 만들기
 
 ```http
 POST /api/v1/paper-orders
 Content-Type: application/json
 ```
 
-필수 필드는 OpenAPI `Paper Orders` → Create Paper Order 스키마를 따릅니다.
+필수 항목은 `/docs` → Paper Orders → Create 에서 확인합니다.  
+(실제 돈이 나가지 않는 연습용입니다.)
 
-### AI 분석 실행
+### 4-6. AI 분석 실행
 
 ```http
 POST /api/v1/ai-analysis/{exchange_code}
 Content-Type: application/json
 ```
 
-Ollama 기동 필요.
+먼저 **Ollama** 가 켜져 있어야 합니다.
 
-### curl 공통 패턴
+### 4-7. 터미널에서 간단히 호출 (선택)
 
 ```powershell
 curl.exe -s http://127.0.0.1:8000/health
@@ -121,34 +158,38 @@ curl.exe -s -H "X-Admin-API-Key: $env:ADMIN_API_KEY" http://127.0.0.1:8000/api/v
 
 ---
 
-## API 그룹 요약
+## 5. 기능 그룹 한눈에 보기
 
-OpenAPI tag / prefix 기준 (구현됨):
-
-| 영역 | Prefix 예 |
-|------|-----------|
-| Health / Version | `/health`, `/version` |
-| System / Audit | `/api/v1/system/dashboard`, `/api/v1/audit` |
-| Market / Prices | `/api/v1/market`, `/api/v1/prices`, `/api/v1/indicators` |
-| Kiwoom / Upbit / Sync | `/api/v1/kiwoom`, `/api/v1/upbit`, `/api/v1/sync` |
-| Candidates / AI | `/api/v1/candidates`, `/api/v1/ai-*`, `/api/v1/ai/candidates` |
-| News / DART | `/api/v1/news`, `/api/v1/dart` |
-| Backtest / Walk-forward / Portfolio | `/api/v1/backtest*`, `/api/v1/walk-forward*`, `/api/v1/portfolio-*` |
-| Strategy | `/api/v1/strategy-*` |
-| Risk | `/api/v1/risk*`, `/api/v1/realtime-risk` |
-| Orders / Outbox / Executions | `/api/v1/orders`, `/api/v1/order-*`, `/api/v1/executions` |
-| Paper | `/api/v1/paper-*` |
-| Broker / Live | `/api/v1/broker/*` |
-| Realtime | `/api/v1/realtime-*` |
-| Jobs / Scheduler / Pipelines | `/api/v1/jobs`, `/api/v1/scheduler-admin`, `/api/v1/pipelines` |
-| Notifications / Calendar / Reports | `/api/v1/notification`, `/api/v1/trading-calendar`, `/api/v1/daily-reports` |
+| 하고 싶은 일 | 주소가 시작하는 곳 |
+|--------------|--------------------|
+| 건강·버전 | `/health`, `/version` |
+| 운영 요약·감사 | `/api/v1/system/dashboard`, `/api/v1/audit` |
+| 시세·지표 | `/api/v1/market`, `/api/v1/prices`, `/api/v1/indicators` |
+| 키움·업비트·동기화 | `/api/v1/kiwoom`, `/api/v1/upbit`, `/api/v1/sync` |
+| 후보·AI | `/api/v1/candidates`, `/api/v1/ai-*` |
+| 뉴스·공시 | `/api/v1/news`, `/api/v1/dart` |
+| 백테스트·포트폴리오 | `/api/v1/backtest*`, `/api/v1/portfolio-*` |
+| 전략 | `/api/v1/strategy-*` |
+| 위험 관리 | `/api/v1/risk*`, `/api/v1/realtime-risk` |
+| 주문·체결 | `/api/v1/orders`, `/api/v1/order-*`, `/api/v1/executions` |
+| 모의 거래 | `/api/v1/paper-*` |
+| 브로커·실전 전환 | `/api/v1/broker/*` |
+| 실시간 | `/api/v1/realtime-*` |
+| 작업·스케줄·파이프라인 | `/api/v1/jobs`, `/api/v1/scheduler-admin`, `/api/v1/pipelines` |
+| 알림·달력·일일 보고 | `/api/v1/notification`, `/api/v1/trading-calendar`, `/api/v1/daily-reports` |
 
 ---
 
-## 전체 엔드포인트 목록
+## 6. 전체 주소 목록
 
-아래 표는 `app.openapi()`에서 생성한 **전체 경로**입니다.  
-`Has body=True`이면 Request Body가 있습니다. 상세 스키마·응답 코드는 `/docs`를 여세요.
+아래 표는 서버 OpenAPI에서 뽑아 온 **전체 목록**입니다.
+
+- **Method** = 요청 방식 (GET/POST/…)  
+- **Path** = 주소  
+- **Has body** = 보낼 내용(JSON)이 있으면 True  
+- **Summary** = 짧은 이름  
+
+상세 입력·출력 칸은 반드시 `/docs` 에서 확인하세요.
 
 | Method | Path | Tags | Has body | Summary |
 |--------|------|------|----------|---------|

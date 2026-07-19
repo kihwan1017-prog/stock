@@ -1,21 +1,24 @@
-# Product Manual Set — Verification Notes
+# 매뉴얼 검증 메모
 
-작성일: 2026-07-19  
-기준: 코드·OpenAPI·DB information_schema·Admin STEP41 소스
+작성·개정: 2026-07-19
 
-## 검증 결과
+## 일반 사용자 가독성 개정
+
+| 항목 | 적용 |
+|------|------|
+| 전문 용어 | 각 문서 상단 또는 절에 「쉬운 말 ↔ 전문 용어」 표 |
+| 스크린샷 위치 | `[스크린샷]` 표기 (이미지 파일은 추후 첨부) |
+| 목차 순서 | 실제 사용·설치·장애 대응 순서 |
+
+## 기술 검증
 
 | 검사 | 결과 |
 |------|------|
-| `docs/manual/` 상대 링크 | 깨진 링크 0건 |
-| OpenAPI path 수 | 201 paths → API사용매뉴얼 반영 |
-| Admin UI | Dashboard만 구현, 나머지 Coming Soon으로 명시 |
-| JWT 로그인 | 미구현으로 명시 |
-| Docker / Redis | 미사용으로 명시 |
-| 백업 전용 스크립트 | 없음 → `pg_dump` 절차로 문서화 |
+| 구현되지 않은 기능을 있는 것처럼 서술 | 금지 (Coming Soon·미구현 명시) |
+| `docs/manual/` 상대 링크 | 개정 후 재확인 필요 |
+| OpenAPI 전체 목록 | API사용매뉴얼 하단에 유지 |
 
-## 의도적으로 문서화하지 않은 것
+## 아직 없는 것
 
-- Admin Coming Soon 화면의 가상 워크플로
-- OpenAPI에 없는 Request 필드 예시 값 날조
-- 존재하지 않는 Redis/Docker 절차
+- 실제 이미지 파일 첨부 (위치만 `[스크린샷]` 으로 표시)
+- Admin Coming Soon 메뉴의 완성 UI 절차
