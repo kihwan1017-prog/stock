@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    ForeignKey,
     Identity,
     String,
     Text,
@@ -106,6 +107,11 @@ class StrategyDeploymentHistoryEntity(Base):
     )
     strategy_deployment_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="CASCADE",
+            name="fk_strategy_deployment_history_deployment",
+        ),
         nullable=False,
     )
     action_code: Mapped[str] = mapped_column(

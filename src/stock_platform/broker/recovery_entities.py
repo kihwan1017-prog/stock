@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    ForeignKey,
     Identity,
     String,
     Text,
@@ -63,6 +64,11 @@ class BrokerRecoveryStepEntity(Base):
     )
     broker_recovery_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "operation.broker_recovery_run.broker_recovery_run_id",
+            ondelete="CASCADE",
+            name="fk_broker_recovery_step_run",
+        ),
         nullable=False,
     )
     component_code: Mapped[str] = mapped_column(

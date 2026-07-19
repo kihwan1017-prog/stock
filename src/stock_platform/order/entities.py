@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
-from sqlalchemy import BigInteger, DateTime, Identity, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Identity, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from stock_platform.database.base import Base
@@ -23,7 +23,15 @@ class TradingOrderEntity(Base):
     exchange_code: Mapped[str] = mapped_column(String(20), nullable=False)
     symbol: Mapped[str] = mapped_column(String(30), nullable=False)
     strategy_code: Mapped[str | None] = mapped_column(String(100))
-    strategy_deployment_id: Mapped[int | None] = mapped_column(BigInteger)
+    strategy_deployment_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="SET NULL",
+            name="fk_trading_order_strategy_deployment",
+        ),
+        nullable=True,
+    )
     portfolio_id: Mapped[int | None] = mapped_column(BigInteger)
     position_id: Mapped[int | None] = mapped_column(BigInteger)
     side_code: Mapped[str] = mapped_column(String(10), nullable=False)
@@ -58,7 +66,15 @@ class TradingOrderStatusHistoryEntity(Base):
     __tablename__ = "trading_order_status_history"
     __table_args__ = (Index("ix_order_status_history_order", "order_id", "created_at"), {"schema": "trading"})
     order_status_history_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
-    order_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    order_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.trading_order.order_id",
+            ondelete="CASCADE",
+            name="fk_order_status_history_order",
+        ),
+        nullable=False,
+    )
     previous_status_code: Mapped[str | None] = mapped_column(String(30))
     current_status_code: Mapped[str] = mapped_column(String(30), nullable=False)
     reason_code: Mapped[str | None] = mapped_column(String(100))

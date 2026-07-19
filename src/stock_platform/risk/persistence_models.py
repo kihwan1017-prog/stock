@@ -7,6 +7,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    ForeignKey,
     Identity,
     Integer,
     Numeric,
@@ -135,6 +136,11 @@ class PositionPlanEntity(Base):
 
     policy_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "strategy.risk_policy.policy_id",
+            ondelete="SET NULL",
+            name="fk_position_plan_policy",
+        ),
         nullable=True,
     )
 
