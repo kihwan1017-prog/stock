@@ -13,6 +13,7 @@ PostgreSQL 스키마, Alembic, Legacy 객체 규칙을 모아 둔다.
 | [ALEMBIC_VERIFY.md](ALEMBIC_VERIFY.md) | Alembic 검증 |
 | [LEGACY_DB_OBJECTS.md](LEGACY_DB_OBJECTS.md) | ORM 미등록 객체 |
 | [MIGRATION_OVERLAYS.md](MIGRATION_OVERLAYS.md) | overlay 참고·적용 금지 |
+| [../manual/DB관리매뉴얼.md](../manual/DB관리매뉴얼.md) | 스키마·백업 연계 운영 매뉴얼 |
 
 Canonical migrations: `database/alembic/versions/`  
 Overlay files (code): `docs/migration-overlays/*.py` (실행 대상 아님)

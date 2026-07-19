@@ -7,6 +7,7 @@
 
 | Folder | Purpose |
 |--------|---------|
+| [manual/](manual/) | **운영·사용자 매뉴얼** (제품 사용 시작점) |
 | [architecture/](architecture/) | 시스템 아키텍처·도메인 맵 |
 | [backend/](backend/) | FastAPI API 개요 |
 | [frontend/](frontend/) | Admin 웹 문서 포인터 |
@@ -20,8 +21,10 @@
 
 ## Quick links
 
-- Install: [deployment/INSTALL.md](deployment/INSTALL.md)
-- Ops: [trading/OPERATIONS_RUNBOOK.md](trading/OPERATIONS_RUNBOOK.md)
+- **매뉴얼 포털:** [manual/README.md](manual/README.md)
+- Install: [manual/설치매뉴얼.md](manual/설치매뉴얼.md) · [deployment/INSTALL.md](deployment/INSTALL.md)
+- Ops: [manual/운영매뉴얼.md](manual/운영매뉴얼.md) · [trading/OPERATIONS_RUNBOOK.md](trading/OPERATIONS_RUNBOOK.md)
+- API: [manual/API사용매뉴얼.md](manual/API사용매뉴얼.md)
 - DB rules: [database/DB_DEVELOPMENT_RULES.md](database/DB_DEVELOPMENT_RULES.md)
 - Admin: [../frontend/README.md](../frontend/README.md)
 - Changelog: [../CHANGELOG.md](../CHANGELOG.md)

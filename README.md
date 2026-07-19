@@ -125,10 +125,11 @@ Admin (Next.js) ??? FastAPI
 
 ## Documentation
 
-?? ??? ??? ??: **[docs/README.md](docs/README.md)**
+?? ??: **[docs/README.md](docs/README.md)**  
+?? ???: **[docs/manual/README.md](docs/manual/README.md)**
 
-?? ??: [docs/development/README.md](docs/development/README.md)  
-??·???: [docs/reference/README.md](docs/reference/README.md)
+??: [docs/development/README.md](docs/development/README.md)  
+??: [docs/reference/README.md](docs/reference/README.md)
 
 ---
 

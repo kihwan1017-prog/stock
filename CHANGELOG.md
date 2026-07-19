@@ -10,6 +10,7 @@
 - Added `docs/reference/DOCUMENT_INVENTORY.md`
 - Root README becomes documentation portal
 - Fixed cross-links after moves (no markdown deletions)
+- Added product manuals under [docs/manual/](docs/manual/) (사용자·관리자·설치·운영·API·DB·백업·장애·FAQ)
 
 ### Added (pending release notes)
 - STEP41 Admin frontend (`frontend/`) + CORS for `localhost:3000`
