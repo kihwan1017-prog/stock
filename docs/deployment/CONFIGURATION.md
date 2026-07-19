@@ -18,6 +18,8 @@
 | `KIWOOM_LIVE_ORDER_ENABLED` | false | 실전 주문 허용 |
 | `KIWOOM_ACCOUNT_NUMBER` | | 계좌번호 |
 | `KIWOOM_APP_KEY/SECRET_KEY` | | REST 인증 |
+| `KIWOOM_RECOVERY_START_WS` | false | 기동 시 주문 WS 자동 시작 (모의는 false 권장) |
+| `KIWOOM_WS_MAX_CONSECUTIVE_FAILURES` | 8 | WS 연속 실패 후 재시도 중단 |
 
 ## AI / 데이터
 
