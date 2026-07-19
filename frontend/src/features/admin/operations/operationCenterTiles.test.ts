@@ -16,6 +16,8 @@ describe("STEP51 operation center tiles", () => {
         "environment",
         "logs",
         "backup",
+        "telegram",
+        "ollama",
         "restore",
       ]),
     );

@@ -93,6 +93,26 @@ export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
     apis: ["GET /ops/backup/status"],
   },
   {
+    id: "telegram",
+    title: "Telegram",
+    description: "Bot 상태 · 알림 이벤트 · 운영 명령",
+    href: adminRoutes.telegram,
+    support: "live",
+    apis: [
+      "GET /notification/status",
+      "POST /notification/test",
+      "GET /telegram/ops/status",
+    ],
+  },
+  {
+    id: "ollama",
+    title: "Ollama",
+    description: "로컬 LLM 상태 · 모델",
+    href: adminRoutes.ollama,
+    support: "live",
+    apis: ["GET /ollama/status", "GET /ollama/models"],
+  },
+  {
     id: "restore",
     title: "Restore",
     description: "웹 restore 미지원 — CLI 매뉴얼",

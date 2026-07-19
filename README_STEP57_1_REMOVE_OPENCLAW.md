@@ -125,12 +125,12 @@ OpenClaw 전용 테이블/컬럼/설정 키 없음. Alembic Migration 불필요.
 
 | 위치 | 이유 |
 |------|------|
-| `frontend/next.config.ts` redirect source `/admin/openclaw` | 구 북마크 호환 (정당한 참조) |
+| `frontend/next.config.ts` | OpenClaw redirect **제거** (활성 코드 0건) |
 | `docs/archive/steps/README_STEP47/50/54/55` | 과거 이력 + DEPRECATED 배너 |
 | `PROJECT_FINAL_AUDIT.md` / `PROJECT_REFACTOR_PLAN.md` | 감사 이력 문구 + STEP57-1 제외 명시 |
 | `README_STEP57_1_REMOVE_OPENCLAW.md` | 본 문서 |
 
-**활성 코드·메뉴·테스트·환경변수:** OpenClaw 제품 참조 **0건** (redirect URL 문자열 제외).
+**활성 코드·메뉴·테스트·환경변수:** OpenClaw 제품 참조 **0건**.
 
 ---
 
