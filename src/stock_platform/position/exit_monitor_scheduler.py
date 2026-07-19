@@ -74,7 +74,7 @@ class PositionExitMonitorScheduler:
 
     async def shutdown(self) -> None:
         if self._scheduler.running:
-            self._scheduler.shutdown(wait=True)
+            self._scheduler.shutdown(wait=False)
             logger.info("position_exit_monitor_stopped")
 
 

@@ -59,7 +59,7 @@ class NotificationService:
             event.event_type,
             settings.notification_level,
         ):
-            logger.info(
+            logger.debug(
                 "notification_dispatch_skipped_level",
                 event_type=event.event_type,
                 configured_level=(
@@ -95,7 +95,7 @@ class NotificationService:
             )
         )
 
-        logger.info(
+        logger.debug(
             "notification_dispatched",
             event_type=event.event_type,
             success=result.success,

@@ -78,7 +78,7 @@ class PositionExitMonitorService:
         *,
         skip_risk_checks: bool = False,
     ) -> list[PositionExitAction]:
-        logger.info(
+        logger.debug(
             "position_exit_scan_begin",
             position_count=len(positions),
         )
@@ -89,7 +89,7 @@ class PositionExitMonitorService:
                 skip_risk_checks=skip_risk_checks,
             )
             actions.append(action)
-        logger.info(
+        logger.debug(
             "position_exit_scan_complete",
             position_count=len(positions),
             exit_submitted=sum(
@@ -104,7 +104,7 @@ class PositionExitMonitorService:
         *,
         skip_risk_checks: bool,
     ) -> PositionExitAction:
-        logger.info(
+        logger.debug(
             "position_exit_inspect",
             account_id=position.account_id,
             exchange_code=position.exchange_code,

@@ -85,20 +85,10 @@ class NotificationPublisher:
             published_at=datetime.now(timezone.utc),
         )
         self._events.append(event)
-        logger.info(
+        logger.debug(
             "notification_published",
             event_type=event_type,
             title=title,
-            message=message,
-            detail=payload,
-            telegram_ready=(
-                event_type in TELEGRAM_READY_EXIT_EVENTS
-                or event_type
-                in {
-                    item.value
-                    for item in NotificationEventType
-                }
-            ),
         )
         if dispatch:
             self._schedule_dispatch(event)

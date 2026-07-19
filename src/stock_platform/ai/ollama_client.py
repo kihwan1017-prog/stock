@@ -41,6 +41,7 @@ class OllamaClient:
             else resolved.ollama_timeout_seconds
         )
         self._temperature = resolved.ollama_temperature
+        self._keep_alive = resolved.ollama_keep_alive
         self._http_client = http_client
         self._owns_client = http_client is None
 
@@ -76,6 +77,7 @@ class OllamaClient:
             "model": model or self.model,
             "prompt": prompt,
             "stream": False,
+            "keep_alive": self._keep_alive,
         }
         if format is not None:
             payload["format"] = format
@@ -181,6 +183,7 @@ class OllamaClient:
             "messages": messages,
             "stream": False,
             "format": "json",
+            "keep_alive": self._keep_alive,
             "options": {"temperature": self._temperature},
         }
 

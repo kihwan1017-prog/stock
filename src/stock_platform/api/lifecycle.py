@@ -264,11 +264,20 @@ class ApplicationLifecycle:
                 notification_publisher,
             )
 
-            await notification_publisher.publish_async(
+            # Telegram 지연이 Startup/Shutdown을 막지 않도록 타임아웃
+            await asyncio.wait_for(
+                notification_publisher.publish_async(
+                    event_type=event_type,
+                    title=event_type.replace("_", " ").title(),
+                    message=message,
+                    detail={"source": "ApplicationLifecycle"},
+                ),
+                timeout=3.0,
+            )
+        except TimeoutError:
+            logger.warning(
+                "lifecycle_notification_timeout",
                 event_type=event_type,
-                title=event_type.replace("_", " ").title(),
-                message=message,
-                detail={"source": "ApplicationLifecycle"},
             )
         except Exception as exc:
             logger.warning(

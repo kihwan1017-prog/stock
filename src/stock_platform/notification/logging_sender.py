@@ -25,11 +25,10 @@ class LoggingNotificationSender(NotificationSender):
         self,
         notification: NotificationMessage,
     ) -> NotificationChannelResult:
-        logger.critical(
+        logger.info(
             "risk_notification",
             title=notification.title,
             message=notification.message,
-            detail=notification.detail,
         )
 
         return NotificationChannelResult(

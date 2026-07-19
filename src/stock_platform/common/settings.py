@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     db_name: str
     db_user: str
     db_password: str
+    # STEP58 — Connection Pool (운영 기본값)
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: float = 30.0
+    db_pool_recycle: int = 1800
+    db_pool_pre_ping: bool = True
 
     kiwoom_app_key: str = Field(default="")
     kiwoom_secret_key: str = Field(default="")

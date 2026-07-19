@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import structlog
 
 from stock_platform.common.settings import get_settings
@@ -29,6 +31,12 @@ class PositionExitMonitorManager:
     async def check_now(
         self,
     ) -> list[PositionExitAction] | None:
+        # 동기 ORM을 이벤트 루프 밖으로 이동 (API 블로킹 방지)
+        return await asyncio.to_thread(self._check_now_sync)
+
+    def _check_now_sync(
+        self,
+    ) -> list[PositionExitAction] | None:
         settings = get_settings()
         if not settings.position_exit_monitor_enabled:
             return None
@@ -39,7 +47,7 @@ class PositionExitMonitorManager:
                 session
             ).load()
             if context.skipped_symbols:
-                logger.info(
+                logger.debug(
                     "position_exit_positions_skipped",
                     symbols=context.skipped_symbols,
                 )

@@ -32,6 +32,7 @@ from stock_platform.operation.setting_service import (
     AppSettingService,
     SettingError,
 )
+from stock_platform.common.ttl_cache import process_ttl_cache
 
 
 router = APIRouter(
@@ -183,12 +184,21 @@ def list_ollama_models(
         ) from exc
 
     try:
-        response = httpx.get(
-            f"{base_url}/api/tags",
-            timeout=5.0,
+        cache_key = f"ollama:tags:{base_url}"
+
+        def _fetch_tags() -> dict:
+            response = httpx.get(
+                f"{base_url}/api/tags",
+                timeout=5.0,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        payload = process_ttl_cache.get_or_set(
+            cache_key,
+            _fetch_tags,
+            ttl_seconds=45.0,
         )
-        response.raise_for_status()
-        payload = response.json()
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -235,12 +245,22 @@ def get_ollama_status(
         ) from exc
 
     try:
-        response = httpx.get(
-            f"{base_url}/api/tags",
-            timeout=3.0,
+        cache_key = f"ollama:tags:{base_url}"
+
+        def _fetch_tags() -> dict:
+            response = httpx.get(
+                f"{base_url}/api/tags",
+                timeout=3.0,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        payload = process_ttl_cache.get_or_set(
+            cache_key,
+            _fetch_tags,
+            ttl_seconds=45.0,
         )
-        response.raise_for_status()
-        models = response.json().get("models") or []
+        models = payload.get("models") or []
         return {
             "status": "UP",
             "base_url": base_url,

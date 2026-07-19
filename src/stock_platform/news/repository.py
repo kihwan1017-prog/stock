@@ -92,18 +92,18 @@ class NewsRepository:
         model_name: str,
         limit: int,
     ) -> list[NewsArticle]:
-        summarized_ids = select(
-            NewsSummary.article_id
-        ).where(
-            NewsSummary.model_name == model_name
-        )
-
+        # NOT IN 서브쿼리 대신 anti-join (대량 요약 이력에서 유리)
         stmt = (
             select(NewsArticle)
+            .outerjoin(
+                NewsSummary,
+                (NewsSummary.article_id == NewsArticle.article_id)
+                & (NewsSummary.model_name == model_name),
+            )
             .where(
                 NewsArticle.exchange_code == exchange_code,
                 NewsArticle.symbol == symbol,
-                NewsArticle.article_id.not_in(summarized_ids),
+                NewsSummary.article_id.is_(None),
             )
             .order_by(
                 NewsArticle.published_at.desc().nullslast(),
