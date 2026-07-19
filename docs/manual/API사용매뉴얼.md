@@ -65,13 +65,26 @@ http://127.0.0.1:8000
 
 ---
 
-## 3. 권한(관리 키)
+## 3. 권한 (JWT · 관리 키)
 
 | 구분 | 어떻게? |
 |------|---------|
-| 일반 조회·많은 API | 키 없이 호출 가능 (이 PC 밖으로 열지 마세요) |
-| 관리 작업 | 요청 헤더에 `X-Admin-API-Key: (설정한 키)` |
-| 설정에 키가 비어 있음 | 이 PC에서는 통과 (개발용). **운영에서는 반드시 키를 넣으세요** |
+| Admin Web | `/login` → JWT (`Authorization: Bearer …`) |
+| 회원·역할·설정·문서 CMS | JWT + RBAC permission |
+| 관리 작업(감사·Kill Switch 등) | `X-Admin-API-Key` **또는** admin JWT |
+| 키가 비어 있음 | Admin Key 검사는 로컬에서 통과 가능. **운영에서는 키·JWT_SECRET 필수** |
+
+### Auth / Settings 예시
+
+| 방식 | 주소 | 설명 |
+|------|------|------|
+| POST | `/api/v1/auth/login` | 로그인 |
+| GET | `/api/v1/auth/me` | 현재 사용자·권한 |
+| GET | `/api/v1/users` | 회원 목록 |
+| GET | `/api/v1/roles` | 역할·권한 |
+| GET/PUT | `/api/v1/settings` | 앱 설정 |
+| GET | `/api/v1/docs` | 문서 CMS 목록 |
+| GET | `/api/v1/docs/{slug}` | 매뉴얼 본문 |
 
 ### 관리 키가 필요한 주소 (코드 기준)
 

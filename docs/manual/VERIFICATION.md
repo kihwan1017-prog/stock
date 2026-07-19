@@ -1,6 +1,6 @@
 # 매뉴얼 검증 메모
 
-작성·개정: 2026-07-19
+작성·개정: 2026-07-19 (STEP 8)
 
 ## 일반 사용자 가독성 개정
 
@@ -14,11 +14,11 @@
 
 | 검사 | 결과 |
 |------|------|
-| 구현되지 않은 기능을 있는 것처럼 서술 | 금지 (Coming Soon·미구현 명시) |
-| `docs/manual/` 상대 링크 | 개정 후 재확인 필요 |
-| OpenAPI 전체 목록 | API사용매뉴얼 하단에 유지 |
+| JWT·RBAC·감사 로그·문서 CMS 반영 | 운영/관리자/사용자/API 매뉴얼 동기화 |
+| `CONFIGURATION.md` | JWT · Settings DB · Live 교차규칙 |
+| OpenAPI | `/docs` + `docs/backend/API.md` |
 
 ## 아직 없는 것
 
 - 실제 이미지 파일 첨부 (위치만 `[스크린샷]` 으로 표시)
-- Admin Coming Soon 메뉴의 완성 UI 절차
+- 문서 업로드/버전 CRUD (의도적 비범위 — Git + 읽기 전용 CMS)

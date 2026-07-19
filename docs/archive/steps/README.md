@@ -7,6 +7,8 @@ They are **not** the current source of truth for install, ops, or DB rules.
 Use [../../deployment/](../../deployment/), [../../trading/](../../trading/), [../../database/](../../database/) instead.
 
 STEP35+ specs live under [../../reference/](../../reference/).
+Product STEP42–55 README logs were moved here in STEP56.
+Current cleanup notes: [../../../README_STEP56.md](../../../README_STEP56.md).
 
 ## Rule
 
