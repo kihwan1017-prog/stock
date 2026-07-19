@@ -1,12 +1,37 @@
 "use client";
 
-import { Alert, Button, Card, Form, Input, Space, Typography } from "antd";
+import { Button, Card, Flex, Form, Input, Space, Typography } from "antd";
 import { useState } from "react";
 
 import { env } from "@/config/env";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import type { LoginRequest } from "@/features/auth/types/auth";
 import { toApiError } from "@/lib/api/apiError";
+
+function NoticeBanner({
+  tone,
+  title,
+  description,
+}: {
+  tone: "warning" | "error";
+  title: string;
+  description?: string;
+}) {
+  const border =
+    tone === "warning" ? "1px solid #faad14" : "1px solid #ff4d4f";
+  const background = tone === "warning" ? "rgba(250, 173, 20, 0.08)" : "rgba(255, 77, 79, 0.08)";
+
+  return (
+    <div style={{ border, background, borderRadius: 8, padding: "12px 14px" }}>
+      <Typography.Text strong>{title}</Typography.Text>
+      {description ? (
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 0, marginTop: 4 }}>
+          {description}
+        </Typography.Paragraph>
+      ) : null}
+    </div>
+  );
+}
 
 export function LoginForm() {
   const { login, enterAsDev } = useAuth();
@@ -47,20 +72,19 @@ export function LoginForm() {
           <Typography.Text type="secondary">관리자 로그인</Typography.Text>
         </div>
 
-        {errorMessage ? <Alert type="error" message={errorMessage} showIcon /> : null}
+        {errorMessage ? <NoticeBanner tone="error" title={errorMessage} /> : null}
 
         {env.AUTH_MODE === "disabled" ? (
-          <>
-            <Alert
-              type="warning"
-              showIcon
-              message="인증 API가 비활성화되어 있습니다"
+          <Flex vertical gap={12}>
+            <NoticeBanner
+              tone="warning"
+              title="인증 API가 비활성화되어 있습니다"
               description="개발 모드로 입장하면 로컬 세션만 생성합니다. TODO(STEP50)"
             />
             <Button type="primary" block loading={submitting} onClick={() => void onEnterDev()}>
               개발 모드로 입장
             </Button>
-          </>
+          </Flex>
         ) : (
           <Form<LoginRequest> layout="vertical" onFinish={(values) => void onFinish(values)}>
             <Form.Item
