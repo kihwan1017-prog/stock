@@ -219,6 +219,13 @@ The goal: Be helpful without being annoying. Check in a few times a day, do usef
 
 This is a starting point. Add your own conventions, style, and rules as you figure out what works.
 
+## Documentation structure
+
+- New Markdown: **never** at repo root for product/how-to docs. Put under `docs/<domain>/`.
+- After adding a doc: update that folder’s `README.md` (and `docs/README.md` for primary entries).
+- Canonical map: `docs/README.md`
+- Cursor rule: `.cursor/rules/documentation-structure.mdc`
+
 ## Related
 
 - [Default AGENTS.md](/reference/AGENTS.default)

@@ -29,6 +29,11 @@
 ## Rules
 
 1. 현재 유효 문서는 이 목차에 올린다.
-2. STEP 작업 로그는 `archive/steps/`에만 둔다.
-3. 삭제는 하지 않고 obsolete/notes로 이동한다.
-4. API 상세는 OpenAPI `http://127.0.0.1:8000/docs` 우선.
+2. **새 Markdown은 프로젝트 루트에 만들지 않는다.** `docs/` 하위 도메인 폴더에만 생성한다.
+3. 새 문서를 만들면 **해당 폴더 `README.md`에 링크·한 줄 설명**을 추가한다. (주요 문서는 이 목차에도 반영)
+4. STEP 작업 로그는 `archive/steps/`에만 둔다.
+5. 삭제는 하지 않고 obsolete/notes로 이동한다.
+6. API 상세는 OpenAPI `http://127.0.0.1:8000/docs` 우선.
+
+루트 예외(포털/에이전트만): `README.md`, `CHANGELOG.md`, `PROJECT_STATUS.md`, `AGENTS.md` 등.  
+상세 규칙: `.cursor/rules/documentation-structure.mdc`

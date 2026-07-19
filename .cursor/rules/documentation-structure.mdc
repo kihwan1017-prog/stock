@@ -1,0 +1,47 @@
+---
+description: Markdown docs must live under docs/ domain folders; keep folder README indexes updated
+alwaysApply: true
+---
+
+# Documentation structure
+
+## New Markdown files
+
+- Do **not** create new product/project Markdown at the repository root.
+- Create them under `docs/` in the correct domain folder:
+  - `docs/architecture/` — system design, domain map
+  - `docs/backend/` — FastAPI / API
+  - `docs/frontend/` — Admin UI pointers (app README stays in `frontend/`)
+  - `docs/database/` — ERD, Alembic, DB rules
+  - `docs/deployment/` — install, config, release
+  - `docs/development/` — test summaries, change plans
+  - `docs/trading/` — ops, paper/live, incidents
+  - `docs/ai/` — AI indexes and AI-focused docs
+  - `docs/reference/` — roadmaps, inventories, reports
+  - `docs/archive/steps/` — STEP work logs only
+  - `docs/archive/notes/` — apply notes
+  - `docs/archive/obsolete/` — superseded guides (move, do not delete)
+
+## After creating a doc
+
+1. Add a link and one-line description to that folder’s `README.md`.
+2. If it is a **current** (non-archive) doc, also link it from `docs/README.md` when it is a primary entry.
+3. Prefer relative links; keep the domain tree intact.
+
+## Root exceptions (do not proliferate)
+
+Allowed at repo root only for portal/agent continuity:
+
+- `README.md`, `CHANGELOG.md`, `PROJECT_STATUS.md`
+- Agent/persona: `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`
+- App-local: `frontend/README.md` (and similar package README under `frontend/`)
+
+New how-to, runbook, design, STEP, or checklist docs belong under `docs/…`, not the root.
+
+## Deletion
+
+Do not delete Markdown content without explicit user approval; move superseded docs to `docs/archive/obsolete/` instead.
+
+## Index
+
+Canonical doc map: `docs/README.md`
