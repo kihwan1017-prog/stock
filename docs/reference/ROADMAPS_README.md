@@ -1,6 +1,6 @@
-# docs/roadmaps
+# Roadmaps (reference)
 
-제품·Admin 로드맵 스펙입니다.
+제품·Admin 로드맵 스펙입니다. (이전 `docs/roadmaps/` → `docs/reference/`)
 
 | 문서 | 상태 | 설명 |
 |------|------|------|
