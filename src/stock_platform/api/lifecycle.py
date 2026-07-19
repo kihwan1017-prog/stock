@@ -158,10 +158,17 @@ class ApplicationLifecycle:
     async def _startup_strategy_runtime(self) -> None:
         settings = get_settings()
 
-        await dynamic_strategy_runtime_manager.initialize(
-            market_code=settings.realtime_strategy_market_code,
-            symbol=settings.realtime_strategy_symbol_or_none,
-        )
+        try:
+            await dynamic_strategy_runtime_manager.initialize(
+                market_code=settings.realtime_strategy_market_code,
+                symbol=settings.realtime_strategy_symbol_or_none,
+            )
+        except LookupError as exc:
+            # 활성 PAPER 전략이 없으면 로컬 기동에서 흔함 — 치명 아님
+            logger.warning(
+                "strategy_runtime_load_skipped",
+                reason=str(exc),
+            )
 
     async def _start_schedulers(self) -> None:
         daily_loss_monitor_scheduler.start()
@@ -212,10 +219,17 @@ class ApplicationLifecycle:
 
         try:
             await step()
-        except Exception:
-            logger.exception(
+        except Exception as exc:
+            # 선택 단계는 기동을 막지 않음. 전체 traceback은 debug로만.
+            logger.warning(
                 "Startup phase failed; continuing",
                 phase=phase_name,
+                error=str(exc),
+            )
+            logger.debug(
+                "Startup phase failure detail",
+                phase=phase_name,
+                exc_info=True,
             )
             return
 

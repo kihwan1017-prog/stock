@@ -44,6 +44,7 @@ class KiwoomOrderExecutionWebSocketClient:
         subscribe_message: dict[str, Any],
         handler: EventHandler,
         reconnect_max_seconds: float = 60.0,
+        max_consecutive_failures: int = 8,
     ) -> None:
         if not websocket_url.startswith("wss://"):
             raise ValueError(
@@ -61,10 +62,16 @@ class KiwoomOrderExecutionWebSocketClient:
         self._reconnect_max_seconds = (
             reconnect_max_seconds
         )
+        # 0이면 실패해도 계속 재시도 (운영에서만 신중히 사용)
+        self._max_consecutive_failures = max(
+            0,
+            max_consecutive_failures,
+        )
         self._stop_event = asyncio.Event()
         self._connected = False
         self._received_count = 0
         self._mapped_count = 0
+        self._consecutive_failures = 0
         self._last_error: str | None = None
         self._task: asyncio.Task | None = None
 
@@ -88,17 +95,38 @@ class KiwoomOrderExecutionWebSocketClient:
             try:
                 await self._run_once()
                 retry_seconds = 1.0
+                self._consecutive_failures = 0
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 self._connected = False
                 self._last_error = str(exc)
+                self._consecutive_failures += 1
                 # mock/로컬 재연결 루프는 traceback 대신 warning만
                 logger.warning(
                     "kiwoom_websocket_failed",
                     error=str(exc),
                     retry_seconds=retry_seconds,
+                    consecutive_failures=self._consecutive_failures,
                 )
+
+                if (
+                    self._max_consecutive_failures > 0
+                    and self._consecutive_failures
+                    >= self._max_consecutive_failures
+                ):
+                    logger.error(
+                        "kiwoom_websocket_gave_up",
+                        error=str(exc),
+                        consecutive_failures=self._consecutive_failures,
+                        hint=(
+                            "POST /api/v1/broker/kiwoom/"
+                            "order-websocket/start 로 다시 시작하거나 "
+                            "KIWOOM_RECOVERY_START_WS=false 로 자동시작을 끄세요"
+                        ),
+                    )
+                    self._stop_event.set()
+                    break
 
                 try:
                     await asyncio.wait_for(
@@ -192,6 +220,10 @@ class KiwoomOrderExecutionWebSocketClient:
             "websocket_url": self._websocket_url,
             "received_count": self._received_count,
             "mapped_count": self._mapped_count,
+            "consecutive_failures": self._consecutive_failures,
             "last_error": self._last_error,
-            "running": self._task is not None,
+            "running": (
+                self._task is not None
+                and not self._task.done()
+            ),
         }

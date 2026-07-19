@@ -40,10 +40,14 @@ class KiwoomOrderWebSocketManager:
 
     async def start(self):
         if self._client is not None:
-            return {
-                "already_running": True,
-                **self.status(),
-            }
+            status = self.status()
+            # 포기(gave up) 후 task가 끝났으면 다시 시작 가능하도록 정리
+            if status.get("running"):
+                return {
+                    "already_running": True,
+                    **status,
+                }
+            await self.stop()
 
         self._client = build_kiwoom_order_websocket(
             self.handle_event

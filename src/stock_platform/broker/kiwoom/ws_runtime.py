@@ -54,4 +54,10 @@ def build_kiwoom_order_websocket(
         websocket_url=websocket_url,
         subscribe_message=subscribe_message,
         handler=handler,
+        reconnect_max_seconds=(
+            settings.kiwoom_ws_reconnect_max_seconds
+        ),
+        max_consecutive_failures=(
+            settings.kiwoom_ws_max_consecutive_failures
+        ),
     )

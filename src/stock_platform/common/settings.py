@@ -28,9 +28,12 @@ class Settings(BaseSettings):
     kiwoom_http_timeout_seconds: float = 10.0
     kiwoom_max_requests_per_second: int = 5
     kiwoom_account_number: str = Field(default="")
-    kiwoom_recovery_start_ws: bool = True
+    # 모의(mock) WebSocket은 handshake 실패가 잦아 기본은 수동 시작
+    kiwoom_recovery_start_ws: bool = False
     kiwoom_recovery_start_trading: bool = False
     kiwoom_recovery_start_scheduler: bool = True
+    # 연속 실패 후 자동 재연결 중단 (0이면 무한 재시도)
+    kiwoom_ws_max_consecutive_failures: int = 8
 
     # 키움 WebSocket (시세/주문체결)
     kiwoom_ws_url: str = Field(default="")
