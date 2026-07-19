@@ -49,13 +49,15 @@ class _FlakySender:
         return {"calls": self.calls}
 
 
-def test_require_admin_open_when_key_empty(monkeypatch) -> None:
+def test_require_admin_rejects_when_key_empty(monkeypatch) -> None:
     monkeypatch.setenv("ADMIN_API_KEY", "")
     from stock_platform.common.settings import get_settings
 
     get_settings.cache_clear()
     try:
-        assert require_admin(x_admin_api_key=None) == "DEV_OPEN"
+        with pytest.raises(HTTPException) as exc:
+            require_admin(x_admin_api_key=None)
+        assert exc.value.status_code == 401
     finally:
         get_settings.cache_clear()
 

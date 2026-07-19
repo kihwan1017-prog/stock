@@ -198,7 +198,7 @@ class RealtimeDashboardService:
         return DashboardAccountSummary(
             account_id=account_id,
             cash_balance=Decimal(
-                account.cash_balance
+                account.available_cash
             ),
             realized_profit_loss=Decimal(
                 account.realized_profit_loss

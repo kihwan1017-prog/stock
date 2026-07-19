@@ -18,6 +18,9 @@ from stock_platform.common.logger import (
 )
 from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_session_factory
+from stock_platform.order.outbox_runtime import (
+    order_outbox_scheduler,
+)
 from stock_platform.realtime.manager import realtime_manager
 from stock_platform.realtime.persistence import (
     market_data_persistence_worker,
@@ -31,6 +34,12 @@ from stock_platform.realtime.session_runtime import (
 )
 from stock_platform.risk_engine.daily_loss_scheduler import (
     daily_loss_monitor_scheduler,
+)
+from stock_platform.position.exit_monitor_scheduler import (
+    position_exit_monitor_scheduler,
+)
+from stock_platform.notification.telegram_polling import (
+    telegram_ops_scheduler,
 )
 from stock_platform.strategy_deployment.performance_monitor_scheduler import (
     deployment_performance_monitor_scheduler,
@@ -55,13 +64,22 @@ def validate_startup_settings() -> None:
     """필수 설정을 로드하고 기본값을 검증한다."""
 
     settings = get_settings()
-    settings.validate_startup()
+    try:
+        settings.validate_startup()
+    except ValueError as exc:
+        # JWT 등 설정 안내를 터미널에서 읽기 쉽게 출력
+        logger.error(
+            "Startup settings validation failed",
+            detail=str(exc),
+        )
+        raise
     logger.info(
         "Startup settings loaded",
         app_env=settings.app_env,
         app_name=settings.app_name,
         kiwoom_use_mock=settings.kiwoom_use_mock,
         kiwoom_live_order_enabled=settings.kiwoom_live_order_enabled,
+        jwt_secret_configured=bool(settings.jwt_secret.strip()),
     )
 
 
@@ -72,6 +90,40 @@ async def verify_database_connection() -> None:
 
     try:
         session.execute(text("SELECT 1"))
+    finally:
+        session.close()
+
+
+async def bootstrap_auth_admin() -> None:
+    """사용자가 없을 때 env 기반 최초 관리자를 생성한다."""
+
+    from stock_platform.auth.repository import AuthRepository
+    from stock_platform.auth.service import AuthService
+
+    settings = get_settings()
+    if not settings.jwt_secret.strip():
+        logger.warning(
+            "JWT_SECRET 미설정 — 로그인 API는 JWT_SECRET 설정 후 사용 가능"
+        )
+        return
+
+    session = get_session_factory()()
+    try:
+        user = AuthService(
+            repository=AuthRepository(session),
+            settings=settings,
+        ).ensure_bootstrap_admin()
+        if user is not None:
+            session.commit()
+            logger.info(
+                "Bootstrap admin created",
+                username=user.username,
+            )
+        else:
+            session.rollback()
+    except Exception:
+        session.rollback()
+        raise
     finally:
         session.close()
 
@@ -107,6 +159,10 @@ class ApplicationLifecycle:
                 verify_database_connection,
             )
             await self._run_optional(
+                "auth bootstrap admin",
+                bootstrap_auth_admin,
+            )
+            await self._run_optional(
                 "broker recovery",
                 broker_recovery_manager.recover,
             )
@@ -125,6 +181,10 @@ class ApplicationLifecycle:
 
             self._started = True
             logger.info("Application startup complete")
+            await self._publish_lifecycle_event(
+                "SYSTEM_START",
+                "Application started",
+            )
 
     async def shutdown(self) -> None:
         async with self._lock:
@@ -135,6 +195,10 @@ class ApplicationLifecycle:
                 return
 
             logger.info("Application shutdown begin")
+            await self._publish_lifecycle_event(
+                "SYSTEM_STOP",
+                "Application stopping",
+            )
 
             await self._run_phase(
                 "scheduler shutdown",
@@ -172,17 +236,46 @@ class ApplicationLifecycle:
 
     async def _start_schedulers(self) -> None:
         daily_loss_monitor_scheduler.start()
+        position_exit_monitor_scheduler.start()
+        telegram_ops_scheduler.start()
         strategy_runtime_reload_scheduler.start()
         strategy_approval_scheduler.start()
         strategy_deployment_pipeline_scheduler.start()
         deployment_performance_monitor_scheduler.start()
+        order_outbox_scheduler.start()
 
     async def _shutdown_schedulers(self) -> None:
+        await order_outbox_scheduler.shutdown()
         await deployment_performance_monitor_scheduler.shutdown()
         await strategy_deployment_pipeline_scheduler.shutdown()
         await strategy_approval_scheduler.shutdown()
         await strategy_runtime_reload_scheduler.shutdown()
+        await telegram_ops_scheduler.shutdown()
+        await position_exit_monitor_scheduler.shutdown()
         await daily_loss_monitor_scheduler.shutdown()
+
+    async def _publish_lifecycle_event(
+        self,
+        event_type: str,
+        message: str,
+    ) -> None:
+        try:
+            from stock_platform.notification.publisher import (
+                notification_publisher,
+            )
+
+            await notification_publisher.publish_async(
+                event_type=event_type,
+                title=event_type.replace("_", " ").title(),
+                message=message,
+                detail={"source": "ApplicationLifecycle"},
+            )
+        except Exception as exc:
+            logger.warning(
+                "lifecycle_notification_failed",
+                event_type=event_type,
+                error=str(exc),
+            )
 
     async def _shutdown_realtime_services(self) -> None:
         await realtime_execution_runner.stop()

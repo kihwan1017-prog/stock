@@ -29,6 +29,37 @@ class PaperAccountRepository:
     ) -> PaperAccount | None:
         return self._session.get(PaperAccount, account_id)
 
+    def list_accounts(
+        self,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+        user_id: int | None = None,
+    ) -> list[PaperAccount]:
+        stmt = select(PaperAccount)
+        if user_id is not None:
+            stmt = stmt.where(PaperAccount.user_id == user_id)
+        stmt = (
+            stmt.order_by(PaperAccount.account_id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return list(self._session.scalars(stmt))
+
+    def get_primary_for_user(
+        self,
+        user_id: int,
+    ) -> PaperAccount | None:
+        """회원 기본 Paper 계좌 (가장 작은 account_id)."""
+
+        stmt = (
+            select(PaperAccount)
+            .where(PaperAccount.user_id == user_id)
+            .order_by(PaperAccount.account_id.asc())
+            .limit(1)
+        )
+        return self._session.scalar(stmt)
+
     def get_position(
         self,
         *,

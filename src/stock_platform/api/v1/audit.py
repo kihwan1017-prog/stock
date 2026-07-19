@@ -26,6 +26,19 @@ def list_audit_events(
         event_type=event_type,
     )
     return {
-        "items": rows,
+        "items": [
+            {
+                "audit_event_id": row.audit_event_id,
+                "event_type": row.event_type,
+                "actor": row.actor,
+                "request_id": row.request_id,
+                "run_id": row.run_id,
+                "strategy_id": row.strategy_id,
+                "symbol": row.symbol,
+                "detail": row.detail,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
         "limit": limit,
     }

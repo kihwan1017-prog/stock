@@ -119,6 +119,7 @@ class DailyLossMonitor:
                 activated = True
 
                 detail = {
+                    "event_type": "DAILY_LOSS",
                     "broker_code": broker_code.upper(),
                     "account_number": account_number,
                     "realized_profit_loss": str(realized),

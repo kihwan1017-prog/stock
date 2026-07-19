@@ -299,7 +299,7 @@ class LiveTradingTransitionService:
         stmt = (
             select(LiveTradingTransitionEntity)
             .order_by(
-                LiveTradingTransitionEntity.created_at.desc()
+                LiveTradingTransitionEntity.requested_at.desc()
             )
             .offset(max(0, offset))
             .limit(max(1, min(limit, 100)))

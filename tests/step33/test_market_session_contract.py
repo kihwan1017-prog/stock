@@ -1,7 +1,7 @@
-def test_step33_package_imports():
-    from stock_platform.market.models import DailyCandle
-    from stock_platform.market.repository import InMemoryMarketRepository
-    from stock_platform.market.services.sync import DailyCandleSyncService
-    assert DailyCandle
-    assert InMemoryMarketRepository
-    assert DailyCandleSyncService
+"""Legacy STEP33 session contract — market package removed in STEP56."""
+
+import pytest
+
+pytestmark = pytest.mark.skip(
+    reason="STEP56: stock_platform.market package removed; use markets/"
+)

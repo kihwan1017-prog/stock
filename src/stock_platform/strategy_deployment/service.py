@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -190,4 +191,39 @@ class PaperStrategyDeploymentService:
             ),
             activated_at=deployment.activated_at,
             message=reason,
+        )
+
+    def update_parameters(
+        self,
+        *,
+        deployment_id: int,
+        parameter_payload: dict[str, Any],
+        requested_by: str,
+    ) -> StrategyDeploymentResult:
+        """활성 전략 파라미터를 새 배포로 교체(즉시 ACTIVE)."""
+
+        current = self._repository.get(deployment_id)
+        if current is None:
+            raise LookupError(
+                "Strategy deployment not found"
+            )
+        if current.status_code != "ACTIVE":
+            raise ValueError(
+                "Only ACTIVE deployment can be updated"
+            )
+
+        return self.deploy(
+            StrategyDeploymentRequest(
+                strategy_code=current.strategy_code,
+                strategy_performance_run_id=(
+                    current.strategy_performance_run_id
+                ),
+                market_code=current.market_code,
+                symbol=current.symbol,
+                mode=StrategyDeploymentMode(
+                    current.mode_code
+                ),
+                parameter_payload=parameter_payload,
+                requested_by=requested_by,
+            )
         )

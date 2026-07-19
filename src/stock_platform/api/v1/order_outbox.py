@@ -13,6 +13,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from stock_platform.auth.deps import (
+    AuthenticatedUser,
+    require_permission,
+)
 from stock_platform.database.session import (
     get_db_session,
 )
@@ -38,6 +42,9 @@ class RetryOutboxRequest(BaseModel):
 def list_outbox(
     status: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
     session: Session = Depends(get_db_session),
 ) -> list[dict[str, Any]]:
     stmt = (
@@ -75,6 +82,9 @@ def list_outbox(
 @router.post("/retry")
 def retry_outbox(
     request: RetryOutboxRequest,
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
     session: Session = Depends(get_db_session),
 ):
     try:

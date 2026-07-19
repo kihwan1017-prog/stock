@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,67 @@ class DartSyncRequest(BaseModel):
     start_date: date
     end_date: date
     resume: bool = True
+
+
+def _disclosure_dict(row) -> dict:
+    return {
+        "disclosure_id": row.disclosure_id,
+        "receipt_no": row.receipt_no,
+        "corp_code": row.corp_code,
+        "corp_name": row.corp_name,
+        "stock_code": row.stock_code,
+        "report_name": row.report_name,
+        "filer_name": row.filer_name,
+        "receipt_date": row.receipt_date,
+        "remark": row.remark,
+        "category_code": row.category_code,
+        "importance_score": (
+            float(row.importance_score)
+            if row.importance_score is not None
+            else 0
+        ),
+        "is_correction": row.is_correction,
+    }
+
+
+@router.get("/disclosures")
+def list_dart_disclosures(
+    stock_code: str = Query(min_length=1, max_length=20),
+    start_date: date | None = Query(default=None),
+    end_date: date | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+):
+    rows = DartDisclosureRepository(session).list_context(
+        stock_code=stock_code.upper(),
+        start_date=start_date,
+        end_date=end_date,
+        limit=limit,
+    )
+    return {
+        "items": [_disclosure_dict(row) for row in rows],
+        "stock_code": stock_code.upper(),
+        "limit": limit,
+    }
+
+
+@router.get("/corps")
+def list_dart_corps(
+    limit: int = Query(default=100, ge=1, le=5000),
+    session: Session = Depends(get_db_session),
+):
+    rows = DartCorpRepository(session).list_listed(limit=limit)
+    return {
+        "items": [
+            {
+                "corp_code": row.corp_code,
+                "corp_name": row.corp_name,
+                "stock_code": row.stock_code,
+            }
+            for row in rows
+        ],
+        "limit": limit,
+    }
 
 
 @router.post("/corps/sync")

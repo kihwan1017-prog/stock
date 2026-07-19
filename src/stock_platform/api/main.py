@@ -2,7 +2,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
 
 from stock_platform.api.exception_handlers import register_exception_handlers
 from stock_platform.api.lifecycle import application_lifecycle
@@ -32,7 +31,6 @@ app = FastAPI(
     title="Stock Platform API",
     description="AI 기반 주식·암호화폐 자동매매 플랫폼",
     version="1.0.0",
-    default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
 

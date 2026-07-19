@@ -1,5 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
+import logging
+import secrets
 from urllib.parse import quote_plus
 
 from pydantic import Field
@@ -7,6 +9,33 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 ENV_FILE = Path(r"E:\StockTrading\secrets\stock-platform.env")
+_SECRETS_ENV_HINT = r"E:\StockTrading\secrets\stock-platform.env"
+_logger = logging.getLogger(__name__)
+
+_DEV_APP_ENVS = frozenset({"local", "dev", "development"})
+_PROD_APP_ENVS = frozenset({"prod", "production", "staging"})
+
+
+def format_jwt_secret_missing_message() -> str:
+    """JWT_SECRET 미설정 시 사용자에게 보여줄 안내 문구."""
+
+    return (
+        "JWT_SECRET 환경변수가 없습니다.\n"
+        "\n"
+        "다음 내용을\n"
+        f"{_SECRETS_ENV_HINT}\n"
+        "에 추가하세요.\n"
+        "\n"
+        "JWT_SECRET=xxxxxxxxxxxxxxxx\n"
+        "JWT_ALGORITHM=HS256\n"
+        "JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60\n"
+        "JWT_REFRESH_TOKEN_EXPIRE_DAYS=30\n"
+        "\n"
+        "개발(local)에서는 JWT_DEV_AUTO_SECRET=true 이면 "
+        "기동 시 임시 Secret을 자동 생성합니다.\n"
+        "운영(prod)에서는 반드시 JWT_SECRET을 설정하세요.\n"
+        "템플릿: 프로젝트 stock-platform.env.example / .env.example"
+    )
 
 
 class Settings(BaseSettings):
@@ -56,13 +85,31 @@ class Settings(BaseSettings):
     telegram_enabled: bool = False
     telegram_bot_token: str = Field(default="")
     telegram_chat_id: str = Field(default="")
+    # STEP54 — Telegram Ops
+    telegram_ops_enabled: bool = False
+    telegram_ops_poll_interval_seconds: float = 3.0
+    telegram_allowed_chat_ids: str = ""
+    telegram_notification_level: str = "INFO"
+    app_version: str = "1.0.0"
     slack_enabled: bool = False
     slack_webhook_url: str = Field(default="")
     discord_enabled: bool = False
     discord_webhook_url: str = Field(default="")
 
     # 관리 API 보호 (비어 있으면 로컬 개발 모드로 통과)
+    # 스크립트/자동화용. Admin Web은 JWT 사용 (프론트에 Key를 두지 않음)
     admin_api_key: str = Field(default="")
+
+    # JWT 인증 (Secret은 env 파일에만 — 코드/ NEXT_PUBLIC 금지)
+    jwt_secret: str = Field(default="")
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = 30
+    jwt_refresh_token_expire_days: int = 7
+    # local/dev 에서만 허용. prod 에서는 무시되고 JWT_SECRET 필수
+    jwt_dev_auto_secret: bool = True
+    # 최초 관리자 시드 (사용자가 0명일 때만 생성)
+    auth_bootstrap_admin_username: str = Field(default="")
+    auth_bootstrap_admin_password: str = Field(default="")
 
     upbit_base_url: str = "https://api.upbit.com"
     upbit_timeout_seconds: float = 10.0
@@ -104,6 +151,14 @@ class Settings(BaseSettings):
     scheduler_available_cash: float = 5000000
     scheduler_minimum_ai_score: float = 70.0
     scheduler_minimum_confidence: float = 0.5
+
+    # STEP53 — Position Exit Monitor (Polling)
+    position_exit_monitor_enabled: bool = True
+    position_exit_monitor_interval_seconds: float = 5.0
+    position_exit_stop_loss_ratio: float = 0.05
+    position_exit_take_profit_ratio: float = 0.10
+    position_exit_trailing_stop_ratio: float | None = 0.03
+    position_exit_relative_loss_ratio: float | None = 0.08
 
     model_config = SettingsConfigDict(
         env_file=ENV_FILE,
@@ -151,6 +206,57 @@ class Settings(BaseSettings):
         symbol = self.realtime_strategy_symbol.strip()
         return symbol or None
 
+    @property
+    def is_production_env(self) -> bool:
+        return self.app_env.strip().lower() in _PROD_APP_ENVS
+
+    @property
+    def is_dev_env(self) -> bool:
+        return self.app_env.strip().lower() in _DEV_APP_ENVS
+
+    def ensure_jwt_secret(self) -> None:
+        """
+        JWT_SECRET 보장.
+        - 운영: 미설정 시 친절한 ValueError로 기동 중단
+        - 개발(local/dev): JWT_DEV_AUTO_SECRET=true 이면 임시 Secret 생성
+        """
+
+        if self.jwt_secret.strip():
+            return
+
+        can_auto = (
+            self.is_dev_env
+            and self.jwt_dev_auto_secret
+            and not self.is_production_env
+        )
+        if can_auto:
+            generated = secrets.token_urlsafe(48)
+            self.jwt_secret = generated
+            _logger.warning(
+                "JWT_SECRET 미설정 — 개발용 임시 Secret을 생성했습니다. "
+                "재시작마다 달라지므로 로그인 토큰이 무효화됩니다. "
+                "고정 Secret이 필요하면 %s 에 JWT_SECRET 을 설정하세요.",
+                _SECRETS_ENV_HINT,
+            )
+            return
+
+        raise ValueError(format_jwt_secret_missing_message())
+
+    def ensure_admin_api_key(self) -> None:
+        """
+        운영/스테이징: ADMIN_API_KEY 필수 (DEV_OPEN 금지).
+        로컬/개발: 비어 있어도 기동 허용 — 단 require_admin 은 JWT admin 필요.
+        """
+
+        if not self.is_production_env:
+            return
+        if self.admin_api_key.strip():
+            return
+        raise ValueError(
+            "운영 환경(APP_ENV=prod|production|staging)에서는 "
+            "ADMIN_API_KEY 가 필수입니다. DEV_OPEN 은 제거되었습니다."
+        )
+
     def validate_startup(self) -> None:
         """서버 기동 시 필수 설정을 검증한다."""
 
@@ -159,6 +265,8 @@ class Settings(BaseSettings):
                 "KIWOOM_LIVE_ORDER_ENABLED cannot be true "
                 "when KIWOOM_USE_MOCK is true"
             )
+        self.ensure_jwt_secret()
+        self.ensure_admin_api_key()
 
     def validate_kiwoom_credentials(self) -> None:
         missing: list[str] = []

@@ -82,6 +82,8 @@ class ExitEvaluationRequest:
     stop_loss_price: Decimal
     take_profit_price: Decimal
     trailing_stop_ratio: Decimal | None = None
+    # 진입가 대비 상대 손실 비율 (예: 0.08 = -8%)
+    relative_loss_ratio: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

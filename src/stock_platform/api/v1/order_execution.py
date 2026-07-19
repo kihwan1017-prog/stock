@@ -7,6 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.auth.account_ownership import (
+    assert_paper_account_access,
+)
+from stock_platform.auth.deps import (
+    AuthenticatedUser,
+    require_permission,
+)
 from stock_platform.database.session import get_db_session
 from stock_platform.order.execution_service import (
     OrderExecutionCommand,
@@ -46,7 +53,6 @@ class SubmitOrderRequest(BaseModel):
     portfolio_value: Decimal | None = None
     available_cash: Decimal | None = None
     current_position_count: int = 0
-    skip_risk_checks: bool = False
     metadata_payload: dict[str, Any] = Field(default_factory=dict)
     actor: str = "API"
 
@@ -54,8 +60,17 @@ class SubmitOrderRequest(BaseModel):
 @router.post("/submit")
 def submit_order(
     request: SubmitOrderRequest,
+    user: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
     session: Session = Depends(get_db_session),
 ):
+    """Admin/API 주문 단일 진입점 — Risk + Kill Switch 필수 (우회 불가)."""
+
+    assert_paper_account_access(
+        user, request.account_id, session
+    )
+
     if request.quantity is None and request.order_amount is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -89,9 +104,10 @@ def submit_order(
                 current_position_count=(
                     request.current_position_count
                 ),
-                skip_risk_checks=request.skip_risk_checks,
+                # 공개 API에서는 항상 Risk/Kill Switch 강제
+                skip_risk_checks=False,
                 metadata_payload=request.metadata_payload,
-                actor=request.actor,
+                actor=request.actor or user.username,
             )
         )
     except ValueError as exc:

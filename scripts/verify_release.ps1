@@ -16,4 +16,20 @@ if ($LASTEXITCODE -ne 0) {
     throw "pytest failed"
 }
 
-Write-Output "Release verification passed"
+Write-Output "== frontend lint/typecheck/test/build =="
+Push-Location frontend
+try {
+    npm run lint
+    if ($LASTEXITCODE -ne 0) { throw "frontend lint failed" }
+    npm run typecheck
+    if ($LASTEXITCODE -ne 0) { throw "frontend typecheck failed" }
+    npm run test
+    if ($LASTEXITCODE -ne 0) { throw "frontend test failed" }
+    npm run build
+    if ($LASTEXITCODE -ne 0) { throw "frontend build failed" }
+}
+finally {
+    Pop-Location
+}
+
+Write-Output "Release verification passed (backend + frontend)"

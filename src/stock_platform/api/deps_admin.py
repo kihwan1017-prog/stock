@@ -1,42 +1,19 @@
 from __future__ import annotations
 
 import hashlib
-import secrets
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
-from stock_platform.common.settings import get_settings
+# JWT + API Key 통합 보호 (기존 import 경로 유지)
+from stock_platform.auth.deps import require_admin  # noqa: F401
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.audit_models import AuditEvent
 from stock_platform.operation.audit_repository import (
     AuditEventRepository,
 )
-
-
-def require_admin(
-    x_admin_api_key: str | None = Header(
-        default=None,
-        alias="X-Admin-API-Key",
-    ),
-) -> str:
-    """관리 API 보호. ADMIN_API_KEY가 비어 있으면 개발 모드로 통과."""
-    settings = get_settings()
-    expected = settings.admin_api_key.strip()
-    if not expected:
-        return "DEV_OPEN"
-    provided = (x_admin_api_key or "").strip()
-    if not provided or not secrets.compare_digest(
-        provided,
-        expected,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Admin API key required",
-        )
-    return "ADMIN"
 
 
 def hash_account(account_number: str | None) -> str | None:

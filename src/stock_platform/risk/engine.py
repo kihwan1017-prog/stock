@@ -182,6 +182,19 @@ class RiskManagementEngine:
                 trigger_price=request.take_profit_price,
             )
 
+        # 기존 SL/TP와 별도로 상대 손실 비율을 유지·검사한다.
+        if request.relative_loss_ratio is not None:
+            loss_ratio = (
+                (request.entry_price - request.current_price)
+                / request.entry_price
+            )
+            if loss_ratio >= request.relative_loss_ratio:
+                return ExitDecision(
+                    should_exit=True,
+                    reason="RELATIVE_LOSS",
+                    trigger_price=request.current_price,
+                )
+
         if request.trailing_stop_ratio is not None:
             trailing_trigger = (
                 request.highest_price
@@ -405,6 +418,15 @@ class RiskManagementEngine:
             ):
                 raise RiskValidationError(
                     "trailing_stop_ratio must be between 0 and 1",
+                )
+
+        if request.relative_loss_ratio is not None:
+            if (
+                request.relative_loss_ratio <= ZERO
+                or request.relative_loss_ratio > ONE
+            ):
+                raise RiskValidationError(
+                    "relative_loss_ratio must be between 0 and 1",
                 )
 
     @staticmethod

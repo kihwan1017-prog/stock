@@ -12,6 +12,10 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.auth.deps import (
+    AuthenticatedUser,
+    require_permission,
+)
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.job_repository import (
     JobRunRepository,
@@ -38,6 +42,22 @@ class JobExecutionRequest(BaseModel):
     )
 
 
+def _job_history_dict(row) -> dict[str, Any]:
+    return {
+        "job_run_id": row.job_run_id,
+        "job_name": row.job_name,
+        "job_group": row.job_group,
+        "trigger_type": row.trigger_type,
+        "status_code": row.status_code,
+        "started_at": row.started_at,
+        "finished_at": row.finished_at,
+        "duration_ms": row.duration_ms,
+        "error_message": row.error_message,
+        "request_payload": row.request_payload,
+        "result_payload": row.result_payload,
+    }
+
+
 @router.get("")
 def list_registered_jobs(
     session: Session = Depends(get_db_session),
@@ -58,6 +78,9 @@ def list_registered_jobs(
 async def execute_job(
     job_name: str,
     request: JobExecutionRequest,
+    _: AuthenticatedUser = Depends(
+        require_permission("ops:execute")
+    ),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -80,14 +103,7 @@ async def execute_job(
         ) from exc
 
     return {
-        "job_run_id": history.job_run_id,
-        "job_name": history.job_name,
-        "job_group": history.job_group,
-        "trigger_type": history.trigger_type,
-        "status_code": history.status_code,
-        "started_at": history.started_at,
-        "finished_at": history.finished_at,
-        "duration_ms": history.duration_ms,
+        **_job_history_dict(history),
         "result": result,
     }
 
@@ -99,8 +115,12 @@ def list_job_history(
     limit: int = Query(default=100, ge=1, le=1000),
     session: Session = Depends(get_db_session),
 ):
-    return JobRunRepository(session).list_recent(
+    rows = JobRunRepository(session).list_recent(
         job_name=job_name,
         status_code=status_code,
         limit=limit,
     )
+    return {
+        "items": [_job_history_dict(row) for row in rows],
+        "limit": limit,
+    }

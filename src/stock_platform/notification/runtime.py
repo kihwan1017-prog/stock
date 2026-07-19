@@ -10,9 +10,15 @@ from stock_platform.notification.discord_sender import (
 from stock_platform.notification.logging_sender import (
     LoggingNotificationSender,
 )
+from stock_platform.notification.publisher import (
+    notification_publisher,
+)
 from stock_platform.notification.resilience import (
     DedupingNotificationSender,
     RetryingNotificationSender,
+)
+from stock_platform.notification.service import (
+    NotificationService,
 )
 from stock_platform.notification.slack_sender import (
     SlackNotificationSender,
@@ -56,3 +62,9 @@ def build_risk_notification_sender() -> CompositeNotificationSender:
 
 
 risk_notification_sender = build_risk_notification_sender()
+
+# Publisher → Service → TelegramSender 연결
+notification_service = NotificationService(
+    sender=risk_notification_sender,
+)
+notification_publisher.set_service(notification_service)

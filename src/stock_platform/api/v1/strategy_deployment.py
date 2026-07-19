@@ -65,6 +65,14 @@ class StrategyDeploymentStopRequest(BaseModel):
     )
 
 
+class StrategyDeploymentUpdateRequest(BaseModel):
+    parameter_payload: dict[str, Any] = {}
+    requested_by: str = Field(
+        min_length=1,
+        max_length=100,
+    )
+
+
 @router.post("")
 def deploy_strategy(
     request: StrategyDeploymentCreateRequest,
@@ -124,6 +132,37 @@ def stop_strategy_deployment(
             detail=str(exc),
         ) from exc
     except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post("/{deployment_id}/update")
+def update_strategy_deployment(
+    deployment_id: int,
+    request: StrategyDeploymentUpdateRequest,
+    session: Session = Depends(get_db_session),
+):
+    """전략 파라미터 수정 = 신규 PAPER 배포로 교체·활성화."""
+
+    try:
+        return PaperStrategyDeploymentService(
+            session
+        ).update_parameters(
+            deployment_id=deployment_id,
+            parameter_payload=request.parameter_payload,
+            requested_by=request.requested_by,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except (
+        ValueError,
+        PermissionError,
+    ) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),

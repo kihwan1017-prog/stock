@@ -16,3 +16,5 @@ pytest
 pytest-asyncio
 APScheduler
 websockets
+PyJWT==2.10.1
+bcrypt==4.3.0

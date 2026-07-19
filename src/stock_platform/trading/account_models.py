@@ -37,6 +37,18 @@ class PaperAccount(Base):
         primary_key=True,
     )
 
+    # STEP52 — 로그인 회원 소유권 (nullable: 레거시 행 호환)
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "auth.user.user_id",
+            ondelete="SET NULL",
+            name="fk_paper_account_user",
+        ),
+        nullable=True,
+        index=True,
+    )
+
     account_name: Mapped[str] = mapped_column(
         String(100),
         nullable=False,

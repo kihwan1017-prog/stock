@@ -6,6 +6,9 @@ from fastapi import APIRouter
 
 from stock_platform.api.v1.ai_analysis import router as ai_analysis_router
 from stock_platform.api.v1.audit import router as audit_router
+from stock_platform.api.v1.auth import router as auth_router
+from stock_platform.api.v1.roles import router as roles_router
+from stock_platform.api.v1.users import router as users_router
 from stock_platform.api.v1.ai_candidates import router as ai_candidates_router
 from stock_platform.api.v1.ai_orchestration import router as ai_orchestration_router
 from stock_platform.api.v1.backtest_grid import router as backtest_grid_router
@@ -29,7 +32,6 @@ from stock_platform.api.v1.deployment_performance_monitor import (
 from stock_platform.api.v1.executions import router as executions_router
 from stock_platform.api.v1.guarded_pipeline import router as guarded_pipeline_router
 from stock_platform.api.v1.health import router as health_router
-from stock_platform.api.v1.indicator_router import router as indicator_router
 from stock_platform.api.v1.indicators import router as indicators_router
 from stock_platform.api.v1.jobs import router as jobs_router
 from stock_platform.api.v1.kill_switch import router as kill_switch_router
@@ -55,6 +57,9 @@ from stock_platform.api.v1.market_quality import (
 )
 from stock_platform.api.v1.news import router as news_router
 from stock_platform.api.v1.notifications import router as notifications_router
+from stock_platform.api.v1.telegram_ops import (
+    router as telegram_ops_router,
+)
 from stock_platform.api.v1.order_cancel_replace import (
     router as order_cancel_replace_router,
 )
@@ -127,6 +132,15 @@ from stock_platform.api.v1.strategy_runtime_switch import (
 from stock_platform.api.v1.strategy_selector import router as strategy_selector_router
 from stock_platform.api.v1.sync import router as sync_router
 from stock_platform.api.v1.system_dashboard import router as system_dashboard_router
+from stock_platform.api.v1.admin_dashboard_summary import (
+    router as admin_dashboard_summary_router,
+)
+from stock_platform.api.v1.settings import (
+    ollama_router,
+    router as settings_router,
+)
+from stock_platform.api.v1.ops_db import router as ops_db_router
+from stock_platform.api.v1.docs_cms import router as docs_cms_router
 from stock_platform.api.v1.trading_calendar import router as trading_calendar_router
 from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
@@ -164,9 +178,17 @@ def collect_duplicate_operation_ids(router: APIRouter) -> list[str]:
 
 _ROUTER_GROUPS = (
     health_router,
+    auth_router,
+    users_router,
+    roles_router,
     audit_router,
     version_router,
     system_dashboard_router,
+    admin_dashboard_summary_router,
+    settings_router,
+    ollama_router,
+    ops_db_router,
+    docs_cms_router,
     prices_router,
     market_data_router,
     market_quality_router,
@@ -174,7 +196,6 @@ _ROUTER_GROUPS = (
     upbit_router,
     sync_router,
     indicators_router,
-    indicator_router,
     candidates_router,
     candidate_runs_router,
     ai_candidates_router,
@@ -243,6 +264,7 @@ _ROUTER_GROUPS = (
     guarded_pipeline_router,
     daily_reports_router,
     notifications_router,
+    telegram_ops_router,
 )
 
 

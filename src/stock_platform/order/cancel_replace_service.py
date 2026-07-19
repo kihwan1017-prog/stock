@@ -4,9 +4,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from stock_platform.broker.kiwoom.adapter import (
-    KiwoomBrokerAdapter,
-)
+from stock_platform.broker.adapter import BrokerAdapter
 from stock_platform.broker.models import (
     BrokerOrderRequest,
 )
@@ -23,7 +21,7 @@ class OrderCancelReplaceService:
         self,
         *,
         session: Session,
-        adapter: KiwoomBrokerAdapter,
+        adapter: BrokerAdapter,
     ) -> None:
         self._repository = TradingOrderRepository(
             session

@@ -1,14 +1,20 @@
 from decimal import Decimal
 from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+
+from stock_platform.auth.deps import (
+    AuthenticatedUser,
+    require_permission,
+)
 from stock_platform.database.session import get_db_session
-from stock_platform.order.models import CreateOrderCommand, OrderSide, OrderTimeInForce, OrderType
+from stock_platform.order.models import OrderSide, OrderTimeInForce, OrderType
 from stock_platform.order.repository import TradingOrderRepository
-from stock_platform.order.service import TradingOrderService
 
 router = APIRouter(prefix="/api/v1/orders", tags=["Orders"])
+
 
 class CreateOrderRequest(BaseModel):
     account_id: int = Field(gt=0)
@@ -28,46 +34,55 @@ class CreateOrderRequest(BaseModel):
     metadata_payload: dict[str, Any] = {}
     actor: str = "API"
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-def create_order(request: CreateOrderRequest, session: Session = Depends(get_db_session)):
-    try:
-        return TradingOrderService(session).create(
-            CreateOrderCommand(
-                account_id=request.account_id,
-                broker_code=request.broker_code,
-                exchange_code=request.exchange_code,
-                symbol=request.symbol,
-                side=request.side,
-                order_type=request.order_type,
-                quantity=request.quantity,
-                price=request.price,
-                time_in_force=request.time_in_force,
-                strategy_code=request.strategy_code,
-                strategy_deployment_id=request.strategy_deployment_id,
-                portfolio_id=request.portfolio_id,
-                position_id=request.position_id,
-                client_order_id=request.client_order_id,
-                metadata_payload=request.metadata_payload,
-            ),
-            request.actor,
-        )
-    except ValueError as exc:
-        session.rollback()
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+@router.post("", status_code=status.HTTP_400_BAD_REQUEST)
+def create_order(
+    request: CreateOrderRequest,
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
+    session: Session = Depends(get_db_session),
+):
+    """가드 없는 직접 생성은 차단 — order-execution/submit 사용."""
+
+    _ = (request, session)
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            "직접 주문 생성은 비활성입니다. "
+            "POST /api/v1/order-execution/submit 를 사용하세요 "
+            "(Risk + Kill Switch 필수)."
+        ),
+    )
+
 
 @router.get("/{order_id}")
-def get_order(order_id: int, session: Session = Depends(get_db_session)):
+def get_order(
+    order_id: int,
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
+    session: Session = Depends(get_db_session),
+):
     entity = TradingOrderRepository(session).get(order_id)
     if entity is None:
         raise HTTPException(status_code=404, detail="Order not found")
     return entity
 
+
 @router.get("/{order_id}/history")
-def get_order_history(order_id: int, session: Session = Depends(get_db_session)):
+def get_order_history(
+    order_id: int,
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
+    session: Session = Depends(get_db_session),
+):
     repo = TradingOrderRepository(session)
     if repo.get(order_id) is None:
         raise HTTPException(status_code=404, detail="Order not found")
     return repo.history(order_id)
+
 
 @router.get("")
 def list_orders(
@@ -77,8 +92,16 @@ def list_orders(
     symbol: str | None = None,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
     session: Session = Depends(get_db_session),
 ):
     return TradingOrderRepository(session).list(
-        account_id, status_code, exchange_code, symbol, limit, offset
+        account_id,
+        status_code,
+        exchange_code,
+        symbol,
+        limit,
+        offset,
     )

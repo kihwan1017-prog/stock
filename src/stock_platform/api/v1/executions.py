@@ -4,6 +4,10 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from stock_platform.auth.deps import (
+    AuthenticatedUser,
+    require_permission,
+)
 from stock_platform.database.session import (
     get_db_session,
 )
@@ -28,6 +32,9 @@ def list_executions(
         ge=1,
         le=500,
     ),
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
     session: Session = Depends(
         get_db_session
     ),
@@ -47,6 +54,9 @@ def list_executions(
 )
 def list_order_executions(
     order_id: int,
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
     session: Session = Depends(
         get_db_session
     ),
