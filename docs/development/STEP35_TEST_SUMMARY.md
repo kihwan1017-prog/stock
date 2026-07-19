@@ -33,7 +33,7 @@
 | 35-01 Lifespan | 완료 |
 | 35-02 Router | 완료 |
 | 35-03 Settings | 완료 |
-| 35-04 Domain map | 완료 (`docs/DOMAIN_PACKAGE_MAP.md`) |
+| 35-04 Domain map | 완료 (`docs/development/DOMAIN_PACKAGE_MAP.md`) |
 | 35-05 Exceptions | 완료 |
 | 35-06 Alembic | 완료 (head `b8f4c2a19e03`) |
 | 35-07 Tests | 완료 (본 문서) |

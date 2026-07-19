@@ -1,5 +1,8 @@
 # STEP34 설치 및 적용 명령어
 
+> **아카이브** — 현재 설치 절차는 [../../INSTALL.md](../../INSTALL.md) 를 사용하세요.  
+> 목차: [../../README.md](../../README.md)
+
 ## 전체 명령 흐름
 
 ```powershell

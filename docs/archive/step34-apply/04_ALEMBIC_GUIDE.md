@@ -1,5 +1,10 @@
 # Alembic 적용 가이드
 
+> **아카이브** — 현재 Alembic 규칙은  
+> [../../development/DB_DEVELOPMENT_RULES.md](../../development/DB_DEVELOPMENT_RULES.md) ·  
+> [../../development/ALEMBIC_VERIFY.md](../../development/ALEMBIC_VERIFY.md) 를 사용하세요.  
+> Canonical path: `database/alembic/versions/`
+
 ## 최신 Revision 확인
 
 ```powershell

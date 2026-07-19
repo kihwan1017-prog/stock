@@ -129,7 +129,7 @@
 - 삭제부터 하지 않고 표준 패키지를 결정한다.
 - 이전 import 경로가 필요한 경우 compatibility module을 둔다.
 - 신규 개발은 표준 패키지만 사용하도록 규칙을 만든다.
-- 결과를 `docs/DOMAIN_PACKAGE_MAP.md`에 기록한다.
+- 결과를 `docs/development/DOMAIN_PACKAGE_MAP.md`에 기록한다.
 
 완료 기준:
 

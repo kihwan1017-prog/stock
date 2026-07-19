@@ -57,7 +57,7 @@ alembic/versions/              ← deprecated, chain 미포함
 Legacy DB 객체:
 
 ```text
-docs/LEGACY_DB_OBJECTS.md
+docs/development/LEGACY_DB_OBJECTS.md
 ```
 
 이전에 문서에만 있던 schema 목록(common~public)은 위 목록으로 통합한다.
@@ -1003,8 +1003,9 @@ pytest -m "not external and not live"
 아래 내용을 Cursor에 그대로 전달한다.
 
 ```text
-DB_DEVELOPMENT_RULES.md와
-STEP35_TO_STEP40_DEVELOPMENT_ROADMAP.md를 먼저 읽으세요.
+docs/development/DB_DEVELOPMENT_RULES.md와
+docs/roadmaps/STEP35_TO_STEP40_DEVELOPMENT_ROADMAP.md를 먼저 읽으세요.
+문서 목차: docs/README.md
 
 현재 프로젝트는 Docker를 사용하지 않습니다.
 Dockerfile, docker-compose.yml, Docker 기반 PostgreSQL 설정을

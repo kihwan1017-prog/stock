@@ -22,4 +22,4 @@ Alembic revision chain에 연결되지 않은 **참고용 초안**입니다.
 
 ## Legacy DB 객체
 
-ORM 미등록 테이블은 `docs/LEGACY_DB_OBJECTS.md`를 참고하세요.
+ORM 미등록 테이블은 `docs/development/LEGACY_DB_OBJECTS.md`를 참고하세요.
