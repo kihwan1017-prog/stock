@@ -1,8 +1,11 @@
 "use client";
 
 import { Layout, Typography } from "antd";
+import type { ReactNode } from "react";
 
 import { SidebarMenu } from "@/components/layout/SidebarMenu";
+import type { AppMenuItem } from "@/config/menu";
+import { adminMenuItems } from "@/config/menu";
 import { env } from "@/config/env";
 import { useLayoutStore } from "@/stores/layoutStore";
 
@@ -10,9 +13,17 @@ const { Sider } = Layout;
 
 interface AppSidebarProps {
   collapsed?: boolean;
+  menuItems?: AppMenuItem[];
+  brandLabel?: string;
+  footerLabel?: string;
 }
 
-export function AppSidebar({ collapsed }: AppSidebarProps) {
+export function AppSidebar({
+  collapsed,
+  menuItems = adminMenuItems,
+  brandLabel = env.APP_NAME,
+  footerLabel = "STEP41 · Admin",
+}: AppSidebarProps) {
   const sidebarCollapsed = useLayoutStore((state) => state.sidebarCollapsed);
   const isCollapsed = collapsed ?? sidebarCollapsed;
 
@@ -24,14 +35,17 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
       width={240}
       collapsedWidth={72}
       style={{
-        overflow: "auto",
-        height: "100%",
+        height: "100vh",
+        position: "sticky",
+        top: 0,
         borderRight: "1px solid var(--app-border)",
       }}
+      className="app-sidebar"
     >
       <div
         style={{
           height: 64,
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: isCollapsed ? "center" : "flex-start",
@@ -39,24 +53,40 @@ export function AppSidebar({ collapsed }: AppSidebarProps) {
           borderBottom: "1px solid var(--app-border)",
         }}
       >
-        <Typography.Text strong style={{ whiteSpace: "nowrap" }}>
-          {isCollapsed ? "K" : env.APP_NAME}
+        <Typography.Text
+          strong
+          style={{
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {isCollapsed ? brandLabel.slice(0, 1).toUpperCase() : brandLabel}
         </Typography.Text>
       </div>
-      <SidebarMenu />
+
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+        <SidebarMenu items={menuItems} />
+      </div>
+
       <div
         style={{
-          position: "absolute",
-          bottom: 12,
-          left: 0,
-          right: 0,
+          flexShrink: 0,
+          padding: "10px 8px 14px",
           textAlign: "center",
           opacity: 0.65,
           fontSize: 12,
+          lineHeight: 1.3,
+          borderTop: "1px solid var(--app-border)",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
       >
-        {isCollapsed ? "v0.1" : "STEP41 · v0.1.0"}
+        {isCollapsed ? "v0.1" : footerLabel}
       </div>
     </Sider>
   );
 }
+
+export type { ReactNode };

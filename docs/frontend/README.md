@@ -12,5 +12,9 @@
 | [../reference/STEP41_ADMIN_FOUNDATION.md](../reference/STEP41_ADMIN_FOUNDATION.md) | STEP41 스펙 |
 | [../manual/사용자매뉴얼.md](../manual/사용자매뉴얼.md) | Admin 사용 (구현 범위 명시) |
 
-접속: http://localhost:3000  
+접속:
+- 포털: http://localhost:3000
+- User Web: http://localhost:3000/user/dashboard
+- Admin: http://localhost:3000/admin/dashboard
+
 상위 목차: [../README.md](../README.md)

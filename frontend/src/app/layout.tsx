@@ -6,7 +6,7 @@ import "@/styles/globals.css";
 
 export const metadata: Metadata = {
   title: env.APP_NAME,
-  description: "KIKI AI Trading Platform Admin",
+  description: "KIKI AI Trading Platform — User & Admin",
 };
 
 export default function RootLayout({

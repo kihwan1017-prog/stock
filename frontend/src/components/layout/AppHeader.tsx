@@ -24,9 +24,13 @@ const { Header } = Layout;
 
 interface AppHeaderProps {
   apiConnected?: boolean | null;
+  tradingLabel?: string;
 }
 
-export function AppHeader({ apiConnected = null }: AppHeaderProps) {
+export function AppHeader({
+  apiConnected = null,
+  tradingLabel = "자동매매: Placeholder",
+}: AppHeaderProps) {
   const pathname = usePathname();
   const title = getRouteTitle(pathname);
   const { user, logout } = useAuth();
@@ -103,7 +107,7 @@ export function AppHeader({ apiConnected = null }: AppHeaderProps) {
             />
           </Space>
 
-          <Tag color="processing">자동매매: Placeholder</Tag>
+          <Tag color="processing">{tradingLabel}</Tag>
 
           {env.AUTH_MODE === "disabled" ? <Tag color="warning">AUTH DISABLED</Tag> : null}
 

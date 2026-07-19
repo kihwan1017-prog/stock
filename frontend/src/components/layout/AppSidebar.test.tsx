@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
-  usePathname: () => "/dashboard",
+  usePathname: () => "/admin/dashboard",
   useRouter: () => ({ push: vi.fn() }),
 }));
 
@@ -19,10 +19,12 @@ describe("AppSidebar", () => {
     render(<AppSidebar collapsed={false} />);
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
     expect(screen.getByText("KIKI AI Trading Platform")).toBeInTheDocument();
+    expect(screen.getByText("STEP41 · Admin")).toBeInTheDocument();
   });
 
   it("shows short brand when collapsed", () => {
     render(<AppSidebar collapsed />);
     expect(screen.getByText("K")).toBeInTheDocument();
+    expect(screen.getByText("v0.1")).toBeInTheDocument();
   });
 });

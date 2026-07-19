@@ -7,6 +7,8 @@ import type { ReactNode } from "react";
 import { AppHeader } from "@/components/layout/AppHeader";
 import { AppSidebar } from "@/components/layout/AppSidebar";
 import { SidebarMenu } from "@/components/layout/SidebarMenu";
+import type { AppMenuItem } from "@/config/menu";
+import { adminMenuItems } from "@/config/menu";
 import type { HealthResponse } from "@/lib/api/apiTypes";
 import { rootClient } from "@/lib/api/rootClient";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -17,6 +19,10 @@ const { useBreakpoint } = Grid;
 
 interface MainLayoutProps {
   children: ReactNode;
+  menuItems?: AppMenuItem[];
+  brandLabel?: string;
+  footerLabel?: string;
+  tradingLabel?: string;
 }
 
 async function fetchHealth(): Promise<HealthResponse> {
@@ -24,7 +30,13 @@ async function fetchHealth(): Promise<HealthResponse> {
   return data;
 }
 
-export function MainLayout({ children }: MainLayoutProps) {
+export function MainLayout({
+  children,
+  menuItems = adminMenuItems,
+  brandLabel,
+  footerLabel,
+  tradingLabel = "자동매매: Placeholder",
+}: MainLayoutProps) {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
   const mobileMenuOpen = useLayoutStore((state) => state.mobileMenuOpen);
@@ -45,23 +57,32 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <Layout style={{ minHeight: "100vh" }}>
-      {!isMobile ? <AppSidebar collapsed={sidebarCollapsed} /> : null}
+      {!isMobile ? (
+        <AppSidebar
+          collapsed={sidebarCollapsed}
+          menuItems={menuItems}
+          brandLabel={brandLabel}
+          footerLabel={footerLabel}
+        />
+      ) : null}
+
+      <Layout>
+        <AppHeader apiConnected={apiConnected} tradingLabel={tradingLabel} />
+        <Content style={{ margin: 0 }}>
+          {children}
+        </Content>
+      </Layout>
 
       <Drawer
-        title="메뉴"
+        title={brandLabel ?? "Menu"}
         placement="left"
         open={isMobile && mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
+        size={280}
         styles={{ body: { padding: 0 } }}
-        size={260}
       >
-        <SidebarMenu />
+        <SidebarMenu items={menuItems} />
       </Drawer>
-
-      <Layout>
-        <AppHeader apiConnected={apiConnected} />
-        <Content style={{ minHeight: 280 }}>{children}</Content>
-      </Layout>
     </Layout>
   );
 }

@@ -53,3 +53,11 @@ a {
     display: inline-flex !important;
   }
 }
+
+/* 사이드바: 헤더 / 스크롤 메뉴 / 하단 버전 분리 (Settings와 버전 문구 겹침 방지) */
+.app-sidebar .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}

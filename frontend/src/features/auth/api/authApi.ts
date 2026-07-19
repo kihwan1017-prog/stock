@@ -3,30 +3,40 @@ import type { AuthUser, LoginRequest, LoginResponse } from "@/features/auth/type
 
 const DEV_DISABLED_TOKEN = "dev-disabled";
 
-const DEV_USER: AuthUser = {
-  id: "dev",
-  username: "dev",
-  displayName: "Dev Admin",
-  roles: ["admin"],
-};
-
 /**
  * AUTH_MODE=disabled: 백엔드 호출 없이 개발 세션 생성
- * TODO(STEP50): 실제 JWT/로그인 API 연동
+ * JWT/회원 API는 Backend에 없음 — 로컬 세션만 사용
  */
-export async function enterDevSession(): Promise<LoginResponse> {
+export async function enterDevSession(
+  portal: "user" | "admin" = "admin",
+): Promise<LoginResponse> {
   if (env.AUTH_MODE !== "disabled") {
     throw new Error("enterDevSession은 AUTH_MODE=disabled 에서만 사용할 수 있습니다.");
   }
 
+  const user: AuthUser =
+    portal === "user"
+      ? {
+          id: "dev-user",
+          username: "investor",
+          displayName: "Dev Investor",
+          roles: ["user"],
+        }
+      : {
+          id: "dev",
+          username: "dev",
+          displayName: "Dev Admin",
+          roles: ["admin"],
+        };
+
   return {
     accessToken: DEV_DISABLED_TOKEN,
-    user: DEV_USER,
+    user,
   };
 }
 
 /**
- * TODO(STEP50): FastAPI 인증 API가 준비되면 실제 로그인 호출로 교체
+ * Backend에 /auth/login 이 없어 실패한다. disabled 모드에서만 개발 세션으로 대체.
  */
 export async function loginWithCredentials(
   payload: LoginRequest,
@@ -34,15 +44,14 @@ export async function loginWithCredentials(
   void payload;
 
   if (env.AUTH_MODE === "disabled") {
-    return enterDevSession();
+    return enterDevSession("admin");
   }
 
-  // TODO(STEP50): apiClient.post('/auth/login', payload)
   throw new Error(
     "백엔드 인증 API가 아직 없습니다. NEXT_PUBLIC_AUTH_MODE=disabled 를 사용하세요.",
   );
 }
 
 export async function logoutRemote(): Promise<void> {
-  // TODO(STEP50): 서버 세션 무효화 API 호출
+  // Backend logout API 없음
 }

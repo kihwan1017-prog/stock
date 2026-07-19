@@ -5,38 +5,43 @@ import { usePathname, useRouter } from "next/navigation";
 import { Menu } from "antd";
 import type { MenuProps } from "antd";
 
-import { appMenuItems } from "@/config/menu";
+import type { AppMenuItem } from "@/config/menu";
+import { adminMenuItems } from "@/config/menu";
 import { useLayoutStore } from "@/stores/layoutStore";
 
-export function SidebarMenu() {
+interface SidebarMenuProps {
+  items?: AppMenuItem[];
+}
+
+export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
   const pathname = usePathname();
   const router = useRouter();
   const setMobileMenuOpen = useLayoutStore((state) => state.setMobileMenuOpen);
 
-  const items: MenuProps["items"] = useMemo(
+  const menuItems: MenuProps["items"] = useMemo(
     () =>
-      appMenuItems
+      items
         .filter((item) => item.enabled)
         .map((item) => ({
           key: item.path,
           icon: item.icon,
           label: item.label,
         })),
-    [],
+    [items],
   );
 
   const selectedKeys = useMemo(() => {
-    const matched = appMenuItems.find(
+    const matched = items.find(
       (item) => pathname === item.path || pathname.startsWith(`${item.path}/`),
     );
     return matched ? [matched.path] : [];
-  }, [pathname]);
+  }, [items, pathname]);
 
   return (
     <Menu
       mode="inline"
       selectedKeys={selectedKeys}
-      items={items}
+      items={menuItems}
       onClick={({ key }) => {
         router.push(key);
         setMobileMenuOpen(false);

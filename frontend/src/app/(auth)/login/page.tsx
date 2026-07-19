@@ -1,6 +1,7 @@
 "use client";
 
-import { Flex } from "antd";
+import { Suspense } from "react";
+import { Flex, Spin } from "antd";
 
 import { LoginForm } from "@/features/auth/components/LoginForm";
 
@@ -16,7 +17,9 @@ export default function LoginPage() {
           "radial-gradient(circle at top left, rgba(22,119,255,0.12), transparent 40%), var(--app-bg)",
       }}
     >
-      <LoginForm />
+      <Suspense fallback={<Spin tip="로그인 준비 중..." />}>
+        <LoginForm />
+      </Suspense>
     </Flex>
   );
 }

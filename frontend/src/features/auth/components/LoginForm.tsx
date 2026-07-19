@@ -1,8 +1,10 @@
 "use client";
 
 import { Button, Card, Flex, Form, Input, Space, Typography } from "antd";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { adminRoutes, userRoutes } from "@/config/routes";
 import { env } from "@/config/env";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import type { LoginRequest } from "@/features/auth/types/auth";
@@ -17,9 +19,9 @@ function NoticeBanner({
   title: string;
   description?: string;
 }) {
-  const border =
-    tone === "warning" ? "1px solid #faad14" : "1px solid #ff4d4f";
-  const background = tone === "warning" ? "rgba(250, 173, 20, 0.08)" : "rgba(255, 77, 79, 0.08)";
+  const border = tone === "warning" ? "1px solid #faad14" : "1px solid #ff4d4f";
+  const background =
+    tone === "warning" ? "rgba(250, 173, 20, 0.08)" : "rgba(255, 77, 79, 0.08)";
 
   return (
     <div style={{ border, background, borderRadius: 8, padding: "12px 14px" }}>
@@ -34,15 +36,27 @@ function NoticeBanner({
 }
 
 export function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { login, enterAsDev } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const portal: "user" | "admin" =
+    searchParams.get("portal") === "user" ? "user" : "admin";
+  const nextParam = searchParams.get("next");
+  const redirectTo =
+    nextParam && nextParam.startsWith("/")
+      ? nextParam
+      : portal === "user"
+        ? userRoutes.dashboard
+        : adminRoutes.dashboard;
 
   const onFinish = async (values: LoginRequest) => {
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      await login(values);
+      await login(values, redirectTo);
     } catch (error) {
       setErrorMessage(toApiError(error).message);
     } finally {
@@ -54,13 +68,15 @@ export function LoginForm() {
     setSubmitting(true);
     setErrorMessage(null);
     try {
-      await enterAsDev();
+      await enterAsDev(portal, redirectTo);
     } catch (error) {
       setErrorMessage(toApiError(error).message);
     } finally {
       setSubmitting(false);
     }
   };
+
+  const subtitle = portal === "user" ? "User Web 입장" : "Admin 입장";
 
   return (
     <Card style={{ width: "100%", maxWidth: 420 }}>
@@ -69,7 +85,7 @@ export function LoginForm() {
           <Typography.Title level={3} style={{ marginBottom: 4 }}>
             {env.APP_NAME}
           </Typography.Title>
-          <Typography.Text type="secondary">관리자 로그인</Typography.Text>
+          <Typography.Text type="secondary">{subtitle}</Typography.Text>
         </div>
 
         {errorMessage ? <NoticeBanner tone="error" title={errorMessage} /> : null}
@@ -78,11 +94,14 @@ export function LoginForm() {
           <Flex vertical gap={12}>
             <NoticeBanner
               tone="warning"
-              title="인증 API가 비활성화되어 있습니다"
-              description="개발 모드로 입장하면 로컬 세션만 생성합니다. TODO(STEP50)"
+              title="회원 JWT 로그인은 Backend에 없습니다"
+              description="개발 모드로 입장하면 로컬 세션만 생성합니다. /auth/login · /me API 미구현."
             />
             <Button type="primary" block loading={submitting} onClick={() => void onEnterDev()}>
-              개발 모드로 입장
+              개발 모드로 입장 ({portal})
+            </Button>
+            <Button type="link" onClick={() => router.push("/")}>
+              포털로 돌아가기
             </Button>
           </Flex>
         ) : (
