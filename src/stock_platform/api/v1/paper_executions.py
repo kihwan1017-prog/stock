@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.trading.account_service import (
     PaperAccountError,
 )
@@ -26,6 +27,7 @@ from stock_platform.trading.paper_engine import (
 router = APIRouter(
     prefix="/api/v1/paper-executions",
     tags=["Paper Executions"],
+    dependencies=[Depends(require_admin)],
 )
 
 

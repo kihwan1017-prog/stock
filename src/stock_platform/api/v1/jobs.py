@@ -16,6 +16,7 @@ from stock_platform.auth.deps import (
     AuthenticatedUser,
     require_permission,
 )
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.job_repository import (
     JobRunRepository,
@@ -60,6 +61,7 @@ def _job_history_dict(row) -> dict[str, Any]:
 
 @router.get("")
 def list_registered_jobs(
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     jobs = SchedulerService(session).list_jobs()
@@ -113,6 +115,7 @@ def list_job_history(
     job_name: str | None = None,
     status_code: str | None = None,
     limit: int = Query(default=100, ge=1, le=1000),
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     rows = JobRunRepository(session).list_recent(

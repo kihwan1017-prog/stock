@@ -8,7 +8,6 @@ import httpx
 from sqlalchemy import text
 
 from stock_platform.common.settings import get_settings
-from stock_platform.database.engine import create_database_engine
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,8 +26,9 @@ def _safe_message(exc: Exception) -> str:
 
 def check_database() -> dict[str, Any]:
     try:
-        engine = create_database_engine()
-        with engine.connect() as conn:
+        from stock_platform.database.session import get_engine
+
+        with get_engine().connect() as conn:
             conn.execute(text("SELECT 1"))
         return {"status": "UP"}
     except Exception as ex:

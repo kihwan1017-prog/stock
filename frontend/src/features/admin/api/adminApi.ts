@@ -26,9 +26,32 @@ export async function getHealth(): Promise<JsonValue> {
   return data as JsonValue;
 }
 
+export async function getHealthLive(): Promise<JsonValue> {
+  const { data } = await rootClient.get("/health/live");
+  return data as JsonValue;
+}
+
+export async function getHealthReady(): Promise<JsonValue> {
+  const { data } = await rootClient.get("/health/ready");
+  return data as JsonValue;
+}
+
 export async function getVersion(): Promise<JsonValue> {
   const { data } = await rootClient.get("/version");
   return data as JsonValue;
+}
+
+export async function getMonitoringOverview(params?: {
+  evaluate_alerts?: boolean;
+  refresh?: boolean;
+}): Promise<JsonValue> {
+  return getJson("/monitoring/overview", params);
+}
+
+export async function getMonitoringAlerts(params?: {
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/monitoring/alerts", params);
 }
 
 export async function getSystemDashboard(params?: {

@@ -174,12 +174,19 @@ class AuthService:
         jti = str(payload.get("jti") or "")
         user_id = int(payload.get("sub") or 0)
         row = self._repository.get_refresh_by_jti(jti)
-        if row is None or row.revoked_at is not None:
+        if row is None:
             raise AuthError("Refresh 토큰이 유효하지 않습니다.")
+        # 이미 revoke된 토큰 재사용 → 세션 전체 폐기 (theft 대응)
+        if row.revoked_at is not None:
+            self._repository.revoke_all_for_user(user_id)
+            raise AuthError(
+                "Refresh 토큰이 재사용되었습니다. 모든 세션이 만료되었습니다."
+            )
         if row.user_id != user_id:
             raise AuthError("Refresh 토큰이 유효하지 않습니다.")
         expected = self._jwt.hash_token(refresh_token)
         if not secrets_compare(row.token_hash, expected):
+            self._repository.revoke_all_for_user(user_id)
             raise AuthError("Refresh 토큰이 유효하지 않습니다.")
 
         user = self._repository.get_by_id(user_id)

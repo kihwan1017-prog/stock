@@ -3,9 +3,10 @@ from __future__ import annotations
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.broker.models import (
     BrokerOrderRequest,
     BrokerOrderSide,
@@ -21,6 +22,7 @@ from stock_platform.broker.runtime import (
 router = APIRouter(
     prefix="/api/v1/broker",
     tags=["Broker"],
+    dependencies=[Depends(require_admin)],
 )
 
 

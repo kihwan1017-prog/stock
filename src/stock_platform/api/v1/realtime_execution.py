@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.realtime.runtime import (
     realtime_execution_runner,
 )
@@ -10,6 +11,7 @@ from stock_platform.realtime.runtime import (
 router = APIRouter(
     prefix="/api/v1/realtime-execution",
     tags=["Realtime Execution"],
+    dependencies=[Depends(require_admin)],
 )
 
 

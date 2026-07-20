@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.realtime.runtime import (
     realtime_signal_bus,
     realtime_strategy_runner,
@@ -16,6 +17,7 @@ from stock_platform.realtime.runtime import (
 router = APIRouter(
     prefix="/api/v1/realtime-strategy",
     tags=["Realtime Strategy"],
+    dependencies=[Depends(require_admin)],
 )
 
 

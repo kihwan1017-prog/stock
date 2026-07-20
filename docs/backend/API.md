@@ -1,8 +1,13 @@
-# API 개요 — stock-platform v1.0
+# API 개요 — stock-platform v1.0.0
 
-OpenAPI: `http://127.0.0.1:8000/docs`  
+루트 요약: [../../API.md](../../API.md)
+
+OpenAPI (local only): `http://127.0.0.1:8000/docs`  
 OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`  
+운영(`production`/`staging`)에서는 docs/openapi **비활성**.  
 사람용 매뉴얼: [../manual/API사용매뉴얼.md](../manual/API사용매뉴얼.md)
+
+앱 버전: `APP_VERSION` / `GET /version` → **1.0.0**
 
 ## 인증
 
@@ -46,7 +51,7 @@ OpenAPI JSON: `http://127.0.0.1:8000/openapi.json`
 
 | Method | Path | 인증 |
 |--------|------|------|
-| GET | `/api/v1/risk/kill-switch` | 없음 |
+| GET | `/api/v1/risk/kill-switch` | Admin (STEP62) |
 | POST | `/api/v1/risk/kill-switch/activate` | Admin |
 | POST | `/api/v1/broker/live-transition/*/approve` | Admin |
 

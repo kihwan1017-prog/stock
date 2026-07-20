@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from stock_platform.database.session import (
     get_db_session,
 )
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.strategy_deployment.models import (
     StrategyDeploymentMode,
     StrategyDeploymentRequest,
@@ -27,6 +28,7 @@ from stock_platform.strategy_deployment.service import (
 router = APIRouter(
     prefix="/api/v1/strategy-deployments",
     tags=["Strategy Deployments"],
+    dependencies=[Depends(require_admin)],
 )
 
 

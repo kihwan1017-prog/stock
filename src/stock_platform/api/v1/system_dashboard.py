@@ -10,6 +10,7 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.operation.operations_dashboard_service import (
     OperationsDashboardService,
 )
@@ -18,6 +19,7 @@ from stock_platform.operation.operations_dashboard_service import (
 router = APIRouter(
     prefix="/api/v1/system/dashboard",
     tags=["System Dashboard"],
+    dependencies=[Depends(require_admin)],
 )
 
 

@@ -44,6 +44,11 @@ Thumbs.db
 data/
 temp/
 
+# Local artifacts / agent state (do not commit)
+*.zip
+stock-platform.zip
+openclaw-workspace-state.json
+
 USER.md
 MEMORY.md
 memory/

@@ -174,6 +174,11 @@ class ApplicationLifecycle:
                 "scheduler startup",
                 self._start_schedulers,
             )
+            from stock_platform.operation.runtime_info import (
+                mark_lifecycle_started,
+            )
+
+            mark_lifecycle_started()
             await self._run_optional(
                 "market data persistence",
                 market_data_persistence_worker.start,

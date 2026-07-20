@@ -8,6 +8,9 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.auth.account_ownership import (
+    assert_trading_account_access,
+)
 from stock_platform.auth.deps import (
     AuthenticatedUser,
     require_permission,
@@ -18,6 +21,7 @@ from stock_platform.database.session import (
 from stock_platform.order.cancel_replace_service import (
     OrderCancelReplaceService,
 )
+from stock_platform.order.repository import TradingOrderRepository
 from stock_platform.order.trading_guards import (
     TradingGuardError,
     resolve_broker_adapter_for_cancel,
@@ -35,13 +39,27 @@ class CancelOrderRequest(BaseModel):
         default=None,
         gt=0,
     )
-    actor: str = "API"
+    actor: str = Field(default="API", max_length=100)
 
 
 class ReplaceOrderRequest(BaseModel):
     quantity: Decimal = Field(gt=0)
     price: Decimal = Field(gt=0)
-    actor: str = "API"
+    actor: str = Field(default="API", max_length=100)
+
+
+def _assert_order_owner(
+    *,
+    user: AuthenticatedUser,
+    order_id: int,
+    session: Session,
+) -> None:
+    entity = TradingOrderRepository(session).get(order_id)
+    if entity is None:
+        raise LookupError(f"Order not found: {order_id}")
+    assert_trading_account_access(
+        user, int(entity.account_id), session
+    )
 
 
 @router.post("/{order_id}/cancel")
@@ -59,6 +77,9 @@ def cancel_order(
     """
 
     try:
+        _assert_order_owner(
+            user=user, order_id=order_id, session=session
+        )
         adapter = resolve_broker_adapter_for_cancel(session)
         return OrderCancelReplaceService(
             session=session,
@@ -95,6 +116,9 @@ def replace_order(
     """
 
     try:
+        _assert_order_owner(
+            user=user, order_id=order_id, session=session
+        )
         adapter = resolve_broker_adapter_for_cancel(session)
         return OrderCancelReplaceService(
             session=session,

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import logging
 import uuid
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from stock_platform.ai.ollama_client import OllamaError
@@ -13,8 +15,12 @@ from stock_platform.common.exceptions import (
     DomainError,
     sanitize_error_message,
 )
+from stock_platform.common.settings import get_settings
 from stock_platform.disclosure.dart_client import DartError
 from stock_platform.news.naver_client import NaverNewsError
+
+
+logger = logging.getLogger(__name__)
 
 
 def _request_id(request: Request) -> str:
@@ -127,4 +133,67 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=502,
             code="NAVER_API_ERROR",
             message=str(exc),
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        return _error_response(
+            request=request,
+            status_code=422,
+            code="VALIDATION_ERROR",
+            message="Request validation failed",
+            detail=exc.errors(),
+        )
+
+    @app.exception_handler(HTTPException)
+    async def handle_http_exception(
+        request: Request,
+        exc: HTTPException,
+    ) -> JSONResponse:
+        detail = exc.detail
+        if isinstance(detail, str):
+            message = detail
+            body_detail: dict | list | str | None = None
+        else:
+            message = "HTTP error"
+            body_detail = detail  # type: ignore[assignment]
+        return _error_response(
+            request=request,
+            status_code=exc.status_code,
+            code=f"HTTP_{exc.status_code}",
+            message=message,
+            detail=body_detail,
+        )
+
+    @app.exception_handler(Exception)
+    async def handle_unhandled_exception(
+        request: Request,
+        exc: Exception,
+    ) -> JSONResponse:
+        try:
+            from stock_platform.operation.exception_rate import (
+                exception_rate_tracker,
+            )
+
+            exception_rate_tracker.record()
+        except Exception:
+            pass
+        logger.exception(
+            "unhandled_exception",
+            extra={"path": str(request.url.path)},
+        )
+        message = "Internal server error"
+        detail: str | None = None
+        if not get_settings().is_production_env:
+            detail = sanitize_error_message(str(exc))
+            message = sanitize_error_message(str(exc)) or message
+        return _error_response(
+            request=request,
+            status_code=500,
+            code="INTERNAL_ERROR",
+            message=message,
+            detail=detail,
         )

@@ -35,6 +35,7 @@ class KillSwitchActionRequest(BaseModel):
 
 @router.get("")
 def get_kill_switch_state(
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     return KillSwitchService(session).get_state()

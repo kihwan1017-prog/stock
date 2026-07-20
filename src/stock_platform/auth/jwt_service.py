@@ -26,7 +26,12 @@ class JwtTokenService:
         if not secret:
             raise JwtError(format_jwt_secret_missing_message())
         self._secret = secret
-        self._algorithm = settings.jwt_algorithm
+        algo = (settings.jwt_algorithm or "HS256").strip().upper()
+        if algo not in {"HS256"}:
+            raise JwtError(
+                f"지원하지 않는 JWT_ALGORITHM 입니다: {algo}. HS256만 허용됩니다."
+            )
+        self._algorithm = algo
 
     def create_access_token(
         self,

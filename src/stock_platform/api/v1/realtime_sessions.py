@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.realtime.session_models import (
     TradingSessionPhase,
 )
@@ -13,6 +14,7 @@ from stock_platform.realtime.session_runtime import (
 router = APIRouter(
     prefix="/api/v1/realtime-sessions",
     tags=["Realtime Sessions"],
+    dependencies=[Depends(require_admin)],
 )
 
 

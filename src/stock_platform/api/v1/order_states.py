@@ -2,12 +2,17 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.order.models import OrderStatus
 from stock_platform.order.state_models import InvalidOrderStateTransition, OrderStateTransitionCommand
 from stock_platform.order.state_service import OrderStateService
 
-router = APIRouter(prefix='/api/v1/orders', tags=['Order States'])
+router = APIRouter(
+    prefix='/api/v1/orders',
+    tags=['Order States'],
+    dependencies=[Depends(require_admin)],
+)
 
 class OrderStateTransitionRequest(BaseModel):
     target_status: OrderStatus

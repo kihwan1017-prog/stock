@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.risk_engine.daily_loss_monitor import (
     DailyLossMonitor,
 )
@@ -26,6 +27,7 @@ from stock_platform.risk_engine.runtime import (
 router = APIRouter(
     prefix="/api/v1/risk/daily-loss",
     tags=["Daily Loss Monitor"],
+    dependencies=[Depends(require_admin)],
 )
 
 

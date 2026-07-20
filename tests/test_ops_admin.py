@@ -33,14 +33,11 @@ def test_ops_db_status_requires_auth() -> None:
     assert client.get("/api/v1/ops/backup/status").status_code == 401
 
 
-def test_job_history_returns_items_dict() -> None:
+def test_job_history_requires_admin() -> None:
     from fastapi.testclient import TestClient
 
     from stock_platform.api.main import app
 
     client = TestClient(app, raise_server_exceptions=False)
     response = client.get("/api/v1/jobs/history", params={"limit": 5})
-    assert response.status_code == 200
-    payload = response.json()
-    assert "items" in payload
-    assert isinstance(payload["items"], list)
+    assert response.status_code in {401, 403}

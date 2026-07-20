@@ -7,8 +7,13 @@ export const queryKeys = {
     all: ["system"] as const,
     status: () => ["system", "status"] as const,
     health: () => ["system", "health"] as const,
+    healthLive: () => ["system", "health-live"] as const,
+    healthReady: () => ["system", "health-ready"] as const,
     version: () => ["system", "version"] as const,
     dashboard: (params?: object) => ["system", "dashboard", params ?? {}] as const,
+    monitoringOverview: (params?: object) =>
+      ["system", "monitoring-overview", params ?? {}] as const,
+    monitoringAlerts: () => ["system", "monitoring-alerts"] as const,
   },
   dashboard: {
     all: ["dashboard"] as const,

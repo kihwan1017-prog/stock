@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_name: str = "stock-platform"
     app_timezone: str = "Asia/Seoul"
+    # STEP59 — 운영 로깅 / CORS
+    log_level: str = "INFO"
+    cors_allow_origins: str = (
+        "http://localhost:3000,http://127.0.0.1:3000"
+    )
 
     db_host: str
     db_port: int = 5432
@@ -96,6 +101,8 @@ class Settings(BaseSettings):
     telegram_ops_poll_interval_seconds: float = 3.0
     telegram_allowed_chat_ids: str = ""
     telegram_notification_level: str = "INFO"
+    # Telegram webhook Secret-Token (설정 시 헤더 검증 필수)
+    telegram_webhook_secret: str = Field(default="")
     app_version: str = "1.0.0"
     slack_enabled: bool = False
     slack_webhook_url: str = Field(default="")
@@ -273,6 +280,30 @@ class Settings(BaseSettings):
             )
         self.ensure_jwt_secret()
         self.ensure_admin_api_key()
+        algo = (self.jwt_algorithm or "HS256").strip().upper()
+        if algo not in {"HS256"}:
+            raise ValueError(
+                "JWT_ALGORITHM 은 HS256 만 허용됩니다."
+            )
+        self.jwt_algorithm = algo
+        if self.is_production_env:
+            origins = [
+                item.strip()
+                for item in self.cors_allow_origins.split(",")
+                if item.strip()
+            ]
+            if not origins:
+                raise ValueError(
+                    "운영 환경에서는 CORS_ALLOW_ORIGINS 가 필수입니다."
+                )
+            if all(
+                "localhost" in origin or "127.0.0.1" in origin
+                for origin in origins
+            ):
+                raise ValueError(
+                    "운영 환경 CORS_ALLOW_ORIGINS 에 localhost 만 있으면 "
+                    "안 됩니다. 실제 Admin Origin을 설정하세요."
+                )
 
     def validate_kiwoom_credentials(self) -> None:
         missing: list[str] = []

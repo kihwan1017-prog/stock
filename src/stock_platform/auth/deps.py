@@ -187,12 +187,12 @@ def require_admin(
             user_id = int(payload.get("sub") or 0)
             user = AuthRepository(session).get_by_id(user_id)
             if user is not None and user.is_active:
-                roles = payload.get("roles") or []
-                if isinstance(roles, list) and "admin" in roles:
+                # JWT claim roles 가 아니라 DB RBAC 재검증 (권한 강등 즉시 반영)
+                rbac = RbacRepository(session)
+                role_codes = rbac.list_role_codes_for_user(user_id)
+                if "admin" in role_codes:
                     return f"JWT:{user.username}"
-                perms = RbacRepository(
-                    session
-                ).list_permission_codes_for_user(user_id)
+                perms = rbac.list_permission_codes_for_user(user_id)
                 if "ops:execute" in perms:
                     return f"JWT:{user.username}"
         except (JwtError, ValueError, TypeError):

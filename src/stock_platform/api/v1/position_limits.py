@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.risk_engine.position_limit_repository import (
     PositionLimitRepository,
@@ -13,6 +14,7 @@ from stock_platform.risk_engine.position_limit_repository import (
 router = APIRouter(
     prefix="/api/v1/risk/position-limits",
     tags=["Position Limits"],
+    dependencies=[Depends(require_admin)],
 )
 
 

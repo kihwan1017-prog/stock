@@ -1,208 +1,135 @@
 # Kiki Trade AI
 
-> AI ?? ??·???? ?? ???  
-> **Current release: v1.0.0** · Live orders blocked by default (`KIWOOM_LIVE_ORDER_ENABLED=false`)
+> AI 기반 주식·암호화폐 자동매매 플랫폼  
+> **Current release: v1.0.0** · Live 주문 기본 차단 (`KIWOOM_LIVE_ORDER_ENABLED=false`)
 
-?? ?? ??: **[docs/README.md](docs/README.md)**
-
----
-
-## ???? ??
-
-Kiki Trade AI? ?? ??(?? REST)? ????(Upbit)? ??? ????? ??·?????? AI ?? ???????.
-
-AI? ??·??·?? ???? ????, ?? ??? Risk Engine ?? ??? Broker? ?????.
+문서 포털: **[docs/README.md](docs/README.md)**
 
 ---
 
-## ????
+## 한줄 소개
 
-??: [docs/architecture/README.md](docs/architecture/README.md) · [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
+Kiki Trade AI는 국내 주식(키움 REST)과 암호화폐(Upbit)를 대상으로 시세·지표·스크리닝·AI 분석을 결합한 자동매매 플랫폼입니다.  
+주문은 Risk Engine·Kill Switch를 거친 뒤 Broker(Outbox)로만 전달됩니다.
+
+---
+
+## 아키텍처
+
+상세: [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
 
 ```text
-Admin (Next.js) ??? FastAPI
-                      ?
-         ???????????????????????????
+Admin (Next.js) ──► FastAPI
+                      │
+         ┌────────────┼────────────┐
       Market/AI    Orders/Risk   Ops/Jobs
-         ???????????????????????????
-                      ?
+         └────────────┼────────────┘
+                      ▼
               PostgreSQL (+ pgvector)
-                      ?
+                      │
               Kiwoom / Upbit
 ```
 
 ---
 
-## ????
+## 스택
 
-| ?? | ?? |
+| 구성 | 버전 |
 |------|------|
-| OS | Windows 11 |
+| OS | Windows 10/11 |
 | Backend | Python 3.12, FastAPI |
 | Frontend | Node.js 20+, Next.js 16 |
-| Database | PostgreSQL 17 (Windows ???, **Docker ??**) |
-| AI | Ollama + Qwen |
-| IDE | Cursor |
+| Database | PostgreSQL 16/17 (Windows Service, **Docker 없음**) |
+| AI | Ollama + Qwen (로컬) |
+| 버전 | **1.0.0** (`APP_VERSION` / `GET /version`) |
 
 ---
 
-## ?? ??
+## 빠른 시작
 
-1. [??](docs/deployment/INSTALL.md)
-2. [??](docs/deployment/CONFIGURATION.md)
+1. [INSTALL.md](INSTALL.md) · [docs/deployment/INSTALL.md](docs/deployment/INSTALL.md)
+2. 설정: [docs/deployment/CONFIGURATION.md](docs/deployment/CONFIGURATION.md) · `.env.example`
 3. Backend:
    ```powershell
    $env:PYTHONPATH = "D:\Projects\stock-platform\src"
    uvicorn stock_platform.api.main:app --reload --app-dir src --host 127.0.0.1 --port 8000
    ```
-4. Admin (??): [frontend/README.md](frontend/README.md) ? `npm run dev`
-5. [?? ??](docs/trading/PAPER_DAY1_CHECKLIST.md) · [?? Runbook](docs/trading/OPERATIONS_RUNBOOK.md)
-6. ??? ??: `.\scripts\verify_release.ps1`
+4. Admin: [frontend/README.md](frontend/README.md) → `npm run dev`
+5. 운영: [OPERATIONS.md](OPERATIONS.md) · [RUNBOOK.md](RUNBOOK.md) · [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md)
 
-- API Docs: http://127.0.0.1:8000/docs  
+- API Docs (local): http://127.0.0.1:8000/docs  
 - Admin: http://localhost:3000  
+- Health: `GET /health/live` · `GET /health/ready` · `GET /version`
 
 ---
 
-## JWT Authentication (Admin Login)
+## 인증
 
-Secrets file (default load path):
+시크릿 기본 경로:
 
 ```text
 E:\StockTrading\secrets\stock-platform.env
 ```
 
-Templates in repo:
+| 환경 | `JWT_SECRET` 미설정 시 |
+|------|------------------------|
+| `APP_ENV=local` + `JWT_DEV_AUTO_SECRET=true` | 임시 시크릿 자동 생성 (경고 로그) |
+| `production` / `staging` | 기동 실패 |
 
-- `stock-platform.env.example`  copy to the secrets path above
-- `.env.example`  full env reference
-
-Minimal JWT block:
-
-```dotenv
-JWT_SECRET=generate-a-long-random-string
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
-JWT_REFRESH_TOKEN_EXPIRE_DAYS=30
-JWT_DEV_AUTO_SECRET=true
-AUTH_BOOTSTRAP_ADMIN_USERNAME=admin
-AUTH_BOOTSTRAP_ADMIN_PASSWORD=ChangeMeNow!
-```
-
-| Environment | Behavior without `JWT_SECRET` |
-|-------------|-------------------------------|
-| `APP_ENV=local` (dev) + `JWT_DEV_AUTO_SECRET=true` | Ephemeral secret auto-generated (warning log) |
-| `APP_ENV=prod` / `production` / `staging` | Startup fails with a friendly setup message |
-
-Never put `JWT_SECRET` in `NEXT_PUBLIC_*` or commit it to Git.
-
-Details: [docs/deployment/CONFIGURATION.md](docs/deployment/CONFIGURATION.md) · [docs/manual/?????.md](docs/manual/?????.md)
+상세: [SECURITY.md](SECURITY.md) · [docs/deployment/CONFIGURATION.md](docs/deployment/CONFIGURATION.md)
 
 ---
 
-## Backend
+## 문서 인덱스 (v1.0.0)
 
-- ???: `stock_platform.api.main:app`
-- ??: [docs/backend/README.md](docs/backend/README.md) · [docs/backend/API.md](docs/backend/API.md)
-- OpenAPI: `/docs`, `/openapi.json`
-- Health: `GET /health`
+| 문서 | 용도 |
+|------|------|
+| [CHANGELOG.md](CHANGELOG.md) | 변경 이력 |
+| [RELEASE_NOTE_v1.0.0.md](RELEASE_NOTE_v1.0.0.md) | 릴리즈 노트 |
+| [API.md](API.md) | API 개요 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 아키텍처 |
+| [DB_SCHEMA.md](DB_SCHEMA.md) | DB 스키마 |
+| [SECURITY.md](SECURITY.md) | 보안 |
+| [BACKUP.md](BACKUP.md) / [RECOVERY.md](RECOVERY.md) | 백업·복구 |
+| [RUNBOOK.md](RUNBOOK.md) | 일상 운영 |
+| [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) | 장애 대응 |
+| [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md) | Go-Live |
+| [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | 알려진 이슈 |
+| [FINAL_PRODUCT_REPORT.md](FINAL_PRODUCT_REPORT.md) | 제품 최종 보고서 |
+| [LICENSE](LICENSE) | 라이선스 |
 
----
-
-## Frontend
-
-- ??: `frontend/` (STEP41 Admin)
-- ??: [docs/frontend/README.md](docs/frontend/README.md) · [frontend/README.md](frontend/README.md)
-- ??: [docs/reference/STEP41_ADMIN_FOUNDATION.md](docs/reference/STEP41_ADMIN_FOUNDATION.md)
-- ?? ?? ??: `JWT login (/login) — see JWT section above`
-
----
-
-## Database
-
-- ??: [docs/database/README.md](docs/database/README.md)
-- ??: [docs/database/DB_DEVELOPMENT_RULES.md](docs/database/DB_DEVELOPMENT_RULES.md)
-- Canonical Alembic: `database/alembic/versions/`
-- Overlay ?? ??: [docs/database/MIGRATION_OVERLAYS.md](docs/database/MIGRATION_OVERLAYS.md)
+한글 매뉴얼: [docs/manual/README.md](docs/manual/README.md)
 
 ---
 
-## API
+## 배포 전제 (중요)
 
-- ??: [docs/backend/API.md](docs/backend/API.md)
-- ??: http://127.0.0.1:8000/docs
-- ?? API: ?? `X-Admin-API-Key` (`ADMIN_API_KEY`)
+v1.0.0은 다음을 전제로 **RELEASE WITH KNOWN ISSUES** 입니다.
 
----
-
-## AI
-
-- ???: [docs/ai/README.md](docs/ai/README.md)
-- ??·?? API? OpenAPI? `/api/v1/ai-*`, `/api/v1/candidates` ??
-- ???: Ollama (??)
+- **공개 인터넷 직접 노출 금지** (VPN / 사설망 / 역프록시)
+- **Live 주문 기본 OFF** — 고객 SaaS Live는 STEP63 감사상 차단
+- 단일 운영자 · Windows 단일 인스턴스 · Paper 중심
 
 ---
 
-## Trading
-
-- ??: [docs/trading/README.md](docs/trading/README.md)
-- ??: [OPERATIONS_RUNBOOK](docs/trading/OPERATIONS_RUNBOOK.md)
-- ??: [LIVE_TRADING_CHECKLIST](docs/trading/LIVE_TRADING_CHECKLIST.md)
-- ??? `OrderExecutionService` ? Outbox ? Broker
-
----
-
-## Deployment
-
-- ??: [docs/deployment/README.md](docs/deployment/README.md)
-- [INSTALL](docs/deployment/INSTALL.md) · [CONFIGURATION](docs/deployment/CONFIGURATION.md) · [RELEASE_CHECKLIST](docs/deployment/RELEASE_CHECKLIST.md)
-
----
-
-## Documentation
-
-?? ??: **[docs/README.md](docs/README.md)**  
-?? ???: **[docs/manual/README.md](docs/manual/README.md)**
-
-??: [docs/development/README.md](docs/development/README.md)  
-??: [docs/reference/README.md](docs/reference/README.md)
-
----
-
-## Archive
-
-?? STEP ?? ??·obsolete ???: [docs/archive/README.md](docs/archive/README.md)
-
-- Steps catalog: [docs/archive/steps/README.md](docs/archive/steps/README.md)
-- Obsolete: [docs/archive/obsolete/README.md](docs/archive/obsolete/README.md)
-
-?? ?? SoT? ????.
-
----
-
-## ChangeLog
-
-?? ??: **[CHANGELOG.md](CHANGELOG.md)** · ??: [PROJECT_STATUS.md](PROJECT_STATUS.md)
-
----
-
-## ???? ??
+## 디렉터리
 
 ```text
-stock-platform
-??? src/                 # FastAPI
-??? frontend/            # Admin (Next.js)
-??? tests/
-??? database/alembic/    # Canonical migrations
-??? docs/                # Domain documentation
-??? scripts/
-??? README.md
-??? CHANGELOG.md
-??? AGENTS.md            # Agent workspace (not product docs)
+stock-platform/
+├── src/                 # FastAPI
+├── frontend/            # Admin (Next.js)
+├── tests/
+├── database/alembic/    # Canonical migrations
+├── ops/                 # Windows 운영 스크립트
+├── docs/                # 도메인 문서
+├── scripts/
+├── LICENSE
+├── README.md
+└── CHANGELOG.md
 ```
 
 ---
 
-## ????
+## 라이선스
 
-Private Project · Copyright © 2026 Kiki Trade AI
+Private Project · Copyright © 2026 Kiki Trade AI — 자세한 내용 [LICENSE](LICENSE)

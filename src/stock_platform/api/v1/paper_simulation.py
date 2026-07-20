@@ -12,6 +12,7 @@ from fastapi import (
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.trading.account_service import (
     PaperAccountError,
@@ -31,6 +32,7 @@ from stock_platform.trading.simulation_service import (
 router = APIRouter(
     prefix="/api/v1/paper-simulation",
     tags=["Paper Simulation"],
+    dependencies=[Depends(require_admin)],
 )
 
 

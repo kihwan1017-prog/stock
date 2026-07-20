@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 # JWT + API Key 통합 보호 (기존 import 경로 유지)
 from stock_platform.auth.deps import require_admin  # noqa: F401
+from stock_platform.common.security_mask import redact_mapping
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.audit_models import AuditEvent
 from stock_platform.operation.audit_repository import (
@@ -45,20 +46,7 @@ class AuditLogService:
         symbol: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> AuditEvent:
-        safe_detail = dict(detail or {})
-        for key in list(safe_detail):
-            lowered = key.lower()
-            if any(
-                secret in lowered
-                for secret in (
-                    "token",
-                    "secret",
-                    "password",
-                    "api_key",
-                    "authorization",
-                )
-            ):
-                safe_detail[key] = "***"
+        safe_detail = redact_mapping(dict(detail or {}))
         return self._repository.create(
             event_type=event_type,
             actor=actor,

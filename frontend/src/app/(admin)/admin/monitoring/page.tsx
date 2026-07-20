@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Card, Col, Row, Space, Tag, Typography } from "antd";
+import { Card, Col, Descriptions, Row, Space, Tag, Typography } from "antd";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -10,142 +10,255 @@ import { asRecord, cell } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
-function ComponentTag({
-  name,
-  status,
-}: {
-  name: string;
-  status: unknown;
-}) {
+function StatusTag({ label, status }: { label: string; status: unknown }) {
   const normalized = String(status ?? "UNKNOWN").toUpperCase();
   const color =
-    normalized === "UP" || normalized === "CONFIGURED" || normalized === "OK"
+    normalized === "UP" ||
+    normalized === "CONFIGURED" ||
+    normalized === "OK" ||
+    normalized === "INACTIVE"
       ? "success"
-      : normalized === "DOWN" || normalized === "FAILED" || normalized === "ERROR"
+      : normalized === "DOWN" ||
+          normalized === "FAILED" ||
+          normalized === "ERROR" ||
+          normalized === "CRITICAL" ||
+          normalized === "ACTIVE"
         ? "error"
         : "warning";
   return (
     <Tag color={color}>
-      {name}: {normalized}
+      {label}: {normalized}
     </Tag>
   );
 }
 
+function SectionCard({
+  title,
+  data,
+  loading,
+  error,
+}: {
+  title: string;
+  data: unknown;
+  loading: boolean;
+  error: unknown;
+}) {
+  return (
+    <AdminJsonCard
+      title={title}
+      loading={loading}
+      error={error ? toApiError(error) : null}
+      data={data}
+    />
+  );
+}
+
 export default function AdminMonitoringPage() {
-  const health = useQuery({
-    queryKey: queryKeys.system.health(),
-    queryFn: adminApi.getHealth,
+  const overview = useQuery({
+    queryKey: queryKeys.system.monitoringOverview({}),
+    queryFn: () =>
+      adminApi.getMonitoringOverview({ evaluate_alerts: true }),
     refetchInterval: 15_000,
+  });
+  const live = useQuery({
+    queryKey: queryKeys.system.healthLive(),
+    queryFn: adminApi.getHealthLive,
+    refetchInterval: 10_000,
+  });
+  const ready = useQuery({
+    queryKey: queryKeys.system.healthReady(),
+    queryFn: adminApi.getHealthReady,
+    refetchInterval: 10_000,
   });
   const version = useQuery({
     queryKey: queryKeys.system.version(),
     queryFn: adminApi.getVersion,
   });
-  const system = useQuery({
-    queryKey: queryKeys.system.dashboard({}),
-    queryFn: () => adminApi.getSystemDashboard({ recent_limit: 20 }),
+  const alerts = useQuery({
+    queryKey: queryKeys.system.monitoringAlerts(),
+    queryFn: () => adminApi.getMonitoringAlerts({ limit: 30 }),
+    refetchInterval: 30_000,
   });
-  const quality = useQuery({
-    queryKey: queryKeys.admin.marketQuality(),
-    queryFn: adminApi.getMarketQualityDashboard,
-  });
-  const risk = useQuery({
-    queryKey: queryKeys.dashboard.risk(),
-    queryFn: () => adminApi.getRiskDashboard(),
-  });
-  const ollama = useQuery({
-    queryKey: queryKeys.admin.ollamaStatus(),
-    queryFn: adminApi.getOllamaStatus,
-    refetchInterval: 15_000,
-  });
-  const migration = useQuery({
-    queryKey: queryKeys.admin.opsMigration(),
-    queryFn: adminApi.getOpsMigrationStatus,
+  const health = useQuery({
+    queryKey: queryKeys.system.health(),
+    queryFn: adminApi.getHealth,
+    refetchInterval: 30_000,
   });
 
-  const healthObj = asRecord(health.data);
-  const components = asRecord(healthObj?.components) ?? {};
-  const ollamaObj = asRecord(ollama.data);
-  const migrationObj = asRecord(migration.data);
+  const ov = asRecord(overview.data);
+  const system = asRecord(ov?.system);
+  const database = asRecord(ov?.database);
+  const broker = asRecord(ov?.broker);
+  const scheduler = asRecord(ov?.scheduler);
+  const ai = asRecord(ov?.ai);
+  const telegram = asRecord(ov?.telegram);
+  const orders = asRecord(ov?.orders);
+  const positions = asRecord(ov?.positions);
+  const risk = asRecord(ov?.risk);
+  const resources = asRecord(ov?.resources);
+  const liveObj = asRecord(live.data);
+  const readyObj = asRecord(ready.data);
+  const versionObj = asRecord(version.data);
 
   return (
     <AdminPageShell
       title="시스템 모니터링"
-      description="health · Ollama · Migration · system/dashboard · risk"
+      description="STEP61 · overview · health live/ready · alerts"
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Card size="small" title="컴포넌트 상태" loading={health.isLoading}>
+        <Card size="small" title="상태 요약" loading={overview.isLoading}>
           <Space wrap>
-            <ComponentTag name="Overall" status={healthObj?.status} />
-            <ComponentTag
-              name="DB"
-              status={asRecord(components.database)?.status}
-            />
-            <ComponentTag
-              name="Ollama"
-              status={
-                ollamaObj?.status ?? asRecord(components.ollama)?.status
-              }
-            />
-            <ComponentTag
-              name="Scheduler"
-              status={asRecord(components.scheduler)?.status}
-            />
-            <ComponentTag
-              name="Kiwoom"
-              status={asRecord(components.kiwoom_rest)?.status}
-            />
-            <Tag color={migrationObj?.in_sync ? "success" : "warning"}>
-              Migration: {migrationObj?.in_sync ? "IN SYNC" : "DRIFT"} (
-              {cell(migrationObj?.current)})
-            </Tag>
+            <StatusTag label="Overall" status={ov?.status} />
+            <StatusTag label="Live" status={liveObj?.status} />
+            <StatusTag label="Ready" status={readyObj?.status} />
+            <StatusTag label="DB" status={database?.status} />
+            <StatusTag label="Broker" status={broker?.status} />
+            <StatusTag label="Scheduler" status={scheduler?.status} />
+            <StatusTag label="AI" status={ai?.status} />
+            <StatusTag label="Telegram" status={telegram?.status} />
+            <StatusTag label="Risk" status={risk?.status} />
           </Space>
-          {health.error ? (
+          {overview.error ? (
             <Typography.Text type="danger">
-              {toApiError(health.error).message}
+              {toApiError(overview.error).message}
             </Typography.Text>
           ) : null}
         </Card>
 
+        <Card size="small" title="System Identity" loading={version.isLoading}>
+          <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
+            <Descriptions.Item label="Server">
+              {cell(system?.server_status)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Uptime(s)">
+              {cell(system?.uptime_seconds ?? versionObj?.uptime_seconds)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Environment">
+              {cell(system?.environment ?? versionObj?.environment)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Version">
+              {cell(system?.version ?? versionObj?.version)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Build">
+              {cell(system?.build_version ?? versionObj?.build_version)}
+            </Descriptions.Item>
+            <Descriptions.Item label="Git">
+              {cell(system?.git_commit ?? versionObj?.git_commit)}
+            </Descriptions.Item>
+          </Descriptions>
+        </Card>
+
         <Row gutter={[16, 16]}>
           <Col xs={24} md={12}>
-            <AdminJsonCard
-              title="GET /health"
-              loading={health.isLoading}
-              error={health.error ? toApiError(health.error) : null}
-              data={health.data}
+            <SectionCard
+              title="Database"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={database}
             />
           </Col>
           <Col xs={24} md={12}>
-            <AdminJsonCard
-              title="GET /version"
-              loading={version.isLoading}
-              error={version.error ? toApiError(version.error) : null}
-              data={version.data}
+            <SectionCard
+              title="Broker"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={broker}
             />
           </Col>
           <Col xs={24} md={12}>
-            <AdminJsonCard
-              title="GET /market-quality/dashboard"
-              loading={quality.isLoading}
-              error={quality.error ? toApiError(quality.error) : null}
-              data={quality.data}
+            <SectionCard
+              title="Scheduler"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={scheduler}
             />
           </Col>
           <Col xs={24} md={12}>
-            <AdminJsonCard
-              title="GET /dashboard/risk"
-              loading={risk.isLoading}
-              error={risk.error ? toApiError(risk.error) : null}
-              data={risk.data}
+            <SectionCard
+              title="AI / Ollama"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={ai}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="Telegram"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={telegram}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="Resources"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={resources}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="Orders (today)"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={orders}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="Positions"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={positions}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="Risk"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={risk}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="Alerts (audit)"
+              loading={alerts.isLoading}
+              error={alerts.error}
+              data={alerts.data}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="GET /health/live"
+              loading={live.isLoading}
+              error={live.error}
+              data={live.data}
+            />
+          </Col>
+          <Col xs={24} md={12}>
+            <SectionCard
+              title="GET /health/ready"
+              loading={ready.isLoading}
+              error={ready.error}
+              data={ready.data}
             />
           </Col>
           <Col xs={24}>
-            <AdminJsonCard
-              title="GET /system/dashboard"
-              loading={system.isLoading}
-              error={system.error ? toApiError(system.error) : null}
-              data={system.data}
+            <SectionCard
+              title="GET /health (상세)"
+              loading={health.isLoading}
+              error={health.error}
+              data={health.data}
+            />
+          </Col>
+          <Col xs={24}>
+            <SectionCard
+              title="GET /api/v1/monitoring/overview"
+              loading={overview.isLoading}
+              error={overview.error}
+              data={overview.data}
             />
           </Col>
         </Row>

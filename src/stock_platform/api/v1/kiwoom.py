@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.brokers.kiwoom.auth import KiwoomTokenManager
 from stock_platform.brokers.kiwoom.exceptions import KiwoomError
 from stock_platform.common.settings import get_settings
@@ -9,6 +10,7 @@ from stock_platform.common.settings import get_settings
 router = APIRouter(
     prefix="/api/v1/kiwoom",
     tags=["Kiwoom"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -48,6 +50,11 @@ def get_kiwoom_configuration() -> KiwoomConfigurationResponse:
     response_model=KiwoomTokenTestResponse,
 )
 async def test_kiwoom_token() -> KiwoomTokenTestResponse:
+    if get_settings().is_production_env:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="token/test is disabled in production",
+        )
     try:
         async with KiwoomTokenManager() as manager:
             token = await manager.get_token(force_refresh=True)

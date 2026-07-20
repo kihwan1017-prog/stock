@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.realtime.runtime import (
     realtime_safety_guard,
 )
@@ -13,6 +14,7 @@ from stock_platform.realtime.runtime import (
 router = APIRouter(
     prefix="/api/v1/realtime-safety",
     tags=["Realtime Safety"],
+    dependencies=[Depends(require_admin)],
 )
 
 

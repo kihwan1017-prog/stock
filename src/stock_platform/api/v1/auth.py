@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from stock_platform.auth.deps import (
@@ -19,7 +19,11 @@ from stock_platform.auth.schemas import (
     TokenResponse,
 )
 from stock_platform.auth.service import AuthError, AuthService, user_view_dict
+from stock_platform.common.rate_limit import enforce_rate_limit
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
+from stock_platform.api.deps_admin import AuditLogService, get_audit_service
+from stock_platform.common.security_mask import mask_secret
 
 router = APIRouter(
     prefix="/api/v1/auth",
@@ -52,6 +56,15 @@ def signup(
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
 ):
+    # RC1 — 운영에서는 공개 가입 차단 (Admin Users API로 생성)
+    if get_settings().is_production_env:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Public signup is disabled in production. "
+                "Create users via Admin API."
+            ),
+        )
     try:
         pair, view = service.signup(
             name=request.name,
@@ -106,17 +119,43 @@ def check_email(
 @router.post("/login", response_model=TokenResponse)
 def login(
     request: LoginRequest,
+    http_request: Request,
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
+    enforce_rate_limit(
+        http_request,
+        scope="auth_login",
+        limit=20,
+        window_seconds=60,
+    )
     try:
         pair, view = service.login(
             username=request.username,
             password=request.password,
         )
+        audit.record(
+            event_type="AUTH_LOGIN_SUCCESS",
+            actor=view.username,
+            detail={"username": view.username},
+        )
         session.commit()
     except AuthError as exc:
         session.rollback()
+        try:
+            AuditLogService(session).record(
+                event_type="AUTH_LOGIN_FAILURE",
+                actor="anonymous",
+                detail={
+                    "username": mask_secret(
+                        request.username.strip(), visible=2
+                    ),
+                },
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
@@ -133,9 +172,16 @@ def login(
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(
     request: RefreshRequest,
+    http_request: Request,
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
 ):
+    enforce_rate_limit(
+        http_request,
+        scope="auth_refresh",
+        limit=60,
+        window_seconds=60,
+    )
     try:
         pair, view = service.refresh(
             refresh_token=request.refresh_token,
@@ -176,10 +222,17 @@ def me(user: AuthenticatedUser = Depends(get_current_user)):
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     request: ChangePasswordRequest,
+    http_request: Request,
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
 ):
+    enforce_rate_limit(
+        http_request,
+        scope="auth_change_password",
+        limit=10,
+        window_seconds=300,
+    )
     try:
         service.change_password(
             user_id=user.user_id,

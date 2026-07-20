@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,8 @@ from stock_platform.api.deps_admin import (
     get_audit_service,
     require_admin,
 )
+from stock_platform.common.rate_limit import enforce_rate_limit
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
 from stock_platform.notification.history import (
     NotificationSettings,
@@ -66,9 +68,30 @@ def get_telegram_ops_status(
 @router.post("/webhook")
 async def telegram_webhook(
     update: TelegramWebhookUpdate,
+    request: Request,
     session: Session = Depends(get_db_session),
+    x_telegram_bot_api_secret_token: str | None = Header(
+        default=None,
+        alias="X-Telegram-Bot-Api-Secret-Token",
+    ),
 ):
     """Telegram이 Push하는 Update를 수신한다."""
+
+    enforce_rate_limit(
+        request,
+        scope="telegram_webhook",
+        limit=120,
+        window_seconds=60,
+    )
+    expected = get_settings().telegram_webhook_secret.strip()
+    if expected:
+        import secrets
+
+        provided = (x_telegram_bot_api_secret_token or "").strip()
+        if not provided or not secrets.compare_digest(
+            provided, expected
+        ):
+            return {"ok": False, "handled": False, "error": "forbidden"}
 
     message = update.message or {}
     text = message.get("text") or ""
@@ -90,11 +113,10 @@ async def telegram_webhook(
             chat_id=chat_id,
             text=result.reply_text,
         )
-    except Exception as exc:
+    except Exception:
         return {
             "ok": False,
             "handled": True,
-            "error": str(exc),
             "command": result.command,
         }
 

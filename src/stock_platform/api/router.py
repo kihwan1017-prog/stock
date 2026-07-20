@@ -32,6 +32,7 @@ from stock_platform.api.v1.deployment_performance_monitor import (
 from stock_platform.api.v1.executions import router as executions_router
 from stock_platform.api.v1.guarded_pipeline import router as guarded_pipeline_router
 from stock_platform.api.v1.health import router as health_router
+from stock_platform.api.v1.monitoring import router as monitoring_router
 from stock_platform.api.v1.indicators import router as indicators_router
 from stock_platform.api.v1.jobs import router as jobs_router
 from stock_platform.api.v1.kill_switch import router as kill_switch_router
@@ -178,6 +179,7 @@ def collect_duplicate_operation_ids(router: APIRouter) -> list[str]:
 
 _ROUTER_GROUPS = (
     health_router,
+    monitoring_router,
     auth_router,
     users_router,
     roles_router,

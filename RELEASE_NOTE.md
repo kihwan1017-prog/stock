@@ -1,0 +1,7 @@
+# RELEASE_NOTE.md
+
+**최신 GA:** [RELEASE_NOTE_v1.0.0.md](RELEASE_NOTE_v1.0.0.md)
+
+이전:
+
+- [RELEASE_NOTE_v1.0.0_RC1.md](RELEASE_NOTE_v1.0.0_RC1.md)

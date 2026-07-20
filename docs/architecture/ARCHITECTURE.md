@@ -1,4 +1,6 @@
-# 아키텍처 — stock-platform v1.0
+# 아키텍처 — stock-platform v1.0.0
+
+루트 요약: [../../ARCHITECTURE.md](../../ARCHITECTURE.md)
 
 ```text
 FastAPI (lifespan)

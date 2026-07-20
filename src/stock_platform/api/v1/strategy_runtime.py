@@ -1,10 +1,12 @@
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     Query,
     status,
 )
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.strategy_deployment.runtime_manager import (
     dynamic_strategy_runtime_manager,
 )
@@ -13,6 +15,7 @@ from stock_platform.strategy_deployment.runtime_manager import (
 router = APIRouter(
     prefix="/api/v1/strategy-runtime",
     tags=["Strategy Runtime"],
+    dependencies=[Depends(require_admin)],
 )
 
 

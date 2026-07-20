@@ -1,9 +1,11 @@
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     status,
 )
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.broker.kiwoom.ws_manager import (
     kiwoom_order_websocket_manager,
 )
@@ -12,6 +14,7 @@ from stock_platform.broker.kiwoom.ws_manager import (
 router = APIRouter(
     prefix="/api/v1/broker/kiwoom/order-websocket",
     tags=["Kiwoom Order WebSocket"],
+    dependencies=[Depends(require_admin)],
 )
 
 

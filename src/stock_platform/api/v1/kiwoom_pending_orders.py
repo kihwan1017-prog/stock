@@ -1,13 +1,18 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
+
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.broker.kiwoom.pending_factory import build_kiwoom_pending_order_client
 from stock_platform.broker.kiwoom.pending_service import KiwoomPendingOrderService
 from stock_platform.broker.pending_repository import BrokerPendingOrderRepository
 
-router = APIRouter(prefix="/api/v1/broker/kiwoom/pending-orders",
-                   tags=["Kiwoom Pending Orders"])
+router = APIRouter(
+    prefix="/api/v1/broker/kiwoom/pending-orders",
+    tags=["Kiwoom Pending Orders"],
+    dependencies=[Depends(require_admin)],
+)
 
 class ModifyOrderRequest(BaseModel):
     symbol: str = Field(min_length=1)

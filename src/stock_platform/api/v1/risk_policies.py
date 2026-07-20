@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.risk.models import PositionSizingMode
 from stock_platform.risk.repository import RiskRepository
@@ -15,6 +16,7 @@ from stock_platform.risk.service import RiskService
 router = APIRouter(
     prefix="/api/v1/risk-policies",
     tags=["Risk Policies"],
+    dependencies=[Depends(require_admin)],
 )
 
 

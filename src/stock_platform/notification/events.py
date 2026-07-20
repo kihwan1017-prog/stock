@@ -23,6 +23,9 @@ class NotificationEventType(StrEnum):
     BROKER_RECONNECTED = "BROKER_RECONNECTED"
     DATABASE_ERROR = "DATABASE_ERROR"
     SCHEDULER_ERROR = "SCHEDULER_ERROR"
+    AI_TIMEOUT = "AI_TIMEOUT"
+    TELEGRAM_FAILURE = "TELEGRAM_FAILURE"
+    MONITORING_ALERT = "MONITORING_ALERT"
 
 
 class NotificationLevel(IntEnum):
@@ -52,6 +55,9 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.BROKER_RECONNECTED: NotificationLevel.INFO,
     NotificationEventType.DATABASE_ERROR: NotificationLevel.CRITICAL,
     NotificationEventType.SCHEDULER_ERROR: NotificationLevel.CRITICAL,
+    NotificationEventType.AI_TIMEOUT: NotificationLevel.WARN,
+    NotificationEventType.TELEGRAM_FAILURE: NotificationLevel.WARN,
+    NotificationEventType.MONITORING_ALERT: NotificationLevel.WARN,
 }
 
 

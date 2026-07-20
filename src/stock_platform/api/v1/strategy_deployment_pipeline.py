@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from stock_platform.database.session import (
     get_db_session,
 )
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.strategy_deployment.pipeline_repository import (
     StrategyDeploymentPipelineRepository,
 )
@@ -24,6 +25,7 @@ from stock_platform.strategy_deployment.pipeline_runtime import (
 router = APIRouter(
     prefix="/api/v1/strategy-deployment-pipeline",
     tags=["Strategy Deployment Pipeline"],
+    dependencies=[Depends(require_admin)],
 )
 
 

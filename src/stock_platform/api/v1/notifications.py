@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from stock_platform.auth.deps import (
     AuthenticatedUser,
     require_permission,
 )
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.notification.events import (
     NotificationEventType,
 )
@@ -45,11 +46,17 @@ class NotificationTestRequest(BaseModel):
 @router.post("/test")
 async def send_test_notification(
     request: NotificationTestRequest,
+    http_request: Request,
     _: AuthenticatedUser = Depends(
         require_permission("trading:write")
     ),
 ):
-    # Publisher → Service → TelegramSender
+    enforce_rate_limit(
+        http_request,
+        scope="notification_test",
+        limit=10,
+        window_seconds=60,
+    )
     event = await notification_publisher.publish_async(
         event_type=request.event_type,
         title=request.title,

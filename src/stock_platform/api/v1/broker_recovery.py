@@ -1,9 +1,11 @@
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     status,
 )
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.broker.recovery_runtime import (
     broker_recovery_manager,
 )
@@ -12,6 +14,7 @@ from stock_platform.broker.recovery_runtime import (
 router = APIRouter(
     prefix="/api/v1/broker/recovery",
     tags=["Broker Recovery"],
+    dependencies=[Depends(require_admin)],
 )
 
 
