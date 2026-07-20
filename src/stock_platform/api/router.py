@@ -9,6 +9,17 @@ from stock_platform.api.v1.audit import router as audit_router
 from stock_platform.api.v1.auth import router as auth_router
 from stock_platform.api.v1.roles import router as roles_router
 from stock_platform.api.v1.users import router as users_router
+from stock_platform.api.v1.user_accounts import router as user_accounts_router
+from stock_platform.api.v1.user_portfolio import router as user_portfolio_router
+from stock_platform.api.v1.user_watchlist import router as user_watchlist_router
+from stock_platform.api.v1.user_news import router as user_news_router
+from stock_platform.api.v1.user_disclosures import router as user_disclosures_router
+from stock_platform.api.v1.user_ai import router as user_ai_router
+from stock_platform.api.v1.user_notifications import (
+    router as user_notifications_router,
+)
+from stock_platform.api.v1.user_settings import router as user_settings_router
+from stock_platform.api.v1.user_profile import router as user_profile_router
 from stock_platform.api.v1.ai_candidates import router as ai_candidates_router
 from stock_platform.api.v1.ai_orchestration import router as ai_orchestration_router
 from stock_platform.api.v1.backtest_grid import router as backtest_grid_router
@@ -182,6 +193,15 @@ _ROUTER_GROUPS = (
     monitoring_router,
     auth_router,
     users_router,
+    user_accounts_router,
+    user_portfolio_router,
+    user_watchlist_router,
+    user_news_router,
+    user_disclosures_router,
+    user_ai_router,
+    user_notifications_router,
+    user_settings_router,
+    user_profile_router,
     roles_router,
     audit_router,
     version_router,

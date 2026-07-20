@@ -215,16 +215,32 @@ def reject_paper_order(
 
 @router.get("")
 def list_paper_orders(
+    account_id: int | None = None,
     exchange_code: str | None = None,
     limit: int = 100,
-    _: AuthenticatedUser = Depends(
+    user: AuthenticatedUser = Depends(
         require_permission("trading:read")
     ),
     session: Session = Depends(get_db_session),
 ):
+    """
+    Paper 주문 목록.
+    paper_order 테이블에 account_id 컬럼이 없어 계정 스코프 필터는 불가.
+    비관리자는 소유권 확인 후 빈 목록을 반환한다 (전역 노출 방지).
+    거래내역은 GET /orders?account_id= 를 사용한다.
+    """
+
+    if not user.is_admin:
+        if account_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="account_id 가 필요합니다.",
+            )
+        assert_paper_account_access(user, account_id, session)
+        return []
+
     rows = PaperOrderRepository(session).list_recent(
         exchange_code=exchange_code,
         limit=limit,
     )
-
     return rows

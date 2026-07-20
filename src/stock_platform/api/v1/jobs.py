@@ -89,14 +89,27 @@ async def execute_job(
         history, result = await SchedulerService(
             session
         ).execute(
-            job_name=job_name,
+            job_name=job_name.strip(),
             payload=request.payload,
             trigger_type=request.trigger_type,
         )
     except LookupError as exc:
+        detail = str(exc)
+        # KeyError도 LookupError 하위 — 필수 payload 누락은 400
+        if isinstance(exc, KeyError):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"필수 payload 필드 누락: {detail}",
+            ) from exc
+        # 미등록 잡만 404, 선행 데이터 부족 등은 409
+        if detail.startswith("Job not found:"):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from exc
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(exc),
+            status_code=status.HTTP_409_CONFLICT,
+            detail=detail,
         ) from exc
     except ValueError as exc:
         raise HTTPException(

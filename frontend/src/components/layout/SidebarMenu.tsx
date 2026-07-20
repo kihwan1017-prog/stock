@@ -25,8 +25,9 @@ function toAntdItems(items: AppMenuItem[]): MenuProps["items"] {
           children: toAntdItems(item.children),
         };
       }
+      // path가 같아도 key는 고유해야 함 (예: monitoring / data → 동일 /admin/monitoring)
       return {
-        key: item.path ?? item.key,
+        key: item.key,
         icon: item.icon,
         label: item.label,
       };
@@ -42,14 +43,19 @@ export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
   const flat = useMemo(() => flattenMenuItems(items), [items]);
 
   const selectedKeys = useMemo(() => {
-    const matched = flat
-      .filter((item) => item.path)
-      .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))
-      .find(
-        (item) =>
-          pathname === item.path || pathname.startsWith(`${item.path}/`),
-      );
-    return matched?.path ? [matched.path] : [];
+    const matches = flat.filter(
+      (item) =>
+        item.path &&
+        (pathname === item.path || pathname.startsWith(`${item.path}/`)),
+    );
+    if (!matches.length) {
+      return [];
+    }
+    // 가장 긴 path 일치 우선 (중첩 경로), 동일 path면 모두 선택
+    const maxLen = Math.max(...matches.map((item) => item.path!.length));
+    return matches
+      .filter((item) => item.path!.length === maxLen)
+      .map((item) => item.key);
   }, [flat, pathname]);
 
   const openKeys = useMemo(() => {
@@ -73,8 +79,9 @@ export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
       defaultOpenKeys={openKeys}
       items={menuItems}
       onClick={({ key }) => {
-        if (key.startsWith("/")) {
-          router.push(key);
+        const target = flat.find((item) => item.key === key);
+        if (target?.path) {
+          router.push(target.path);
           setMobileMenuOpen(false);
         }
       }}

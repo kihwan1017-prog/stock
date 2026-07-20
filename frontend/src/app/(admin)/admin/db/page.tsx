@@ -60,7 +60,7 @@ export default function AdminDbPage() {
         <Alert
           type="info"
           showIcon
-          message="SQL 콘솔·웹 migrate·웹 restore는 제공하지 않습니다."
+          title="SQL 콘솔·웹 migrate·웹 restore는 제공하지 않습니다."
           description="구조 변경은 `python -m alembic upgrade head`, 백업/복구는 docs/manual/백업복구매뉴얼.md 의 pg_dump/pg_restore를 사용하세요."
         />
 

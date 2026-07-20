@@ -139,8 +139,10 @@ export default function UserTradingPage() {
   });
 
   const paperOrdersQuery = useQuery({
-    queryKey: [...queryKeys.user.paperOrders(), "trading"],
-    queryFn: () => userApi.listPaperOrders(),
+    queryKey: [...queryKeys.user.paperOrders(), "trading", { account_id: accountId }],
+    queryFn: () =>
+      userApi.listPaperOrders({ account_id: accountId as number }),
+    enabled: accountId != null,
     refetchInterval: 5_000,
   });
 
@@ -157,8 +159,17 @@ export default function UserTradingPage() {
   });
 
   const executionsQuery = useQuery({
-    queryKey: [...queryKeys.user.executions(), "trading", { limit: 30 }],
-    queryFn: () => userApi.listExecutions({ limit: 30 }),
+    queryKey: [
+      ...queryKeys.user.executions(),
+      "trading",
+      { limit: 30, account_id: accountId },
+    ],
+    queryFn: () =>
+      userApi.listExecutions({
+        limit: 30,
+        account_id: accountId as number,
+      }),
+    enabled: accountId != null,
     refetchInterval: 5_000,
   });
 

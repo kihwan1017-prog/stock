@@ -60,6 +60,8 @@ class PaperAccountService:
         initial_cash: Decimal,
         currency_code: str = "KRW",
         user_id: int | None = None,
+        is_default: bool = False,
+        is_active: bool = True,
     ) -> PaperAccount:
         if not account_name.strip():
             raise PaperAccountError(
@@ -78,6 +80,8 @@ class PaperAccountService:
                 available_cash=initial_cash,
                 realized_profit_loss=ZERO,
                 user_id=user_id,
+                is_default=is_default,
+                is_active=is_active,
             )
         )
 

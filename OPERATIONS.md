@@ -5,7 +5,7 @@
 
 관련: [INSTALL.md](INSTALL.md) · [RUNBOOK.md](RUNBOOK.md) · [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md) · [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) · [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) · [docs/manual/장애대응매뉴얼.md](docs/manual/장애대응매뉴얼.md)
 
-**제품 버전:** v1.0.0 · 결정: RELEASE WITH KNOWN ISSUES ([FINAL_PRODUCT_REPORT.md](FINAL_PRODUCT_REPORT.md))
+**제품 버전:** v1.1.0 · 결정: GO (CONDITIONAL) ([FINAL_RELEASE_REPORT_v1.1.0.md](FINAL_RELEASE_REPORT_v1.1.0.md))
 
 ---
 

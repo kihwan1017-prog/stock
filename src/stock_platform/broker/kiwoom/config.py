@@ -60,10 +60,18 @@ class KiwoomBrokerConfig:
         return "https://api.kiwoom.com"
 
     def validate(self) -> None:
+        # 모의(mockapi)도 키움 OpenAPI 앱키/시크릿 필요
         if not self.app_key.strip():
-            raise ValueError("KIWOOM_APP_KEY is required")
+            raise ValueError(
+                "KIWOOM_APP_KEY is required "
+                "(모의투자 mockapi 포함 — "
+                "E:\\StockTrading\\secrets\\stock-platform.env 에 설정)"
+            )
         if not self.secret_key.strip():
-            raise ValueError("KIWOOM_SECRET_KEY is required")
+            raise ValueError(
+                "KIWOOM_SECRET_KEY is required "
+                "(모의투자 mockapi 포함)"
+            )
         if self.live_order_enabled and self.use_mock:
             raise ValueError(
                 "live_order_enabled cannot be true when use_mock is true"

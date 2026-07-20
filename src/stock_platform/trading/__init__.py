@@ -2,6 +2,7 @@ from stock_platform.trading.account_models import (
     PaperAccount,
     PaperPosition,
     PaperTrade,
+    UserBrokerAccount,
 )
 from stock_platform.trading.account_service import (
     AccountValuation,
@@ -57,6 +58,7 @@ __all__ = [
     "PaperOrderValidationError",
     "PaperPosition",
     "PaperTrade",
+    "UserBrokerAccount",
     "PositionValuation",
     "SimulatedFillResult",
     "SimulationRequest",

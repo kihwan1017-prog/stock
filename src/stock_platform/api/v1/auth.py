@@ -19,6 +19,7 @@ from stock_platform.auth.schemas import (
     TokenResponse,
 )
 from stock_platform.auth.service import AuthError, AuthService, user_view_dict
+from stock_platform.auth.session_meta import session_meta_from_request
 from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
@@ -134,6 +135,7 @@ def login(
         pair, view = service.login(
             username=request.username,
             password=request.password,
+            session_meta=session_meta_from_request(http_request),
         )
         audit.record(
             event_type="AUTH_LOGIN_SUCCESS",
@@ -185,6 +187,7 @@ def refresh(
     try:
         pair, view = service.refresh(
             refresh_token=request.refresh_token,
+            session_meta=session_meta_from_request(http_request),
         )
         session.commit()
     except AuthError as exc:

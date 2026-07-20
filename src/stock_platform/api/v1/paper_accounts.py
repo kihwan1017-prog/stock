@@ -36,8 +36,6 @@ router = APIRouter(
     tags=["Paper Accounts"],
 )
 
-_DEFAULT_INITIAL_CASH = Decimal("10000000")
-
 
 class CreatePaperAccountRequest(BaseModel):
     account_name: str = Field(
@@ -50,6 +48,15 @@ class CreatePaperAccountRequest(BaseModel):
         min_length=1,
         max_length=10,
     )
+
+
+class UpdatePaperAccountRequest(BaseModel):
+    account_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+    is_active: bool | None = None
 
 
 class ApplyFillRequest(BaseModel):
@@ -89,6 +96,8 @@ def _account_dict(account: PaperAccount) -> dict:
         "initial_cash": account.initial_cash,
         "available_cash": account.available_cash,
         "realized_profit_loss": account.realized_profit_loss,
+        "is_default": bool(account.is_default),
+        "is_active": bool(account.is_active),
         "created_at": account.created_at,
         "updated_at": account.updated_at,
     }
@@ -98,24 +107,31 @@ def _ensure_my_account(
     user: AuthenticatedUser,
     session: Session,
 ) -> PaperAccount:
-    """내 Paper 계좌 — 없으면 lazy 생성."""
+    """내 Paper 계좌 — 없으면 lazy 생성 (기본 계좌 1개)."""
 
-    repo = PaperAccountRepository(session)
-    existing = repo.get_primary_for_user(user.user_id)
-    if existing is not None:
-        return existing
+    from stock_platform.trading.user_account_service import (
+        UserAccountError,
+        UserAccountService,
+    )
+
     try:
-        return _service(session).create_account(
-            account_name=f"user-{user.user_id}-default",
-            initial_cash=_DEFAULT_INITIAL_CASH,
-            currency_code="KRW",
-            user_id=user.user_id,
+        view = UserAccountService(session).ensure_default_paper(
+            user.user_id
         )
-    except PaperAccountError as exc:
+    except UserAccountError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+    account = PaperAccountRepository(session).get_account(
+        view.account_id
+    )
+    if account is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="기본 Paper 계좌를 준비하지 못했습니다.",
+        )
+    return account
 
 
 @router.get("/me")
@@ -175,20 +191,80 @@ def create_paper_account(
     ),
     session: Session = Depends(get_db_session),
 ):
+    from stock_platform.trading.user_account_service import (
+        UserAccountError,
+        UserAccountService,
+    )
+
     try:
-        account = _service(session).create_account(
+        view = UserAccountService(session).create_account(
+            user.user_id,
+            account_type="PAPER",
             account_name=request.account_name,
             initial_cash=request.initial_cash,
             currency_code=request.currency_code,
-            user_id=user.user_id,
         )
-    except PaperAccountError as exc:
+    except UserAccountError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-
+    account = assert_paper_account_access(
+        user, view.account_id, session
+    )
     return _account_dict(account)
+
+
+@router.patch("/{account_id}")
+def update_paper_account(
+    account_id: int,
+    request: UpdatePaperAccountRequest,
+    user: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
+    session: Session = Depends(get_db_session),
+):
+    account = assert_paper_account_access(
+        user, account_id, session
+    )
+    if request.account_name is not None:
+        account.account_name = request.account_name.strip()
+    if request.is_active is not None:
+        account.is_active = request.is_active
+        if not request.is_active:
+            account.is_default = False
+    session.commit()
+    session.refresh(account)
+    return _account_dict(account)
+
+
+@router.delete("/{account_id}")
+def delete_paper_account(
+    account_id: int,
+    user: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
+    session: Session = Depends(get_db_session),
+):
+    """소프트 삭제 — is_active=false. 기본 계좌는 거부."""
+
+    from stock_platform.trading.user_account_service import (
+        UserAccountError,
+        UserAccountService,
+    )
+
+    assert_paper_account_access(user, account_id, session)
+    try:
+        return UserAccountService(session).delete_account(
+            user.user_id,
+            account_id,
+            account_type="PAPER",
+        )
+    except UserAccountError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/{account_id}/fills")

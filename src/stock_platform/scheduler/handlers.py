@@ -52,19 +52,32 @@ class SchedulerHandlers:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        settings = get_settings()
+        # Admin 수동 실행 시 payload 비어 있으면 스케줄러 기본값 사용
+        as_of_raw = payload.get("as_of_date") or date.today().isoformat()
+        # 수동 실행(빈 payload): minimum_score 미지정 시 0
+        # (KRX 종목 1개·저점수여도 후보가 생기도록 — 스케줄러는 값을 명시 전달)
+        if "minimum_score" in payload:
+            minimum_score = Decimal(str(payload["minimum_score"]))
+        else:
+            minimum_score = Decimal("0")
         service = CandidateRunService(self._session)
 
         run = service.execute_and_save(
             exchange_code=str(
-                payload.get("exchange_code", "KRX")
+                payload.get(
+                    "exchange_code",
+                    settings.scheduler_exchange_code,
+                )
             ).upper(),
-            as_of_date=date.fromisoformat(
-                str(payload["as_of_date"])
+            as_of_date=date.fromisoformat(str(as_of_raw)),
+            limit=int(
+                payload.get(
+                    "limit",
+                    settings.scheduler_candidate_limit,
+                )
             ),
-            limit=int(payload.get("limit", 10)),
-            minimum_score=Decimal(
-                str(payload.get("minimum_score", 0))
-            ),
+            minimum_score=minimum_score,
             require_all_rules=bool(
                 payload.get(
                     "require_all_rules",
@@ -103,10 +116,15 @@ class SchedulerHandlers:
                 exchange_code=str(
                     payload.get(
                         "exchange_code",
-                        "KRX",
+                        settings.scheduler_exchange_code,
                     )
                 ).upper(),
-                limit=int(payload.get("limit", 10)),
+                limit=int(
+                    payload.get(
+                        "limit",
+                        settings.scheduler_ai_limit,
+                    )
+                ),
                 news_limit=int(
                     payload.get("news_limit", 20)
                 ),
@@ -118,6 +136,19 @@ class SchedulerHandlers:
                 ),
                 lookback_days=int(
                     payload.get("lookback_days", 90)
+                ),
+                # 수동 빈 payload: 낮은 기준 (스케줄러는 settings 값 명시)
+                minimum_ai_score=float(
+                    payload.get(
+                        "minimum_ai_score",
+                        0,
+                    )
+                ),
+                minimum_confidence=float(
+                    payload.get(
+                        "minimum_confidence",
+                        0,
+                    )
                 ),
             )
 
@@ -139,20 +170,39 @@ class SchedulerHandlers:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        settings = get_settings()
         service = CandidatePositionPlanService(
             self._session
         )
 
         result = service.create_plans(
             exchange_code=str(
-                payload.get("exchange_code", "KRX")
+                payload.get(
+                    "exchange_code",
+                    settings.scheduler_exchange_code,
+                )
             ).upper(),
-            policy_id=int(payload["policy_id"]),
+            policy_id=int(
+                payload.get(
+                    "policy_id",
+                    settings.scheduler_policy_id,
+                )
+            ),
             portfolio_value=Decimal(
-                str(payload["portfolio_value"])
+                str(
+                    payload.get(
+                        "portfolio_value",
+                        settings.scheduler_portfolio_value,
+                    )
+                )
             ),
             available_cash=Decimal(
-                str(payload["available_cash"])
+                str(
+                    payload.get(
+                        "available_cash",
+                        settings.scheduler_available_cash,
+                    )
+                )
             ),
             current_position_count=int(
                 payload.get(
@@ -160,12 +210,17 @@ class SchedulerHandlers:
                     0,
                 )
             ),
-            limit=int(payload.get("limit", 5)),
+            limit=int(
+                payload.get(
+                    "limit",
+                    settings.scheduler_position_limit,
+                )
+            ),
             minimum_ai_score=Decimal(
                 str(
                     payload.get(
                         "minimum_ai_score",
-                        0,
+                        settings.scheduler_minimum_ai_score,
                     )
                 )
             ),
@@ -173,7 +228,7 @@ class SchedulerHandlers:
                 str(
                     payload.get(
                         "minimum_confidence",
-                        0,
+                        settings.scheduler_minimum_confidence,
                     )
                 )
             ),
@@ -282,13 +337,15 @@ class SchedulerHandlers:
         )
 
         symbol_limit = payload.get("symbol_limit")
+        today = date.today()
+        # 수동 실행 기본: 최근 1년
+        start_raw = payload.get("start_date") or (
+            today.replace(year=today.year - 1)
+        ).isoformat()
+        end_raw = payload.get("end_date") or today.isoformat()
         result = pipeline.compute_batch(
-            start_date=date.fromisoformat(
-                str(payload["start_date"])
-            ),
-            end_date=date.fromisoformat(
-                str(payload["end_date"])
-            ),
+            start_date=date.fromisoformat(str(start_raw)),
+            end_date=date.fromisoformat(str(end_raw)),
             exchange_code=(
                 str(payload["exchange_code"]).upper()
                 if payload.get("exchange_code")

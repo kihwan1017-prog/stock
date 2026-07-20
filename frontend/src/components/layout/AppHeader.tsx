@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BellOutlined,
   ControlOutlined,
   DesktopOutlined,
   LogoutOutlined,
@@ -11,10 +12,11 @@ import {
   SunOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Button, Dropdown, Flex, Layout, Space, Tag, Typography } from "antd";
+import { Badge, Button, Dropdown, Flex, Layout, Space, Tag, Typography } from "antd";
 import type { MenuProps } from "antd";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 
 import { StatusBadge } from "@/components/common/StatusBadge";
 import { adminRoutes, getRouteTitle, userRoutes } from "@/config/routes";
@@ -23,7 +25,9 @@ import {
   canAccessAdminPortal,
   primaryProductRole,
 } from "@/features/auth/utils/roles";
+import * as userApi from "@/features/user/api/userApi";
 import { useThemeMode } from "@/hooks/useThemeMode";
+import { queryKeys } from "@/lib/query/queryKeys";
 import { useLayoutStore } from "@/stores/layoutStore";
 
 const { Header } = Layout;
@@ -44,6 +48,15 @@ export function AppHeader({
   const sidebarCollapsed = useLayoutStore((state) => state.sidebarCollapsed);
   const toggleSidebar = useLayoutStore((state) => state.toggleSidebar);
   const setMobileMenuOpen = useLayoutStore((state) => state.setMobileMenuOpen);
+
+  const isUserArea = pathname.startsWith("/user");
+  const unreadQuery = useQuery({
+    queryKey: queryKeys.user.notifications.unreadCount(),
+    queryFn: () => userApi.getNotificationUnreadCount(),
+    enabled: isUserArea && Boolean(user),
+    refetchInterval: 30_000,
+    retry: false,
+  });
 
   const themeItems: MenuProps["items"] = [
     { key: "light", icon: <SunOutlined />, label: "Light", onClick: () => setMode("light") },
@@ -147,6 +160,14 @@ export function AppHeader({
 
           {user ? (
             <Tag color={roleColor}>{productRole}</Tag>
+          ) : null}
+
+          {isUserArea && user ? (
+            <Link href={userRoutes.notifications} aria-label="알림 센터">
+              <Badge count={unreadQuery.data?.unread_count ?? 0} size="small" overflowCount={99}>
+                <Button type="text" icon={<BellOutlined />} />
+              </Badge>
+            </Link>
           ) : null}
 
           <Dropdown menu={{ items: themeItems, selectedKeys: [mode] }} placement="bottomRight">

@@ -10,7 +10,10 @@ from fastapi import (
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
-from stock_platform.api.deps_admin import require_admin
+from stock_platform.auth.account_ownership import (
+    assert_trading_account_access,
+)
+from stock_platform.auth.deps import AuthenticatedUser, get_current_user
 from stock_platform.operation.admin_dashboard_summary_service import (
     AdminDashboardSummaryService,
 )
@@ -19,7 +22,6 @@ from stock_platform.operation.admin_dashboard_summary_service import (
 router = APIRouter(
     prefix="/api/v1/dashboard",
     tags=["Dashboard"],
-    dependencies=[Depends(require_admin)],
 )
 
 
@@ -29,9 +31,12 @@ async def get_admin_dashboard_summary(
     market_code: str = Query(default="KRX"),
     mode_code: str = Query(default="PAPER"),
     recent_limit: int = Query(default=10, ge=1, le=100),
+    user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db_session),
 ):
-    """Admin 운영 Dashboard Summary — KPI·상태·최근 이벤트 통합."""
+    """Dashboard Summary — Admin 전체 / 일반 유저는 본인 계좌만."""
+
+    assert_trading_account_access(user, account_id, session)
 
     try:
         return await AdminDashboardSummaryService(

@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   Col,
+  Empty,
   Flex,
   Row,
   Space,
@@ -25,7 +26,6 @@ import * as userApi from "@/features/user/api/userApi";
 import { userRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
-import { UnimplementedNotice } from "@/shared/components/UnimplementedNotice";
 
 const DEFAULT_EXCHANGE = "KRX";
 
@@ -95,18 +95,31 @@ export default function UserDashboardPage() {
   });
 
   const paperOrdersQuery = useQuery({
-    queryKey: queryKeys.user.paperOrders(),
-    queryFn: () => userApi.listPaperOrders(),
+    queryKey: queryKeys.user.paperOrders({ account_id: accountId }),
+    queryFn: () =>
+      userApi.listPaperOrders({ account_id: accountId as number }),
+    enabled: accountId != null,
   });
 
   const ordersQuery = useQuery({
-    queryKey: [...queryKeys.user.orders(), { limit: 10 }],
-    queryFn: () => userApi.listOrders({ limit: 10, offset: 0 }),
+    queryKey: [...queryKeys.user.orders(), { limit: 10, accountId }],
+    queryFn: () =>
+      userApi.listOrders({
+        limit: 10,
+        offset: 0,
+        account_id: accountId as number,
+      }),
+    enabled: accountId != null,
   });
 
   const executionsQuery = useQuery({
-    queryKey: [...queryKeys.user.executions(), { limit: 10 }],
-    queryFn: () => userApi.listExecutions({ limit: 10 }),
+    queryKey: [...queryKeys.user.executions(), { limit: 10, accountId }],
+    queryFn: () =>
+      userApi.listExecutions({
+        limit: 10,
+        account_id: accountId as number,
+      }),
+    enabled: accountId != null,
   });
 
   const aiQuery = useQuery({
@@ -662,20 +675,61 @@ export default function UserDashboardPage() {
           </Col>
         </Row>
 
-        {/* 관심종목 — API 없음 */}
-        <Card title="관심종목" size="small">
-          {/* TODO: GET /api/v1/user/watchlist — 회원 관심종목 API 신규 필요 */}
-          <UnimplementedNotice
-            feature="관심종목"
-            reason="Backend에 회원 관심종목(watchlist) API가 없습니다. 추가 후 Dashboard에 연결합니다."
-            relatedApis={[
-              "TODO: GET /api/v1/user/watchlist",
-              "TODO: POST /api/v1/user/watchlist",
-              "TODO: DELETE /api/v1/user/watchlist/{symbol}",
-            ]}
-          />
+        {/* STEP67 — 관심종목 미리보기 */}
+        <Card
+          title="관심종목"
+          size="small"
+          extra={
+            <Link href={userRoutes.watchlist}>
+              <Button size="small" type="link">
+                관리
+              </Button>
+            </Link>
+          }
+        >
+          <DashboardWatchlistPreview />
         </Card>
       </Space>
     </UserPageShell>
+  );
+}
+
+function DashboardWatchlistPreview() {
+  const query = useQuery({
+    queryKey: queryKeys.user.watchlist(),
+    queryFn: userApi.listWatchlist,
+  });
+  if (query.isLoading) {
+    return <Typography.Text type="secondary">불러오는 중…</Typography.Text>;
+  }
+  if (query.error) {
+    return (
+      <Alert type="warning" showIcon title={toApiError(query.error).message} />
+    );
+  }
+  const rows = query.data?.items ?? [];
+  if (rows.length === 0) {
+    return (
+      <Empty
+        description={
+          <span>
+            관심종목이 없습니다.{" "}
+            <Typography.Link href={userRoutes.watchlist}>
+              추가하기
+            </Typography.Link>
+          </span>
+        }
+      />
+    );
+  }
+  return (
+    <Space wrap size={[8, 8]}>
+      {rows.slice(0, 12).map((row) => (
+        <Tag key={row.watchlist_id} color={row.color ?? undefined}>
+          {row.symbol} {row.symbol_name}
+        </Tag>
+      ))}
+      {rows.length > 12 ? <Tag>+{rows.length - 12}</Tag> : null}
+    </Space>
   );
 }

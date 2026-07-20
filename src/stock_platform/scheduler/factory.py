@@ -5,9 +5,18 @@ from sqlalchemy.orm import Session
 from stock_platform.scheduler.handlers import (
     SchedulerHandlers,
 )
+from stock_platform.scheduler.portfolio_snapshot_job import (
+    PortfolioEquitySnapshotJob,
+)
 from stock_platform.scheduler.registry import JobRegistry
 from stock_platform.scheduler.report_job import (
     DailyReportJob,
+)
+from stock_platform.scheduler.watchlist_news_sync_job import (
+    WatchlistNewsSyncJob,
+)
+from stock_platform.scheduler.watchlist_disclosure_sync_job import (
+    WatchlistDisclosureSyncJob,
 )
 
 
@@ -16,6 +25,9 @@ def build_job_registry(
 ) -> JobRegistry:
     handlers = SchedulerHandlers(session)
     report_job = DailyReportJob(session)
+    equity_job = PortfolioEquitySnapshotJob(session)
+    news_job = WatchlistNewsSyncJob(session)
+    disclosure_job = WatchlistDisclosureSyncJob(session)
     registry = JobRegistry()
 
     registry.register(
@@ -55,6 +67,36 @@ def build_job_registry(
             "손익을 요약해 저장합니다."
         ),
         handler=report_job.execute,
+    )
+
+    registry.register(
+        name="portfolio_equity_snapshot",
+        group="PORTFOLIO",
+        description=(
+            "장후 회원별 Paper 계좌 일별 자산 스냅샷을 저장합니다. "
+            "PAPER/LIVE mode_code를 지원합니다."
+        ),
+        handler=equity_job.execute,
+    )
+
+    registry.register(
+        name="watchlist_news_sync",
+        group="NEWS",
+        description=(
+            "활성 관심종목(news_enabled) distinct 심볼만 Naver 뉴스를 수집합니다. "
+            "공용 저장·사용자 중복 저장 없음."
+        ),
+        handler=news_job.execute,
+    )
+
+    registry.register(
+        name="watchlist_disclosure_sync",
+        group="DISCLOSURE",
+        description=(
+            "활성 관심종목(disclosure_enabled) KRX 심볼만 DART 공시를 수집합니다. "
+            "공용 저장·사용자 중복 수집 없음."
+        ),
+        handler=disclosure_job.execute,
     )
 
     registry.register(

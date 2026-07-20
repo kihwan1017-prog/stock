@@ -81,6 +81,24 @@ class AutomaticScheduler:
             misfire_grace_time=1800,
         )
 
+        self._scheduler.add_job(
+            self._run_portfolio_equity_snapshot,
+            trigger=CronTrigger(
+                day_of_week="mon-fri",
+                hour=self._settings.scheduler_equity_snapshot_hour,
+                minute=(
+                    self._settings.scheduler_equity_snapshot_minute
+                ),
+                timezone=self._settings.scheduler_timezone,
+            ),
+            id="portfolio_equity_snapshot_daily",
+            name="Portfolio equity snapshot daily",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=1800,
+        )
+
     def start(self) -> None:
         if not self._settings.scheduler_enabled:
             logger.info("automatic_scheduler_disabled")
@@ -115,6 +133,9 @@ class AutomaticScheduler:
             ),
             "position_planning": (
                 self._run_position_planning
+            ),
+            "portfolio_equity_snapshot": (
+                self._run_portfolio_equity_snapshot
             ),
         }
 
@@ -199,6 +220,12 @@ class AutomaticScheduler:
                 "news_limit": 20,
                 "disclosure_limit": 20,
                 "lookback_days": 90,
+                "minimum_ai_score": (
+                    self._settings.scheduler_minimum_ai_score
+                ),
+                "minimum_confidence": (
+                    self._settings.scheduler_minimum_confidence
+                ),
             },
         )
 
@@ -235,6 +262,17 @@ class AutomaticScheduler:
                     "WATCH",
                     "REVIEW",
                 ],
+            },
+        )
+
+    async def _run_portfolio_equity_snapshot(
+        self,
+    ) -> dict[str, Any]:
+        return await self._execute_registered_job(
+            job_name="portfolio_equity_snapshot",
+            payload={
+                "snapshot_date": date.today().isoformat(),
+                "include_live": True,
             },
         )
 

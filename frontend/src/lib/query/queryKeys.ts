@@ -111,9 +111,11 @@ export const queryKeys = {
     portfolioSummary: (accountId = "1") =>
       ["user", "portfolio-summary", accountId] as const,
     positions: () => ["user", "positions"] as const,
-    orders: () => ["user", "orders"] as const,
-    executions: () => ["user", "executions"] as const,
-    paperOrders: () => ["user", "paper-orders"] as const,
+    orders: (params?: object) => ["user", "orders", params ?? {}] as const,
+    executions: (params?: object) =>
+      ["user", "executions", params ?? {}] as const,
+    paperOrders: (params?: object) =>
+      ["user", "paper-orders", params ?? {}] as const,
     topCandidates: (ex: string) => ["user", "top-candidates", ex] as const,
     aiLatest: (ex: string) => ["user", "ai-latest", ex] as const,
     aiRuns: (ex?: string) => ["user", "ai-runs", ex ?? "all"] as const,
@@ -128,10 +130,80 @@ export const queryKeys = {
       ["user", "investment-kpis", accountId] as const,
     paperAccounts: () => ["user", "paper-accounts"] as const,
     myPaperAccount: () => ["user", "paper-account", "me"] as const,
+    userAccounts: (params?: object) =>
+      ["user", "accounts", params ?? {}] as const,
+    portfolioHistory: (params?: object) =>
+      ["user", "portfolio-history", params ?? {}] as const,
+    portfolioAssetSummary: (params?: object) =>
+      ["user", "portfolio-asset-summary", params ?? {}] as const,
     dartDisclosures: (stockCode: string, rangeKey = "default") =>
       ["user", "dart-disclosures", stockCode, rangeKey] as const,
-    // TODO: GET /user/watchlist — 관심종목 API 없음
+    // STEP67 — 관심종목
     watchlist: () => ["user", "watchlist"] as const,
+    watchlistSearch: (params?: object) =>
+      ["user", "watchlist-search", params ?? {}] as const,
+    // STEP68 — 관심종목 뉴스
+    userNews: {
+      all: ["user", "user-news"] as const,
+      list: (params?: object) =>
+        ["user", "user-news", "list", params ?? {}] as const,
+      detail: (newsId: number) =>
+        ["user", "user-news", "detail", newsId] as const,
+      unreadCount: () => ["user", "user-news", "unread-count"] as const,
+    },
+    // STEP69 — 관심종목 공시·AI 요약
+    userDisclosures: {
+      all: ["user", "user-disclosures"] as const,
+      list: (params?: object) =>
+        ["user", "user-disclosures", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["user", "user-disclosures", "detail", id] as const,
+      unreadCount: () =>
+        ["user", "user-disclosures", "unread-count"] as const,
+      aiSummary: (id: number) =>
+        ["user", "user-disclosures", "ai-summary", id] as const,
+      recentSummaries: () =>
+        ["user", "user-disclosures", "ai-summaries-recent"] as const,
+    },
+    userAiStatus: () => ["user", "ai-status"] as const,
+    // STEP70 — 사용자 AI 추천
+    userAi: {
+      status: () => ["user", "ai-status"] as const,
+      recommendations: {
+        list: (params?: object) =>
+          ["user", "ai-recommendations", "list", params ?? {}] as const,
+        latest: (params?: object) =>
+          ["user", "ai-recommendations", "latest", params ?? {}] as const,
+        detail: (requestId: number) =>
+          ["user", "ai-recommendations", "detail", requestId] as const,
+      },
+    },
+    // STEP71 — Notification Center
+    notifications: {
+      all: ["user", "notifications"] as const,
+      list: (params?: object) =>
+        ["user", "notifications", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["user", "notifications", "detail", id] as const,
+      unreadCount: () =>
+        ["user", "notifications", "unread-count"] as const,
+      subscriptions: () =>
+        ["user", "notifications", "subscriptions"] as const,
+    },
+    // STEP72 — User Preferences
+    settings: {
+      all: ["user", "settings"] as const,
+      get: () => ["user", "settings", "get"] as const,
+    },
+    // STEP73 — My Profile
+    profile: {
+      all: ["user", "profile"] as const,
+      detail: () => ["user", "profile", "detail"] as const,
+      sessions: () => ["user", "profile", "sessions"] as const,
+      connections: () => ["user", "profile", "connections"] as const,
+      accountsSummary: () =>
+        ["user", "profile", "accounts-summary"] as const,
+    },
     paperAccount: (id: number) => ["user", "paper-account", id] as const,
     latestPrice: (ex: string, sym: string) =>
       ["user", "latest-price", ex, sym] as const,

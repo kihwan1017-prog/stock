@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     telegram_notification_level: str = "INFO"
     # Telegram webhook Secret-Token (설정 시 헤더 검증 필수)
     telegram_webhook_secret: str = Field(default="")
-    app_version: str = "1.0.0"
+    app_version: str = "1.1.0"
     slack_enabled: bool = False
     slack_webhook_url: str = Field(default="")
     discord_enabled: bool = False
@@ -133,6 +133,17 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: float = 120.0
     ollama_temperature: float = 0.2
     ollama_keep_alive: str = "10m"
+    # STEP69 — 사용자 공시 AI 요약 (미설정 시 ollama_model 사용)
+    ai_disclosure_summary_model: str = Field(default="")
+    ai_disclosure_summary_prompt_version: str = "v1"
+    ai_disclosure_summary_cooldown_seconds: int = 30
+    ai_disclosure_summary_max_per_minute: int = 10
+
+    # STEP70 — 사용자 AI 종목 추천
+    ai_recommendation_model: str = Field(default="")
+    ai_recommendation_prompt_version: str = "v1"
+    ai_recommendation_cooldown_seconds: int = 60
+    ai_recommendation_max_per_minute: int = 5
 
     dart_api_key: str = Field(default="")
     dart_base_url: str = "https://opendart.fss.or.kr/api"
@@ -153,6 +164,9 @@ class Settings(BaseSettings):
     scheduler_ai_minute: int = 30
     scheduler_position_hour: int = 17
     scheduler_position_minute: int = 0
+    # STEP66 — 장후 자산 스냅샷 (기본 15:40 KST)
+    scheduler_equity_snapshot_hour: int = 15
+    scheduler_equity_snapshot_minute: int = 40
 
     scheduler_exchange_code: str = "KRX"
     scheduler_candidate_limit: int = 30
@@ -179,6 +193,13 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    @property
+    def resolved_disclosure_summary_model(self) -> str:
+        """사용자 공시 요약 모델 — 전용 설정 우선, 없으면 ollama_model."""
+
+        custom = (self.ai_disclosure_summary_model or "").strip()
+        return custom or self.ollama_model
 
     @property
     def database_url(self) -> str:

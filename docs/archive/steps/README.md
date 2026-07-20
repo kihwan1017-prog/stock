@@ -82,17 +82,17 @@ All `README_STEPxx` work logs must exist **only** in this folder.
 | STEP62 | — | No work log in this folder |
 | STEP63 | — | No work log in this folder |
 | STEP64 | — | No work log in this folder |
-| STEP65 | — | No work log in this folder |
-| STEP66 | — | No work log in this folder |
-| STEP67 | — | No work log in this folder |
-| STEP68 | — | No work log in this folder |
-| STEP69 | — | No work log in this folder |
-| STEP70 | — | No work log in this folder |
-| STEP71 | — | No work log in this folder |
-| STEP72 | — | No work log in this folder |
-| STEP73 | — | No work log in this folder |
-| STEP74 | — | No work log in this folder |
-| STEP75 | — | No work log in this folder |
+| STEP65 | README_STEP65.md | User Account Ownership Foundation |
+| STEP66 | README_STEP66.md | Portfolio Asset History |
+| STEP67 | README_STEP67.md | User Watchlist |
+| STEP68 | README_STEP68.md | User Watchlist News |
+| STEP69 | README_STEP69.md | User Watchlist Disclosures & AI Summary |
+| STEP70 | README_STEP70.md | User AI Recommendation & Ollama Permission Separation |
+| STEP71 | README_STEP71.md | User Notification Center |
+| STEP72 | README_STEP72.md | User Preferences |
+| STEP73 | README_STEP73.md | My Profile, Security & Connected Accounts |
+| STEP74 | README_STEP74.md | User Integration Audit, UAT, Security & Performance |
+| STEP75 | README_STEP75.md | Version 1.1.0 Production Release |
 | STEP76 | — | No work log in this folder |
 | STEP77 | — | No work log in this folder |
 | STEP78 | — | No work log in this folder |

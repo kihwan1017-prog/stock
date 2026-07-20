@@ -50,11 +50,28 @@ class PaperAccountRepository:
         self,
         user_id: int,
     ) -> PaperAccount | None:
-        """회원 기본 Paper 계좌 (가장 작은 account_id)."""
+        """회원 기본 Paper 계좌 — is_default 우선, 없으면 최소 account_id."""
+
+        default_stmt = (
+            select(PaperAccount)
+            .where(
+                PaperAccount.user_id == user_id,
+                PaperAccount.is_default.is_(True),
+                PaperAccount.is_active.is_(True),
+            )
+            .order_by(PaperAccount.account_id.asc())
+            .limit(1)
+        )
+        found = self._session.scalar(default_stmt)
+        if found is not None:
+            return found
 
         stmt = (
             select(PaperAccount)
-            .where(PaperAccount.user_id == user_id)
+            .where(
+                PaperAccount.user_id == user_id,
+                PaperAccount.is_active.is_(True),
+            )
             .order_by(PaperAccount.account_id.asc())
             .limit(1)
         )

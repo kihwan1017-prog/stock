@@ -106,7 +106,7 @@ export default function AdminRolesPage() {
       <Row gutter={[16, 16]}>
         <Col xs={24} md={8}>
           <Card title="역할" loading={rolesQuery.isLoading} size="small">
-            <Space direction="vertical" style={{ width: "100%" }}>
+            <Space orientation="vertical" style={{ width: "100%" }}>
               {roles.map((role) => (
                 <Card
                   key={role.id}

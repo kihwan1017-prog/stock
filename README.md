@@ -1,7 +1,8 @@
 # Kiki Trade AI
 
 > AI 기반 주식·암호화폐 자동매매 플랫폼  
-> **Current release: v1.0.0** · Live 주문 기본 차단 (`KIWOOM_LIVE_ORDER_ENABLED=false`)
+> **Current release: v1.1.0** · Live 주문 기본 차단 (`KIWOOM_LIVE_ORDER_ENABLED=false`)
+> STEP74 판정: **CONDITIONAL APPROVAL** · STEP75: Production Release Packaging
 
 문서 포털: **[docs/README.md](docs/README.md)**
 
@@ -41,7 +42,7 @@ Admin (Next.js) ──► FastAPI
 | Frontend | Node.js 20+, Next.js 16 |
 | Database | PostgreSQL 16/17 (Windows Service, **Docker 없음**) |
 | AI | Ollama + Qwen (로컬) |
-| 버전 | **1.0.0** (`APP_VERSION` / `GET /version`) |
+| 버전 | **1.1.0** (`APP_VERSION` / `GET /version`) |
 
 ---
 
@@ -80,12 +81,15 @@ E:\StockTrading\secrets\stock-platform.env
 
 ---
 
-## 문서 인덱스 (v1.0.0)
+## 문서 인덱스 (v1.1.0)
 
 | 문서 | 용도 |
 |------|------|
 | [CHANGELOG.md](CHANGELOG.md) | 변경 이력 |
-| [RELEASE_NOTE_v1.0.0.md](RELEASE_NOTE_v1.0.0.md) | 릴리즈 노트 |
+| [RELEASE_NOTE_v1.1.0.md](RELEASE_NOTE_v1.1.0.md) | v1.1.0 릴리즈 노트 |
+| [FINAL_RELEASE_REPORT_v1.1.0.md](FINAL_RELEASE_REPORT_v1.1.0.md) | 최종 릴리즈 보고 |
+| [docs/deployment/DEPLOY_v1.1.0.md](docs/deployment/DEPLOY_v1.1.0.md) | 배포 가이드 |
+| [docs/deployment/ROLLBACK_v1.1.0.md](docs/deployment/ROLLBACK_v1.1.0.md) | 롤백 |
 | [API.md](API.md) | API 개요 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 아키텍처 |
 | [DB_SCHEMA.md](DB_SCHEMA.md) | DB 스키마 |
@@ -95,7 +99,8 @@ E:\StockTrading\secrets\stock-platform.env
 | [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) | 장애 대응 |
 | [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md) | Go-Live |
 | [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | 알려진 이슈 |
-| [FINAL_PRODUCT_REPORT.md](FINAL_PRODUCT_REPORT.md) | 제품 최종 보고서 |
+| [docs/archive/steps/README_STEP74.md](docs/archive/steps/README_STEP74.md) | 사용자 통합 감사 |
+| [docs/archive/steps/README_STEP75.md](docs/archive/steps/README_STEP75.md) | v1.1.0 Release |
 | [LICENSE](LICENSE) | 라이선스 |
 
 한글 매뉴얼: [docs/manual/README.md](docs/manual/README.md)
@@ -104,11 +109,12 @@ E:\StockTrading\secrets\stock-platform.env
 
 ## 배포 전제 (중요)
 
-v1.0.0은 다음을 전제로 **RELEASE WITH KNOWN ISSUES** 입니다.
+v1.1.0은 STEP74 **CONDITIONAL APPROVAL** 기준으로 다음을 전제합니다.
 
 - **공개 인터넷 직접 노출 금지** (VPN / 사설망 / 역프록시)
 - **Live 주문 기본 OFF** — 고객 SaaS Live는 STEP63 감사상 차단
-- 단일 운영자 · Windows 단일 인스턴스 · Paper 중심
+- 단일 운영자 · Windows 단일 인스턴스 · Paper + 사용자 Self 기능 중심
+- Telegram 실발송 DLQ·Watchlist 그룹·자동매매 UI 완성은 후속
 
 ---
 

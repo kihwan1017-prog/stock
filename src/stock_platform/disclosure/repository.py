@@ -3,11 +3,16 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from stock_platform.disclosure.models import DartCorp, DartDisclosure
+from stock_platform.disclosure.models import (
+    DartCorp,
+    DartDisclosure,
+    DisclosureAiSummary,
+    UserDisclosureState,
+)
 
 
 class DartCorpRepository:
@@ -121,3 +126,225 @@ class DartDisclosureRepository:
         ).limit(limit)
 
         return list(self._session.scalars(stmt))
+
+    def list_for_stock_codes(
+        self,
+        *,
+        stock_codes: list[str],
+        limit: int = 50,
+        offset: int = 0,
+        keyword: str | None = None,
+        category_code: str | None = None,
+        report_name: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[DartDisclosure]:
+        """관심종목 stock_code 집합의 공시 목록."""
+
+        if not stock_codes:
+            return []
+        normalized = [code.strip().upper() for code in stock_codes if code]
+        if not normalized:
+            return []
+
+        stmt = select(DartDisclosure).where(
+            DartDisclosure.stock_code.in_(normalized)
+        )
+        if keyword:
+            pattern = f"%{keyword.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    DartDisclosure.report_name.ilike(pattern),
+                    DartDisclosure.corp_name.ilike(pattern),
+                    DartDisclosure.remark.ilike(pattern),
+                )
+            )
+        if category_code:
+            stmt = stmt.where(
+                DartDisclosure.category_code == category_code.upper()
+            )
+        if report_name:
+            stmt = stmt.where(
+                DartDisclosure.report_name.ilike(
+                    f"%{report_name.strip()}%"
+                )
+            )
+        if date_from is not None:
+            stmt = stmt.where(DartDisclosure.receipt_date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(DartDisclosure.receipt_date <= date_to)
+
+        stmt = (
+            stmt.order_by(
+                DartDisclosure.receipt_date.desc(),
+                DartDisclosure.disclosure_id.desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt))
+
+    def count_for_stock_codes(
+        self,
+        *,
+        stock_codes: list[str],
+        keyword: str | None = None,
+        category_code: str | None = None,
+        report_name: str | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> int:
+        if not stock_codes:
+            return 0
+        normalized = [code.strip().upper() for code in stock_codes if code]
+        if not normalized:
+            return 0
+
+        stmt = select(func.count(DartDisclosure.disclosure_id)).where(
+            DartDisclosure.stock_code.in_(normalized)
+        )
+        if keyword:
+            pattern = f"%{keyword.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    DartDisclosure.report_name.ilike(pattern),
+                    DartDisclosure.corp_name.ilike(pattern),
+                    DartDisclosure.remark.ilike(pattern),
+                )
+            )
+        if category_code:
+            stmt = stmt.where(
+                DartDisclosure.category_code == category_code.upper()
+            )
+        if report_name:
+            stmt = stmt.where(
+                DartDisclosure.report_name.ilike(
+                    f"%{report_name.strip()}%"
+                )
+            )
+        if date_from is not None:
+            stmt = stmt.where(DartDisclosure.receipt_date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(DartDisclosure.receipt_date <= date_to)
+        return int(self._session.scalar(stmt) or 0)
+
+    def get_disclosure(
+        self, disclosure_id: int
+    ) -> DartDisclosure | None:
+        return self._session.get(DartDisclosure, disclosure_id)
+
+    def get_or_create_user_state(
+        self,
+        *,
+        user_id: int,
+        disclosure_id: int,
+    ) -> UserDisclosureState:
+        row = self._session.scalar(
+            select(UserDisclosureState).where(
+                UserDisclosureState.user_id == user_id,
+                UserDisclosureState.disclosure_id == disclosure_id,
+            )
+        )
+        if row is not None:
+            return row
+        row = UserDisclosureState(
+            user_id=user_id,
+            disclosure_id=disclosure_id,
+        )
+        self._session.add(row)
+        self._session.commit()
+        self._session.refresh(row)
+        return row
+
+    def list_user_states(
+        self,
+        *,
+        user_id: int,
+        disclosure_ids: list[int],
+    ) -> dict[int, UserDisclosureState]:
+        if not disclosure_ids:
+            return {}
+        rows = list(
+            self._session.scalars(
+                select(UserDisclosureState).where(
+                    UserDisclosureState.user_id == user_id,
+                    UserDisclosureState.disclosure_id.in_(disclosure_ids),
+                )
+            )
+        )
+        return {int(row.disclosure_id): row for row in rows}
+
+    def list_latest_summaries(
+        self,
+        disclosure_ids: list[int],
+    ) -> dict[int, DisclosureAiSummary]:
+        """공시별 최신 요약 1건 (batch)."""
+
+        if not disclosure_ids:
+            return {}
+        rows = list(
+            self._session.scalars(
+                select(DisclosureAiSummary)
+                .where(
+                    DisclosureAiSummary.disclosure_id.in_(disclosure_ids)
+                )
+                .order_by(
+                    DisclosureAiSummary.disclosure_id.asc(),
+                    DisclosureAiSummary.generated_at.desc().nullslast(),
+                    DisclosureAiSummary.summary_id.desc(),
+                )
+            )
+        )
+        result: dict[int, DisclosureAiSummary] = {}
+        for row in rows:
+            key = int(row.disclosure_id)
+            if key not in result:
+                result[key] = row
+        return result
+
+    def find_summary_cache(
+        self,
+        *,
+        disclosure_id: int,
+        summary_type: str,
+        model_name: str,
+        prompt_version: str,
+        source_text_hash: str,
+    ) -> DisclosureAiSummary | None:
+        return self._session.scalar(
+            select(DisclosureAiSummary).where(
+                DisclosureAiSummary.disclosure_id == disclosure_id,
+                DisclosureAiSummary.summary_type == summary_type,
+                DisclosureAiSummary.model_name == model_name,
+                DisclosureAiSummary.prompt_version == prompt_version,
+                DisclosureAiSummary.source_text_hash == source_text_hash,
+            )
+        )
+
+    def list_completed_summaries_for_stocks(
+        self,
+        *,
+        stock_codes: list[str],
+        limit: int = 20,
+    ) -> list[tuple[DartDisclosure, DisclosureAiSummary]]:
+        if not stock_codes:
+            return []
+        normalized = [c.strip().upper() for c in stock_codes if c]
+        stmt = (
+            select(DartDisclosure, DisclosureAiSummary)
+            .join(
+                DisclosureAiSummary,
+                DisclosureAiSummary.disclosure_id
+                == DartDisclosure.disclosure_id,
+            )
+            .where(
+                DartDisclosure.stock_code.in_(normalized),
+                DisclosureAiSummary.status == "COMPLETED",
+            )
+            .order_by(
+                DisclosureAiSummary.generated_at.desc().nullslast(),
+                DisclosureAiSummary.summary_id.desc(),
+            )
+            .limit(limit)
+        )
+        return list(self._session.execute(stmt).all())

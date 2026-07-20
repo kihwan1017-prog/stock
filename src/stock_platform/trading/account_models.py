@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Identity,
@@ -74,6 +75,114 @@ class PaperAccount(Base):
         Numeric(20, 2),
         nullable=False,
         server_default=text("0"),
+    )
+
+    # STEP65 — 기본/활성 계좌
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class UserBrokerAccount(Base):
+    """회원별 Broker 계좌 연결 (평문 계좌번호·시크릿 미저장)."""
+
+    __tablename__ = "user_broker_account"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "broker_code",
+            "account_ref_hash",
+            name="uq_user_broker_account_ref",
+        ),
+        {"schema": "trading"},
+    )
+
+    user_broker_account_id: Mapped[int] = mapped_column(
+        BigInteger,
+        Identity(),
+        primary_key=True,
+    )
+
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "auth.user.user_id",
+            ondelete="CASCADE",
+            name="fk_user_broker_account_user",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    broker_code: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    account_alias: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    # SHA-256 hex — 원문 계좌번호는 저장하지 않음
+    account_ref_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+
+    masked_account_number: Mapped[str | None] = mapped_column(
+        String(40),
+        nullable=True,
+    )
+
+    currency_code: Mapped[str] = mapped_column(
+        String(10),
+        nullable=False,
+        server_default=text("'KRW'"),
+    )
+
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+
+    is_active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("true"),
+    )
+
+    connection_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'DISCONNECTED'"),
+    )
+
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(

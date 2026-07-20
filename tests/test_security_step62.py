@@ -65,6 +65,7 @@ def test_unauthenticated_order_mutate_rejected(monkeypatch) -> None:
         assert client.post(
             "/api/v1/realtime-execution/start"
         ).status_code in {401, 403}
+        # Kill Switch 조회도 로그인 필요 (미인증 401)
         assert client.get(
             "/api/v1/risk/kill-switch"
         ).status_code in {401, 403}

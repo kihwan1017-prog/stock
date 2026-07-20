@@ -4,241 +4,521 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   App,
+  Badge,
   Button,
   Card,
-  Col,
-  Descriptions,
-  Form,
+  Drawer,
+  Empty,
   Input,
-  Row,
+  Select,
+  Skeleton,
   Space,
+  Switch,
   Table,
   Tag,
   Typography,
 } from "antd";
+import {
+  DeleteOutlined,
+  StarFilled,
+  StarOutlined,
+  InboxOutlined,
+} from "@ant-design/icons";
+import dayjs from "dayjs";
+import { useMemo, useState } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
-import { NOTIFICATION_EVENT_CATALOG } from "@/features/admin/notifications/opsCatalog";
-import { UserPageShell } from "@/features/user/components/UserPageShell";
+import type {
+  NotificationSubscriptionItem,
+  UserNotificationFilter,
+  UserNotificationItem,
+} from "@/features/user/api/userApi";
 import * as userApi from "@/features/user/api/userApi";
+import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
-import { UnimplementedNotice } from "@/shared/components/UnimplementedNotice";
 
-function channelEnabled(row: Record<string, unknown>): boolean {
-  const value = row.enabled ?? row.is_enabled ?? row.active;
-  if (typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    return ["true", "1", "yes", "enabled"].includes(value.toLowerCase());
-  }
-  return Boolean(value);
-}
+const SEVERITY_COLOR: Record<string, string> = {
+  INFO: "blue",
+  SUCCESS: "green",
+  WARNING: "orange",
+  ERROR: "red",
+  CRITICAL: "magenta",
+};
 
 export default function UserNotificationsPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
 
-  const statusQuery = useQuery({
-    queryKey: queryKeys.user.notificationStatus(),
-    queryFn: userApi.getNotificationStatus,
+  const [eventType, setEventType] = useState<string | undefined>();
+  const [severity, setSeverity] = useState<string | undefined>();
+  const [unreadOnly, setUnreadOnly] = useState(false);
+  const [archived, setArchived] = useState(false);
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [keyword, setKeyword] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [showSubscriptions, setShowSubscriptions] = useState(false);
+
+  const listParams: UserNotificationFilter = useMemo(
+    () => ({
+      event_type: eventType,
+      severity,
+      unread_only: unreadOnly || undefined,
+      archived,
+      starred: starredOnly || undefined,
+      keyword: keyword || undefined,
+      page,
+      page_size: 20,
+    }),
+    [eventType, severity, unreadOnly, archived, starredOnly, keyword, page],
+  );
+
+  const listQuery = useQuery({
+    queryKey: queryKeys.user.notifications.list(listParams),
+    queryFn: () => userApi.listUserNotifications(listParams),
+    refetchInterval: 45_000,
   });
 
-  const testNotification = useMutation({
-    mutationFn: (body: { title: string; message: string }) =>
-      userApi.testNotification(body),
-    onSuccess: async () => {
-      message.success("테스트 알림 전송 요청 완료");
+  const unreadQuery = useQuery({
+    queryKey: queryKeys.user.notifications.unreadCount(),
+    queryFn: () => userApi.getNotificationUnreadCount(),
+    refetchInterval: 30_000,
+  });
+
+  const detailQuery = useQuery({
+    queryKey: queryKeys.user.notifications.detail(selectedId ?? 0),
+    queryFn: () => userApi.getUserNotificationDetail(selectedId as number),
+    enabled: selectedId != null,
+  });
+
+  const subscriptionsQuery = useQuery({
+    queryKey: queryKeys.user.notifications.subscriptions(),
+    queryFn: () => userApi.listNotificationSubscriptions(),
+    enabled: showSubscriptions,
+  });
+
+  const invalidate = async (notificationId?: number) => {
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.user.notifications.list(listParams),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.user.notifications.unreadCount(),
+    });
+    if (notificationId != null) {
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.user.notificationStatus(),
+        queryKey: queryKeys.user.notifications.detail(notificationId),
+      });
+    }
+  };
+
+  const readMutation = useMutation({
+    mutationFn: (id: number) => userApi.markNotificationRead(id),
+    onSuccess: async (_d, id) => invalidate(id),
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const readAllMutation = useMutation({
+    mutationFn: () => userApi.readAllNotifications(),
+    onSuccess: async (result) => {
+      message.success(`읽음 처리 ${result.updated_count}건`);
+      await invalidate();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({
+      id,
+      archived: next,
+    }: {
+      id: number;
+      archived: boolean;
+    }) =>
+      next
+        ? userApi.archiveNotification(id)
+        : userApi.unarchiveNotification(id),
+    onSuccess: async (_d, v) => invalidate(v.id),
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const starMutation = useMutation({
+    mutationFn: async ({
+      id,
+      starred,
+    }: {
+      id: number;
+      starred: boolean;
+    }) =>
+      starred
+        ? userApi.starNotification(id)
+        : userApi.unstarNotification(id),
+    onSuccess: async (_d, v) => invalidate(v.id),
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => userApi.deleteUserNotification(id),
+    onSuccess: async (_d, id) => {
+      message.success("삭제되었습니다.");
+      if (selectedId === id) setSelectedId(null);
+      await invalidate(id);
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const subscriptionMutation = useMutation({
+    mutationFn: (body: NotificationSubscriptionItem) =>
+      userApi.updateNotificationSubscription(body),
+    onSuccess: async () => {
+      message.success("구독 설정이 저장되었습니다.");
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.user.notifications.subscriptions(),
       });
     },
     onError: (e) => message.error(toApiError(e).message),
   });
 
-  const status = asRecord(statusQuery.data);
-  const channels = extractRows(status?.channels ?? statusQuery.data).filter(
-    (row) => {
-      // Discord UI 제외 (STEP50)
-      const name = String(row.channel ?? row.name ?? row.type ?? "").toUpperCase();
-      return !name.includes("DISCORD");
-    },
-  );
+  const openDetail = (item: UserNotificationItem) => {
+    setSelectedId(item.notification_id);
+    if (!item.is_read) {
+      readMutation.mutate(item.notification_id);
+    }
+  };
+
+  const items = listQuery.data?.items ?? [];
+  const total = listQuery.data?.total_count ?? 0;
+  const hasNext = listQuery.data?.has_next ?? false;
 
   return (
     <UserPageShell
-      title="알림"
-      description="채널 상태 · 이벤트 카탈로그 · 테스트 (Discord 제외)"
+      title="알림 센터"
+      description="인박스 · 읽음 · 보관 · 구독 (Telegram은 구독 설정 경유)"
+      extra={
+        <Space wrap>
+          <Badge count={unreadQuery.data?.unread_count ?? 0} size="small">
+            <Tag>미읽음</Tag>
+          </Badge>
+          <Button onClick={() => readAllMutation.mutate()} loading={readAllMutation.isPending}>
+            전체 읽음
+          </Button>
+          <Button onClick={() => setShowSubscriptions(true)}>구독 관리</Button>
+          <Button
+            onClick={() => {
+              void listQuery.refetch();
+              void unreadQuery.refetch();
+            }}
+          >
+            새로고침
+          </Button>
+        </Space>
+      }
     >
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <UnimplementedNotice
-          feature="알림 인박스·읽음·구독"
-          reason="사용자 알림함 API가 없습니다. 채널 상태 조회와 테스트 전송만 가능합니다."
-          relatedApis={[
-            "GET /api/v1/notification/status",
-            "POST /api/v1/notification/test",
-            "TODO: GET /api/v1/notification/inbox",
-          ]}
-        />
-
-        {statusQuery.error ? (
-          <Alert
-            type="error"
-            showIcon
-            title={toApiError(statusQuery.error).message}
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Space wrap>
+          <Select
+            allowClear
+            placeholder="유형"
+            style={{ width: 180 }}
+            value={eventType}
+            onChange={(v) => {
+              setEventType(v);
+              setPage(1);
+            }}
+            options={[
+              { value: "AI_ANALYSIS_COMPLETE", label: "AI 추천" },
+              { value: "NEWS", label: "뉴스" },
+              { value: "DISCLOSURE", label: "공시" },
+              { value: "ORDER", label: "주문" },
+              { value: "RISK", label: "리스크" },
+              { value: "SYSTEM", label: "시스템" },
+            ]}
           />
-        ) : null}
+          <Select
+            allowClear
+            placeholder="심각도"
+            style={{ width: 140 }}
+            value={severity}
+            onChange={(v) => {
+              setSeverity(v);
+              setPage(1);
+            }}
+            options={[
+              { value: "INFO", label: "INFO" },
+              { value: "SUCCESS", label: "SUCCESS" },
+              { value: "WARNING", label: "WARNING" },
+              { value: "ERROR", label: "ERROR" },
+              { value: "CRITICAL", label: "CRITICAL" },
+            ]}
+          />
+          <Button
+            type={unreadOnly ? "primary" : "default"}
+            onClick={() => {
+              setUnreadOnly((p) => !p);
+              setPage(1);
+            }}
+          >
+            미읽음만
+          </Button>
+          <Button
+            type={starredOnly ? "primary" : "default"}
+            onClick={() => {
+              setStarredOnly((p) => !p);
+              setPage(1);
+            }}
+          >
+            중요만
+          </Button>
+          <Button
+            type={archived ? "primary" : "default"}
+            icon={<InboxOutlined />}
+            onClick={() => {
+              setArchived((p) => !p);
+              setPage(1);
+            }}
+          >
+            보관함
+          </Button>
+          <Input.Search
+            allowClear
+            placeholder="검색"
+            style={{ width: 220 }}
+            value={keywordInput}
+            onChange={(e) => setKeywordInput(e.target.value)}
+            onSearch={(v) => {
+              setKeyword(v.trim());
+              setPage(1);
+            }}
+          />
+        </Space>
+      </Card>
 
-        <Card
-          title="알림 채널 상태"
-          size="small"
-          loading={statusQuery.isLoading}
-          extra={
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              GET /notification/status
+      {listQuery.isLoading ? (
+        <Skeleton active paragraph={{ rows: 8 }} />
+      ) : listQuery.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          message="알림을 불러오지 못했습니다."
+          description={toApiError(listQuery.error).message}
+        />
+      ) : items.length === 0 ? (
+        <Empty description="알림이 없습니다." />
+      ) : (
+        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+          {items.map((item) => (
+            <Card
+              key={item.notification_id}
+              size="small"
+              hoverable
+              onClick={() => openDetail(item)}
+              style={{
+                opacity: item.is_read ? 0.85 : 1,
+                borderLeft: item.is_read
+                  ? undefined
+                  : "3px solid #1677ff",
+              }}
+              title={
+                <Space wrap>
+                  <Typography.Text strong={!item.is_read}>
+                    {item.title}
+                  </Typography.Text>
+                  <Tag color={SEVERITY_COLOR[item.severity] || "default"}>
+                    {item.severity}
+                  </Tag>
+                  <Tag>{item.category || item.event_type}</Tag>
+                  {!item.is_read && <Tag color="blue">미읽음</Tag>}
+                </Space>
+              }
+              extra={
+                <Space onClick={(e) => e.stopPropagation()}>
+                  <Button
+                    type="text"
+                    icon={
+                      item.is_starred ? <StarFilled /> : <StarOutlined />
+                    }
+                    onClick={() =>
+                      starMutation.mutate({
+                        id: item.notification_id,
+                        starred: !item.is_starred,
+                      })
+                    }
+                  />
+                  <Button
+                    type="text"
+                    icon={<DeleteOutlined />}
+                    onClick={() =>
+                      deleteMutation.mutate(item.notification_id)
+                    }
+                  />
+                </Space>
+              }
+            >
+              <Typography.Paragraph
+                type="secondary"
+                ellipsis={{ rows: 2 }}
+                style={{ marginBottom: 4 }}
+              >
+                {item.message}
+              </Typography.Paragraph>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                {dayjs(item.created_at).format("YYYY-MM-DD HH:mm")}
+              </Typography.Text>
+            </Card>
+          ))}
+          <Space>
+            <Button
+              disabled={page <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              이전
+            </Button>
+            <Typography.Text>
+              {page}페이지 · 총 {total}건
             </Typography.Text>
-          }
-        >
-          {channels.length === 0 ? (
+            <Button disabled={!hasNext} onClick={() => setPage((p) => p + 1)}>
+              다음
+            </Button>
+          </Space>
+        </Space>
+      )}
+
+      <Drawer
+        title="알림 상세"
+        open={selectedId != null}
+        onClose={() => setSelectedId(null)}
+        width={480}
+        destroyOnClose
+      >
+        {detailQuery.isLoading ? (
+          <Skeleton active />
+        ) : detailQuery.data ? (
+          <Space direction="vertical" style={{ width: "100%" }} size={12}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {detailQuery.data.title}
+            </Typography.Title>
+            <Space wrap>
+              <Tag color={SEVERITY_COLOR[detailQuery.data.severity]}>
+                {detailQuery.data.severity}
+              </Tag>
+              <Tag>{detailQuery.data.event_type}</Tag>
+            </Space>
+            <Typography.Paragraph>{detailQuery.data.message}</Typography.Paragraph>
             <Typography.Text type="secondary">
-              등록된 채널 정보가 없습니다
+              {dayjs(detailQuery.data.created_at).format("YYYY-MM-DD HH:mm:ss")}
             </Typography.Text>
-          ) : (
-            <Row gutter={[12, 12]}>
-              {channels.map((channel, index) => {
-                const name = cell(
-                  channel.channel ??
-                    channel.name ??
-                    channel.type ??
-                    `channel-${index}`,
-                );
-                const enabled = channelEnabled(channel);
-                return (
-                  <Col xs={24} sm={12} md={8} key={`${name}-${index}`}>
-                    <Card size="small" type="inner" title={name}>
-                      <Space orientation="vertical" size={4}>
-                        <Tag color={enabled ? "success" : "default"}>
-                          {enabled ? "enabled" : "disabled"}
-                        </Tag>
-                        <Descriptions column={1} size="small">
-                          {Object.entries(channel)
-                            .filter(
-                              ([key]) =>
-                                ![
-                                  "channel",
-                                  "name",
-                                  "type",
-                                  "enabled",
-                                  "is_enabled",
-                                  "active",
-                                ].includes(key),
-                            )
-                            .slice(0, 4)
-                            .map(([key, value]) => (
-                              <Descriptions.Item key={key} label={key}>
-                                {cell(value)}
-                              </Descriptions.Item>
-                            ))}
-                        </Descriptions>
-                      </Space>
-                    </Card>
-                  </Col>
-                );
-              })}
-            </Row>
-          )}
-        </Card>
+            <Space wrap>
+              <Button
+                onClick={() =>
+                  archiveMutation.mutate({
+                    id: detailQuery.data.notification_id,
+                    archived: !detailQuery.data.is_archived,
+                  })
+                }
+              >
+                {detailQuery.data.is_archived ? "보관 해제" : "보관"}
+              </Button>
+              <Button
+                icon={
+                  detailQuery.data.is_starred ? (
+                    <StarFilled />
+                  ) : (
+                    <StarOutlined />
+                  )
+                }
+                onClick={() =>
+                  starMutation.mutate({
+                    id: detailQuery.data.notification_id,
+                    starred: !detailQuery.data.is_starred,
+                  })
+                }
+              >
+                중요
+              </Button>
+              <Button
+                danger
+                onClick={() =>
+                  deleteMutation.mutate(detailQuery.data.notification_id)
+                }
+              >
+                삭제
+              </Button>
+            </Space>
+          </Space>
+        ) : null}
+      </Drawer>
 
-        <Card size="small" title="알림 이벤트 (예정 포함)">
+      <Drawer
+        title="알림 구독"
+        open={showSubscriptions}
+        onClose={() => setShowSubscriptions(false)}
+        width={560}
+      >
+        {subscriptionsQuery.isLoading ? (
+          <Skeleton active />
+        ) : (
           <Table
             size="small"
+            rowKey="event_type"
             pagination={false}
-            rowKey={(row) => row.id}
-            dataSource={NOTIFICATION_EVENT_CATALOG}
+            dataSource={subscriptionsQuery.data?.items ?? []}
             columns={[
-              { title: "이벤트", dataIndex: "label", width: 140 },
-              { title: "설명", dataIndex: "description" },
+              { title: "이벤트", dataIndex: "event_type" },
               {
-                title: "지원",
-                dataIndex: "support",
-                width: 110,
-                render: (v: string) => (
-                  <Tag
-                    color={
-                      v === "live"
-                        ? "success"
-                        : v === "partial"
-                          ? "processing"
-                          : "default"
+                title: "사용",
+                dataIndex: "enabled",
+                render: (value: boolean, row: NotificationSubscriptionItem) => (
+                  <Switch
+                    checked={value}
+                    onChange={(checked) =>
+                      subscriptionMutation.mutate({
+                        ...row,
+                        enabled: checked,
+                      })
                     }
-                  >
-                    {v}
-                  </Tag>
+                  />
+                ),
+              },
+              {
+                title: "웹",
+                dataIndex: "web_enabled",
+                render: (value: boolean, row: NotificationSubscriptionItem) => (
+                  <Switch
+                    checked={value}
+                    onChange={(checked) =>
+                      subscriptionMutation.mutate({
+                        ...row,
+                        web_enabled: checked,
+                      })
+                    }
+                  />
+                ),
+              },
+              {
+                title: "Telegram",
+                dataIndex: "telegram_enabled",
+                render: (value: boolean, row: NotificationSubscriptionItem) => (
+                  <Switch
+                    checked={value}
+                    onChange={(checked) =>
+                      subscriptionMutation.mutate({
+                        ...row,
+                        telegram_enabled: checked,
+                      })
+                    }
+                  />
                 ),
               },
             ]}
           />
-        </Card>
-
-        <Card
-          title="테스트 전송"
-          size="small"
-          extra={
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              POST /notification/test
-            </Typography.Text>
-          }
-        >
-          <Form
-            layout="vertical"
-            initialValues={{
-              title: "Stock Platform 테스트 알림",
-              message: "User Web 알림 연결 테스트입니다.",
-            }}
-            onFinish={(values: { title: string; message: string }) => {
-              testNotification.mutate(values);
-            }}
-            style={{ maxWidth: 480 }}
-          >
-            <Form.Item
-              name="title"
-              label="제목"
-              rules={[{ required: true, message: "제목을 입력하세요" }]}
-            >
-              <Input maxLength={200} />
-            </Form.Item>
-            <Form.Item
-              name="message"
-              label="내용"
-              rules={[{ required: true, message: "내용을 입력하세요" }]}
-            >
-              <Input.TextArea rows={3} maxLength={1000} />
-            </Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={testNotification.isPending}
-            >
-              테스트 전송
-            </Button>
-          </Form>
-          {testNotification.data ? (
-            <Alert
-              style={{ marginTop: 12 }}
-              type="info"
-              showIcon
-              title="전송 결과"
-              description={
-                <Typography.Paragraph
-                  copyable
-                  style={{ marginBottom: 0, fontSize: 12 }}
-                >
-                  {JSON.stringify(testNotification.data)}
-                </Typography.Paragraph>
-              }
-            />
-          ) : null}
-        </Card>
-      </Space>
+        )}
+        <Alert
+          style={{ marginTop: 16 }}
+          type="info"
+          showIcon
+          message="Telegram은 Notification Center 구독을 거쳐 발송됩니다."
+        />
+      </Drawer>
     </UserPageShell>
   );
 }

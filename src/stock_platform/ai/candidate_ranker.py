@@ -321,10 +321,36 @@ class OllamaCandidateRanker:
         limit: int,
         minimum_score: Decimal,
     ) -> list[RankedCandidate]:
+        # 1차: minimum_score 이상만
+        eligible = [
+            row
+            for row in rows
+            if Decimal(str(row.total_score)) >= minimum_score
+        ]
+        # 2차: AI 실패 시 완전 공백 방지 — 규칙 점수 상위라도 선정
+        soft_fallback = False
+        if not eligible:
+            soft_fallback = True
+            eligible = sorted(
+                rows,
+                key=lambda row: (
+                    Decimal(str(row.total_score)),
+                    int(row.rules_passed_count or 0),
+                    str(row.symbol),
+                ),
+                reverse=True,
+            )
+
         selected: list[RankedCandidate] = []
-        for row in rows:
-            if Decimal(str(row.total_score)) < minimum_score:
-                continue
+        for row in eligible[:limit]:
+            risks = ["AI 평가 실패로 규칙 점수만 사용"]
+            risk_flags = ["AI_FALLBACK"]
+            if soft_fallback:
+                risks.append(
+                    f"규칙 점수가 최소 기준({minimum_score}) "
+                    "미만이지만 fallback으로 선정"
+                )
+                risk_flags.append("SOFT_SCORE_FALLBACK")
             selected.append(
                 RankedCandidate(
                     rank=len(selected) + 1,
@@ -333,11 +359,15 @@ class OllamaCandidateRanker:
                     action="REVIEW",
                     confidence=Decimal("0.5"),
                     reasons=["규칙 기반 fallback 선정"],
-                    risks=["AI 평가 실패로 규칙 점수만 사용"],
+                    risks=risks,
                     decision="SELECT",
-                    positive_reasons=["규칙 점수 충족"],
-                    negative_reasons=[],
-                    risk_flags=["AI_FALLBACK"],
+                    positive_reasons=["규칙 점수 충족"]
+                    if not soft_fallback
+                    else ["규칙 상위 후보 (완화된 fallback)"],
+                    negative_reasons=[]
+                    if not soft_fallback
+                    else [f"규칙 점수 < {minimum_score}"],
+                    risk_flags=risk_flags,
                     invalidation_conditions=[
                         "규칙 점수 하락",
                     ],
@@ -345,12 +375,11 @@ class OllamaCandidateRanker:
                     selection_source="RULE_FALLBACK",
                 )
             )
-            if len(selected) >= limit:
-                break
 
         if not selected:
             raise ValueError(
-                "Fallback selection produced no candidates"
+                "Fallback selection produced no candidates "
+                "(규칙 후보 행이 비어 있습니다)"
             )
         return selected
 

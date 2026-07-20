@@ -5,6 +5,59 @@
 
 ---
 
+## [1.1.0] — 2026-07-21
+
+### Added — User Platform (STEP65–STEP73)
+
+- **STEP65** User Account Ownership — Paper/Broker 계좌 Self API, 마스킹, 기본 계좌
+- **STEP66** Portfolio Asset History — Snapshot, 기간 수익률, MDD
+- **STEP67** User Watchlist — 관심종목 CRUD (flat), 시장·중복 방지
+- **STEP68** Watchlist News — 공용 뉴스 + 사용자 읽음/북마크 상태
+- **STEP69** Watchlist Disclosures & AI Summary — 공시·사용자용 요약 (admin settings 불필요)
+- **STEP70** User AI Recommendation — 후보 검증·Ollama 분리·주문 비연결
+- **STEP71** Notification Center — Inbox, 읽음/보관/중요, 구독, Dispatcher→Telegram 큐
+- **STEP72** User Preferences — Theme/Language/Timezone/기본 계좌·시장 (admin Settings 분리)
+- **STEP73** My Profile / Security / Sessions / Connections — 프로필·비밀번호·세션·연결 요약
+- **STEP74** User Integration Audit — Quiet Time 적용, admin 래퍼 제거, UAT/Security 문서
+
+### Security
+
+- 사용자 Self API와 Admin Settings/Ollama/Users API 경계 강화
+- JWT `user_id` 기반 소유권 (Body user_id 미신뢰)
+- 세션 public id, IP/계좌/이메일/Chat ID 마스킹
+- 비밀번호 변경 Rate Limit · 타 세션 revoke
+- Notification Quiet Time (Telegram 억제, CRITICAL 예외)
+
+### Changed
+
+- `APP_VERSION` / Frontend `package.json` → **1.1.0**
+- Alembic head: `g3b4c5d6e7f8` (STEP65–73 migrations)
+- Release 판정 기반: STEP74 **CONDITIONAL APPROVAL**
+
+### Migration
+
+운영 DB는 **수동** `alembic upgrade head` (자동 적용 금지).  
+체인: `e5f6a7b8c9d0` … `g3b4c5d6e7f8`
+
+### Breaking Changes
+
+- 없음 (기존 Admin/Paper/Ops API 계약 유지). 신규는 `/api/v1/user/*` 추가.
+
+### Known Issues
+
+- Telegram QUEUED→SENT/DLQ worker 미구현
+- Watchlist 그룹 테이블 없음
+- `/user/trading|strategies|auto-trading` 일부 Unimplemented / admin realtime 혼재
+- Playwright E2E 미자동화
+- npm `postcss` moderate (next 종속)
+- 상세: `docs/archive/steps/RELEASE_RISK_STEP74.md`
+
+### Freeze (STEP75)
+
+- Migration Freeze · Prompt Version Freeze · API 계약 변경 금지
+
+---
+
 ## [1.0.0] — 2026-07-20
 
 ### Added

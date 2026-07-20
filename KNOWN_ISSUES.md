@@ -1,6 +1,24 @@
-# KNOWN_ISSUES.md — v1.0.0
+# KNOWN_ISSUES.md
 
-**버전:** 1.0.0 GA  
+**현재 릴리즈:** v1.1.0 (GO CONDITIONAL)  
+**v1.1.0 사용자 모듈 위험:** [docs/archive/steps/RELEASE_RISK_STEP74.md](docs/archive/steps/RELEASE_RISK_STEP74.md)
+
+### v1.1.0 추가 (User Self)
+
+| ID | 등급 | 내용 | 완화 |
+|----|------|------|------|
+| KI-U11-01 | Medium | Telegram QUEUED→SENT/DLQ 미구현 | Web Inbox |
+| KI-U11-02 | Medium | Watchlist 그룹 없음 | flat 목록 |
+| KI-U11-03 | Medium | Trading/Strategies/Auto-trading UI·admin API 혼재 | 메뉴 제한 |
+| KI-U11-04 | Low | Playwright E2E 미자동화 | 수동 UAT |
+
+아래는 v1.0.0 GA부터 누적된 운영 인지 사항입니다.
+
+---
+
+# KNOWN_ISSUES — v1.0.0 (누적)
+
+**버전:** 1.0.0 GA (기반)  
 **성격:** 운영 전 필수 인지 사항 (기능 요청 목록 아님)  
 **감사 원본:** [FINAL_AUDIT_REPORT.md](FINAL_AUDIT_REPORT.md) · [TOP_100_IMPROVEMENTS.md](TOP_100_IMPROVEMENTS.md)
 

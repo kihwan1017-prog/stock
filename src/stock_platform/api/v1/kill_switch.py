@@ -10,6 +10,7 @@ from stock_platform.api.deps_admin import (
     get_audit_service,
     require_admin,
 )
+from stock_platform.auth.deps import require_authenticated
 from stock_platform.database.session import get_db_session
 from stock_platform.risk_engine.kill_switch_service import (
     KillSwitchService,
@@ -35,9 +36,10 @@ class KillSwitchActionRequest(BaseModel):
 
 @router.get("")
 def get_kill_switch_state(
-    _: str = Depends(require_admin),
+    _: str = Depends(require_authenticated),
     session: Session = Depends(get_db_session),
 ):
+    # 조회는 로그인 사용자(또는 Admin Key)에게 허용 — User Web 대시보드용
     return KillSwitchService(session).get_state()
 
 

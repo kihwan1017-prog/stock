@@ -1,441 +1,751 @@
 "use client";
 
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   App,
   Button,
   Card,
   DatePicker,
-  Form,
+  Drawer,
+  Empty,
   Input,
+  List,
   Select,
+  Skeleton,
   Space,
-  Table,
   Tag,
   Typography,
 } from "antd";
-import dayjs from "dayjs";
+import {
+  BookFilled,
+  BookOutlined,
+  LinkOutlined,
+  ReloadOutlined,
+  RobotOutlined,
+} from "@ant-design/icons";
+import dayjs, { type Dayjs } from "dayjs";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
-import { UserPageShell } from "@/features/user/components/UserPageShell";
-import { pickFocusSymbol } from "@/features/user/dashboard/pickFocusSymbol";
-import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";
-import { pickInterestSymbols } from "@/features/user/news/pickInterestSymbols";
+import { userRoutes } from "@/config/routes";
+import type {
+  DisclosureAiSummary,
+  UserDisclosureFilter,
+  UserDisclosureItem,
+} from "@/features/user/api/userApi";
 import * as userApi from "@/features/user/api/userApi";
+import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
-import { UnimplementedNotice } from "@/shared/components/UnimplementedNotice";
 
-const DEFAULT_EXCHANGE = "KRX";
+type DateRange = [Dayjs | null, Dayjs | null] | null;
 
-function tableRowKey(row: Record<string, unknown>, fields: string[]): string {
-  for (const field of fields) {
-    const value = row[field];
-    if (value !== null && value !== undefined && value !== "") {
-      return String(value);
-    }
-  }
-  try {
-    return JSON.stringify(row);
-  } catch {
-    return "unknown-row";
-  }
+function formatSubmittedAt(value: string | null): string {
+  if (!value) return "접수일 없음";
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format("YYYY-MM-DD") : value;
 }
 
-type DisclosureFormValues = {
-  stock_code: string;
-  range: [dayjs.Dayjs, dayjs.Dayjs];
-};
-
-type ManualFilter = {
-  stockCode: string;
-  start: string;
-  end: string;
-};
+function SummaryBlock({ summary }: { summary: DisclosureAiSummary }) {
+  if (summary.status === "PROCESSING" || summary.status === "QUEUED") {
+    return <Alert type="info" showIcon message="AI 요약을 생성 중입니다…" />;
+  }
+  if (summary.status === "FAILED") {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="AI 요약 생성에 실패했습니다."
+        description="잠시 후 다시 시도해 주세요."
+      />
+    );
+  }
+  if (summary.status !== "COMPLETED" && summary.status !== "STALE") {
+    return (
+      <Typography.Text type="secondary">
+        아직 생성된 AI 요약이 없습니다.
+      </Typography.Text>
+    );
+  }
+  return (
+    <Space direction="vertical" style={{ width: "100%" }} size={8}>
+      {summary.is_stale && (
+        <Alert type="warning" showIcon message="요약이 오래되었을 수 있습니다." />
+      )}
+      <Typography.Paragraph>{summary.summary}</Typography.Paragraph>
+      {!!summary.key_points?.length && (
+        <>
+          <Typography.Text strong>주요 내용</Typography.Text>
+          <List
+            size="small"
+            dataSource={summary.key_points}
+            renderItem={(item) => <List.Item>{item}</List.Item>}
+          />
+        </>
+      )}
+      {!!summary.risk_factors?.length && (
+        <>
+          <Typography.Text strong>위험 요인</Typography.Text>
+          <List
+            size="small"
+            dataSource={summary.risk_factors}
+            renderItem={(item) => <List.Item>{item}</List.Item>}
+          />
+        </>
+      )}
+      {!!summary.financial_impacts?.length && (
+        <>
+          <Typography.Text strong>재무 영향</Typography.Text>
+          <List
+            size="small"
+            dataSource={summary.financial_impacts}
+            renderItem={(item) => <List.Item>{item}</List.Item>}
+          />
+        </>
+      )}
+      {!!summary.important_numbers?.length && (
+        <>
+          <Typography.Text strong>주요 수치</Typography.Text>
+          <List
+            size="small"
+            dataSource={summary.important_numbers}
+            renderItem={(item) => <List.Item>{item}</List.Item>}
+          />
+        </>
+      )}
+      {!!summary.uncertainty_notes?.length && (
+        <>
+          <Typography.Text strong>불확실성</Typography.Text>
+          <List
+            size="small"
+            dataSource={summary.uncertainty_notes}
+            renderItem={(item) => <List.Item>{item}</List.Item>}
+          />
+        </>
+      )}
+      <Alert
+        type="warning"
+        showIcon
+        message={
+          summary.disclaimer ||
+          "AI가 생성한 요약으로 오류나 누락이 있을 수 있습니다. 중요한 판단은 공시 원문을 확인하세요."
+        }
+      />
+    </Space>
+  );
+}
 
 export default function UserDisclosuresPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const { accountId } = useMyPaperAccountId();
-  const [form] = Form.useForm<DisclosureFormValues>();
 
-  const defaultRange = useMemo(
+  const [marketCode, setMarketCode] = useState<string | undefined>();
+  const [symbol, setSymbol] = useState<string | undefined>();
+  const [disclosureType, setDisclosureType] = useState<string | undefined>();
+  const [readStatus, setReadStatus] = useState<"" | "read" | "unread">("");
+  const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
+  const [hasAiSummary, setHasAiSummary] = useState<boolean | undefined>();
+  const [keyword, setKeyword] = useState("");
+  const [keywordInput, setKeywordInput] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>(null);
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  const pageSize = 20;
+
+  const watchlistQuery = useQuery({
+    queryKey: queryKeys.user.watchlist(),
+    queryFn: () => userApi.listWatchlist(),
+  });
+
+  const disclosureEnabledItems = useMemo(
+    () =>
+      (watchlistQuery.data?.items ?? []).filter(
+        (item) =>
+          item.disclosure_enabled &&
+          ["KRX", "KOSPI", "KOSDAQ"].includes(item.market.toUpperCase()),
+      ),
+    [watchlistQuery.data?.items],
+  );
+
+  const listParams: UserDisclosureFilter = useMemo(
     () => ({
-      start: dayjs().subtract(30, "day").format("YYYY-MM-DD"),
-      end: dayjs().format("YYYY-MM-DD"),
+      market_code: marketCode,
+      symbol,
+      disclosure_type: disclosureType,
+      keyword: keyword || undefined,
+      from_date: dateRange?.[0]
+        ? dateRange[0].format("YYYY-MM-DD")
+        : undefined,
+      to_date: dateRange?.[1]
+        ? dateRange[1].format("YYYY-MM-DD")
+        : undefined,
+      read_status: readStatus || undefined,
+      bookmarked: bookmarkedOnly ? true : undefined,
+      has_ai_summary: hasAiSummary,
+      page,
+      page_size: pageSize,
     }),
-    [],
+    [
+      marketCode,
+      symbol,
+      disclosureType,
+      keyword,
+      dateRange,
+      readStatus,
+      bookmarkedOnly,
+      hasAiSummary,
+      page,
+    ],
   );
-
-  // null이면 AI/보유 기반 autoFocus + 기본 기간
-  const [manualFilter, setManualFilter] = useState<ManualFilter | null>(null);
-  const [interestSymbol, setInterestSymbol] = useState<string | null>(null);
-
-  const positionsQuery = useQuery({
-    queryKey: queryKeys.user.paperPositions(accountId ?? 0),
-    queryFn: () => userApi.getPaperPositions(accountId as number),
-    enabled: accountId != null,
-  });
-
-  const aiQuery = useQuery({
-    queryKey: queryKeys.user.topCandidates(DEFAULT_EXCHANGE),
-    queryFn: () => userApi.getTopCandidates(DEFAULT_EXCHANGE),
-  });
-
-  const positionRows = useMemo(() => {
-    const fromExtract = extractRows(positionsQuery.data);
-    if (fromExtract.length) return fromExtract;
-    if (Array.isArray(positionsQuery.data)) {
-      return positionsQuery.data as Record<string, unknown>[];
-    }
-    return [];
-  }, [positionsQuery.data]);
-
-  const aiRows = useMemo(
-    () => extractRows(aiQuery.data).slice(0, 8),
-    [aiQuery.data],
-  );
-
-  const autoFocus = useMemo(
-    () => pickFocusSymbol(aiRows, positionRows),
-    [aiRows, positionRows],
-  );
-
-  const stockCode = manualFilter?.stockCode ?? autoFocus;
-  const dateRange = manualFilter
-    ? { start: manualFilter.start, end: manualFilter.end }
-    : defaultRange;
-  const rangeKey = `${dateRange.start}_${dateRange.end}`;
-
-  const interestSymbols = useMemo(
-    () => pickInterestSymbols(positionRows, 5),
-    [positionRows],
-  );
-
-  const activeInterest =
-    interestSymbol && interestSymbols.includes(interestSymbol)
-      ? interestSymbol
-      : (interestSymbols[0] ?? null);
 
   const listQuery = useQuery({
-    queryKey: queryKeys.user.dartDisclosures(stockCode, rangeKey),
-    queryFn: () =>
-      userApi.listDartDisclosures({
-        stock_code: stockCode,
-        start_date: dateRange.start,
-        end_date: dateRange.end,
-        limit: 50,
-      }),
+    queryKey: queryKeys.user.userDisclosures.list(listParams),
+    queryFn: () => userApi.listUserDisclosures(listParams),
   });
 
-  const interestDisclosureQueries = useQueries({
-    queries: interestSymbols.map((sym) => ({
-      queryKey: queryKeys.user.dartDisclosures(sym, rangeKey),
-      queryFn: () =>
-        userApi.listDartDisclosures({
-          stock_code: sym,
-          start_date: dateRange.start,
-          end_date: dateRange.end,
-          limit: 20,
-        }),
-      enabled: interestSymbols.length > 0,
-    })),
+  const unreadQuery = useQuery({
+    queryKey: queryKeys.user.userDisclosures.unreadCount(),
+    queryFn: () => userApi.getUnreadDisclosureCount(),
   });
 
-  const syncDisclosures = useMutation({
-    mutationFn: (body: {
-      stock_code: string;
-      start_date: string;
-      end_date: string;
-    }) => userApi.syncDartDisclosures(body),
-    onSuccess: async (_data, variables) => {
-      message.success("공시 동기화 요청 완료");
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.user.dartDisclosures(variables.stock_code),
-      });
+  const aiStatusQuery = useQuery({
+    queryKey: queryKeys.user.userAiStatus(),
+    queryFn: () => userApi.getUserAiStatus(),
+  });
+
+  const detailQuery = useQuery({
+    queryKey: queryKeys.user.userDisclosures.detail(selectedId ?? 0),
+    queryFn: () => userApi.getUserDisclosureDetail(selectedId as number),
+    enabled: selectedId != null,
+  });
+
+  const summaryQuery = useQuery({
+    queryKey: queryKeys.user.userDisclosures.aiSummary(selectedId ?? 0),
+    queryFn: () => userApi.getDisclosureAiSummary(selectedId as number),
+    enabled: selectedId != null,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === "PROCESSING" || status === "QUEUED") return 3000;
+      return false;
     },
-    onError: (e) => message.error(toApiError(e).message),
   });
 
-  const applyFilter = (values: DisclosureFormValues) => {
-    const code = values.stock_code.trim().toUpperCase();
-    const start = values.range[0].format("YYYY-MM-DD");
-    const end = values.range[1].format("YYYY-MM-DD");
-    setManualFilter({ stockCode: code, start, end });
-    return { stock_code: code, start_date: start, end_date: end };
+  const invalidateList = async (disclosureId?: number) => {
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.user.userDisclosures.list(listParams),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.user.userDisclosures.unreadCount(),
+    });
+    if (disclosureId != null) {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.user.userDisclosures.detail(disclosureId),
+      });
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.user.userDisclosures.aiSummary(disclosureId),
+      });
+    }
   };
 
-  const rows = extractRows(listQuery.data);
-  const meta = asRecord(listQuery.data);
+  const readMutation = useMutation({
+    mutationFn: async ({
+      id,
+      read,
+    }: {
+      id: number;
+      read: boolean;
+    }) =>
+      read
+        ? userApi.markUserDisclosureRead(id)
+        : userApi.unmarkUserDisclosureRead(id),
+    onSuccess: async (_data, variables) => {
+      await invalidateList(variables.id);
+    },
+    onError: (error) => message.error(toApiError(error).message),
+  });
 
-  const sortedRows = useMemo(
-    () =>
-      [...rows].sort((a, b) =>
-        String(b.receipt_date ?? "").localeCompare(String(a.receipt_date ?? "")),
+  const bookmarkMutation = useMutation({
+    mutationFn: async ({
+      id,
+      bookmarked,
+    }: {
+      id: number;
+      bookmarked: boolean;
+    }) =>
+      bookmarked
+        ? userApi.bookmarkUserDisclosure(id)
+        : userApi.unbookmarkUserDisclosure(id),
+    onSuccess: async (_data, variables) => {
+      await invalidateList(variables.id);
+    },
+    onError: (error) => message.error(toApiError(error).message),
+  });
+
+  const readAllMutation = useMutation({
+    mutationFn: () =>
+      userApi.readAllUserDisclosures({
+        market_code: marketCode,
+        symbol,
+      }),
+    onSuccess: async (result) => {
+      message.success(`읽음 처리 ${result.updated_count}건`);
+      await invalidateList();
+    },
+    onError: (error) => message.error(toApiError(error).message),
+  });
+
+  const summarizeMutation = useMutation({
+    mutationFn: (id: number) => userApi.requestDisclosureAiSummary(id),
+    onSuccess: async (_data, id) => {
+      message.success("AI 요약 요청 완료");
+      await invalidateList(id);
+    },
+    onError: (error) => message.error(toApiError(error).message),
+  });
+
+  const regenerateMutation = useMutation({
+    mutationFn: (id: number) => userApi.regenerateDisclosureAiSummary(id),
+    onSuccess: async (_data, id) => {
+      message.success("AI 요약 재생성 요청 완료");
+      await invalidateList(id);
+    },
+    onError: (error) => message.error(toApiError(error).message),
+  });
+
+  const openDetail = (item: UserDisclosureItem) => {
+    setSelectedId(item.disclosure_id);
+    if (!item.is_read) {
+      readMutation.mutate({ id: item.disclosure_id, read: true });
+    }
+  };
+
+  const watchlistEmpty =
+    !watchlistQuery.isLoading &&
+    (watchlistQuery.data?.items.length ?? 0) === 0;
+
+  const items = listQuery.data?.items ?? [];
+  const totalCount = listQuery.data?.total_count ?? 0;
+  const hasNext = listQuery.data?.has_next ?? false;
+
+  const symbolOptions = useMemo(() => {
+    const filtered = marketCode
+      ? disclosureEnabledItems.filter(
+          (item) => item.market.toUpperCase() === marketCode.toUpperCase(),
+        )
+      : disclosureEnabledItems;
+    return filtered.map((item) => ({
+      value: item.symbol,
+      label: `${item.symbol} ${item.symbol_name}`,
+    }));
+  }, [disclosureEnabledItems, marketCode]);
+
+  const marketOptions = useMemo(() => {
+    const markets = Array.from(
+      new Set(
+        disclosureEnabledItems.map((item) => item.market.toUpperCase()),
       ),
-    [rows],
-  );
-
-  const interestMergedRows = useMemo(() => {
-    const merged: Record<string, unknown>[] = [];
-    interestSymbols.forEach((sym, index) => {
-      const result = interestDisclosureQueries[index];
-      for (const row of extractRows(result?.data)) {
-        merged.push({ ...row, _interest_symbol: sym });
-      }
-    });
-    return merged.sort((a, b) =>
-      String(b.receipt_date ?? "").localeCompare(String(a.receipt_date ?? "")),
     );
-  }, [interestSymbols, interestDisclosureQueries]);
+    return markets.map((m) => ({ value: m, label: m }));
+  }, [disclosureEnabledItems]);
 
-  const filteredInterestRows = activeInterest
-    ? interestMergedRows.filter(
-        (row) => String(row._interest_symbol) === activeInterest,
-      )
-    : interestMergedRows;
-
-  const interestLoading = interestDisclosureQueries.some((q) => q.isLoading);
-  const interestError = interestDisclosureQueries.find((q) => q.error)?.error;
-
-  const disclosureColumns = [
-    {
-      title: "보고서",
-      dataIndex: "report_name",
-      ellipsis: true,
-      render: cell,
-    },
-    {
-      title: "법인",
-      dataIndex: "corp_name",
-      width: 140,
-      ellipsis: true,
-      render: cell,
-    },
-    {
-      title: "중요도",
-      dataIndex: "importance_score",
-      width: 80,
-      render: cell,
-    },
-    {
-      title: "접수일",
-      dataIndex: "receipt_date",
-      width: 110,
-      render: cell,
-    },
-    {
-      title: "접수번호",
-      dataIndex: "receipt_no",
-      width: 140,
-      render: cell,
-    },
-  ];
+  const activeSummary =
+    summaryQuery.data ?? detailQuery.data?.ai_summary ?? null;
 
   return (
     <UserPageShell
-      title="공시"
-      description="최신 공시 · 관심(보유) 종목 · AI 요약"
-    >
-      <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Card size="small" title="조회 조건 · 최신 공시">
-          <Form
-            key={
-              manualFilter
-                ? `manual-${manualFilter.stockCode}-${manualFilter.start}`
-                : `auto-${autoFocus}`
-            }
-            form={form}
-            layout="inline"
-            initialValues={{
-              stock_code: stockCode,
-              range: [
-                dayjs(dateRange.start),
-                dayjs(dateRange.end),
-              ] as [dayjs.Dayjs, dayjs.Dayjs],
-            }}
-            onFinish={(values) => {
-              applyFilter(values);
+      title="관심종목 공시"
+      description="내 관심종목(KRX)과 연결된 DART 공시를 조회하고 AI 요약을 요청합니다."
+      extra={
+        <Space wrap>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              void listQuery.refetch();
+              void unreadQuery.refetch();
             }}
           >
-            <Form.Item
-              name="stock_code"
-              label="종목코드"
-              rules={[{ required: true }]}
-            >
-              <Input style={{ width: 120 }} />
-            </Form.Item>
-            <Form.Item name="range" label="기간" rules={[{ required: true }]}>
-              <DatePicker.RangePicker />
-            </Form.Item>
-            <Button type="primary" htmlType="submit">
-              조회
-            </Button>
-            <Button
-              loading={syncDisclosures.isPending}
-              onClick={async () => {
-                try {
-                  const values = await form.validateFields();
-                  const filtered = applyFilter(values);
-                  syncDisclosures.mutate(filtered);
-                } catch {
-                  // Form 검증 실패
-                }
-              }}
-            >
-              동기화
-            </Button>
-          </Form>
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            포커스 기본값: {autoFocus} · GET /dart/disclosures · POST /dart/sync
-          </Typography.Text>
-        </Card>
-
-        {listQuery.error ? (
-          <Alert
-            type="error"
-            showIcon
-            title={toApiError(listQuery.error).message}
-          />
-        ) : null}
-
-        <Card
-          title={`최신 공시 · ${stockCode}`}
-          size="small"
-          loading={listQuery.isLoading}
-          extra={
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {dateRange.start} ~ {dateRange.end} · limit{" "}
-              {cell(meta?.limit ?? 50)} ·{" "}
-              <Tag color="blue">종목 단위 API</Tag>
-            </Typography.Text>
-          }
-        >
-          <Table
-            size="small"
-            pagination={{ pageSize: 12 }}
-            rowKey={(row) =>
-              tableRowKey(row, [
-                "disclosure_id",
-                "receipt_no",
-                "report_name",
-              ])
-            }
-            dataSource={sortedRows}
-            locale={{ emptyText: "공시 없음 — 동기화 후 다시 조회하세요" }}
-            columns={disclosureColumns}
-            expandable={{
-              expandedRowRender: (row) => (
-                <Space orientation="vertical" size={2}>
-                  <Typography.Text style={{ fontSize: 12 }}>
-                    filer: {cell(row.filer_name)} · category:{" "}
-                    {cell(row.category_code)}
-                  </Typography.Text>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    remark: {cell(row.remark)}
-                  </Typography.Text>
-                </Space>
-              ),
+            새로고침
+          </Button>
+          <Button
+            onClick={() => readAllMutation.mutate()}
+            loading={readAllMutation.isPending}
+            disabled={watchlistEmpty}
+          >
+            전체 읽음
+          </Button>
+          <Button
+            type={bookmarkedOnly ? "primary" : "default"}
+            onClick={() => {
+              setBookmarkedOnly((prev) => !prev);
+              setPage(1);
             }}
-          />
-        </Card>
+          >
+            북마크만 보기
+          </Button>
+          {unreadQuery.data != null && (
+            <Tag color="blue">미읽음 {unreadQuery.data.unread_count}</Tag>
+          )}
+        </Space>
+      }
+    >
+      {aiStatusQuery.data && !aiStatusQuery.data.disclosure_summary_available && (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="현재 AI 요약 서비스를 사용할 수 없습니다."
+          description="공시 목록·원문 조회는 가능합니다."
+        />
+      )}
 
-        <Card size="small" title="관심종목 공시">
-          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-            {/* TODO: GET /api/v1/user/watchlist */}
-            <UnimplementedNotice
-              feature="관심종목 공시"
-              reason="Backend 관심종목(watchlist) API가 없습니다. 보유 종목 공시로 대체 표시합니다."
-              relatedApis={[
-                "GET /dart/disclosures",
-                "GET /paper-accounts/{id}/positions",
-              ]}
-            />
-
-            {interestSymbols.length === 0 ? (
-              <Alert
-                type="info"
-                showIcon
-                title="보유 종목 없음"
-                description="Paper 포지션이 있으면 종목별 공시를 여기에 모읍니다."
+      {watchlistEmpty ? (
+        <Empty
+          description="관심종목을 먼저 등록해 주세요."
+          style={{ marginTop: 48 }}
+        >
+          <Link href={userRoutes.watchlist}>
+            <Button type="primary">관심종목으로 이동</Button>
+          </Link>
+        </Empty>
+      ) : (
+        <>
+          <Card size="small" style={{ marginBottom: 16 }}>
+            <Space wrap>
+              <Select
+                allowClear
+                placeholder="시장"
+                style={{ width: 120 }}
+                options={marketOptions}
+                value={marketCode}
+                onChange={(value) => {
+                  setMarketCode(value);
+                  setSymbol(undefined);
+                  setPage(1);
+                }}
               />
-            ) : (
-              <>
-                <Space wrap>
-                  <Typography.Text type="secondary">보유 종목:</Typography.Text>
-                  <Select
-                    style={{ minWidth: 160 }}
-                    value={activeInterest ?? undefined}
-                    options={interestSymbols.map((sym) => ({
-                      value: sym,
-                      label: sym,
-                    }))}
-                    onChange={(value) => setInterestSymbol(value)}
-                  />
+              <Select
+                allowClear
+                showSearch
+                placeholder="관심종목"
+                style={{ width: 220 }}
+                options={symbolOptions}
+                value={symbol}
+                onChange={(value) => {
+                  setSymbol(value);
+                  setPage(1);
+                }}
+                filterOption={(input, option) =>
+                  String(option?.label ?? "")
+                    .toLowerCase()
+                    .includes(input.toLowerCase())
+                }
+              />
+              <Select
+                allowClear
+                placeholder="공시 유형"
+                style={{ width: 160 }}
+                value={disclosureType}
+                options={[
+                  { value: "MAJOR_EVENT", label: "주요사항" },
+                  { value: "FINANCIAL", label: "실적/재무" },
+                  { value: "OTHER", label: "기타" },
+                ]}
+                onChange={(value) => {
+                  setDisclosureType(value);
+                  setPage(1);
+                }}
+              />
+              <Select
+                allowClear
+                placeholder="읽음 상태"
+                style={{ width: 140 }}
+                value={readStatus || undefined}
+                options={[
+                  { value: "unread", label: "미읽음" },
+                  { value: "read", label: "읽음" },
+                ]}
+                onChange={(value) => {
+                  setReadStatus((value as "" | "read" | "unread") || "");
+                  setPage(1);
+                }}
+              />
+              <Select
+                allowClear
+                placeholder="AI 요약"
+                style={{ width: 140 }}
+                value={
+                  hasAiSummary === undefined
+                    ? undefined
+                    : hasAiSummary
+                      ? "yes"
+                      : "no"
+                }
+                options={[
+                  { value: "yes", label: "요약 있음" },
+                  { value: "no", label: "요약 없음" },
+                ]}
+                onChange={(value) => {
+                  setHasAiSummary(
+                    value === "yes" ? true : value === "no" ? false : undefined,
+                  );
+                  setPage(1);
+                }}
+              />
+              <DatePicker.RangePicker
+                value={dateRange}
+                onChange={(value) => {
+                  setDateRange(value);
+                  setPage(1);
+                }}
+              />
+              <Input.Search
+                allowClear
+                placeholder="키워드"
+                style={{ width: 220 }}
+                value={keywordInput}
+                onChange={(event) => setKeywordInput(event.target.value)}
+                onSearch={(value) => {
+                  setKeyword(value.trim());
+                  setPage(1);
+                }}
+              />
+            </Space>
+          </Card>
+
+          {listQuery.isLoading ? (
+            <Skeleton active paragraph={{ rows: 8 }} />
+          ) : listQuery.isError ? (
+            <Alert
+              type="error"
+              showIcon
+              message="공시를 불러오지 못했습니다."
+              description={toApiError(listQuery.error).message}
+            />
+          ) : items.length === 0 ? (
+            <Empty description="공시 데이터가 없습니다." />
+          ) : (
+            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+              {items.map((item) => (
+                <Card
+                  key={item.disclosure_id}
+                  size="small"
+                  hoverable
+                  onClick={() => openDetail(item)}
+                  style={{
+                    opacity: item.is_read ? 0.85 : 1,
+                    borderLeft: item.is_read
+                      ? undefined
+                      : "3px solid #1677ff",
+                  }}
+                  title={
+                    <Space wrap>
+                      <Typography.Text strong={!item.is_read}>
+                        {item.report_name}
+                      </Typography.Text>
+                      {item.is_correction && <Tag color="orange">정정</Tag>}
+                      {!item.is_read && <Tag color="blue">미읽음</Tag>}
+                      <Tag>{item.disclosure_type}</Tag>
+                      <Tag
+                        color={
+                          item.has_ai_summary
+                            ? "green"
+                            : item.ai_summary_status === "FAILED"
+                              ? "red"
+                              : "default"
+                        }
+                      >
+                        AI {item.ai_summary_status}
+                      </Tag>
+                    </Space>
+                  }
+                  extra={
+                    <Button
+                      type="text"
+                      icon={
+                        item.is_bookmarked ? (
+                          <BookFilled />
+                        ) : (
+                          <BookOutlined />
+                        )
+                      }
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        bookmarkMutation.mutate({
+                          id: item.disclosure_id,
+                          bookmarked: !item.is_bookmarked,
+                        });
+                      }}
+                    />
+                  }
+                >
+                  <Space wrap size={[8, 8]}>
+                    <Tag>
+                      {item.symbol} {item.symbol_name}
+                    </Tag>
+                    <Typography.Text type="secondary">
+                      {formatSubmittedAt(item.submitted_at)}
+                    </Typography.Text>
+                    {item.original_url && (
+                      <a
+                        href={item.original_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <LinkOutlined /> 원문
+                      </a>
+                    )}
+                  </Space>
+                </Card>
+              ))}
+              <Space>
+                <Button
+                  disabled={page <= 1}
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                >
+                  이전
+                </Button>
+                <Typography.Text>
+                  {page} / {Math.max(1, Math.ceil(totalCount / pageSize))}
+                  페이지 (총 {totalCount}건)
+                </Typography.Text>
+                <Button
+                  disabled={!hasNext}
+                  onClick={() => setPage((prev) => prev + 1)}
+                >
+                  다음
+                </Button>
+              </Space>
+            </Space>
+          )}
+        </>
+      )}
+
+      <Drawer
+        title="공시 상세"
+        width={560}
+        open={selectedId != null}
+        onClose={() => setSelectedId(null)}
+        destroyOnClose
+      >
+        {detailQuery.isLoading ? (
+          <Skeleton active />
+        ) : detailQuery.isError ? (
+          <Alert type="error" message={toApiError(detailQuery.error).message} />
+        ) : detailQuery.data ? (
+          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Typography.Title level={4} style={{ margin: 0 }}>
+              {detailQuery.data.report_name}
+            </Typography.Title>
+            <Space wrap>
+              <Tag>
+                {detailQuery.data.symbol} {detailQuery.data.symbol_name}
+              </Tag>
+              <Tag>{detailQuery.data.disclosure_type}</Tag>
+              {detailQuery.data.is_correction && (
+                <Tag color="orange">정정공시</Tag>
+              )}
+              <Typography.Text type="secondary">
+                접수번호 {detailQuery.data.receipt_no}
+              </Typography.Text>
+            </Space>
+            <Typography.Text type="secondary">
+              제출 {formatSubmittedAt(detailQuery.data.submitted_at)}
+            </Typography.Text>
+            <Typography.Paragraph>
+              {detailQuery.data.body_text || "메타데이터 없음"}
+            </Typography.Paragraph>
+            <Typography.Text type="secondary">
+              {detailQuery.data.body_note}
+            </Typography.Text>
+
+            <Card
+              size="small"
+              title={
+                <Space>
+                  <RobotOutlined />
+                  AI 요약
+                </Space>
+              }
+              extra={
+                <Space>
                   <Button
                     size="small"
-                    loading={syncDisclosures.isPending}
-                    disabled={!activeInterest}
-                    onClick={() => {
-                      if (!activeInterest) return;
-                      syncDisclosures.mutate({
-                        stock_code: activeInterest,
-                        start_date: dateRange.start,
-                        end_date: dateRange.end,
-                      });
-                    }}
+                    loading={summarizeMutation.isPending}
+                    disabled={
+                      aiStatusQuery.data?.disclosure_summary_available === false
+                    }
+                    onClick={() =>
+                      summarizeMutation.mutate(detailQuery.data.disclosure_id)
+                    }
                   >
-                    선택 종목 동기화
+                    생성
+                  </Button>
+                  <Button
+                    size="small"
+                    loading={regenerateMutation.isPending}
+                    disabled={
+                      aiStatusQuery.data?.disclosure_summary_available === false
+                    }
+                    onClick={() =>
+                      regenerateMutation.mutate(
+                        detailQuery.data.disclosure_id,
+                      )
+                    }
+                  >
+                    재생성
                   </Button>
                 </Space>
+              }
+            >
+              {summaryQuery.isLoading && !activeSummary ? (
+                <Skeleton active />
+              ) : activeSummary ? (
+                <SummaryBlock summary={activeSummary} />
+              ) : (
+                <Typography.Text type="secondary">
+                  요약을 생성해 주세요.
+                </Typography.Text>
+              )}
+            </Card>
 
-                {interestError ? (
-                  <Alert
-                    type="error"
-                    showIcon
-                    title={toApiError(interestError).message}
-                  />
-                ) : null}
-
-                <Table
-                  size="small"
-                  loading={interestLoading}
-                  pagination={{ pageSize: 8 }}
-                  rowKey={(row) =>
-                    `${String(row._interest_symbol)}-${tableRowKey(row, [
-                      "disclosure_id",
-                      "receipt_no",
-                      "report_name",
-                    ])}`
-                  }
-                  dataSource={filteredInterestRows}
-                  locale={{ emptyText: "해당 보유 종목 공시 없음" }}
-                  columns={[
-                    {
-                      title: "종목",
-                      dataIndex: "_interest_symbol",
-                      width: 90,
-                      render: cell,
-                    },
-                    ...disclosureColumns,
-                  ]}
-                />
-              </>
-            )}
+            <Space wrap>
+              {detailQuery.data.original_url && (
+                <Button
+                  type="primary"
+                  href={detailQuery.data.original_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  icon={<LinkOutlined />}
+                >
+                  원문 보기
+                </Button>
+              )}
+              <Button
+                icon={
+                  detailQuery.data.is_bookmarked ? (
+                    <BookFilled />
+                  ) : (
+                    <BookOutlined />
+                  )
+                }
+                onClick={() =>
+                  bookmarkMutation.mutate({
+                    id: detailQuery.data.disclosure_id,
+                    bookmarked: !detailQuery.data.is_bookmarked,
+                  })
+                }
+              >
+                {detailQuery.data.is_bookmarked
+                  ? "북마크 해제"
+                  : "북마크"}
+              </Button>
+            </Space>
           </Space>
-        </Card>
-
-        <Card size="small" title="AI 요약">
-          {/* TODO: POST /api/v1/dart/summarize */}
-          <UnimplementedNotice
-            feature="공시 AI 요약"
-            reason="Backend에 공시 AI 요약 API(POST /dart/summarize)가 없습니다. 뉴스 요약(POST /news/summarize)만 사용 가능합니다."
-            relatedApis={["GET /dart/disclosures", "POST /dart/sync"]}
-          />
-        </Card>
-      </Space>
+        ) : null}
+      </Drawer>
     </UserPageShell>
   );
 }

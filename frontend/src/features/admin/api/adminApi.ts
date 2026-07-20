@@ -1,3 +1,5 @@
+import type { AxiosRequestConfig } from "axios";
+
 import { apiClient } from "@/lib/api/apiClient";
 import { rootClient } from "@/lib/api/rootClient";
 
@@ -14,8 +16,12 @@ async function postJson(
   path: string,
   body?: unknown,
   params?: Params,
+  config?: AxiosRequestConfig,
 ): Promise<JsonValue> {
-  const { data } = await apiClient.post(path, body ?? {}, { params });
+  const { data } = await apiClient.post(path, body ?? {}, {
+    params,
+    ...config,
+  });
   return data;
 }
 
@@ -482,14 +488,25 @@ export async function executeJob(
   jobName: string,
   payload?: Params,
 ): Promise<JsonValue> {
-  return postJson(`/jobs/${encodeURIComponent(jobName)}/execute`, {
-    payload: payload ?? {},
-    trigger_type: "MANUAL",
-  });
+  // Ollama AI 잡은 수분 소요 — axios 기본 15s로는 부족
+  return postJson(
+    `/jobs/${encodeURIComponent(jobName)}/execute`,
+    {
+      payload: payload ?? {},
+      trigger_type: "MANUAL",
+    },
+    undefined,
+    { timeout: 180_000 },
+  );
 }
 
 export async function runSchedulerNow(jobName: string): Promise<JsonValue> {
-  return postJson(`/scheduler-admin/run-now/${encodeURIComponent(jobName)}`);
+  return postJson(
+    `/scheduler-admin/run-now/${encodeURIComponent(jobName)}`,
+    {},
+    undefined,
+    { timeout: 180_000 },
+  );
 }
 
 export async function getLatestPipeline(): Promise<JsonValue> {

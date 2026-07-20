@@ -155,7 +155,13 @@ class AuthService:
             return False
         return not self._repository.email_exists(cleaned)
 
-    def login(self, *, username: str, password: str) -> tuple[TokenPair, AuthUserView]:
+    def login(
+        self,
+        *,
+        username: str,
+        password: str,
+        session_meta: dict[str, str | None] | None = None,
+    ) -> tuple[TokenPair, AuthUserView]:
         # 아이디 또는 이메일로 조회
         user = self._repository.get_by_username_or_email(username)
         if user is None or not user.is_active:
@@ -163,9 +169,18 @@ class AuthService:
         if not self._passwords.verify(password, user.password_hash):
             raise AuthError("사용자명 또는 비밀번호가 올바르지 않습니다.")
 
-        return self._issue_tokens(user), to_user_view(user, self._rbac)
+        self._repository.mark_last_login(user)
+        return (
+            self._issue_tokens(user, session_meta=session_meta),
+            to_user_view(user, self._rbac),
+        )
 
-    def refresh(self, *, refresh_token: str) -> tuple[TokenPair, AuthUserView]:
+    def refresh(
+        self,
+        *,
+        refresh_token: str,
+        session_meta: dict[str, str | None] | None = None,
+    ) -> tuple[TokenPair, AuthUserView]:
         try:
             payload = self._jwt.decode_refresh_token(refresh_token)
         except JwtError as exc:
@@ -178,7 +193,9 @@ class AuthService:
             raise AuthError("Refresh 토큰이 유효하지 않습니다.")
         # 이미 revoke된 토큰 재사용 → 세션 전체 폐기 (theft 대응)
         if row.revoked_at is not None:
-            self._repository.revoke_all_for_user(user_id)
+            self._repository.revoke_all_for_user(
+                user_id, reason="REFRESH_REUSE"
+            )
             raise AuthError(
                 "Refresh 토큰이 재사용되었습니다. 모든 세션이 만료되었습니다."
             )
@@ -186,7 +203,9 @@ class AuthService:
             raise AuthError("Refresh 토큰이 유효하지 않습니다.")
         expected = self._jwt.hash_token(refresh_token)
         if not secrets_compare(row.token_hash, expected):
-            self._repository.revoke_all_for_user(user_id)
+            self._repository.revoke_all_for_user(
+                user_id, reason="REFRESH_HASH_MISMATCH"
+            )
             raise AuthError("Refresh 토큰이 유효하지 않습니다.")
 
         user = self._repository.get_by_id(user_id)
@@ -194,8 +213,11 @@ class AuthService:
             raise AuthError("사용자를 찾을 수 없습니다.")
 
         # 회전: 기존 refresh revoke 후 재발급
-        self._repository.revoke_refresh(jti)
-        return self._issue_tokens(user), to_user_view(user, self._rbac)
+        self._repository.revoke_refresh(jti, reason="ROTATED")
+        return (
+            self._issue_tokens(user, session_meta=session_meta),
+            to_user_view(user, self._rbac),
+        )
 
     def logout(self, *, refresh_token: str | None) -> None:
         if not refresh_token:
@@ -206,7 +228,7 @@ class AuthService:
             return
         jti = str(payload.get("jti") or "")
         if jti:
-            self._repository.revoke_refresh(jti)
+            self._repository.revoke_refresh(jti, reason="LOGOUT")
 
     def get_user(self, user_id: int) -> AuthUserView:
         user = self._repository.get_by_id(user_id)
@@ -220,6 +242,7 @@ class AuthService:
         user_id: int,
         current_password: str,
         new_password: str,
+        exclude_jti: str | None = None,
     ) -> None:
         user = self._repository.get_by_id(user_id)
         if user is None or not user.is_active:
@@ -237,10 +260,19 @@ class AuthService:
             user,
             password_hash=self._passwords.hash(new_password),
         )
-        # 기존 세션 무효화
-        self._repository.revoke_all_for_user(user_id)
+        # 기본: 다른 세션 폐기. exclude_jti 있으면 현재 세션 유지
+        self._repository.revoke_all_for_user(
+            user_id,
+            exclude_jti=exclude_jti,
+            reason="PASSWORD_CHANGED",
+        )
 
-    def _issue_tokens(self, user: AuthUser) -> TokenPair:
+    def _issue_tokens(
+        self,
+        user: AuthUser,
+        *,
+        session_meta: dict[str, str | None] | None = None,
+    ) -> TokenPair:
         roles = _roles_of(user, self._rbac)
         access, expires_in = self._jwt.create_access_token(
             user_id=user.user_id,
@@ -250,11 +282,17 @@ class AuthService:
         refresh, jti, expires_at = self._jwt.create_refresh_token(
             user_id=user.user_id,
         )
+        meta = session_meta or {}
         self._repository.save_refresh_token(
             user_id=user.user_id,
             jti=jti,
             token_hash=self._jwt.hash_token(refresh),
             expires_at=expires_at,
+            device_name=meta.get("device_name"),
+            browser_name=meta.get("browser_name"),
+            operating_system=meta.get("operating_system"),
+            ip_address=meta.get("ip_address"),
+            user_agent=meta.get("user_agent"),
         )
         return TokenPair(
             access_token=access,

@@ -51,10 +51,10 @@ class JobRegistry:
 
     def get(self, name: str) -> RegisteredJob:
         try:
-            return self._jobs[name]
+            return self._jobs[name.strip()]
         except KeyError as exc:
             raise LookupError(
-                f"Job not found: {name}"
+                f"Job not found: {name.strip()}"
             ) from exc
 
     def list_jobs(self) -> list[RegisteredJob]:
