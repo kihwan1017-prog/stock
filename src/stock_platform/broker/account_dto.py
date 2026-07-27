@@ -35,3 +35,7 @@ class BrokerAccountSyncResult:
     positions: list[BrokerPositionSnapshot]
     synchronized_at: datetime
     raw_data: dict[str, Any]
+    # STEP 8-5-17 — 저장 시 필수 (UBA 또는 Paper)
+    user_broker_account_id: int | None = None
+    paper_account_id: int | None = None
+    broker_server_time: datetime | None = None

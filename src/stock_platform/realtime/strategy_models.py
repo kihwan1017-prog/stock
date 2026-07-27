@@ -39,3 +39,14 @@ class RealtimeSignal:
     change_rate: Decimal | None
     reason_code: str
     generated_at: datetime
+    # STEP 8-5-9 — Scope 메타 (레거시 신호는 None)
+    signal_id: str | None = None
+    fingerprint: str | None = None
+    scope_key: str | None = None
+    user_id: int | None = None
+    account_kind: str | None = None
+    account_id: int | None = None
+    strategy_id: int | None = None
+    strategy_version: str | None = None
+    broker_code: str | None = None
+    market_type: str | None = None

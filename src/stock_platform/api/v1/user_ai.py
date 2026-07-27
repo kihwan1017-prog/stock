@@ -126,7 +126,7 @@ def recent_disclosure_summaries(
 @router.post("/recommendations")
 async def create_recommendation(
     body: CreateRecommendationBody,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     if body.account_id is not None:
@@ -207,7 +207,7 @@ def get_recommendation(
 @router.post("/recommendations/{request_id}/bookmark")
 def bookmark_recommendation(
     request_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -221,7 +221,7 @@ def bookmark_recommendation(
 @router.delete("/recommendations/{request_id}/bookmark")
 def unbookmark_recommendation(
     request_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -235,7 +235,7 @@ def unbookmark_recommendation(
 @router.post("/recommendations/{request_id}/hide")
 def hide_recommendation(
     request_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -248,7 +248,7 @@ def hide_recommendation(
 def feedback_recommendation(
     request_id: int,
     body: FeedbackBody,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:

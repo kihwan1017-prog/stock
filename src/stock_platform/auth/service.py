@@ -32,18 +32,19 @@ class AuthUserView:
     roles: list[str]
     permissions: list[str]
     email: str | None = None
+    user_status: str = "ACTIVE"
+    password_change_required: bool = False
+    default_route: str = "/user/dashboard"
+    onboarding_completed: bool = False
 
 
 def _roles_of(
     user: AuthUser,
     rbac: RbacRepository | None = None,
 ) -> list[str]:
-    if rbac is not None:
-        codes = rbac.list_role_codes_for_user(user.user_id)
-        if codes:
-            return codes
-    raw = user.roles or []
-    return [str(item) for item in raw]
+    from stock_platform.auth.role_sync import resolve_role_codes
+
+    return resolve_role_codes(user, rbac)
 
 
 def _permissions_of(
@@ -59,13 +60,27 @@ def to_user_view(
     user: AuthUser,
     rbac: RbacRepository | None = None,
 ) -> AuthUserView:
+    from stock_platform.auth.user_status import (
+        resolve_default_route,
+        resolve_user_status,
+    )
+
+    roles = _roles_of(user, rbac)
     return AuthUserView(
         id=str(user.user_id),
         username=user.username,
         email=user.email,
         display_name=user.display_name,
-        roles=_roles_of(user, rbac),
+        roles=roles,
         permissions=_permissions_of(user, rbac),
+        user_status=resolve_user_status(user),
+        password_change_required=bool(
+            getattr(user, "password_change_required", False)
+        ),
+        default_route=resolve_default_route(user=user, roles=roles),
+        onboarding_completed=bool(
+            getattr(user, "onboarding_completed_at", None)
+        ),
     )
 
 
@@ -136,11 +151,11 @@ class AuthService:
             username=cleaned_username,
             password_hash=self._passwords.hash(password),
             display_name=cleaned_name,
-            roles=["viewer"],
+            roles=["user"],
             email=cleaned_email,
             terms_accepted_at=datetime.now(timezone.utc),
         )
-        self._sync_user_roles(user.user_id, ["viewer"])
+        self._sync_user_roles(user.user_id, ["user"])
         return self._issue_tokens(user), to_user_view(user, self._rbac)
 
     def check_username_available(self, username: str) -> bool:
@@ -162,17 +177,68 @@ class AuthService:
         password: str,
         session_meta: dict[str, str | None] | None = None,
     ) -> tuple[TokenPair, AuthUserView]:
-        # 아이디 또는 이메일로 조회
-        user = self._repository.get_by_username_or_email(username)
-        if user is None or not user.is_active:
-            raise AuthError("사용자명 또는 비밀번호가 올바르지 않습니다.")
-        if not self._passwords.verify(password, user.password_hash):
-            raise AuthError("사용자명 또는 비밀번호가 올바르지 않습니다.")
+        from datetime import timedelta
 
+        from stock_platform.auth.user_status import (
+            STATUS_LOCKED,
+            resolve_user_status,
+        )
+
+        # 아이디 또는 이메일로 조회 — 존재 여부 노출 방지 동일 메시지
+        generic = "사용자명 또는 비밀번호가 올바르지 않습니다."
+        user = self._repository.get_by_username_or_email(username)
+        if user is None or user.deleted_at is not None:
+            raise AuthError(generic)
+        if not user.is_active:
+            raise AuthError(generic)
+
+        status = resolve_user_status(user)
+        if status == STATUS_LOCKED:
+            raise AuthError(
+                "계정이 일시 잠금되었습니다. 잠시 후 다시 시도하세요."
+            )
+
+        if not self._passwords.verify(password, user.password_hash):
+            self._register_failed_login(user)
+            raise AuthError(generic)
+
+        from stock_platform.auth.role_codes import has_valid_app_role
+
+        if self._rbac is not None:
+            from stock_platform.auth.role_sync import reconcile_user_roles
+
+            reconcile_user_roles(
+                self._repository._session,
+                user,
+                self._rbac,
+                commit=False,
+            )
+
+        roles = _roles_of(user, self._rbac)
+        if not has_valid_app_role(roles):
+            raise AuthError(
+                "계정에 유효한 권한이 없습니다. 관리자에게 문의하세요."
+            )
+
+        # 성공: 실패 카운터 초기화
+        user.failed_login_count = 0
+        user.locked_until = None
+        ip = None
+        if session_meta:
+            ip = session_meta.get("ip_address") or session_meta.get("client_ip")
+        if ip:
+            user.last_login_ip = str(ip)[:64]
         self._repository.mark_last_login(user)
         return (
             self._issue_tokens(user, session_meta=session_meta),
             to_user_view(user, self._rbac),
+        )
+
+    def _register_failed_login(self, user: AuthUser) -> None:
+        self._repository.record_failed_login(
+            user,
+            max_fails=self._settings.auth_max_failed_logins,
+            lockout_minutes=self._settings.auth_lockout_minutes,
         )
 
     def refresh(
@@ -260,12 +326,30 @@ class AuthService:
             user,
             password_hash=self._passwords.hash(new_password),
         )
+        self._repository.set_password_change_required(
+            user,
+            required=False,
+        )
         # 기본: 다른 세션 폐기. exclude_jti 있으면 현재 세션 유지
         self._repository.revoke_all_for_user(
             user_id,
             exclude_jti=exclude_jti,
             reason="PASSWORD_CHANGED",
         )
+
+    def complete_onboarding(self, *, user_id: int) -> AuthUserView:
+        user = self._repository.get_by_id(user_id)
+        if user is None or not user.is_active:
+            raise AuthError("사용자를 찾을 수 없습니다.")
+        self._repository.mark_onboarding_completed(user)
+        return to_user_view(user, self._rbac)
+
+    def unlock_user(self, *, user_id: int) -> AuthUserView:
+        user = self._repository.get_by_id(user_id)
+        if user is None:
+            raise AuthError("사용자를 찾을 수 없습니다.")
+        self._repository.clear_lockout(user)
+        return to_user_view(user, self._rbac)
 
     def _issue_tokens(
         self,
@@ -322,4 +406,8 @@ def user_view_dict(view: AuthUserView) -> dict[str, Any]:
         "display_name": view.display_name,
         "roles": view.roles,
         "permissions": view.permissions,
+        "user_status": view.user_status,
+        "password_change_required": view.password_change_required,
+        "default_route": view.default_route,
+        "onboarding_completed": view.onboarding_completed,
     }

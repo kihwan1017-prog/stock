@@ -7,6 +7,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import (
     get_db_session,
 )
@@ -33,6 +34,7 @@ def get_strategy_operations_dashboard(
         ge=1,
         le=200,
     ),
+    _: None = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:

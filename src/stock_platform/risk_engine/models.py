@@ -34,6 +34,20 @@ class RiskPolicy:
     max_broker_error_rate: Decimal = Decimal("0.5")
     block_on_stale_market_data: bool = True
     block_on_broker_unstable: bool = True
+    # STEP 8-2 — ResolvedRiskPolicy 오버레이 필드
+    daily_max_order_amount: Decimal | None = None
+    max_total_investment_amount: Decimal | None = None
+    max_position_amount: Decimal | None = None
+    allow_duplicate_buy: bool = True
+    daily_max_loss_rate: Decimal | None = None
+    buy_enabled: bool = True
+    sell_enabled: bool = True
+    sell_only: bool = False
+    auto_trading_enabled: bool = True
+    account_paused: bool = False
+    # STEP 8-7
+    daily_order_limit: int = 20
+    duplicate_order_window_seconds: int = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +61,11 @@ class RiskOrderRequest:
     requested_at: datetime
     market_data_age_seconds: int | None = None
     broker_error_rate: Decimal | None = None
+    # STEP 8-2
+    order_source: str = "MANUAL"  # MANUAL | AUTO | EXIT
+    is_risk_reducing: bool = False
+    daily_ordered_amount: Decimal = Decimal("0")
+    symbol_invested_amount: Decimal = Decimal("0")
 
     @property
     def order_amount(self) -> Decimal:

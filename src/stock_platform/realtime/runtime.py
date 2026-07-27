@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import time
 from decimal import Decimal
 
+from stock_platform.common.settings import get_settings
 from stock_platform.realtime.execution_models import (
     RealtimeExecutionConfig,
     RealtimeExecutionMode,
@@ -50,6 +51,9 @@ realtime_safety_guard = RealtimeOrderSafetyGuard(
     )
 )
 
+# import 시 get_settings() 호출 금지.
+# 기본 account_id=1 (Settings.realtime_paper_account_id 기본과 동일).
+# 기동 시 apply_realtime_paper_account_from_settings() 로 env 반영.
 realtime_execution_runner = RealtimeExecutionRunner(
     signal_bus=realtime_signal_bus,
     config=RealtimeExecutionConfig(
@@ -62,3 +66,19 @@ realtime_execution_runner = RealtimeExecutionRunner(
     ),
     safety_guard=realtime_safety_guard,
 )
+
+
+def apply_realtime_paper_account_from_settings() -> int:
+    """Settings 의 REALTIME_PAPER_ACCOUNT_ID 를 runner config 에 반영."""
+
+    account_id = get_settings().realtime_paper_account_id
+    current = realtime_execution_runner._config
+    realtime_execution_runner._config = RealtimeExecutionConfig(
+        mode=current.mode,
+        account_id=account_id,
+        order_amount=current.order_amount,
+        auto_fill=current.auto_fill,
+        allow_buy=current.allow_buy,
+        allow_sell=current.allow_sell,
+    )
+    return account_id

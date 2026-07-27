@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Identity, String, Text, func, text
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Identity,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,10 +30,20 @@ class StrategyApprovalRunEntity(Base):
     )
     strategy_selection_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "ai.strategy_selection_run.strategy_selection_run_id",
+            ondelete="RESTRICT",
+            name="fk_strategy_approval_selection_run",
+        ),
         nullable=False,
     )
     strategy_performance_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_performance_run.strategy_performance_run_id",
+            ondelete="RESTRICT",
+            name="fk_strategy_approval_performance_run",
+        ),
         nullable=False,
     )
     strategy_code: Mapped[str] = mapped_column(
@@ -76,6 +95,11 @@ class StrategyApprovalRunEntity(Base):
     )
     deployment_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="SET NULL",
+            name="fk_strategy_approval_deployment",
+        ),
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(

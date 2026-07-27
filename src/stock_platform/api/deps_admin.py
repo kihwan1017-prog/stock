@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 # JWT + API Key 통합 보호 (기존 import 경로 유지)
 from stock_platform.auth.deps import require_admin  # noqa: F401
+from stock_platform.common.json_safe import to_jsonable
 from stock_platform.common.security_mask import redact_mapping
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.audit_models import AuditEvent
@@ -46,7 +47,8 @@ class AuditLogService:
         symbol: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> AuditEvent:
-        safe_detail = redact_mapping(dict(detail or {}))
+        # Decimal 등 JSONB 비호환 타입을 str로 보존한 뒤 Secret 마스킹
+        safe_detail = redact_mapping(to_jsonable(dict(detail or {})))
         return self._repository.create(
             event_type=event_type,
             actor=actor,

@@ -20,12 +20,16 @@ router = APIRouter(
 
 @router.post("/run")
 async def run_broker_recovery():
+    """레거시 호환 — 통합 Runtime recover()."""
+
     try:
         return await broker_recovery_manager.recover()
-    except (
-        ValueError,
-        RuntimeError,
-    ) as exc:
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),

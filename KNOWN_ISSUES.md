@@ -1,7 +1,7 @@
 # KNOWN_ISSUES.md
 
-**현재 릴리즈:** v1.1.0 (GO CONDITIONAL)  
-**v1.1.0 사용자 모듈 위험:** [docs/archive/steps/RELEASE_RISK_STEP74.md](docs/archive/steps/RELEASE_RISK_STEP74.md)
+**현재 릴리즈:** v1.0 RC (GO — Paper / 소액 LIVE 로컬·VPN)  
+**최종 갱신:** STEP 8-6-1A (2026-07-26)
 
 ### v1.1.0 추가 (User Self)
 
@@ -12,48 +12,24 @@
 | KI-U11-03 | Medium | Trading/Strategies/Auto-trading UI·admin API 혼재 | 메뉴 제한 |
 | KI-U11-04 | Low | Playwright E2E 미자동화 | 수동 UAT |
 
-아래는 v1.0.0 GA부터 누적된 운영 인지 사항입니다.
-
 ---
 
 # KNOWN_ISSUES — v1.0.0 (누적)
 
-**버전:** 1.0.0 GA (기반)  
-**성격:** 운영 전 필수 인지 사항 (기능 요청 목록 아님)  
-**감사 원본:** [FINAL_AUDIT_REPORT.md](FINAL_AUDIT_REPORT.md) · [TOP_100_IMPROVEMENTS.md](TOP_100_IMPROVEMENTS.md)
+상세: [docs/security/KI_SEC_KNOWN_ISSUES.md](docs/security/KI_SEC_KNOWN_ISSUES.md) · [docs/trading/KI_TRD_KNOWN_ISSUES.md](docs/trading/KI_TRD_KNOWN_ISSUES.md)
 
----
+## Critical (공개망/고객 Live)
 
-## Critical (공개망/Live 차단 사유)
+| ID | 내용 | 영향 | 완화 / 상태 |
+|----|------|------|-------------|
+| ~~KI-TRD-02~~ | Outbox reclaim 레이스 | 중복 주문 | **FIXED 8-5-22** Fencing |
+| KI-SEC-15 | Telegram webhook | 위조 webhook | **FIXED** Fail Closed + 운영 secret 설정 |
 
-| ID | 내용 | 영향 | 완화 |
-|----|------|------|------|
-| KI-SEC-10 | pipeline / guarded_pipeline / candidate_runs 무인증 mutate | 파이프라인·부하 남용 | VPN/ACL · 후속 `require_admin` |
-| KI-SEC-11 | sync / upbit / kiwoom_account_sync / indicators 무인증 | 데이터·쿼터 오염 | 동일 |
-| KI-SEC-12 | ai_* / backtest_runs 무인증 | GPU/CPU DoS | 동일 + rate limit |
-| KI-SEC-13 | strategy_runtime_switch / realtime_quotes 무인증 | 런타임·WS 탈취 | 동일 |
-| KI-SEC-14 | step32_router deprecated mutate 잔존 | 레거시 우회 | 제거 또는 Admin |
-| KI-SEC-15 | Telegram webhook secret 빈 값 → 검증 스킵 | 위조 webhook | **운영에서 secret 필수** |
-| KI-TRD-01 | Outbox가 `PaperBrokerAdapter` 고정 (`outbox_runtime`) | Live 미전송·상태 거짓 | Live OFF 전제 · 후속 factory 연결 |
-| KI-TRD-02 | Outbox PROCESSING crash 재처리 레이스 | **중복 주문** | 수동 재전송 금지 · idempotency |
-| KI-TRD-03 | Exit monitor `skip_risk_checks=True` | Risk 우회 | Kill Switch·감시 강화 |
-| KI-TRD-04 | `account_id=1` 하드코딩 (`realtime/runtime` 등) | 오계좌 | Paper 단일 계좌 전제 |
-
----
-
-## High
+## High (소액 LIVE)
 
 | ID | 내용 | 완화 |
 |----|------|------|
-| KI-AUTH-01 | 일부 조회 API 권한 약함 가능 | VPN |
-| KI-AUTH-02 | localStorage JWT (FE) | XSS 방어 · 내부망 |
-| KI-RATE-01 | Rate limit in-memory · XFF 신뢰 | 단일 인스턴스 · 공개망 금지 |
-| KI-ARCH-01 | `broker/` vs `brokers/` 이중 스택 | 문서 인지 · 후속 통합 |
-| KI-SCH-01 | 다수 AsyncIOScheduler | API 단일 프로세스만 |
-| KI-DB-01 | 일부 order account FK 부재 | orphan 모니터링 |
-| KI-DB-02 | alembic 경로 이중(root overlay) | canonical `database/alembic`만 |
-
----
+| ~~KI-OPS-RC22-01~~ | 빈 DB / Restore DBA | **FIXED** Official Restore PASS · DB Release Blocker 0 |
 
 ## Medium
 
@@ -62,35 +38,15 @@
 | KI-PERF-01 | sync ORM in async · dashboard 외부 HTTP |
 | KI-PERF-02 | Screener/Quality N+1 |
 | KI-AI-01 | Ollama Semaphore 없음 |
-| KI-MON-01 | Alert dedup in-memory · 전송 실패 swallow |
+| KI-MON-01 | Alert dedup in-memory |
 | KI-OPS-01 | Docker/HA 없음 (의도) |
 | KI-FE-01 | 일부 Admin UnimplementedNotice |
-| KI-DOC-01 | `PROJECT_FINAL_AUDIT.md` 등 일부 진부 문서 |
+| KI-SNAP-01 | Snapshot 레거시 account Unique |
+| KI-FE-PL-01 | Position Limit Admin UI 부재 |
 
----
+## 운영 전제
 
-## Mitigated in RC/GA (참고)
-
-| ID | 내용 | 상태 |
-|----|------|------|
-| KI-SEC-01 | 다수 Broker/Realtime mutate 무인증 | STEP59/62 `require_admin` |
-| KI-SEC-02 | 운영 Swagger | prod 비활성 |
-| KI-SEC-03 | 공개 signup | prod 403 |
-| KI-HEALTH-01 | health 상세 | prod 최소 · live/ready 분리 |
-
----
-
-## Out of Scope
-
-- OpenClaw  
-- Discord 알림 UI  
-- 멀티테넌시 SaaS · Docker HA  
-
----
-
-## 운영 전제 (GA)
-
-- API **공개 인터넷 직접 노출 금지**
-- `KIWOOM_LIVE_ORDER_ENABLED=false`
-- Known Issues 인지 후 [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md) 서명
-- Critical 해소 전 고객 Live 배포 금지
+- API **공개 인터넷 직접 노출 금지** (공개망 범위 제외)
+- 소액 LIVE는 로컬/VPN 전제
+- [docs/release/V1_0_RC_FINAL_APPROVAL.md](docs/release/V1_0_RC_FINAL_APPROVAL.md)
+- 리허설: [docs/operations/README_OPERATION_REHEARSAL.md](docs/operations/README_OPERATION_REHEARSAL.md)

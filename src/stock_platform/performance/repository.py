@@ -33,6 +33,8 @@ class StrategyPerformanceRepository:
         period_start_date: date,
         period_end_date: date,
         parameter_payload: dict[str, Any],
+        strategy_id: int | None = None,
+        requested_by_user_id: int | None = None,
     ) -> StrategyPerformanceRunEntity:
         if period_start_date > period_end_date:
             raise ValueError(
@@ -53,6 +55,8 @@ class StrategyPerformanceRepository:
             period_end_date=period_end_date,
             parameter_hash=parameter_hash,
             parameter_payload=parameter_payload,
+            strategy_id=strategy_id,
+            requested_by_user_id=requested_by_user_id,
         )
         self._session.add(entity)
         self._session.commit()

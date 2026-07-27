@@ -12,7 +12,9 @@ import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
 export default function AdminPortfolioPage() {
-  const [accountId, setAccountId] = useState(1);
+  const [accountId, setAccountId] = useState(
+    Number(process.env.NEXT_PUBLIC_DEFAULT_PAPER_ACCOUNT_ID ?? "1"),
+  );
 
   const summary = useQuery({
     queryKey: queryKeys.admin.portfolioSummary(accountId),

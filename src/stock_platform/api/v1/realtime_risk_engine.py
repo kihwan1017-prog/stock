@@ -1,7 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 
 from stock_platform.risk_engine.models import (
@@ -18,6 +19,7 @@ from stock_platform.risk_engine.runtime import (
 router = APIRouter(
     prefix="/api/v1/realtime-risk",
     tags=["Realtime Risk Engine"],
+    dependencies=[Depends(require_admin)],
 )
 
 

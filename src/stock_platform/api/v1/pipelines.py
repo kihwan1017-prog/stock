@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.pipeline_repository import (
     PipelineRepository,
@@ -18,6 +20,7 @@ from stock_platform.scheduler.daily_pipeline import (
 router = APIRouter(
     prefix="/api/v1/pipelines",
     tags=["Pipelines"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -38,8 +41,15 @@ class DailyPipelineRequest(BaseModel):
 @router.post("/daily-strategy")
 async def execute_daily_strategy_pipeline(
     request: DailyPipelineRequest,
+    http_request: Request,
     session: Session = Depends(get_db_session),
 ):
+    enforce_rate_limit(
+        http_request,
+        scope="pipeline_daily_strategy",
+        limit=10,
+        window_seconds=60,
+    )
     pipeline, steps = await DailyStrategyPipeline(
         session
     ).execute(

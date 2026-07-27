@@ -9,12 +9,19 @@ export class ApiError extends Error {
   readonly requestId?: string;
 
   constructor(payload: ApiErrorPayload) {
-    super(payload.message);
+    // 빈/비문자 메시지는 Error 생성 시 이상 동작·오버레이 혼란을 막기 위해 정규화
+    const normalizedMessage =
+      typeof payload.message === "string" && payload.message.trim().length > 0
+        ? payload.message.trim()
+        : "요청 처리 중 오류가 발생했습니다.";
+    super(normalizedMessage);
     this.name = "ApiError";
-    this.status = payload.status;
+    this.status = Number.isFinite(payload.status) ? payload.status : 0;
     this.code = payload.code;
     this.details = payload.details;
     this.requestId = payload.requestId;
+    // bundler/transpile 환경에서 instanceof 유지
+    Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
 
@@ -62,6 +69,11 @@ function extractMessage(data: unknown): string | undefined {
     return data.message;
   }
 
+  // { ok:false, error:{ code, message } }
+  if (isRecord(data.error) && typeof data.error.message === "string") {
+    return data.error.message;
+  }
+
   return undefined;
 }
 
@@ -71,6 +83,9 @@ function extractCode(data: unknown): string | undefined {
   }
   if (typeof data.code === "string") {
     return data.code;
+  }
+  if (isRecord(data.error) && typeof data.error.code === "string") {
+    return data.error.code;
   }
   if (isRecord(data.detail) && typeof data.detail.code === "string") {
     return data.detail.code;
@@ -95,15 +110,25 @@ function extractRequestId(data: unknown, headers?: Record<string, unknown>): str
   return typeof headerValue === "string" ? headerValue : undefined;
 }
 
+function resolveFallbackMessage(status: number, axiosMessage?: string): string {
+  if (typeof axiosMessage === "string" && axiosMessage.trim().length > 0) {
+    // Axios 기본 "Network Error" 등은 한글로 치환
+    if (axiosMessage === "Network Error" || status === 0) {
+      return "네트워크 연결에 실패했습니다.";
+    }
+    return axiosMessage;
+  }
+  return status === 0
+    ? "네트워크 연결에 실패했습니다."
+    : "요청 처리 중 오류가 발생했습니다.";
+}
+
 export function mapAxiosErrorToApiError(error: AxiosError): ApiError {
   const status = error.response?.status ?? 0;
   const data = error.response?.data;
   const headers = error.response?.headers as Record<string, unknown> | undefined;
 
-  const message =
-    extractMessage(data) ??
-    error.message ??
-    (status === 0 ? "네트워크 연결에 실패했습니다." : "요청 처리 중 오류가 발생했습니다.");
+  const message = extractMessage(data) ?? resolveFallbackMessage(status, error.message);
 
   return new ApiError({
     status,

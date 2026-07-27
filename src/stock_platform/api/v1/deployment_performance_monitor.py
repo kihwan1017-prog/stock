@@ -5,6 +5,7 @@ from fastapi import (
     Query,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import (
@@ -21,6 +22,7 @@ from stock_platform.strategy_deployment.performance_monitor_runtime import (
 router = APIRouter(
     prefix="/api/v1/strategy-deployment-performance",
     tags=["Strategy Deployment Performance"],
+    dependencies=[Depends(require_admin)],
 )
 
 

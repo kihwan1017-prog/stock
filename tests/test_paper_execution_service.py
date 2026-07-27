@@ -15,6 +15,7 @@ class FakeOrderRepository:
     def __init__(self):
         self.order = SimpleNamespace(
             order_id=1,
+            account_id=1,
             exchange_code="KRX",
             symbol="005930",
             side="BUY",

@@ -95,7 +95,7 @@ def read_all_news(
     market_code: str | None = None,
     symbol: str | None = None,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -129,7 +129,7 @@ def get_user_news_detail(
 def mark_news_read(
     news_id: int,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -145,7 +145,7 @@ def mark_news_read(
 def unmark_news_read(
     news_id: int,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -161,7 +161,7 @@ def unmark_news_read(
 def bookmark_news(
     news_id: int,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -177,7 +177,7 @@ def bookmark_news(
 def unbookmark_news(
     news_id: int,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):

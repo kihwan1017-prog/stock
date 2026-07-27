@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from stock_platform.auth.deps import (
     AuthenticatedUser,
     require_permission,
 )
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
 from stock_platform.order.trading_guards import (
@@ -85,6 +86,7 @@ def _resolve_price(request: CreatePaperOrderRequest) -> Decimal:
 @router.post("")
 def create_paper_order(
     request: CreatePaperOrderRequest,
+    http_request: Request,
     user: AuthenticatedUser = Depends(
         require_permission("trading:write")
     ),
@@ -92,6 +94,12 @@ def create_paper_order(
 ):
     """Paper 주문 — Kill Switch + Risk 통과 후에만 생성."""
 
+    enforce_rate_limit(
+        http_request,
+        scope="paper_order_create",
+        limit=60,
+        window_seconds=60,
+    )
     assert_paper_account_access(
         user, request.account_id, session
     )
@@ -112,8 +120,15 @@ def create_paper_order(
             quantity=request.quantity,
             price=_resolve_price(request),
             broker_code=request.broker_code,
+            user_id=int(user.user_id),
+            order_source="MANUAL",
+            is_risk_reducing=(
+                request.side.value.upper() == "SELL"
+            ),
+            environment="PAPER",
         )
         return _service(session).create(
+            account_id=request.account_id,
             exchange_code=request.exchange_code,
             symbol=request.symbol,
             side=request.side,
@@ -139,12 +154,18 @@ def create_paper_order(
 def fill_paper_order(
     order_id: int,
     request: FillPaperOrderRequest,
-    _: AuthenticatedUser = Depends(
+    user: AuthenticatedUser = Depends(
         require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
     try:
+        order = PaperOrderRepository(session).get(order_id)
+        if order is None:
+            raise LookupError(f"Paper order not found: {order_id}")
+        assert_paper_account_access(
+            user, int(order.account_id), session
+        )
         return _service(session).fill(
             order_id=order_id,
             fill_quantity=request.fill_quantity,
@@ -165,13 +186,19 @@ def fill_paper_order(
 @router.post("/{order_id}/cancel")
 def cancel_paper_order(
     order_id: int,
-    _: AuthenticatedUser = Depends(
+    user: AuthenticatedUser = Depends(
         require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
     # 취소는 리스크 축소이므로 Kill Switch와 무관하게 허용
     try:
+        order = PaperOrderRepository(session).get(order_id)
+        if order is None:
+            raise LookupError(f"Paper order not found: {order_id}")
+        assert_paper_account_access(
+            user, int(order.account_id), session
+        )
         return _service(session).cancel(
             order_id=order_id
         )
@@ -191,12 +218,18 @@ def cancel_paper_order(
 def reject_paper_order(
     order_id: int,
     request: RejectPaperOrderRequest,
-    _: AuthenticatedUser = Depends(
+    user: AuthenticatedUser = Depends(
         require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
     try:
+        order = PaperOrderRepository(session).get(order_id)
+        if order is None:
+            raise LookupError(f"Paper order not found: {order_id}")
+        assert_paper_account_access(
+            user, int(order.account_id), session
+        )
         return _service(session).reject(
             order_id=order_id,
             reason=request.reason,
@@ -225,9 +258,7 @@ def list_paper_orders(
 ):
     """
     Paper 주문 목록.
-    paper_order 테이블에 account_id 컬럼이 없어 계정 스코프 필터는 불가.
-    비관리자는 소유권 확인 후 빈 목록을 반환한다 (전역 노출 방지).
-    거래내역은 GET /orders?account_id= 를 사용한다.
+    비관리자는 account_id 필수 + 소유권 검사 후 해당 계좌 주문만 반환.
     """
 
     if not user.is_admin:
@@ -237,9 +268,9 @@ def list_paper_orders(
                 detail="account_id 가 필요합니다.",
             )
         assert_paper_account_access(user, account_id, session)
-        return []
 
     rows = PaperOrderRepository(session).list_recent(
+        account_id=account_id,
         exchange_code=exchange_code,
         limit=limit,
     )

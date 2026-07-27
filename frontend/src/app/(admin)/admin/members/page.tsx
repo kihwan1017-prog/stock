@@ -65,6 +65,18 @@ export default function AdminMembersPage() {
     enabled: detailId !== null,
   });
 
+  const memberAccountsQuery = useQuery({
+    queryKey: ["admin", "member-accounts", detailId],
+    queryFn: () => adminApi.listMemberAccounts(detailId!),
+    enabled: detailId !== null,
+  });
+
+  const memberSessionsQuery = useQuery({
+    queryKey: ["admin", "member-sessions", detailId],
+    queryFn: () => adminApi.listMemberSessions(detailId!),
+    enabled: detailId !== null,
+  });
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin", "members"] });
   };
@@ -115,6 +127,33 @@ export default function AdminMembersPage() {
     onSuccess: () => {
       message.success("회원이 활성화되었습니다.");
       invalidate();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const unlockMut = useMutation({
+    mutationFn: adminApi.unlockMember,
+    onSuccess: () => {
+      message.success("계정 잠금이 해제되었습니다.");
+      invalidate();
+      if (detailId) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.admin.memberDetail(detailId),
+        });
+      }
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const forceLogoutMut = useMutation({
+    mutationFn: adminApi.forceLogoutMember,
+    onSuccess: (data) => {
+      message.success(`세션 ${data.revoked_sessions}건 강제 종료`);
+      if (detailId) {
+        void queryClient.invalidateQueries({
+          queryKey: ["admin", "member-sessions", detailId],
+        });
+      }
     },
     onError: (e) => message.error(toApiError(e).message),
   });
@@ -218,8 +257,7 @@ export default function AdminMembersPage() {
               style={{ width: 120 }}
               options={[
                 { value: "admin", label: "admin (관리자)" },
-                { value: "operator", label: "operator (운영자)" },
-                { value: "viewer", label: "viewer (조회자)" },
+                { value: "user", label: "user (일반 사용자)" },
               ]}
             />
           </Form.Item>
@@ -335,6 +373,30 @@ export default function AdminMembersPage() {
                   >
                     PW초기화
                   </Button>
+                  {row.user_status === "LOCKED" || row.locked_until ? (
+                    <Button
+                      size="small"
+                      disabled={Boolean(row.deleted_at)}
+                      loading={unlockMut.isPending}
+                      onClick={() => unlockMut.mutate(row.id)}
+                    >
+                      잠금해제
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="small"
+                    disabled={Boolean(row.deleted_at)}
+                    loading={forceLogoutMut.isPending}
+                    onClick={() => {
+                      modal.confirm({
+                        title: "세션 강제 종료",
+                        content: `${row.username} 의 모든 세션을 종료할까요?`,
+                        onOk: () => forceLogoutMut.mutateAsync(row.id),
+                      });
+                    }}
+                  >
+                    세션종료
+                  </Button>
                   <PermissionButton
                     permission="users:delete"
                     size="small"
@@ -361,7 +423,7 @@ export default function AdminMembersPage() {
         title={`회원 상세 #${detailId}`}
         open={detailId !== null}
         onClose={() => setDetailId(null)}
-        size={480}
+        size={560}
       >
         {detailQuery.isLoading ? (
           <Typography.Text>불러오는 중...</Typography.Text>
@@ -372,9 +434,60 @@ export default function AdminMembersPage() {
           </Typography.Text>
         ) : null}
         {detailQuery.data ? (
-          <pre style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>
-            {JSON.stringify(detailQuery.data, null, 2)}
-          </pre>
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <div>
+              <Typography.Text strong>상태</Typography.Text>
+              <div>
+                <Tag>{detailQuery.data.user_status ?? "-"}</Tag>
+                {detailQuery.data.password_change_required ? (
+                  <Tag color="warning">PW변경필요</Tag>
+                ) : null}
+              </div>
+            </div>
+            <pre style={{ fontSize: 12, whiteSpace: "pre-wrap", margin: 0 }}>
+              {JSON.stringify(detailQuery.data, null, 2)}
+            </pre>
+            <div>
+              <Typography.Text strong>계좌 연결 (Secret 미포함)</Typography.Text>
+              {memberAccountsQuery.isLoading ? (
+                <Typography.Text type="secondary"> 로딩…</Typography.Text>
+              ) : (
+                <pre style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>
+                  {JSON.stringify(memberAccountsQuery.data ?? {}, null, 2)}
+                </pre>
+              )}
+            </div>
+            <div>
+              <Typography.Text strong>활성 세션</Typography.Text>
+              {memberSessionsQuery.isLoading ? (
+                <Typography.Text type="secondary"> 로딩…</Typography.Text>
+              ) : (
+                <pre style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>
+                  {JSON.stringify(memberSessionsQuery.data ?? {}, null, 2)}
+                </pre>
+              )}
+            </div>
+            <Space wrap>
+              <Button
+                onClick={() => detailId && unlockMut.mutate(detailId)}
+                loading={unlockMut.isPending}
+              >
+                잠금 해제
+              </Button>
+              <Button
+                danger
+                onClick={() =>
+                  detailId &&
+                  modal.confirm({
+                    title: "세션 강제 종료",
+                    onOk: () => forceLogoutMut.mutateAsync(detailId),
+                  })
+                }
+              >
+                전체 세션 종료
+              </Button>
+            </Space>
+          </Space>
         ) : null}
       </Drawer>
 
@@ -394,7 +507,7 @@ export default function AdminMembersPage() {
             roles: string[];
             is_active: boolean;
           }) => createMut.mutate(values)}
-          initialValues={{ roles: ["viewer"], is_active: true }}
+          initialValues={{ roles: ["user"], is_active: true }}
         >
           <Form.Item name="username" label="username" rules={[{ required: true, min: 3 }]}>
             <Input autoComplete="off" />
@@ -410,8 +523,7 @@ export default function AdminMembersPage() {
               mode="multiple"
               options={[
                 { value: "admin", label: "admin (관리자)" },
-                { value: "operator", label: "operator (운영자)" },
-                { value: "viewer", label: "viewer (조회자)" },
+                { value: "user", label: "user (일반 사용자)" },
               ]}
             />
           </Form.Item>
@@ -458,8 +570,7 @@ export default function AdminMembersPage() {
                 mode="multiple"
                 options={[
                   { value: "admin", label: "admin (관리자)" },
-                  { value: "operator", label: "operator (운영자)" },
-                  { value: "viewer", label: "viewer (조회자)" },
+                  { value: "user", label: "user (일반 사용자)" },
                 ]}
               />
             </Form.Item>

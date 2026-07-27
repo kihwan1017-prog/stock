@@ -167,6 +167,19 @@ class PositionExitMonitorService:
         )
 
         try:
+            # Paper 계좌 소유자 → ResolvedRiskPolicy
+            from stock_platform.trading.account_models import (
+                PaperAccount,
+            )
+
+            paper = self._session.get(
+                PaperAccount, position.account_id
+            )
+            owner_user_id = (
+                int(paper.user_id)
+                if paper is not None and paper.user_id is not None
+                else None
+            )
             result = self._execution.submit(
                 OrderExecutionCommand(
                     account_id=position.account_id,
@@ -183,6 +196,12 @@ class PositionExitMonitorService:
                         "exit_reason": reason,
                     },
                     actor="POSITION_EXIT_MONITOR",
+                    order_source="EXIT",
+                    is_risk_reducing=True,
+                    user_id=owner_user_id,
+                    account_number=(
+                        f"PAPER-{position.account_id}"
+                    ),
                     idempotency_key=(
                         f"EXIT:{position.exchange_code}:"
                         f"{position.symbol}:{reason}:"

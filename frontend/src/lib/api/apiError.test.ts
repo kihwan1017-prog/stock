@@ -39,6 +39,38 @@ describe("apiError mapper", () => {
     expect(error.requestId).toBe("abc-123");
   });
 
+  it("maps platform error envelope with nested error.message", () => {
+    const error = mapAxiosErrorToApiError(
+      createAxiosError(
+        {
+          ok: false,
+          error: { code: "UNAUTHORIZED", message: "아이디 또는 비밀번호가 올바르지 않습니다." },
+          detail: null,
+          code: "UNAUTHORIZED",
+          message: "아이디 또는 비밀번호가 올바르지 않습니다.",
+          request_id: "req-login",
+        },
+        401,
+      ),
+    );
+    expect(error.status).toBe(401);
+    expect(error.code).toBe("UNAUTHORIZED");
+    expect(error.message).toContain("비밀번호");
+    expect(error.requestId).toBe("req-login");
+  });
+
+  it("maps Network Error to Korean message", () => {
+    const axiosError = {
+      isAxiosError: true,
+      name: "AxiosError",
+      message: "Network Error",
+      toJSON: () => ({}),
+    } as AxiosError;
+    const error = mapAxiosErrorToApiError(axiosError);
+    expect(error.status).toBe(0);
+    expect(error.message).toBe("네트워크 연결에 실패했습니다.");
+  });
+
   it("returns existing ApiError via toApiError", () => {
     const original = new ApiError({ status: 500, message: "boom" });
     expect(toApiError(original)).toBe(original);

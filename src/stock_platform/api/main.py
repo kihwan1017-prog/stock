@@ -66,6 +66,60 @@ def create_app() -> FastAPI:
         openapi_url=None if hide_docs else "/openapi.json",
     )
 
+    def custom_openapi():
+        if application.openapi_schema:
+            return application.openapi_schema
+        from fastapi.openapi.utils import get_openapi
+
+        schema = get_openapi(
+            title=application.title,
+            version=application.version,
+            description=application.description,
+            routes=application.routes,
+        )
+        schema.setdefault("components", {}).setdefault(
+            "securitySchemes",
+            {},
+        ).update(
+            {
+                "BearerAuth": {
+                    "type": "http",
+                    "scheme": "bearer",
+                    "bearerFormat": "JWT",
+                },
+                "AdminApiKey": {
+                    "type": "apiKey",
+                    "in": "header",
+                    "name": "X-Admin-API-Key",
+                },
+            }
+        )
+        # 전역 security 힌트 (엔드포인트별 Depends가 실제 강제)
+        schema["security"] = [
+            {"BearerAuth": []},
+            {"AdminApiKey": []},
+        ]
+        # operationId 중복 검사
+        seen: dict[str, str] = {}
+        duplicates: list[str] = []
+        for path, methods in (schema.get("paths") or {}).items():
+            for method, op in methods.items():
+                if not isinstance(op, dict):
+                    continue
+                op_id = op.get("operationId")
+                if not op_id:
+                    continue
+                if op_id in seen:
+                    duplicates.append(op_id)
+                else:
+                    seen[op_id] = f"{method.upper()} {path}"
+        if duplicates:
+            schema.setdefault("x-operation-id-duplicates", sorted(set(duplicates)))
+        application.openapi_schema = schema
+        return application.openapi_schema
+
+    application.openapi = custom_openapi  # type: ignore[method-assign]
+
     @application.get("/")
     def root():
         return {

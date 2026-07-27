@@ -27,6 +27,7 @@ class PaperOrderService:
     def create(
         self,
         *,
+        account_id: int,
         exchange_code: str,
         symbol: str,
         side: OrderSide,
@@ -37,6 +38,7 @@ class PaperOrderService:
         auto_accept: bool = True,
     ) -> PaperOrder:
         order = self._engine.create_order(
+            account_id=account_id,
             exchange_code=exchange_code,
             symbol=symbol,
             side=side,

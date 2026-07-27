@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Integer,
     String,
     func,
     text,
@@ -76,7 +77,7 @@ class AuthUser(Base):
     roles: Mapped[list[Any]] = mapped_column(
         JSONB,
         nullable=False,
-        server_default=text("'[\"viewer\"]'::jsonb"),
+        server_default=text("'[\"user\"]'::jsonb"),
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean,
@@ -104,6 +105,28 @@ class AuthUser(Base):
         server_default=func.now(),
     )
     deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    password_change_required: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    failed_login_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_login_ip: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    onboarding_completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

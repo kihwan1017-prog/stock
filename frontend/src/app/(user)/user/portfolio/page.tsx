@@ -407,7 +407,7 @@ export default function UserPortfolioPage() {
             <Link href={userRoutes.trading}>매매</Link>
           </Button>
           <Button size="small">
-            <Link href={userRoutes.trades}>거래내역</Link>
+            <Link href={userRoutes.orders}>거래내역</Link>
           </Button>
         </Space>
       }

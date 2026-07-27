@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Identity, String, Text, func, text
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Identity,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,8 +26,24 @@ class StrategyRuntimeSwitchEntity(Base):
     strategy_runtime_switch_id: Mapped[int] = mapped_column(
         BigInteger, Identity(), primary_key=True
     )
-    previous_deployment_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    target_deployment_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    previous_deployment_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="SET NULL",
+            name="fk_strategy_runtime_switch_previous",
+        ),
+        nullable=True,
+    )
+    target_deployment_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="RESTRICT",
+            name="fk_strategy_runtime_switch_target",
+        ),
+        nullable=False,
+    )
     status_code: Mapped[str] = mapped_column(String(30), nullable=False)
     requested_by: Mapped[str] = mapped_column(String(100), nullable=False)
     dry_run_payload: Mapped[dict[str, Any]] = mapped_column(

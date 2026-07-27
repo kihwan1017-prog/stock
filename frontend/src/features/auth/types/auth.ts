@@ -5,6 +5,10 @@ export interface AuthUser {
   displayName?: string;
   roles: string[];
   permissions: string[];
+  userStatus?: string;
+  passwordChangeRequired?: boolean;
+  defaultRoute?: string;
+  onboardingCompleted?: boolean;
 }
 
 export interface LoginRequest {
@@ -26,6 +30,7 @@ export interface LoginResponse {
   accessToken: string;
   refreshToken: string;
   expiresIn?: number;
+  defaultRoute?: string;
   user: AuthUser;
 }
 

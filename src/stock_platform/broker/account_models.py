@@ -6,8 +6,12 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
+    ForeignKey,
     Identity,
+    Index,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -21,7 +25,7 @@ from stock_platform.database.base import Base
 
 
 class BrokerAccountSnapshotEntity(Base):
-    """브로커 계좌 조회 결과의 최신 스냅샷."""
+    """브로커 계좌 조회 결과 — UserBrokerAccount에 바인딩된 스냅샷."""
 
     __tablename__ = "broker_account_snapshot"
     __table_args__ = (
@@ -29,6 +33,25 @@ class BrokerAccountSnapshotEntity(Base):
             "broker_code",
             "account_number",
             name="uq_broker_account_snapshot_account",
+        ),
+        CheckConstraint(
+            "snapshot_status IN ("
+            "'ACTIVE','ORPHAN','STALE','SUPERSEDED','INVALID',"
+            "'REBIND_PENDING','REBOUND','RETIRED','PURGED')",
+            name="ck_broker_account_snapshot_status",
+        ),
+        CheckConstraint(
+            "snapshot_generation >= 1 AND snapshot_version >= 1",
+            name="ck_broker_account_snapshot_generation_pos",
+        ),
+        Index(
+            "ix_broker_account_snapshot_uba",
+            "user_broker_account_id",
+        ),
+        Index(
+            "ix_broker_account_snapshot_status_time",
+            "snapshot_status",
+            "snapshot_time",
         ),
         {"schema": "trading"},
     )
@@ -45,6 +68,41 @@ class BrokerAccountSnapshotEntity(Base):
     account_number: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
+    )
+    # STEP 8-5-17 — 명시적 UBA Binding (휴리스틱 금지)
+    user_broker_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.user_broker_account.user_broker_account_id",
+            ondelete="SET NULL",
+            name="fk_broker_account_snapshot_uba",
+        ),
+        nullable=True,
+    )
+    paper_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    snapshot_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'ACTIVE'"),
+    )
+    snapshot_generation: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        server_default=text("1"),
+        default=1,
+    )
+    snapshot_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("1"),
+        default=1,
+    )
+    snapshot_hash: Mapped[str | None] = mapped_column(String(64))
+    snapshot_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    broker_server_time: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
     )
     currency_code: Mapped[str] = mapped_column(
         String(10),
@@ -91,10 +149,15 @@ class BrokerAccountSnapshotEntity(Base):
         nullable=False,
         server_default=func.now(),
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class BrokerPositionSnapshotEntity(Base):
-    """브로커 계좌 보유종목 최신 스냅샷."""
+    """브로커 계좌 보유종목 스냅샷 — UBA Binding."""
 
     __tablename__ = "broker_position_snapshot"
     __table_args__ = (
@@ -104,6 +167,10 @@ class BrokerPositionSnapshotEntity(Base):
             "exchange_code",
             "symbol",
             name="uq_broker_position_snapshot_symbol",
+        ),
+        Index(
+            "ix_broker_position_snapshot_uba",
+            "user_broker_account_id",
         ),
         {"schema": "trading"},
     )
@@ -120,6 +187,12 @@ class BrokerPositionSnapshotEntity(Base):
     account_number: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
+    )
+    user_broker_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    snapshot_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'ACTIVE'"),
     )
     exchange_code: Mapped[str] = mapped_column(
         String(20),

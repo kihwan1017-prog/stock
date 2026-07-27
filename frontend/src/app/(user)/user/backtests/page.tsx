@@ -28,7 +28,7 @@ export default function UserBacktestsPage() {
   return (
     <PageContainer
       title="백테스트"
-      description="GET /backtest-runs · POST /backtests/moving-average (스키마는 /docs 확인)"
+      description="GET /user/backtests/runs · POST /user/backtests/moving-average (스키마는 /docs 확인)"
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Form

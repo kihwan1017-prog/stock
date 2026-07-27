@@ -19,7 +19,7 @@ router = APIRouter(
 
 
 @router.post("/start-scheduler")
-def start_realtime_session_scheduler():
+async def start_realtime_session_scheduler():
     if realtime_trading_scheduler.scheduler.running:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

@@ -9,12 +9,11 @@ from stock_platform.auth.models import AuthUser
 from stock_platform.auth.password import PasswordHasher
 from stock_platform.auth.rbac_repository import RbacRepository
 from stock_platform.auth.repository import AuthRepository, SortField, SortOrder
+from stock_platform.auth.role_codes import (
+    ALLOWED_ROLES,
+    normalize_role_code,
+)
 from stock_platform.auth.service import AuthError
-
-
-ALLOWED_ROLES = frozenset({"admin", "operator", "viewer"})
-# STEP2 legacy alias
-_ROLE_ALIASES = {"user": "viewer"}
 
 
 @dataclass(frozen=True)
@@ -29,6 +28,13 @@ class MemberView:
     password_changed_at: datetime
     deleted_at: datetime | None
     email: str | None = None
+    user_status: str = "ACTIVE"
+    password_change_required: bool = False
+    failed_login_count: int = 0
+    locked_until: datetime | None = None
+    last_login_at: datetime | None = None
+    last_login_ip: str | None = None
+    onboarding_completed: bool = False
 
 
 def to_member_view(
@@ -36,6 +42,8 @@ def to_member_view(
     *,
     roles: list[str] | None = None,
 ) -> MemberView:
+    from stock_platform.auth.user_status import resolve_user_status
+
     resolved = roles if roles is not None else [
         str(item) for item in (user.roles or [])
     ]
@@ -50,6 +58,19 @@ def to_member_view(
         updated_at=user.updated_at,
         password_changed_at=user.password_changed_at,
         deleted_at=user.deleted_at,
+        user_status=resolve_user_status(user),
+        password_change_required=bool(
+            getattr(user, "password_change_required", False)
+        ),
+        failed_login_count=int(
+            getattr(user, "failed_login_count", 0) or 0
+        ),
+        locked_until=getattr(user, "locked_until", None),
+        last_login_at=getattr(user, "last_login_at", None),
+        last_login_ip=getattr(user, "last_login_ip", None),
+        onboarding_completed=bool(
+            getattr(user, "onboarding_completed_at", None)
+        ),
     )
 
 
@@ -65,6 +86,13 @@ def member_view_dict(view: MemberView) -> dict[str, Any]:
         "updated_at": view.updated_at,
         "password_changed_at": view.password_changed_at,
         "deleted_at": view.deleted_at,
+        "user_status": view.user_status,
+        "password_change_required": view.password_change_required,
+        "failed_login_count": view.failed_login_count,
+        "locked_until": view.locked_until,
+        "last_login_at": view.last_login_at,
+        "last_login_ip": view.last_login_ip,
+        "onboarding_completed": view.onboarding_completed,
     }
 
 
@@ -144,6 +172,11 @@ class UserAdminService:
             roles=validated_roles,
             is_active=is_active,
             email=email,
+        )
+        # 관리자 생성 계정은 최초 로그인 시 비밀번호 변경 유도
+        self._repository.set_password_change_required(
+            user,
+            required=True,
         )
         self._sync_roles(user.user_id, validated_roles)
         return self._to_view(user)
@@ -264,13 +297,7 @@ class UserAdminService:
     def _validate_roles(roles: list[str]) -> list[str]:
         if not roles:
             raise AuthError("역할이 최소 1개 필요합니다.")
-        cleaned = [
-            _ROLE_ALIASES.get(
-                str(role).strip().lower(),
-                str(role).strip().lower(),
-            )
-            for role in roles
-        ]
+        cleaned = [normalize_role_code(role) for role in roles]
         invalid = [role for role in cleaned if role not in ALLOWED_ROLES]
         if invalid:
             raise AuthError(
@@ -287,3 +314,57 @@ class UserAdminService:
     def _generate_temporary_password() -> str:
         # 8자 이상 정책 충족
         return f"Tmp!{secrets.token_urlsafe(9)}"
+
+    def unlock_member(self, user_id: int) -> MemberView:
+        user = self._repository.get_by_id(user_id)
+        if user is None:
+            raise AuthError("회원을 찾을 수 없습니다.")
+        self._repository.clear_lockout(user)
+        return self._to_view(user)
+
+    def force_logout_member(self, user_id: int) -> dict[str, Any]:
+        user = self._repository.get_by_id(user_id)
+        if user is None:
+            raise AuthError("회원을 찾을 수 없습니다.")
+        count = self._repository.revoke_all_for_user(
+            user_id,
+            reason="ADMIN_FORCE_LOGOUT",
+        )
+        return {"user_id": user_id, "revoked_sessions": count}
+
+    def list_member_sessions(self, user_id: int) -> list[dict[str, Any]]:
+        user = self._repository.get_by_id(user_id)
+        if user is None:
+            raise AuthError("회원을 찾을 수 없습니다.")
+        rows = self._repository.list_active_sessions(user_id)
+        from stock_platform.common.security_mask import mask_ip
+
+        return [
+            {
+                "session_id": row.session_public_id,
+                "created_at": row.created_at,
+                "expires_at": row.expires_at,
+                "last_used_at": row.last_used_at or row.created_at,
+                "device_name": row.device_name,
+                "ip_address_masked": mask_ip(row.ip_address),
+                "user_agent": (row.user_agent or "")[:80] or None,
+            }
+            for row in rows
+        ]
+
+    def list_member_accounts(self, user_id: int) -> dict[str, Any]:
+        """연결 여부만 — Secret/계좌번호 원문 미포함."""
+
+        from stock_platform.auth.profile_service import UserProfileService
+
+        user = self._repository.get_by_id(user_id)
+        if user is None:
+            raise AuthError("회원을 찾을 수 없습니다.")
+        # private `_session` 대신 공개 get_session() 계약 사용
+        profile = UserProfileService(self._repository.get_session())
+        summary = profile.accounts_summary(user_id)
+        connections = profile.list_connections(user_id)
+        return {
+            "summary": summary,
+            "connections": connections,
+        }

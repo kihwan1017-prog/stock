@@ -1,11 +1,12 @@
-"use client";
+﻿"use client";
 
 import type { ReactNode } from "react";
 import {
-  ApiOutlined,
   ApartmentOutlined,
+  ApiOutlined,
   BarChartOutlined,
   BellOutlined,
+  BulbOutlined,
   CloudServerOutlined,
   ControlOutlined,
   DashboardOutlined,
@@ -15,66 +16,69 @@ import {
   FileTextOutlined,
   FundOutlined,
   KeyOutlined,
+  LineChartOutlined,
   MonitorOutlined,
   ReadOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   SettingOutlined,
-  SwapOutlined,
   StarOutlined,
+  SwapOutlined,
   TeamOutlined,
   ThunderboltOutlined,
+  ToolOutlined,
   UserOutlined,
   WalletOutlined,
 } from "@ant-design/icons";
 
-import { adminRoutes, userRoutes } from "@/config/routes";
-import { meetsUserMenuAccess } from "@/features/auth/utils/roles";
+import {
+  adminRoutes,
+  userRoutes,
+  type AdminRoute,
+  type AppRoute,
+  type UserRoute,
+} from "@/config/routes";
+import { isAdminRole, meetsUserMenuAccess } from "@/features/auth/utils/roles";
 
-export interface AppMenuItem {
+/**
+ * 메뉴 항목 — path는 routes.ts의 캐노니컬 경로 타입만 허용한다.
+ * USER/ADMIN 포털은 제네릭으로 분리해 서로 다른 경로가 섞이지 않게 한다.
+ */
+export interface AppMenuItem<TPath extends string = AppRoute> {
   key: string;
   label: string;
-  path?: string;
+  path?: TPath;
   icon?: ReactNode;
   enabled: boolean;
-  /** 메뉴 표시에 필요한 permission (없으면 로그인만) */
+  /** 메뉴 표시에 필요한 permission (없으면 로그인만 필요) */
   permission?: string;
   /**
-   * User 메뉴 최소 역할 티어 (viewer 기본).
-   * trader = Backend operator | trader | admin
+   * User 메뉴 최소 접근 티어 (user 기본).
+   * admin = 관리자 전용 메뉴 (현재 User 메뉴에서는 미사용)
    */
-  minAccess?: "viewer" | "trader" | "admin";
-  children?: AppMenuItem[];
+  minAccess?: "user" | "admin";
+  children?: AppMenuItem<TPath>[];
 }
 
-export const adminMenuItems: AppMenuItem[] = [
+export type AdminMenuItem = AppMenuItem<AdminRoute>;
+export type UserMenuItem = AppMenuItem<UserRoute>;
+
+/**
+ * Admin 사이드바 메뉴 — 업무 흐름 순서(회원 → 계좌 → 시장데이터 → 전략·후보 →
+ * 거래 → 리스크·운영 → 알림 → 운영관리 → 내 정보)로 구성한다.
+ */
+export const adminMenuItems: AdminMenuItem[] = [
   {
-    key: "overview",
-    label: "개요",
+    key: "dashboard",
+    label: "Dashboard",
+    path: adminRoutes.dashboard,
     icon: <DashboardOutlined />,
     enabled: true,
-    children: [
-      {
-        key: "dashboard",
-        label: "Dashboard",
-        path: adminRoutes.dashboard,
-        icon: <DashboardOutlined />,
-        enabled: true,
-        permission: "menu:dashboard",
-      },
-      {
-        key: "monitoring",
-        label: "시스템 모니터링",
-        path: adminRoutes.monitoring,
-        icon: <MonitorOutlined />,
-        enabled: true,
-        permission: "menu:monitoring",
-      },
-    ],
+    permission: "menu:dashboard",
   },
   {
-    key: "users",
-    label: "사용자",
+    key: "members-group",
+    label: "회원관리",
     icon: <TeamOutlined />,
     enabled: true,
     children: [
@@ -97,19 +101,242 @@ export const adminMenuItems: AppMenuItem[] = [
     ],
   },
   {
-    key: "trading-group",
-    label: "거래",
-    icon: <SwapOutlined />,
+    key: "accounts-group",
+    label: "계좌",
+    icon: <WalletOutlined />,
     enabled: true,
     children: [
       {
         key: "accounts",
-        label: "계좌관리",
+        label: "전체 계좌",
         path: adminRoutes.accounts,
         icon: <WalletOutlined />,
         enabled: true,
         permission: "menu:accounts",
       },
+      {
+        key: "accounts-kiwoom",
+        label: "키움 계좌",
+        path: adminRoutes.kiwoom,
+        icon: <ApiOutlined />,
+        enabled: true,
+        permission: "menu:kiwoom",
+      },
+      {
+        key: "accounts-upbit",
+        label: "업비트 계좌",
+        path: adminRoutes.upbit,
+        icon: <ApiOutlined />,
+        enabled: true,
+        permission: "menu:upbit",
+      },
+    ],
+  },
+  {
+    key: "market-data",
+    label: "시장 데이터",
+    icon: <MonitorOutlined />,
+    enabled: true,
+    children: [
+      {
+        key: "monitoring",
+        label: "시스템 모니터링",
+        path: adminRoutes.monitoring,
+        icon: <MonitorOutlined />,
+        enabled: true,
+        permission: "menu:monitoring",
+      },
+      {
+        key: "news",
+        label: "뉴스관리",
+        path: adminRoutes.news,
+        icon: <ReadOutlined />,
+        enabled: true,
+        permission: "menu:news",
+      },
+      {
+        key: "disclosures",
+        label: "공시관리",
+        path: adminRoutes.disclosures,
+        icon: <FileTextOutlined />,
+        enabled: true,
+        permission: "menu:disclosures",
+      },
+      {
+        key: "upbit-market",
+        label: "업비트 시세",
+        path: adminRoutes.upbit,
+        icon: <ApiOutlined />,
+        enabled: true,
+        permission: "menu:upbit",
+      },
+      {
+        key: "indicators",
+        label: "기술지표 관리",
+        path: adminRoutes.indicators,
+        icon: <LineChartOutlined />,
+        enabled: true,
+      },
+    ],
+  },
+  {
+    key: "strategy-ai",
+    label: "전략·후보",
+    icon: <ExperimentOutlined />,
+    enabled: true,
+    children: [
+      {
+        key: "ai",
+        label: "후보·LLM 관리",
+        path: adminRoutes.ai,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-providers",
+        label: "Provider 관리",
+        path: adminRoutes.aiProviders,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-prompts",
+        label: "Prompt 관리",
+        path: adminRoutes.aiPrompts,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-schemas",
+        label: "Output Schema 관리",
+        path: adminRoutes.aiSchemas,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-policies",
+        label: "Policy 관리",
+        path: adminRoutes.aiPolicies,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-executions",
+        label: "Execution 관리",
+        path: adminRoutes.aiExecutions,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-document-analyses",
+        label: "문서 분석",
+        path: adminRoutes.aiDocumentAnalyses,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-market-analyses",
+        label: "시장·차트 분석",
+        path: adminRoutes.aiMarketAnalyses,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-reviews",
+        label: "Human Review",
+        path: adminRoutes.aiReviews,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-evaluation-datasets",
+        label: "Evaluation Dataset",
+        path: adminRoutes.aiEvaluationDatasets,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-benchmarks",
+        label: "Benchmark/Scorecard",
+        path: adminRoutes.aiBenchmarks,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-candidate-assessments",
+        label: "후보 평가 초안",
+        path: adminRoutes.aiCandidateAssessments,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-candidate-consensuses",
+        label: "Multi-AI 합의 초안",
+        path: adminRoutes.aiCandidateConsensuses,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-candidate-recommendation-queues",
+        label: "후보 추천 검토 큐",
+        path: adminRoutes.aiCandidateRecommendationQueues,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-candidate-promotions",
+        label: "Candidate Promotion Gateway",
+        path: adminRoutes.aiCandidatePromotions,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "ai-candidate-lifecycle",
+        label: "Candidate Lifecycle",
+        path: adminRoutes.aiCandidateLifecycle,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+      },
+      {
+        key: "strategies",
+        label: "전략관리",
+        path: adminRoutes.strategies,
+        icon: <ExperimentOutlined />,
+        enabled: true,
+        permission: "menu:strategies",
+      },
+      {
+        key: "backtests",
+        label: "백테스트",
+        path: adminRoutes.backtests,
+        icon: <BarChartOutlined />,
+        enabled: true,
+        permission: "menu:backtests",
+      },
+    ],
+  },
+  {
+    key: "trading-group",
+    label: "거래",
+    icon: <SwapOutlined />,
+    enabled: true,
+    children: [
       {
         key: "trading",
         label: "자동매매관리",
@@ -136,7 +363,7 @@ export const adminMenuItems: AppMenuItem[] = [
       },
       {
         key: "portfolio",
-        label: "포트폴리오",
+        label: "잔고·손익",
         path: adminRoutes.portfolio,
         icon: <FundOutlined />,
         enabled: true,
@@ -145,67 +372,27 @@ export const adminMenuItems: AppMenuItem[] = [
     ],
   },
   {
-    key: "strategy-ai",
-    label: "전략·AI",
-    icon: <ExperimentOutlined />,
-    enabled: true,
-    children: [
-      {
-        key: "strategies",
-        label: "전략관리",
-        path: adminRoutes.strategies,
-        icon: <ExperimentOutlined />,
-        enabled: true,
-        permission: "menu:strategies",
-      },
-      {
-        key: "ai",
-        label: "AI 관리",
-        path: adminRoutes.ai,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "backtests",
-        label: "백테스트",
-        path: adminRoutes.backtests,
-        icon: <BarChartOutlined />,
-        enabled: true,
-        permission: "menu:backtests",
-      },
-    ],
-  },
-  {
-    key: "content",
-    label: "콘텐츠",
-    icon: <ReadOutlined />,
-    enabled: true,
-    children: [
-      {
-        key: "news",
-        label: "뉴스관리",
-        path: adminRoutes.news,
-        icon: <ReadOutlined />,
-        enabled: true,
-        permission: "menu:news",
-      },
-      {
-        key: "disclosures",
-        label: "공시관리",
-        path: adminRoutes.disclosures,
-        icon: <FileTextOutlined />,
-        enabled: true,
-        permission: "menu:disclosures",
-      },
-    ],
-  },
-  {
-    key: "ops",
+    key: "risk-ops",
     label: "리스크·운영",
     icon: <SafetyCertificateOutlined />,
     enabled: true,
     children: [
+      {
+        key: "risk",
+        label: "리스크 관리",
+        path: adminRoutes.risk,
+        icon: <SafetyCertificateOutlined />,
+        enabled: true,
+        permission: "menu:risk",
+      },
+      {
+        key: "live-validation-upbit",
+        label: "업비트 소액 LIVE 검증",
+        path: adminRoutes.liveValidationUpbit,
+        icon: <ThunderboltOutlined />,
+        enabled: true,
+        permission: "menu:risk",
+      },
       {
         key: "operations",
         label: "운영센터",
@@ -215,16 +402,16 @@ export const adminMenuItems: AppMenuItem[] = [
         permission: "menu:scheduler",
       },
       {
-        key: "risk",
-        label: "Risk 관리",
-        path: adminRoutes.risk,
-        icon: <SafetyCertificateOutlined />,
+        key: "operations-dashboard",
+        label: "통합 모니터링",
+        path: adminRoutes.operationsDashboard,
+        icon: <DashboardOutlined />,
         enabled: true,
-        permission: "menu:risk",
+        permission: "menu:scheduler",
       },
       {
         key: "scheduler",
-        label: "Scheduler 관리",
+        label: "스케줄러 관리",
         path: adminRoutes.scheduler,
         icon: <ControlOutlined />,
         enabled: true,
@@ -238,6 +425,21 @@ export const adminMenuItems: AppMenuItem[] = [
         enabled: true,
         permission: "menu:batch",
       },
+      {
+        key: "recovery",
+        label: "장애 복구",
+        path: adminRoutes.recovery,
+        icon: <ToolOutlined />,
+        enabled: true,
+      },
+    ],
+  },
+  {
+    key: "notifications-group",
+    label: "알림",
+    icon: <BellOutlined />,
+    enabled: true,
+    children: [
       {
         key: "notifications",
         label: "알림 관리",
@@ -257,43 +459,19 @@ export const adminMenuItems: AppMenuItem[] = [
     ],
   },
   {
-    key: "broker-data",
-    label: "브로커·데이터",
-    icon: <ApiOutlined />,
-    enabled: true,
-    children: [
-      {
-        key: "kiwoom",
-        label: "키움 API 관리",
-        path: adminRoutes.kiwoom,
-        icon: <ApiOutlined />,
-        enabled: true,
-        permission: "menu:kiwoom",
-      },
-      {
-        key: "upbit",
-        label: "업비트 관리",
-        path: adminRoutes.upbit,
-        icon: <ApiOutlined />,
-        enabled: true,
-        permission: "menu:upbit",
-      },
-      {
-        key: "data",
-        label: "데이터·모니터링",
-        path: adminRoutes.monitoring,
-        icon: <DatabaseOutlined />,
-        enabled: true,
-        permission: "menu:data",
-      },
-    ],
-  },
-  {
     key: "system",
-    label: "시스템",
+    label: "운영관리",
     icon: <SettingOutlined />,
     enabled: true,
     children: [
+      {
+        key: "system-monitoring",
+        label: "시스템 모니터링",
+        path: adminRoutes.monitoring,
+        icon: <MonitorOutlined />,
+        enabled: true,
+        permission: "menu:monitoring",
+      },
       {
         key: "system-settings",
         label: "시스템 설정",
@@ -352,14 +530,31 @@ export const adminMenuItems: AppMenuItem[] = [
       },
     ],
   },
+  {
+    key: "my-info",
+    label: "내 정보",
+    icon: <UserOutlined />,
+    enabled: true,
+    children: [
+      {
+        key: "profile",
+        label: "내 정보",
+        path: adminRoutes.profile,
+        icon: <UserOutlined />,
+        enabled: true,
+      },
+    ],
+  },
 ];
 
 /** @deprecated adminMenuItems 사용 */
 export const appMenuItems = adminMenuItems;
 
-/** 플랫 메뉴 경로 목록 (가드·테스트용) */
-export function flattenMenuItems(items: AppMenuItem[]): AppMenuItem[] {
-  const result: AppMenuItem[] = [];
+/** 평탄화된 메뉴 경로 목록 (권한 검사·selectedKey 계산용) */
+export function flattenMenuItems<TPath extends string>(
+  items: AppMenuItem<TPath>[],
+): AppMenuItem<TPath>[] {
+  const result: AppMenuItem<TPath>[] = [];
   for (const item of items) {
     if (item.children?.length) {
       result.push(...flattenMenuItems(item.children));
@@ -371,22 +566,24 @@ export function flattenMenuItems(items: AppMenuItem[]): AppMenuItem[] {
 }
 
 /** permission 기준으로 메뉴 트리 필터 */
-export function filterMenuByPermissions(
-  items: AppMenuItem[],
+export function filterMenuByPermissions<TPath extends string>(
+  items: AppMenuItem<TPath>[],
   permissions: string[],
   roles: string[] = [],
-): AppMenuItem[] {
-  const isAdmin = roles.includes("admin");
+): AppMenuItem<TPath>[] {
+  const isAdmin = isAdminRole(roles);
   const owned = new Set(permissions);
 
-  const filterNode = (item: AppMenuItem): AppMenuItem | null => {
+  const filterNode = (
+    item: AppMenuItem<TPath>,
+  ): AppMenuItem<TPath> | null => {
     if (!item.enabled) {
       return null;
     }
     if (item.children?.length) {
       const children = item.children
         .map(filterNode)
-        .filter((child): child is AppMenuItem => child !== null);
+        .filter((child): child is AppMenuItem<TPath> => child !== null);
       if (!children.length) {
         return null;
       }
@@ -404,24 +601,26 @@ export function filterMenuByPermissions(
 
   return items
     .map(filterNode)
-    .filter((item): item is AppMenuItem => item !== null);
+    .filter((item): item is AppMenuItem<TPath> => item !== null);
 }
 
-/** User 메뉴 — 역할 티어로 필터 (viewer / trader / admin) */
-export function filterUserMenuByRoles(
-  items: AppMenuItem[],
+/** User 메뉴 최소 접근 티어로 필터 (user / admin) */
+export function filterUserMenuByRoles<TPath extends string>(
+  items: AppMenuItem<TPath>[],
   roles: string[],
-): AppMenuItem[] {
-  const filterNode = (item: AppMenuItem): AppMenuItem | null => {
+): AppMenuItem<TPath>[] {
+  const filterNode = (
+    item: AppMenuItem<TPath>,
+  ): AppMenuItem<TPath> | null => {
     if (!item.enabled) return null;
     if (item.children?.length) {
       const children = item.children
         .map(filterNode)
-        .filter((child): child is AppMenuItem => child !== null);
+        .filter((child): child is AppMenuItem<TPath> => child !== null);
       if (!children.length) return null;
       return { ...item, children };
     }
-    const minAccess = item.minAccess ?? "viewer";
+    const minAccess = item.minAccess ?? "user";
     if (!meetsUserMenuAccess(roles, minAccess)) {
       return null;
     }
@@ -430,7 +629,7 @@ export function filterUserMenuByRoles(
 
   return items
     .map(filterNode)
-    .filter((item): item is AppMenuItem => item !== null);
+    .filter((item): item is AppMenuItem<TPath> => item !== null);
 }
 
 /** 경로에 매핑된 menu permission 조회 */
@@ -450,102 +649,243 @@ export function permissionForPath(
   return matched[0]?.permission;
 }
 
-export const userMenuItems: AppMenuItem[] = [
+/**
+ * User 사이드바 메뉴 — 업무 흐름 순서(대시보드 → 내 계좌 → 시장정보 →
+ * 매매 후보 → 내 전략 → 내 주문·체결 → 잔고·손익 → 리스크 → 리포트 →
+ * 알림 → 내 정보)로 구성한다.
+ */
+export const userMenuItems: UserMenuItem[] = [
   {
     key: "dashboard",
-    label: "Dashboard",
+    label: "대시보드",
     path: userRoutes.dashboard,
     icon: <DashboardOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    minAccess: "user",
   },
   {
-    key: "account",
+    key: "my-accounts",
     label: "내 계좌",
-    path: userRoutes.account,
     icon: <WalletOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    children: [
+      {
+        key: "accounts-all",
+        label: "전체 계좌",
+        path: userRoutes.accounts,
+        icon: <WalletOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "accounts-kiwoom",
+        label: "키움 계좌",
+        path: userRoutes.accountsKiwoom,
+        icon: <ApiOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "accounts-upbit",
+        label: "업비트 계좌",
+        path: userRoutes.accountsUpbit,
+        icon: <ApiOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "accounts-paper",
+        label: "Paper 계좌",
+        path: userRoutes.accountsPaper,
+        icon: <WalletOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+    ],
   },
   {
-    key: "trading",
-    label: "매매",
-    path: userRoutes.trading,
-    icon: <SwapOutlined />,
+    key: "market-info",
+    label: "시장 정보",
+    icon: <LineChartOutlined />,
     enabled: true,
-    minAccess: "trader",
+    children: [
+      {
+        key: "markets-stocks",
+        label: "주식",
+        path: userRoutes.marketsStocks,
+        icon: <LineChartOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "markets-crypto",
+        label: "암호화폐",
+        path: userRoutes.marketsCrypto,
+        icon: <LineChartOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "watchlist",
+        label: "관심종목",
+        path: userRoutes.watchlist,
+        icon: <StarOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "news",
+        label: "뉴스",
+        path: userRoutes.news,
+        icon: <ReadOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "disclosures",
+        label: "공시",
+        path: userRoutes.disclosures,
+        icon: <FileTextOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+    ],
   },
   {
-    key: "auto-trading",
-    label: "자동매매",
-    path: userRoutes.autoTrading,
-    icon: <ThunderboltOutlined />,
+    key: "candidates",
+    label: "매매 후보",
+    icon: <BulbOutlined />,
     enabled: true,
-    minAccess: "trader",
+    children: [
+      {
+        key: "candidates-stocks",
+        label: "주식 후보",
+        path: userRoutes.candidatesStocks,
+        icon: <BulbOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "candidates-crypto",
+        label: "업비트 후보",
+        path: userRoutes.candidatesCrypto,
+        icon: <BulbOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "candidates-llm",
+        label: "LLM 분석",
+        path: userRoutes.candidatesLlm,
+        icon: <RobotOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+    ],
   },
   {
-    key: "strategies",
-    label: "전략",
-    path: userRoutes.strategies,
+    key: "my-strategies",
+    label: "내 전략",
     icon: <ExperimentOutlined />,
     enabled: true,
-    minAccess: "trader",
+    children: [
+      {
+        key: "strategies",
+        label: "전략",
+        path: userRoutes.strategies,
+        icon: <ExperimentOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "auto-trading",
+        label: "자동매매",
+        path: userRoutes.autoTrading,
+        icon: <ThunderboltOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "backtests",
+        label: "백테스트",
+        path: userRoutes.backtests,
+        icon: <BarChartOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+    ],
   },
   {
-    key: "backtests",
-    label: "백테스트",
-    path: userRoutes.backtests,
-    icon: <BarChartOutlined />,
+    key: "my-orders",
+    label: "내 주문·체결",
+    icon: <ApartmentOutlined />,
     enabled: true,
-    minAccess: "trader",
+    children: [
+      {
+        key: "trading",
+        label: "매매(주문 실행)",
+        path: userRoutes.trading,
+        icon: <SwapOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "orders",
+        label: "주문·체결 내역",
+        path: userRoutes.orders,
+        icon: <ApartmentOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "orders-kiwoom",
+        label: "키움 주문·체결",
+        path: userRoutes.ordersKiwoom,
+        icon: <ApiOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "orders-upbit",
+        label: "업비트 주문·체결",
+        path: userRoutes.ordersUpbit,
+        icon: <ApiOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+    ],
   },
   {
     key: "portfolio",
-    label: "포트폴리오",
+    label: "내 잔고·손익",
     path: userRoutes.portfolio,
     icon: <FundOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    minAccess: "user",
   },
   {
-    key: "watchlist",
-    label: "관심종목",
-    path: userRoutes.watchlist,
-    icon: <StarOutlined />,
+    key: "risk",
+    label: "내 리스크",
+    path: userRoutes.risk,
+    icon: <SafetyCertificateOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    minAccess: "user",
   },
   {
-    key: "trades",
-    label: "거래내역",
-    path: userRoutes.trades,
-    icon: <ApartmentOutlined />,
+    key: "live-validation-upbit",
+    label: "업비트 LIVE 검증",
+    path: userRoutes.liveValidationUpbit,
+    icon: <ThunderboltOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    minAccess: "user",
   },
   {
-    key: "ai",
-    label: "AI 추천",
-    path: userRoutes.ai,
-    icon: <RobotOutlined />,
+    key: "reports",
+    label: "내 리포트",
+    path: userRoutes.reports,
+    icon: <FileSearchOutlined />,
     enabled: true,
-    minAccess: "viewer",
-  },
-  {
-    key: "news",
-    label: "뉴스",
-    path: userRoutes.news,
-    icon: <ReadOutlined />,
-    enabled: true,
-    minAccess: "viewer",
-  },
-  {
-    key: "disclosures",
-    label: "공시",
-    path: userRoutes.disclosures,
-    icon: <FileTextOutlined />,
-    enabled: true,
-    minAccess: "viewer",
+    minAccess: "user",
   },
   {
     key: "notifications",
@@ -553,22 +893,30 @@ export const userMenuItems: AppMenuItem[] = [
     path: userRoutes.notifications,
     icon: <BellOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    minAccess: "user",
   },
   {
-    key: "settings",
-    label: "설정",
-    path: userRoutes.settings,
-    icon: <SettingOutlined />,
-    enabled: true,
-    minAccess: "viewer",
-  },
-  {
-    key: "profile",
+    key: "my-info",
     label: "내 정보",
-    path: userRoutes.profile,
     icon: <UserOutlined />,
     enabled: true,
-    minAccess: "viewer",
+    children: [
+      {
+        key: "profile",
+        label: "프로필",
+        path: userRoutes.profile,
+        icon: <UserOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        key: "settings",
+        label: "설정",
+        path: userRoutes.settings,
+        icon: <SettingOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+    ],
   },
 ];

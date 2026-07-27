@@ -1,7 +1,8 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Space } from "antd";
+import { App, Button, InputNumber, Space } from "antd";
+import { useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -12,6 +13,7 @@ import { queryKeys } from "@/lib/query/queryKeys";
 export default function AdminKiwoomPage() {
   const { message } = App.useApp();
   const qc = useQueryClient();
+  const [ubaId, setUbaId] = useState<number | null>(null);
 
   const config = useQuery({
     queryKey: queryKeys.admin.kiwoomConfig(),
@@ -32,9 +34,9 @@ export default function AdminKiwoomPage() {
     onError: (e) => message.error(toApiError(e).message),
   });
   const sync = useMutation({
-    mutationFn: adminApi.syncKiwoomAccount,
+    mutationFn: (id: number) => adminApi.syncKiwoomAccount(id),
     onSuccess: () => {
-      message.success("계좌 동기화 완료");
+      message.success("계좌 동기화 완료 (UBA Binding)");
       void qc.invalidateQueries({ queryKey: queryKeys.admin.brokerAccount() });
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -43,13 +45,24 @@ export default function AdminKiwoomPage() {
   return (
     <AdminPageShell
       title="키움 API 관리"
-      description="kiwoom/configuration · token/test · account sync · live-transition"
+      description="kiwoom/configuration · token/test · UBA-bound account sync"
       extra={
         <Space>
+          <InputNumber
+            placeholder="UBA ID"
+            min={1}
+            value={ubaId ?? undefined}
+            onChange={(v) => setUbaId(typeof v === "number" ? v : null)}
+          />
           <Button loading={testToken.isPending} onClick={() => testToken.mutate()}>
             토큰 테스트
           </Button>
-          <Button type="primary" loading={sync.isPending} onClick={() => sync.mutate()}>
+          <Button
+            type="primary"
+            loading={sync.isPending}
+            disabled={ubaId == null}
+            onClick={() => ubaId != null && sync.mutate(ubaId)}
+          >
             계좌 동기화
           </Button>
         </Space>

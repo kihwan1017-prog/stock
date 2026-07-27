@@ -47,16 +47,65 @@ function handleUnauthorized(): void {
   }
 
   isRedirectingToLogin = true;
-  window.location.assign(`${routes.login}?portal=admin`);
+  // 통합 로그인: portal 쿼리 없이 /login 으로만 이동
+  window.location.assign(routes.login);
 }
 
+/** 로그인·가입·토큰 갱신 등 — 401을 세션 만료로 취급하지 않음 */
 function isAuthEndpoint(url?: string): boolean {
   if (!url) return false;
   return (
     url.includes("/auth/login") ||
+    url.includes("/auth/signup") ||
     url.includes("/auth/refresh") ||
-    url.includes("/auth/logout")
+    url.includes("/auth/logout") ||
+    url.includes("/auth/change-password")
   );
+}
+
+async function refreshAndRetry(
+  client: AxiosInstance,
+  original: InternalAxiosRequestConfig & { _retry?: boolean },
+  apiError: ReturnType<typeof toApiError>,
+): Promise<unknown> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    handleUnauthorized();
+    return Promise.reject(apiError);
+  }
+
+  if (isRefreshing) {
+    const nextToken = await new Promise<string | null>((resolve) => {
+      refreshWaiters.push(resolve);
+    });
+    if (!nextToken) {
+      return Promise.reject(apiError);
+    }
+    original.headers.set("Authorization", `Bearer ${nextToken}`);
+    return client.request(original);
+  }
+
+  original._retry = true;
+  isRefreshing = true;
+  try {
+    const { refreshAccessToken } = await import("@/features/auth/api/authApi");
+    const { useAuthStore } = await import("@/features/auth/store/authStore");
+    const refreshed = await refreshAccessToken(refreshToken);
+    setToken(refreshed.accessToken);
+    setRefreshToken(refreshed.refreshToken);
+    useAuthStore
+      .getState()
+      .setSession(refreshed.accessToken, refreshed.user, refreshed.refreshToken);
+    notifyRefreshWaiters(refreshed.accessToken);
+    original.headers.set("Authorization", `Bearer ${refreshed.accessToken}`);
+    return client.request(original);
+  } catch {
+    notifyRefreshWaiters(null);
+    handleUnauthorized();
+    return Promise.reject(apiError);
+  } finally {
+    isRefreshing = false;
+  }
 }
 
 export function setupInterceptors(client: AxiosInstance): void {
@@ -67,7 +116,9 @@ export function setupInterceptors(client: AxiosInstance): void {
 
   client.interceptors.response.use(
     (response) => response,
-    async (error: unknown) => {
+    (error: unknown) => {
+      // async 인터셉터 전체가 Promise가 되면 unhandledrejection 타이밍 이슈가 생길 수 있어
+      // 일반 경로는 동기 reject, refresh 만 async로 분리
       const apiError = toApiError(error);
       const axiosError = error as AxiosError;
       const original = axiosError.config as
@@ -81,64 +132,18 @@ export function setupInterceptors(client: AxiosInstance): void {
         requestId: apiError.requestId,
       });
 
-      if (
+      const canRefresh =
         apiError.status === 401 &&
-        original &&
-        !original._retry &&
-        !isAuthEndpoint(original.url)
-      ) {
-        const refreshToken = getRefreshToken();
-        if (!refreshToken) {
-          handleUnauthorized();
-          return Promise.reject(apiError);
-        }
+        Boolean(original) &&
+        !original!._retry &&
+        !isAuthEndpoint(original?.url);
 
-        if (isRefreshing) {
-          const nextToken = await new Promise<string | null>((resolve) => {
-            refreshWaiters.push(resolve);
-          });
-          if (!nextToken) {
-            return Promise.reject(apiError);
-          }
-          original.headers.set("Authorization", `Bearer ${nextToken}`);
-          return client.request(original);
-        }
-
-        original._retry = true;
-        isRefreshing = true;
-        try {
-          const { refreshAccessToken } = await import(
-            "@/features/auth/api/authApi"
-          );
-          const { useAuthStore } = await import(
-            "@/features/auth/store/authStore"
-          );
-          const refreshed = await refreshAccessToken(refreshToken);
-          setToken(refreshed.accessToken);
-          setRefreshToken(refreshed.refreshToken);
-          useAuthStore
-            .getState()
-            .setSession(
-              refreshed.accessToken,
-              refreshed.user,
-              refreshed.refreshToken,
-            );
-          notifyRefreshWaiters(refreshed.accessToken);
-          original.headers.set(
-            "Authorization",
-            `Bearer ${refreshed.accessToken}`,
-          );
-          return client.request(original);
-        } catch {
-          notifyRefreshWaiters(null);
-          handleUnauthorized();
-          return Promise.reject(apiError);
-        } finally {
-          isRefreshing = false;
-        }
+      if (canRefresh && original) {
+        return refreshAndRetry(client, original, apiError);
       }
 
-      if (apiError.status === 401) {
+      // 로그인 실패(401) 등은 세션 만료 처리하지 않음
+      if (apiError.status === 401 && !isAuthEndpoint(original?.url)) {
         handleUnauthorized();
       }
 

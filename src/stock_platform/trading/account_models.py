@@ -90,6 +90,16 @@ class PaperAccount(Base):
         server_default=text("true"),
     )
 
+    # 통합 브로커 메타 (nullable — 레거시 호환)
+    broker_code: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+    exchange_code: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -101,6 +111,13 @@ class PaperAccount(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+    # Soft delete — Hard Delete 금지(주문/체결 이력 보존)
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
     )
 
 
@@ -172,6 +189,44 @@ class UserBrokerAccount(Base):
         Boolean,
         nullable=False,
         server_default=text("true"),
+    )
+
+    # STEP 8-7 — 계좌별 LIVE 실주문 승인 (기본 OFF)
+    live_order_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    live_approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    live_approved_by: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    # STEP 8-8 — LIVE ARM (5분 토큰)
+    live_armed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )
+    arm_token_hash: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+    arm_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    arm_armed_by: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    arm_armed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
 
     connection_status: Mapped[str] = mapped_column(

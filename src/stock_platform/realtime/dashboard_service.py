@@ -44,10 +44,16 @@ class RealtimeDashboardService:
     async def build(
         self,
         *,
-        account_id: int = 1,
+        account_id: int | None = None,
         recent_limit: int = 20,
     ) -> RealtimeDashboardSnapshot:
-        if account_id <= 0:
+        # 미지정 시 설정 기본 계좌 (하드코딩 1 제거)
+        resolved_account_id = (
+            account_id
+            if account_id is not None
+            else self._settings.realtime_paper_account_id
+        )
+        if resolved_account_id <= 0:
             raise ValueError(
                 "account_id must be greater than zero"
             )
@@ -87,11 +93,11 @@ class RealtimeDashboardService:
         }
 
         account = self._account_summary(
-            account_id=account_id
+            account_id=resolved_account_id
         )
 
         trading = self._trading_summary(
-            account_id=account_id,
+            account_id=resolved_account_id,
             recent_limit=recent_limit,
         )
 

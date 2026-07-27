@@ -215,7 +215,7 @@ export default function UserAiPage() {
         <Alert
           type="warning"
           showIcon
-          message="AI 추천은 투자 판단을 위한 참고 정보이며 수익을 보장하지 않습니다."
+          title="AI 추천은 투자 판단을 위한 참고 정보이며 수익을 보장하지 않습니다."
           description="실제 주문 전 시장 상황과 원문 데이터를 직접 확인하세요. 이 화면에서 주문이 실행되지 않습니다."
         />
 
@@ -233,7 +233,7 @@ export default function UserAiPage() {
           <Alert
             type="error"
             showIcon
-            message={
+            title={
               statusQuery.data?.message ||
               "현재 AI 추천 서비스를 사용할 수 없습니다."
             }
@@ -356,13 +356,13 @@ export default function UserAiPage() {
                   </Space>
                   {(displayDetail.status === "QUEUED" ||
                     displayDetail.status === "PROCESSING") && (
-                    <Alert type="info" showIcon message="분석 중입니다…" />
+                    <Alert type="info" showIcon title="분석 중입니다…" />
                   )}
                   {displayDetail.status === "FAILED" && (
                     <Alert
                       type="error"
                       showIcon
-                      message="추천 생성에 실패했습니다."
+                      title="추천 생성에 실패했습니다."
                       description={displayDetail.error_code || undefined}
                     />
                   )}
@@ -447,7 +447,7 @@ export default function UserAiPage() {
               {listQuery.isError ? (
                 <Alert
                   type="error"
-                  message={toApiError(listQuery.error).message}
+                  title={toApiError(listQuery.error).message}
                 />
               ) : (listQuery.data?.items.length ?? 0) === 0 ? (
                 <Empty description="이력 없음" />
@@ -529,8 +529,8 @@ export default function UserAiPage() {
         title="추천 상세"
         open={selectedRequestId != null}
         onClose={() => setSelectedRequestId(null)}
-        width={520}
-        destroyOnClose
+        size={520}
+        destroyOnHidden
       >
         {detailQuery.isLoading ? (
           <Skeleton active />

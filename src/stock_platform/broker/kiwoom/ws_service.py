@@ -10,6 +10,7 @@ from stock_platform.broker.kiwoom.ws_models import (
 from stock_platform.broker.pending_entities import (
     BrokerPendingOrderEntity,
 )
+from stock_platform.trading.account_masking import mask_account_number
 
 
 class KiwoomOrderExecutionEventService:
@@ -21,22 +22,39 @@ class KiwoomOrderExecutionEventService:
     def apply(
         self,
         event: KiwoomOrderExecutionEvent,
+        *,
+        user_broker_account_id: int | None = None,
     ) -> dict:
-        entity = self._session.scalar(
-            select(BrokerPendingOrderEntity).where(
-                BrokerPendingOrderEntity.broker_code
-                == "KIWOOM",
-                BrokerPendingOrderEntity.account_number
-                == event.account_number,
-                BrokerPendingOrderEntity.broker_order_id
-                == event.broker_order_id,
-            )
+        # 내부 식별: broker_order_id (+ UBA 있으면 우선)
+        stmt = select(BrokerPendingOrderEntity).where(
+            BrokerPendingOrderEntity.broker_code == "KIWOOM",
+            BrokerPendingOrderEntity.broker_order_id
+            == event.broker_order_id,
         )
+        if user_broker_account_id is not None:
+            stmt = stmt.where(
+                BrokerPendingOrderEntity.user_broker_account_id
+                == int(user_broker_account_id)
+            )
+        entity = self._session.scalar(stmt)
+
+        storage_token = (
+            f"UBA:{int(user_broker_account_id)}"
+            if user_broker_account_id is not None
+            else f"UBA:PENDING:{event.broker_order_id}"
+        )
+        masked = mask_account_number(event.account_number)
 
         if entity is None:
             entity = BrokerPendingOrderEntity(
                 broker_code="KIWOOM",
-                account_number=event.account_number,
+                account_number=storage_token,
+                user_broker_account_id=(
+                    int(user_broker_account_id)
+                    if user_broker_account_id is not None
+                    else None
+                ),
+                masked_account_ref=masked,
                 broker_order_id=event.broker_order_id,
                 exchange_code=event.exchange_code,
                 symbol=event.symbol,
@@ -46,12 +64,9 @@ class KiwoomOrderExecutionEventService:
                 order_quantity=event.order_quantity,
                 order_price=None,
                 filled_quantity=event.filled_quantity,
-                remaining_quantity=(
-                    event.remaining_quantity
-                ),
+                remaining_quantity=event.remaining_quantity,
                 average_fill_price=(
-                    event.average_fill_price
-                    or event.fill_price
+                    event.average_fill_price or event.fill_price
                 ),
                 status_code=event.event_type.value,
                 ordered_at=event.event_time,
@@ -61,16 +76,17 @@ class KiwoomOrderExecutionEventService:
             self._session.add(entity)
         else:
             entity.filled_quantity = event.filled_quantity
-            entity.remaining_quantity = (
-                event.remaining_quantity
-            )
+            entity.remaining_quantity = event.remaining_quantity
             entity.average_fill_price = (
-                event.average_fill_price
-                or event.fill_price
+                event.average_fill_price or event.fill_price
             )
             entity.status_code = event.event_type.value
             entity.raw_data = event.raw_data
             entity.synchronized_at = event.received_at
+            if user_broker_account_id is not None:
+                entity.user_broker_account_id = int(user_broker_account_id)
+                entity.account_number = storage_token
+                entity.masked_account_ref = masked
 
         self._session.commit()
 
@@ -82,12 +98,9 @@ class KiwoomOrderExecutionEventService:
 
         return {
             "broker_order_id": event.broker_order_id,
+            "user_broker_account_id": entity.user_broker_account_id,
             "status_code": event.event_type.value,
             "terminal": terminal,
-            "filled_quantity": str(
-                event.filled_quantity
-            ),
-            "remaining_quantity": str(
-                event.remaining_quantity
-            ),
+            "filled_quantity": str(event.filled_quantity),
+            "remaining_quantity": str(event.remaining_quantity),
         }

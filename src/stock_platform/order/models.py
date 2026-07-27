@@ -19,6 +19,7 @@ class OrderTimeInForce(StrEnum):
 class OrderStatus(StrEnum):
     CREATED = "CREATED"
     PENDING = "PENDING"
+    SUBMITTING = "SUBMITTING"
     SENT = "SENT"
     ACCEPTED = "ACCEPTED"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
@@ -29,14 +30,23 @@ class OrderStatus(StrEnum):
     REPLACED = "REPLACED"
     REJECTED = "REJECTED"
     FAILED = "FAILED"
+    # STEP 8-5-12 — Upbit Ambiguous / Identity
+    AMBIGUOUS_SUBMISSION = "AMBIGUOUS_SUBMISSION"
+    REMOTE_LOOKUP_PENDING = "REMOTE_LOOKUP_PENDING"
+    IDENTITY_CONFLICT = "IDENTITY_CONFLICT"
+    MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
+
 
 TERMINAL_ORDER_STATUSES: frozenset[OrderStatus] = frozenset(
     {
         OrderStatus.FILLED,
         OrderStatus.CANCELLED,
+        OrderStatus.REPLACED,
         OrderStatus.REJECTED,
+        OrderStatus.FAILED,
+        OrderStatus.IDENTITY_CONFLICT,
     }
-)    
+)
 
 @dataclass(frozen=True, slots=True)
 class CreateOrderCommand:
@@ -55,3 +65,5 @@ class CreateOrderCommand:
     position_id: int | None = None
     client_order_id: str | None = None
     metadata_payload: dict[str, Any] | None = None
+    # STEP8-1 — LIVE 키움·업비트는 UserBrokerAccount FK
+    user_broker_account_id: int | None = None

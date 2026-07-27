@@ -6,12 +6,13 @@ import { Button, Result } from "antd";
 
 import { AppLoading } from "@/components/common/AppLoading";
 import { permissionForPath } from "@/config/menu";
-import { adminRoutes, routes, userRoutes } from "@/config/routes";
+import { authRoutes, userRoutes } from "@/config/routes";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import {
   hasAnyRole,
   hasPermission,
 } from "@/features/auth/utils/permissions";
+import { hasValidAppRole } from "@/features/auth/utils/roles";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -23,7 +24,7 @@ interface AuthGuardProps {
   enforceMenuPermission?: boolean;
   /**
    * 로그인됐지만 역할 부족일 때 이동 경로.
-   * 미지정 시 Admin→User 대시보드, 그 외 로그인.
+   * 미지정 시 /forbidden
    */
   forbiddenRedirect?: string;
 }
@@ -50,11 +51,12 @@ export function AuthGuard({
     requiredRoles?.length && !hasAnyRole(user, ...requiredRoles),
   );
 
-  const roleFallback =
-    forbiddenRedirect ??
-    (pathname.startsWith("/admin")
-      ? userRoutes.dashboard
-      : userRoutes.dashboard);
+  /** Role이 없거나 admin/user가 아니면 접근 차단 */
+  const lacksValidAppRole = Boolean(
+    authenticated && user && !hasValidAppRole(user.roles),
+  );
+
+  const roleFallback = forbiddenRedirect ?? authRoutes.forbidden;
 
   useEffect(() => {
     hydrateFromStorage();
@@ -64,11 +66,14 @@ export function AuthGuard({
     if (!hydrated) {
       return;
     }
-    const portal = pathname.startsWith("/user") ? "user" : "admin";
     if (!authenticated) {
       router.replace(
-        `${routes.login}?portal=${portal}&next=${encodeURIComponent(pathname)}`,
+        `${authRoutes.login}?next=${encodeURIComponent(pathname)}`,
       );
+      return;
+    }
+    if (lacksValidAppRole) {
+      router.replace(authRoutes.forbidden);
       return;
     }
     if (lacksRole) {
@@ -79,6 +84,7 @@ export function AuthGuard({
     hydrated,
     pathname,
     lacksRole,
+    lacksValidAppRole,
     roleFallback,
     router,
   ]);
@@ -89,6 +95,21 @@ export function AuthGuard({
 
   if (!authenticated) {
     return <AppLoading fullScreen tip="로그인 페이지로 이동 중..." />;
+  }
+
+  if (lacksValidAppRole) {
+    return (
+      <Result
+        status="403"
+        title="유효한 권한이 없습니다"
+        subTitle="ADMIN 또는 USER 역할이 필요합니다."
+        extra={
+          <Button type="primary" href={authRoutes.login}>
+            로그인
+          </Button>
+        }
+      />
+    );
   }
 
   if (lacksRole) {
@@ -116,8 +137,8 @@ export function AuthGuard({
         title="접근 권한이 없습니다"
         subTitle={`필요 권한: ${effectivePermissions.join(", ")}`}
         extra={
-          <Button type="primary" href={adminRoutes.dashboard}>
-            Dashboard로 이동
+          <Button type="primary" href={userRoutes.dashboard}>
+            사용자 대시보드
           </Button>
         }
       />

@@ -40,7 +40,7 @@ class OperationsDashboardService:
     async def build(
         self,
         *,
-        account_id: int = 1,
+        account_id: int | None = None,
         exchange_code: str = "KRX",
         recent_limit: int = 20,
     ) -> dict[str, Any]:
@@ -58,6 +58,7 @@ class OperationsDashboardService:
             .where(
                 CandidateRun.exchange_code == exchange,
                 CandidateRun.as_of_date == today,
+                CandidateRun.run_type == "DAILY",
             )
             .order_by(CandidateRun.run_id.desc())
             .limit(1)

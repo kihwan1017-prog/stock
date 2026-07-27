@@ -82,3 +82,28 @@ class LiveTradingTransitionEntity(Base):
         Text,
         nullable=True,
     )
+    # STEP 8-5-21 — Activation Gate 만료·범위
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    activation_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'PENDING'"),
+    )
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        server_default=text("'BROKER'"),
+    )
+    broker_code: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'KIWOOM'"),
+    )
+    user_broker_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        nullable=True,
+    )

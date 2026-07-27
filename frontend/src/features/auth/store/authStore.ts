@@ -8,7 +8,6 @@ import {
   getToken,
   isRememberMeEnabled,
   setRefreshToken,
-  setRememberMe,
   setToken,
 } from "@/lib/storage/tokenStorage";
 
@@ -72,13 +71,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   authenticated: false,
   hydrated: false,
   setSession: (accessToken, user, refreshToken, rememberMe) => {
-    const persist = rememberMe ?? isRememberMeEnabled();
-    setRememberMe(persist);
-    setToken(accessToken, persist);
+    // 토큰은 항상 sessionStorage. 사용자 프로필만 rememberMe에 따라 저장소 선택.
+    const persistUser = rememberMe ?? isRememberMeEnabled();
+    setToken(accessToken);
     if (refreshToken) {
-      setRefreshToken(refreshToken, persist);
+      setRefreshToken(refreshToken);
     }
-    writeStoredUser(user, persist);
+    writeStoredUser(user, persistUser);
     set({
       accessToken,
       refreshToken: refreshToken ?? getRefreshToken(),

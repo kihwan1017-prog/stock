@@ -9,6 +9,9 @@ from stock_platform.risk_engine.models import RiskPolicy
 
 realtime_risk_engine = RealtimeRiskEngine()
 
+# 주문 경로 강제 정책 (보수적 기본값).
+# Admin setting_catalog `risk_max_order_amount` 기본도 동일(100000)로 맞춤.
+# DB 설정 오버레이는 후속(운영 검증 후) — 현재는 코드 정책이 단일 소스.
 realtime_risk_policy = RiskPolicy(
     max_order_amount=Decimal("100000"),
     max_order_quantity=Decimal("1000000"),

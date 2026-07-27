@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from stock_platform.api.deps_admin import require_admin
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -15,6 +16,7 @@ from stock_platform.realtime.manager import (
 router = APIRouter(
     prefix="/api/v1/realtime-quotes",
     tags=["Realtime Quotes"],
+    dependencies=[Depends(require_admin)],
 )
 
 

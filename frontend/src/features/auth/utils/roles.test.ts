@@ -3,44 +3,104 @@ import { describe, expect, it } from "vitest";
 import {
   canAccessAdminPortal,
   displayRoleLabel,
-  isTraderRole,
+  hasValidAppRole,
+  isAdminRole,
+  normalizeRoles,
   requiredRolesForUserPath,
   resolvePostLoginPath,
+  roleHomePath,
 } from "./roles";
 
-describe("roles RBAC helpers", () => {
-  it("trader 티어는 operator·trader·admin", () => {
-    expect(isTraderRole(["viewer"])).toBe(false);
-    expect(isTraderRole(["operator"])).toBe(true);
-    expect(isTraderRole(["trader"])).toBe(true);
-    expect(isTraderRole(["admin"])).toBe(true);
+describe("roles RBAC helpers (ADMIN / USER)", () => {
+  it("레거시 viewer·operator·trader를 admin/user로 정규화", () => {
+    expect(normalizeRoles(["viewer"])).toEqual(["user"]);
+    expect(normalizeRoles(["operator"])).toEqual(["admin"]);
+    expect(normalizeRoles(["trader", "user"])).toEqual(["user"]);
   });
 
-  it("Admin 포털은 admin·operator만", () => {
+  it("Admin 포털은 admin만 (operator 레거시는 admin으로 매핑)", () => {
+    expect(canAccessAdminPortal(["user"])).toBe(false);
     expect(canAccessAdminPortal(["viewer"])).toBe(false);
-    expect(canAccessAdminPortal(["operator"])).toBe(true);
     expect(canAccessAdminPortal(["admin"])).toBe(true);
+    expect(canAccessAdminPortal(["operator"])).toBe(true);
   });
 
-  it("operator 표시명은 trader (operator)", () => {
-    expect(displayRoleLabel("operator")).toBe("trader (operator)");
+  it("표시명은 admin / user", () => {
+    expect(displayRoleLabel("admin")).toBe("admin");
+    expect(displayRoleLabel("user")).toBe("user");
+    expect(displayRoleLabel("viewer")).toBe("user");
+    expect(displayRoleLabel("operator")).toBe("admin");
   });
 
-  it("매매 경로는 trader 역할 요구", () => {
+  it("매매·전략 경로는 USER도 접근 가능", () => {
     expect(requiredRolesForUserPath("/user/dashboard")).toBeUndefined();
-    expect(requiredRolesForUserPath("/user/trading")).toEqual([
-      "admin",
-      "operator",
-      "trader",
-    ]);
+    expect(requiredRolesForUserPath("/user/trading")).toBeUndefined();
+    expect(requiredRolesForUserPath("/user/strategies")).toBeUndefined();
   });
 
-  it("viewer의 admin next는 user dashboard로", () => {
+  it("USER의 admin next는 forbidden, ADMIN은 유지", () => {
+    expect(
+      resolvePostLoginPath({ roles: ["user"] }, "/admin/dashboard"),
+    ).toBe("/forbidden");
     expect(
       resolvePostLoginPath({ roles: ["viewer"] }, "/admin/dashboard"),
-    ).toBe("/user/dashboard");
+    ).toBe("/forbidden");
     expect(
       resolvePostLoginPath({ roles: ["admin"] }, "/admin/members"),
     ).toBe("/admin/members");
+  });
+
+  it("isAdminRole은 admin만 true", () => {
+    expect(isAdminRole(["admin"])).toBe(true);
+    expect(isAdminRole(["user"])).toBe(false);
+  });
+
+  it("Role별 홈은 USER→/user/dashboard, ADMIN→/admin/dashboard", () => {
+    expect(roleHomePath(["user"])).toBe("/user/dashboard");
+    expect(roleHomePath(["admin"])).toBe("/admin/dashboard");
+    expect(resolvePostLoginPath({ roles: ["user"] })).toBe("/user/dashboard");
+    expect(resolvePostLoginPath({ roles: ["admin"] })).toBe(
+      "/admin/dashboard",
+    );
+  });
+
+  it("비밀번호 변경·온보딩이 Role 홈보다 우선", () => {
+    expect(
+      resolvePostLoginPath({
+        roles: ["admin"],
+        passwordChangeRequired: true,
+      }),
+    ).toBe("/change-password");
+    expect(
+      resolvePostLoginPath({
+        roles: ["user"],
+        onboardingCompleted: false,
+      }),
+    ).toBe("/onboarding");
+  });
+
+  it("defaultRoute는 권한에 맞게만 허용", () => {
+    expect(
+      resolvePostLoginPath({
+        roles: ["user"],
+        defaultRoute: "/admin/dashboard",
+      }),
+    ).toBe("/user/dashboard");
+    expect(
+      resolvePostLoginPath({
+        roles: ["admin"],
+        defaultRoute: "/admin/dashboard",
+      }),
+    ).toBe("/admin/dashboard");
+  });
+
+  it("유효하지 않은 Role·로그인 루프 next는 차단", () => {
+    expect(hasValidAppRole([])).toBe(false);
+    expect(hasValidAppRole(["guest"])).toBe(false);
+    expect(resolvePostLoginPath({ roles: [] })).toBe("/forbidden");
+    expect(resolvePostLoginPath({ roles: ["guest"] })).toBe("/forbidden");
+    expect(resolvePostLoginPath({ roles: ["user"] }, "/login")).toBe(
+      "/user/dashboard",
+    );
   });
 });

@@ -21,11 +21,27 @@ from stock_platform.database.session import get_session_factory
 from stock_platform.order.outbox_runtime import (
     order_outbox_scheduler,
 )
+from stock_platform.broker.upbit.ambiguous_resolution_scheduler import (
+    upbit_ambiguous_order_resolution_scheduler,
+)
+from stock_platform.operation.market_session_job_scheduler import (
+    market_session_job_scheduler,
+)
+from stock_platform.order.post_fill_verification_scheduler import (
+    post_fill_verification_scheduler,
+)
+from stock_platform.trading.upbit_live_tracking_scheduler import (
+    upbit_live_tracking_scheduler,
+)
+from stock_platform.settlement.upbit_daily_scheduler import (
+    upbit_daily_settlement_scheduler,
+)
 from stock_platform.realtime.manager import realtime_manager
 from stock_platform.realtime.persistence import (
     market_data_persistence_worker,
 )
 from stock_platform.realtime.runtime import (
+    apply_realtime_paper_account_from_settings,
     realtime_execution_runner,
     realtime_strategy_runner,
 )
@@ -34,6 +50,9 @@ from stock_platform.realtime.session_runtime import (
 )
 from stock_platform.risk_engine.daily_loss_scheduler import (
     daily_loss_monitor_scheduler,
+)
+from stock_platform.broker.recovery_scheduler import (
+    broker_recovery_scheduler,
 )
 from stock_platform.position.exit_monitor_scheduler import (
     position_exit_monitor_scheduler,
@@ -97,7 +116,9 @@ async def verify_database_connection() -> None:
 async def bootstrap_auth_admin() -> None:
     """사용자가 없을 때 env 기반 최초 관리자를 생성한다."""
 
+    from stock_platform.auth.rbac_repository import RbacRepository
     from stock_platform.auth.repository import AuthRepository
+    from stock_platform.auth.role_sync import backfill_missing_user_roles
     from stock_platform.auth.service import AuthService
 
     settings = get_settings()
@@ -109,9 +130,19 @@ async def bootstrap_auth_admin() -> None:
 
     session = get_session_factory()()
     try:
+        # 기존 JSONB-only admin 등 user_role 누락 치유
+        healed = backfill_missing_user_roles(session)
+        if healed:
+            session.commit()
+            logger.info(
+                "RBAC user_role backfill completed",
+                healed_users=healed,
+            )
+
         user = AuthService(
             repository=AuthRepository(session),
             settings=settings,
+            rbac_repository=RbacRepository(session),
         ).ensure_bootstrap_admin()
         if user is not None:
             session.commit()
@@ -120,7 +151,7 @@ async def bootstrap_auth_admin() -> None:
                 username=user.username,
             )
         else:
-            session.rollback()
+            session.commit()
     except Exception:
         session.rollback()
         raise
@@ -134,6 +165,7 @@ class ApplicationLifecycle:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         self._started = False
+        self._scheduler_leader_lock = None
 
     @property
     def started(self) -> bool:
@@ -159,16 +191,32 @@ class ApplicationLifecycle:
                 verify_database_connection,
             )
             await self._run_optional(
+                "runtime startup policy (phase 1)",
+                self._startup_runtime_policy_phase1,
+            )
+            await self._run_optional(
                 "auth bootstrap admin",
                 bootstrap_auth_admin,
             )
             await self._run_optional(
+                "ai provider manager bootstrap",
+                self._startup_ai_provider_manager,
+            )
+            await self._run_optional(
+                "ai execution recovery",
+                self._startup_ai_execution_recovery,
+            )
+            await self._run_optional(
                 "broker recovery",
-                broker_recovery_manager.recover,
+                self._startup_broker_recovery,
             )
             await self._run_optional(
                 "strategy runtime load",
                 self._startup_strategy_runtime,
+            )
+            await self._run_optional(
+                "runtime startup policy (phase 2)",
+                self._startup_runtime_policy_phase2,
             )
             await self._run_phase(
                 "scheduler startup",
@@ -210,8 +258,8 @@ class ApplicationLifecycle:
                 self._shutdown_schedulers,
             )
             await self._run_phase(
-                "strategy runtime clear",
-                dynamic_strategy_runtime_manager.clear,
+                "strategy runtime shutdown",
+                dynamic_strategy_runtime_manager.shutdown_all,
             )
             await self._run_phase(
                 "realtime services shutdown",
@@ -223,23 +271,246 @@ class ApplicationLifecycle:
 
     async def _startup_settings(self) -> None:
         validate_startup_settings()
+        # import 시 읽지 않은 REALTIME_PAPER_ACCOUNT_ID 를 기동 시 반영
+        account_id = apply_realtime_paper_account_from_settings()
+        logger.info(
+            "Realtime paper account applied",
+            account_id=account_id,
+        )
 
-    async def _startup_strategy_runtime(self) -> None:
-        settings = get_settings()
+    async def _startup_runtime_policy_phase1(self) -> None:
+        """STEP 10-2 — DB desired 로드 + LIVE/ARM Fail Closed."""
+
+        session = get_session_factory()()
+        try:
+            from stock_platform.operation.startup_runtime_policy import (
+                RuntimeStartupPolicy,
+            )
+
+            result = await RuntimeStartupPolicy(session).apply_phase1()
+            session.commit()
+            logger.info("runtime_startup_policy_phase1", **result)
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    async def _startup_runtime_policy_phase2(self) -> None:
+        """STEP 10-2 — Runtime idle + Scheduler 조건부 복원."""
+
+        session = get_session_factory()()
+        try:
+            from stock_platform.operation.startup_runtime_policy import (
+                RuntimeStartupPolicy,
+            )
+
+            result = await RuntimeStartupPolicy(session).apply_phase2()
+            session.commit()
+            logger.info("runtime_startup_policy_phase2", **result)
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    async def _startup_ai_execution_recovery(self) -> None:
+        """STEP 11-5 — stale RUNNING/QUEUED → ABANDONED (자동 외부 재호출 0)."""
+
+        from stock_platform.ai.execution.recovery import recover_stale_executions
+
+        session = get_session_factory()()
+        try:
+            result = recover_stale_executions(session, actor="STARTUP")
+            logger.info("ai_execution_recovery", **result)
+        except Exception as exc:  # noqa: BLE001
+            session.rollback()
+            logger.warning(
+                "ai_execution_recovery_failed",
+                error=type(exc).__name__,
+            )
+        finally:
+            session.close()
+
+    async def _startup_ai_provider_manager(self) -> None:
+        """STEP 11-3 — DB SoT로 AIManager 부트스트랩 (외부 AI 자동 호출 없음)."""
+
+        from stock_platform.ai.providers.registry_loader import (
+            bootstrap_ai_manager_from_db,
+        )
+
+        source = bootstrap_ai_manager_from_db()
+        logger.info("ai_provider_manager_startup", source=source)
+
+    async def _startup_broker_recovery(self) -> None:
+        """Recovery 완료 전 Scheduler가 시작되지 않도록 선행.
+
+        전체 Timeout으로 기동 무한 대기를 방지한다.
+        """
+
+        import asyncio
+        from datetime import datetime, timezone
 
         try:
-            await dynamic_strategy_runtime_manager.initialize(
-                market_code=settings.realtime_strategy_market_code,
-                symbol=settings.realtime_strategy_symbol_or_none,
+            await asyncio.wait_for(
+                broker_recovery_manager.recover(),
+                timeout=150.0,
+            )
+        except TimeoutError:
+            logger.warning(
+                "broker_recovery_startup_timeout",
+                message="Startup recovery timed out; continuing",
+            )
+        finally:
+            # Scheduler Cooldown 기준점 (성공·타임아웃 공통)
+            broker_recovery_manager._startup_finished_at = (
+                datetime.now(timezone.utc)
+            )
+
+    async def _startup_strategy_runtime(self) -> None:
+        # STEP 8-5-5 — account_strategy_link 기반 Scope Runtime만 생성
+        # STEP 8-5-9 — Hub dispatch 선행 (Consumer는 bootstrap 중 등록)
+        try:
+            from stock_platform.common.settings import get_settings
+            from stock_platform.realtime.market_data_hub import (
+                get_realtime_market_data_hub,
+            )
+
+            if bool(getattr(get_settings(), "realtime_hub_enabled", True)):
+                hub = get_realtime_market_data_hub()
+                if bool(
+                    getattr(get_settings(), "realtime_auto_connect", True)
+                ):
+                    await hub.start_dispatch()
+                    logger.info("realtime_hub_dispatch_started")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "realtime_hub_startup_error",
+                error=str(exc),
+            )
+
+        try:
+            result = await dynamic_strategy_runtime_manager.initialize()
+            logger.info(
+                "strategy_runtime_bootstrap",
+                **{
+                    k: result.get(k)
+                    for k in (
+                        "link_count",
+                        "created_running",
+                        "created_paused",
+                        "global_krx_runtime_created",
+                    )
+                    if k in result
+                },
+                failed_count=len(result.get("failed") or []),
             )
         except LookupError as exc:
-            # 활성 PAPER 전략이 없으면 로컬 기동에서 흔함 — 치명 아님
             logger.warning(
                 "strategy_runtime_load_skipped",
                 reason=str(exc),
             )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "strategy_runtime_bootstrap_error",
+                error=str(exc),
+            )
 
     async def _start_schedulers(self) -> None:
+        settings = get_settings()
+
+        # Outbox는 replica마다 기동해도 SKIP LOCKED로 안전
+        order_outbox_scheduler.start()
+        # STEP 8-5-14 — DB Claim 기반이라 Leader Lock과 무관하게 항상 기동
+        upbit_ambiguous_order_resolution_scheduler.start()
+        # STEP 8-5-15 — 영속 Market Session Job Dispatcher/Reconcile 역시
+        # DB Claim 기반이므로 Leader Lock과 무관하게 항상 기동
+        market_session_job_scheduler.start()
+        # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
+        upbit_daily_settlement_scheduler.start()
+        # STEP 8-8A — Post-Fill 재검증 (DB Claim)
+        post_fill_verification_scheduler.start()
+        upbit_live_tracking_scheduler.start()
+        # STEP 8-11A — Recovery는 자체 enabled 플래그로 제어.
+        # lifecycle cron 게이트/리더락과 무관하게 기동 (Outbox·Tracking과 동일 계열).
+        # 주문 생성/Import/Conflict 승인 없음 — reconcile·조회만.
+        try:
+            broker_recovery_scheduler.start()
+            session = get_session_factory()()
+            try:
+                from stock_platform.order.live_safety_audit import (
+                    emit_live_safety_audit,
+                )
+
+                emit_live_safety_audit(
+                    session,
+                    event_type="RECOVERY_STARTUP_RESTORED",
+                    actor="STARTUP",
+                    run_id=None,
+                    user_id=None,
+                    account_id=None,
+                    strategy_id=None,
+                    detail={
+                        "scheduler_status": broker_recovery_scheduler.status(),
+                    },
+                    commit=True,
+                )
+            finally:
+                session.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "broker_recovery_scheduler_start_failed",
+                error=str(exc)[:300],
+            )
+            session = get_session_factory()()
+            try:
+                from stock_platform.order.live_safety_audit import (
+                    emit_live_safety_audit,
+                )
+
+                emit_live_safety_audit(
+                    session,
+                    event_type="RECOVERY_STARTUP_RESTORE_FAILED",
+                    actor="STARTUP",
+                    run_id=None,
+                    user_id=None,
+                    account_id=None,
+                    strategy_id=None,
+                    detail={"error": str(exc)[:300]},
+                    commit=True,
+                )
+            finally:
+                session.close()
+
+        if not settings.lifecycle_scheduler_enabled:
+            logger.info("lifecycle_scheduler_disabled")
+            return
+
+        if settings.scheduler_leader_lock_enabled:
+            from stock_platform.scheduler.leader_lock import (
+                try_acquire_lifecycle_scheduler_lock,
+            )
+
+            session = get_session_factory()()
+            try:
+                engine = session.get_bind()
+            finally:
+                session.close()
+            leader = try_acquire_lifecycle_scheduler_lock(
+                engine
+            )
+            self._scheduler_leader_lock = leader
+            if not leader.acquired:
+                logger.warning(
+                    "lifecycle_scheduler_skipped_not_leader",
+                    reason=leader.reason,
+                )
+                return
+            logger.info(
+                "lifecycle_scheduler_leader_acquired",
+                reason=leader.reason,
+            )
+
         daily_loss_monitor_scheduler.start()
         position_exit_monitor_scheduler.start()
         telegram_ops_scheduler.start()
@@ -247,10 +518,36 @@ class ApplicationLifecycle:
         strategy_approval_scheduler.start()
         strategy_deployment_pipeline_scheduler.start()
         deployment_performance_monitor_scheduler.start()
-        order_outbox_scheduler.start()
+        from stock_platform.operation.calendar_scheduler import (
+            krx_trading_calendar_scheduler,
+        )
+
+        krx_trading_calendar_scheduler.start()
+        # Startup Coverage 검사 (실패해도 기동 계속)
+        try:
+            await krx_trading_calendar_scheduler._run_coverage()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "krx_calendar_startup_coverage_failed",
+                error=str(exc)[:300],
+            )
 
     async def _shutdown_schedulers(self) -> None:
         await order_outbox_scheduler.shutdown()
+        await upbit_ambiguous_order_resolution_scheduler.shutdown()
+        await market_session_job_scheduler.shutdown()
+        await upbit_daily_settlement_scheduler.shutdown()
+        await post_fill_verification_scheduler.shutdown()
+        await upbit_live_tracking_scheduler.shutdown()
+        await broker_recovery_scheduler.shutdown()
+        try:
+            from stock_platform.operation.calendar_scheduler import (
+                krx_trading_calendar_scheduler,
+            )
+
+            await krx_trading_calendar_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
         await deployment_performance_monitor_scheduler.shutdown()
         await strategy_deployment_pipeline_scheduler.shutdown()
         await strategy_approval_scheduler.shutdown()
@@ -258,6 +555,9 @@ class ApplicationLifecycle:
         await telegram_ops_scheduler.shutdown()
         await position_exit_monitor_scheduler.shutdown()
         await daily_loss_monitor_scheduler.shutdown()
+        if self._scheduler_leader_lock is not None:
+            self._scheduler_leader_lock.release()
+            self._scheduler_leader_lock = None
 
     async def _publish_lifecycle_event(
         self,
@@ -294,6 +594,14 @@ class ApplicationLifecycle:
     async def _shutdown_realtime_services(self) -> None:
         await realtime_execution_runner.stop()
         await realtime_strategy_runner.stop()
+        try:
+            from stock_platform.realtime.market_data_hub import (
+                get_realtime_market_data_hub,
+            )
+
+            await get_realtime_market_data_hub().shutdown()
+        except Exception:  # noqa: BLE001
+            pass
         await realtime_trading_scheduler.shutdown()
         await kiwoom_order_websocket_manager.stop()
         await realtime_manager.stop_all()

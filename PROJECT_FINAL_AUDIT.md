@@ -1,30 +1,44 @@
 # PROJECT_FINAL_AUDIT.md
 
-> **감사일:** 2026-07-19  
-> **범위:** Backend · Frontend · Database · Scheduler · Broker · Risk · Strategy · AI · Auth · Ops  
-> **원칙:** 코드/DB 근거만 사용. **신규 기능 구현·코드 수정 없음.**  
-> **상태 범례:** ✅ 완료 · 🟡 일부 · 🔴 미구현 · ⚪ 구현됐으나 미사용(Dead)  
-> **UPDATE (STEP57-1):** OpenClaw 연동은 프로젝트 범위에서 제외됨. Telegram·Ollama는 유지.
+> **원 감사일:** 2026-07-19  
+> **재동기화:** 2026-07-21 — P0/P1 완화 반영. **현행 이슈·조치 상태의 단일 진실은 [`README_ISSUES.md`](README_ISSUES.md).**  
+> 아래 본문은 감사 시점 스냅샷이며, §0이 최신 판정을 덮어쓴다.
 
 ---
 
-# 1. 프로젝트 요약
+# 0. 2026-07-21 동기화 요약 (P0–P3)
+
+| 영역 | 감사 시점 | 현재 |
+|------|-----------|------|
+| 무인증 mutate / step32 | Critical | **완화/해결** — 핵심 라우터 `require_admin`, step32 언마운트·tombstone, `test_security_step62` |
+| `paper_order.account_id` / 핵심 FK | Critical | **해결/완화** — `h4`/`i5`/`j6` 마이그레이션 |
+| CI / coverage / Docker | Critical | **해결** — `.github/workflows/ci.yml`, pytest-cov, Dockerfile/compose |
+| Rate limit / FE 토큰 / account 기본값 | High | **완화** — 고비용 POST, sessionStorage+쿠키 동기화, `REALTIME_PAPER_ACCOUNT_ID` |
+| Backup dump / RTO | 미구현 | **완화** — `/ops/backup/dump` + status RTO/RPO |
+| Envelope / E2E / dead code | 품질 | **완화** — error_catalog 적용, Playwright 스캐폴드, indicator/step32 tombstone |
+
+**현행 종합:** 감사 시점 51/100 NO-GO에서 P0 차단 항목은 코드상 대부분 닫힘. Live 납품 최종 GO는 `README_ISSUES.md` 잔여(P1-8 이중 스택, 본격 E2E CI 등)와 Live 이중 게이트 운영 증적으로 판단.
+
+---
+
+# 1. 프로젝트 요약 (감사 시점 스냅샷)
 
 Stock Platform은 **FastAPI + PostgreSQL + Next.js(Admin/User)** 기반의 주식 자동매매·운영 플랫폼이다.  
 STEP35~51까지 Admin 콘솔·User Web·인증·RBAC·Paper/주문 아웃박스·Kill Switch·일손실·백테스트/WF·Ollama AI·알림 송신·운영센터 허브까지 **제품 골격은 대부분 갖춰져 있다.**
 
-그러나 **출시(릴리즈) 관점**에서는 다음이 핵심 리스크다.
+그러나 **출시(릴리즈) 관점**에서는 다음이 핵심 리스크였다(§0에서 다수 완화).
 
-1. **매매·리스크 API 다수가 무인증** (`order-execution` 등)
-2. **`ADMIN_API_KEY` 미설정 시 `require_admin` → `DEV_OPEN`**
-3. **User Web `account_id = 1` 하드코딩** (멀티유저 격리 불가)
-4. **실시간 청산 모니터(`PositionExitMonitor`) 미연결**
+1. **매매·리스크 API 다수가 무인증** → P0에서 핵심 mutate 차단
+2. **`ADMIN_API_KEY` 미설정 시 `require_admin` → `DEV_OPEN`** → DEV_OPEN 제거됨
+3. **User Web `account_id = 1` 하드코딩** → 설정/`NEXT_PUBLIC_DEFAULT_PAPER_ACCOUNT_ID`로 완화
+4. **실시간 청산 모니터(`PositionExitMonitor`) 미연결** (잔여 가능)
 5. **~~OpenClaw Backend·Telegram 수신(슬래시) 없음~~** → Telegram 수신은 STEP54로 해소. OpenClaw는 STEP57-1에서 범위 제외
-6. **Admin `/admin/logs`, `/admin/data` 페이지 부재(404)**
-7. **웹 Backup/Restore 실행 API 없음**
-8. **Docker 배포 산출물 없음** (레포 내 Dockerfile/compose 미발견)
+6. **Admin `/admin/logs`, `/admin/data` 페이지 부재(404)** (잔여 가능)
+7. **웹 Backup/Restore 실행 API 없음** → dump/status는 완화, 웹 restore는 의도적 미제공
+8. **Docker 배포 산출물 없음** → Dockerfile/compose 추가됨
 
-**한 줄 평가:** “단일 운영자 · 내부망 · Paper 중심 데모”에는 가깝고, “다중 회원 · Live 자동매매 · 원격 Telegram 운영” 출시에는 **추가 보안·격리·청산·알림 훅이 필수**다.
+**한 줄 평가(감사 시점):** “단일 운영자 · 내부망 · Paper 중심 데모”에는 가깝고, “다중 회원 · Live 자동매매 · 원격 Telegram 운영” 출시에는 **추가 보안·격리·청산·알림 훅이 필수**다.  
+**한 줄 평가(2026-07-21):** P0 납품 차단 코드 조치는 반영. Live GO는 운영 체크리스트·잔여 P1/P2와 함께 재평가.
 
 ---
 

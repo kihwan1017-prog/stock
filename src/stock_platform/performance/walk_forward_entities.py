@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
+    ForeignKey,
     Identity,
     Integer,
     Numeric,
@@ -39,6 +40,11 @@ class WalkForwardWindowMetricEntity(Base):
     )
     strategy_performance_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_performance_run.strategy_performance_run_id",
+            ondelete="CASCADE",
+            name="fk_walk_forward_metric_run",
+        ),
         nullable=False,
     )
     window_no: Mapped[int] = mapped_column(

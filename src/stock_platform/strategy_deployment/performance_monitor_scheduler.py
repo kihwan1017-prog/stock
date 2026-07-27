@@ -25,11 +25,14 @@ class DeploymentPerformanceMonitorScheduler:
         return self._scheduler
 
     def configure(self) -> None:
+        settings = get_settings()
         self._scheduler.add_job(
             self.run_after_market,
             trigger=CronTrigger(
+                day_of_week="mon-fri",
                 hour=16,
                 minute=30,
+                timezone=settings.scheduler_timezone,
             ),
             id="paper_strategy_performance_monitor",
             replace_existing=True,

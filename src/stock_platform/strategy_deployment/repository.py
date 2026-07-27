@@ -29,6 +29,8 @@ class StrategyDeploymentRepository:
             == mode_code.upper(),
             StrategyDeploymentEntity.status_code
             == "ACTIVE",
+            # 전역 로드는 SYSTEM 우선 (USER 배포와 격리)
+            StrategyDeploymentEntity.owner_type == "SYSTEM",
         )
 
         if symbol is None:
@@ -41,6 +43,44 @@ class StrategyDeploymentRepository:
                 == symbol.upper()
             )
 
+        return self._session.scalar(
+            statement.order_by(
+                StrategyDeploymentEntity
+                .strategy_deployment_id.desc()
+            ).limit(1)
+        )
+
+    def get_active_for_user(
+        self,
+        *,
+        market_code: str,
+        symbol: str | None,
+        mode_code: str,
+        user_id: int,
+    ) -> StrategyDeploymentEntity | None:
+        """USER 소유 ACTIVE 배포 (없으면 None → SYSTEM fallback)."""
+
+        statement = select(
+            StrategyDeploymentEntity
+        ).where(
+            StrategyDeploymentEntity.market_code
+            == market_code.upper(),
+            StrategyDeploymentEntity.mode_code
+            == mode_code.upper(),
+            StrategyDeploymentEntity.status_code
+            == "ACTIVE",
+            StrategyDeploymentEntity.owner_type == "USER",
+            StrategyDeploymentEntity.user_id == int(user_id),
+        )
+        if symbol is None:
+            statement = statement.where(
+                StrategyDeploymentEntity.symbol.is_(None)
+            )
+        else:
+            statement = statement.where(
+                StrategyDeploymentEntity.symbol
+                == symbol.upper()
+            )
         return self._session.scalar(
             statement.order_by(
                 StrategyDeploymentEntity

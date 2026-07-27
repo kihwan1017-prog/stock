@@ -22,8 +22,7 @@ import { queryKeys } from "@/lib/query/queryKeys";
 
 const ROLE_COLORS: Record<string, string> = {
   admin: "magenta",
-  operator: "blue",
-  viewer: "default",
+  user: "default",
 };
 
 export default function AdminRolesPage() {

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from fastapi import Depends, Header, HTTPException, status
@@ -14,10 +15,20 @@ from stock_platform.common.settings import Settings, get_settings
 from stock_platform.database.session import get_db_session
 
 _bearer = HTTPBearer(auto_error=False)
+_logger = logging.getLogger(__name__)
+
+# Admin API Key 인증 시 합성 Principal (JWT 사용자와 구분)
+ADMIN_API_KEY_PRINCIPAL_USER_ID = 0
 
 
 @dataclass(frozen=True)
 class AuthenticatedUser:
+    """인증 Principal — Admin/User API 공통 계약.
+
+    필드: user_id, username, roles, permissions (+ is_admin)
+    Admin API Key 경로: user_id=0, username=ADMIN_KEY, roles=["admin"]
+    """
+
     user_id: int
     username: str
     roles: list[str]
@@ -27,7 +38,10 @@ class AuthenticatedUser:
 
     @property
     def is_admin(self) -> bool:
-        return "admin" in self.roles
+        # operator 등 레거시 코드는 admin으로 정규화
+        from stock_platform.auth.role_codes import normalize_role_codes
+
+        return "admin" in normalize_role_codes(list(self.roles))
 
     def has_permission(self, *codes: str) -> bool:
         if self.is_admin:
@@ -40,6 +54,32 @@ class AuthenticatedUser:
             return True
         owned = set(self.permissions)
         return any(code in owned for code in codes)
+
+
+def admin_actor_label(principal: AuthenticatedUser) -> str:
+    """Audit actor — 항상 admin:{user_id}. owner_user_id 와 혼동 금지."""
+
+    if not isinstance(principal, AuthenticatedUser):
+        _logger.error(
+            "admin_actor_label: invalid principal type=%s",
+            type(principal).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin JWT 또는 Admin API Key가 필요합니다.",
+        )
+    return f"admin:{int(principal.user_id)}"
+
+
+def admin_api_key_principal() -> AuthenticatedUser:
+    """X-Admin-API-Key 통과 시 합성 Principal."""
+
+    return AuthenticatedUser(
+        user_id=ADMIN_API_KEY_PRINCIPAL_USER_ID,
+        username="ADMIN_KEY",
+        roles=["admin"],
+        permissions=[],
+    )
 
 
 def get_auth_service(
@@ -77,14 +117,40 @@ def get_current_user(
 
     user_id = int(payload.get("sub") or 0)
     user = AuthRepository(session).get_by_id(user_id)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.deleted_at is not None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="사용자를 찾을 수 없습니다.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    from stock_platform.auth.user_status import (
+        STATUS_LOCKED,
+        resolve_user_status,
+    )
+
+    if resolve_user_status(user) == STATUS_LOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="계정이 일시 잠금되었습니다.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     rbac = RbacRepository(session)
+    # JSONB만 admin이고 user_role이 비어 있으면 치유
+    from stock_platform.auth.role_sync import reconcile_user_roles
+
+    _roles, changed = reconcile_user_roles(
+        session, user, rbac, commit=False
+    )
     view = to_user_view(user, rbac)
+    from stock_platform.auth.role_codes import has_valid_app_role
+
+    if not has_valid_app_role(view.roles):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="계정에 유효한 권한이 없습니다.",
+        )
+    if changed:
+        session.commit()
     return AuthenticatedUser(
         user_id=user.user_id,
         username=view.username,
@@ -210,15 +276,18 @@ def require_admin(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
     session: Session = Depends(get_db_session),
     settings: Settings = Depends(get_settings),
-) -> str:
+) -> AuthenticatedUser:
     """
-    민감 운영 API 보호.
-    1) admin JWT 또는 ops:execute 권한 JWT
-    2) X-Admin-API-Key (서버 env, 스크립트용)
-    중 하나면 통과.
+    민감 운영 API 보호 — AuthenticatedUser Principal 반환.
 
+    1) DB 기준 admin 역할 JWT → 해당 사용자 Principal
+    2) X-Admin-API-Key → 합성 Principal (user_id=0, username=ADMIN_KEY)
+
+    JWT claim roles / ops:execute 만으로는 통과하지 않는다.
     인증은 됐지만 권한 부족 → 403 (FE가 세션 폐기하지 않도록)
     미인증 → 401
+
+    Audit actor 는 admin_actor_label(principal) 사용.
     """
 
     # 단위 테스트에서 함수를 직접 호출할 때 Depends 기본값 방어
@@ -231,7 +300,7 @@ def require_admin(
 
     jwt_authenticated = False
 
-    # JWT: admin 역할 또는 ops:execute 권한
+    # JWT: DB 역할 기준 admin만 허용 (user_role ↔ JSONB 정합 후 판정)
     if (
         credentials is not None
         and credentials.scheme.lower() == "bearer"
@@ -245,14 +314,30 @@ def require_admin(
             user = AuthRepository(session).get_by_id(user_id)
             if user is not None and user.is_active:
                 jwt_authenticated = True
-                # JWT claim roles 가 아니라 DB RBAC 재검증 (권한 강등 즉시 반영)
                 rbac = RbacRepository(session)
-                role_codes = rbac.list_role_codes_for_user(user_id)
-                if "admin" in role_codes:
-                    return f"JWT:{user.username}"
-                perms = rbac.list_permission_codes_for_user(user_id)
-                if "ops:execute" in perms:
-                    return f"JWT:{user.username}"
+                from stock_platform.auth.role_codes import normalize_role_codes
+                from stock_platform.auth.role_sync import (
+                    reconcile_user_roles,
+                    resolve_role_codes,
+                )
+
+                # 드리프트 치유 후 동일 기준으로 판정
+                _codes, changed = reconcile_user_roles(
+                    session, user, rbac, commit=False
+                )
+                role_codes = resolve_role_codes(user, rbac)
+                if changed:
+                    session.commit()
+                if "admin" in normalize_role_codes(role_codes):
+                    view = to_user_view(user, rbac)
+                    return AuthenticatedUser(
+                        user_id=int(user.user_id),
+                        username=view.username,
+                        roles=list(view.roles),
+                        permissions=list(view.permissions),
+                        display_name=view.display_name,
+                        email=view.email,
+                    )
         except (JwtError, ValueError, TypeError):
             pass
 
@@ -262,7 +347,7 @@ def require_admin(
         import secrets
 
         if secrets.compare_digest(provided, expected):
-            return "ADMIN_KEY"
+            return admin_api_key_principal()
 
     # 로그인된 일반 유저가 Admin API를 친 경우 — 로그아웃 루프 방지
     if jwt_authenticated:

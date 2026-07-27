@@ -77,7 +77,7 @@ def get_profile(
 def patch_profile(
     body: ProfileUpdateBody,
     request: Request,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
 ):
@@ -100,7 +100,7 @@ def patch_profile(
 def change_password(
     body: ChangePasswordBody,
     request: Request,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
     x_refresh_token: str | None = Header(default=None, alias="X-Refresh-Token"),
@@ -158,7 +158,7 @@ def list_sessions(
 @router.delete("/sessions/{session_id}")
 def revoke_session(
     session_id: str,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
     x_refresh_token: str | None = Header(default=None, alias="X-Refresh-Token"),
@@ -188,7 +188,7 @@ def revoke_session(
 def revoke_sessions(
     request: Request,
     exclude_current: bool = Query(True),
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
     x_refresh_token: str | None = Header(default=None, alias="X-Refresh-Token"),
@@ -231,7 +231,7 @@ def list_connections(
 
 @router.delete("/connections/telegram")
 def disconnect_telegram(
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
 ):

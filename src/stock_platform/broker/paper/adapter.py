@@ -13,11 +13,19 @@ class PaperBrokerAdapter(BrokerAdapter):
     def submit_order(
         self,
         request: BrokerOrderRequest,
+        **_kwargs,
     ) -> BrokerOrderResult:
+        # 재시도 시 동일 client_order_id → 동일 broker_order_id (중복 실주문 방지)
+        stable = "".join(
+            ch for ch in request.client_order_id.upper() if ch.isalnum()
+        )
+        if len(stable) < 8:
+            stable = f"{stable}{uuid4().hex}".upper()
+        broker_order_id = f"PAPER-{stable[:16]}"
         return BrokerOrderResult(
             accepted=True,
             status=BrokerOrderStatus.ACCEPTED,
-            broker_order_id=f"PAPER-{uuid4().hex[:12].upper()}",
+            broker_order_id=broker_order_id,
             submitted_at=datetime.now(timezone.utc),
         )
 

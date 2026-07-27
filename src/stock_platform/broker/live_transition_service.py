@@ -45,6 +45,12 @@ class LiveTradingTransitionService:
 
         self._add_bool_check(
             checks,
+            LiveTransitionCheckCode.GLOBAL_LIVE_ORDER_ENABLED,
+            settings.global_live_order_enabled is True,
+            "GLOBAL_LIVE_ORDER_ENABLED=true",
+        )
+        self._add_bool_check(
+            checks,
             LiveTransitionCheckCode.MOCK_MODE_DISABLED,
             settings.kiwoom_use_mock is False,
             "KIWOOM_USE_MOCK=false",
@@ -217,6 +223,11 @@ class LiveTradingTransitionService:
         transition_id: int,
         approved_by: str,
         approval_phrase: str,
+        reason: str | None = None,
+        ttl_hours: int | None = None,
+        scope: str = "BROKER",
+        broker_code: str = "KIWOOM",
+        user_broker_account_id: int | None = None,
     ) -> LiveTradingTransitionEntity:
         entity = self._session.get(
             LiveTradingTransitionEntity,
@@ -240,12 +251,31 @@ class LiveTradingTransitionService:
                 "Live approval phrase is invalid"
             )
 
+        settings = get_settings()
+        hours = int(
+            ttl_hours
+            if ttl_hours is not None
+            else settings.live_activation_ttl_hours
+        )
+        if hours < 1:
+            raise PermissionError(
+                "LIVE activation TTL must be >= 1 hour (no indefinite)"
+            )
+        now = datetime.now(timezone.utc)
+        from datetime import timedelta
+
         entity.approved_by = approved_by
         entity.approval_phrase_hash = hashlib.sha256(
             approval_phrase.encode("utf-8")
         ).hexdigest()
-        entity.approved_at = datetime.now(timezone.utc)
+        entity.approved_at = now
+        entity.expires_at = now + timedelta(hours=hours)
         entity.enabled = True
+        entity.activation_status = "ACTIVE"
+        entity.reason = (reason or "").strip() or None
+        entity.scope = (scope or "BROKER").strip().upper()
+        entity.broker_code = (broker_code or "KIWOOM").strip().upper()
+        entity.user_broker_account_id = user_broker_account_id
 
         self._session.commit()
         self._session.refresh(entity)
@@ -269,6 +299,7 @@ class LiveTradingTransitionService:
         entity.enabled = False
         entity.disabled_at = datetime.now(timezone.utc)
         entity.disable_reason = reason
+        entity.activation_status = "DISABLED"
 
         self._session.commit()
         self._session.refresh(entity)
@@ -277,7 +308,9 @@ class LiveTradingTransitionService:
     def get_active(
         self,
     ) -> LiveTradingTransitionEntity | None:
-        return self._session.scalar(
+        """활성·미만료 Activation만 반환. 만료 시 자동 DISABLED."""
+
+        entity = self._session.scalar(
             select(LiveTradingTransitionEntity)
             .where(
                 LiveTradingTransitionEntity.enabled.is_(
@@ -289,6 +322,31 @@ class LiveTradingTransitionService:
             )
             .limit(1)
         )
+        if entity is None:
+            return None
+        now = datetime.now(timezone.utc)
+        expires = entity.expires_at
+        if expires is None:
+            # 무기한 금지 — 만료 없는 활성은 즉시 차단
+            entity.enabled = False
+            entity.activation_status = "EXPIRED"
+            entity.disabled_at = now
+            entity.disable_reason = (
+                "Activation missing expires_at (indefinite forbidden)"
+            )
+            self._session.commit()
+            return None
+        exp = expires
+        if exp.tzinfo is None:
+            exp = exp.replace(tzinfo=timezone.utc)
+        if exp <= now:
+            entity.enabled = False
+            entity.activation_status = "EXPIRED"
+            entity.disabled_at = now
+            entity.disable_reason = "Activation expired"
+            self._session.commit()
+            return None
+        return entity
 
     def list_history(
         self,

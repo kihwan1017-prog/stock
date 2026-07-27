@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from stock_platform.auth.deps import (
@@ -25,6 +25,11 @@ from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
 from stock_platform.api.deps_admin import AuditLogService, get_audit_service
 from stock_platform.common.security_mask import mask_secret
+from stock_platform.auth.refresh_cookie import (
+    clear_refresh_cookie,
+    read_refresh_token,
+    set_refresh_cookie,
+)
 
 router = APIRouter(
     prefix="/api/v1/auth",
@@ -32,13 +37,17 @@ router = APIRouter(
 )
 
 
-def _token_response(pair, view) -> TokenResponse:
+def _token_response(pair, view, response: Response | None = None) -> TokenResponse:
+    user = AuthUserResponse(**user_view_dict(view))
+    if response is not None:
+        set_refresh_cookie(response, pair.refresh_token)
     return TokenResponse(
         access_token=pair.access_token,
         refresh_token=pair.refresh_token,
         token_type=pair.token_type,
         expires_in=pair.expires_in,
-        user=AuthUserResponse(**user_view_dict(view)),
+        user=user,
+        default_route=view.default_route,
     )
 
 
@@ -54,6 +63,7 @@ def _validation_detail(exc: ValueError) -> str:
 )
 def signup(
     request: SignupRequest,
+    response: Response,
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
 ):
@@ -88,7 +98,7 @@ def signup(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=_validation_detail(exc),
         ) from exc
-    return _token_response(pair, view)
+    return _token_response(pair, view, response)
 
 
 @router.get("/check-username", response_model=AvailabilityResponse)
@@ -121,6 +131,7 @@ def check_email(
 def login(
     request: LoginRequest,
     http_request: Request,
+    response: Response,
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
     audit: AuditLogService = Depends(get_audit_service),
@@ -168,13 +179,14 @@ def login(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    return _token_response(pair, view)
+    return _token_response(pair, view, response)
 
 
 @router.post("/refresh", response_model=TokenResponse)
 def refresh(
     request: RefreshRequest,
     http_request: Request,
+    response: Response,
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
 ):
@@ -184,9 +196,15 @@ def refresh(
         limit=60,
         window_seconds=60,
     )
+    token = read_refresh_token(http_request, request.refresh_token)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh 토큰이 필요합니다.",
+        )
     try:
         pair, view = service.refresh(
-            refresh_token=request.refresh_token,
+            refresh_token=token,
             session_meta=session_meta_from_request(http_request),
         )
         session.commit()
@@ -196,30 +214,66 @@ def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
-    return _token_response(pair, view)
+    return _token_response(pair, view, response)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(
     request: LogoutRequest,
+    http_request: Request,
+    response: Response,
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
-    service.logout(refresh_token=request.refresh_token)
+    token = read_refresh_token(http_request, request.refresh_token)
+    service.logout(refresh_token=token)
+    clear_refresh_cookie(response)
+    try:
+        audit.record(
+            event_type="AUTH_LOGOUT",
+            actor="anonymous",
+            detail={},
+        )
+    except Exception:
+        pass
     session.commit()
     return None
 
 
 @router.get("/me", response_model=AuthUserResponse)
-def me(user: AuthenticatedUser = Depends(get_current_user)):
-    return AuthUserResponse(
-        id=str(user.user_id),
-        username=user.username,
-        email=getattr(user, "email", None),
-        display_name=user.display_name,
-        roles=user.roles,
-        permissions=user.permissions,
-    )
+def me(
+    user: AuthenticatedUser = Depends(get_current_user),
+    service: AuthService = Depends(get_auth_service),
+):
+    """DB 기준 최신 사용자·역할·권한·default_route."""
+
+    view = service.get_user(user.user_id)
+    return AuthUserResponse(**user_view_dict(view))
+
+
+@router.post("/onboarding/complete", response_model=AuthUserResponse)
+def complete_onboarding(
+    user: AuthenticatedUser = Depends(get_current_user),
+    session: Session = Depends(get_db_session),
+    service: AuthService = Depends(get_auth_service),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    try:
+        view = service.complete_onboarding(user_id=user.user_id)
+        audit.record(
+            event_type="AUTH_ONBOARDING_COMPLETE",
+            actor=user.username,
+            detail={"user_id": user.user_id},
+        )
+        session.commit()
+    except AuthError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return AuthUserResponse(**user_view_dict(view))
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -229,6 +283,7 @@ def change_password(
     user: AuthenticatedUser = Depends(get_current_user),
     session: Session = Depends(get_db_session),
     service: AuthService = Depends(get_auth_service),
+    audit: AuditLogService = Depends(get_audit_service),
 ):
     enforce_rate_limit(
         http_request,
@@ -241,6 +296,11 @@ def change_password(
             user_id=user.user_id,
             current_password=request.current_password,
             new_password=request.new_password,
+        )
+        audit.record(
+            event_type="AUTH_PASSWORD_CHANGED",
+            actor=user.username,
+            detail={"user_id": user.user_id},
         )
         session.commit()
     except AuthError as exc:

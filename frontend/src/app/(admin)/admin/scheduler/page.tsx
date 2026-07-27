@@ -7,6 +7,7 @@ import { useState } from "react";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { MarketCalendarPanel } from "@/features/admin/market/MarketCalendarPanel";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
@@ -88,6 +89,7 @@ export default function AdminSchedulerPage() {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <MarketCalendarPanel />
         <AdminDataTable
           title="GET /jobs"
           loading={jobs.isLoading}

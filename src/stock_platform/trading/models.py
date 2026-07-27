@@ -7,6 +7,7 @@ from enum import StrEnum
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    ForeignKey,
     Identity,
     Numeric,
     String,
@@ -52,8 +53,25 @@ class PaperOrder(Base):
         primary_key=True,
     )
 
+    # 멀티계좌 격리 — paper_account FK (P0)
+    account_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.paper_account.account_id",
+            ondelete="RESTRICT",
+            name="fk_paper_order_account",
+        ),
+        nullable=False,
+        index=True,
+    )
+
     position_plan_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "strategy.position_plan.position_plan_id",
+            ondelete="SET NULL",
+            name="fk_paper_order_position_plan",
+        ),
         nullable=True,
     )
 

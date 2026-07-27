@@ -11,6 +11,8 @@ _SENSITIVE_KEY_FRAGMENTS = (
     "authorization",
     "api_key",
     "apikey",
+    "app_key",
+    "access_key",
     "client_secret",
     "bot_token",
     "refresh",
@@ -18,6 +20,9 @@ _SENSITIVE_KEY_FRAGMENTS = (
     "set-cookie",
     "jwt",
     "private_key",
+    "credential",
+    "encrypted_payload",
+    "nonce_b64",
 )
 
 

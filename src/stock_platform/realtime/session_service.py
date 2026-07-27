@@ -47,16 +47,28 @@ class RealtimeTradingSessionService:
             calendar_date=target_date,
         )
 
-        if (
-            exchange == "KRX"
-            and not decision.is_trading_day
+        if exchange == "KRX" and (
+            not decision.is_trading_day or not decision.live_allowed
         ):
+            from stock_platform.operation.calendar_constants import (
+                CALENDAR_UNAVAILABLE_REASONS,
+                PAUSE_REASON_CALENDAR_UNAVAILABLE,
+                PAUSE_REASON_MARKET_CLOSED,
+            )
+
+            unavailable = (
+                decision.reason_code in CALENDAR_UNAVAILABLE_REASONS
+            )
+            reason = (
+                PAUSE_REASON_CALENDAR_UNAVAILABLE
+                if unavailable
+                else PAUSE_REASON_MARKET_CLOSED
+            )
             return TradingSessionResult(
                 phase=phase,
                 executed=False,
                 message=(
-                    f"Skipped non-trading day: "
-                    f"{decision.reason_code}"
+                    f"Skipped: {reason} ({decision.reason_code})"
                 ),
                 executed_at=datetime.now(timezone.utc),
             )
@@ -71,25 +83,17 @@ class RealtimeTradingSessionService:
             )
 
         if phase == TradingSessionPhase.MARKET_OPEN:
-            execution_status = (
-                realtime_execution_runner.status()
-            )
-            strategy_status = (
-                realtime_strategy_runner.status()
-            )
-
-            if not execution_status["running"]:
-                await realtime_execution_runner.start()
-
-            if not strategy_status["running"]:
-                await realtime_strategy_runner.start()
-
+            # STEP 9-5 — Scheduler와 Runner 분리 계약
+            # Runner는 /realtime-strategy/start · /realtime-execution/start 로만 기동
+            execution_status = realtime_execution_runner.status()
+            strategy_status = realtime_strategy_runner.status()
             return TradingSessionResult(
                 phase=phase,
                 executed=True,
                 message=(
-                    "Realtime execution and strategy "
-                    "runners started"
+                    "Market open marked; runners require explicit start "
+                    f"(execution_running={execution_status.get('running')}, "
+                    f"strategy_running={strategy_status.get('running')})"
                 ),
                 executed_at=datetime.now(timezone.utc),
             )

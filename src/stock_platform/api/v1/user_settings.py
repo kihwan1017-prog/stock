@@ -92,7 +92,7 @@ def get_settings(
 @router.put("")
 def put_settings(
     body: UserSettingsBody,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -108,7 +108,7 @@ def put_settings(
 @router.patch("")
 def patch_settings(
     body: UserSettingsBody,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     patch = _body_dict(body, include_nulls=False)
@@ -127,7 +127,7 @@ def patch_settings(
 
 @router.post("/reset")
 def reset_settings(
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     return _svc(session).reset(user.user_id)

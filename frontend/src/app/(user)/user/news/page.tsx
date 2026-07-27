@@ -256,7 +256,7 @@ export default function UserNewsPage() {
         type="info"
         showIcon
         style={{ marginBottom: 16 }}
-        message="AI 요약 기능은 준비 중입니다."
+        title="AI 요약 기능은 준비 중입니다."
         description="현재는 수집된 제목·요약과 원문 링크만 제공합니다. 공시·AI 요약은 이후 STEP에서 제공됩니다."
       />
 
@@ -265,7 +265,7 @@ export default function UserNewsPage() {
           type="error"
           showIcon
           style={{ marginBottom: 16 }}
-          message="관심종목을 불러오지 못했습니다."
+          title="관심종목을 불러오지 못했습니다."
           description={toApiError(watchlistQuery.error).message}
         />
       )}
@@ -353,13 +353,13 @@ export default function UserNewsPage() {
             <Alert
               type="error"
               showIcon
-              message="뉴스를 불러오지 못했습니다."
+              title="뉴스를 불러오지 못했습니다."
               description={toApiError(newsQuery.error).message}
             />
           ) : items.length === 0 ? (
             <Empty description="검색 결과가 없습니다." />
           ) : (
-            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               {items.map((item) => (
                 <Card
                   key={item.news_id}
@@ -456,20 +456,20 @@ export default function UserNewsPage() {
 
       <Drawer
         title="뉴스 상세"
-        width={520}
+        size={520}
         open={selectedNewsId != null}
         onClose={() => setSelectedNewsId(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         {detailQuery.isLoading ? (
           <Skeleton active />
         ) : detailQuery.isError ? (
           <Alert
             type="error"
-            message={toApiError(detailQuery.error).message}
+            title={toApiError(detailQuery.error).message}
           />
         ) : detailQuery.data ? (
-          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Title level={4} style={{ margin: 0 }}>
               {detailQuery.data.title}
             </Typography.Title>
@@ -500,7 +500,7 @@ export default function UserNewsPage() {
             <Alert
               type="info"
               showIcon
-              message="AI 요약 기능은 준비 중입니다."
+              title="AI 요약 기능은 준비 중입니다."
             />
             <Space wrap>
               {detailQuery.data.original_url && (

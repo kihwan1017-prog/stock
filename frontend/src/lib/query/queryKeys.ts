@@ -26,14 +26,48 @@ export const queryKeys = {
     brokerAccount: () => ["admin", "broker-account"] as const,
     kiwoomConfig: () => ["admin", "kiwoom-config"] as const,
     paperPositions: (id: number) => ["admin", "paper-positions", id] as const,
+    paperAccount: (id: number) => ["admin", "paper-account", id] as const,
     paperAccounts: (params?: object) =>
       ["admin", "paper-accounts", params ?? {}] as const,
     realtimeStrategy: () => ["admin", "realtime-strategy"] as const,
     realtimeExecution: () => ["admin", "realtime-execution"] as const,
     realtimeSessions: () => ["admin", "realtime-sessions"] as const,
+    realtimeHubScopes: () => ["admin", "realtime-hub-scopes"] as const,
+    realtimeHubConnections: () =>
+      ["admin", "realtime-hub-connections"] as const,
     killSwitch: () => ["admin", "kill-switch"] as const,
+    brokerRecoveryStatus: () => ["admin", "broker-recovery-status"] as const,
     dailyLoss: () => ["admin", "daily-loss"] as const,
     riskPolicies: () => ["admin", "risk-policies"] as const,
+    systemRiskSettings: () => ["admin", "system-risk-settings"] as const,
+    userRiskSettings: (userId: number) =>
+      ["admin", "user-risk-settings", userId] as const,
+    liveOrderAccounts: (userId: number) =>
+      ["admin", "live-order-accounts", userId] as const,
+    liveOpsDashboard: () => ["admin", "live-ops-dashboard"] as const,
+    operationsCenterSummary: () =>
+      ["admin", "operations-center", "summary"] as const,
+    aiProviderConfigurations: () =>
+      ["admin", "ai-provider-configurations"] as const,
+    aiPromptTemplates: () => ["admin", "ai-prompt-templates"] as const,
+    aiOutputSchemas: () => ["admin", "ai-output-schemas"] as const,
+    aiPolicies: () => ["admin", "ai-policies"] as const,
+    aiExecutions: () => ["admin", "ai-executions"] as const,
+    aiDocumentAnalyses: () => ["admin", "ai-document-analyses"] as const,
+    aiMarketAnalyses: () => ["admin", "ai-market-analyses"] as const,
+    aiReviews: () => ["admin", "ai-reviews"] as const,
+    aiEvaluationDatasets: () => ["admin", "ai-evaluation-datasets"] as const,
+    aiBenchmarks: () => ["admin", "ai-benchmarks"] as const,
+    aiCandidateAssessments: () => ["admin", "ai-candidate-assessments"] as const,
+    aiCandidateConsensuses: () => ["admin", "ai-candidate-consensuses"] as const,
+    aiCandidateRecommendationQueues: () =>
+      ["admin", "ai-candidate-recommendation-queues"] as const,
+    aiCandidatePromotions: () =>
+      ["admin", "ai-candidate-promotions"] as const,
+    aiCandidateLifecycle: () =>
+      ["admin", "ai-candidate-lifecycle"] as const,
+    strategyDefinitions: (params?: object) =>
+      ["admin", "strategy-definitions", params ?? {}] as const,
     strategyRuntime: () => ["admin", "strategy-runtime"] as const,
     activeDeployment: (market = "KRX") =>
       ["admin", "active-deployment", market] as const,
@@ -63,6 +97,9 @@ export const queryKeys = {
     auditEvents: (params?: object) =>
       ["admin", "audit-events", params ?? {}] as const,
     upbitMarkets: () => ["admin", "upbit-markets"] as const,
+    upbitAccountStatus: () => ["admin", "upbit-account-status"] as const,
+    upbitAccountSnapshot: () => ["admin", "upbit-account-snapshot"] as const,
+    upbitRateLimits: () => ["admin", "upbit-rate-limits"] as const,
     marketQuality: () => ["admin", "market-quality"] as const,
     orderOutbox: () => ["admin", "order-outbox"] as const,
     liveTransitionHistory: () => ["admin", "live-transition-history"] as const,
@@ -81,6 +118,24 @@ export const queryKeys = {
     opsDbStatus: () => ["admin", "ops-db-status"] as const,
     opsMigration: () => ["admin", "ops-migration"] as const,
     opsBackup: () => ["admin", "ops-backup"] as const,
+    opsDashboardOverview: () =>
+      ["admin", "ops-dashboard", "overview"] as const,
+    opsDashboardAccounts: (params?: object) =>
+      ["admin", "ops-dashboard", "accounts", params ?? {}] as const,
+    opsDashboardSchedulers: () =>
+      ["admin", "ops-dashboard", "schedulers"] as const,
+    opsDashboardRuntimes: () =>
+      ["admin", "ops-dashboard", "runtimes"] as const,
+    opsDashboardRisk: () => ["admin", "ops-dashboard", "risk"] as const,
+    opsDashboardOrders: (params?: object) =>
+      ["admin", "ops-dashboard", "orders", params ?? {}] as const,
+    opsDashboardPositions: () =>
+      ["admin", "ops-dashboard", "positions"] as const,
+    opsDashboardAlerts: () => ["admin", "ops-dashboard", "alerts"] as const,
+    opsDashboardAudits: (params?: object) =>
+      ["admin", "ops-dashboard", "audits", params ?? {}] as const,
+    opsDashboardNotifications: () =>
+      ["admin", "ops-dashboard", "notifications"] as const,
     opsTables: (schema: string) => ["admin", "ops-tables", schema] as const,
     dartDisclosures: (params?: object) =>
       ["admin", "dart-disclosures", params ?? {}] as const,
@@ -100,6 +155,12 @@ export const queryKeys = {
     realtimeSessions: () => ["user", "realtime-sessions"] as const,
     realtimeRisk: () => ["user", "realtime-risk"] as const,
     killSwitch: () => ["user", "kill-switch"] as const,
+    riskSettings: () => ["user", "risk-settings"] as const,
+    liveOrderStatus: () => ["user", "live-order-status"] as const,
+    accountRiskSettings: (ubaId: number) =>
+      ["user", "account-risk-settings", ubaId] as const,
+    ownedStrategies: (scope?: string) =>
+      ["user", "owned-strategies", scope ?? "all"] as const,
     strategyRuntime: () => ["user", "strategy-runtime"] as const,
     activeDeployment: (marketCode = "KRX") =>
       ["user", "active-deployment", marketCode] as const,
@@ -117,6 +178,7 @@ export const queryKeys = {
     paperOrders: (params?: object) =>
       ["user", "paper-orders", params ?? {}] as const,
     topCandidates: (ex: string) => ["user", "top-candidates", ex] as const,
+    latestCandidates: (ex: string) => ["user", "latest-candidates", ex] as const,
     aiLatest: (ex: string) => ["user", "ai-latest", ex] as const,
     aiRuns: (ex?: string) => ["user", "ai-runs", ex ?? "all"] as const,
     aiRationale: (runId: number, symbol: string) =>
@@ -213,5 +275,8 @@ export const queryKeys = {
     marketSymbols: (market: string) =>
       ["user", "market-symbols", market] as const,
     strategyOps: () => ["user", "strategy-ops"] as const,
+    // STEP 8-5-13 — KRX Session Timeline Phase
+    marketSessionStatus: (exchangeCode = "KRX") =>
+      ["user", "market-session-status", exchangeCode] as const,
   },
 };

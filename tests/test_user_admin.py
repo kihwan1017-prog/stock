@@ -40,6 +40,21 @@ class _FakeRepo:
                 return user
         return None
 
+    def email_exists(self, email: str) -> bool:
+        key = email.strip().lower()
+        return any(
+            (u.email or "").lower() == key for u in self.users.values()
+        )
+
+    def get_by_email(self, email: str, *, include_deleted: bool = False):
+        key = email.strip().lower()
+        for user in self.users.values():
+            if (user.email or "").lower() == key:
+                if not include_deleted and user.deleted_at is not None:
+                    return None
+                return user
+        return None
+
     def create_user(self, **kwargs):
         self._seq += 1
         now = datetime.now(timezone.utc)
@@ -50,11 +65,16 @@ class _FakeRepo:
             display_name=kwargs.get("display_name"),
             roles=kwargs.get("roles") or ["user"],
             is_active=kwargs.get("is_active", True),
+            email=kwargs.get("email"),
             created_at=now,
             updated_at=now,
             password_changed_at=now,
             deleted_at=None,
         )
+        user.password_change_required = False
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.onboarding_completed_at = None
         self.users[user.user_id] = user
         return user
 
@@ -107,8 +127,31 @@ class _FakeRepo:
         user.password_changed_at = datetime.now(timezone.utc)
         return user
 
-    def revoke_all_for_user(self, user_id: int) -> int:
+    def revoke_all_for_user(
+        self,
+        user_id: int,
+        *,
+        exclude_jti: str | None = None,
+        reason: str | None = None,
+    ) -> int:
         return 1
+
+    def flush(self) -> None:
+        return None
+
+    def set_password_change_required(self, user, *, required: bool):
+        user.password_change_required = required
+        return user
+
+    def clear_lockout(self, user):
+        user.locked_until = None
+        user.failed_login_count = 0
+        return user
+
+    def get_session(self):
+        raise NotImplementedError(
+            "list_member_accounts 는 실 Session 이 필요합니다"
+        )
 
 
 @pytest.mark.unit

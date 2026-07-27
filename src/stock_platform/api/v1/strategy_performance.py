@@ -8,6 +8,8 @@ from fastapi import (
     HTTPException,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
+from stock_platform.auth.deps import AuthenticatedUser
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -29,6 +31,7 @@ from stock_platform.performance.service import (
 router = APIRouter(
     prefix="/api/v1/strategy-performance",
     tags=["Strategy Performance"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -77,6 +80,7 @@ class StrategyPerformanceCompleteRequest(BaseModel):
 def create_performance_run(
     request: StrategyPerformanceRunRequest,
     session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
 ):
     try:
         return StrategyPerformanceService(
@@ -89,6 +93,8 @@ def create_performance_run(
             period_start_date=request.period_start_date,
             period_end_date=request.period_end_date,
             parameter_payload=request.parameter_payload,
+            # ADMIN 실행 — USER 백테스트와 구분
+            requested_by_user_id=int(user.user_id),
         )
     except ValueError as exc:
         raise HTTPException(

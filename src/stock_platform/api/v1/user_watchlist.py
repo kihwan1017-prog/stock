@@ -106,7 +106,7 @@ def search_watchlist_symbols(
 def create_watchlist_item(
     request: CreateWatchlistRequest,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -132,7 +132,7 @@ def update_watchlist_item(
     watchlist_id: int,
     request: UpdateWatchlistRequest,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -159,7 +159,7 @@ def update_watchlist_item(
 def delete_watchlist_item(
     watchlist_id: int,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):
@@ -175,7 +175,7 @@ def delete_watchlist_item(
 def reorder_watchlist(
     request: ReorderWatchlistRequest,
     user: AuthenticatedUser = Depends(
-        require_permission("trading:read")
+        require_permission("trading:write")
     ),
     session: Session = Depends(get_db_session),
 ):

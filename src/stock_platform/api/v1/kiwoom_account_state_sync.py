@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from stock_platform.api.deps_admin import require_admin
@@ -31,22 +31,24 @@ router = APIRouter(
 
 @router.post("/sync")
 async def synchronize_kiwoom_account_state(
+    user_broker_account_id: int = Query(..., ge=1),
     _: None = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
-    """예수금·보유·평가손익·미체결을 일괄 동기화한다 (관리자·서버 공용 credential)."""
+    """예수금·보유·평가손익·미체결을 일괄 동기화한다 (UBA 필수)."""
     try:
         result = await KiwoomAccountStateSyncService(
             session=session,
             account_sync_service=KiwoomAccountSyncService(
                 session=session,
                 account_client=build_kiwoom_account_client(),
+                user_broker_account_id=user_broker_account_id,
             ),
             pending_order_service=KiwoomPendingOrderService(
                 session,
                 build_kiwoom_pending_order_client(),
             ),
-        ).synchronize()
+        ).synchronize(user_broker_account_id=user_broker_account_id)
     except (ValueError, RuntimeError, KiwoomRestError) as exc:
         session.rollback()
         raise HTTPException(

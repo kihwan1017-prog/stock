@@ -86,7 +86,19 @@ class TelegramNotificationSender(NotificationSender):
                     "disable_web_page_preview": True,
                 },
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # 403 등 — JSON description을 보존 (토큰은 호출측에서 마스킹)
+                detail = "Telegram API error"
+                try:
+                    body = response.json()
+                    if isinstance(body, dict) and body.get("description"):
+                        detail = str(body["description"])
+                    else:
+                        detail = f"HTTP {response.status_code}"
+                except Exception:  # noqa: BLE001
+                    detail = f"HTTP {response.status_code}"
+                raise RuntimeError(detail)
+
             payload = response.json()
 
             if not payload.get("ok"):

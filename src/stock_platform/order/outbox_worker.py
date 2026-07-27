@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -11,6 +12,13 @@ from stock_platform.operation.idempotency_repository import (
 from stock_platform.order.outbox_dispatcher import (
     OrderOutboxDispatcher,
 )
+from stock_platform.order.outbox_fencing import (
+    OutboxAmbiguousError,
+    OutboxFencingError,
+    record_outbox_audit,
+    stable_request_hash,
+)
+from stock_platform.order.outbox_models import OutboxStatus
 from stock_platform.order.outbox_repository import (
     OrderOutboxRepository,
 )
@@ -22,6 +30,7 @@ class OutboxRunSummary:
     succeeded: int
     retried: int
     failed: int
+    ambiguous: int = 0
 
 
 class OrderOutboxWorker:
@@ -32,6 +41,7 @@ class OrderOutboxWorker:
         60,
         300,
     )
+    STALE_PROCESSING_AFTER = timedelta(minutes=5)
 
     def __init__(
         self,
@@ -51,67 +61,140 @@ class OrderOutboxWorker:
         succeeded = 0
         retried = 0
         failed = 0
+        ambiguous = 0
 
         with self._session_factory() as session:
-            repository = OrderOutboxRepository(
-                session
+            repository = OrderOutboxRepository(session)
+            repository.reclaim_stale_processing(
+                stale_after=self.STALE_PROCESSING_AFTER,
             )
             rows = repository.claim_batch(
                 worker_id=self._worker_id,
                 batch_size=self._batch_size,
             )
             claimed = len(rows)
+            # claim 스냅샷 (fencing_token 포함)
+            claims = [
+                (int(r.outbox_id), int(r.fencing_token))
+                for r in rows
+            ]
             session.commit()
 
-        for claimed_row in rows:
+        for outbox_id, fencing_token in claims:
             with self._session_factory() as session:
-                repository = OrderOutboxRepository(
-                    session
-                )
-                idempotency = (
-                    PostgreSqlIdempotencyRepository(
-                        session
-                    )
-                )
-                entity = repository.get(
-                    claimed_row.outbox_id
-                )
+                repository = OrderOutboxRepository(session)
+                idempotency = PostgreSqlIdempotencyRepository(session)
+                entity = repository.get(outbox_id)
                 if entity is None:
                     continue
 
                 try:
-                    payload = entity.payload_json
-                    request_hash = (
-                        idempotency.request_hash(payload)
-                    )
-                    record = idempotency.begin(
-                        idempotency_key=(
-                            entity.idempotency_key
-                        ),
-                        request_hash=request_hash,
-                    )
-
-                    if record.status_code == "COMPLETED":
+                    payload = dict(entity.payload_json or {})
+                    # 레거시 payload에 order_id 누락 시 보강
+                    payload.setdefault("order_id", int(entity.order_id))
+                    # 주문에 이미 broker_order_id 있으면 재전송 금지
+                    if self._order_already_has_broker_id(
+                        session, entity.order_id
+                    ):
+                        record_outbox_audit(
+                            session,
+                            event_type="OUTBOX_DUPLICATE_DISPATCH_BLOCKED",
+                            detail={
+                                "outbox_id": outbox_id,
+                                "order_id": entity.order_id,
+                            },
+                            actor=self._worker_id,
+                        )
                         repository.mark_done(
-                            entity=entity
+                            entity=entity,
+                            fencing_token=fencing_token,
+                            worker_id=self._worker_id,
                         )
                         succeeded += 1
                         session.commit()
                         continue
 
-                    result = self._dispatcher.dispatch(
-                        event_type=entity.event_type,
-                        payload=payload,
-                        idempotency_key=(
-                            entity.idempotency_key
-                        ),
+                    request_hash = stable_request_hash(payload)
+                    # Dispatch Intent 영속화 → Commit 후에만 Broker
+                    repository.create_dispatch_intent(
+                        entity=entity,
+                        fencing_token=fencing_token,
+                        worker_id=self._worker_id,
+                        request_hash=request_hash,
                     )
+                    session.commit()
+                    entity = repository.get(outbox_id)
+                    if entity is None:
+                        continue
 
-                    if not result["accepted"]:
-                        raise RuntimeError(
-                            result.get(
-                                "reject_message"
+                    # LIVE safety: intent 후에도 재확인 (전송 직전)
+                    self._assert_live_dispatch_allowed(session, payload)
+
+                    record = idempotency.begin(
+                        idempotency_key=entity.idempotency_key,
+                        request_hash=request_hash,
+                    )
+                    if record.status_code == "COMPLETED":
+                        result = record.result_json or {}
+                        if result.get("accepted"):
+                            self._apply_order_broker_result(
+                                session=session,
+                                order_id=entity.order_id,
+                                result=result,
+                                event_type=entity.event_type,
                             )
+                        repository.mark_done(
+                            entity=entity,
+                            fencing_token=fencing_token,
+                            worker_id=self._worker_id,
+                        )
+                        succeeded += 1
+                        session.commit()
+                        continue
+
+                    try:
+                        result = self._dispatcher.dispatch(
+                            event_type=entity.event_type,
+                            payload=payload,
+                            idempotency_key=entity.idempotency_key,
+                            session=session,
+                        )
+                    except TimeoutError as exc:
+                        raise OutboxAmbiguousError(
+                            f"BROKER_TIMEOUT:{exc}"
+                        ) from exc
+
+                    if (
+                        not result.get("accepted")
+                        and (
+                            result.get("status") == "AMBIGUOUS"
+                            or str(
+                                result.get("reject_code") or ""
+                            ).startswith("AMBIGUOUS")
+                        )
+                    ):
+                        self._mark_ambiguous_order(
+                            session=session,
+                            order_id=entity.order_id,
+                            result=result,
+                        )
+                        repository.mark_ambiguous(
+                            entity=entity,
+                            reason=str(
+                                result.get("reject_message")
+                                or result.get("reject_code")
+                                or "AMBIGUOUS"
+                            ),
+                            fencing_token=fencing_token,
+                            worker_id=self._worker_id,
+                        )
+                        ambiguous += 1
+                        session.commit()
+                        continue
+
+                    if not result.get("accepted"):
+                        raise RuntimeError(
+                            result.get("reject_message")
                             or "Broker rejected order"
                         )
 
@@ -121,33 +204,85 @@ class OrderOutboxWorker:
                         result=result,
                         event_type=entity.event_type,
                     )
+                    # payload에도 broker_order_id 반영 (재전송 억제)
+                    if result.get("broker_order_id"):
+                        payload["broker_order_id"] = str(
+                            result["broker_order_id"]
+                        )
+                        entity.payload_json = payload
 
                     idempotency.complete(
-                        idempotency_key=(
-                            entity.idempotency_key
-                        ),
+                        idempotency_key=entity.idempotency_key,
                         result_json=result,
                     )
                     repository.mark_done(
-                        entity=entity
+                        entity=entity,
+                        fencing_token=fencing_token,
+                        worker_id=self._worker_id,
                     )
                     succeeded += 1
                     session.commit()
+                except OutboxFencingError as exc:
+                    session.rollback()
+                    record_outbox_audit(
+                        session,
+                        event_type="OUTBOX_FENCING_REJECTED",
+                        detail={
+                            "outbox_id": outbox_id,
+                            "fencing_token": fencing_token,
+                            "error": str(exc)[:200],
+                        },
+                        actor=self._worker_id,
+                    )
+                    session.commit()
+                except OutboxAmbiguousError as exc:
+                    session.rollback()
+                    with self._session_factory() as amb_session:
+                        amb_repo = OrderOutboxRepository(amb_session)
+                        amb_entity = amb_repo.get(outbox_id)
+                        if amb_entity is not None:
+                            amb_repo.mark_ambiguous(
+                                entity=amb_entity,
+                                reason=str(exc),
+                                fencing_token=fencing_token,
+                                worker_id=self._worker_id,
+                            )
+                            amb_session.commit()
+                            ambiguous += 1
                 except Exception as exc:
                     session.rollback()
-
                     with self._session_factory() as retry_session:
-                        retry_repository = (
-                            OrderOutboxRepository(
-                                retry_session
-                            )
+                        retry_repository = OrderOutboxRepository(
+                            retry_session
                         )
-                        retry_entity = (
-                            retry_repository.get(
-                                claimed_row.outbox_id
-                            )
-                        )
+                        retry_entity = retry_repository.get(outbox_id)
                         if retry_entity is None:
+                            continue
+
+                        # intent 이후 불명 오류 → Ambiguous
+                        msg = str(exc)
+                        uncertain = any(
+                            x in msg.upper()
+                            for x in (
+                                "TIMEOUT",
+                                "5XX",
+                                "CONNECTION",
+                                "AMBIGUOUS",
+                                "UNAVAILABLE",
+                            )
+                        )
+                        if (
+                            retry_entity.dispatch_intent_at is not None
+                            and uncertain
+                        ):
+                            retry_repository.mark_ambiguous(
+                                entity=retry_entity,
+                                reason=msg,
+                                fencing_token=fencing_token,
+                                worker_id=self._worker_id,
+                            )
+                            ambiguous += 1
+                            retry_session.commit()
                             continue
 
                         if (
@@ -156,26 +291,39 @@ class OrderOutboxWorker:
                         ):
                             retry_repository.mark_failed(
                                 entity=retry_entity,
-                                error_message=str(exc),
+                                error_message=msg,
+                                fencing_token=fencing_token,
+                                worker_id=self._worker_id,
+                            )
+                            self._fail_open_order(
+                                session=retry_session,
+                                order_id=retry_entity.order_id,
+                                error_message=msg,
+                                event_type=retry_entity.event_type,
                             )
                             failed += 1
                         else:
                             retry_repository.mark_retry(
                                 entity=retry_entity,
                                 next_retry_at=(
-                                    datetime.now(
-                                        timezone.utc
-                                    )
+                                    datetime.now(timezone.utc)
                                     + timedelta(
                                         seconds=self._retry_delay(
                                             retry_entity.retry_count
                                         )
                                     )
                                 ),
-                                error_message=str(exc),
+                                error_message=msg,
+                                fencing_token=fencing_token,
+                                worker_id=self._worker_id,
                             )
-                            retried += 1
-
+                            if (
+                                retry_entity.status_code
+                                == OutboxStatus.AMBIGUOUS.value
+                            ):
+                                ambiguous += 1
+                            else:
+                                retried += 1
                         retry_session.commit()
 
         return OutboxRunSummary(
@@ -183,63 +331,234 @@ class OrderOutboxWorker:
             succeeded=succeeded,
             retried=retried,
             failed=failed,
+            ambiguous=ambiguous,
         )
+
+    @staticmethod
+    def _order_already_has_broker_id(
+        session: Session, order_id: int
+    ) -> bool:
+        from stock_platform.order.repository import TradingOrderRepository
+
+        order = TradingOrderRepository(session).get(order_id)
+        return bool(order and order.broker_order_id)
+
+    @staticmethod
+    def _assert_live_dispatch_allowed(
+        session: Session, payload: dict[str, Any]
+    ) -> None:
+        env = str(payload.get("environment") or "PAPER").upper()
+        if env != "LIVE":
+            return
+        from stock_platform.broker.live_config_gate import (
+            evaluate_live_flag_consistency,
+        )
+        from stock_platform.broker.live_transition_guard import (
+            LiveTradingTransitionGuard,
+        )
+        from stock_platform.operation.live_health_gate import (
+            assert_live_orders_allowed,
+        )
+
+        cfg = evaluate_live_flag_consistency()
+        if cfg.code in {
+            "LIVE_MOCK_CONFLICT",
+            "LIVE_FLAG_MISMATCH_KIWOOM",
+        }:
+            raise PermissionError(cfg.code)
+        assert_live_orders_allowed(session)
+        LiveTradingTransitionGuard(session).require_active()
+
+        # STEP 8-7 — dispatch 직전 계좌 LIVE 승인 재확인
+        uba_raw = payload.get("user_broker_account_id")
+        if uba_raw is None:
+            raise PermissionError("UBA_REQUIRED")
+        from stock_platform.trading.account_models import UserBrokerAccount
+
+        uba = session.get(UserBrokerAccount, int(uba_raw))
+        if uba is None or not bool(uba.is_active):
+            raise PermissionError("ACCOUNT_INACTIVE")
+        if not bool(getattr(uba, "live_order_enabled", False)):
+            raise PermissionError("LIVE_ORDER_DISABLED")
+        # STEP 8-8 — ARM 유효성 (토큰 원문은 Outbox에 저장하지 않음)
+        from stock_platform.trading.live_arm_service import LiveArmService
+
+        if LiveArmService(session).expire_if_needed(int(uba_raw)):
+            raise PermissionError("LIVE_ARM_EXPIRED")
+        uba = session.get(UserBrokerAccount, int(uba_raw))
+        if uba is None or not bool(getattr(uba, "live_armed", False)):
+            raise PermissionError("LIVE_NOT_ARMED")
 
     @staticmethod
     def _apply_order_broker_result(
         *,
         session: Session,
         order_id: int,
-        result: dict,
+        result: dict[str, Any],
         event_type: str,
     ) -> None:
         from stock_platform.order.models import OrderStatus
-        from stock_platform.order.outbox_models import (
-            OutboxEventType,
+        from stock_platform.order.outbox_models import OutboxEventType
+        from stock_platform.order.repository import TradingOrderRepository
+        from stock_platform.order.state_machine import OrderStateMachine
+
+        if event_type == OutboxEventType.SUBMIT_ORDER.value:
+            repository = TradingOrderRepository(session)
+            order = repository.get(order_id)
+            if order is None:
+                return
+            broker_order_id = result.get("broker_order_id")
+            if broker_order_id:
+                order.broker_order_id = str(broker_order_id)
+            status = OrderStatus(order.status_code)
+            if status in {
+                OrderStatus.ACCEPTED,
+                OrderStatus.PARTIALLY_FILLED,
+                OrderStatus.FILLED,
+                OrderStatus.CANCEL_REQUESTED,
+                OrderStatus.CANCELLED,
+                OrderStatus.REPLACE_REQUESTED,
+                OrderStatus.REPLACED,
+                OrderStatus.REJECTED,
+                OrderStatus.FAILED,
+            }:
+                return
+            if status == OrderStatus.PENDING:
+                order = repository.change_status(
+                    entity=order,
+                    new_status=OrderStatus.SENT,
+                    actor="OUTBOX_WORKER",
+                    reason_code="BROKER_REQUEST_SENT",
+                    commit=False,
+                )
+                status = OrderStatus.SENT
+            if status == OrderStatus.SUBMITTING:
+                # claim_submitting 이후 ACCEPTED로 승격
+                order = repository.change_status(
+                    entity=order,
+                    new_status=OrderStatus.ACCEPTED,
+                    actor="OUTBOX_WORKER",
+                    reason_code="BROKER_ACCEPTED",
+                    commit=False,
+                )
+                status = OrderStatus.ACCEPTED
+            if status == OrderStatus.SENT:
+                repository.change_status(
+                    entity=order,
+                    new_status=OrderStatus.ACCEPTED,
+                    actor="OUTBOX_WORKER",
+                    reason_code="BROKER_ACCEPTED",
+                    commit=False,
+                )
+                status = OrderStatus.ACCEPTED
+            # STEP 10-1 — Upbit는 접수 직후 체결 동기화(시장가 즉시 체결 포함)
+            if (
+                status == OrderStatus.ACCEPTED
+                and str(getattr(order, "broker_code", "") or "").upper()
+                == "UPBIT"
+                and order.broker_order_id
+            ):
+                try:
+                    from stock_platform.broker.upbit.fill_sync_service import (
+                        UpbitFillSyncService,
+                    )
+
+                    UpbitFillSyncService(session).sync_by_order_id(
+                        int(order.order_id),
+                        actor="OUTBOX_UPBIT_FILL_SYNC",
+                    )
+                except Exception:  # noqa: BLE001
+                    # 체결 동기화 실패가 submit 성공을 롤백하지 않음
+                    # Reconcile/Tracker가 후속 처리
+                    pass
+            return
+
+        if event_type == OutboxEventType.CANCEL_ORDER.value:
+            repository = TradingOrderRepository(session)
+            order = repository.get(order_id)
+            if order is None:
+                return
+            accepted = bool(result.get("accepted"))
+            if accepted:
+                status = OrderStatus(order.status_code)
+                if OrderStateMachine.can_transition(
+                    status, OrderStatus.CANCELLED
+                ):
+                    repository.change_status(
+                        entity=order,
+                        new_status=OrderStatus.CANCELLED,
+                        actor="OUTBOX_WORKER",
+                        reason_code="BROKER_CANCEL_ACCEPTED",
+                        commit=False,
+                    )
+            # 미확정은 Tracking이 Broker 조회로 확정 — 여기서 COMPLETED 금지
+            return
+
+    @staticmethod
+    def _mark_ambiguous_order(
+        *,
+        session: Session,
+        order_id: int,
+        result: dict[str, Any],
+    ) -> None:
+        from stock_platform.broker.upbit.ambiguous_constants import (
+            SubmissionAttemptResult,
         )
-        from stock_platform.order.repository import (
-            TradingOrderRepository,
+        from stock_platform.broker.upbit.ambiguous_resolver import (
+            UpbitAmbiguousOrderResolver,
         )
+        from stock_platform.order.repository import TradingOrderRepository
+
+        order = TradingOrderRepository(session).get(order_id)
+        if order is None:
+            return
+        code = str(result.get("reject_code") or "")
+        if "RATE_LIMIT" in code:
+            attempt = SubmissionAttemptResult.AMBIGUOUS_429.value
+        elif "5" in code:
+            attempt = SubmissionAttemptResult.AMBIGUOUS_5XX.value
+        else:
+            attempt = SubmissionAttemptResult.AMBIGUOUS_TIMEOUT.value
+        UpbitAmbiguousOrderResolver(session).mark_ambiguous(
+            order,
+            reason=str(result.get("reject_message") or code)[:200],
+            attempt_result=attempt,
+            actor="OUTBOX_WORKER",
+        )
+
+    @staticmethod
+    def _fail_open_order(
+        *,
+        session: Session,
+        order_id: int,
+        error_message: str,
+        event_type: str,
+    ) -> None:
+        from stock_platform.order.models import OrderStatus
+        from stock_platform.order.outbox_models import OutboxEventType
+        from stock_platform.order.repository import TradingOrderRepository
+        from stock_platform.order.state_machine import OrderStateMachine
 
         if event_type != OutboxEventType.SUBMIT_ORDER.value:
             return
-
         repository = TradingOrderRepository(session)
         order = repository.get(order_id)
         if order is None:
             return
-
-        broker_order_id = result.get("broker_order_id")
-        if broker_order_id:
-            order.broker_order_id = str(broker_order_id)
-
         status = OrderStatus(order.status_code)
-        if status == OrderStatus.PENDING:
-            order = repository.change_status(
-                entity=order,
-                new_status=OrderStatus.SENT,
-                actor="OUTBOX_WORKER",
-                reason_code="BROKER_REQUEST_SENT",
-                commit=False,
-            )
-            status = OrderStatus.SENT
-
-        if status == OrderStatus.SENT:
-            repository.change_status(
-                entity=order,
-                new_status=OrderStatus.ACCEPTED,
-                actor="OUTBOX_WORKER",
-                reason_code="BROKER_ACCEPTED",
-                commit=False,
-            )
+        if not OrderStateMachine.can_transition(status, OrderStatus.FAILED):
+            return
+        order.reject_message = error_message[:500]
+        repository.change_status(
+            entity=order,
+            new_status=OrderStatus.FAILED,
+            actor="OUTBOX_WORKER",
+            reason_code="OUTBOX_EXHAUSTED",
+            message=error_message[:500],
+            commit=False,
+        )
 
     @classmethod
-    def _retry_delay(
-        cls,
-        retry_count: int,
-    ) -> int:
-        index = min(
-            retry_count,
-            len(cls.RETRY_DELAYS_SECONDS) - 1,
-        )
+    def _retry_delay(cls, retry_count: int) -> int:
+        index = min(retry_count, len(cls.RETRY_DELAYS_SECONDS) - 1)
         return cls.RETRY_DELAYS_SECONDS[index]

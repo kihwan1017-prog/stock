@@ -77,6 +77,30 @@ export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
     apis: ["GET/PUT /settings"],
   },
   {
+    id: "live-activation",
+    title: "LIVE Activation",
+    description: "GLOBAL/Broker LIVE · Mock · Activation 만료 · Dry Run",
+    href: adminRoutes.kiwoom,
+    support: "live",
+    apis: [
+      "GET /broker/live-transition/active",
+      "POST /broker/live-transition/dry-run",
+      "GET /health",
+    ],
+  },
+  {
+    id: "settlement",
+    title: "Account Settlement",
+    description: "EOD 정산 · 불일치 · Manual Review",
+    href: adminRoutes.batch,
+    support: "live",
+    apis: [
+      "GET /admin/settlements",
+      "GET /admin/settlements/health",
+      "POST /admin/settlements/{id}/retry",
+    ],
+  },
+  {
     id: "logs",
     title: "Log Viewer",
     description: "감사 로그 (앱 로그 테일 없음)",

@@ -30,7 +30,8 @@ def test_blocks_when_account_number_missing(
     executor._session = object()
     executor._execution_config = (
         RealtimeExecutionConfig(
-            order_amount=Decimal("100000")
+            account_id=1,
+            order_amount=Decimal("100000"),
         )
     )
     executor._safety_guard = object()

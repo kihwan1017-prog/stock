@@ -31,6 +31,8 @@ def test_kill_switch_blocks_buy_when_active() -> None:
 
 def test_require_order_safety_runs_kill_then_risk() -> None:
     session = MagicMock()
+    # MagicMock.scalar 가 Truthy를 반환하면 Recovery Pause로 오판함
+    session.scalar.return_value = None
     with patch(
         "stock_platform.order.trading_guards.PersistentKillSwitchGuard"
     ) as kill_cls, patch(
@@ -50,6 +52,9 @@ def test_require_order_safety_runs_kill_then_risk() -> None:
             symbol="005930",
             quantity=Decimal("1"),
             price=Decimal("70000"),
+            user_id=1,
+            user_broker_account_id=10,
+            environment="LIVE",
         )
         kill_cls.return_value.require_order_allowed.assert_called_once()
         risk_cls.return_value.check.assert_called_once()
@@ -57,9 +62,17 @@ def test_require_order_safety_runs_kill_then_risk() -> None:
 
 def test_resolve_broker_adapter_defaults_to_paper() -> None:
     session = MagicMock()
-    with patch(
-        "stock_platform.order.trading_guards.get_settings"
-    ) as settings_fn:
-        settings_fn.return_value.kiwoom_live_order_enabled = False
-        adapter = resolve_broker_adapter_for_cancel(session)
-        assert isinstance(adapter, PaperBrokerAdapter)
+    adapter = resolve_broker_adapter_for_cancel(session)
+    assert isinstance(adapter, PaperBrokerAdapter)
+
+
+def test_resolve_broker_adapter_upbit_paper() -> None:
+    from stock_platform.broker.upbit.adapter import UpbitBrokerAdapter
+
+    session = MagicMock()
+    adapter = resolve_broker_adapter_for_cancel(
+        session,
+        broker_code="UPBIT",
+        environment="PAPER",
+    )
+    assert isinstance(adapter, UpbitBrokerAdapter)

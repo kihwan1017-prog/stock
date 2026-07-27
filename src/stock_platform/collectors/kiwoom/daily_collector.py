@@ -5,7 +5,7 @@ from typing import Final
 
 import structlog
 
-from stock_platform.brokers.kiwoom.client import KiwoomRestClient
+from stock_platform.broker.kiwoom.market.client import KiwoomRestClient
 from stock_platform.collectors.kiwoom.dto import DailyPriceDTO
 from stock_platform.collectors.kiwoom.pagination import ContinuationState
 from stock_platform.collectors.kiwoom.parser import KiwoomDailyParser

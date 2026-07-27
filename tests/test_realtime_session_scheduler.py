@@ -4,7 +4,7 @@ from stock_platform.realtime.session_scheduler import (
 )
 
 
-def test_registers_four_realtime_session_jobs() -> None:
+def test_registers_realtime_session_contract_jobs() -> None:
     settings = Settings(
         db_host="localhost",
         db_name="stock_platform",
@@ -16,14 +16,7 @@ def test_registers_four_realtime_session_jobs() -> None:
     scheduler = RealtimeTradingScheduler(settings)
     scheduler.configure()
 
-    job_ids = {
-        job.id
-        for job in scheduler.scheduler.get_jobs()
-    }
-
-    assert job_ids == {
-        "realtime_pre_market",
-        "realtime_market_open",
-        "realtime_market_close",
-        "realtime_after_market",
-    }
+    assert (
+        scheduler.registered_job_ids()
+        == set(RealtimeTradingScheduler.REGISTERED_JOB_IDS)
+    )

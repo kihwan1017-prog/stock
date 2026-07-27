@@ -27,7 +27,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <AuthGuard
-      requiredRoles={["admin", "operator"]}
+      requiredRoles={["admin"]}
       enforceMenuPermission
       forbiddenRedirect={userRoutes.dashboard}
     >

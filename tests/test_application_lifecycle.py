@@ -167,7 +167,7 @@ def test_shutdown_order(lifecycle: ApplicationLifecycle) -> None:
         "_shutdown_schedulers",
         new=AsyncMock(side_effect=shutdown_schedulers),
     ), patch(
-        "stock_platform.api.lifecycle.dynamic_strategy_runtime_manager.clear",
+        "stock_platform.api.lifecycle.dynamic_strategy_runtime_manager.shutdown_all",
         new=AsyncMock(side_effect=clear_strategy),
     ), patch.object(
         lifecycle,

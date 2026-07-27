@@ -1,106 +1,85 @@
 const TOKEN_STORAGE_KEY = "kiki-admin-token";
 const REFRESH_STORAGE_KEY = "kiki-admin-refresh";
-const PERSIST_FLAG_KEY = "kiki-admin-persist";
 
-type StorageKind = "session" | "local";
+/**
+ * 증권사 납품 기준: access/refresh 토큰은 sessionStorage만 사용.
+ * localStorage 영속화(Remember Me)는 XSS 지속 노출 위험이 있어 제거.
+ * Next middleware 정합을 위해 동일 이름의 session 쿠키도 동기화한다.
+ */
 
 function canUseBrowserStorage(): boolean {
   return typeof window !== "undefined";
 }
 
-function activeStorage(): Storage | null {
+function syncAuthCookie(name: string, value: string | null): void {
+  if (!canUseBrowserStorage()) {
+    return;
+  }
+  if (!value) {
+    document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+    return;
+  }
+  // session cookie (Max-Age 미지정) — 탭 종료 시 브라우저가 정리
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; SameSite=Lax`;
+}
+
+function readSession(key: string): string | null {
   if (!canUseBrowserStorage()) {
     return null;
   }
-  const persist = window.localStorage.getItem(PERSIST_FLAG_KEY) === "1";
-  return persist ? window.localStorage : window.sessionStorage;
+  return window.sessionStorage.getItem(key);
 }
 
-function readFromBoth(key: string): string | null {
+function writeSession(key: string, value: string): void {
   if (!canUseBrowserStorage()) {
-    return null;
+    return;
   }
-  return (
-    window.localStorage.getItem(key) ?? window.sessionStorage.getItem(key)
-  );
+  // 레거시 localStorage 잔여분 제거
+  window.localStorage.removeItem(key);
+  window.sessionStorage.setItem(key, value);
+  syncAuthCookie(key, value);
 }
 
-function writeToken(key: string, value: string, persist: boolean): void {
+function clearSession(key: string): void {
   if (!canUseBrowserStorage()) {
     return;
   }
   window.localStorage.removeItem(key);
   window.sessionStorage.removeItem(key);
-  const store = persist ? window.localStorage : window.sessionStorage;
-  store.setItem(key, value);
-  if (persist) {
-    window.localStorage.setItem(PERSIST_FLAG_KEY, "1");
-  } else {
-    window.localStorage.removeItem(PERSIST_FLAG_KEY);
-  }
-}
-
-function clearBoth(key: string): void {
-  if (!canUseBrowserStorage()) {
-    return;
-  }
-  window.localStorage.removeItem(key);
-  window.sessionStorage.removeItem(key);
+  syncAuthCookie(key, null);
 }
 
 export function isRememberMeEnabled(): boolean {
-  if (!canUseBrowserStorage()) {
-    return false;
-  }
-  return window.localStorage.getItem(PERSIST_FLAG_KEY) === "1";
+  // 보안 정책상 Remember Me(토큰 localStorage) 비활성
+  return false;
 }
 
 export function getToken(): string | null {
-  return readFromBoth(TOKEN_STORAGE_KEY);
+  return readSession(TOKEN_STORAGE_KEY);
 }
 
-export function setToken(token: string, persist = isRememberMeEnabled()): void {
-  writeToken(TOKEN_STORAGE_KEY, token, persist);
+/** Access Token은 항상 sessionStorage — persist 인자 없음(레거시 제거). */
+export function setToken(token: string): void {
+  writeSession(TOKEN_STORAGE_KEY, token);
 }
 
 export function clearToken(): void {
-  clearBoth(TOKEN_STORAGE_KEY);
+  clearSession(TOKEN_STORAGE_KEY);
 }
 
 export function getRefreshToken(): string | null {
-  return readFromBoth(REFRESH_STORAGE_KEY);
+  return readSession(REFRESH_STORAGE_KEY);
 }
 
-export function setRefreshToken(
-  token: string,
-  persist = isRememberMeEnabled(),
-): void {
-  writeToken(REFRESH_STORAGE_KEY, token, persist);
+/** Refresh Token은 항상 sessionStorage — persist 인자 없음(레거시 제거). */
+export function setRefreshToken(token: string): void {
+  writeSession(REFRESH_STORAGE_KEY, token);
 }
 
 export function clearRefreshToken(): void {
-  clearBoth(REFRESH_STORAGE_KEY);
+  clearSession(REFRESH_STORAGE_KEY);
   if (canUseBrowserStorage()) {
-    window.localStorage.removeItem(PERSIST_FLAG_KEY);
-  }
-}
-
-export function setRememberMe(persist: boolean): void {
-  if (!canUseBrowserStorage()) {
-    return;
-  }
-  const access = getToken();
-  const refresh = getRefreshToken();
-  if (persist) {
-    window.localStorage.setItem(PERSIST_FLAG_KEY, "1");
-  } else {
-    window.localStorage.removeItem(PERSIST_FLAG_KEY);
-  }
-  if (access) {
-    writeToken(TOKEN_STORAGE_KEY, access, persist);
-  }
-  if (refresh) {
-    writeToken(REFRESH_STORAGE_KEY, refresh, persist);
+    window.localStorage.removeItem("kiki-admin-persist");
   }
 }
 

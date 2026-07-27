@@ -94,18 +94,43 @@ class RealtimeOrderSafetyGuard:
             signal.exchange_code.upper() == "KRX"
             and self._config.enforce_market_hours_for_krx
         ):
-            current_time = now.astimezone().time().replace(
-                tzinfo=None
+            # STEP 8-5-13 — 고정 trading_start/end_time 대신
+            # Session Timeline Phase 사용 (지연개장/조기종료 반영).
+            # trading_start_time/trading_end_time은 config 하위호환용으로
+            # 유지되나 KRX LIVE 판단에는 더 이상 사용하지 않는다.
+            from stock_platform.operation.session_timeline import (
+                SessionTimelineReasonCode,
+                phase_reason_code,
+                resolve_krx_timeline,
             )
-            if not (
-                self._config.trading_start_time
-                <= current_time
-                <= self._config.trading_end_time
-            ):
+
+            try:
+                timeline = resolve_krx_timeline(moment=now)
+            except Exception:  # noqa: BLE001
                 return SafetyDecision(
                     allowed=False,
-                    reason_code="OUTSIDE_MARKET_HOURS",
-                    message="KRX order is outside configured market hours",
+                    reason_code=(
+                        SessionTimelineReasonCode.CALENDAR_UNAVAILABLE.value
+                    ),
+                    message="KRX session timeline unavailable",
+                )
+
+            # BUY는 신규진입(OPEN)만 허용, SELL/EXIT은 위험축소로 간주해
+            # OPEN·EXIT_ONLY Phase 모두 허용한다.
+            is_risk_reducing = (
+                signal.action == RealtimeSignalAction.SELL
+            )
+            if not timeline.allows_any_order(
+                now, is_risk_reducing=is_risk_reducing
+            ):
+                phase = timeline.phase_at(now)
+                return SafetyDecision(
+                    allowed=False,
+                    reason_code=phase_reason_code(phase),
+                    message=(
+                        f"KRX order blocked by session phase "
+                        f"{phase.value}"
+                    ),
                 )
 
         symbol_key = self._symbol_key(signal)

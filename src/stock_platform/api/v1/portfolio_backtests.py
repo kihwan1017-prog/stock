@@ -2,13 +2,16 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from fastapi import APIRouter,Depends,HTTPException,status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel,Field
 from sqlalchemy.orm import Session
 from stock_platform.backtest.portfolio_models import PortfolioBacktestAsset
 from stock_platform.backtest.portfolio_report import PortfolioBacktestReportBuilder
 from stock_platform.backtest.portfolio_service import PortfolioBacktestService
 from stock_platform.database.session import get_db_session
-router=APIRouter(prefix='/api/v1/portfolio-backtests',tags=['Portfolio Backtests'])
+router=APIRouter(prefix='/api/v1/portfolio-backtests',tags=['Portfolio Backtests'],
+    dependencies=[Depends(require_admin)],
+)
 class PortfolioAssetRequest(BaseModel):
     exchange_code:str=Field(min_length=1,max_length=20); symbol:str=Field(min_length=1,max_length=30); weight:Decimal=Field(gt=0,le=1)
 class PortfolioBacktestRequest(BaseModel):

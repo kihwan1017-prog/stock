@@ -1,13 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Form, Input, Space } from "antd";
+import { App, Button, Form, Input, Space, Typography } from "antd";
+import Link from "next/link";
 import { useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { adminRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -38,6 +40,11 @@ export default function AdminNewsPage() {
 
   return (
     <AdminPageShell title="뉴스관리" description="news sync · get · failures">
+      <Typography.Paragraph type="secondary">
+        AI 분석은 수집과 분리됩니다.{" "}
+        <Link href={adminRoutes.aiDocumentAnalyses}>문서 분석(참고용)</Link>
+        {" — "}매매 신호가 아닙니다. 저장만으로 자동 AI 호출 없음.
+      </Typography.Paragraph>
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Form
           layout="inline"

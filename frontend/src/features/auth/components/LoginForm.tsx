@@ -3,12 +3,13 @@
 import { Button, Card, Checkbox, Form, Input, Space, Typography } from "antd";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { adminRoutes, routes, userRoutes } from "@/config/routes";
+import { authRoutes } from "@/config/routes";
 import { env } from "@/config/env";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import type { LoginRequest } from "@/features/auth/types/auth";
+import { resolvePostLoginPath } from "@/features/auth/utils/roles";
 import { toApiError } from "@/lib/api/apiError";
 
 function NoticeBanner({ title, description }: { title: string; description?: string }) {
@@ -34,19 +35,25 @@ function NoticeBanner({ title, description }: { title: string; description?: str
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { login } = useAuth();
+  const { login, authenticated, hydrated, user, hydrateFromStorage } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const portal: "user" | "admin" =
-    searchParams.get("portal") === "user" ? "user" : "admin";
   const nextParam = searchParams.get("next");
   const redirectTo =
-    nextParam && nextParam.startsWith("/")
-      ? nextParam
-      : portal === "user"
-        ? userRoutes.dashboard
-        : adminRoutes.dashboard;
+    nextParam && nextParam.startsWith("/") ? nextParam : undefined;
+
+  // 세션 복원 후 이미 로그인된 경우 Role별 대시보드로 이동
+  useEffect(() => {
+    hydrateFromStorage();
+  }, [hydrateFromStorage]);
+
+  useEffect(() => {
+    if (!hydrated || !authenticated || !user) {
+      return;
+    }
+    router.replace(resolvePostLoginPath(user, redirectTo ?? null));
+  }, [authenticated, hydrated, user, redirectTo, router]);
 
   const onFinish = async (values: LoginRequest & { rememberMe?: boolean }) => {
     setSubmitting(true);
@@ -67,6 +74,15 @@ export function LoginForm() {
     }
   };
 
+  // 로그인 상태면 폼 대신 이동 중 표시
+  if (hydrated && authenticated) {
+    return (
+      <Card style={{ width: "100%", maxWidth: 420 }}>
+        <Typography.Text type="secondary">권한별 화면으로 이동 중…</Typography.Text>
+      </Card>
+    );
+  }
+
   return (
     <Card style={{ width: "100%", maxWidth: 420 }}>
       <Space orientation="vertical" size="large" style={{ width: "100%" }}>
@@ -75,7 +91,7 @@ export function LoginForm() {
             {env.APP_NAME}
           </Typography.Title>
           <Typography.Text type="secondary">
-            {portal === "user" ? "User 로그인" : "Admin 로그인"}
+            통합 로그인 — 권한에 따라 사용자/관리자 화면으로 이동합니다
           </Typography.Text>
         </div>
 
@@ -101,30 +117,16 @@ export function LoginForm() {
             <Input.Password autoComplete="current-password" />
           </Form.Item>
           <Form.Item name="rememberMe" valuePropName="checked">
-            <Checkbox>자동 로그인 (이 기기에서 유지)</Checkbox>
+            <Checkbox>로그인 상태 유지</Checkbox>
           </Form.Item>
-          <Button type="primary" htmlType="submit" block loading={submitting}>
+          <Button type="primary" htmlType="submit" loading={submitting} block>
             로그인
-          </Button>
-          <Button type="link" block href={routes.signup}>
-            회원가입
-          </Button>
-          <Button type="link" block onClick={() => router.push("/")}>
-            포털로 돌아가기
           </Button>
         </Form>
 
-        <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          계정이 없으면 <Link href={routes.signup}>회원가입</Link> 후 이용하세요.
-          {portal === "admin" ? (
-            <>
-              {" "}
-              Admin 콘솔은 <Typography.Text code>admin</Typography.Text> /
-              <Typography.Text code>operator</Typography.Text>(trader) 역할만
-              진입할 수 있습니다. viewer는 User로 이동합니다.
-            </>
-          ) : null}
-        </Typography.Paragraph>
+        <Typography.Text type="secondary">
+          계정이 없나요? <Link href={authRoutes.signup}>회원가입</Link>
+        </Typography.Text>
       </Space>
     </Card>
   );

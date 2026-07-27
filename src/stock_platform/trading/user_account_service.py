@@ -59,6 +59,7 @@ class UserAccountView:
     created_at: datetime | None
     updated_at: datetime | None
     last_synced_at: datetime | None = None
+    live_order_enabled: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -75,6 +76,7 @@ class UserAccountView:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "last_synced_at": self.last_synced_at,
+            "live_order_enabled": self.live_order_enabled,
         }
 
 
@@ -113,6 +115,9 @@ def broker_to_view(row: UserBrokerAccount) -> UserAccountView:
         created_at=row.created_at,
         updated_at=row.updated_at,
         last_synced_at=row.last_synced_at,
+        live_order_enabled=bool(
+            getattr(row, "live_order_enabled", False)
+        ),
     )
 
 
@@ -175,6 +180,7 @@ class UserAccountService:
         currency_code: str = "KRW",
         account_number: str | None = None,
         is_default: bool = False,
+        auto_commit: bool = True,
     ) -> UserAccountView:
         kind = (account_type or "").strip().upper()
         if kind == "PAPER":
@@ -193,6 +199,7 @@ class UserAccountService:
                 account_number=account_number,
                 currency_code=currency_code,
                 is_default=is_default,
+                auto_commit=auto_commit,
             )
         raise UserAccountError(
             f"지원하지 않는 account_type: {account_type}"
@@ -253,19 +260,26 @@ class UserAccountService:
             user_id, account_id, account_type=account_type
         )
         if isinstance(resolved, PaperAccount):
+            if resolved.deleted_at is not None:
+                raise UserAccountError("이미 삭제된 Paper 계좌입니다.")
             if resolved.is_default:
                 raise UserAccountError(
                     "기본 Paper 계좌는 삭제할 수 없습니다. "
                     "다른 계좌를 기본으로 지정한 뒤 다시 시도하세요."
                 )
-            resolved.is_active = False
-            resolved.is_default = False
+            # Soft Delete (deleted_at) — Hard Delete 금지
+            has_history = self._paper_repo.has_order_or_trade_history(
+                int(resolved.account_id)
+            )
+            self._paper_repo.soft_delete_account(resolved)
             self._session.commit()
             return {
                 "deleted": True,
                 "account_type": "PAPER",
                 "account_id": int(resolved.account_id),
-                "mode": "soft_deactivate",
+                "mode": "soft_delete",
+                "has_trading_history": has_history,
+                "hard_delete_allowed": False,
             }
 
         broker_id = int(resolved.user_broker_account_id)
@@ -466,6 +480,7 @@ class UserAccountService:
         account_number: str | None,
         currency_code: str,
         is_default: bool,
+        auto_commit: bool = True,
     ) -> UserAccountView:
         if not account_number or not account_number.strip():
             raise UserAccountError(
@@ -495,7 +510,10 @@ class UserAccountService:
         )
         self._session.add(row)
         try:
-            self._session.commit()
+            if auto_commit:
+                self._session.commit()
+            else:
+                self._session.flush()
             self._session.refresh(row)
         except IntegrityError as exc:
             self._session.rollback()
@@ -512,6 +530,8 @@ class UserAccountService:
         include_inactive: bool,
     ) -> list[PaperAccount]:
         stmt = select(PaperAccount).where(PaperAccount.user_id == user_id)
+        # Soft-deleted 계좌는 목록에서 항상 제외
+        stmt = stmt.where(PaperAccount.deleted_at.is_(None))
         if not include_inactive:
             stmt = stmt.where(PaperAccount.is_active.is_(True))
         if default_only:

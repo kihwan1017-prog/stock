@@ -27,12 +27,18 @@ import { queryKeys } from "@/lib/query/queryKeys";
 
 type OrderRow = Record<string, unknown>;
 
+const DEFAULT_PAPER_ACCOUNT_ID = Number(
+  process.env.NEXT_PUBLIC_DEFAULT_PAPER_ACCOUNT_ID ?? "1",
+);
+
 export default function AdminOrdersPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [filters, setFilters] = useState<{
     account_id?: number;
     symbol?: string;
+    exchange_code?: string;
+    broker_code?: string;
     limit: number;
     offset: number;
   }>({ limit: 50, offset: 0 });
@@ -141,7 +147,9 @@ export default function AdminOrdersPage() {
             onFinish={(v) =>
               submit.mutate({
                 account_id: v.account_id,
+                broker_code: v.broker_code,
                 exchange_code: v.exchange_code,
+                environment: v.environment,
                 symbol: v.symbol,
                 side: v.side,
                 order_type: v.order_type,
@@ -152,8 +160,10 @@ export default function AdminOrdersPage() {
               })
             }
             initialValues={{
-              account_id: 1,
+              account_id: DEFAULT_PAPER_ACCOUNT_ID,
+              broker_code: "KIWOOM",
               exchange_code: "KRX",
+              environment: "PAPER",
               side: "BUY",
               order_type: "LIMIT",
               quantity: 1,
@@ -165,11 +175,35 @@ export default function AdminOrdersPage() {
             <Form.Item name="account_number" label="account_number">
               <Input placeholder="Risk 계좌번호" style={{ width: 140 }} />
             </Form.Item>
+            <Form.Item name="broker_code" label="broker" rules={[{ required: true }]}>
+              <Select
+                options={[
+                  { value: "KIWOOM", label: "KIWOOM" },
+                  { value: "UPBIT", label: "UPBIT" },
+                ]}
+                style={{ width: 110 }}
+              />
+            </Form.Item>
             <Form.Item name="exchange_code" label="exchange" rules={[{ required: true }]}>
-              <Input style={{ width: 90 }} />
+              <Select
+                options={[
+                  { value: "KRX", label: "KRX" },
+                  { value: "UPBIT", label: "UPBIT" },
+                ]}
+                style={{ width: 110 }}
+              />
+            </Form.Item>
+            <Form.Item name="environment" label="env">
+              <Select
+                options={[
+                  { value: "PAPER", label: "PAPER" },
+                  { value: "LIVE", label: "LIVE" },
+                ]}
+                style={{ width: 100 }}
+              />
             </Form.Item>
             <Form.Item name="symbol" label="symbol" rules={[{ required: true }]}>
-              <Input placeholder="005930" style={{ width: 100 }} />
+              <Input placeholder="005930 / KRW-BTC" style={{ width: 120 }} />
             </Form.Item>
             <Form.Item name="side" label="side" rules={[{ required: true }]}>
               <Select
@@ -216,6 +250,8 @@ export default function AdminOrdersPage() {
             setFilters({
               account_id: v.account_id,
               symbol: v.symbol || undefined,
+              exchange_code: v.exchange_code || undefined,
+              broker_code: v.broker_code || undefined,
               limit: v.limit ?? 50,
               offset: v.offset ?? 0,
             })
@@ -224,8 +260,28 @@ export default function AdminOrdersPage() {
           <Form.Item name="account_id" label="account_id">
             <InputNumber min={1} />
           </Form.Item>
+          <Form.Item name="broker_code" label="broker">
+            <Select
+              allowClear
+              options={[
+                { value: "KIWOOM", label: "KIWOOM" },
+                { value: "UPBIT", label: "UPBIT" },
+              ]}
+              style={{ width: 110 }}
+            />
+          </Form.Item>
+          <Form.Item name="exchange_code" label="exchange">
+            <Select
+              allowClear
+              options={[
+                { value: "KRX", label: "KRX" },
+                { value: "UPBIT", label: "UPBIT" },
+              ]}
+              style={{ width: 110 }}
+            />
+          </Form.Item>
           <Form.Item name="symbol" label="symbol">
-            <Input allowClear placeholder="005930" style={{ width: 120 }} />
+            <Input allowClear placeholder="005930 / KRW-BTC" style={{ width: 140 }} />
           </Form.Item>
           <Form.Item name="limit" label="limit">
             <InputNumber min={1} max={500} />
@@ -245,6 +301,8 @@ export default function AdminOrdersPage() {
           rowKey={(r) => cell(r.order_id ?? r.id ?? JSON.stringify(r))}
           columns={[
             { title: "order_id", dataIndex: "order_id", sorter: true },
+            { title: "broker", dataIndex: "broker_code" },
+            { title: "exchange", dataIndex: "exchange_code" },
             { title: "symbol", dataIndex: "symbol", sorter: true },
             { title: "side", dataIndex: "side_code" },
             { title: "status", dataIndex: "status_code" },
@@ -309,7 +367,7 @@ export default function AdminOrdersPage() {
               })
             }
             initialValues={{
-              account_id: 1,
+              account_id: DEFAULT_PAPER_ACCOUNT_ID,
               exchange_code: "KRX",
               side: "BUY",
               order_type: "LIMIT",

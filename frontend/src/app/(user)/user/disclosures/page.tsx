@@ -49,14 +49,14 @@ function formatSubmittedAt(value: string | null): string {
 
 function SummaryBlock({ summary }: { summary: DisclosureAiSummary }) {
   if (summary.status === "PROCESSING" || summary.status === "QUEUED") {
-    return <Alert type="info" showIcon message="AI 요약을 생성 중입니다…" />;
+    return <Alert type="info" showIcon title="AI 요약을 생성 중입니다…" />;
   }
   if (summary.status === "FAILED") {
     return (
       <Alert
         type="error"
         showIcon
-        message="AI 요약 생성에 실패했습니다."
+        title="AI 요약 생성에 실패했습니다."
         description="잠시 후 다시 시도해 주세요."
       />
     );
@@ -69,9 +69,9 @@ function SummaryBlock({ summary }: { summary: DisclosureAiSummary }) {
     );
   }
   return (
-    <Space direction="vertical" style={{ width: "100%" }} size={8}>
+    <Space orientation="vertical" style={{ width: "100%" }} size={8}>
       {summary.is_stale && (
-        <Alert type="warning" showIcon message="요약이 오래되었을 수 있습니다." />
+        <Alert type="warning" showIcon title="요약이 오래되었을 수 있습니다." />
       )}
       <Typography.Paragraph>{summary.summary}</Typography.Paragraph>
       {!!summary.key_points?.length && (
@@ -127,7 +127,7 @@ function SummaryBlock({ summary }: { summary: DisclosureAiSummary }) {
       <Alert
         type="warning"
         showIcon
-        message={
+        title={
           summary.disclaimer ||
           "AI가 생성한 요약으로 오류나 누락이 있을 수 있습니다. 중요한 판단은 공시 원문을 확인하세요."
         }
@@ -395,7 +395,7 @@ export default function UserDisclosuresPage() {
           type="warning"
           showIcon
           style={{ marginBottom: 16 }}
-          message="현재 AI 요약 서비스를 사용할 수 없습니다."
+          title="현재 AI 요약 서비스를 사용할 수 없습니다."
           description="공시 목록·원문 조회는 가능합니다."
         />
       )}
@@ -520,13 +520,13 @@ export default function UserDisclosuresPage() {
             <Alert
               type="error"
               showIcon
-              message="공시를 불러오지 못했습니다."
+              title="공시를 불러오지 못했습니다."
               description={toApiError(listQuery.error).message}
             />
           ) : items.length === 0 ? (
             <Empty description="공시 데이터가 없습니다." />
           ) : (
-            <Space direction="vertical" size={12} style={{ width: "100%" }}>
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               {items.map((item) => (
                 <Card
                   key={item.disclosure_id}
@@ -625,17 +625,17 @@ export default function UserDisclosuresPage() {
 
       <Drawer
         title="공시 상세"
-        width={560}
+        size={560}
         open={selectedId != null}
         onClose={() => setSelectedId(null)}
-        destroyOnClose
+        destroyOnHidden
       >
         {detailQuery.isLoading ? (
           <Skeleton active />
         ) : detailQuery.isError ? (
-          <Alert type="error" message={toApiError(detailQuery.error).message} />
+          <Alert type="error" title={toApiError(detailQuery.error).message} />
         ) : detailQuery.data ? (
-          <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Typography.Title level={4} style={{ margin: 0 }}>
               {detailQuery.data.report_name}
             </Typography.Title>

@@ -23,6 +23,7 @@ class PaperOrderEngine:
     def create_order(
         self,
         *,
+        account_id: int,
         exchange_code: str,
         symbol: str,
         side: OrderSide,
@@ -31,6 +32,10 @@ class PaperOrderEngine:
         price: Decimal | None,
         position_plan_id: int | None = None,
     ) -> PaperOrder:
+        if account_id <= 0:
+            raise PaperOrderValidationError(
+                "account_id must be greater than zero"
+            )
         if quantity <= ZERO:
             raise PaperOrderValidationError(
                 "quantity must be greater than zero"
@@ -45,6 +50,7 @@ class PaperOrderEngine:
             )
 
         return PaperOrder(
+            account_id=account_id,
             position_plan_id=position_plan_id,
             exchange_code=exchange_code.upper(),
             symbol=symbol.upper(),

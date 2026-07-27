@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from sqlalchemy.orm import Session
 
 from stock_platform.ai.candidate_ranker import (
@@ -17,6 +18,7 @@ from stock_platform.database.session import get_db_session
 router = APIRouter(
     prefix="/api/v1/ai/candidates",
     tags=["AI Candidates"],
+    dependencies=[Depends(require_admin)],
 )
 
 

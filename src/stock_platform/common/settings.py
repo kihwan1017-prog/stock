@@ -1,29 +1,98 @@
 from functools import lru_cache
 from pathlib import Path
 import logging
+import os
 import secrets
+import sys
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-ENV_FILE = Path(r"E:\StockTrading\secrets\stock-platform.env")
-_SECRETS_ENV_HINT = r"E:\StockTrading\secrets\stock-platform.env"
 _logger = logging.getLogger(__name__)
 
 _DEV_APP_ENVS = frozenset({"local", "dev", "development"})
 _PROD_APP_ENVS = frozenset({"prod", "production", "staging"})
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+# 레거시 머신 고정 경로 — 호환용. 신규 배포는 STOCK_PLATFORM_ENV_FILE 권장
+_LEGACY_ENV_PATH = Path(r"E:\StockTrading\secrets\stock-platform.env")
+
+
+def is_testing_runtime() -> bool:
+    """pytest / 명시적 테스트 플래그 여부."""
+
+    flag = (os.environ.get("STOCK_PLATFORM_TESTING") or "").strip().lower()
+    if flag in _TRUTHY:
+        return True
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    return "pytest" in sys.modules
+
+
+def _env_flag(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in _TRUTHY
+
+
+def resolve_env_file() -> Path | None:
+    """ENV 파일 경로 결정.
+
+    우선순위:
+    1. STOCK_PLATFORM_DISABLE_ENV_FILE=true → 파일 미사용(환경변수만)
+    2. STOCK_PLATFORM_ENV_FILE (명시 경로)
+    3. cwd / 프로젝트 루트 stock-platform.env · .env
+    4. 레거시 머신 경로 (테스트 런타임에서는 기본 제외)
+
+    import 시점에 Settings를 만들지 않는다.
+    """
+
+    if _env_flag("STOCK_PLATFORM_DISABLE_ENV_FILE"):
+        return None
+
+    explicit = (os.environ.get("STOCK_PLATFORM_ENV_FILE") or "").strip()
+    if explicit:
+        path = Path(explicit)
+        try:
+            return path if path.is_file() else path
+        except OSError:
+            return path
+
+    candidates: list[Path] = [
+        Path.cwd() / "stock-platform.env",
+        Path.cwd() / ".env",
+        Path(__file__).resolve().parents[3] / "stock-platform.env",
+        Path(__file__).resolve().parents[3] / ".env",
+    ]
+
+    # 레거시 머신 경로(호환). CI/이식 환경에서는 DISABLE_LEGACY 로 차단.
+    # Live 플래그 오염은 pytest_configure 의 환경변수 오버라이드로 차단한다.
+    if not _env_flag("STOCK_PLATFORM_DISABLE_LEGACY_ENV_PATH"):
+        candidates.append(_LEGACY_ENV_PATH)
+
+    for path in candidates:
+        try:
+            if path.is_file():
+                return path
+        except OSError:
+            continue
+    return None
 
 
 def format_jwt_secret_missing_message() -> str:
     """JWT_SECRET 미설정 시 사용자에게 보여줄 안내 문구."""
 
+    env_hint = resolve_env_file()
+    hint = str(env_hint) if env_hint is not None else (
+        "STOCK_PLATFORM_ENV_FILE 로 지정한 env 파일 "
+        "또는 프로세스 환경변수"
+    )
+
     return (
         "JWT_SECRET 환경변수가 없습니다.\n"
         "\n"
         "다음 내용을\n"
-        f"{_SECRETS_ENV_HINT}\n"
+        f"{hint}\n"
         "에 추가하세요.\n"
         "\n"
         "JWT_SECRET=xxxxxxxxxxxxxxxx\n"
@@ -34,7 +103,8 @@ def format_jwt_secret_missing_message() -> str:
         "개발(local)에서는 JWT_DEV_AUTO_SECRET=true 이면 "
         "기동 시 임시 Secret을 자동 생성합니다.\n"
         "운영(prod)에서는 반드시 JWT_SECRET을 설정하세요.\n"
-        "템플릿: 프로젝트 stock-platform.env.example / .env.example"
+        "템플릿: 프로젝트 stock-platform.env.example / .env.example\n"
+        "참고: 구명칭 JWT_SECRET_KEY 는 JWT_SECRET 으로 이전하세요."
     )
 
 
@@ -64,6 +134,12 @@ class Settings(BaseSettings):
     kiwoom_secret_key: str = Field(default="")
     kiwoom_use_mock: bool = True
     kiwoom_live_order_enabled: bool = False
+    # STEP 8-5-21 — LIVE Activation 기본 만료(시간). 무기한 금지.
+    live_activation_ttl_hours: int = Field(default=4, ge=1, le=72)
+    # LIVE Dry Run / 소액 한도 (설정 없으면 Fail Closed는 Risk/Transition 경로)
+    live_small_max_order_amount: float = Field(default=100_000.0, gt=0)
+    live_small_max_daily_order_amount: float = Field(default=300_000.0, gt=0)
+    live_small_max_daily_order_count: int = Field(default=10, ge=1)
     kiwoom_timeout_seconds: float = 10.0
     kiwoom_http_timeout_seconds: float = 10.0
     kiwoom_max_requests_per_second: int = 5
@@ -89,6 +165,18 @@ class Settings(BaseSettings):
 
     realtime_strategy_market_code: str = "KRX"
     realtime_strategy_symbol: str = Field(default="")
+    # 실시간 Paper 실행 기본 계좌 (환경변수 REALTIME_PAPER_ACCOUNT_ID)
+    realtime_paper_account_id: int = Field(default=1, ge=1)
+    # STEP 8-5-9 — Realtime Hub / Scope
+    realtime_hub_enabled: bool = True
+    realtime_auto_connect: bool = True
+    realtime_event_max_age_seconds: float = 10.0
+    realtime_reconnect_base_seconds: float = 1.0
+    realtime_reconnect_max_seconds: float = 60.0
+    realtime_reconnect_jitter_ratio: float = 0.2
+    realtime_signal_cooldown_seconds: int = 30
+    realtime_warmup_timeout_seconds: float = 60.0
+    realtime_max_scopes_per_symbol: int = 100
     strategy_auto_deploy_enabled: bool = False
     paper_strategy_auto_stop_enabled: bool = False
 
@@ -113,8 +201,16 @@ class Settings(BaseSettings):
     # 스크립트/자동화용. Admin Web은 JWT 사용 (프론트에 Key를 두지 않음)
     admin_api_key: str = Field(default="")
 
-    # JWT 인증 (Secret은 env 파일에만 — 코드/ NEXT_PUBLIC 금지)
-    jwt_secret: str = Field(default="")
+    # JWT 인증 — 공식 이름 JWT_SECRET. JWT_SECRET_KEY 는 호환 alias.
+    jwt_secret: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "JWT_SECRET",
+            "jwt_secret",
+            "JWT_SECRET_KEY",
+            "jwt_secret_key",
+        ),
+    )
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
     jwt_refresh_token_expire_days: int = 7
@@ -123,10 +219,61 @@ class Settings(BaseSettings):
     # 최초 관리자 시드 (사용자가 0명일 때만 생성)
     auth_bootstrap_admin_username: str = Field(default="")
     auth_bootstrap_admin_password: str = Field(default="")
+    # 로그인 실패 잠금
+    auth_max_failed_logins: int = 5
+    auth_lockout_minutes: int = 15
+    # true면 login/refresh 응답에 HttpOnly refresh cookie 설정
+    # SPA가 다른 Origin이면 credentials + CORS 필요
+    auth_refresh_cookie_enabled: bool = False
 
     upbit_base_url: str = "https://api.upbit.com"
     upbit_timeout_seconds: float = 10.0
     upbit_max_requests_per_second: int = 8
+    # Private API (잔고·주문) — 평문 env만, DB 저장 금지
+    # 사용자 실계좌는 Vault(UBA) Credential 사용 (STEP 8-5-2)
+    upbit_access_key: str = Field(default="")
+    upbit_secret_key: str = Field(default="")
+    # AES-256-GCM Master Key 파일 경로 (원문 금지 — 경로만)
+    broker_vault_master_key_file: str = Field(default="")
+    # true면 private 호출 대신 mock 스냅샷 (로컬/CI)
+    upbit_use_mock: bool = True
+    # 실주문은 이중 게이트 필요 — 기본 false
+    upbit_live_order_enabled: bool = False
+    # 허용 마켓 화이트리스트 (쉼표). 비우면 제한 없음(조회용)
+    upbit_allowed_markets: str = Field(default="")
+    # 스냅샷 account_number 식별자 (업비트는 단일 마스터 키)
+    upbit_account_ref: str = Field(default="MAIN")
+
+    # STEP 8-5-8 — Upbit Rate Limit / Retry-After
+    upbit_retry_max_attempts_read: int = 4
+    upbit_retry_max_attempts_write: int = 1
+    upbit_retry_base_delay_seconds: float = 1.0
+    upbit_retry_max_delay_seconds: float = 60.0
+    upbit_retry_jitter_ratio: float = 0.2
+    upbit_retry_after_max_seconds: float = 300.0
+    upbit_rate_limit_cooldown_persist_seconds: float = 10.0
+    upbit_418_default_block_seconds: float = 600.0
+    upbit_rate_limit_coordinator_enabled: bool = True
+    # STEP 8-5-12 — Client Identifier / Ambiguous Resolver
+    upbit_client_order_identifier_enabled: bool = True
+    upbit_ambiguous_resolver_enabled: bool = True
+    upbit_ambiguous_lookup_initial_delay_seconds: int = 2
+    upbit_ambiguous_lookup_max_attempts: int = 5
+    upbit_ambiguous_lookup_max_age_seconds: int = 120
+    upbit_ambiguous_lookup_backoff_seconds: int = 2
+    upbit_order_auto_resubmit_enabled: bool = False
+    upbit_order_idempotency_enabled: bool = True
+    upbit_order_idempotency_ttl_hours: int = 24
+    # STEP 8-5-14 — Ambiguous Resolver Scheduler (DB Claim / Distributed Lock)
+    upbit_ambiguous_resolver_poll_seconds: int = 5
+    upbit_ambiguous_resolver_batch_size: int = 20
+    upbit_ambiguous_resolver_claim_seconds: int = 60
+    upbit_ambiguous_max_orders_per_account_per_run: int = 5
+    upbit_ambiguous_lookup_max_interval_seconds: int = 60
+    upbit_ambiguous_resolver_run_history_days: int = 30
+
+    # 실거래 전역 이중 게이트 (브로커별 LIVE_* 와 AND)
+    global_live_order_enabled: bool = False
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen3.5:4b"
@@ -145,9 +292,56 @@ class Settings(BaseSettings):
     ai_recommendation_cooldown_seconds: int = 60
     ai_recommendation_max_per_minute: int = 5
 
+    # STEP 11-1 — AI Provider Framework (자동매매 없음)
+    ai_provider_mock_enabled: bool = True
+    ai_provider_mock_default: bool = True
+    ai_provider_mock_priority: int = 10
+    ai_provider_mock_model: str = "mock-v1"
+    ai_provider_mock_timeout_seconds: float = 5.0
+    ai_provider_mock_retry_max: int = 1
+    ai_provider_mock_signal: str = "HOLD"
+    ai_provider_mock_latency_ms: float = 5.0
+    ai_provider_mock_simulate_error: bool = False
+    ai_provider_mock_simulate_timeout: bool = False
+    ai_provider_openai_enabled: bool = False
+    ai_provider_openai_priority: int = 20
+    ai_provider_openai_model: str = "gpt-4o-mini"
+    ai_provider_openai_endpoint: str = "https://api.openai.com/v1"
+    ai_provider_openai_api_key: str = Field(default="")
+    ai_provider_openai_timeout_seconds: float = 30.0
+    ai_provider_openai_retry_max: int = 2
+    ai_provider_openai_max_tokens: int = 1024
+    ai_provider_openai_temperature: float = 0.2
+    ai_provider_claude_enabled: bool = False
+    ai_provider_claude_priority: int = 30
+    ai_provider_claude_model: str = "claude-3-5-sonnet-latest"
+    ai_provider_claude_endpoint: str = "https://api.anthropic.com"
+    ai_provider_claude_api_key: str = Field(default="")
+    ai_provider_claude_timeout_seconds: float = 30.0
+    ai_provider_gemini_enabled: bool = False
+    ai_provider_gemini_priority: int = 40
+    ai_provider_gemini_model: str = "gemini-2.0-flash"
+    ai_provider_gemini_endpoint: str = (
+        "https://generativelanguage.googleapis.com"
+    )
+    ai_provider_gemini_api_key: str = Field(default="")
+    ai_provider_gemini_timeout_seconds: float = 30.0
+    ai_provider_ollama_enabled: bool = False
+    ai_provider_ollama_priority: int = 50
+    ai_provider_ollama_model: str = Field(default="")
+    ai_provider_ollama_endpoint: str = Field(default="")
+    ai_provider_ollama_timeout_seconds: float = 120.0
+    ai_provider_openai_compatible_enabled: bool = False
+    ai_provider_openai_compatible_priority: int = 60
+    ai_provider_openai_compatible_model: str = "local-model"
+    ai_provider_openai_compatible_endpoint: str = Field(default="")
+    ai_provider_openai_compatible_api_key: str = Field(default="")
+    ai_provider_openai_compatible_timeout_seconds: float = 30.0
+    ai_provider_openai_compatible_allow_localhost: bool = True
+
     dart_api_key: str = Field(default="")
     dart_base_url: str = "https://opendart.fss.or.kr/api"
-    dart_timeout_seconds: float = 20.0
+    dart_timeout_seconds: float = 60.0
 
     naver_client_id: str = Field(default="")
     naver_client_secret: str = Field(default="")
@@ -157,6 +351,10 @@ class Settings(BaseSettings):
     naver_news_timeout_seconds: float = 15.0
 
     scheduler_enabled: bool = True
+    # API lifecycle 내 cron(일손실·전략 등). False면 outbox 제외 cron 미기동
+    lifecycle_scheduler_enabled: bool = True
+    # True면 PG advisory lock 리더만 lifecycle cron 기동 (다중 replica)
+    scheduler_leader_lock_enabled: bool = False
     scheduler_timezone: str = "Asia/Seoul"
     scheduler_candidate_hour: int = 16
     scheduler_candidate_minute: int = 10
@@ -167,6 +365,105 @@ class Settings(BaseSettings):
     # STEP66 — 장후 자산 스냅샷 (기본 15:40 KST)
     scheduler_equity_snapshot_hour: int = 15
     scheduler_equity_snapshot_minute: int = 40
+
+    # STEP 8-5-3 — Broker Recovery Scheduler
+    recovery_scheduler_enabled: bool = True
+    # Startup Recovery 직후 Scheduler Job Cooldown (초)
+    recovery_scheduler_startup_cooldown_seconds: int = 120
+
+    # STEP 8-5-6 — PostgreSQL Distributed Recovery Lock
+    recovery_distributed_lock_enabled: bool = True
+    recovery_lock_lease_seconds: int = 120
+    recovery_lock_heartbeat_seconds: int = 30
+    recovery_lock_acquire_timeout_seconds: float = 5.0
+    recovery_lock_namespace: str = "stock-platform-recovery"
+
+    # STEP 8-5-7 — KRX Trading Calendar
+    krx_calendar_allow_weekday_fallback: bool = False
+    krx_calendar_required_future_days: int = 60
+    krx_calendar_sync_enabled: bool = True
+    krx_calendar_stale_after_days: int = 30
+    # STEP 8-5-11 — 변경 요청 승인자 분리 (소규모 운영 기본 false)
+    krx_calendar_require_separate_approver: bool = False
+    # Calendar 메모리 Cache TTL (초). 다중 인스턴스 최대 지연 ≈ TTL
+    krx_calendar_cache_ttl_seconds: float = 2.0
+    # STEP 8-5-13 — Session Timeline Offsets
+    krx_preopen_minutes_before_open: int = 30
+    krx_recovery_preopen_minutes_before_open: int = 30
+    krx_new_entry_cutoff_minutes_before_close: int = 10
+    krx_recovery_postclose_minutes_after_close: int = 10
+    krx_snapshot_minutes_after_close: int = 10
+    krx_settlement_minutes_after_close: int = 20
+    krx_ai_analysis_minutes_after_close: int = 30
+    krx_dynamic_session_jobs_enabled: bool = True
+    krx_cron_fallback_enabled: bool = True
+    krx_cron_fallback_early_tolerance_minutes: int = 5
+    krx_cron_fallback_late_tolerance_minutes: int = 60
+    paper_stock_follow_krx_calendar: bool = True
+
+    # STEP 8-5-15 — 영속 Market Session Job (DB Claim 기반 Dispatcher/Reconcile)
+    market_session_job_enabled: bool = True
+    market_session_job_dispatcher_poll_seconds: int = 5
+    market_session_job_batch_size: int = 20
+    market_session_job_claim_seconds: int = 120
+    market_session_job_reconcile_enabled: bool = True
+    market_session_job_reconcile_interval_seconds: int = 300
+    market_session_job_reconcile_days_ahead: int = 7
+    market_session_job_max_attempts: int = 3
+    market_session_job_retry_base_seconds: int = 30
+    market_session_job_retry_max_seconds: int = 600
+    market_session_job_retention_days: int = 90
+    market_session_job_run_retention_days: int = 90
+    market_session_cron_wakeup_enabled: bool = True
+
+    # STEP 8-5-16 — EOD Account Settlement
+    settlement_enabled: bool = True
+    settlement_max_attempts: int = 3
+    settlement_retry_base_seconds: int = 60
+    settlement_retry_max_seconds: int = 900
+    settlement_position_value_tolerance_krw: float = 10.0
+    settlement_average_price_tolerance_krw: float = 1.0
+    settlement_cash_tolerance_krw: float = 10.0
+    settlement_equity_tolerance_krw: float = 100.0
+    settlement_price_max_age_seconds: int = 3600
+    settlement_pause_account_on_critical_mismatch: bool = True
+    upbit_daily_settlement_enabled: bool = True
+    upbit_daily_settlement_hour: int = 0
+    upbit_daily_settlement_minute: int = 10
+
+    # STEP 8-8A — Post-Fill 재검증
+    post_fill_verify_enabled: bool = True
+    post_fill_verify_poll_seconds: int = 2
+    post_fill_verify_batch_size: int = 20
+    post_fill_verify_claim_seconds: int = 30
+    post_fill_verify_max_attempts: int = 5
+    post_fill_verify_ttl_seconds: int = 60
+    # 재시도 간격(초) — 콤마 구분, 하드코딩 금지
+    post_fill_verify_retry_delays_seconds: str = "2,5,10,20"
+    post_fill_verify_telegram_on_verified: bool = False
+
+    # STEP 8-9 — Upbit 소액 LIVE 스모크
+    upbit_live_preflight_ttl_seconds: int = 30
+    upbit_live_smoke_allowlist: str = "KRW-BTC,KRW-ETH,KRW-XRP"
+    upbit_live_smoke_order_watch_seconds: int = 60
+    upbit_live_smoke_auto_cancel: bool = True
+    # 스모크 Preflight에서 Scheduler Pause로 인정할지 (운영은 실제 Pause 후 True로)
+    upbit_live_smoke_treat_scheduler_paused: bool = False
+    upbit_live_smoke_default_amount: float = 5000.0
+    upbit_live_smoke_max_amount: float = 10000.0
+    # STEP 8-9A — Broker 추적 (거래 Scheduler와 분리)
+    upbit_live_track_enabled: bool = True
+    upbit_live_track_poll_seconds: int = 2
+    upbit_live_track_retry_delays_seconds: str = "1,2,5,10,20"
+    upbit_live_track_max_attempts: int = 8
+
+    # STEP 8-11 — Operations Monitoring Dashboard stale / TTL
+    ops_dashboard_broker_health_stale_seconds: int = 60
+    ops_dashboard_scheduler_stale_seconds: int = 120
+    ops_dashboard_runtime_stale_seconds: int = 60
+    ops_dashboard_position_stale_seconds: int = 60
+    ops_dashboard_readiness_stale_seconds: int = 30
+    ops_dashboard_broker_balance_ttl_seconds: int = 20
 
     scheduler_exchange_code: str = "KRX"
     scheduler_candidate_limit: int = 30
@@ -187,12 +484,330 @@ class Settings(BaseSettings):
     position_exit_trailing_stop_ratio: float | None = 0.03
     position_exit_relative_loss_ratio: float | None = 0.08
 
+    # 백업 디렉터리 (머신 고정 경로 제거 — env로 주입)
+    backup_dir: str = Field(default="backups")
+
     model_config = SettingsConfigDict(
-        env_file=ENV_FILE,
+        # 기본 env_file 은 __init__ 에서 resolve (import 시점 경로 고정 금지)
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        populate_by_name=True,
     )
+
+    def __init__(self, **values: object) -> None:
+        # _env_file 미지정 시 현재 resolve 결과 사용.
+        # 테스트는 _env_file=None 으로 파일 로드를 끈다.
+        if "_env_file" not in values:
+            values["_env_file"] = resolve_env_file()
+        super().__init__(**values)
+
+    @model_validator(mode="after")
+    def _warn_deprecated_jwt_secret_key(self) -> "Settings":
+        """JWT_SECRET 없이 JWT_SECRET_KEY 만 있으면 호환 경고."""
+
+        has_official = bool((os.environ.get("JWT_SECRET") or "").strip())
+        has_legacy = bool((os.environ.get("JWT_SECRET_KEY") or "").strip())
+        if has_legacy and not has_official and self.jwt_secret.strip():
+            _logger.warning(
+                "JWT_SECRET_KEY 는 deprecated 입니다. "
+                "JWT_SECRET 으로 이름을 통일하세요."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_recovery_distributed_lock(self) -> "Settings":
+        """분산 Lock Lease/Heartbeat 설정 검증."""
+
+        lease = int(self.recovery_lock_lease_seconds)
+        hb = int(self.recovery_lock_heartbeat_seconds)
+        timeout = float(self.recovery_lock_acquire_timeout_seconds)
+        ns = (self.recovery_lock_namespace or "").strip()
+        if lease <= 0:
+            raise ValueError("recovery_lock_lease_seconds must be > 0")
+        if hb <= 0:
+            raise ValueError(
+                "recovery_lock_heartbeat_seconds must be > 0"
+            )
+        if hb >= lease:
+            raise ValueError(
+                "recovery_lock_heartbeat_seconds must be "
+                "< recovery_lock_lease_seconds"
+            )
+        if timeout < 0:
+            raise ValueError(
+                "recovery_lock_acquire_timeout_seconds must be >= 0"
+            )
+        if not ns:
+            raise ValueError("recovery_lock_namespace must be non-empty")
+        if (
+            not self.recovery_distributed_lock_enabled
+            and self.is_production_env
+        ):
+            _logger.warning(
+                "RECOVERY_DISTRIBUTED_LOCK_ENABLED=false 는 "
+                "개발/테스트 전용입니다. 운영에서는 활성화하세요."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_krx_calendar_settings(self) -> "Settings":
+        if int(self.krx_calendar_required_future_days) <= 0:
+            raise ValueError(
+                "krx_calendar_required_future_days must be > 0"
+            )
+        if self.krx_calendar_allow_weekday_fallback:
+            _logger.warning(
+                "KRX_CALENDAR_ALLOW_WEEKDAY_FALLBACK=true — "
+                "개발/테스트 전용. 운영 LIVE 거래는 Fail Closed를 권장합니다."
+            )
+            if self.is_production_env:
+                _logger.error(
+                    "운영 환경에서 WEEKDAY_FALLBACK이 활성화되어 있습니다. "
+                    "LIVE 자동매매 신뢰성을 보장할 수 없습니다."
+                )
+        # STEP 8-5-13 offset validation
+        for name in (
+            "krx_preopen_minutes_before_open",
+            "krx_recovery_preopen_minutes_before_open",
+            "krx_new_entry_cutoff_minutes_before_close",
+            "krx_recovery_postclose_minutes_after_close",
+            "krx_snapshot_minutes_after_close",
+            "krx_settlement_minutes_after_close",
+            "krx_ai_analysis_minutes_after_close",
+            "krx_cron_fallback_early_tolerance_minutes",
+            "krx_cron_fallback_late_tolerance_minutes",
+        ):
+            if int(getattr(self, name)) < 0:
+                raise ValueError(f"{name} must be >= 0")
+        if self.krx_cron_fallback_late_tolerance_minutes <= 0:
+            raise ValueError(
+                "krx_cron_fallback_late_tolerance_minutes must be > 0"
+            )
+        if (
+            not self.krx_dynamic_session_jobs_enabled
+            and self.is_production_env
+        ):
+            _logger.warning(
+                "KRX_DYNAMIC_SESSION_JOBS_ENABLED=false in production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_upbit_retry_settings(self) -> "Settings":
+        if self.upbit_retry_max_attempts_read < 0:
+            raise ValueError("upbit_retry_max_attempts_read must be >= 0")
+        if self.upbit_retry_max_attempts_write < 0:
+            raise ValueError("upbit_retry_max_attempts_write must be >= 0")
+        if self.upbit_retry_base_delay_seconds < 0:
+            raise ValueError("upbit_retry_base_delay_seconds must be >= 0")
+        if (
+            self.upbit_retry_max_delay_seconds
+            < self.upbit_retry_base_delay_seconds
+        ):
+            raise ValueError(
+                "upbit_retry_max_delay_seconds must be "
+                ">= upbit_retry_base_delay_seconds"
+            )
+        if not 0 <= self.upbit_retry_jitter_ratio <= 1:
+            raise ValueError("upbit_retry_jitter_ratio must be in [0, 1]")
+        if self.upbit_retry_after_max_seconds <= 0:
+            raise ValueError("upbit_retry_after_max_seconds must be > 0")
+        if self.upbit_418_default_block_seconds <= 0:
+            raise ValueError("upbit_418_default_block_seconds must be > 0")
+        if (
+            not self.upbit_rate_limit_coordinator_enabled
+            and self.is_production_env
+        ):
+            _logger.warning(
+                "UPBIT_RATE_LIMIT_COORDINATOR_ENABLED=false "
+                "in production"
+            )
+        if self.upbit_ambiguous_lookup_initial_delay_seconds < 0:
+            raise ValueError(
+                "upbit_ambiguous_lookup_initial_delay_seconds must be >= 0"
+            )
+        if self.upbit_ambiguous_lookup_max_attempts < 1:
+            raise ValueError(
+                "upbit_ambiguous_lookup_max_attempts must be >= 1"
+            )
+        if self.upbit_ambiguous_lookup_max_age_seconds <= 0:
+            raise ValueError(
+                "upbit_ambiguous_lookup_max_age_seconds must be > 0"
+            )
+        if self.upbit_ambiguous_lookup_backoff_seconds <= 0:
+            raise ValueError(
+                "upbit_ambiguous_lookup_backoff_seconds must be > 0"
+            )
+        if self.upbit_order_idempotency_ttl_hours <= 0:
+            raise ValueError(
+                "upbit_order_idempotency_ttl_hours must be > 0"
+            )
+        if (
+            not self.upbit_client_order_identifier_enabled
+            and self.upbit_live_order_enabled
+        ):
+            _logger.warning(
+                "UPBIT_CLIENT_ORDER_IDENTIFIER_ENABLED=false while "
+                "LIVE orders enabled — Ambiguous resolve weakened"
+            )
+        if self.upbit_order_auto_resubmit_enabled:
+            _logger.warning(
+                "UPBIT_ORDER_AUTO_RESUBMIT_ENABLED=true — "
+                "운영 기본은 false (수동 승인 권장)"
+            )
+        if self.upbit_ambiguous_resolver_poll_seconds < 1:
+            raise ValueError(
+                "upbit_ambiguous_resolver_poll_seconds must be >= 1"
+            )
+        if self.upbit_ambiguous_resolver_batch_size <= 0:
+            raise ValueError(
+                "upbit_ambiguous_resolver_batch_size must be > 0"
+            )
+        if self.upbit_ambiguous_resolver_claim_seconds < 30:
+            raise ValueError(
+                "upbit_ambiguous_resolver_claim_seconds must be >= 30"
+            )
+        if self.upbit_ambiguous_max_orders_per_account_per_run <= 0:
+            raise ValueError(
+                "upbit_ambiguous_max_orders_per_account_per_run must be > 0"
+            )
+        if self.upbit_ambiguous_lookup_max_interval_seconds <= 0:
+            raise ValueError(
+                "upbit_ambiguous_lookup_max_interval_seconds must be > 0"
+            )
+        if self.upbit_ambiguous_resolver_run_history_days <= 0:
+            raise ValueError(
+                "upbit_ambiguous_resolver_run_history_days must be > 0"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_market_session_job_settings(self) -> "Settings":
+        """STEP 8-5-15 — 영속 Market Session Job Dispatcher/Reconcile 설정."""
+
+        if self.market_session_job_dispatcher_poll_seconds < 1:
+            raise ValueError(
+                "market_session_job_dispatcher_poll_seconds must be >= 1"
+            )
+        if self.market_session_job_batch_size <= 0:
+            raise ValueError(
+                "market_session_job_batch_size must be > 0"
+            )
+        if self.market_session_job_claim_seconds < 30:
+            raise ValueError(
+                "market_session_job_claim_seconds must be >= 30"
+            )
+        if self.market_session_job_reconcile_interval_seconds < 30:
+            raise ValueError(
+                "market_session_job_reconcile_interval_seconds must be >= 30"
+            )
+        if self.market_session_job_reconcile_days_ahead < 0:
+            raise ValueError(
+                "market_session_job_reconcile_days_ahead must be >= 0"
+            )
+        if self.market_session_job_max_attempts < 1:
+            raise ValueError(
+                "market_session_job_max_attempts must be >= 1"
+            )
+        if self.market_session_job_retry_base_seconds < 1:
+            raise ValueError(
+                "market_session_job_retry_base_seconds must be >= 1"
+            )
+        if (
+            self.market_session_job_retry_max_seconds
+            < self.market_session_job_retry_base_seconds
+        ):
+            raise ValueError(
+                "market_session_job_retry_max_seconds must be "
+                ">= market_session_job_retry_base_seconds"
+            )
+        if self.market_session_job_retention_days < 1:
+            raise ValueError(
+                "market_session_job_retention_days must be >= 1"
+            )
+        if self.market_session_job_run_retention_days < 1:
+            raise ValueError(
+                "market_session_job_run_retention_days must be >= 1"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_settlement_settings(self) -> "Settings":
+        if self.settlement_max_attempts < 1:
+            raise ValueError("settlement_max_attempts must be >= 1")
+        if self.post_fill_verify_poll_seconds < 1:
+            raise ValueError("post_fill_verify_poll_seconds must be >= 1")
+        if self.post_fill_verify_max_attempts < 1:
+            raise ValueError("post_fill_verify_max_attempts must be >= 1")
+        if self.post_fill_verify_ttl_seconds < 1:
+            raise ValueError("post_fill_verify_ttl_seconds must be >= 1")
+        if self.post_fill_verify_claim_seconds < 5:
+            raise ValueError("post_fill_verify_claim_seconds must be >= 5")
+        if self.post_fill_verify_batch_size <= 0:
+            raise ValueError("post_fill_verify_batch_size must be > 0")
+        if self.settlement_retry_base_seconds < 1:
+            raise ValueError("settlement_retry_base_seconds must be >= 1")
+        if (
+            self.settlement_retry_max_seconds
+            < self.settlement_retry_base_seconds
+        ):
+            raise ValueError(
+                "settlement_retry_max_seconds must be "
+                ">= settlement_retry_base_seconds"
+            )
+        for name in (
+            "settlement_position_value_tolerance_krw",
+            "settlement_average_price_tolerance_krw",
+            "settlement_cash_tolerance_krw",
+            "settlement_equity_tolerance_krw",
+        ):
+            if float(getattr(self, name)) < 0:
+                raise ValueError(f"{name} must be >= 0")
+        if self.settlement_price_max_age_seconds <= 0:
+            raise ValueError("settlement_price_max_age_seconds must be > 0")
+        if not (0 <= int(self.upbit_daily_settlement_hour) <= 23):
+            raise ValueError("upbit_daily_settlement_hour must be 0..23")
+        if not (0 <= int(self.upbit_daily_settlement_minute) <= 59):
+            raise ValueError("upbit_daily_settlement_minute must be 0..59")
+        if not self.settlement_enabled and self.is_production_env:
+            _logger.warning(
+                "SETTLEMENT_ENABLED=false in production"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_realtime_hub_settings(self) -> "Settings":
+        if self.realtime_event_max_age_seconds <= 0:
+            raise ValueError("realtime_event_max_age_seconds must be > 0")
+        if self.realtime_reconnect_base_seconds < 0:
+            raise ValueError("realtime_reconnect_base_seconds must be >= 0")
+        if (
+            self.realtime_reconnect_max_seconds
+            < self.realtime_reconnect_base_seconds
+        ):
+            raise ValueError(
+                "realtime_reconnect_max_seconds must be "
+                ">= realtime_reconnect_base_seconds"
+            )
+        if not 0 <= self.realtime_reconnect_jitter_ratio <= 1:
+            raise ValueError(
+                "realtime_reconnect_jitter_ratio must be in [0, 1]"
+            )
+        if self.realtime_signal_cooldown_seconds < 0:
+            raise ValueError(
+                "realtime_signal_cooldown_seconds must be >= 0"
+            )
+        if self.realtime_warmup_timeout_seconds <= 0:
+            raise ValueError("realtime_warmup_timeout_seconds must be > 0")
+        if self.realtime_max_scopes_per_symbol <= 0:
+            raise ValueError("realtime_max_scopes_per_symbol must be > 0")
+        if not self.realtime_hub_enabled and self.is_production_env:
+            _logger.warning(
+                "REALTIME_HUB_ENABLED=false in production — "
+                "LIVE scoped realtime signals will not dispatch"
+            )
+        return self
 
     @property
     def resolved_disclosure_summary_model(self) -> str:
@@ -269,8 +884,7 @@ class Settings(BaseSettings):
             _logger.warning(
                 "JWT_SECRET 미설정 — 개발용 임시 Secret을 생성했습니다. "
                 "재시작마다 달라지므로 로그인 토큰이 무효화됩니다. "
-                "고정 Secret이 필요하면 %s 에 JWT_SECRET 을 설정하세요.",
-                _SECRETS_ENV_HINT,
+                "고정 Secret이 필요하면 JWT_SECRET 을 설정하세요."
             )
             return
 
@@ -292,13 +906,26 @@ class Settings(BaseSettings):
         )
 
     def validate_startup(self) -> None:
-        """서버 기동 시 필수 설정을 검증한다."""
+        """서버 기동 시 필수 설정을 검증한다. import 시점에는 호출하지 말 것."""
 
         if self.kiwoom_live_order_enabled and self.kiwoom_use_mock:
             raise ValueError(
                 "KIWOOM_LIVE_ORDER_ENABLED cannot be true "
                 "when KIWOOM_USE_MOCK is true"
             )
+        if self.upbit_live_order_enabled and self.upbit_use_mock:
+            raise ValueError(
+                "UPBIT_LIVE_ORDER_ENABLED cannot be true "
+                "when UPBIT_USE_MOCK is true"
+            )
+        if self.global_live_order_enabled and (
+            self.kiwoom_live_order_enabled or self.upbit_live_order_enabled
+        ):
+            # 전역 라이브는 허용하되, 둘 다 mock이면 무의미하므로 경고성 검증은 생략
+            pass
+        if self.kiwoom_live_order_enabled and not self.global_live_order_enabled:
+            # 키움 라이브도 전역 게이트 필요 (점진 도입 — 기동은 허용, factory에서 차단)
+            pass
         self.ensure_jwt_secret()
         self.ensure_admin_api_key()
         algo = (self.jwt_algorithm or "HS256").strip().upper()
@@ -337,6 +964,31 @@ class Settings(BaseSettings):
                 f"Missing Kiwoom credentials: {', '.join(missing)}"
             )
 
+    def validate_upbit_credentials(self) -> None:
+        """Private API 호출 전 Access/Secret 검증 (mock이면 스킵)."""
+
+        if self.upbit_use_mock:
+            return
+        missing: list[str] = []
+        if not self.upbit_access_key.strip():
+            missing.append("UPBIT_ACCESS_KEY")
+        if not self.upbit_secret_key.strip():
+            missing.append("UPBIT_SECRET_KEY")
+        if missing:
+            raise ValueError(
+                f"Missing Upbit credentials: {', '.join(missing)}"
+            )
+
+    def upbit_allowed_market_set(self) -> set[str]:
+        raw = self.upbit_allowed_markets.strip()
+        if not raw:
+            return set()
+        return {
+            item.strip().upper()
+            for item in raw.split(",")
+            if item.strip()
+        }
+
     def validate_dart_credentials(self) -> None:
         if not self.dart_api_key.strip():
             raise ValueError("Missing DART_API_KEY")
@@ -355,4 +1007,15 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    """캐시된 Settings. 파일 경로는 호출 시점에 resolve 한다."""
+
+    env_file = resolve_env_file()
+    if env_file is None:
+        return Settings(_env_file=None)
+    return Settings(_env_file=env_file)
+
+
+def clear_settings_cache() -> None:
+    """테스트·핫리로드용 캐시 무효화."""
+
+    get_settings.cache_clear()

@@ -4,13 +4,16 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
 from stock_platform.screener.run_service import CandidateRunService
 
-router = APIRouter(prefix="/api/v1/candidate-runs", tags=["Candidate Runs"])
+router = APIRouter(prefix="/api/v1/candidate-runs", tags=["Candidate Runs"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 class CandidateRunRequest(BaseModel):
@@ -24,6 +27,16 @@ class CandidateRunRequest(BaseModel):
 
 @router.post("")
 def execute_candidate_run(request: CandidateRunRequest, session: Session = Depends(get_db_session)):
+    # Promotion Run은 Candidate Promotion Gateway Commit 전용 — 이 API로 우회 금지
+    run_type = request.run_type.upper()
+    if run_type == "AI_REVIEW_PROMOTION" or run_type.startswith("AIRP"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "PROMOTION_RUN_TYPE_FORBIDDEN",
+                "message": "AI_REVIEW_PROMOTION은 Candidate Promotion Gateway Commit에서만 생성됩니다",
+            },
+        )
     service = CandidateRunService(session)
     try:
         run = service.execute_and_save(
@@ -32,7 +45,7 @@ def execute_candidate_run(request: CandidateRunRequest, session: Session = Depen
             limit=request.limit,
             minimum_score=request.minimum_score,
             require_all_rules=request.require_all_rules,
-            run_type=request.run_type.upper(),
+            run_type=run_type,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

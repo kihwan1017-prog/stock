@@ -7,8 +7,10 @@ from fastapi import (
     APIRouter,
     Depends,
     HTTPException,
+    Request,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -16,12 +18,14 @@ from stock_platform.backtest.engine import (
     BacktestValidationError,
 )
 from stock_platform.backtest.service import BacktestService
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.database.session import get_db_session
 
 
 router = APIRouter(
     prefix="/api/v1/backtests",
     tags=["Backtests"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -74,8 +78,16 @@ class MovingAverageBacktestRequest(BaseModel):
 @router.post("/moving-average")
 def run_moving_average_backtest(
     request: MovingAverageBacktestRequest,
+    http_request: Request,
     session: Session = Depends(get_db_session),
 ):
+    # 고비용 백테스트 — IP당 분당 10회
+    enforce_rate_limit(
+        http_request,
+        scope="backtest_moving_average",
+        limit=10,
+        window_seconds=60,
+    )
     if request.start_date > request.end_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

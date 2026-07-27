@@ -50,23 +50,38 @@ class KiwoomAccountStateSyncService:
         self._account_sync = account_sync_service
         self._pending_sync = pending_order_service
 
-    async def synchronize(self) -> AccountStateSyncResult:
-        account = await self._account_sync.synchronize()
-        account_number = str(account["account_number"])
+    async def synchronize(
+        self,
+        *,
+        user_broker_account_id: int | None = None,
+    ) -> AccountStateSyncResult:
+        sync_kwargs = {}
+        if user_broker_account_id is not None:
+            sync_kwargs["user_broker_account_id"] = int(
+                user_broker_account_id
+            )
+        account = await self._account_sync.synchronize(**sync_kwargs)
+        uba_id = account.get("user_broker_account_id") or user_broker_account_id
+        if uba_id is None:
+            raise ValueError(
+                "Kiwoom account-state sync requires user_broker_account_id"
+            )
 
-        # 미체결 실패해도 예수금/잔고 스냅샷은 유지 (Day-1/부분실패 허용)
+        # 미체결 실패해도 예수금/잔고 스냅샷은 유지
         try:
             pending = await self._pending_sync.synchronize(
-                account_number
+                user_broker_account_id=int(uba_id),
+                account_number=str(account.get("account_number") or "")
+                or None,
             )
         except Exception as exc:
             logger.warning(
                 "kiwoom_pending_sync_failed",
-                account_number=account_number,
+                user_broker_account_id=int(uba_id),
                 error=str(exc),
             )
             pending = {
-                "account_number": account_number,
+                "user_broker_account_id": int(uba_id),
                 "count": 0,
                 "items": [],
                 "error": str(exc),

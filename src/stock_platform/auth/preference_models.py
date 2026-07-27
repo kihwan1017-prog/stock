@@ -57,10 +57,22 @@ class UserPreference(Base):
         String(20), nullable=False, server_default=text("'KRX'")
     )
     default_account_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True
+        BigInteger,
+        ForeignKey(
+            "trading.paper_account.account_id",
+            ondelete="SET NULL",
+            name="fk_user_preference_default_account",
+        ),
+        nullable=True,
     )
     default_watchlist_id: Mapped[int | None] = mapped_column(
-        BigInteger, nullable=True
+        BigInteger,
+        ForeignKey(
+            "trading.watchlist.watchlist_id",
+            ondelete="SET NULL",
+            name="fk_user_preference_default_watchlist",
+        ),
+        nullable=True,
     )
     default_dashboard: Mapped[str] = mapped_column(
         String(40), nullable=False, server_default=text("'Dashboard'")

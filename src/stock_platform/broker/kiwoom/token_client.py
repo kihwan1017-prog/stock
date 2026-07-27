@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+
 import httpx
+
 from stock_platform.broker.exceptions import BrokerAuthenticationError
 from stock_platform.broker.kiwoom.config import KiwoomOrderConfig
 
@@ -36,8 +38,14 @@ class KiwoomTokenClient:
                 payload.get("return_msg", "Kiwoom token issuance failed")
             )
 
+        # expires_dt는 키움 서버 로컬시각 문자열 — UTC로 정규화해 캐시 비교에 사용
+        expires_at = datetime.strptime(
+            payload["expires_dt"],
+            "%Y%m%d%H%M%S",
+        ).replace(tzinfo=timezone.utc)
+
         return KiwoomAccessToken(
             token=payload["token"],
             token_type=payload.get("token_type", "bearer"),
-            expires_at=datetime.strptime(payload["expires_dt"], "%Y%m%d%H%M%S"),
+            expires_at=expires_at,
         )

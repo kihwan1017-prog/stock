@@ -3,7 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, DateTime, Identity, String, Text, func, text
+from sqlalchemy import (
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Identity,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,18 +30,38 @@ class StrategyDeploymentPipelineEntity(Base):
     )
     strategy_selection_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "ai.strategy_selection_run.strategy_selection_run_id",
+            ondelete="RESTRICT",
+            name="fk_deployment_pipeline_selection",
+        ),
         nullable=False,
     )
     strategy_approval_run_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_approval_run.strategy_approval_run_id",
+            ondelete="SET NULL",
+            name="fk_deployment_pipeline_approval",
+        ),
         nullable=True,
     )
     strategy_deployment_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="SET NULL",
+            name="fk_deployment_pipeline_deployment",
+        ),
         nullable=True,
     )
     strategy_runtime_switch_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_runtime_switch.strategy_runtime_switch_id",
+            ondelete="SET NULL",
+            name="fk_deployment_pipeline_runtime_switch",
+        ),
         nullable=True,
     )
     strategy_code: Mapped[str | None] = mapped_column(

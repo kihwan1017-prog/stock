@@ -8,6 +8,21 @@ export const adminRoutes = {
   trading: "/admin/trading",
   strategies: "/admin/strategies",
   ai: "/admin/ai",
+  aiProviders: "/admin/ai/providers",
+  aiPrompts: "/admin/ai/prompts",
+  aiSchemas: "/admin/ai/schemas",
+  aiPolicies: "/admin/ai/policies",
+  aiExecutions: "/admin/ai/executions",
+  aiDocumentAnalyses: "/admin/ai/document-analyses",
+  aiMarketAnalyses: "/admin/ai/market-analyses",
+  aiReviews: "/admin/ai/reviews",
+  aiEvaluationDatasets: "/admin/ai/evaluation-datasets",
+  aiBenchmarks: "/admin/ai/benchmarks",
+  aiCandidateAssessments: "/admin/ai/candidate-assessments",
+  aiCandidateConsensuses: "/admin/ai/candidate-consensuses",
+  aiCandidateRecommendationQueues: "/admin/ai/candidate-recommendation-queues",
+  aiCandidatePromotions: "/admin/ai/candidate-promotions",
+  aiCandidateLifecycle: "/admin/ai/candidate-lifecycle",
   news: "/admin/news",
   disclosures: "/admin/disclosures",
   portfolio: "/admin/portfolio",
@@ -27,11 +42,19 @@ export const adminRoutes = {
   ollama: "/admin/ollama",
   kiwoom: "/admin/kiwoom",
   upbit: "/admin/upbit",
+  liveValidationUpbit: "/admin/live-validation/upbit",
+  /** STEP4-6: 기술지표 관리 — 준비중(ComingSoon) */
+  indicators: "/admin/indicators",
+  /** STEP4-6: 장애 복구 센터 — 준비중(ComingSoon) */
+  recovery: "/admin/recovery",
   batch: "/admin/batch",
   notifications: "/admin/notifications",
   telegram: "/admin/telegram",
   docs: "/admin/docs",
   operations: "/admin/operations",
+  operationsDashboard: "/admin/operations-dashboard",
+  /** STEP4-6: 관리자 내 정보 — 준비중(ComingSoon) */
+  profile: "/admin/profile",
   // 하위 호환·리다이렉트용
   market: "/admin/monitoring",
   positions: "/admin/portfolio",
@@ -42,26 +65,70 @@ export const userRoutes = {
   home: "/user",
   login: "/login",
   dashboard: "/user/dashboard",
-  account: "/user/account",
+
+  /** 내 계좌 — STEP4-6: /user/account → /user/accounts로 개편 */
+  accounts: "/user/accounts",
+  accountsKiwoom: "/user/accounts/kiwoom",
+  accountsUpbit: "/user/accounts/upbit",
+  accountsPaper: "/user/accounts/paper",
+
+  /** 매매(수동 주문 실행) — 경로 변경 없음 */
   trading: "/user/trading",
   autoTrading: "/user/auto-trading",
+
+  /** 내 전략 */
   strategies: "/user/strategies",
+  /** STEP4-6: /user/strategies/auto → /user/auto-trading 별칭 경로 */
+  strategiesAuto: "/user/strategies/auto",
   backtests: "/user/backtests",
+
   portfolio: "/user/portfolio",
   watchlist: "/user/watchlist",
-  trades: "/user/trades",
+
+  /** 내 주문·체결 — STEP4-6: /user/trades → /user/orders로 개편 */
+  orders: "/user/orders",
+  ordersKiwoom: "/user/orders/kiwoom",
+  ordersUpbit: "/user/orders/upbit",
+  ordersPaper: "/user/orders/paper",
+
   ai: "/user/ai",
+
+  /** 시장 정보 — STEP4-6: /user/market → /user/markets/{stocks|crypto}로 개편 */
+  marketsStocks: "/user/markets/stocks",
+  marketsCrypto: "/user/markets/crypto",
+
+  /** 매매 후보 — STEP4-6 신규 */
+  candidatesStocks: "/user/candidates/stocks",
+  candidatesCrypto: "/user/candidates/crypto",
+  candidatesLlm: "/user/candidates/llm",
+
   news: "/user/news",
   disclosures: "/user/disclosures",
   notifications: "/user/notifications",
+  reports: "/user/reports",
+
+  /** 내 리스크 — STEP4-6 신규(준비중) */
+  risk: "/user/risk",
+  liveValidationUpbit: "/user/live-validation/upbit",
+
   settings: "/user/settings",
   profile: "/user/profile",
+} as const;
+
+/** @deprecated 구 경로 — 리다이렉트 소스로만 사용. 신규 코드는 위 캐노니컬 경로를 사용 */
+export const legacyUserRoutes = {
+  account: "/user/account",
+  trades: "/user/trades",
+  market: "/user/market",
 } as const;
 
 /** 공개 인증 경로 */
 export const authRoutes = {
   login: "/login",
   signup: "/signup",
+  changePassword: "/change-password",
+  onboarding: "/onboarding",
+  forbidden: "/forbidden",
 } as const;
 
 /** @deprecated Admin 경로 — adminRoutes 사용. signup 은 authRoutes 권장 */
@@ -77,52 +144,87 @@ export type AppRoute = AdminRoute | UserRoute;
 const adminTitles: Record<string, string> = {
   [adminRoutes.home]: "Admin",
   [adminRoutes.login]: "Login",
-  [adminRoutes.dashboard]: "Dashboard",
+  [adminRoutes.dashboard]: "관리자 대시보드",
   [adminRoutes.members]: "회원관리",
   [adminRoutes.roles]: "권한관리",
-  [adminRoutes.accounts]: "계좌관리",
+  [adminRoutes.accounts]: "전체 계좌",
   [adminRoutes.trading]: "자동매매관리",
   [adminRoutes.strategies]: "전략관리",
-  [adminRoutes.ai]: "AI 관리",
+  [adminRoutes.ai]: "후보·LLM 관리",
+  [adminRoutes.aiProviders]: "AI Provider 관리",
+  [adminRoutes.aiPrompts]: "AI Prompt 관리",
+  [adminRoutes.aiSchemas]: "AI Output Schema 관리",
+  [adminRoutes.aiPolicies]: "AI Policy 관리",
+  [adminRoutes.aiExecutions]: "AI Execution 관리",
+  [adminRoutes.aiDocumentAnalyses]: "AI 문서 분석",
+  [adminRoutes.aiMarketAnalyses]: "AI 시장·차트 분석",
+  [adminRoutes.aiReviews]: "AI 분석 품질 검토",
+  [adminRoutes.aiEvaluationDatasets]: "AI 평가 데이터셋",
+  [adminRoutes.aiBenchmarks]: "AI 벤치마크·스코어카드",
+  [adminRoutes.aiCandidateAssessments]: "AI 후보 평가 초안",
+  [adminRoutes.aiCandidateConsensuses]: "Multi-AI 합의 초안",
+  [adminRoutes.aiCandidateRecommendationQueues]: "후보 추천 검토 큐",
+  [adminRoutes.aiCandidatePromotions]: "Candidate Promotion Gateway",
+  [adminRoutes.aiCandidateLifecycle]: "Candidate Lifecycle",
   [adminRoutes.news]: "뉴스관리",
   [adminRoutes.disclosures]: "공시관리",
-  [adminRoutes.portfolio]: "포트폴리오",
+  [adminRoutes.portfolio]: "잔고·손익",
   [adminRoutes.backtests]: "백테스트",
   [adminRoutes.orders]: "주문관리",
   [adminRoutes.trades]: "거래내역",
-  [adminRoutes.risk]: "Risk 관리",
-  [adminRoutes.scheduler]: "Scheduler 관리",
+  [adminRoutes.risk]: "리스크 관리",
+  [adminRoutes.scheduler]: "스케줄러 관리",
   [adminRoutes.operations]: "운영센터",
+  [adminRoutes.operationsDashboard]: "통합 모니터링",
   [adminRoutes.systemSettings]: "시스템 설정",
   [adminRoutes.envSettings]: "환경설정",
   [adminRoutes.logs]: "로그 조회",
-  [adminRoutes.monitoring]: "시스템 모니터링 · 데이터",
+  [adminRoutes.monitoring]: "시스템 모니터링",
   [adminRoutes.db]: "DB 관리",
   [adminRoutes.api]: "API 관리",
   [adminRoutes.ollama]: "Ollama 관리",
-  [adminRoutes.kiwoom]: "키움 API 관리",
-  [adminRoutes.upbit]: "업비트 관리",
+  [adminRoutes.kiwoom]: "키움 계좌",
+  [adminRoutes.upbit]: "업비트 계좌·시세",
+  [adminRoutes.liveValidationUpbit]: "업비트 소액 LIVE 검증",
+  [adminRoutes.indicators]: "기술지표 관리",
+  [adminRoutes.recovery]: "장애 복구",
   [adminRoutes.batch]: "배치 관리",
   [adminRoutes.notifications]: "알림 관리",
   [adminRoutes.telegram]: "Telegram 운영",
   [adminRoutes.docs]: "문서 관리",
+  [adminRoutes.profile]: "관리자 내 정보",
 };
 
 const userTitles: Record<string, string> = {
   [userRoutes.home]: "User",
-  [userRoutes.dashboard]: "Dashboard",
-  [userRoutes.account]: "내 계좌",
+  [userRoutes.dashboard]: "대시보드",
+  [userRoutes.accounts]: "전체 계좌",
+  [userRoutes.accountsKiwoom]: "키움 계좌",
+  [userRoutes.accountsUpbit]: "업비트 계좌",
+  [userRoutes.accountsPaper]: "Paper 계좌",
   [userRoutes.trading]: "매매",
   [userRoutes.autoTrading]: "자동매매",
   [userRoutes.strategies]: "전략",
+  [userRoutes.strategiesAuto]: "전략 · 자동매매",
   [userRoutes.backtests]: "백테스트",
-  [userRoutes.portfolio]: "포트폴리오",
+  [userRoutes.portfolio]: "내 잔고·손익",
   [userRoutes.watchlist]: "관심종목",
-  [userRoutes.trades]: "거래내역",
-  [userRoutes.ai]: "AI 추천",
+  [userRoutes.orders]: "내 주문·체결",
+  [userRoutes.ordersKiwoom]: "키움 주문·체결",
+  [userRoutes.ordersUpbit]: "업비트 주문·체결",
+  [userRoutes.ordersPaper]: "Paper 주문·체결",
+  [userRoutes.ai]: "AI 추천 · LLM 분석",
+  [userRoutes.marketsStocks]: "주식 시장정보",
+  [userRoutes.marketsCrypto]: "암호화폐 시장정보",
+  [userRoutes.candidatesStocks]: "주식 매매 후보",
+  [userRoutes.candidatesCrypto]: "업비트 매매 후보",
+  [userRoutes.candidatesLlm]: "LLM 분석",
   [userRoutes.news]: "뉴스",
   [userRoutes.disclosures]: "공시",
   [userRoutes.notifications]: "알림",
+  [userRoutes.reports]: "내 리포트",
+  [userRoutes.risk]: "내 리스크",
+  [userRoutes.liveValidationUpbit]: "업비트 LIVE 검증(읽기)",
   [userRoutes.settings]: "설정",
   [userRoutes.profile]: "내 정보",
 };

@@ -99,6 +99,11 @@ def test_auth_service_login_with_fake_repo() -> None:
                 roles=["admin"],
                 is_active=True,
             )
+            self.user.deleted_at = None
+            self.user.failed_login_count = 0
+            self.user.locked_until = None
+            self.user.password_change_required = False
+            self.user.onboarding_completed_at = None
             self.tokens: dict[str, object] = {}
 
         def count_users(self) -> int:
@@ -115,6 +120,9 @@ def test_auth_service_login_with_fake_repo() -> None:
         def get_by_id(self, user_id: int):
             return self.user if user_id == 1 else None
 
+        def mark_last_login(self, user) -> None:
+            return None
+
         def save_refresh_token(self, **kwargs):
             self.tokens[kwargs["jti"]] = kwargs
             return kwargs
@@ -122,10 +130,16 @@ def test_auth_service_login_with_fake_repo() -> None:
         def get_refresh_by_jti(self, jti: str):
             return None
 
-        def revoke_refresh(self, jti: str) -> bool:
+        def revoke_refresh(self, jti: str, *, reason: str | None = None) -> bool:
             return True
 
-        def revoke_all_for_user(self, user_id: int) -> int:
+        def revoke_all_for_user(
+            self,
+            user_id: int,
+            *,
+            exclude_jti: str | None = None,
+            reason: str | None = None,
+        ) -> int:
             return 0
 
         def create_user(self, **kwargs):
@@ -133,6 +147,28 @@ def test_auth_service_login_with_fake_repo() -> None:
 
         def update_password(self, user, *, password_hash: str):
             user.password_hash = password_hash
+            return user
+
+        def flush(self) -> None:
+            return None
+
+        def record_failed_login(
+            self,
+            user,
+            *,
+            max_fails: int,
+            lockout_minutes: int,
+        ):
+            user.failed_login_count = int(user.failed_login_count or 0) + 1
+            return user
+
+        def set_password_change_required(self, user, *, required: bool):
+            user.password_change_required = required
+            return user
+
+        def clear_lockout(self, user):
+            user.locked_until = None
+            user.failed_login_count = 0
             return user
 
     service = AuthService(

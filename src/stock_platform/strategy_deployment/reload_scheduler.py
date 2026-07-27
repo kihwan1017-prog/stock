@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 import structlog
-from apscheduler.schedulers.asyncio import (
-    AsyncIOScheduler,
-)
-from apscheduler.triggers.interval import (
-    IntervalTrigger,
-)
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
-from stock_platform.common.settings import (
-    get_settings,
-)
 from stock_platform.strategy_deployment.runtime_manager import (
     dynamic_strategy_runtime_manager,
 )
@@ -19,42 +12,50 @@ logger = structlog.get_logger(__name__)
 
 
 class StrategyRuntimeReloadScheduler:
+    """등록된 Scope Runtime만 재로드 — 전역/기본 KRX 조회 없음."""
+
     def __init__(self) -> None:
+        from stock_platform.common.settings import get_settings
+
         settings = get_settings()
         self._scheduler = AsyncIOScheduler(
             timezone=settings.scheduler_timezone
         )
-        self._missing_logged = False
+        self._empty_logged = False
 
     @property
     def scheduler(self):
         return self._scheduler
 
     async def reload_active_strategy(self) -> None:
-        settings = get_settings()
-
-        try:
-            result = await dynamic_strategy_runtime_manager.reload(
-                market_code=settings.realtime_strategy_market_code,
-                symbol=settings.realtime_strategy_symbol_or_none,
-                force=False,
-            )
-        except LookupError as exc:
-            # 활성 배포가 없으면 Day-1/로컬에서 정상. traceback 대신 1회만 안내.
-            if not self._missing_logged:
+        status = dynamic_strategy_runtime_manager.status()
+        count = int(status.get("scoped_runtime_count") or 0)
+        if count == 0:
+            if not self._empty_logged:
                 logger.info(
                     "strategy_runtime_reload_skipped",
-                    reason=str(exc),
+                    reason="No scoped runtimes registered",
                 )
-                self._missing_logged = True
+                self._empty_logged = True
             return
 
-        self._missing_logged = False
-        if result.changed:
+        self._empty_logged = False
+        try:
+            result = await dynamic_strategy_runtime_manager.reload_all_scopes(
+                force=False
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "strategy_runtime_reload_batch_failed",
+                error=str(exc),
+            )
+            return
+
+        if int(result.get("changed") or 0) > 0:
             logger.info(
                 "strategy_runtime_reloaded",
-                deployment_id=result.current_deployment_id,
-                strategy_code=result.strategy_code,
+                changed=result.get("changed"),
+                failed=len(result.get("failed") or []),
             )
 
     def configure(self) -> None:
@@ -71,7 +72,6 @@ class StrategyRuntimeReloadScheduler:
     def start(self) -> None:
         if self._scheduler.running:
             return
-
         self.configure()
         self._scheduler.start()
 
@@ -80,6 +80,4 @@ class StrategyRuntimeReloadScheduler:
             self._scheduler.shutdown(wait=True)
 
 
-strategy_runtime_reload_scheduler = (
-    StrategyRuntimeReloadScheduler()
-)
+strategy_runtime_reload_scheduler = StrategyRuntimeReloadScheduler()

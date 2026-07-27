@@ -13,6 +13,9 @@ interface UserPageShellProps {
   description?: string;
   extra?: ReactNode;
   children: ReactNode;
+  /** 브레드크럼 홈 (기본: User 대시보드) */
+  homeHref?: string;
+  homeLabel?: string;
 }
 
 /** AdminPageShell과 동일한 Breadcrumb + PageContainer 패턴 */
@@ -21,6 +24,8 @@ export function UserPageShell({
   description,
   extra,
   children,
+  homeHref = userRoutes.dashboard,
+  homeLabel = "User",
 }: UserPageShellProps) {
   const pathname = usePathname();
 
@@ -29,7 +34,7 @@ export function UserPageShell({
       <Breadcrumb
         style={{ marginBottom: 16 }}
         items={[
-          { title: <Link href={userRoutes.dashboard}>User</Link> },
+          { title: <Link href={homeHref}>{homeLabel}</Link> },
           { title: getRouteTitle(pathname) || title },
         ]}
       />

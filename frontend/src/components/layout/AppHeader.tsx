@@ -106,12 +106,7 @@ export function AppHeader({
   const apiStatus =
     apiConnected === null ? "unknown" : apiConnected ? ("healthy" as const) : ("error" as const);
 
-  const roleColor =
-    productRole === "admin"
-      ? "red"
-      : productRole === "trader"
-        ? "blue"
-        : "default";
+  const roleColor = productRole === "admin" ? "red" : "default";
 
   return (
     <Header

@@ -68,7 +68,6 @@ class PositionExitMonitorLoader:
         self._kill_switch = KillSwitchService(session)
 
     def load(self) -> LoadedExitContext:
-        thresholds = self._resolve_thresholds()
         kill_switch_active = self._kill_switch.is_active()
 
         open_rows = list(
@@ -97,11 +96,42 @@ class PositionExitMonitorLoader:
         else:
             accounts = {}
 
+        # 계좌(user)별 임계값 캐시 — Paper는 사용자 기본 설정 적용
+        threshold_by_user: dict[int | None, ExitThresholds] = {}
+
         positions: list[ManagedPosition] = []
         skipped: list[str] = []
         account_unrealized: dict[int, Decimal] = {}
 
         for row in open_rows:
+            account = accounts.get(row.account_id)
+            # STEP 8-5-5 — Recovery Pause 계좌는 Exit 주문 생성 제외
+            if account is not None:
+                from stock_platform.broker.recovery_lock import (
+                    RecoveryAccountLockService,
+                )
+
+                if RecoveryAccountLockService(
+                    self._session
+                ).is_trading_paused(
+                    paper_account_id=int(row.account_id),
+                    broker_code="PAPER",
+                ):
+                    skipped.append(
+                        f"paused:{row.exchange_code}/{row.symbol}"
+                    )
+                    continue
+            owner_id = (
+                int(account.user_id)
+                if account is not None and account.user_id is not None
+                else None
+            )
+            if owner_id not in threshold_by_user:
+                threshold_by_user[owner_id] = self._resolve_thresholds(
+                    user_id=owner_id
+                )
+            thresholds = threshold_by_user[owner_id]
+
             current_price = self._resolve_current_price(
                 exchange_code=row.exchange_code,
                 symbol=row.symbol,
@@ -168,6 +198,16 @@ class PositionExitMonitorLoader:
             account = accounts.get(account_id)
             if account is None:
                 continue
+            owner_id = (
+                int(account.user_id)
+                if account.user_id is not None
+                else None
+            )
+            if owner_id not in threshold_by_user:
+                threshold_by_user[owner_id] = self._resolve_thresholds(
+                    user_id=owner_id
+                )
+            thresholds = threshold_by_user[owner_id]
             combined = (
                 Decimal(account.realized_profit_loss)
                 + unrealized_sum
@@ -220,7 +260,28 @@ class PositionExitMonitorLoader:
             skipped_symbols=skipped,
         )
 
-    def _resolve_thresholds(self) -> ExitThresholds:
+    def _resolve_thresholds(
+        self,
+        *,
+        user_id: int | None = None,
+    ) -> ExitThresholds:
+        # STEP8-2: 사용자 ResolvedRiskPolicy 우선, 없으면 ENV/strategy.risk_policy
+        if user_id is not None:
+            from stock_platform.risk_engine.resolved_policy import (
+                ResolvedRiskPolicyResolver,
+            )
+
+            resolved = ResolvedRiskPolicyResolver(
+                self._session
+            ).resolve(user_id=int(user_id))
+            return ExitThresholds(
+                stop_loss_ratio=resolved.stop_loss_rate,
+                take_profit_ratio=resolved.take_profit_rate,
+                trailing_stop_ratio=resolved.trailing_stop_rate,
+                relative_loss_ratio=None,
+                daily_loss_limit=resolved.daily_max_loss_amount,
+            )
+
         settings = get_settings()
         stop_loss_ratio = Decimal(
             str(settings.position_exit_stop_loss_ratio)

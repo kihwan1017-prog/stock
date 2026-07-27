@@ -65,7 +65,7 @@ class KiwoomBrokerConfig:
             raise ValueError(
                 "KIWOOM_APP_KEY is required "
                 "(모의투자 mockapi 포함 — "
-                "E:\\StockTrading\\secrets\\stock-platform.env 에 설정)"
+                "STOCK_PLATFORM_ENV_FILE 또는 KIWOOM_APP_KEY env 설정)"
             )
         if not self.secret_key.strip():
             raise ValueError(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +14,7 @@ from stock_platform.markets.quality_service import (
 router = APIRouter(
     prefix="/api/v1/market-quality",
     tags=["Market Quality"],
+    dependencies=[Depends(require_admin)],
 )
 
 

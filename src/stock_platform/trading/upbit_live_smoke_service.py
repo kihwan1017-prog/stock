@@ -1,0 +1,823 @@
+"""STEP 8-9 — Upbit 소액 LIVE Smoke 실행 서비스 (기본 DRY-RUN)."""
+
+from __future__ import annotations
+
+import hashlib
+import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from stock_platform.broker.upbit.rules import (
+    round_upbit_price,
+    round_upbit_volume,
+)
+from stock_platform.common.settings import get_settings
+from stock_platform.order.live_safety_audit import (
+    emit_live_order_telegram,
+    emit_live_safety_audit,
+)
+from stock_platform.order.models import OrderSide, OrderType
+from stock_platform.trading.account_models import UserBrokerAccount
+from stock_platform.trading.live_arm_service import LiveArmService
+from stock_platform.trading.live_validation_entities import (
+    LiveValidationRunEntity,
+)
+from stock_platform.trading.upbit_live_preflight_service import (
+    UpbitLivePreflightService,
+)
+from stock_platform.trading.upbit_live_smoke_constants import (
+    ALLOWED_TRANSITIONS,
+    CONFIRMATION_TEXT,
+    LiveValidationRunStatus,
+    MAX_SMOKE_AMOUNT,
+    UPBIT_LIVE_SMOKE_COMPLETED,
+    UPBIT_LIVE_SMOKE_EXECUTION_REQUESTED,
+    UPBIT_LIVE_SMOKE_FAILED_CLOSED,
+    UPBIT_LIVE_SMOKE_ORDER_REJECTED,
+    UPBIT_LIVE_SMOKE_ORDER_SUBMITTED,
+    UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
+)
+
+
+class UpbitLiveSmokeError(ValueError):
+    """스모크 실행 거부."""
+
+
+class UpbitLiveSmokeService:
+    """수동 1건 검증. 실주문은 명시적 플래그 3종 모두 필요."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def dry_run(
+        self,
+        *,
+        user_broker_account_id: int,
+        market: str,
+        side: str,
+        amount: Decimal,
+        limit_price: Decimal,
+        actor: str,
+        arm_token: str | None = None,
+        skip_live_network: bool = False,
+    ) -> dict[str, Any]:
+        preflight = UpbitLivePreflightService(self._session).run(
+            user_broker_account_id=user_broker_account_id,
+            market=market,
+            side=side,
+            amount=amount,
+            limit_price=limit_price,
+            arm_token=arm_token,
+            actor=actor,
+            skip_live_network=skip_live_network,
+            purpose="dry_run",
+        )
+        run = self._create_run(
+            preflight=preflight.to_dict(),
+            execute_live=False,
+            actor=actor,
+        )
+        self._transition(
+            run, LiveValidationRunStatus.READY.value, actor=actor
+        )
+        self._transition(
+            run,
+            LiveValidationRunStatus.DRY_RUN_COMPLETED.value,
+            actor=actor,
+        )
+        run.completed_at = datetime.now(timezone.utc)
+        self._session.flush()
+        payload = {
+            "run_id": run.run_id,
+            "execute_live": False,
+            "ready": preflight.ready,
+            "dry_run_ready": preflight.dry_run_ready,
+            "live_execution_ready": preflight.live_execution_ready,
+            "preflight": preflight.to_dict(),
+            "status": run.status_code,
+            "message": "DRY_RUN — Adapter not called",
+            "adapter_create_order_calls": 0,
+        }
+        self._telegram(
+            title="Upbit LIVE Smoke Dry-run",
+            message=(
+                f"UBA {user_broker_account_id} {market} {side} "
+                f"amount={amount} dry-run ready={preflight.ready}"
+            ),
+            detail={
+                "run_id": run.run_id,
+                "uba_id": user_broker_account_id,
+                "market": market,
+                "side": side,
+                "estimated_amount": preflight.estimated_amount,
+                "execute_live": False,
+            },
+            event_type=UPBIT_LIVE_SMOKE_COMPLETED,
+        )
+        return payload
+
+    def execute(
+        self,
+        *,
+        user_broker_account_id: int,
+        market: str,
+        side: str,
+        amount: Decimal,
+        limit_price: Decimal,
+        actor: str,
+        arm_token: str | None,
+        execute_live: bool,
+        confirmation_text: str | None,
+        preflight_id: str | None = None,
+        skip_live_network: bool = False,
+    ) -> dict[str, Any]:
+        """실주문은 execute_live + confirmation + arm_token 모두 필수."""
+
+        if not execute_live:
+            return self.dry_run(
+                user_broker_account_id=user_broker_account_id,
+                market=market,
+                side=side,
+                amount=amount,
+                limit_price=limit_price,
+                actor=actor,
+                arm_token=arm_token,
+                skip_live_network=skip_live_network,
+            )
+
+        if confirmation_text != CONFIRMATION_TEXT:
+            raise UpbitLiveSmokeError("CONFIRMATION_TEXT_MISMATCH")
+        if not arm_token:
+            raise UpbitLiveSmokeError("ARM_TOKEN_REQUIRED")
+        if Decimal(str(amount)) > MAX_SMOKE_AMOUNT:
+            raise UpbitLiveSmokeError("AMOUNT_EXCEEDS_MAX")
+
+        from stock_platform.trading.upbit_live_tracking_service import (
+            UpbitLiveTrackingService,
+        )
+
+        if UpbitLiveTrackingService(self._session).blocks_new_order(
+            int(user_broker_account_id)
+        ):
+            raise UpbitLiveSmokeError("NEW_ORDER_BLOCKED_UNKNOWN_OR_REVIEW")
+
+        # Admin API 경로: 저장된 preflight_id 필수 검증
+        stored: LiveValidationRunEntity | None = None
+        if preflight_id:
+            stored = self._session.scalar(
+                select(LiveValidationRunEntity).where(
+                    LiveValidationRunEntity.preflight_id == preflight_id
+                )
+            )
+            if stored is None:
+                raise UpbitLiveSmokeError("PREFLIGHT_NOT_FOUND")
+            self._assert_preflight_still_valid(
+                stored,
+                user_broker_account_id=user_broker_account_id,
+                market=market,
+                side=side,
+                amount=amount,
+                limit_price=limit_price,
+            )
+
+        preflight = UpbitLivePreflightService(self._session).run(
+            user_broker_account_id=user_broker_account_id,
+            market=market,
+            side=side,
+            amount=amount,
+            limit_price=limit_price,
+            arm_token=arm_token,
+            actor=actor,
+            skip_live_network=skip_live_network,
+            purpose="live_execution",
+        )
+        if not preflight.live_execution_ready:
+            raise UpbitLiveSmokeError(
+                f"PREFLIGHT_NOT_READY:{','.join((preflight.blockers + preflight.live_blockers)[:3])}"
+            )
+        if stored is not None:
+            stored_fp = str(
+                (stored.preflight_result or {}).get("request_fingerprint")
+                or stored.request_fingerprint
+                or ""
+            )
+            if (
+                stored_fp
+                and preflight.request_fingerprint
+                and stored_fp != preflight.request_fingerprint
+            ):
+                raise UpbitLiveSmokeError("PREFLIGHT_PARAMS_CHANGED")
+
+        # 시장가 금지 — LIMIT만
+        order_type = OrderType.LIMIT
+        side_enum = OrderSide.BUY if side.upper() == "BUY" else OrderSide.SELL
+        price = round_upbit_price(Decimal(str(limit_price)))
+        qty = (
+            Decimal(str(preflight.quantity))
+            if preflight.quantity
+            else round_upbit_volume(Decimal(str(amount)) / price)
+        )
+
+        run = self._create_run(
+            preflight=preflight.to_dict(),
+            execute_live=True,
+            actor=actor,
+        )
+        result: dict[str, Any] = {
+            "run_id": run.run_id,
+            "execute_live": True,
+            "preflight": preflight.to_dict(),
+        }
+        try:
+            self._transition(
+                run,
+                LiveValidationRunStatus.EXECUTION_REQUESTED.value,
+                actor=actor,
+            )
+            emit_live_safety_audit(
+                self._session,
+                event_type=UPBIT_LIVE_SMOKE_EXECUTION_REQUESTED,
+                actor=actor,
+                run_id=run.run_id,
+                user_id=preflight.user_id,
+                account_id=user_broker_account_id,
+                strategy_id=None,
+                detail={
+                    "run_id": run.run_id,
+                    "preflight_id": preflight.preflight_id,
+                    "market": market,
+                    "side": side,
+                    "quantity": str(qty),
+                    "limit_price": str(price),
+                    "estimated_amount": preflight.estimated_amount,
+                },
+                commit=False,
+            )
+            self._pause_uba_scope(user_broker_account_id, actor=actor)
+
+            # 실주문 — OrderExecutionService (Adapter 우회 금지)
+            from stock_platform.order.execution_service import (
+                OrderExecutionCommand,
+                OrderExecutionService,
+            )
+
+            uba = self._session.get(
+                UserBrokerAccount, int(user_broker_account_id)
+            )
+            if uba is None:
+                raise UpbitLiveSmokeError("UBA_NOT_FOUND")
+
+            cmd = OrderExecutionCommand(
+                account_id=int(uba.user_broker_account_id),
+                broker_code="UPBIT",
+                exchange_code="UPBIT",
+                symbol=str(market).upper(),
+                side=side_enum,
+                order_type=order_type,
+                price=price,
+                quantity=qty,
+                actor=actor,
+                environment="LIVE",
+                user_broker_account_id=int(user_broker_account_id),
+                owner_user_id=int(uba.user_id),
+                user_id=int(uba.user_id),
+                arm_token=arm_token,
+                reference_price=Decimal(str(preflight.limit_price)),
+                order_source="UPBIT_LIVE_SMOKE",
+                idempotency_key=f"smoke:{run.run_id}",
+                metadata_payload={
+                    "smoke_run_id": run.run_id,
+                    "preflight_id": preflight.preflight_id,
+                },
+            )
+            exec_result = OrderExecutionService(self._session).submit(cmd)
+            if not exec_result.allowed:
+                self._transition(
+                    run,
+                    LiveValidationRunStatus.REJECTED.value,
+                    actor=actor,
+                )
+                run.failure_code = exec_result.reason_code
+                emit_live_safety_audit(
+                    self._session,
+                    event_type=UPBIT_LIVE_SMOKE_ORDER_REJECTED,
+                    actor=actor,
+                    run_id=run.run_id,
+                    user_id=preflight.user_id,
+                    account_id=user_broker_account_id,
+                    strategy_id=None,
+                    detail={
+                        "run_id": run.run_id,
+                        "reason_code": exec_result.reason_code,
+                    },
+                    commit=False,
+                )
+                result["status"] = run.status_code
+                result["reason_code"] = exec_result.reason_code
+                return result
+
+            run.order_id = exec_result.order_id
+            run.order_status = exec_result.status_code
+            run.submitted_at = datetime.now(timezone.utc)
+            # Outbox 대기 — Broker ACCEPTED로 오인 금지
+            from stock_platform.trading.upbit_live_tracking_service import (
+                UpbitLiveTrackingService,
+            )
+
+            tracker = UpbitLiveTrackingService(self._session)
+            tracker.attach_after_execution(
+                run,
+                order_id=exec_result.order_id,
+                actor=actor,
+                outbox_pending=True,
+            )
+            emit_live_safety_audit(
+                self._session,
+                event_type=UPBIT_LIVE_SMOKE_ORDER_SUBMITTED,
+                actor=actor,
+                run_id=run.run_id,
+                user_id=preflight.user_id,
+                account_id=user_broker_account_id,
+                strategy_id=None,
+                order_id=exec_result.order_id,
+                detail={
+                    "run_id": run.run_id,
+                    "order_id": exec_result.order_id,
+                    "status": "OUTBOX_PENDING",
+                    "internal_status": run.internal_status,
+                    "broker_order_status": run.broker_order_status,
+                },
+                commit=False,
+            )
+            watch = self._watch_and_maybe_cancel(
+                run=run,
+                order_id=int(exec_result.order_id or 0),
+                actor=actor,
+            )
+            result.update(watch)
+            result["order_id"] = exec_result.order_id
+            result["status"] = run.internal_status
+            result["internal_status"] = run.internal_status
+            result["broker_order_status"] = run.broker_order_status
+            return result
+        except UpbitLiveSmokeError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            self._transition(
+                run,
+                LiveValidationRunStatus.UNKNOWN.value,
+                actor=actor,
+            )
+            run.failure_code = type(exc).__name__
+            run.failure_summary = str(exc)[:200]
+            emit_live_safety_audit(
+                self._session,
+                event_type=UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
+                actor=actor,
+                run_id=run.run_id,
+                user_id=preflight.user_id,
+                account_id=user_broker_account_id,
+                strategy_id=None,
+                detail={
+                    "run_id": run.run_id,
+                    "error": type(exc).__name__,
+                },
+                commit=False,
+            )
+            result["status"] = run.status_code
+            result["error"] = type(exc).__name__
+            return result
+        finally:
+            self._finalize_protect(
+                user_broker_account_id=user_broker_account_id,
+                run=run,
+                actor=actor,
+            )
+
+    def list_runs(
+        self, *, limit: int = 50, uba_id: int | None = None
+    ) -> list[dict[str, Any]]:
+        stmt = select(LiveValidationRunEntity).order_by(
+            LiveValidationRunEntity.created_at.desc()
+        )
+        if uba_id is not None:
+            stmt = stmt.where(
+                LiveValidationRunEntity.user_broker_account_id == int(uba_id)
+            )
+        stmt = stmt.limit(limit)
+        rows = list(self._session.scalars(stmt))
+        return [self._row_dict(r) for r in rows]
+
+    def get_run(self, run_id: str) -> dict[str, Any]:
+        row = self._session.scalar(
+            select(LiveValidationRunEntity).where(
+                LiveValidationRunEntity.run_id == run_id
+            )
+        )
+        if row is None:
+            raise LookupError("run not found")
+        return self._row_dict(row)
+
+    def persist_preflight(
+        self,
+        *,
+        preflight: dict[str, Any],
+        actor: str,
+    ) -> dict[str, Any]:
+        """Admin Preflight API용 — TTL 내 execute 참조를 위해 READY로 저장."""
+
+        run = self._create_run(
+            preflight=preflight,
+            execute_live=False,
+            actor=actor,
+        )
+        if preflight.get("ready"):
+            self._transition(
+                run, LiveValidationRunStatus.READY.value, actor=actor
+            )
+        else:
+            self._transition(
+                run,
+                LiveValidationRunStatus.PREFLIGHT_FAILED.value,
+                actor=actor,
+            )
+        self._session.flush()
+        return {
+            **preflight,
+            "run_id": run.run_id,
+            "status": run.status_code,
+        }
+
+    def _assert_preflight_still_valid(
+        self,
+        stored: LiveValidationRunEntity,
+        *,
+        user_broker_account_id: int,
+        market: str,
+        side: str,
+        amount: Decimal,
+        limit_price: Decimal,
+    ) -> None:
+        pf = dict(stored.preflight_result or {})
+        if not pf.get("ready"):
+            raise UpbitLiveSmokeError("PREFLIGHT_NOT_READY")
+        expires_raw = pf.get("expires_at")
+        if expires_raw:
+            try:
+                expires = datetime.fromisoformat(str(expires_raw))
+                if expires.tzinfo is None:
+                    expires = expires.replace(tzinfo=timezone.utc)
+                if datetime.now(timezone.utc) > expires:
+                    raise UpbitLiveSmokeError("PREFLIGHT_EXPIRED")
+            except UpbitLiveSmokeError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                raise UpbitLiveSmokeError("PREFLIGHT_EXPIRED") from exc
+        if int(stored.user_broker_account_id) != int(user_broker_account_id):
+            raise UpbitLiveSmokeError("PREFLIGHT_PARAMS_CHANGED")
+        if str(stored.market).upper() != str(market).upper():
+            raise UpbitLiveSmokeError("PREFLIGHT_PARAMS_CHANGED")
+        if str(stored.side_code).upper() != str(side).upper():
+            raise UpbitLiveSmokeError("PREFLIGHT_PARAMS_CHANGED")
+        # 금액·가격 비교 (Decimal)
+        stored_price = Decimal(str(pf.get("limit_price") or stored.limit_price))
+        req_amount = Decimal(str(amount))
+        req_price = round_upbit_price(Decimal(str(limit_price)))
+        if abs(stored_price - req_price) > Decimal("0"):
+            raise UpbitLiveSmokeError("PREFLIGHT_PARAMS_CHANGED")
+        raw_amount = pf.get("requested_amount")
+        if raw_amount is not None and Decimal(str(raw_amount)) != req_amount:
+            raise UpbitLiveSmokeError("PREFLIGHT_PARAMS_CHANGED")
+
+    # --- internals ---
+
+    def _create_run(
+        self,
+        *,
+        preflight: dict[str, Any],
+        execute_live: bool,
+        actor: str,
+    ) -> LiveValidationRunEntity:
+        run_id = f"uvs-{uuid.uuid4().hex[:16]}"
+        key = hashlib.sha256(
+            f"{run_id}|{preflight.get('preflight_id')}".encode()
+        ).hexdigest()[:40]
+        row = LiveValidationRunEntity(
+            run_id=run_id,
+            preflight_id=preflight.get("preflight_id"),
+            idempotency_key=f"smoke:{key}",
+            user_id=int(preflight.get("user_id") or 0),
+            user_broker_account_id=int(
+                preflight.get("user_broker_account_id") or 0
+            ),
+            broker_code="UPBIT",
+            market=str(preflight.get("market") or ""),
+            side_code=str(preflight.get("side") or ""),
+            amount=Decimal(str(preflight.get("estimated_amount") or 0)),
+            quantity=(
+                Decimal(str(preflight["quantity"]))
+                if preflight.get("quantity")
+                else None
+            ),
+            limit_price=Decimal(str(preflight.get("limit_price") or 0)),
+            execute_live=execute_live,
+            status_code=LiveValidationRunStatus.CREATED.value,
+            internal_status=LiveValidationRunStatus.CREATED.value,
+            broker_order_status="NOT_SUBMITTED",
+            broker_identifier=None,
+            preflight_result=preflight,
+            request_fingerprint=str(
+                preflight.get("request_fingerprint") or ""
+            ),
+            created_by=actor,
+            detail={},
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def _transition(
+        self,
+        run: LiveValidationRunEntity,
+        new_status: str,
+        *,
+        actor: str,
+    ) -> None:
+        current = run.status_code
+        allowed = ALLOWED_TRANSITIONS.get(current, frozenset())
+        if new_status == current:
+            return
+        if new_status not in allowed and current not in {
+            LiveValidationRunStatus.CREATED.value
+        }:
+            # CREATED에서 READY 직행 허용 보정
+            if not (
+                current == LiveValidationRunStatus.CREATED.value
+                and new_status
+                in {
+                    LiveValidationRunStatus.READY.value,
+                    LiveValidationRunStatus.PREFLIGHT_FAILED.value,
+                    LiveValidationRunStatus.EXECUTION_REQUESTED.value,
+                }
+            ):
+                raise UpbitLiveSmokeError(
+                    f"INVALID_TRANSITION:{current}->{new_status}"
+                )
+        run.status_code = new_status
+        run.internal_status = new_status
+        run.updated_at = datetime.now(timezone.utc)
+        detail = dict(run.detail or {})
+        hist = list(detail.get("transitions") or [])
+        hist.append(
+            {
+                "from": current,
+                "to": new_status,
+                "actor": actor,
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        detail["transitions"] = hist[-20:]
+        run.detail = detail
+        self._session.flush()
+
+    def _pause_uba_scope(self, uba_id: int, *, actor: str) -> None:
+        try:
+            from stock_platform.strategy_deployment.runtime_manager import (
+                dynamic_strategy_runtime_manager,
+            )
+
+            dynamic_strategy_runtime_manager.pause_account_runtimes(
+                user_broker_account_id=int(uba_id),
+                reason=f"upbit_live_smoke:{actor}",
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _watch_and_maybe_cancel(
+        self,
+        *,
+        run: LiveValidationRunEntity,
+        order_id: int,
+        actor: str,
+    ) -> dict[str, Any]:
+        """관찰 — Outbox를 ACCEPTED로 오인하지 않음. 추적 Scheduler에 위임."""
+
+        settings = get_settings()
+        watch_seconds = int(
+            getattr(settings, "upbit_live_smoke_order_watch_seconds", 60)
+        )
+        auto_cancel = bool(
+            getattr(settings, "upbit_live_smoke_auto_cancel", True)
+        )
+        from stock_platform.trading.upbit_live_tracking_service import (
+            UpbitLiveTrackingService,
+        )
+
+        # 즉시 1회 추적 시도 (Mock/테스트용). 실패해도 UNKNOWN 처리.
+        track_view: dict[str, Any] = {}
+        try:
+            track_view = UpbitLiveTrackingService(self._session).track_once(
+                run, actor=actor
+            )
+        except Exception as exc:  # noqa: BLE001
+            track_view = {
+                "track_error": type(exc).__name__,
+                "internal_status": run.internal_status,
+                "broker_order_status": run.broker_order_status,
+            }
+        return {
+            "watch_seconds": watch_seconds,
+            "auto_cancel": auto_cancel,
+            "order_id": order_id,
+            "internal_status": run.internal_status,
+            "broker_order_status": run.broker_order_status,
+            "note": (
+                "OUTBOX_PENDING is not ORDER_ACCEPTED; "
+                "broker tracker confirms status"
+            ),
+            "track": track_view,
+        }
+
+    def _finalize_protect(
+        self,
+        *,
+        user_broker_account_id: int,
+        run: LiveValidationRunEntity,
+        actor: str,
+    ) -> None:
+        """성공/실패/예외와 무관 — DISARM + LIVE OFF + Pause 유지."""
+
+        try:
+            LiveArmService(self._session).disarm(
+                int(user_broker_account_id),
+                actor=actor,
+                reason="UPBIT_LIVE_SMOKE_FINALLY",
+                turn_live_off=True,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        self._pause_uba_scope(user_broker_account_id, actor=actor)
+        # Broker 미확정 시 COMPLETED 금지
+        from stock_platform.trading.upbit_live_smoke_constants import (
+            BrokerOrderStatus,
+            TERMINAL_BROKER_STATUSES,
+        )
+
+        broker_status = str(run.broker_order_status or "")
+        terminal_ok = broker_status in TERMINAL_BROKER_STATUSES or (
+            run.internal_status
+            in {
+                LiveValidationRunStatus.DRY_RUN_COMPLETED.value,
+                LiveValidationRunStatus.VERIFIED.value,
+            }
+        )
+        if run.status_code not in {
+            LiveValidationRunStatus.COMPLETED.value,
+            LiveValidationRunStatus.DRY_RUN_COMPLETED.value,
+            LiveValidationRunStatus.FAILED_CLOSED.value,
+        }:
+            try:
+                if run.status_code in {
+                    LiveValidationRunStatus.REJECTED.value,
+                } or broker_status == BrokerOrderStatus.UNKNOWN.value:
+                    if run.internal_status != (
+                        LiveValidationRunStatus.FAILED_CLOSED.value
+                    ):
+                        self._transition(
+                            run,
+                            LiveValidationRunStatus.FAILED_CLOSED.value,
+                            actor=actor,
+                        )
+                    emit_live_safety_audit(
+                        self._session,
+                        event_type=UPBIT_LIVE_SMOKE_FAILED_CLOSED,
+                        actor=actor,
+                        run_id=run.run_id,
+                        user_id=run.user_id,
+                        account_id=user_broker_account_id,
+                        strategy_id=None,
+                        detail={
+                            "run_id": run.run_id,
+                            "status": run.status_code,
+                            "broker_order_status": broker_status,
+                        },
+                        commit=False,
+                    )
+                elif terminal_ok and run.internal_status in {
+                    LiveValidationRunStatus.CANCELED.value,
+                    LiveValidationRunStatus.VERIFIED.value,
+                }:
+                    self._transition(
+                        run,
+                        LiveValidationRunStatus.COMPLETED.value,
+                        actor=actor,
+                    )
+                # 그 외(OUTBOX_PENDING/BROKER_TRACKING/CANCEL_PENDING)는
+                # 추적 Scheduler가 계속 처리 — finally에서 COMPLETED 금지
+            except UpbitLiveSmokeError:
+                pass
+        if terminal_ok and run.internal_status in {
+            LiveValidationRunStatus.COMPLETED.value,
+            LiveValidationRunStatus.FAILED_CLOSED.value,
+            LiveValidationRunStatus.DRY_RUN_COMPLETED.value,
+        }:
+            run.completed_at = datetime.now(timezone.utc)
+        self._session.flush()
+        self._telegram(
+            title="Upbit LIVE Smoke Finished (protect)",
+            message=(
+                f"run={run.run_id} internal={run.internal_status} "
+                f"broker={broker_status} LIVE OFF + DISARM applied"
+            ),
+            detail={
+                "run_id": run.run_id,
+                "uba_id": user_broker_account_id,
+                "status": run.internal_status,
+                "broker_order_status": broker_status,
+                "order_id": run.order_id,
+                "execute_live": bool(run.execute_live),
+            },
+            event_type=UPBIT_LIVE_SMOKE_COMPLETED,
+        )
+
+    def _telegram(
+        self,
+        *,
+        title: str,
+        message: str,
+        detail: dict[str, Any],
+        event_type: str,
+    ) -> None:
+        safe = {
+            k: v
+            for k, v in detail.items()
+            if k
+            not in {
+                "arm_token",
+                "access_key",
+                "secret_key",
+                "token",
+                "password",
+            }
+        }
+        emit_live_order_telegram(
+            event_type=event_type,
+            title=title,
+            message=message,
+            detail=safe,
+        )
+
+    @staticmethod
+    def _row_dict(row: LiveValidationRunEntity) -> dict[str, Any]:
+        from stock_platform.trading.upbit_live_smoke_constants import (
+            mask_broker_uuid,
+        )
+
+        return {
+            "run_id": row.run_id,
+            "preflight_id": row.preflight_id,
+            "user_id": row.user_id,
+            "user_broker_account_id": row.user_broker_account_id,
+            "broker_code": row.broker_code,
+            "market": row.market,
+            "side": row.side_code,
+            "amount": str(row.amount),
+            "quantity": str(row.quantity) if row.quantity is not None else None,
+            "limit_price": str(row.limit_price),
+            "execute_live": bool(row.execute_live),
+            "status": row.internal_status or row.status_code,
+            "internal_status": row.internal_status or row.status_code,
+            "broker_order_status": getattr(
+                row, "broker_order_status", "NOT_SUBMITTED"
+            ),
+            "broker_identifier": getattr(row, "broker_identifier", None),
+            "broker_uuid_masked": mask_broker_uuid(
+                getattr(row, "broker_order_uuid", None)
+            ),
+            "order_id": row.order_id,
+            "order_status": row.order_status,
+            "manual_review_required": bool(
+                getattr(row, "manual_review_required", False)
+            ),
+            "last_broker_query_at": (
+                row.last_broker_query_at.isoformat()
+                if getattr(row, "last_broker_query_at", None)
+                else None
+            ),
+            "failure_code": row.failure_code,
+            "started_at": (
+                row.started_at.isoformat() if row.started_at else None
+            ),
+            "submitted_at": (
+                row.submitted_at.isoformat() if row.submitted_at else None
+            ),
+            "completed_at": (
+                row.completed_at.isoformat() if row.completed_at else None
+            ),
+            "post_fill_verification_id": row.post_fill_verification_id,
+            "created_by": row.created_by,
+        }

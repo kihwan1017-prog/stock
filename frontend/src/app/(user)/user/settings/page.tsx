@@ -148,7 +148,7 @@ export default function UserSettingsPage() {
         <Alert
           type="error"
           showIcon
-          message="설정을 불러오지 못했습니다."
+          title="설정을 불러오지 못했습니다."
           description={toApiError(settingsQuery.error).message}
         />
       ) : (
@@ -326,7 +326,7 @@ export default function UserSettingsPage() {
                 <Alert
                   type="info"
                   showIcon
-                  message="이벤트별 구독은 알림 센터에서 관리합니다."
+                  title="이벤트별 구독은 알림 센터에서 관리합니다."
                 />
               </Card>
             </Col>

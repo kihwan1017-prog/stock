@@ -1,10 +1,13 @@
-class UpbitError(RuntimeError):
-    """Base exception for Upbit API failures."""
+"""호환 래퍼 — canonical: stock_platform.broker.upbit.exceptions"""
 
+from stock_platform.broker.upbit.exceptions import (
+    UpbitError,
+    UpbitRateLimitError,
+    UpbitRequestError,
+)
 
-class UpbitRequestError(UpbitError):
-    """Raised when an Upbit REST request fails."""
-
-
-class UpbitRateLimitError(UpbitRequestError):
-    """Raised when Upbit rejects a request due to rate limiting."""
+__all__ = [
+    "UpbitError",
+    "UpbitRateLimitError",
+    "UpbitRequestError",
+]

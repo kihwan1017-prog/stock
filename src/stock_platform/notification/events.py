@@ -10,6 +10,8 @@ class NotificationEventType(StrEnum):
     SYSTEM_STOP = "SYSTEM_STOP"
     ORDER_SUBMITTED = "ORDER_SUBMITTED"
     ORDER_FILLED = "ORDER_FILLED"
+    ORDER_PARTIAL_FILLED = "ORDER_PARTIAL_FILLED"
+    ORDER_CANCELLED = "ORDER_CANCELLED"
     ORDER_REJECTED = "ORDER_REJECTED"
     STOP_LOSS = "STOP_LOSS"
     TAKE_PROFIT = "TAKE_PROFIT"
@@ -21,8 +23,20 @@ class NotificationEventType(StrEnum):
     BACKTEST_COMPLETE = "BACKTEST_COMPLETE"
     BROKER_DISCONNECTED = "BROKER_DISCONNECTED"
     BROKER_RECONNECTED = "BROKER_RECONNECTED"
+    BROKER_CONNECTED = "BROKER_CONNECTED"
+    BROKER_TIMEOUT = "BROKER_TIMEOUT"
     DATABASE_ERROR = "DATABASE_ERROR"
+    SCHEDULER_STARTED = "SCHEDULER_STARTED"
+    SCHEDULER_PAUSED = "SCHEDULER_PAUSED"
     SCHEDULER_ERROR = "SCHEDULER_ERROR"
+    RUNTIME_STARTED = "RUNTIME_STARTED"
+    RUNTIME_PAUSED = "RUNTIME_PAUSED"
+    RECOVERY_STARTED = "RECOVERY_STARTED"
+    RECOVERY_FAILED = "RECOVERY_FAILED"
+    RECOVERY_CONFLICT = "RECOVERY_CONFLICT"
+    RECONCILIATION_MISMATCH = "RECONCILIATION_MISMATCH"
+    SUBMISSION_UNKNOWN = "SUBMISSION_UNKNOWN"
+    SYSTEM_RESTART = "SYSTEM_RESTART"
     AI_TIMEOUT = "AI_TIMEOUT"
     TELEGRAM_FAILURE = "TELEGRAM_FAILURE"
     MONITORING_ALERT = "MONITORING_ALERT"
@@ -42,6 +56,8 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.SYSTEM_STOP: NotificationLevel.INFO,
     NotificationEventType.ORDER_SUBMITTED: NotificationLevel.INFO,
     NotificationEventType.ORDER_FILLED: NotificationLevel.INFO,
+    NotificationEventType.ORDER_PARTIAL_FILLED: NotificationLevel.INFO,
+    NotificationEventType.ORDER_CANCELLED: NotificationLevel.WARN,
     NotificationEventType.ORDER_REJECTED: NotificationLevel.WARN,
     NotificationEventType.STOP_LOSS: NotificationLevel.WARN,
     NotificationEventType.TAKE_PROFIT: NotificationLevel.INFO,
@@ -53,8 +69,20 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.BACKTEST_COMPLETE: NotificationLevel.INFO,
     NotificationEventType.BROKER_DISCONNECTED: NotificationLevel.CRITICAL,
     NotificationEventType.BROKER_RECONNECTED: NotificationLevel.INFO,
+    NotificationEventType.BROKER_CONNECTED: NotificationLevel.INFO,
+    NotificationEventType.BROKER_TIMEOUT: NotificationLevel.CRITICAL,
     NotificationEventType.DATABASE_ERROR: NotificationLevel.CRITICAL,
+    NotificationEventType.SCHEDULER_STARTED: NotificationLevel.INFO,
+    NotificationEventType.SCHEDULER_PAUSED: NotificationLevel.WARN,
     NotificationEventType.SCHEDULER_ERROR: NotificationLevel.CRITICAL,
+    NotificationEventType.RUNTIME_STARTED: NotificationLevel.INFO,
+    NotificationEventType.RUNTIME_PAUSED: NotificationLevel.WARN,
+    NotificationEventType.RECOVERY_STARTED: NotificationLevel.INFO,
+    NotificationEventType.RECOVERY_FAILED: NotificationLevel.CRITICAL,
+    NotificationEventType.RECOVERY_CONFLICT: NotificationLevel.WARN,
+    NotificationEventType.RECONCILIATION_MISMATCH: NotificationLevel.WARN,
+    NotificationEventType.SUBMISSION_UNKNOWN: NotificationLevel.CRITICAL,
+    NotificationEventType.SYSTEM_RESTART: NotificationLevel.INFO,
     NotificationEventType.AI_TIMEOUT: NotificationLevel.WARN,
     NotificationEventType.TELEGRAM_FAILURE: NotificationLevel.WARN,
     NotificationEventType.MONITORING_ALERT: NotificationLevel.WARN,

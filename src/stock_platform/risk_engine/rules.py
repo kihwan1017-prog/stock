@@ -224,6 +224,8 @@ class DailyLossRule(RiskRule):
 
 
 class TradingTimeRule(RiskRule):
+    """STEP 8-5-13 — 고정 09:00~15:20 대신 Calendar Session Phase 사용."""
+
     def evaluate(self, *, order, account, policy):
         if (
             order.exchange_code.upper() != "KRX"
@@ -235,38 +237,56 @@ class TradingTimeRule(RiskRule):
                 message="Market-hour check is not required",
             )
 
-        local_time = (
-            order.requested_at
-            .astimezone()
-            .time()
-            .replace(tzinfo=None)
-        )
-
-        if (
-            policy.trading_start_time
-            <= local_time
-            <= policy.trading_end_time
-        ):
-            return RiskRuleResult(
-                rule_code="TRADING_TIME",
-                level=RiskDecisionLevel.PASS,
-                message="Order is within configured trading hours",
+        try:
+            from stock_platform.operation.session_timeline import (
+                TradingSessionPhase,
+                phase_reason_code,
+                resolve_krx_timeline,
             )
 
-        return RiskRuleResult(
-            rule_code="TRADING_TIME",
-            level=RiskDecisionLevel.BLOCK,
-            message="Order is outside configured trading hours",
-            detail={
-                "requested_time": local_time.isoformat(),
-                "start_time": (
-                    policy.trading_start_time.isoformat()
-                ),
-                "end_time": (
-                    policy.trading_end_time.isoformat()
-                ),
-            },
-        )
+            timeline = resolve_krx_timeline(moment=order.requested_at)
+            phase = timeline.phase_at(order.requested_at)
+            is_risk_reducing = bool(
+                getattr(order, "is_risk_reducing", False)
+            )
+            # SELL을 위험 축소로 간주 (명시 플래그 없을 때)
+            if not is_risk_reducing and order.side == RiskOrderSide.SELL:
+                is_risk_reducing = True
+
+            if timeline.allows_any_order(
+                order.requested_at, is_risk_reducing=is_risk_reducing
+            ):
+                return RiskRuleResult(
+                    rule_code="TRADING_TIME",
+                    level=RiskDecisionLevel.PASS,
+                    message=f"Order allowed in phase {phase.value}",
+                    detail={
+                        "phase": phase.value,
+                        "revision": timeline.revision,
+                        "reason_code": phase_reason_code(phase),
+                    },
+                )
+
+            reason = phase_reason_code(phase)
+            if phase == TradingSessionPhase.EXIT_ONLY and not is_risk_reducing:
+                reason = phase_reason_code(phase)
+            return RiskRuleResult(
+                rule_code="TRADING_TIME",
+                level=RiskDecisionLevel.BLOCK,
+                message=f"Order blocked: {reason}",
+                detail={
+                    "phase": phase.value,
+                    "revision": timeline.revision,
+                    "reason_code": reason,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            return RiskRuleResult(
+                rule_code="TRADING_TIME",
+                level=RiskDecisionLevel.BLOCK,
+                message=f"Calendar session unavailable: {exc}",
+                detail={"reason_code": "CALENDAR_UNAVAILABLE"},
+            )
 
 
 class AvailableCashRule(RiskRule):
@@ -400,5 +420,196 @@ class BrokerHealthRule(RiskRule):
                 "error_rate": str(rate),
                 "limit": str(limit),
             },
+        )
+
+
+class AccountTradingPermissionRule(RiskRule):
+    """계좌 일시정지·매수/매도 허용·매도전용·자동매매 게이트."""
+
+    def evaluate(self, *, order, account, policy):
+        if getattr(policy, "account_paused", False):
+            # 위험 축소(EXIT) 매도는 일시정지 중에도 허용
+            if (
+                order.side == RiskOrderSide.SELL
+                and getattr(order, "is_risk_reducing", False)
+            ):
+                return RiskRuleResult(
+                    rule_code="ACCOUNT_PAUSED",
+                    level=RiskDecisionLevel.WARNING,
+                    message="Account paused but risk-reducing SELL allowed",
+                )
+            return RiskRuleResult(
+                rule_code="ACCOUNT_PAUSED",
+                level=RiskDecisionLevel.BLOCK,
+                message="Account trading is paused",
+            )
+
+        source = str(getattr(order, "order_source", "MANUAL")).upper()
+        if (
+            source == "AUTO"
+            and not getattr(policy, "auto_trading_enabled", True)
+        ):
+            return RiskRuleResult(
+                rule_code="AUTO_TRADING_DISABLED",
+                level=RiskDecisionLevel.BLOCK,
+                message="Auto trading is disabled for this policy",
+            )
+
+        if order.side == RiskOrderSide.BUY:
+            if getattr(policy, "sell_only", False):
+                return RiskRuleResult(
+                    rule_code="SELL_ONLY",
+                    level=RiskDecisionLevel.BLOCK,
+                    message="Sell-only mode blocks new BUY orders",
+                )
+            if not getattr(policy, "buy_enabled", True):
+                return RiskRuleResult(
+                    rule_code="BUY_DISABLED",
+                    level=RiskDecisionLevel.BLOCK,
+                    message="BUY is disabled for this policy",
+                )
+
+        if order.side == RiskOrderSide.SELL:
+            if not getattr(policy, "sell_enabled", True):
+                if getattr(order, "is_risk_reducing", False):
+                    return RiskRuleResult(
+                        rule_code="SELL_DISABLED",
+                        level=RiskDecisionLevel.WARNING,
+                        message="SELL disabled but risk-reducing exit allowed",
+                    )
+                return RiskRuleResult(
+                    rule_code="SELL_DISABLED",
+                    level=RiskDecisionLevel.BLOCK,
+                    message="SELL is disabled for this policy",
+                )
+
+        return RiskRuleResult(
+            rule_code="ACCOUNT_TRADING_PERMISSION",
+            level=RiskDecisionLevel.PASS,
+            message="Trading permissions allow this order",
+        )
+
+
+class DailyMaxOrderAmountRule(RiskRule):
+    def evaluate(self, *, order, account, policy):
+        limit = getattr(policy, "daily_max_order_amount", None)
+        if limit is None:
+            return RiskRuleResult(
+                rule_code="DAILY_MAX_ORDER_AMOUNT",
+                level=RiskDecisionLevel.PASS,
+                message="Daily max order amount not configured",
+            )
+        if order.side == RiskOrderSide.SELL:
+            return RiskRuleResult(
+                rule_code="DAILY_MAX_ORDER_AMOUNT",
+                level=RiskDecisionLevel.PASS,
+                message="SELL does not consume daily order budget",
+            )
+        projected = (
+            getattr(order, "daily_ordered_amount", ZERO)
+            + order.order_amount
+        )
+        if projected <= limit:
+            return RiskRuleResult(
+                rule_code="DAILY_MAX_ORDER_AMOUNT",
+                level=RiskDecisionLevel.PASS,
+                message="Daily order amount within limit",
+                detail={
+                    "projected": str(projected),
+                    "limit": str(limit),
+                },
+            )
+        return RiskRuleResult(
+            rule_code="DAILY_MAX_ORDER_AMOUNT",
+            level=RiskDecisionLevel.BLOCK,
+            message="Daily max order amount exceeded",
+            detail={
+                "projected": str(projected),
+                "limit": str(limit),
+            },
+        )
+
+
+class MaxTotalInvestmentAmountRule(RiskRule):
+    def evaluate(self, *, order, account, policy):
+        limit = getattr(policy, "max_total_investment_amount", None)
+        if limit is None or order.side == RiskOrderSide.SELL:
+            return RiskRuleResult(
+                rule_code="MAX_TOTAL_INVESTMENT",
+                level=RiskDecisionLevel.PASS,
+                message="Total investment check skipped",
+            )
+        projected = account.invested_amount + order.order_amount
+        if projected <= limit:
+            return RiskRuleResult(
+                rule_code="MAX_TOTAL_INVESTMENT",
+                level=RiskDecisionLevel.PASS,
+                message="Total investment within limit",
+            )
+        return RiskRuleResult(
+            rule_code="MAX_TOTAL_INVESTMENT",
+            level=RiskDecisionLevel.BLOCK,
+            message="Account max investment amount exceeded",
+            detail={
+                "projected": str(projected),
+                "limit": str(limit),
+            },
+        )
+
+
+class MaxPositionAmountRule(RiskRule):
+    def evaluate(self, *, order, account, policy):
+        limit = getattr(policy, "max_position_amount", None)
+        if limit is None or order.side == RiskOrderSide.SELL:
+            return RiskRuleResult(
+                rule_code="MAX_POSITION_AMOUNT",
+                level=RiskDecisionLevel.PASS,
+                message="Position amount check skipped",
+            )
+        projected = (
+            getattr(order, "symbol_invested_amount", ZERO)
+            + order.order_amount
+        )
+        if projected <= limit:
+            return RiskRuleResult(
+                rule_code="MAX_POSITION_AMOUNT",
+                level=RiskDecisionLevel.PASS,
+                message="Symbol position amount within limit",
+            )
+        return RiskRuleResult(
+            rule_code="MAX_POSITION_AMOUNT",
+            level=RiskDecisionLevel.BLOCK,
+            message="Symbol max investment amount exceeded",
+            detail={
+                "projected": str(projected),
+                "limit": str(limit),
+            },
+        )
+
+
+class DuplicateBuyRule(RiskRule):
+    def evaluate(self, *, order, account, policy):
+        if order.side != RiskOrderSide.BUY:
+            return RiskRuleResult(
+                rule_code="DUPLICATE_BUY",
+                level=RiskDecisionLevel.PASS,
+                message="Not a BUY order",
+            )
+        if getattr(policy, "allow_duplicate_buy", True):
+            return RiskRuleResult(
+                rule_code="DUPLICATE_BUY",
+                level=RiskDecisionLevel.PASS,
+                message="Duplicate buy allowed",
+            )
+        if account.symbol_position_quantity > ZERO:
+            return RiskRuleResult(
+                rule_code="DUPLICATE_BUY",
+                level=RiskDecisionLevel.BLOCK,
+                message="Duplicate buy blocked for existing position",
+            )
+        return RiskRuleResult(
+            rule_code="DUPLICATE_BUY",
+            level=RiskDecisionLevel.PASS,
+            message="No existing position for symbol",
         )
 

@@ -31,6 +31,7 @@ class FakeRepo:
         self.by_id: dict[int, AuthUser] = {}
         self.next_id = 1
         self.tokens: dict[str, object] = {}
+        self.revoked: list[tuple[str, str | None]] = []
 
     def count_users(self) -> int:
         return len(self.users)
@@ -68,7 +69,7 @@ class FakeRepo:
             username=kwargs["username"],
             password_hash=kwargs["password_hash"],
             display_name=kwargs.get("display_name"),
-            roles=kwargs.get("roles") or ["viewer"],
+            roles=kwargs.get("roles") or ["user"],
             is_active=kwargs.get("is_active", True),
             email=kwargs.get("email"),
             terms_accepted_at=kwargs.get("terms_accepted_at"),
@@ -76,6 +77,11 @@ class FakeRepo:
             updated_at=datetime.now(timezone.utc),
             password_changed_at=datetime.now(timezone.utc),
         )
+        user.deleted_at = None
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.password_change_required = False
+        user.onboarding_completed_at = None
         self.next_id += 1
         self.users[user.username] = user
         self.by_id[user.user_id] = user
@@ -88,14 +94,54 @@ class FakeRepo:
     def get_refresh_by_jti(self, jti: str):
         return None
 
-    def revoke_refresh(self, jti: str) -> bool:
+    def revoke_refresh(self, jti: str, *, reason: str | None = None) -> bool:
+        self.revoked.append((jti, reason))
         return True
 
-    def revoke_all_for_user(self, user_id: int) -> int:
+    def revoke_all_for_user(
+        self,
+        user_id: int,
+        *,
+        exclude_jti: str | None = None,
+        reason: str | None = None,
+    ) -> int:
         return 0
 
     def update_password(self, user, *, password_hash: str):
         user.password_hash = password_hash
+        return user
+
+    def mark_last_login(self, user) -> None:
+        user.last_login_at = datetime.now(timezone.utc)
+
+    def flush(self) -> None:
+        return None
+
+    def set_password_change_required(self, user, *, required: bool):
+        user.password_change_required = required
+        return user
+
+    def mark_onboarding_completed(self, user):
+        if user.onboarding_completed_at is None:
+            user.onboarding_completed_at = datetime.now(timezone.utc)
+        return user
+
+    def clear_lockout(self, user):
+        user.locked_until = None
+        user.failed_login_count = 0
+        return user
+
+    def record_failed_login(
+        self,
+        user,
+        *,
+        max_fails: int,
+        lockout_minutes: int,
+    ):
+        user.failed_login_count = int(user.failed_login_count or 0) + 1
+        if user.failed_login_count >= max(1, int(max_fails)):
+            user.failed_login_count = 0
+            user.locked_until = datetime.now(timezone.utc)
         return user
 
 
@@ -116,7 +162,7 @@ def test_signup_and_login_by_email() -> None:
     assert pair.refresh_token
     assert view.username == "hong"
     assert view.email == "hong@example.com"
-    assert "viewer" in view.roles
+    assert "user" in view.roles
 
     pair2, view2 = service.login(
         username="hong@example.com",

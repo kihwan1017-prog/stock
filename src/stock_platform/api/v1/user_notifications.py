@@ -92,7 +92,7 @@ def list_subscriptions(
 @router.put("/subscriptions")
 def update_subscription(
     body: SubscriptionUpdateBody,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     return _svc(session).update_subscription(
@@ -109,7 +109,7 @@ def update_subscription(
 
 @router.post("/read-all")
 def read_all(
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     return _svc(session).read_all(user.user_id)
@@ -130,7 +130,7 @@ def get_notification(
 @router.post("/{notification_id}/read")
 def mark_read(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -144,7 +144,7 @@ def mark_read(
 @router.delete("/{notification_id}/read")
 def mark_unread(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -158,7 +158,7 @@ def mark_unread(
 @router.post("/{notification_id}/archive")
 def archive(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -172,7 +172,7 @@ def archive(
 @router.delete("/{notification_id}/archive")
 def unarchive(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -186,7 +186,7 @@ def unarchive(
 @router.post("/{notification_id}/star")
 def star(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -200,7 +200,7 @@ def star(
 @router.delete("/{notification_id}/star")
 def unstar(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -214,7 +214,7 @@ def unstar(
 @router.delete("/{notification_id}")
 def delete_notification(
     notification_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:

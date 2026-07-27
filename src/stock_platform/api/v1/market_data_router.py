@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
@@ -32,7 +33,9 @@ from stock_platform.markets.service import (
 )
 
 
-router = APIRouter(prefix="/api/v1/market", tags=["market-data"])
+router = APIRouter(prefix="/api/v1/market", tags=["market-data"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 def _instrument_service(session: Session) -> InstrumentService:

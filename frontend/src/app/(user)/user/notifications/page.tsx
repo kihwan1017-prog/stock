@@ -299,13 +299,13 @@ export default function UserNotificationsPage() {
         <Alert
           type="error"
           showIcon
-          message="알림을 불러오지 못했습니다."
+          title="알림을 불러오지 못했습니다."
           description={toApiError(listQuery.error).message}
         />
       ) : items.length === 0 ? (
         <Empty description="알림이 없습니다." />
       ) : (
-        <Space direction="vertical" size={10} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={10} style={{ width: "100%" }}>
           {items.map((item) => (
             <Card
               key={item.notification_id}
@@ -387,13 +387,13 @@ export default function UserNotificationsPage() {
         title="알림 상세"
         open={selectedId != null}
         onClose={() => setSelectedId(null)}
-        width={480}
-        destroyOnClose
+        size={480}
+        destroyOnHidden
       >
         {detailQuery.isLoading ? (
           <Skeleton active />
         ) : detailQuery.data ? (
-          <Space direction="vertical" style={{ width: "100%" }} size={12}>
+          <Space orientation="vertical" style={{ width: "100%" }} size={12}>
             <Typography.Title level={4} style={{ margin: 0 }}>
               {detailQuery.data.title}
             </Typography.Title>
@@ -452,7 +452,7 @@ export default function UserNotificationsPage() {
         title="알림 구독"
         open={showSubscriptions}
         onClose={() => setShowSubscriptions(false)}
-        width={560}
+        size={560}
       >
         {subscriptionsQuery.isLoading ? (
           <Skeleton active />
@@ -516,7 +516,7 @@ export default function UserNotificationsPage() {
           style={{ marginTop: 16 }}
           type="info"
           showIcon
-          message="Telegram은 Notification Center 구독을 거쳐 발송됩니다."
+          title="Telegram은 Notification Center 구독을 거쳐 발송됩니다."
         />
       </Drawer>
     </UserPageShell>

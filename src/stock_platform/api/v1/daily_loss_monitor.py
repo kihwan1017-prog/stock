@@ -66,7 +66,6 @@ async def check_daily_loss_now():
 @router.post("/reset")
 def reset_daily_loss_monitor(
     request: DailyLossResetRequest,
-    account_number: str = Query(min_length=1),
     session: Session = Depends(get_db_session),
 ):
     return DailyLossMonitor(

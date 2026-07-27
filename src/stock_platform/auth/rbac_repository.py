@@ -9,6 +9,7 @@ from stock_platform.auth.rbac_models import (
     RolePermission,
     UserRole,
 )
+from stock_platform.auth.role_codes import normalize_role_code
 
 
 class RbacRepository:
@@ -63,11 +64,8 @@ class RbacRepository:
     def get_role_ids_by_codes(self, codes: list[str]) -> list[int]:
         if not codes:
             return []
-        normalized = [c.strip().lower() for c in codes]
-        # legacy alias
-        normalized = [
-            "viewer" if code == "user" else code for code in normalized
-        ]
+        # viewer/operator 등 레거시 입력을 admin/user로 정규화
+        normalized = [normalize_role_code(c) for c in codes]
         rows = self._session.scalars(
             select(Role.role_id).where(Role.code.in_(normalized))
         )

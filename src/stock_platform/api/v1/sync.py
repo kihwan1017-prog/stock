@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from stock_platform.brokers.kiwoom.client import KiwoomRestClient
-from stock_platform.brokers.kiwoom.exceptions import KiwoomError
+from stock_platform.broker.kiwoom.market.client import KiwoomRestClient
+from stock_platform.broker.kiwoom.market.exceptions import KiwoomError
 from stock_platform.collectors.kiwoom.daily_collector import (
     KiwoomDailyCollectionError,
     KiwoomDailyCollector,
@@ -16,6 +17,7 @@ from stock_platform.collectors.kiwoom.sync_service import (
     KiwoomDailySyncResult,
     KiwoomDailySyncService,
 )
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.database.session import get_db_session
 from stock_platform.markets.repository import (
     InstrumentRepository,
@@ -31,6 +33,7 @@ from stock_platform.markets.service import (
 router = APIRouter(
     prefix="/api/v1/sync",
     tags=["Synchronization"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -58,8 +61,15 @@ class KiwoomDailySyncResponse(BaseModel):
 )
 async def sync_kiwoom_daily(
     request: KiwoomDailySyncRequest,
+    http_request: Request,
     session: Session = Depends(get_db_session),
 ) -> KiwoomDailySyncResult:
+    enforce_rate_limit(
+        http_request,
+        scope="sync_kiwoom_daily",
+        limit=20,
+        window_seconds=60,
+    )
     instrument_service = InstrumentService(
         InstrumentRepository(session)
     )

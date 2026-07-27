@@ -117,7 +117,7 @@ def recent_ai_summaries(
 def read_all(
     market_code: str | None = None,
     symbol: str | None = None,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -145,7 +145,7 @@ def get_detail(
 @router.post("/{disclosure_id}/read")
 def mark_read(
     disclosure_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -159,7 +159,7 @@ def mark_read(
 @router.delete("/{disclosure_id}/read")
 def unmark_read(
     disclosure_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -173,7 +173,7 @@ def unmark_read(
 @router.post("/{disclosure_id}/bookmark")
 def bookmark(
     disclosure_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -187,7 +187,7 @@ def bookmark(
 @router.delete("/{disclosure_id}/bookmark")
 def unbookmark(
     disclosure_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -213,7 +213,7 @@ def get_ai_summary(
 @router.post("/{disclosure_id}/ai-summary")
 async def request_ai_summary(
     disclosure_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     service = _ai(session)
@@ -234,7 +234,7 @@ async def request_ai_summary(
 @router.post("/{disclosure_id}/ai-summary/regenerate")
 async def regenerate_ai_summary(
     disclosure_id: int,
-    user: AuthenticatedUser = Depends(require_permission("trading:read")),
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
     session: Session = Depends(get_db_session),
 ):
     service = _ai(session)

@@ -24,7 +24,9 @@ import { useMemo, useState } from "react";
 import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { userRoutes } from "@/config/routes";
 import { useAuth } from "@/features/auth/hooks/useAuth";
+import { canAccessAdminPortal } from "@/features/auth/utils/roles";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
+import { MarketSessionBanner } from "@/features/user/market/MarketSessionBanner";
 import * as userApi from "@/features/user/api/userApi";
 import { normalizeWeights } from "@/features/user/strategy/normalizeWeights";
 import { toApiError } from "@/lib/api/apiError";
@@ -55,11 +57,296 @@ function tableRowKey(row: Record<string, unknown>, fields: string[]): string {
   }
 }
 
+/** STEP 8-3 — 내 전략 / 공개 전략 패널 */
+function OwnedStrategiesPanel({
+  currentUserId,
+  messageApi,
+}: {
+  currentUserId: number | null;
+  messageApi: { success: (s: string) => void; error: (s: string) => void };
+}) {
+  const queryClient = useQueryClient();
+  const [createForm] = Form.useForm();
+  const [linkAccountId, setLinkAccountId] = useState<number | null>(null);
+  const [busyId, setBusyId] = useState<number | null>(null);
+
+  const mineQuery = useQuery({
+    queryKey: queryKeys.user.ownedStrategies("MINE"),
+    queryFn: () => userApi.listOwnedStrategies({ scope: "MINE", limit: 100 }),
+  });
+  const publicQuery = useQuery({
+    queryKey: queryKeys.user.ownedStrategies("PUBLIC"),
+    queryFn: () => userApi.listOwnedStrategies({ scope: "PUBLIC", limit: 100 }),
+  });
+
+  const invalidateOwned = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["user", "owned-strategies"],
+    });
+  };
+
+  const createMut = useMutation({
+    mutationFn: userApi.createOwnedStrategy,
+    onSuccess: () => {
+      messageApi.success("개인 전략을 생성했습니다");
+      createForm.resetFields();
+      invalidateOwned();
+    },
+    onError: (e) => messageApi.error(toApiError(e).message),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => userApi.deleteOwnedStrategy(id),
+    onSuccess: () => {
+      messageApi.success("전략을 비활성화(soft delete)했습니다");
+      invalidateOwned();
+    },
+    onError: (e) => messageApi.error(toApiError(e).message),
+    onSettled: () => setBusyId(null),
+  });
+
+  const cloneMut = useMutation({
+    mutationFn: (id: number) => userApi.cloneOwnedStrategy(id),
+    onSuccess: () => {
+      messageApi.success("공개 전략을 개인 전략으로 복제했습니다");
+      invalidateOwned();
+    },
+    onError: (e) => messageApi.error(toApiError(e).message),
+    onSettled: () => setBusyId(null),
+  });
+
+  const linkMut = useMutation({
+    mutationFn: (strategyId: number) => {
+      if (!linkAccountId || linkAccountId <= 0) {
+        throw new Error("연결할 Paper 계좌 ID를 입력하세요");
+      }
+      return userApi.linkAccountStrategy(linkAccountId, strategyId, {
+        account_type: "PAPER",
+        account_broker: "PAPER",
+      });
+    },
+    onSuccess: () => messageApi.success("계좌에 전략을 연결했습니다"),
+    onError: (e) => messageApi.error(toApiError(e).message),
+    onSettled: () => setBusyId(null),
+  });
+
+  const mineRows = extractRows(mineQuery.data);
+  const publicRows = extractRows(publicQuery.data);
+
+  const columnsFor = (kind: "MINE" | "PUBLIC") => [
+    { title: "ID", dataIndex: "strategy_id", width: 70, render: cell },
+    { title: "코드", dataIndex: "strategy_code", render: cell },
+    { title: "이름", dataIndex: "name", render: cell },
+    { title: "시장", dataIndex: "market_type", width: 80, render: cell },
+    {
+      title: "소유",
+      dataIndex: "owner_type",
+      width: 80,
+      render: (v: unknown, row: Record<string, unknown>) => (
+        <Space size={4}>
+          <Tag>{cell(v)}</Tag>
+          {kind === "MINE" ||
+          (currentUserId != null &&
+            Number(row.user_id) === Number(currentUserId)) ? (
+            <Tag color="blue">내 전략</Tag>
+          ) : (
+            <Tag color="green">공개</Tag>
+          )}
+        </Space>
+      ),
+    },
+    {
+      title: "공개",
+      dataIndex: "visibility",
+      width: 80,
+      render: cell,
+    },
+    {
+      title: "활성",
+      dataIndex: "is_active",
+      width: 70,
+      render: (v: unknown) => (v ? <Tag color="success">Y</Tag> : <Tag>N</Tag>),
+    },
+    {
+      title: "승인",
+      dataIndex: "approved_at",
+      width: 90,
+      render: (v: unknown) => (v ? <Tag color="purple">승인</Tag> : <Tag>—</Tag>),
+    },
+    {
+      title: "작업",
+      key: "actions",
+      width: kind === "MINE" ? 280 : 240,
+      render: (_: unknown, row: Record<string, unknown>) => {
+        const id = Number(row.strategy_id);
+        const loading = busyId === id;
+        if (kind === "MINE") {
+          return (
+            <Space wrap size={4}>
+              <Button
+                size="small"
+                disabled={loading || deleteMut.isPending}
+                loading={loading && deleteMut.isPending}
+                danger
+                onClick={() => {
+                  setBusyId(id);
+                  deleteMut.mutate(id);
+                }}
+              >
+                삭제
+              </Button>
+              <Button
+                size="small"
+                disabled={loading || linkMut.isPending}
+                loading={loading && linkMut.isPending}
+                onClick={() => {
+                  setBusyId(id);
+                  linkMut.mutate(id);
+                }}
+              >
+                계좌 연결
+              </Button>
+              <Button
+                size="small"
+                disabled={loading || cloneMut.isPending}
+                onClick={() => {
+                  setBusyId(id);
+                  cloneMut.mutate(id);
+                }}
+              >
+                복제
+              </Button>
+            </Space>
+          );
+        }
+        return (
+          <Space wrap size={4}>
+            <Button
+              size="small"
+              disabled={loading || cloneMut.isPending}
+              loading={loading && cloneMut.isPending}
+              onClick={() => {
+                setBusyId(id);
+                cloneMut.mutate(id);
+              }}
+            >
+              복제
+            </Button>
+            <Button
+              size="small"
+              disabled={loading || linkMut.isPending}
+              loading={loading && linkMut.isPending}
+              onClick={() => {
+                setBusyId(id);
+                linkMut.mutate(id);
+              }}
+            >
+              계좌 연결
+            </Button>
+          </Space>
+        );
+      },
+    },
+  ];
+
+  return (
+    <Card
+      size="small"
+      title="내 전략 · 공개 전략"
+      extra={
+        <Space>
+          <Typography.Text type="secondary">Paper 계좌 ID</Typography.Text>
+          <InputNumber
+            min={1}
+            size="small"
+            value={linkAccountId ?? undefined}
+            onChange={(v) => setLinkAccountId(typeof v === "number" ? v : null)}
+          />
+        </Space>
+      }
+    >
+      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+        <Form
+          form={createForm}
+          layout="inline"
+          onFinish={(v) =>
+            createMut.mutate({
+              strategy_code: String(v.strategy_code),
+              name: String(v.name),
+              market_type: String(v.market_type || "STOCK"),
+              description: v.description || null,
+              parameter_payload: {},
+            })
+          }
+        >
+          <Form.Item
+            name="strategy_code"
+            label="코드"
+            rules={[{ required: true }]}
+          >
+            <Input placeholder="MY_MA" />
+          </Form.Item>
+          <Form.Item name="name" label="이름" rules={[{ required: true }]}>
+            <Input placeholder="내 이동평균" />
+          </Form.Item>
+          <Form.Item name="market_type" label="시장" initialValue="STOCK">
+            <Select
+              style={{ width: 110 }}
+              options={[
+                { value: "STOCK", label: "STOCK" },
+                { value: "CRYPTO", label: "CRYPTO" },
+                { value: "ALL", label: "ALL" },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={createMut.isPending}
+              disabled={createMut.isPending}
+            >
+              개인 전략 생성
+            </Button>
+          </Form.Item>
+        </Form>
+
+        <Typography.Text strong>내 전략</Typography.Text>
+        <Table
+          size="small"
+          loading={mineQuery.isLoading}
+          pagination={{ pageSize: 5 }}
+          rowKey={(r) => String(asRecord(r)?.strategy_id ?? "mine")}
+          dataSource={mineRows}
+          columns={columnsFor("MINE")}
+          locale={{ emptyText: "내 전략 없음" }}
+        />
+
+        <Typography.Text strong>공개 전략</Typography.Text>
+        <Typography.Paragraph type="secondary" style={{ margin: 0 }}>
+          공개 전략은 상세·복제·백테스트·계좌 연결만 가능합니다 (수정·삭제 버튼 없음).
+        </Typography.Paragraph>
+        <Table
+          size="small"
+          loading={publicQuery.isLoading}
+          pagination={{ pageSize: 5 }}
+          rowKey={(r) => String(asRecord(r)?.strategy_id ?? "public")}
+          dataSource={publicRows}
+          columns={columnsFor("PUBLIC")}
+          locale={{ emptyText: "공개 전략 없음" }}
+        />
+      </Space>
+    </Card>
+  );
+}
+
 export default function UserStrategiesPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const actor = user?.username ?? "user-web";
+  // 전략 배포·런타임 제어는 admin 전용 — 조회는 회원 누구나 가능
+  const canOperate = canAccessAdminPortal(user?.roles);
 
   const [paramJson, setParamJson] = useState('{"fast":5,"slow":20}');
   const [updateJson, setUpdateJson] = useState("{}");
@@ -101,9 +388,21 @@ export default function UserStrategiesPage() {
     refetchInterval: 10_000,
   });
 
+  const myRuntimesQuery = useQuery({
+    queryKey: ["user", "my-runtimes"],
+    queryFn: () => userApi.listMyRuntimes(),
+    refetchInterval: 10_000,
+  });
+
   const realtimeQuery = useQuery({
     queryKey: queryKeys.user.realtimeStrategy(),
     queryFn: userApi.getRealtimeStrategyStatus,
+    refetchInterval: 10_000,
+  });
+
+  const realtimeScopesQuery = useQuery({
+    queryKey: ["user", "realtime-scopes"],
+    queryFn: userApi.listMyRealtimeScopes,
     refetchInterval: 10_000,
   });
 
@@ -323,6 +622,24 @@ export default function UserStrategiesPage() {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <MarketSessionBanner exchangeCode="KRX" />
+
+        <Alert
+          type="info"
+          showIcon
+          title="전략 소유권 (STEP 8-3)"
+          description="내 개인 전략과 공개(시스템·승인) 전략을 구분합니다. 공개 전략 원본은 수정·삭제할 수 없으며 복제 후 사용하세요."
+        />
+
+        <OwnedStrategiesPanel
+          currentUserId={
+            user?.id != null && user.id !== ""
+              ? Number(user.id)
+              : null
+          }
+          messageApi={message}
+        />
+
         <Alert
           type="info"
           showIcon
@@ -330,15 +647,61 @@ export default function UserStrategiesPage() {
           description="생성=performance run+deploy · 수정=update · 중지=stop · 실행=runtime reload+realtime start · 백테스트=/backtests/moving-average · WF=/walk-forward. 삭제·포트폴리오 최적화 API는 없음."
         />
 
+        {!canOperate ? (
+          <Alert
+            type="warning"
+            showIcon
+            title="전략 배포·실행 제어는 운영자 이상 권한이 필요합니다"
+            description="전략 목록·순위·실행 상태 조회는 누구나 가능합니다. 배포 생성·수정·중지, 런타임 실행·중지는 admin 권한 계정에서만 가능합니다."
+          />
+        ) : null}
+
         {/* 실행 상태 */}
         <Card size="small" title="전략 실행 · 중지" loading={runtimeQuery.isLoading}>
           <Space wrap>
             <Tag color="processing">
-              Runtime: {cell(runtime?.status ?? runtime?.state ?? "—")}
+              Registry:{" "}
+              {cell(
+                (runtime as { scoped_runtime_count?: number } | null)
+                  ?.scoped_runtime_count ?? "—",
+              )}{" "}
+              scopes
             </Tag>
             <Tag>
               Realtime: {cell(realtime?.status ?? realtime?.running ?? "—")}
             </Tag>
+            {(() => {
+              const items =
+                realtimeScopesQuery.data &&
+                typeof realtimeScopesQuery.data === "object" &&
+                "items" in realtimeScopesQuery.data &&
+                Array.isArray(
+                  (realtimeScopesQuery.data as { items?: unknown }).items,
+                )
+                  ? (
+                      realtimeScopesQuery.data as {
+                        items: Record<string, unknown>[];
+                      }
+                    ).items
+                  : [];
+              const first = items[0];
+              if (!first) {
+                return <Tag>Scope 구독 없음</Tag>;
+              }
+              return (
+                <>
+                  <Tag color="blue">
+                    Warm-up: {cell(first.warmup_status ?? "—")}
+                  </Tag>
+                  <Tag>
+                    상태: {cell(first.runtime_status ?? "—")}
+                  </Tag>
+                  <Tag>
+                    마지막 신호: {cell(first.last_signal_at ?? "—")}
+                  </Tag>
+                </>
+              );
+            })()}
             {activeRow ? (
               <Tag color="success">
                 Active #{cell(activeRow.strategy_deployment_id)}{" "}
@@ -349,12 +712,14 @@ export default function UserStrategiesPage() {
             )}
             <Button
               type="primary"
+              disabled={!canOperate}
               loading={startRuntime.isPending}
               onClick={() => startRuntime.mutate()}
             >
               전략 실행
             </Button>
             <Button
+              disabled={!canOperate}
               loading={stopRuntime.isPending}
               onClick={() => stopRuntime.mutate()}
             >
@@ -362,7 +727,9 @@ export default function UserStrategiesPage() {
             </Button>
             <Button
               danger
-              disabled={!Number.isFinite(activeId) || activeId <= 0}
+              disabled={
+                !canOperate || !Number.isFinite(activeId) || activeId <= 0
+              }
               loading={stopStrategy.isPending}
               onClick={() => {
                 if (activeId > 0) stopStrategy.mutate(activeId);
@@ -371,6 +738,48 @@ export default function UserStrategiesPage() {
               배포 중지
             </Button>
           </Space>
+        </Card>
+
+        <Card
+          size="small"
+          title="내 Scope Runtime"
+          loading={myRuntimesQuery.isLoading}
+        >
+          <Table
+            size="small"
+            rowKey={(r) => String((r as { scope_key?: string }).scope_key)}
+            pagination={false}
+            dataSource={myRuntimesQuery.data?.items ?? []}
+            locale={{ emptyText: "연결된 Scope Runtime이 없습니다." }}
+            columns={[
+              {
+                title: "Broker",
+                dataIndex: "broker_code",
+                width: 80,
+              },
+              {
+                title: "Market",
+                dataIndex: "market_type",
+                width: 80,
+              },
+              {
+                title: "Strategy",
+                dataIndex: "strategy_id",
+                width: 90,
+              },
+              {
+                title: "상태",
+                dataIndex: "status",
+                render: (v: string) => <Tag>{v}</Tag>,
+              },
+              {
+                title: "Pause/오류",
+                key: "pause",
+                render: (_: unknown, row: Record<string, unknown>) =>
+                  String(row.pause_reason ?? row.last_error ?? "-"),
+              },
+            ]}
+          />
         </Card>
 
         {/* 전략 목록 */}
@@ -384,8 +793,8 @@ export default function UserStrategiesPage() {
           }
           extra={
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              GET /dashboard/strategy-operations · /strategy-deployments/active ·
-              /strategy-ranking
+              GET /user/strategies/operations-dashboard ·
+              /strategy-deployments/active · /user/strategies/ranking
             </Typography.Text>
           }
         >
@@ -459,6 +868,7 @@ export default function UserStrategiesPage() {
             >
               <Form
                 layout="vertical"
+                disabled={!canOperate}
                 onFinish={(v) => {
                   const parameter_payload = parseJsonObject(
                     paramJson,
@@ -535,6 +945,7 @@ export default function UserStrategiesPage() {
             >
               <Form
                 layout="vertical"
+                disabled={!canOperate}
                 onFinish={() => {
                   const id =
                     selectedDeploymentId ??
@@ -606,7 +1017,7 @@ export default function UserStrategiesPage() {
           size="small"
           extra={
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              POST /backtests/moving-average · GET /backtest-runs
+              POST /user/backtests/moving-average · GET /user/backtests/runs
             </Typography.Text>
           }
         >
@@ -726,7 +1137,7 @@ export default function UserStrategiesPage() {
           size="small"
           extra={
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              POST /walk-forward
+              POST /user/backtests/walk-forward
             </Typography.Text>
           }
         >
@@ -869,7 +1280,7 @@ export default function UserStrategiesPage() {
             reason="최적 가중치(예: mean-variance)를 산출하는 API가 Backend에 없습니다. 아래는 가중치를 직접 넣는 포트폴리오 백테스트입니다."
             relatedApis={[
               "TODO: POST /api/v1/portfolio-optimize",
-              "참고: POST /api/v1/portfolio-backtests",
+              "참고: POST /api/v1/user/backtests/portfolio",
             ]}
           />
 

@@ -1,0 +1,28 @@
+# Audit documents
+
+단계별 전체 코드 감사·수정 산출물.
+
+| Document | Description |
+|----------|-------------|
+| [STEP01_PROJECT_ANALYSIS.md](STEP01_PROJECT_ANALYSIS.md) | 프로젝트 전체 현황 분석 |
+| [STEP02_TEST_BASELINE.md](STEP02_TEST_BASELINE.md) | 테스트·빌드 기준선 |
+| [STEP03_CONFIGURATION.md](STEP03_CONFIGURATION.md) | 환경설정·초기화·테스트 격리 |
+| [STEP04_AUTH_REPOSITORY.md](STEP04_AUTH_REPOSITORY.md) | Auth Repository 계약 |
+| [STEP05_EXCEPTION_MAPPING.md](STEP05_EXCEPTION_MAPPING.md) | 예외·API 오류 코드 매핑 |
+| [STEP06_BROKER_CONSOLIDATION.md](STEP06_BROKER_CONSOLIDATION.md) | broker/brokers 통합 |
+| [STEP07_ORDER_EXECUTION.md](STEP07_ORDER_EXECUTION.md) | 주문·Outbox·체결 |
+| [STEP08_RISK_KILL_SWITCH.md](STEP08_RISK_KILL_SWITCH.md) | Risk·Kill Switch |
+| [STEP09_SCHEDULER_RUNTIME.md](STEP09_SCHEDULER_RUNTIME.md) | Scheduler·Runtime |
+| [STEP10_KIWOOM.md](STEP10_KIWOOM.md) | 키움 상세 검증 |
+| [STEP11_UPBIT.md](STEP11_UPBIT.md) | 업비트 상세 검증 |
+| [STEP12_PAPER_TRADING.md](STEP12_PAPER_TRADING.md) | Paper Trading |
+| [STEP13_MARKET_STRATEGY.md](STEP13_MARKET_STRATEGY.md) | 시장·지표·전략 |
+| [STEP14_AI_NEWS_DISCLOSURE.md](STEP14_AI_NEWS_DISCLOSURE.md) | 뉴스·공시·LLM |
+| [STEP15_FRONTEND_BUILD.md](STEP15_FRONTEND_BUILD.md) | FE 의존성·빌드 |
+| [STEP16_FRONTEND_FEATURES.md](STEP16_FRONTEND_FEATURES.md) | FE 미구현 기능 |
+| [STEP17_SECURITY.md](STEP17_SECURITY.md) | API 보안 감사 |
+| [STEP18_OPERATIONS.md](STEP18_OPERATIONS.md) | 운영·백업·복구 |
+| [STEP19_CLEANUP.md](STEP19_CLEANUP.md) | 정리 대상 |
+| [STEP20_INTEGRATION_TEST.md](STEP20_INTEGRATION_TEST.md) | 통합 테스트 기준선 |
+| [STEP21_FINAL.md](STEP21_FINAL.md) | 최종 평가 포인터 |
+| [FINAL_AUDIT_REPORT.md](FINAL_AUDIT_REPORT.md) | **최종 운영 준비도 보고서** |

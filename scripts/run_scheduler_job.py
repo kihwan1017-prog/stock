@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
             "candidate_screening",
             "ai_orchestration",
             "position_planning",
+            "portfolio_equity_snapshot",
         ],
     )
     return parser.parse_args()

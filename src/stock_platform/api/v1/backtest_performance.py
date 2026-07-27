@@ -7,6 +7,7 @@ from fastapi import (
     HTTPException,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,7 @@ from stock_platform.performance.backtest_result_adapter import (
 router = APIRouter(
     prefix="/api/v1/backtest-performance",
     tags=["Backtest Performance"],
+    dependencies=[Depends(require_admin)],
 )
 
 

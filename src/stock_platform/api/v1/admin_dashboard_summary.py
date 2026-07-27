@@ -9,6 +9,7 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
+from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
 from stock_platform.auth.account_ownership import (
     assert_trading_account_access,
@@ -27,7 +28,8 @@ router = APIRouter(
 
 @router.get("/admin-summary")
 async def get_admin_dashboard_summary(
-    account_id: int = Query(default=1, gt=0),
+    # None이면 REALTIME_PAPER_ACCOUNT_ID 설정값 사용 (하드코딩 1 제거)
+    account_id: int | None = Query(default=None, gt=0),
     market_code: str = Query(default="KRX"),
     mode_code: str = Query(default="PAPER"),
     recent_limit: int = Query(default=10, ge=1, le=100),
@@ -36,13 +38,18 @@ async def get_admin_dashboard_summary(
 ):
     """Dashboard Summary — Admin 전체 / 일반 유저는 본인 계좌만."""
 
-    assert_trading_account_access(user, account_id, session)
+    resolved_account_id = (
+        account_id
+        if account_id is not None
+        else get_settings().realtime_paper_account_id
+    )
+    assert_trading_account_access(user, resolved_account_id, session)
 
     try:
         return await AdminDashboardSummaryService(
             session
         ).build(
-            account_id=account_id,
+            account_id=resolved_account_id,
             market_code=market_code,
             mode_code=mode_code,
             recent_limit=recent_limit,

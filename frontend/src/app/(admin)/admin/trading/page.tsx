@@ -6,6 +6,8 @@ import { App, Button, Space } from "antd";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { AdminRuntimePanel } from "@/features/admin/runtime/AdminRuntimePanel";
+import { AdminRealtimeHubPanel } from "@/features/admin/realtime/AdminRealtimeHubPanel";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -91,8 +93,10 @@ export default function AdminTradingPage() {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <AdminRuntimePanel />
+        <AdminRealtimeHubPanel />
         <AdminJsonCard
-          title="GET /realtime-strategy/status"
+          title="GET /realtime-strategy/status (deprecated → Hub)"
           loading={strategy.isLoading}
           error={strategy.error ? toApiError(strategy.error) : null}
           data={strategy.data}
@@ -110,7 +114,7 @@ export default function AdminTradingPage() {
           data={sessions.data}
         />
         <AdminJsonCard
-          title="GET /strategy-runtime/status"
+          title="GET /strategy-runtime/status (scoped registry)"
           loading={runtime.isLoading}
           error={runtime.error ? toApiError(runtime.error) : null}
           data={runtime.data}

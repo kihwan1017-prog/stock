@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,6 +20,7 @@ from stock_platform.operation.report_service import (
 router = APIRouter(
     prefix="/api/v1/daily-reports",
     tags=["Daily Reports"],
+    dependencies=[Depends(require_admin)],
 )
 
 

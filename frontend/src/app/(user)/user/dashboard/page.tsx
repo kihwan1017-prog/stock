@@ -22,6 +22,7 @@ import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers"
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { pickFocusSymbol } from "@/features/user/dashboard/pickFocusSymbol";
 import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";
+import { MarketSessionBanner } from "@/features/user/market/MarketSessionBanner";
 import * as userApi from "@/features/user/api/userApi";
 import { userRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
@@ -244,6 +245,8 @@ export default function UserDashboardPage() {
             회원 전용 Dashboard API 없음 — admin-summary / Paper·공용 API 사용
           </Typography.Text>
         </Flex>
+
+        <MarketSessionBanner exchangeCode="KRX" />
 
         {kpiError ? (
           <Alert

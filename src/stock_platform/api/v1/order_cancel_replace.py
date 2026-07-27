@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from stock_platform.auth.account_ownership import (
-    assert_trading_account_access,
+    assert_order_resource_access,
 )
 from stock_platform.auth.deps import (
     AuthenticatedUser,
@@ -57,8 +57,25 @@ def _assert_order_owner(
     entity = TradingOrderRepository(session).get(order_id)
     if entity is None:
         raise LookupError(f"Order not found: {order_id}")
-    assert_trading_account_access(
-        user, int(entity.account_id), session
+    assert_order_resource_access(user, entity, session)
+
+
+def _resolve_adapter_for_order(
+    *,
+    order_id: int,
+    session: Session,
+):
+    entity = TradingOrderRepository(session).get(order_id)
+    if entity is None:
+        raise LookupError(f"Order not found: {order_id}")
+    meta = entity.metadata_payload or {}
+    environment = str(
+        meta.get("environment") or "PAPER"
+    ).upper()
+    return resolve_broker_adapter_for_cancel(
+        session,
+        broker_code=entity.broker_code,
+        environment=environment,
     )
 
 
@@ -71,16 +88,18 @@ def cancel_order(
     ),
     session: Session = Depends(get_db_session),
 ):
-    """
-    주문 취소.
-    실거래 어댑터는 KIWOOM_LIVE_ORDER_ENABLED + transition 승인 시에만.
+    """주문 취소. LIVE는 이중 게이트 + transition 승인 시에만.
+    Kill Switch 활성 시에도 취소는 허용(리스크 축소).
     """
 
     try:
         _assert_order_owner(
             user=user, order_id=order_id, session=session
         )
-        adapter = resolve_broker_adapter_for_cancel(session)
+        adapter = _resolve_adapter_for_order(
+            order_id=order_id,
+            session=session,
+        )
         return OrderCancelReplaceService(
             session=session,
             adapter=adapter,
@@ -110,16 +129,16 @@ def replace_order(
     ),
     session: Session = Depends(get_db_session),
 ):
-    """
-    주문 정정.
-    실거래 어댑터는 KIWOOM_LIVE_ORDER_ENABLED + transition 승인 시에만.
-    """
+    """주문 정정. 업비트는 cancel+new로 어댑터가 처리."""
 
     try:
         _assert_order_owner(
             user=user, order_id=order_id, session=session
         )
-        adapter = resolve_broker_adapter_for_cancel(session)
+        adapter = _resolve_adapter_for_order(
+            order_id=order_id,
+            session=session,
+        )
         return OrderCancelReplaceService(
             session=session,
             adapter=adapter,

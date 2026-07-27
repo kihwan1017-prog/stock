@@ -63,7 +63,7 @@ def _user(user_id: int, *, admin: bool = False) -> AuthenticatedUser:
     return AuthenticatedUser(
         user_id=user_id,
         username=f"user{user_id}",
-        roles=["admin"] if admin else ["operator"],
+        roles=["admin"] if admin else ["user"],
         permissions=["trading:read", "trading:write"],
     )
 
@@ -73,6 +73,7 @@ def test_assert_paper_account_access_idor() -> None:
     paper = MagicMock()
     paper.user_id = 10
     paper.account_id = 1
+    paper.deleted_at = None
 
     with pytest.MonkeyPatch.context() as mp:
         repo = MagicMock()
@@ -91,6 +92,7 @@ def test_assert_paper_account_access_owner_ok() -> None:
     paper = MagicMock()
     paper.user_id = 10
     paper.account_id = 1
+    paper.deleted_at = None
 
     with pytest.MonkeyPatch.context() as mp:
         repo = MagicMock()

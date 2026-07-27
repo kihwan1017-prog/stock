@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
+    ForeignKey,
     Identity,
     Integer,
     Numeric,
@@ -102,6 +103,11 @@ class StrategyLeaderboardEntryEntity(Base):
     )
     strategy_leaderboard_snapshot_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_leaderboard_snapshot.strategy_leaderboard_snapshot_id",
+            ondelete="CASCADE",
+            name="fk_leaderboard_entry_snapshot",
+        ),
         nullable=False,
     )
     rank_no: Mapped[int] = mapped_column(
@@ -110,6 +116,11 @@ class StrategyLeaderboardEntryEntity(Base):
     )
     strategy_performance_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_performance_run.strategy_performance_run_id",
+            ondelete="RESTRICT",
+            name="fk_leaderboard_entry_performance_run",
+        ),
         nullable=False,
     )
     strategy_code: Mapped[str] = mapped_column(

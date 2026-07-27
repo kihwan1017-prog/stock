@@ -93,9 +93,15 @@ class DartClient:
 
         self._settings.validate_dart_credentials()
         client = await self._get_client()
+        # ZIP 전체 다운로드 — 설정값보다 긴 타임아웃 허용
+        corp_timeout = max(
+            float(self._settings.dart_timeout_seconds),
+            120.0,
+        )
         response = await client.get(
             f"{self._settings.dart_base_url.rstrip('/')}/corpCode.xml",
             params={"crtfc_key": self._settings.dart_api_key},
+            timeout=httpx.Timeout(corp_timeout),
         )
 
         if response.is_error:

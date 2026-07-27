@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 
 from stock_platform.realtime.ai_runner import (
@@ -13,6 +14,7 @@ from stock_platform.realtime.ai_runner import (
 router = APIRouter(
     prefix="/api/v1/realtime-ai",
     tags=["Realtime AI"],
+    dependencies=[Depends(require_admin)],
 )
 
 

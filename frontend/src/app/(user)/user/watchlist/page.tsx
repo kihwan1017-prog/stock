@@ -18,20 +18,19 @@ import { CSS } from "@dnd-kit/utilities";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
+  App,
   AutoComplete,
   Button,
   Card,
   ColorPicker,
   Empty,
   Input,
-  Modal,
   Select,
   Space,
   Switch,
   Table,
   Tag,
   Typography,
-  message,
 } from "antd";
 import type { Color } from "antd/es/color-picker";
 import { HolderOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -164,6 +163,7 @@ function SortableRow({
 }
 
 export default function UserWatchlistPage() {
+  const { message, modal } = App.useApp();
   const queryClient = useQueryClient();
   const [market, setMarket] = useState("KRX");
   const [searchText, setSearchText] = useState("");
@@ -176,7 +176,11 @@ export default function UserWatchlistPage() {
     queryFn: userApi.listWatchlist,
   });
 
-  const items = listQuery.data?.items ?? [];
+  // data 미도착 시마다 새 [] 가 생기지 않도록 안정화 (exhaustive-deps)
+  const items = useMemo(
+    () => listQuery.data?.items ?? [],
+    [listQuery.data],
+  );
   const maxItems = listQuery.data?.max_items ?? 50;
 
   const invalidate = async () => {
@@ -315,7 +319,7 @@ export default function UserWatchlistPage() {
   };
 
   const confirmDelete = (item: WatchlistItem) => {
-    Modal.confirm({
+    modal.confirm({
       title: "관심종목 삭제",
       content: `${item.symbol} (${item.symbol_name}) 을(를) 삭제할까요?`,
       okText: "삭제",

@@ -25,6 +25,7 @@ from stock_platform.realtime.strategy_models import (
     RealtimeSignal,
 )
 from stock_platform.risk_engine.kill_switch_guard import (
+    KillSwitchUnavailableError,
     PersistentKillSwitchGuard,
 )
 from stock_platform.risk_engine.order_guard import (
@@ -69,6 +70,12 @@ class RiskIntegratedRealtimeOrderExecutor:
             ).require_order_allowed(
                 side=signal.action.value,
                 allow_sell=True,
+                exchange_code=signal.exchange_code,
+            )
+        except KillSwitchUnavailableError:
+            return self._skipped(
+                signal,
+                "KILL_SWITCH_UNAVAILABLE",
             )
         except PermissionError:
             return self._skipped(
@@ -81,16 +88,48 @@ class RiskIntegratedRealtimeOrderExecutor:
             / signal.signal_price
         ).quantize(Decimal("0.00000001"))
 
+        # STEP 8-5-9 — Signal Scope 계좌 우선 (환경변수 기본 계좌 우회 금지)
+        exec_account_id = self._execution_config.account_id
+        if (
+            getattr(signal, "scope_key", None)
+            and getattr(signal, "account_id", None)
+            and signal.account_kind == "PAPER"
+        ):
+            exec_account_id = int(signal.account_id)
+        elif getattr(signal, "scope_key", None) and not getattr(
+            signal, "account_id", None
+        ):
+            return self._skipped(signal, "SCOPE_ACCOUNT_REQUIRED")
+
         risk_result = DatabaseBackedRiskOrderGuard(
             self._session
         ).check(
             account_number=account_number,
-            account_id=self._execution_config.account_id,
+            account_id=exec_account_id,
             exchange_code=signal.exchange_code,
             symbol=signal.symbol,
             side=signal.action.value,
             quantity=quantity,
             price=signal.signal_price,
+            user_id=(
+                getattr(signal, "user_id", None)
+                or getattr(self._execution_config, "user_id", None)
+            ),
+            user_broker_account_id=(
+                int(signal.account_id)
+                if getattr(signal, "account_kind", None)
+                == "USER_BROKER"
+                and getattr(signal, "account_id", None)
+                else getattr(
+                    self._execution_config,
+                    "user_broker_account_id",
+                    None,
+                )
+            ),
+            order_source="AUTO",
+            is_risk_reducing=(
+                signal.action.value.upper() == "SELL"
+            ),
         )
 
         if not risk_result.allowed:
@@ -110,7 +149,7 @@ class RiskIntegratedRealtimeOrderExecutor:
             .select_from(PaperPosition)
             .where(
                 PaperPosition.account_id
-                == self._execution_config.account_id,
+                == exec_account_id,
                 PaperPosition.quantity > 0,
             )
         ) or 0
@@ -129,7 +168,7 @@ class RiskIntegratedRealtimeOrderExecutor:
 
         result = OrderExecutionService(self._session).submit(
             OrderExecutionCommand(
-                account_id=self._execution_config.account_id,
+                account_id=exec_account_id,
                 broker_code="KIWOOM",
                 exchange_code=signal.exchange_code,
                 symbol=signal.symbol,
@@ -149,6 +188,18 @@ class RiskIntegratedRealtimeOrderExecutor:
                     ),
                 },
                 actor="REALTIME_EXECUTION",
+                order_source="AUTO",
+                is_risk_reducing=(
+                    signal.action.value.upper() == "SELL"
+                ),
+                user_id=getattr(
+                    self._execution_config, "user_id", None
+                ),
+                user_broker_account_id=getattr(
+                    self._execution_config,
+                    "user_broker_account_id",
+                    None,
+                ),
                 idempotency_key=(
                     f"RT:{signal.exchange_code}:"
                     f"{signal.symbol}:"

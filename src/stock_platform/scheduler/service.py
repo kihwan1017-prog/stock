@@ -34,7 +34,23 @@ class SchedulerService:
         payload: dict[str, Any],
         trigger_type: str = "MANUAL",
     ):
+        from stock_platform.trading.account_identity import (
+            AccountIdentityError,
+            validate_scheduler_account_payload,
+        )
+
         job = self._registry.get(job_name)
+        safe_payload = dict(payload or {})
+        # job_type 미지정 시 job_name 으로 검증
+        if "job_type" not in safe_payload:
+            safe_payload["job_type"] = job.name
+        try:
+            validate_scheduler_account_payload(
+                safe_payload,
+                job_type=str(safe_payload.get("job_type") or job.name),
+            )
+        except AccountIdentityError as exc:
+            raise ValueError(f"{exc.code.value}: {exc}") from exc
 
         history, result = await self._execution.execute(
             job_name=job.name,

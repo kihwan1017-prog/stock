@@ -23,21 +23,27 @@ class DartCorpRepository:
         if not rows:
             return 0
 
-        stmt = insert(DartCorp).values(rows)
-        stmt = stmt.on_conflict_do_update(
-            index_elements=[DartCorp.corp_code],
-            set_={
-                "corp_name": stmt.excluded.corp_name,
-                "stock_code": stmt.excluded.stock_code,
-                "modify_date": stmt.excluded.modify_date,
-                "is_active": stmt.excluded.is_active,
-                "raw_data": stmt.excluded.raw_data,
-                "updated_at": stmt.excluded.updated_at,
-            },
-        )
-        result = self._session.execute(stmt)
+        # 수만 건 일괄 insert 시 메모리/타임아웃 방지 — 배치 처리
+        batch_size = 1000
+        total = 0
+        for start in range(0, len(rows), batch_size):
+            batch = rows[start : start + batch_size]
+            stmt = insert(DartCorp).values(batch)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[DartCorp.corp_code],
+                set_={
+                    "corp_name": stmt.excluded.corp_name,
+                    "stock_code": stmt.excluded.stock_code,
+                    "modify_date": stmt.excluded.modify_date,
+                    "is_active": stmt.excluded.is_active,
+                    "raw_data": stmt.excluded.raw_data,
+                    "updated_at": stmt.excluded.updated_at,
+                },
+            )
+            result = self._session.execute(stmt)
+            total += int(result.rowcount or len(batch))
         self._session.commit()
-        return result.rowcount or len(rows)
+        return total
 
     def find_by_stock_code(self, stock_code: str) -> DartCorp | None:
         stmt = select(DartCorp).where(

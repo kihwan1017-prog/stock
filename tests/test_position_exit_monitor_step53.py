@@ -43,10 +43,15 @@ def _monitor_with_execution(
     order_id: int = 42,
     publisher: NotificationPublisher | None = None,
 ) -> tuple[PositionExitMonitorService, MagicMock]:
-    monitor = PositionExitMonitorService.__new__(
-        PositionExitMonitorService
+    # 실제 생성자와 동일하게 Session을 명시 주입 (전역 Session 금지)
+    session = MagicMock()
+    paper = SimpleNamespace(user_id=1, account_id=1, is_active=True)
+    session.get.return_value = paper
+
+    monitor = PositionExitMonitorService(
+        session,
+        notification_publisher=publisher or NotificationPublisher(),
     )
-    monitor._risk_engine = RiskManagementEngine()
     fake_execution = MagicMock()
     fake_execution.submit.return_value = SimpleNamespace(
         allowed=allowed,
@@ -54,7 +59,6 @@ def _monitor_with_execution(
         reason_code="OK" if allowed else "BLOCKED",
     )
     monitor._execution = fake_execution
-    monitor._publisher = publisher or NotificationPublisher()
     return monitor, fake_execution
 
 
@@ -258,6 +262,8 @@ def test_lifecycle_starts_exit_monitor_scheduler() -> None:
     ) as daily_start, patch(
         "stock_platform.api.lifecycle.position_exit_monitor_scheduler.start"
     ) as exit_start, patch(
+        "stock_platform.api.lifecycle.telegram_ops_scheduler.start"
+    ), patch(
         "stock_platform.api.lifecycle.strategy_runtime_reload_scheduler.start"
     ), patch(
         "stock_platform.api.lifecycle.strategy_approval_scheduler.start"
@@ -267,6 +273,8 @@ def test_lifecycle_starts_exit_monitor_scheduler() -> None:
         "stock_platform.api.lifecycle.deployment_performance_monitor_scheduler.start"
     ), patch(
         "stock_platform.api.lifecycle.order_outbox_scheduler.start"
+    ), patch(
+        "stock_platform.api.lifecycle.broker_recovery_scheduler.start"
     ):
         asyncio.run(lifecycle.startup())
 

@@ -53,10 +53,10 @@ class PositionExitMonitorManager:
                 )
 
             monitor = PositionExitMonitorService(session)
-            # 시스템 청산은 계정번호 미설정 환경에서도 동작
+            # STEP8-2: 청산도 Risk Engine 통과 (is_risk_reducing 으로 매수제한 우회)
             actions = monitor.evaluate_and_exit(
                 context.positions,
-                skip_risk_checks=True,
+                skip_risk_checks=False,
             )
             session.commit()
             self._last_actions = actions

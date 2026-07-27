@@ -10,16 +10,136 @@ from stock_platform.api.v1.auth import router as auth_router
 from stock_platform.api.v1.roles import router as roles_router
 from stock_platform.api.v1.users import router as users_router
 from stock_platform.api.v1.user_accounts import router as user_accounts_router
+from stock_platform.api.v1.user_broker_credentials import (
+    router as user_broker_credentials_router,
+)
+from stock_platform.api.v1.admin_broker_credentials import (
+    router as admin_broker_credentials_router,
+)
+from stock_platform.api.v1.admin_broker_accounts import (
+    router as admin_broker_accounts_router,
+)
+from stock_platform.api.v1.admin_live_ops_readiness import (
+    router as admin_live_ops_readiness_router,
+)
+from stock_platform.api.v1.admin_operations_dashboard import (
+    router as admin_operations_dashboard_router,
+)
+from stock_platform.api.v1.admin_dashboard_ops import (
+    router as admin_dashboard_ops_router,
+)
+from stock_platform.api.v1.admin_ai_providers import (
+    router as admin_ai_providers_router,
+)
+from stock_platform.api.v1.admin_ai_provider_configurations import (
+    router as admin_ai_provider_configurations_router,
+)
+from stock_platform.api.v1.admin_ai_prompt_policy import (
+    router as admin_ai_prompt_policy_router,
+)
+from stock_platform.api.v1.admin_ai_executions import (
+    costs_router as admin_ai_costs_router,
+    router as admin_ai_executions_router,
+)
+from stock_platform.api.v1.admin_ai_document_analyses import (
+    router as admin_ai_document_analyses_router,
+)
+from stock_platform.api.v1.admin_ai_market_analyses import (
+    router as admin_ai_market_analyses_router,
+)
+from stock_platform.api.v1.admin_ai_candidate_assessments import (
+    router as admin_ai_candidate_assessments_router,
+)
+from stock_platform.api.v1.admin_ai_candidate_consensuses import (
+    router as admin_ai_candidate_consensuses_router,
+)
+from stock_platform.api.v1.admin_ai_candidate_recommendation_queues import (
+    router as admin_ai_candidate_recommendation_queues_router,
+)
+from stock_platform.api.v1.admin_ai_candidate_promotions import (
+    router as admin_ai_candidate_promotions_router,
+)
+from stock_platform.api.v1.admin_ai_candidate_lifecycle import (
+    candidates_router as admin_ai_candidate_lifecycle_candidates_router,
+    dashboard_router as admin_ai_candidate_lifecycle_dashboard_router,
+    router as admin_ai_candidate_lifecycle_router,
+)
+from stock_platform.api.v1.admin_ai_reviews import (
+    assignments_router as admin_ai_review_assignments_router,
+    decisions_router as admin_ai_review_decisions_router,
+    reviews_router as admin_ai_reviews_router,
+)
+from stock_platform.api.v1.admin_ai_evaluation_datasets import (
+    router as admin_ai_evaluation_datasets_router,
+)
+from stock_platform.api.v1.admin_ai_benchmarks import (
+    benchmarks_router as admin_ai_benchmarks_router,
+    scorecards_router as admin_ai_scorecards_router,
+)
+from stock_platform.api.v1.user_risk_settings import (
+    router as user_risk_settings_router,
+)
+from stock_platform.api.v1.admin_risk_settings import (
+    router as admin_risk_settings_router,
+)
+from stock_platform.api.v1.live_order_safety import (
+    admin_router as admin_live_order_router,
+    user_router as user_live_order_router,
+)
+from stock_platform.api.v1.upbit_live_validation import (
+    admin_router as admin_upbit_live_validation_router,
+    user_router as user_upbit_live_validation_router,
+)
 from stock_platform.api.v1.user_portfolio import router as user_portfolio_router
 from stock_platform.api.v1.user_watchlist import router as user_watchlist_router
 from stock_platform.api.v1.user_news import router as user_news_router
 from stock_platform.api.v1.user_disclosures import router as user_disclosures_router
 from stock_platform.api.v1.user_ai import router as user_ai_router
+from stock_platform.api.v1.user_ai_candidate_lifecycle import (
+    router as user_ai_candidate_lifecycle_router,
+)
 from stock_platform.api.v1.user_notifications import (
     router as user_notifications_router,
 )
 from stock_platform.api.v1.user_settings import router as user_settings_router
 from stock_platform.api.v1.user_profile import router as user_profile_router
+from stock_platform.api.v1.user_market import router as user_market_router
+from stock_platform.api.v1.user_candidates import (
+    router as user_candidates_router,
+)
+from stock_platform.api.v1.user_strategies import (
+    router as user_strategies_router,
+)
+from stock_platform.api.v1.user_strategy_ownership import (
+    router as user_strategy_ownership_router,
+)
+from stock_platform.api.v1.user_account_strategies import (
+    router as user_account_strategies_router,
+)
+from stock_platform.api.v1.admin_strategies import (
+    router as admin_strategies_router,
+)
+from stock_platform.api.v1.admin_recovery import (
+    router as admin_recovery_router,
+)
+from stock_platform.api.v1.admin_recovery_scheduler import (
+    router as admin_recovery_scheduler_router,
+)
+from stock_platform.api.v1.admin_trading_scheduler import (
+    admin_router as admin_trading_scheduler_router,
+)
+from stock_platform.api.v1.admin_recovery_conflicts import (
+    router as admin_recovery_conflicts_router,
+)
+from stock_platform.api.v1.admin_runtimes import (
+    router as admin_runtimes_router,
+)
+from stock_platform.api.v1.user_runtimes import (
+    router as user_runtimes_router,
+)
+from stock_platform.api.v1.user_backtests import (
+    router as user_backtests_router,
+)
 from stock_platform.api.v1.ai_candidates import router as ai_candidates_router
 from stock_platform.api.v1.ai_orchestration import router as ai_orchestration_router
 from stock_platform.api.v1.backtest_grid import router as backtest_grid_router
@@ -53,6 +173,9 @@ from stock_platform.api.v1.kiwoom_account_sync import (
 )
 from stock_platform.api.v1.kiwoom_account_state_sync import (
     router as kiwoom_account_state_sync_router,
+)
+from stock_platform.api.v1.upbit_account import (
+    router as upbit_account_router,
 )
 from stock_platform.api.v1.kiwoom_order_websocket import (
     router as kiwoom_order_websocket_router,
@@ -116,7 +239,6 @@ from stock_platform.api.v1.risk import router as risk_router
 from stock_platform.api.v1.risk_dashboard import router as risk_dashboard_router
 from stock_platform.api.v1.risk_policies import router as risk_policies_router
 from stock_platform.api.v1.scheduler_admin import router as scheduler_admin_router
-from stock_platform.api.v1.step32_router import router as step32_router
 from stock_platform.api.v1.strategy_approval_policy import (
     router as strategy_approval_policy_router,
 )
@@ -154,6 +276,40 @@ from stock_platform.api.v1.settings import (
 from stock_platform.api.v1.ops_db import router as ops_db_router
 from stock_platform.api.v1.docs_cms import router as docs_cms_router
 from stock_platform.api.v1.trading_calendar import router as trading_calendar_router
+from stock_platform.api.v1.admin_market_calendar import (
+    admin_router as admin_market_calendar_router,
+    user_router as user_market_calendar_router,
+)
+from stock_platform.api.v1.admin_upbit_rate_limits import (
+    admin_router as admin_upbit_rate_limits_router,
+    user_router as user_upbit_rate_limits_router,
+)
+from stock_platform.api.v1.admin_upbit_ambiguous_orders import (
+    admin_router as admin_upbit_ambiguous_orders_router,
+)
+from stock_platform.api.v1.admin_upbit_ambiguous_resolver import (
+    admin_router as admin_upbit_ambiguous_resolver_router,
+)
+from stock_platform.api.v1.admin_market_session_jobs import (
+    admin_router as admin_market_session_jobs_router,
+)
+from stock_platform.api.v1.admin_settlements import (
+    admin_router as admin_settlements_router,
+)
+from stock_platform.api.v1.admin_broker_snapshots import (
+    admin_router as admin_broker_snapshots_router,
+    uba_router as admin_uba_snapshots_router,
+)
+from stock_platform.api.v1.user_settlements import (
+    user_router as user_settlements_router,
+)
+from stock_platform.api.v1.user_broker_snapshots import (
+    user_router as user_broker_snapshots_router,
+)
+from stock_platform.api.v1.admin_realtime_hub import (
+    admin_router as admin_realtime_hub_router,
+    user_router as user_realtime_hub_router,
+)
 from stock_platform.api.v1.upbit import router as upbit_router
 from stock_platform.api.v1.version import router as version_router
 from stock_platform.api.v1.walk_forward import router as walk_forward_router
@@ -194,14 +350,61 @@ _ROUTER_GROUPS = (
     auth_router,
     users_router,
     user_accounts_router,
+    user_broker_credentials_router,
+    user_risk_settings_router,
+    admin_risk_settings_router,
+    admin_live_order_router,
+    user_live_order_router,
+    admin_upbit_live_validation_router,
+    user_upbit_live_validation_router,
+    admin_broker_credentials_router,
+    admin_broker_accounts_router,
+    admin_live_ops_readiness_router,
+    admin_operations_dashboard_router,
+    admin_dashboard_ops_router,
+    admin_ai_providers_router,
+    admin_ai_provider_configurations_router,
+    admin_ai_prompt_policy_router,
+    admin_ai_executions_router,
+    admin_ai_document_analyses_router,
+    admin_ai_market_analyses_router,
+    admin_ai_candidate_assessments_router,
+    admin_ai_candidate_consensuses_router,
+    admin_ai_candidate_recommendation_queues_router,
+    admin_ai_candidate_promotions_router,
+    admin_ai_candidate_lifecycle_router,
+    admin_ai_candidate_lifecycle_candidates_router,
+    admin_ai_candidate_lifecycle_dashboard_router,
+    admin_ai_review_assignments_router,
+    admin_ai_reviews_router,
+    admin_ai_review_decisions_router,
+    admin_ai_evaluation_datasets_router,
+    admin_ai_benchmarks_router,
+    admin_ai_scorecards_router,
+    admin_ai_costs_router,
+    admin_strategies_router,
+    admin_recovery_router,
+    admin_recovery_scheduler_router,
+    admin_trading_scheduler_router,
+    admin_recovery_conflicts_router,
+    admin_runtimes_router,
+    user_runtimes_router,
     user_portfolio_router,
     user_watchlist_router,
     user_news_router,
     user_disclosures_router,
     user_ai_router,
+    user_ai_candidate_lifecycle_router,
     user_notifications_router,
     user_settings_router,
     user_profile_router,
+    user_market_router,
+    user_candidates_router,
+    # 정적 경로(/ranking 등)를 path param 보다 먼저 등록
+    user_strategies_router,
+    user_strategy_ownership_router,
+    user_account_strategies_router,
+    user_backtests_router,
     roles_router,
     audit_router,
     version_router,
@@ -263,6 +466,7 @@ _ROUTER_GROUPS = (
     broker_orders_router,
     kiwoom_account_sync_router,
     kiwoom_account_state_sync_router,
+    upbit_account_router,
     kiwoom_pending_orders_router,
     kiwoom_order_websocket_router,
     broker_recovery_router,
@@ -278,11 +482,25 @@ _ROUTER_GROUPS = (
     paper_accounts_router,
     paper_executions_router,
     paper_simulation_router,
-    step32_router,
+    # step32_router: deprecated 무인증 paper fill 우회 — 등록 해제 (P0)
     jobs_router,
     scheduler_admin_router,
     pipelines_router,
     trading_calendar_router,
+    admin_market_calendar_router,
+    user_market_calendar_router,
+    admin_upbit_rate_limits_router,
+    admin_upbit_ambiguous_orders_router,
+    admin_upbit_ambiguous_resolver_router,
+    admin_market_session_jobs_router,
+    admin_settlements_router,
+    admin_broker_snapshots_router,
+    admin_uba_snapshots_router,
+    user_settlements_router,
+    user_broker_snapshots_router,
+    user_upbit_rate_limits_router,
+    admin_realtime_hub_router,
+    user_realtime_hub_router,
     guarded_pipeline_router,
     daily_reports_router,
     notifications_router,

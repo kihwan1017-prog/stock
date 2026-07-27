@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -25,6 +26,7 @@ from stock_platform.screener.service import ScreenerService
 router = APIRouter(
     prefix="/api/v1/candidates",
     tags=["Candidates"],
+    dependencies=[Depends(require_admin)],
 )
 
 

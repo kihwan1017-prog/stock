@@ -23,6 +23,17 @@ export interface UserAccount {
   updated_at?: string | null;
   last_synced_at?: string | null;
   sync_note?: string;
+  /** STEP 8-5-4 — Recovery 검토/일시중지 (상세 Conflict 없음) */
+  trading_paused?: boolean;
+  recovery_review_required?: boolean;
+  recovery_status?: string | null;
+  recovery_user_message?: string | null;
+  /** STEP 8-5-8 — Upbit Rate Limit 요약 */
+  upbit_api_status?: string | null;
+  upbit_rate_limit_message?: string | null;
+  upbit_retry_scheduled_at?: string | null;
+  /** STEP 8-7 — LIVE 실주문 승인 (읽기 전용) */
+  live_order_enabled?: boolean;
 }
 
 export interface UserAccountListResponse {
@@ -56,6 +67,12 @@ export interface TradeOrder {
   order_price?: number | string | null;
   filled_quantity?: number | string;
   created_at?: string;
+  // STEP 8-5-14 — Resolver Scheduler 원격 재조회 안전 필드 (Claim 토큰 등은 노출 안 함)
+  next_remote_lookup_at?: string | null;
+  last_remote_lookup_at?: string | null;
+  remote_lookup_attempt_count?: number;
+  manual_review_required?: boolean;
+  remote_order_found?: boolean;
   [key: string]: unknown;
 }
 
@@ -108,8 +125,14 @@ export async function getKiwoomConfiguration(): Promise<JsonValue> {
   return data;
 }
 
-export async function syncKiwoomAccount(): Promise<JsonValue> {
-  const { data } = await apiClient.post("/broker/kiwoom/account/sync");
+export async function syncKiwoomAccount(
+  userBrokerAccountId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    "/broker/kiwoom/account/sync",
+    {},
+    { params: { user_broker_account_id: userBrokerAccountId } },
+  );
   return data;
 }
 
@@ -128,7 +151,13 @@ export async function getPaperPositions(accountId: number): Promise<JsonValue> {
 }
 
 export async function getRealtimeStrategyStatus(): Promise<JsonValue> {
-  const { data } = await apiClient.get("/realtime-strategy/status");
+  const { data } = await apiClient.get("/user/strategies/realtime/status");
+  return data;
+}
+
+/** STEP 8-5-9 — 본인 Realtime Scope 상태 */
+export async function listMyRealtimeScopes(): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/realtime/scopes");
   return data;
 }
 
@@ -196,9 +225,244 @@ export async function getKillSwitch(): Promise<JsonValue> {
   return data;
 }
 
-export async function getStrategyRuntimeStatus(): Promise<JsonValue> {
-  const { data } = await apiClient.get("/strategy-runtime/status");
+export type RiskSettingsPayload = {
+  max_order_amount?: number | null;
+  daily_max_order_amount?: number | null;
+  max_total_investment_amount?: number | null;
+  max_position_amount?: number | null;
+  max_position_count?: number | null;
+  max_position_weight?: number | null;
+  allow_duplicate_buy?: boolean | null;
+  daily_max_loss_amount?: number | null;
+  daily_max_loss_rate?: number | null;
+  stop_loss_rate?: number | null;
+  take_profit_rate?: number | null;
+  trailing_stop_rate?: number | null;
+  auto_trading_enabled?: boolean | null;
+  buy_enabled?: boolean | null;
+  sell_enabled?: boolean | null;
+  sell_only?: boolean | null;
+  account_paused?: boolean | null;
+  max_order_quantity?: number | null;
+  daily_order_limit?: number | null;
+  duplicate_order_window_seconds?: number | null;
+};
+
+export async function getMyRiskSettings(): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/risk-settings");
   return data;
+}
+
+export async function updateMyRiskSettings(
+  body: RiskSettingsPayload,
+): Promise<JsonValue> {
+  const { data } = await apiClient.put("/user/risk-settings", body);
+  return data;
+}
+
+export async function getAccountRiskSettings(
+  userBrokerAccountId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/accounts/${userBrokerAccountId}/risk-settings`,
+  );
+  return data;
+}
+
+export async function updateAccountRiskSettings(
+  userBrokerAccountId: number,
+  body: RiskSettingsPayload,
+): Promise<JsonValue> {
+  const { data } = await apiClient.put(
+    `/user/accounts/${userBrokerAccountId}/risk-settings`,
+    body,
+  );
+  return data;
+}
+
+/** STEP 8-7 — 계좌 LIVE 상태 (읽기 전용) */
+export async function listMyLiveOrderStatus(): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/live-order/accounts");
+  return data;
+}
+
+export async function getMyLiveOrderStatus(
+  userBrokerAccountId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/live-order/accounts/${userBrokerAccountId}`,
+  );
+  return data;
+}
+
+/** STEP 8-8 — LIVE/ARM 읽기 전용 대시보드 */
+export async function getMyLiveOpsDashboard(): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/live-order/dashboard");
+  return data;
+}
+
+/** STEP 8-9 — Upbit LIVE 검증 읽기 전용 */
+export async function listUpbitLiveValidationRuns(
+  limit = 20,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/live-validation/upbit/runs", {
+    params: { limit },
+  });
+  return data;
+}
+
+export async function getUpbitLiveValidationRun(
+  runId: string,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/live-validation/upbit/runs/${runId}`,
+  );
+  return data;
+}
+
+/** STEP 8-3 — 전략 소유권 정의 */
+export type StrategyDefinitionPayload = {
+  strategy_code: string;
+  name: string;
+  description?: string | null;
+  market_type?: string;
+  parameter_payload?: Record<string, unknown>;
+};
+
+export async function listOwnedStrategies(params?: {
+  scope?: "MINE" | "PUBLIC";
+  limit?: number;
+  offset?: number;
+}): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/strategies", { params });
+  return data;
+}
+
+export async function getOwnedStrategy(
+  strategyId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(`/user/strategies/${strategyId}`);
+  return data;
+}
+
+export async function createOwnedStrategy(
+  body: StrategyDefinitionPayload,
+): Promise<JsonValue> {
+  const { data } = await apiClient.post("/user/strategies", body);
+  return data;
+}
+
+export async function updateOwnedStrategy(
+  strategyId: number,
+  body: Partial<StrategyDefinitionPayload> & { is_active?: boolean },
+): Promise<JsonValue> {
+  const { data } = await apiClient.put(`/user/strategies/${strategyId}`, body);
+  return data;
+}
+
+export async function deleteOwnedStrategy(
+  strategyId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.delete(`/user/strategies/${strategyId}`);
+  return data;
+}
+
+export async function cloneOwnedStrategy(
+  strategyId: number,
+  body?: { name?: string },
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/strategies/${strategyId}/clone`,
+    body ?? {},
+  );
+  return data;
+}
+
+export async function checkStrategyBacktestAllowed(
+  strategyId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/strategies/${strategyId}/backtest`,
+    {},
+  );
+  return data;
+}
+
+export async function listAccountStrategies(
+  accountId: number,
+  accountType = "PAPER",
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/accounts/${accountId}/strategies`,
+    { params: { account_type: accountType } },
+  );
+  return data;
+}
+
+export async function linkAccountStrategy(
+  accountId: number,
+  strategyId: number,
+  body?: { account_type?: string; account_broker?: string },
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${accountId}/strategies/${strategyId}`,
+    body ?? { account_type: "PAPER", account_broker: "PAPER" },
+  );
+  return data;
+}
+
+export async function unlinkAccountStrategy(
+  accountId: number,
+  strategyId: number,
+  accountType = "PAPER",
+): Promise<JsonValue> {
+  const { data } = await apiClient.delete(
+    `/user/accounts/${accountId}/strategies/${strategyId}`,
+    { params: { account_type: accountType } },
+  );
+  return data;
+}
+
+export async function getStrategyRuntimeStatus(): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/strategies/runtime/status");
+  return data;
+}
+
+/** STEP 8-5-5 — 본인 Scope Runtime */
+export async function listMyRuntimes(): Promise<{
+  items: Array<Record<string, unknown>>;
+  total: number;
+}> {
+  const { data } = await apiClient.get("/user/runtimes");
+  const row = data as {
+    items?: Array<Record<string, unknown>>;
+    total?: number;
+  };
+  return {
+    items: Array.isArray(row.items) ? row.items : [],
+    total: row.total ?? 0,
+  };
+}
+
+export async function listAccountRuntimes(
+  accountId: number,
+  accountType?: string,
+): Promise<{
+  items: Array<Record<string, unknown>>;
+  total: number;
+}> {
+  const { data } = await apiClient.get(
+    `/user/accounts/${accountId}/runtimes`,
+    { params: accountType ? { account_type: accountType } : undefined },
+  );
+  const row = data as {
+    items?: Array<Record<string, unknown>>;
+    total?: number;
+  };
+  return {
+    items: Array.isArray(row.items) ? row.items : [],
+    total: row.total ?? 0,
+  };
 }
 
 export async function getActiveStrategyDeployment(params: {
@@ -206,7 +470,7 @@ export async function getActiveStrategyDeployment(params: {
   mode?: string;
   symbol?: string;
 }): Promise<JsonValue> {
-  // market_code 쿼리 필수
+  // market_code 쿼리 필수 — require_authenticated라 회원도 조회 가능
   const { data } = await apiClient.get("/strategy-deployments/active", {
     params,
   });
@@ -214,19 +478,19 @@ export async function getActiveStrategyDeployment(params: {
 }
 
 export async function getStrategyRanking(): Promise<JsonValue> {
-  const { data } = await apiClient.get("/strategy-ranking");
+  const { data } = await apiClient.get("/user/strategies/ranking");
   return data;
 }
 
 export async function getLatestStrategySelection(): Promise<JsonValue> {
-  const { data } = await apiClient.get("/strategy-selector/latest");
+  const { data } = await apiClient.get("/user/strategies/selection/latest");
   return data;
 }
 
 export async function listBacktestRuns(
   params?: Record<string, unknown>,
 ): Promise<JsonValue> {
-  const { data } = await apiClient.get("/backtest-runs", { params });
+  const { data } = await apiClient.get("/user/backtests/runs", { params });
   return data;
 }
 
@@ -241,7 +505,7 @@ export async function runMovingAverageBacktest(body: {
   stop_loss_ratio?: number;
   take_profit_ratio?: number;
 }): Promise<JsonValue> {
-  const { data } = await apiClient.post("/backtests/moving-average", {
+  const { data } = await apiClient.post("/user/backtests/moving-average", {
     short_window: 5,
     long_window: 20,
     stop_loss_ratio: 0.05,
@@ -265,7 +529,7 @@ export async function runWalkForward(body: {
   take_profit_ratios?: number[];
   position_ratios?: number[];
 }): Promise<JsonValue> {
-  const { data } = await apiClient.post("/walk-forward", {
+  const { data } = await apiClient.post("/user/backtests/walk-forward", {
     train_months: 6,
     test_months: 2,
     short_windows: [5, 10],
@@ -290,7 +554,7 @@ export async function runPortfolioBacktest(body: {
   short_window?: number;
   long_window?: number;
 }): Promise<JsonValue> {
-  const { data } = await apiClient.post("/portfolio-backtests", {
+  const { data } = await apiClient.post("/user/backtests/portfolio", {
     short_window: 5,
     long_window: 20,
     ...body,
@@ -322,7 +586,9 @@ export async function listPositions(accountId: number): Promise<JsonValue> {
 
 export async function listOrders(params?: {
   account_id?: number;
+  user_broker_account_id?: number;
   status_code?: string;
+  broker_code?: string;
   exchange_code?: string;
   symbol?: string;
   limit?: number;
@@ -334,6 +600,7 @@ export async function listOrders(params?: {
 
 export async function listExecutions(params?: {
   account_id?: number;
+  user_broker_account_id?: number;
   limit?: number;
 }): Promise<TradeExecution[]> {
   const { data } = await apiClient.get("/executions", { params });
@@ -357,9 +624,19 @@ export async function getTopCandidates(
   const resolvedDate =
     asOfDate ??
     new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
-  const { data } = await apiClient.get(`/candidates/top/${exchangeCode}`, {
+  const { data } = await apiClient.get(`/user/candidates/top/${exchangeCode}`, {
     params: { as_of_date: resolvedDate },
   });
+  return data;
+}
+
+/** 최신 매매 후보 스코어링 — 별도 as_of_date 지정 없이 최신 배치 결과 조회 (없으면 404) */
+export async function getLatestCandidates(
+  exchangeCode: string,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/candidates/latest/${exchangeCode}`,
+  );
   return data;
 }
 
@@ -1609,6 +1886,86 @@ export async function createUserAccount(
   return data as UserAccount;
 }
 
+/** STEP 8-5-2 — UBA Credential Vault (원문 Secret 응답 없음) */
+export interface BrokerCredentialStatus {
+  user_broker_account_id: number;
+  broker_code: string;
+  connected: boolean;
+  is_active: boolean;
+  verification_status: string | null;
+  masked_identifier: string | null;
+  key_version: number | null;
+  last_verified_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  expires_at: string | null;
+  verification_message: string | null;
+  vault_available: boolean;
+}
+
+export interface KiwoomCredentialPayload {
+  app_key: string;
+  secret_key: string;
+  account_number: string;
+  account_product_code?: string;
+  is_mock?: boolean;
+}
+
+export interface UpbitCredentialPayload {
+  access_key: string;
+  secret_key: string;
+}
+
+export async function getUserBrokerCredentialStatus(
+  ubaId: number,
+): Promise<BrokerCredentialStatus> {
+  const { data } = await apiClient.get(
+    `/user/accounts/${ubaId}/credentials/status`,
+  );
+  return data as BrokerCredentialStatus;
+}
+
+export async function registerUserBrokerCredential(
+  ubaId: number,
+  body: KiwoomCredentialPayload | UpbitCredentialPayload,
+): Promise<BrokerCredentialStatus> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${ubaId}/credentials`,
+    body,
+  );
+  return data as BrokerCredentialStatus;
+}
+
+export async function replaceUserBrokerCredential(
+  ubaId: number,
+  body: KiwoomCredentialPayload | UpbitCredentialPayload,
+): Promise<BrokerCredentialStatus> {
+  const { data } = await apiClient.put(
+    `/user/accounts/${ubaId}/credentials`,
+    body,
+  );
+  return data as BrokerCredentialStatus;
+}
+
+export async function revokeUserBrokerCredential(
+  ubaId: number,
+): Promise<BrokerCredentialStatus> {
+  const { data } = await apiClient.delete(
+    `/user/accounts/${ubaId}/credentials`,
+  );
+  return data as BrokerCredentialStatus;
+}
+
+export async function verifyUserBrokerCredential(
+  ubaId: number,
+): Promise<BrokerCredentialStatus> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${ubaId}/credentials/verify`,
+    {},
+  );
+  return data as BrokerCredentialStatus;
+}
+
 export async function getUserAccount(
   accountId: number,
   params?: { account_type?: string },
@@ -1719,28 +2076,54 @@ export async function getPaperAccount(accountId: number): Promise<JsonValue> {
   return data;
 }
 
-/** 최신 종가 — 포트폴리오·매매 폴백용 */
+/** 최신 종가 — 포트폴리오·매매 폴백용 (주식·업비트 공통) */
 export async function getLatestPrice(
   exchangeCode: string,
   symbol: string,
 ): Promise<JsonValue> {
   const { data } = await apiClient.get(
-    `/prices/latest/${exchangeCode}/${symbol}`,
+    `/user/market/prices/latest/${exchangeCode}/${symbol}`,
   );
   return data;
 }
 
-/** 종목 목록 — 매매 화면 검색용 */
+/** 종목 목록 — 매매·시장정보 화면 검색용 (주식·업비트 공통) */
 export async function listMarketSymbols(params?: {
   market?: string;
   active_only?: boolean;
 }): Promise<JsonValue> {
-  const { data } = await apiClient.get("/market/symbols", {
+  const { data } = await apiClient.get("/user/market/symbols", {
     params: {
       market: params?.market,
       active_only: params?.active_only ?? true,
     },
   });
+  return data;
+}
+
+/** 일봉 캔들 — 시장정보 화면용 (주식·업비트 공통) */
+export async function getDailyCandles(
+  exchangeCode: string,
+  symbol: string,
+  params?: { limit?: number },
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/market/candles/day/${exchangeCode}/${symbol}`,
+    { params },
+  );
+  return data;
+}
+
+/** 일봉 기술지표 — 시장정보 화면용 (주식·업비트 공통) */
+export async function getDailyIndicators(
+  exchangeCode: string,
+  symbol: string,
+  params: { start_date: string; end_date: string },
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/market/indicators/daily/${exchangeCode}/${symbol}`,
+    { params },
+  );
   return data;
 }
 
@@ -1769,8 +2152,10 @@ export async function cancelPaperOrder(orderId: number): Promise<JsonValue> {
 
 export async function submitLiveOrder(body: {
   account_id: number;
+  user_broker_account_id?: number;
   broker_code?: string;
   exchange_code: string;
+  environment?: string;
   symbol: string;
   side: "BUY" | "SELL";
   order_type?: string;
@@ -1801,13 +2186,13 @@ export async function cancelTradingOrder(
   return data;
 }
 
-/** 실시간 시세 캐시 조회 (없으면 404) */
+/** 실시간 시세 캐시 조회 (없으면 404, 주식·업비트 공통) */
 export async function getRealtimeQuote(
   exchangeCode: string,
   symbol: string,
 ): Promise<JsonValue> {
   const { data } = await apiClient.get(
-    `/realtime-quotes/${exchangeCode}/${symbol}`,
+    `/user/market/realtime-quotes/${exchangeCode}/${symbol}`,
   );
   return data;
 }
@@ -1818,7 +2203,9 @@ export async function getRealtimeQuotesStatus(): Promise<JsonValue> {
 }
 
 export async function getStrategyOpsDashboard(): Promise<JsonValue> {
-  const { data } = await apiClient.get("/dashboard/strategy-operations");
+  const { data } = await apiClient.get(
+    "/user/strategies/operations-dashboard",
+  );
   return data;
 }
 
@@ -1924,4 +2311,61 @@ export async function completeStrategyPerformanceRun(
     },
   );
   return data;
+}
+
+/** STEP 8-5-16 — 본인 계좌 정산 조회 (Backend 계산값만 표시) */
+export interface UserSettlement {
+  settlement_id: number;
+  market_date: string;
+  broker_code: string;
+  settlement_type: string;
+  status_code: string;
+  status_label: string;
+  needs_manual_review: boolean;
+  has_mismatch: boolean;
+  realized_pnl: string;
+  unrealized_pnl: string;
+  fees: string;
+  taxes: string;
+  net_pnl: string;
+  closing_equity: string | null;
+  completed_at: string | null;
+}
+
+export async function listMySettlements(params?: {
+  market_date?: string;
+  limit?: number;
+}): Promise<{ items: UserSettlement[]; count: number }> {
+  const { data } = await apiClient.get("/user/settlements", { params });
+  const row = data as { items?: UserSettlement[]; count?: number };
+  return {
+    items: Array.isArray(row.items) ? row.items : [],
+    count: row.count ?? 0,
+  };
+}
+
+export async function getMySettlement(
+  settlementId: number,
+): Promise<UserSettlement> {
+  const { data } = await apiClient.get(`/user/settlements/${settlementId}`);
+  return data as UserSettlement;
+}
+
+/** STEP 8-5-17 — Snapshot 상태 (정상/동기화 중/오래됨) */
+export interface UserBrokerSnapshotStatus {
+  broker_code: string;
+  status_label: string;
+  is_fresh: boolean;
+}
+
+export async function listMyBrokerSnapshotStatus(): Promise<{
+  items: UserBrokerSnapshotStatus[];
+  count: number;
+}> {
+  const { data } = await apiClient.get("/user/broker-snapshots");
+  const row = data as { items?: UserBrokerSnapshotStatus[]; count?: number };
+  return {
+    items: Array.isArray(row.items) ? row.items : [],
+    count: row.count ?? 0,
+  };
 }

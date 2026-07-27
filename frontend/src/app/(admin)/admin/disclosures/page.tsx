@@ -1,14 +1,16 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, DatePicker, Form, Input, Space } from "antd";
+import { App, Button, DatePicker, Form, Input, Space, Typography } from "antd";
 import dayjs from "dayjs";
+import Link from "next/link";
 import { useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { adminRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -27,6 +29,15 @@ export default function AdminDisclosuresPage() {
       }),
   });
 
+  const syncCorps = useMutation({
+    mutationFn: () => adminApi.syncDartCorps(),
+    onSuccess: (data) => {
+      message.success("법인코드 동기화 요청 완료");
+      setLastResult(data);
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
   const syncDisclosures = useMutation({
     mutationFn: (body: {
       stock_code: string;
@@ -40,28 +51,38 @@ export default function AdminDisclosuresPage() {
         queryKey: queryKeys.admin.dartDisclosures({ stock_code: stockCode }),
       });
     },
-    onError: (e) => message.error(toApiError(e).message),
-  });
-
-  const syncCorps = useMutation({
-    mutationFn: () => adminApi.syncDartCorps(),
-    onSuccess: (data) => {
-      message.success("법인코드 동기화 요청 완료");
-      setLastResult(data);
+    onError: (e) => {
+      const err = toApiError(e);
+      // 법인 마스터 미동기화 시 안내
+      if (
+        err.status === 404 ||
+        /corp not found/i.test(err.message) ||
+        /법인코드/i.test(err.message)
+      ) {
+        message.error(
+          `${err.message} — 상단 「법인코드 Sync」를 먼저 실행하세요.`,
+        );
+        return;
+      }
+      message.error(err.message);
     },
-    onError: (e) => message.error(toApiError(e).message),
   });
 
   return (
     <AdminPageShell
       title="공시관리"
-      description="DART 공시 조회 · sync"
+      description="DART 공시 조회 · sync — 법인코드 Sync는 ZIP 다운로드로 1~3분 걸릴 수 있습니다."
       extra={
         <Button loading={syncCorps.isPending} onClick={() => syncCorps.mutate()}>
           법인코드 Sync
         </Button>
       }
     >
+      <Typography.Paragraph type="secondary">
+        AI 분석은 수집과 분리됩니다.{" "}
+        <Link href={adminRoutes.aiDocumentAnalyses}>문서 분석(참고용)</Link>
+        {" — "}매매 신호가 아닙니다. 저장만으로 자동 AI 호출 없음.
+      </Typography.Paragraph>
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Form
           layout="inline"

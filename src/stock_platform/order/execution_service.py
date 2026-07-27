@@ -26,6 +26,7 @@ from stock_platform.risk.models import (
     RiskPolicy,
 )
 from stock_platform.risk_engine.kill_switch_guard import (
+    KillSwitchUnavailableError,
     PersistentKillSwitchGuard,
 )
 from stock_platform.risk_engine.order_guard import (
@@ -60,6 +61,20 @@ class OrderExecutionCommand:
     skip_risk_checks: bool = False
     metadata_payload: dict[str, Any] | None = None
     actor: str = "ORDER_EXECUTION"
+    # PAPER(기본) | LIVE — LIVE는 이중 게이트 + transition 필요
+    environment: str = "PAPER"
+    # STEP8-1 — LIVE 키움·업비트 UserBrokerAccount 격리
+    user_broker_account_id: int | None = None
+    # 마스킹된 외부 계좌 식별자 (Outbox/Adapter 전달용)
+    external_account_ref: str | None = None
+    owner_user_id: int | None = None
+    # STEP8-2 — 리스크 해석용
+    order_source: str = "MANUAL"
+    is_risk_reducing: bool = False
+    user_id: int | None = None
+    # STEP 8-8 — ARM 토큰·기준가
+    arm_token: str | None = None
+    reference_price: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,14 +109,30 @@ class OrderExecutionService:
         self,
         command: OrderExecutionCommand,
     ) -> OrderExecutionResult:
-        account_number = (
-            command.account_number
-            or get_settings().kiwoom_account_number.strip()
-        )
-        if not account_number and not command.skip_risk_checks:
-            return self._blocked(
-                "RISK_ACCOUNT_NUMBER_MISSING"
+        environment = (command.environment or "PAPER").upper()
+        # LIVE+UBA: 환경변수 단일 계좌를 사용자 계좌처럼 쓰지 않음
+        account_number = command.account_number
+        if not account_number and command.user_broker_account_id:
+            account_number = (
+                command.external_account_ref
+                or f"UBA:{command.user_broker_account_id}"
             )
+        if not account_number and environment != "LIVE":
+            account_number = (
+                get_settings().kiwoom_account_number.strip()
+            )
+        if environment == "LIVE" and command.user_broker_account_id is None:
+            return self._blocked("UBA_REQUIRED")
+        if not account_number and not command.skip_risk_checks:
+            if environment == "LIVE":
+                account_number = (
+                    command.external_account_ref
+                    or f"UBA:{command.user_broker_account_id}"
+                )
+            else:
+                return self._blocked(
+                    "RISK_ACCOUNT_NUMBER_MISSING"
+                )
 
         try:
             quantity, price, plan_payload = self._resolve_size(
@@ -114,17 +145,106 @@ class OrderExecutionService:
             )
 
         if not command.skip_risk_checks:
+            if environment == "LIVE":
+                from stock_platform.operation.live_health_gate import (
+                    LiveHealthBlockedError,
+                    assert_live_orders_allowed,
+                )
+                from stock_platform.order.live_safety_pipeline import (
+                    LiveOrderSafetyPipeline,
+                )
+
+                if command.user_broker_account_id is None:
+                    return self._blocked("UBA_REQUIRED")
+
+                # STEP 8-7 — Adapter 직전과 동일한 LIVE 안전 파이프라인
+                safety = LiveOrderSafetyPipeline(self._session).evaluate(
+                    user_id=command.user_id or command.owner_user_id,
+                    user_broker_account_id=int(
+                        command.user_broker_account_id
+                    ),
+                    broker_code=str(command.broker_code),
+                    exchange_code=command.exchange_code,
+                    symbol=command.symbol,
+                    side=command.side.value,
+                    quantity=quantity,
+                    price=price,
+                    strategy_id=(
+                        command.strategy_code
+                        or (
+                            str(command.strategy_deployment_id)
+                            if command.strategy_deployment_id
+                            else None
+                        )
+                    ),
+                    run_id=(
+                        (command.metadata_payload or {}).get("run_id")
+                        if isinstance(command.metadata_payload, dict)
+                        else None
+                    ),
+                    actor=command.actor,
+                    operator=command.actor,
+                    environment=environment,
+                    is_risk_reducing=command.is_risk_reducing,
+                    arm_token=command.arm_token,
+                    reference_price=command.reference_price,
+                    require_arm=True,
+                )
+                if not safety.allowed:
+                    return self._blocked(safety.reason_code)
+
+                try:
+                    assert_live_orders_allowed(self._session)
+                except LiveHealthBlockedError:
+                    return self._blocked("SYSTEM_HEALTH_CRITICAL")
+
             try:
                 PersistentKillSwitchGuard(
                     self._session
                 ).require_order_allowed(
                     side=command.side.value,
                     allow_sell=True,
+                    exchange_code=command.exchange_code,
+                    user_broker_account_id=command.user_broker_account_id,
+                    paper_account_id=(
+                        command.account_id
+                        if environment != "LIVE"
+                        else None
+                    ),
+                )
+            except KillSwitchUnavailableError:
+                return self._blocked(
+                    "KILL_SWITCH_UNAVAILABLE"
                 )
             except PermissionError:
                 return self._blocked(
                     "GLOBAL_KILL_SWITCH_ACTIVE"
                 )
+
+            # STEP 8-5-2 — LIVE UBA는 Risk 전에 Vault Credential 검사
+            if (
+                environment == "LIVE"
+                and command.user_broker_account_id is not None
+                and str(command.broker_code).upper()
+                in {"KIWOOM", "UPBIT"}
+            ):
+                from stock_platform.broker.credential_vault_service import (
+                    BrokerCredentialVaultError,
+                    BrokerCredentialVaultService,
+                )
+
+                try:
+                    BrokerCredentialVaultService(
+                        self._session
+                    ).assert_live_order_allowed(
+                        int(command.user_broker_account_id),
+                        broker_code=str(command.broker_code),
+                    )
+                except BrokerCredentialVaultError as exc:
+                    return self._blocked(
+                        exc.code.upper(),
+                        message=exc.message,
+                    )
 
             risk_result = DatabaseBackedRiskOrderGuard(
                 self._session,
@@ -137,6 +257,11 @@ class OrderExecutionService:
                 side=command.side.value,
                 quantity=quantity,
                 price=price,
+                user_id=command.user_id or command.owner_user_id,
+                user_broker_account_id=command.user_broker_account_id,
+                order_source=command.order_source,
+                is_risk_reducing=command.is_risk_reducing,
+                environment=environment,
             )
             if not risk_result.allowed:
                 return self._blocked(
@@ -195,9 +320,11 @@ class OrderExecutionService:
         if plan_payload:
             metadata["position_plan"] = plan_payload
 
+        # 주문+Outbox를 한 트랜잭션에 묶어 orphan CREATED 방지
         order = self._order_service.create(
             CreateOrderCommand(
                 account_id=command.account_id,
+                user_broker_account_id=command.user_broker_account_id,
                 broker_code=command.broker_code,
                 exchange_code=command.exchange_code,
                 symbol=command.symbol,
@@ -216,6 +343,7 @@ class OrderExecutionService:
                 metadata_payload=metadata,
             ),
             actor=command.actor,
+            commit=False,
         )
 
         order = self._order_repository.change_status(
@@ -232,8 +360,31 @@ class OrderExecutionService:
             event_type=OutboxEventType.SUBMIT_ORDER,
             idempotency_key=idempotency_key,
             payload_json={
+                # Upbit identifier claim 등 Outbox dispatch에 필요
+                "order_id": order.order_id,
                 "client_order_id": order.client_order_id,
                 "account_id": order.account_id,
+                "user_broker_account_id": (
+                    order.user_broker_account_id
+                ),
+                "broker_code": order.broker_code,
+                "environment": environment,
+                "account_type": environment,
+                "external_account_ref": (
+                    command.external_account_ref
+                ),
+                "owner_user_id": command.owner_user_id,
+                "arm_token_present": bool(command.arm_token),
+                # STEP 8-5-2 — 사용자 LIVE는 UBA Vault (env 공용 대체 금지)
+                "uses_system_shared_credential": False,
+                "credential_ref": (
+                    f"USER_BROKER_ACCOUNT:{order.user_broker_account_id}"
+                    if (
+                        order.user_broker_account_id is not None
+                        and environment == "LIVE"
+                    )
+                    else None
+                ),
                 "exchange_code": order.exchange_code,
                 "symbol": order.symbol,
                 "side": order.side_code,
@@ -249,6 +400,50 @@ class OrderExecutionService:
         )
         self._session.commit()
         self._session.refresh(order)
+
+        if environment == "LIVE":
+            try:
+                from stock_platform.order.live_safety_pipeline import (
+                    LiveOrderSafetyPipeline,
+                )
+
+                LiveOrderSafetyPipeline(self._session).notify_submitted(
+                    decision_detail={
+                        "broker_code": order.broker_code,
+                        "exchange_code": order.exchange_code,
+                        "symbol": order.symbol,
+                        "side": order.side_code,
+                        "quantity": str(order.order_quantity),
+                        "price": (
+                            None
+                            if order.order_price is None
+                            else str(order.order_price)
+                        ),
+                        "amount": str(
+                            (
+                                Decimal(str(order.order_quantity))
+                                * Decimal(str(order.order_price or 0))
+                            ).quantize(Decimal("0.01"))
+                        ),
+                        "strategy_id": order.strategy_code,
+                        "operator": command.actor,
+                    },
+                    order_id=order.order_id,
+                    client_order_id=order.client_order_id,
+                    run_id=(
+                        (command.metadata_payload or {}).get("run_id")
+                        if isinstance(command.metadata_payload, dict)
+                        else None
+                    ),
+                    actor=command.actor,
+                    user_id=command.user_id or command.owner_user_id,
+                    account_id=command.user_broker_account_id,
+                    strategy_id=order.strategy_code,
+                    symbol=order.symbol,
+                )
+                self._session.commit()
+            except Exception:  # noqa: BLE001
+                pass
 
         return OrderExecutionResult(
             allowed=True,
@@ -268,6 +463,7 @@ class OrderExecutionService:
         order_id: int,
         actor: str = "ORDER_DISPATCHER",
         idempotency_key: str | None = None,
+        environment: str = "PAPER",
     ) -> OrderExecutionResult:
         """기존 CREATED 주문을 Outbox에 넣고 PENDING으로 전이한다."""
         order = self._order_repository.get(order_id)
@@ -297,8 +493,12 @@ class OrderExecutionService:
             event_type=OutboxEventType.SUBMIT_ORDER,
             idempotency_key=key,
             payload_json={
+                "order_id": order.order_id,
                 "client_order_id": order.client_order_id,
                 "account_id": order.account_id,
+                "user_broker_account_id": order.user_broker_account_id,
+                "broker_code": order.broker_code,
+                "environment": (environment or "PAPER").upper(),
                 "exchange_code": order.exchange_code,
                 "symbol": order.symbol,
                 "side": order.side_code,

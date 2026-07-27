@@ -6,11 +6,12 @@ from decimal import Decimal
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Identity,
+    Index,
     Numeric,
     String,
-    UniqueConstraint,
     func,
     text,
 )
@@ -20,14 +21,36 @@ from stock_platform.database.base import Base
 
 
 class PositionLimitEntity(Base):
+    """STEP 8-5-19 — UBA/Paper 기준 Position Limit."""
+
     __tablename__ = "position_limit"
     __table_args__ = (
-        UniqueConstraint(
-            "broker_code",
-            "account_number",
+        CheckConstraint(
+            "("
+            "(user_broker_account_id IS NOT NULL AND paper_account_id IS NULL "
+            "AND account_scope_type = 'LIVE') OR "
+            "(user_broker_account_id IS NULL AND paper_account_id IS NOT NULL "
+            "AND account_scope_type = 'PAPER') OR "
+            "(user_broker_account_id IS NULL AND paper_account_id IS NULL "
+            "AND account_scope_type = 'LEGACY_ORPHAN')"
+            ")",
+            name="ck_position_limit_exactly_one_scope",
+        ),
+        Index(
+            "uq_position_limit_uba_symbol",
+            "user_broker_account_id",
             "exchange_code",
             "symbol",
-            name="uq_position_limit_scope",
+            unique=True,
+            postgresql_where=text("user_broker_account_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_position_limit_paper_symbol",
+            "paper_account_id",
+            "exchange_code",
+            "symbol",
+            unique=True,
+            postgresql_where=text("paper_account_id IS NOT NULL"),
         ),
         {"schema": "operation"},
     )
@@ -42,10 +65,14 @@ class PositionLimitEntity(Base):
         nullable=False,
         server_default=text("'KIWOOM'"),
     )
-    account_number: Mapped[str] = mapped_column(
-        String(30),
+    user_broker_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    paper_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    account_scope_type: Mapped[str] = mapped_column(
+        String(20),
         nullable=False,
+        server_default=text("'UNKNOWN'"),
     )
+    masked_account_ref: Mapped[str | None] = mapped_column(String(40))
     exchange_code: Mapped[str] = mapped_column(
         String(20),
         nullable=False,

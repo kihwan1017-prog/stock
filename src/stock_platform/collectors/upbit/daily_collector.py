@@ -4,7 +4,7 @@ from datetime import date
 
 import structlog
 
-from stock_platform.brokers.upbit.client import UpbitQuotationClient
+from stock_platform.broker.upbit.market.client import UpbitQuotationClient
 from stock_platform.collectors.upbit.dto import UpbitDailyPriceDTO
 from stock_platform.collectors.upbit.parser import UpbitDailyParser
 

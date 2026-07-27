@@ -31,6 +31,7 @@ from stock_platform.notification.service import (
 from stock_platform.notification.telegram_commands import (
     TelegramCommandHandler,
     _extract_command,
+    parse_telegram_input,
 )
 
 
@@ -54,6 +55,7 @@ def test_extract_command() -> None:
     assert _extract_command("/status@MyBot") == "/status"
     assert _extract_command("hello") is None
     assert _extract_command("/unknown") is None
+    assert parse_telegram_input("YES")[0] == "__confirm_yes__"
 
 
 @pytest.mark.asyncio
@@ -186,7 +188,7 @@ async def test_kill_and_resume() -> None:
         handler,
         "_audit",
     ), patch(
-        "stock_platform.notification.telegram_commands.KillSwitchService"
+        "stock_platform.risk_engine.kill_switch_service.KillSwitchService"
     ) as ks_cls, patch(
         "stock_platform.notification.telegram_commands.notification_publisher.publish_async",
         new=AsyncMock(),
@@ -195,13 +197,24 @@ async def test_kill_and_resume() -> None:
         ks.activate.return_value = state
         ks.deactivate.return_value = state_off
 
-        kill = await handler.handle(
+        kill_req = await handler.handle(
             chat_id="1",
             text="/kill",
         )
-        resume = await handler.handle(
+        assert kill_req.ok is True
+        assert "승인 필요" in kill_req.reply_text
+        kill = await handler.handle(
+            chat_id="1",
+            text="YES",
+        )
+        resume_req = await handler.handle(
             chat_id="1",
             text="/resume",
+        )
+        assert "승인 필요" in resume_req.reply_text
+        resume = await handler.handle(
+            chat_id="1",
+            text="YES",
         )
 
     assert kill.ok is True
@@ -276,6 +289,8 @@ def test_lifecycle_starts_telegram_ops_scheduler() -> None:
         "stock_platform.api.lifecycle.deployment_performance_monitor_scheduler.start"
     ), patch(
         "stock_platform.api.lifecycle.order_outbox_scheduler.start"
+    ), patch(
+        "stock_platform.api.lifecycle.broker_recovery_scheduler.start"
     ):
         asyncio.run(lifecycle.startup())
 

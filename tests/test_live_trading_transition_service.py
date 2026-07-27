@@ -9,6 +9,7 @@ from stock_platform.common.settings import get_settings
 
 
 def _configure_live_ready_env(monkeypatch) -> None:
+    monkeypatch.setenv("GLOBAL_LIVE_ORDER_ENABLED", "true")
     monkeypatch.setenv("KIWOOM_USE_MOCK", "false")
     monkeypatch.setenv("KIWOOM_LIVE_ORDER_ENABLED", "true")
     monkeypatch.setenv("KIWOOM_ACCOUNT_NUMBER", "123456")

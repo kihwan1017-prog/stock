@@ -8,12 +8,23 @@ class TradingOrderService:
     def __init__(self, session: Session):
         self.repository = TradingOrderRepository(session)
 
-    def create(self, command: CreateOrderCommand, actor: str = "SYSTEM"):
+    def create(
+        self,
+        command: CreateOrderCommand,
+        actor: str = "SYSTEM",
+        *,
+        commit: bool = True,
+    ):
         self._validate(command)
         client_order_id = command.client_order_id or ClientOrderIdGenerator.generate()
         if self.repository.get_by_client_order_id(client_order_id):
             raise ValueError("client_order_id already exists")
-        return self.repository.create(command, client_order_id, actor)
+        return self.repository.create(
+            command,
+            client_order_id,
+            actor,
+            commit=commit,
+        )
 
     @staticmethod
     def _validate(command: CreateOrderCommand):

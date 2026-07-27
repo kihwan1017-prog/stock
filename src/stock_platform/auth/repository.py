@@ -370,3 +370,66 @@ class AuthRepository:
         user.last_login_at = datetime.now(timezone.utc)
         user.updated_at = datetime.now(timezone.utc)
         self._session.flush()
+
+    def flush(self) -> None:
+        """보류 중인 ORM 변경을 DB에 반영한다."""
+
+        self._session.flush()
+
+    def get_session(self) -> Session:
+        """동일 트랜잭션으로 Profile 등 다른 서비스를 붙일 때 사용.
+
+        서비스는 `_repository._session` private 에 접근하지 말고
+        이 공개 계약을 사용한다.
+        """
+
+        return self._session
+
+    def set_password_change_required(
+        self,
+        user: AuthUser,
+        *,
+        required: bool,
+    ) -> AuthUser:
+        user.password_change_required = required
+        user.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        return user
+
+    def mark_onboarding_completed(self, user: AuthUser) -> AuthUser:
+        if user.onboarding_completed_at is None:
+            now = datetime.now(timezone.utc)
+            user.onboarding_completed_at = now
+            user.updated_at = now
+            self._session.flush()
+        return user
+
+    def clear_lockout(self, user: AuthUser) -> AuthUser:
+        user.locked_until = None
+        user.failed_login_count = 0
+        user.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        return user
+
+    def record_failed_login(
+        self,
+        user: AuthUser,
+        *,
+        max_fails: int,
+        lockout_minutes: int,
+    ) -> AuthUser:
+        """로그인 실패 카운트 증가. 한도 초과 시 잠금."""
+
+        from datetime import timedelta
+
+        user.failed_login_count = int(user.failed_login_count or 0) + 1
+        limit = max(1, int(max_fails))
+        if user.failed_login_count >= limit:
+            minutes = max(1, int(lockout_minutes))
+            user.locked_until = datetime.now(timezone.utc) + timedelta(
+                minutes=minutes
+            )
+            user.failed_login_count = 0
+        user.updated_at = datetime.now(timezone.utc)
+        self._session.flush()
+        return user

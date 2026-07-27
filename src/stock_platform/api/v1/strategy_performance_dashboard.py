@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query
+from stock_platform.api.deps_admin import require_admin
 from sqlalchemy.orm import Session
 from stock_platform.database.session import get_db_session
 from stock_platform.performance.dashboard_service import StrategyPerformanceDashboardService
@@ -6,6 +7,7 @@ from stock_platform.performance.dashboard_service import StrategyPerformanceDash
 router = APIRouter(
     prefix="/api/v1/dashboard/strategy-performance",
     tags=["Strategy Performance Dashboard"],
+    dependencies=[Depends(require_admin)],
 )
 
 @router.get("")

@@ -10,7 +10,7 @@ from stock_platform.ai.ollama_client import OllamaClient
 from stock_platform.ai.orchestration_service import (
     CandidateAnalysisOrchestrator,
 )
-from stock_platform.brokers.upbit.client import (
+from stock_platform.broker.upbit.market.client import (
     UpbitQuotationClient,
 )
 from stock_platform.collectors.upbit.batch_daily_sync_service import (

@@ -1,0 +1,24 @@
+"""STEP 11-2 — Provider Health 상태 표준화."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class HealthStatus(StrEnum):
+    DISABLED = "DISABLED"
+    NOT_CONFIGURED = "NOT_CONFIGURED"
+    UNCONFIGURED = "UNCONFIGURED"  # 하위 호환 alias
+    INITIALIZING = "INITIALIZING"
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    RATE_LIMITED = "RATE_LIMITED"
+    AUTH_FAILED = "AUTH_FAILED"
+    MODEL_NOT_FOUND = "MODEL_NOT_FOUND"
+    TIMEOUT = "TIMEOUT"
+    OFFLINE = "OFFLINE"
+    CIRCUIT_OPEN = "CIRCUIT_OPEN"
+    ERROR = "ERROR"
+    UNHEALTHY = "UNHEALTHY"  # 하위 호환
+    UNKNOWN = "UNKNOWN"
+    SAFETY_BLOCKED = "SAFETY_BLOCKED"

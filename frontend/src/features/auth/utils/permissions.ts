@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/features/auth/types/auth";
+import { isAdminRole, normalizeRoles } from "@/features/auth/utils/roles";
 
 /** admin은 모든 권한 보유로 간주 */
 export function hasPermission(
@@ -8,7 +9,7 @@ export function hasPermission(
   if (!user || !codes.length) {
     return false;
   }
-  if (user.roles.includes("admin")) {
+  if (isAdminRole(user.roles)) {
     return true;
   }
   const owned = new Set(user.permissions ?? []);
@@ -22,7 +23,7 @@ export function hasAnyPermission(
   if (!user || !codes.length) {
     return false;
   }
-  if (user.roles.includes("admin")) {
+  if (isAdminRole(user.roles)) {
     return true;
   }
   const owned = new Set(user.permissions ?? []);
@@ -36,5 +37,6 @@ export function hasAnyRole(
   if (!user || !roles.length) {
     return false;
   }
-  return roles.some((role) => user.roles.includes(role));
+  const owned = new Set(normalizeRoles(user.roles));
+  return roles.some((role) => owned.has(normalizeRoles([role])[0] ?? role));
 }
