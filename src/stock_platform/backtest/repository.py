@@ -15,12 +15,23 @@ class BacktestRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
+    def find_by_idempotency_key(
+        self, idempotency_key: str
+    ) -> BacktestRunEntity | None:
+        return self._session.scalar(
+            select(BacktestRunEntity).where(
+                BacktestRunEntity.idempotency_key == idempotency_key
+            )
+        )
+
     def save_result(
         self,
         *,
         result: BacktestResult,
         strategy_code: str,
         parameters: dict,
+        strategy_definition_id: int | None = None,
+        idempotency_key: str | None = None,
     ) -> BacktestRunEntity:
         run = BacktestRunEntity(
             strategy_code=strategy_code,
@@ -44,6 +55,8 @@ class BacktestRepository:
             ),
             parameters=parameters,
             status_code="SUCCESS",
+            strategy_definition_id=strategy_definition_id,
+            idempotency_key=idempotency_key,
         )
 
         self._session.add(run)

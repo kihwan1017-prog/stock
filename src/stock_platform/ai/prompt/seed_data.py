@@ -32,7 +32,23 @@ COMMON_ENVELOPE_PROPS: dict[str, Any] = {
 }
 
 
-def envelope(task_type: str, result_props: dict[str, Any]) -> dict[str, Any]:
+def envelope(
+    task_type: str,
+    result_props: dict[str, Any],
+    *,
+    result_required: list[str] | None = None,
+) -> dict[str, Any]:
+    result_schema: dict[str, Any] = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": result_props,
+    }
+    if result_required:
+        # 지정하지 않으면 하위 호환을 위해 이전과 동일하게 "required" 없이
+        # 둔다(result의 모든 필드가 선택). 지정한 태스크(예: STRATEGY_DRAFT)는
+        # grammar 제약 Provider(Ollama 등)가 필수 필드를 건너뛰고 조기에
+        # 객체를 닫아버리는 것을 스키마 차원에서 방지한다.
+        result_schema["required"] = result_required
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -50,11 +66,7 @@ def envelope(task_type: str, result_props: dict[str, Any]) -> dict[str, Any]:
                 "type": "string",
                 "enum": [task_type],
             },
-            "result": {
-                "type": "object",
-                "additionalProperties": False,
-                "properties": result_props,
-            },
+            "result": result_schema,
         },
     }
 

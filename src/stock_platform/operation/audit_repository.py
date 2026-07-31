@@ -27,7 +27,16 @@ class AuditEventRepository:
         symbol: str | None,
         detail: dict[str, Any],
         created_at: datetime,
+        auto_commit: bool = True,
     ) -> AuditEvent:
+        """§ STEP12-19 Carry-forward(3.1) — Transaction 경계 명확화.
+        `auto_commit=True`(기본값, 기존 모든 호출부의 동작을 그대로
+        유지)면 이전과 동일하게 여기서 즉시 commit한다. 최상위
+        Application Service가 자신의 Transaction을 직접 소유하려는
+        호출부(예: Deployment/Runtime Registration Commit처럼 Audit
+        저장이 다른 Domain INSERT들과 원자적으로 함께 성공/실패해야
+        하는 경우)는 `auto_commit=False`로 호출해 flush까지만 수행하고,
+        최종 commit/rollback은 호출자가 정확히 한 번 수행한다."""
         entity = AuditEvent(
             event_type=event_type,
             actor=actor,
@@ -42,8 +51,11 @@ class AuditEventRepository:
             created_at=created_at,
         )
         self._session.add(entity)
-        self._session.commit()
-        self._session.refresh(entity)
+        if auto_commit:
+            self._session.commit()
+            self._session.refresh(entity)
+        else:
+            self._session.flush()
         return entity
 
     def list_recent(

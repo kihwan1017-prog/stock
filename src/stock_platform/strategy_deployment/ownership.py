@@ -81,6 +81,27 @@ def assert_strategy_readable(
     )
 
 
+def assert_strategy_not_draft_derived(strategy: StrategyDefinitionEntity) -> None:
+    """STEP12-3 — AI Strategy Draft 승인으로 생성된 행은 불변이다.
+
+    관리자 포함 누구도 STEP8-3의 범용 수정/승인/공개/활성 API로 직접
+    고칠 수 없다(수정이 필요하면 새 Draft/새 승인/새 Definition을
+    생성해야 한다 — 승인 후 불변 정책). 관리자 최종 승인(REVOKE)만
+    ai.strategy_draft_approval 도메인을 통해 is_active를 끌 수 있다.
+    """
+    # getattr 방어: 기존 STEP8-3 테스트가 SimpleNamespace 등 경량 fake로
+    # 이 함수를 호출하는 경우 신규 컬럼이 없을 수 있다 — 없으면 "AI Draft
+    # 유래가 아님"으로 안전하게 간주한다.
+    if getattr(strategy, "source_draft_id", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "AI Draft 승인으로 생성된 Strategy Definition은 불변입니다. "
+                "수정하려면 새 Draft 승인으로 새 Definition을 생성하세요."
+            ),
+        )
+
+
 def assert_strategy_writable(
     user: AuthenticatedUser,
     strategy: StrategyDefinitionEntity,
@@ -92,6 +113,7 @@ def assert_strategy_writable(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Strategy not found",
         )
+    assert_strategy_not_draft_derived(strategy)
     if user.is_admin:
         return
     if strategy.owner_type != "USER":
@@ -414,6 +436,7 @@ class StrategyDefinitionService:
         actor: str,
     ) -> StrategyDefinitionEntity:
         row = self.require(strategy_id)
+        assert_strategy_not_draft_derived(row)
         vis = visibility.upper()
         if vis not in {"PRIVATE", "PUBLIC"}:
             raise StrategyOwnershipError("invalid visibility")
@@ -437,6 +460,7 @@ class StrategyDefinitionService:
         approve: bool,
     ) -> StrategyDefinitionEntity:
         row = self.require(strategy_id)
+        assert_strategy_not_draft_derived(row)
         if approve:
             row.approved_by = actor
             row.approved_at = datetime.now(timezone.utc)
@@ -457,6 +481,7 @@ class StrategyDefinitionService:
         actor: str,
     ) -> StrategyDefinitionEntity:
         row = self.require(strategy_id)
+        assert_strategy_not_draft_derived(row)
         row.is_active = is_active
         row.updated_by = actor
         self._session.flush()
@@ -481,6 +506,16 @@ class StrategyDefinitionService:
             "published_by": row.published_by,
             "published_at": row.published_at,
             "source_strategy_id": row.source_strategy_id,
+            "source_draft_id": row.source_draft_id,
+            "source_draft_version": row.source_draft_version,
+            "source_draft_revision": row.source_draft_revision,
+            "strategy_request_id": row.strategy_request_id,
+            "candidate_id": row.candidate_id,
+            "candidate_fingerprint": row.candidate_fingerprint,
+            "approval_id": row.approval_id,
+            "schema_version": row.schema_version,
+            "definition_version": row.definition_version,
+            "definition_hash": row.definition_hash,
             "created_at": row.created_at,
             "updated_at": row.updated_at,
         }

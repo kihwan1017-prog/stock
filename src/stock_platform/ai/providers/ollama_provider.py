@@ -172,8 +172,33 @@ class OllamaProvider(AIProvider):
                     ),
                 },
             }
+            json_schema = (
+                request.metadata.get("json_schema")
+                if isinstance(request.metadata, dict)
+                else None
+            )
             if request.json_mode:
-                payload["format"] = "json"
+                # STEP12-2-3A: Ollama(>=0.5)는 "format"에 리터럴 문자열
+                # "json" 대신 실제 JSON Schema 객체를 전달하면 grammar
+                # 제약 디코딩으로 스키마를 구조적으로 강제한다(실측:
+                # qwen3.5:4b가 envelope+중첩 규칙 스키마를 1회 시도로 그대로
+                # 만족). 호출자가 스키마를 제공한 경우에만 사용하고,
+                # 없으면 기존 "json" 문자열로 하위 호환한다.
+                payload["format"] = (
+                    json_schema if isinstance(json_schema, dict) else "json"
+                )
+            # STEP12-2-3: 추론("thinking") 지원 모델(예: qwen3.5)은 구조화 JSON
+            # 요청에서 사고 과정에 응답 토큰 예산을 전부 소진해 최종 content가
+            # 빈 문자열로 끝나는 사례를 실제 로컬 Ollama로 확인했다(같은 토큰
+            # 수 소비, content 없음). 호출자가 명시적으로 요청한 경우에만
+            # think 옵션을 전달한다(기본 동작 변경 없음 — 값 미지정 시 생략).
+            think = (
+                request.metadata.get("think")
+                if isinstance(request.metadata, dict)
+                else None
+            )
+            if think is not None:
+                payload["think"] = bool(think)
 
             result, latency = await timed_call(
                 self._http.request(

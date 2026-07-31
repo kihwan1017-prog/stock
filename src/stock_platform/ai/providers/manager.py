@@ -301,7 +301,11 @@ class AIManager:
         circuit = self._circuit_for(provider_id)
         metrics = self._metrics[provider_id]
         cfg = self._config(provider_id)
-        timeout = cfg.timeout_seconds if cfg else 30.0
+        timeout = (
+            request.timeout_seconds
+            if request.timeout_seconds is not None
+            else (cfg.timeout_seconds if cfg else 30.0)
+        )
         retries = cfg.retry_max if cfg else 1
         backoff = cfg.retry_backoff_seconds if cfg else 0.2
 

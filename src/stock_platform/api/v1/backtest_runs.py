@@ -10,7 +10,12 @@ from fastapi import (
     Query,
     status,
 )
-from stock_platform.api.deps_admin import require_admin
+from stock_platform.api.deps_admin import (
+    AuditLogService,
+    get_audit_service,
+    require_admin,
+)
+from stock_platform.auth.deps import AuthenticatedUser
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,6 +32,10 @@ from stock_platform.backtest.repository import (
     BacktestRepository,
 )
 from stock_platform.database.session import get_db_session
+from stock_platform.performance.backtest_analytics import (
+    PerformanceAnalyticsError,
+    analyze_backtest_run,
+)
 
 
 router = APIRouter(
@@ -194,3 +203,106 @@ def compare_backtest_runs(
         strategy_code=strategy_code,
         limit=limit,
     )
+
+
+# ---------------------------------------------------------------------------
+# STEP12-8 — Backtest 결과 기반 Performance Analytics(신규 Entity/Table
+# 없음 — 기존 backtest_run.parameters(JSONB)에 병합 저장). 기존
+# BacktestEngine/BacktestResult는 전혀 수정하지 않는다.
+# ---------------------------------------------------------------------------
+
+
+def _raise_analytics(exc: PerformanceAnalyticsError) -> None:
+    code = status.HTTP_404_NOT_FOUND if exc.code == "NOT_FOUND" else status.HTTP_400_BAD_REQUEST
+    raise HTTPException(status_code=code, detail={"code": exc.code, "message": exc.message})
+
+
+@router.get("/{backtest_run_id}/performance")
+def get_backtest_run_performance(
+    backtest_run_id: int,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    try:
+        result = analyze_backtest_run(session, backtest_run_id)
+    except PerformanceAnalyticsError as exc:
+        _raise_analytics(exc)
+        return {}
+    audit.record(
+        event_type="PERFORMANCE_ANALYZED",
+        actor=user.username,
+        run_id=str(backtest_run_id),
+        detail={
+            "trade_count": result["kpi"]["trade_count"],
+            "total_return_rate": str(result["kpi"]["total_return_rate"]),
+        },
+    )
+    session.commit()
+    return result
+
+
+@router.get("/{backtest_run_id}/summary")
+def get_backtest_run_summary(
+    backtest_run_id: int,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    try:
+        result = analyze_backtest_run(session, backtest_run_id)
+    except PerformanceAnalyticsError as exc:
+        _raise_analytics(exc)
+        return {}
+    kpi = result["kpi"]
+    summary = {
+        "backtest_run_id": result["backtest_run_id"],
+        "strategy_definition_id": result["strategy_definition_id"],
+        "total_return_rate": kpi["total_return_rate"],
+        "cagr": kpi["cagr"],
+        "annual_return": kpi["annual_return"],
+        "sharpe_ratio": kpi["sharpe_ratio"],
+        "sortino_ratio": kpi["sortino_ratio"],
+        "calmar_ratio": kpi["calmar_ratio"],
+        "profit_factor": kpi["profit_factor"],
+        "maximum_drawdown_rate": kpi["maximum_drawdown_rate"],
+        "win_rate": kpi["win_rate"],
+        "trade_count": kpi["trade_count"],
+    }
+    audit.record(
+        event_type="PERFORMANCE_ANALYZED",
+        actor=user.username,
+        run_id=str(backtest_run_id),
+        detail={"trade_count": kpi["trade_count"]},
+    )
+    session.commit()
+    return summary
+
+
+@router.get("/{backtest_run_id}/score")
+def get_backtest_run_score(
+    backtest_run_id: int,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    try:
+        result = analyze_backtest_run(session, backtest_run_id)
+    except PerformanceAnalyticsError as exc:
+        _raise_analytics(exc)
+        return {}
+    audit.record(
+        event_type="STRATEGY_SCORED",
+        actor=user.username,
+        run_id=str(backtest_run_id),
+        detail={
+            "score": str(result["score"]["score"]) if result["score"]["score"] is not None else None,
+            "grade": result["score"]["grade"],
+        },
+    )
+    session.commit()
+    return {
+        "backtest_run_id": result["backtest_run_id"],
+        "strategy_definition_id": result["strategy_definition_id"],
+        **result["score"],
+    }

@@ -64,6 +64,18 @@ from stock_platform.api.v1.admin_ai_candidate_lifecycle import (
     dashboard_router as admin_ai_candidate_lifecycle_dashboard_router,
     router as admin_ai_candidate_lifecycle_router,
 )
+from stock_platform.api.v1.admin_strategy_requests import (
+    router as admin_strategy_requests_router,
+)
+from stock_platform.api.v1.admin_strategy_drafts import (
+    router as admin_strategy_drafts_router,
+)
+from stock_platform.api.v1.admin_strategy_draft_generations import (
+    router as admin_strategy_draft_generations_router,
+)
+from stock_platform.api.v1.admin_strategy_draft_approvals import (
+    router as admin_strategy_draft_approvals_router,
+)
 from stock_platform.api.v1.admin_ai_reviews import (
     assignments_router as admin_ai_review_assignments_router,
     decisions_router as admin_ai_review_decisions_router,
@@ -98,6 +110,12 @@ from stock_platform.api.v1.user_ai import router as user_ai_router
 from stock_platform.api.v1.user_ai_candidate_lifecycle import (
     router as user_ai_candidate_lifecycle_router,
 )
+from stock_platform.api.v1.user_strategy_requests import (
+    router as user_strategy_requests_router,
+)
+from stock_platform.api.v1.user_strategy_drafts import (
+    router as user_strategy_drafts_router,
+)
 from stock_platform.api.v1.user_notifications import (
     router as user_notifications_router,
 )
@@ -118,6 +136,9 @@ from stock_platform.api.v1.user_account_strategies import (
 )
 from stock_platform.api.v1.admin_strategies import (
     router as admin_strategies_router,
+)
+from stock_platform.api.v1.admin_portfolio_validations import (
+    router as admin_portfolio_validations_router,
 )
 from stock_platform.api.v1.admin_recovery import (
     router as admin_recovery_router,
@@ -375,6 +396,10 @@ _ROUTER_GROUPS = (
     admin_ai_candidate_lifecycle_router,
     admin_ai_candidate_lifecycle_candidates_router,
     admin_ai_candidate_lifecycle_dashboard_router,
+    admin_strategy_requests_router,
+    admin_strategy_drafts_router,
+    admin_strategy_draft_generations_router,
+    admin_strategy_draft_approvals_router,
     admin_ai_review_assignments_router,
     admin_ai_reviews_router,
     admin_ai_review_decisions_router,
@@ -383,6 +408,7 @@ _ROUTER_GROUPS = (
     admin_ai_scorecards_router,
     admin_ai_costs_router,
     admin_strategies_router,
+    admin_portfolio_validations_router,
     admin_recovery_router,
     admin_recovery_scheduler_router,
     admin_trading_scheduler_router,
@@ -395,6 +421,8 @@ _ROUTER_GROUPS = (
     user_disclosures_router,
     user_ai_router,
     user_ai_candidate_lifecycle_router,
+    user_strategy_requests_router,
+    user_strategy_drafts_router,
     user_notifications_router,
     user_settings_router,
     user_profile_router,

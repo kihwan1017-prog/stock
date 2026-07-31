@@ -130,6 +130,18 @@ class BacktestRunEntity(Base):
         nullable=True,
     )
 
+    # STEP12-7 — 승인된 Strategy Definition 기반 실행 연결(§14). 기존
+    # MovingAverage 전용 실행 경로는 계속 NULL(하위 호환).
+    strategy_definition_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_definition.strategy_id",
+            ondelete="RESTRICT",
+            name="fk_backtest_run_strategy_definition",
+        ),
+    )
+    idempotency_key: Mapped[str | None] = mapped_column(String(64))
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

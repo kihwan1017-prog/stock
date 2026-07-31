@@ -215,6 +215,53 @@ class MockAIProvider(AIProvider):
                     },
                     ensure_ascii=False,
                 )
+            elif "STRATEGY_DRAFT" in joined:
+                content = json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "task_type": "STRATEGY_DRAFT",
+                        "confidence": 0.6,
+                        "reasoning_summary": "Mock strategy draft (reference only)",
+                        "result": {
+                            "title": "Mock RSI Reversal Draft",
+                            "summary": "Mock oversold bounce sketch for review only.",
+                            "market_type": "KR_STOCK",
+                            "symbols": ["MOCK"],
+                            "timeframe": "1D",
+                            "entry_rules": [
+                                {
+                                    "indicator": "RSI",
+                                    "operator": "LT",
+                                    "threshold": 30,
+                                }
+                            ],
+                            "exit_rules": [
+                                {
+                                    "indicator": "RSI",
+                                    "operator": "GT",
+                                    "threshold": 70,
+                                }
+                            ],
+                            "stop_loss_rule": {"type": "PERCENT", "value": 5},
+                            "take_profit_rule": {"type": "PERCENT", "value": 10},
+                            "position_sizing_rule": {
+                                "method": "FIXED_PERCENT",
+                                "value": 0.1,
+                            },
+                            "indicators": ["RSI"],
+                            "risk_parameters": {"max_daily_loss_pct": 2.0},
+                            "trading_session_rules": [],
+                            "cooldown_rules": [],
+                            "invalidation_conditions": [],
+                            "assumptions": ["mock_data"],
+                            "rationale": "Mock reference sketch only, not investment advice.",
+                            "confidence": 0.6,
+                        },
+                        "warnings": ["mock_provider_reference_only"],
+                        "citations": [{"source": "mock", "ref": "fixture"}],
+                    },
+                    ensure_ascii=False,
+                )
             elif "MARKET_ANALYSIS" in joined or "market overview" in joined.lower():
                 content = json.dumps(
                     {

@@ -96,6 +96,11 @@ class AIChatRequest:
     max_tokens: int | None = None
     stream: bool = False
     json_mode: bool = False
+    # STEP12-3 §18: 지정 시 AIManager가 Provider 설정(AIProviderConfig
+    # .timeout_seconds)보다 이 값을 우선한다 — 호출자가 자신이 기록/추적하는
+    # timeout(예: Generation Run.timeout_seconds)을 실제 호출에 반영할 수
+    # 있게 한다. 미지정 시 기존 동작(Provider 설정값) 그대로 유지.
+    timeout_seconds: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

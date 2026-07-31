@@ -33,14 +33,19 @@ class StrategyDeploymentEntity(Base):
         String(100),
         nullable=False,
     )
-    strategy_performance_run_id: Mapped[int] = mapped_column(
+    # § STEP12-19 — STEP12-x AI Strategy 파이프라인(Backtest/Quality Gate
+    # 근거 체계)으로 생성되는 Deployment는 이 컬럼이 가리키는 STEP7-x류
+    # "Performance Run" 개념과 무관하므로 NULL을 허용한다(기존
+    # PaperStrategyDeploymentService의 호출부는 계속 값을 채워 넣으므로
+    # 하위 호환에 영향 없음).
+    strategy_performance_run_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey(
             "trading.strategy_performance_run.strategy_performance_run_id",
             ondelete="RESTRICT",
             name="fk_strategy_deployment_performance_run",
         ),
-        nullable=False,
+        nullable=True,
     )
     market_code: Mapped[str] = mapped_column(
         String(30),
