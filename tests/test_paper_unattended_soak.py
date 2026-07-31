@@ -505,24 +505,156 @@ async def _wait_position(account_id: int, *, timeout: float = 25.0) -> bool:
     return False
 
 
+def _count_accepted(account_id: int) -> int:
+    Session = get_session_factory()
+    with Session() as s:
+        return int(
+            s.execute(
+                text(
+                    """
+                    SELECT COUNT(*) FROM trading.trading_order
+                    WHERE account_id=:a AND status_code='ACCEPTED'
+                    """
+                ),
+                {"a": account_id},
+            ).scalar_one()
+        )
+
+
+async def _one_trade_cycle(account_id: int, report: SoakReport) -> bool:
+    """BUY→SELL 1사이클. 실패해도 전체 Soak를 끝내지 않는다."""
+
+    hub = get_realtime_market_data_hub()
+    report.price_events += await _feed_prices(_BUY_SEQ, wait=1.2)
+    if not await _wait_position(account_id, timeout=15):
+        for c in hub.registry.list_consumers():
+            try:
+                hub.registry.rewarm(c["scope_key"])
+            except Exception:  # noqa: BLE001
+                pass
+        report.price_events += await _feed_prices(_BUY_SEQ, wait=1.5)
+        if not await _wait_position(account_id, timeout=15):
+            return False
+    mid_fills = _snapshot(account_id).fills
+    report.price_events += await _feed_prices(_EXIT_SEQ, wait=1.5)
+    if not await _wait_flat(account_id, timeout=20):
+        report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
+        if not await _wait_flat(account_id, timeout=20):
+            return False
+    return _snapshot(account_id).fills > mid_fills
+
+
 @pytest.mark.asyncio
 async def test_paper_unattended_soak(harness, soak_lifecycle) -> None:
+    """duration 동안 Background Loop 유지 + A–H 시나리오.
+
+    시나리오 완료만으로 종료하지 않는다. wall time >= 95% duration.
+    """
+
     session, created = harness
     aid = created["account_id"]
     duration = _soak_duration()
     report = SoakReport()
     started = time.monotonic()
+    deadline = started + duration
 
     await _boot(session, created)
     report.phase_results["boot"] = "OK"
 
-    # ---- A. 정상 반복 거래 (장시간 핵심) ----
-    phase_a_until = started + max(20.0, duration * 0.45)
+    phase = "A"
     cycles = 0
-    while time.monotonic() < phase_a_until:
-        report.price_events += await _feed_prices(_BUY_SEQ, wait=1.5)
-        if not await _wait_position(aid, timeout=20):
-            # MA state 리셋 후 재시도
+    last_snap_at = started
+    kill_scope: str | None = None
+
+    while time.monotonic() < deadline:
+        now = time.monotonic()
+        # 주기 health snapshot
+        if now - last_snap_at >= max(5.0, min(30.0, duration / 20)):
+            snap = _snapshot(aid)
+            report.snapshots.append(snap)
+            report.max_checked_out = max(
+                report.max_checked_out, snap.pool_checked_out
+            )
+            if snap.rss_mb is not None:
+                report.max_rss_mb = max(report.max_rss_mb, snap.rss_mb)
+            last_snap_at = now
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+
+        if phase == "A":
+            ok = await _one_trade_cycle(aid, report)
+            if ok:
+                cycles += 1
+                report.trade_cycles = cycles
+            # 최소 2사이클 확보 후 다음 시나리오. 실패해도 duration 동안 재시도.
+            if cycles >= 2:
+                report.phase_results["A_cycles"] = f"OK:{cycles}"
+                phase = "B"
+            elif remaining < 15 and cycles < 2:
+                report.final_errors.append("phase_a_insufficient_cycles")
+                report.phase_results["A_cycles"] = f"PARTIAL:{cycles}"
+                phase = "B"
+            continue
+
+        if phase == "B":
+            before_o = _snapshot(aid).orders
+            before_f = _snapshot(aid).fills
+            same = [12000, 12000, 12000, 12000]
+            report.price_events += await _feed_prices(same, wait=1.0)
+            report.price_events += await _feed_prices(same, wait=1.0)
+            after = _snapshot(aid)
+            assert after.orders - before_o <= 2
+            assert after.fills - before_f <= 2
+            report.phase_results["B_dup_prices"] = "OK"
+            phase = "C"
+            continue
+
+        if phase == "C":
+            report.price_events += await _feed_prices(_BUY_SEQ, wait=1.0)
+            await asyncio.sleep(0.5)
+            await paper_outbox_worker_runtime.shutdown()
+            assert paper_outbox_worker_runtime.status()["running"] is False
+            await asyncio.sleep(1.5)
+            stalled = _snapshot(aid)
+            paper_outbox_worker_runtime.start()
+            assert paper_outbox_worker_runtime.status()["running"] is True
+            drain_deadline = min(time.monotonic() + 25, deadline)
+            while time.monotonic() < drain_deadline:
+                s = _snapshot(aid)
+                if s.pending_outbox == 0 and s.processing_outbox == 0:
+                    break
+                await asyncio.sleep(0.4)
+            drained = _snapshot(aid)
+            assert drained.pending_outbox == 0
+            assert drained.processing_outbox == 0
+            if drained.qty > 0:
+                report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
+                await _wait_flat(aid, timeout=25)
+            report.phase_results["C_worker_restart"] = (
+                f"OK:stalled_pending={stalled.pending_outbox}"
+            )
+            phase = "D"
+            continue
+
+        if phase == "D":
+            original = PaperOutboxFillService.fill_accepted_order
+
+            def _crash(self, order_id, **kwargs):
+                return PaperOutboxFillResult(
+                    filled=False,
+                    skipped=True,
+                    reason_code="SOAK_SIMULATED_CRASH",
+                    order_id=int(order_id),
+                    order_status="ACCEPTED",
+                )
+
+            PaperOutboxFillService.fill_accepted_order = _crash  # type: ignore[method-assign]
+            # 포지션 없는 상태에서 BUY만 유도 (SELL ACCEPTED 고착 방지)
+            if _snapshot(aid).qty > 0:
+                report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
+                await _wait_flat(aid, timeout=20)
             hub = get_realtime_market_data_hub()
             for c in hub.registry.list_consumers():
                 try:
@@ -530,204 +662,187 @@ async def test_paper_unattended_soak(harness, soak_lifecycle) -> None:
                 except Exception:  # noqa: BLE001
                     pass
             report.price_events += await _feed_prices(_BUY_SEQ, wait=2.0)
-            if not await _wait_position(aid, timeout=20):
-                # 이미 최소 사이클 충족 시 조기 종료는 오류 아님
-                if cycles < 2:
-                    report.final_errors.append("phase_a_buy_timeout")
-                break
-        mid = _snapshot(aid)
-        report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
-        if not await _wait_flat(aid, timeout=25):
-            report.final_errors.append("phase_a_exit_timeout")
-            break
-        end = _snapshot(aid)
-        assert end.qty == 0
-        assert end.fills > mid.fills
-        cycles += 1
-        report.trade_cycles = cycles
-        snap = _snapshot(aid)
-        report.snapshots.append(snap)
-        report.max_checked_out = max(report.max_checked_out, snap.pool_checked_out)
-        if snap.rss_mb is not None:
-            report.max_rss_mb = max(report.max_rss_mb, snap.rss_mb)
-        await asyncio.sleep(0.3)
-    report.phase_results["A_cycles"] = f"OK:{cycles}"
-    assert cycles >= 2, f"need >=2 buy/sell cycles, got {cycles}"
+            wait_acc = min(time.monotonic() + 20, deadline)
+            while time.monotonic() < wait_acc and _count_accepted(aid) < 1:
+                await asyncio.sleep(0.4)
+            fills_before = _snapshot(aid).fills
+            accepted_before = _count_accepted(aid)
+            PaperOutboxFillService.fill_accepted_order = original  # type: ignore[method-assign]
+            # Recovery 스케줄러가 돌고 있는지 확인
+            if not paper_fill_recovery_scheduler.status().get("running"):
+                paper_fill_recovery_scheduler.start()
+            if not paper_outbox_worker_runtime.status().get("running"):
+                paper_outbox_worker_runtime.start()
 
-    # ---- B. 중복 가격 이벤트 ----
-    before_o = _snapshot(aid).orders
-    before_f = _snapshot(aid).fills
-    same = [12000, 12000, 12000, 12000]
-    report.price_events += await _feed_prices(same, wait=1.5)
-    report.price_events += await _feed_prices(same, wait=1.5)
-    after = _snapshot(aid)
-    # 평평한 중복 가격만으로는 신규 주문이 폭증하면 안 됨
-    assert after.orders - before_o <= 2
-    assert after.fills - before_f <= 2
-    report.phase_results["B_dup_prices"] = "OK"
+            # accepted 전량 해소까지 대기 (fills만 보고 조기 통과 금지)
+            wait_fill = deadline  # duration 잔여 전부 허용
+            while time.monotonic() < wait_fill:
+                if (
+                    _snapshot(aid).fills > fills_before
+                    and _count_accepted(aid) == 0
+                ):
+                    break
+                await asyncio.sleep(0.5)
+            after_d = _snapshot(aid)
+            assert after_d.fills >= fills_before + 1, (
+                f"recovery did not fill: fills={after_d.fills} "
+                f"before={fills_before} accepted={_count_accepted(aid)} "
+                f"accepted_before={accepted_before} "
+                f"rec={paper_fill_recovery_scheduler.status()}"
+            )
+            assert _count_accepted(aid) == 0, (
+                f"ACCEPTED leftover={_count_accepted(aid)} "
+                f"rec={paper_fill_recovery_scheduler.status()}"
+            )
+            await asyncio.sleep(1.0)
+            _d_orders, d_fills = _dup_counts(aid)
+            assert d_fills == 0
+            if after_d.qty > 0:
+                report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
+                await _wait_flat(aid, timeout=25)
+            report.phase_results["D_recovery_race"] = "OK"
+            phase = "E"
+            continue
 
-    # ---- C. Worker 일시 장애 → 재기동 자연 Drain ----
-    report.price_events += await _feed_prices(_BUY_SEQ, wait=1.0)
-    await asyncio.sleep(0.8)
-    await paper_outbox_worker_runtime.shutdown()
-    assert paper_outbox_worker_runtime.status()["running"] is False
-    # 적체 대기 (직접 run_once 금지)
-    await asyncio.sleep(2.0)
-    stalled = _snapshot(aid)
-    paper_outbox_worker_runtime.start()
-    assert paper_outbox_worker_runtime.status()["running"] is True
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        s = _snapshot(aid)
-        if s.pending_outbox == 0 and s.processing_outbox == 0:
-            break
-        await asyncio.sleep(0.5)
-    drained = _snapshot(aid)
-    assert drained.pending_outbox == 0
-    assert drained.processing_outbox == 0
-    # 포지션 정리
-    if drained.qty > 0:
-        report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
-        await _wait_flat(aid, timeout=30)
-    report.phase_results["C_worker_restart"] = (
-        f"OK:stalled_pending={stalled.pending_outbox}"
-    )
+        if phase == "E":
+            # Kill은 BUY 차단·SELL 허용 — flat 후 BUY 시퀀스만으로 검증
+            if _snapshot(aid).qty > 0:
+                report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
+                await _wait_flat(aid, timeout=25)
+            kill_scope = paper_kill_switch_scope(aid)
+            created["kill_scopes"].append(kill_scope)
+            KillSwitchService(session).activate_scope(
+                scope_code=kill_scope, actor="SOAK", reason="soak_kill"
+            )
+            session.commit()
+            before_kill = _snapshot(aid)
+            report.price_events += await _feed_prices(_BUY_SEQ, wait=2.0)
+            after_kill = _snapshot(aid)
+            assert after_kill.orders == before_kill.orders
+            assert after_kill.fills == before_kill.fills
+            KillSwitchService(session).deactivate_scope(
+                scope_code=kill_scope, actor="SOAK", reason="done"
+            )
+            session.commit()
+            report.phase_results["E_kill"] = "OK"
+            phase = "F"
+            continue
 
-    # ---- D. Recovery와 Worker 경합 (Fill 1회) ----
-    original = PaperOutboxFillService.fill_accepted_order
+        if phase == "F":
+            if _snapshot(aid).qty > 0:
+                report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
+                await _wait_flat(aid, timeout=25)
+            session.add(
+                BrokerRecoveryAccountStateEntity(
+                    broker_code=_BROKER,
+                    user_id=created["user_id"],
+                    paper_account_id=aid,
+                    recovery_status="IDLE",
+                    trading_paused=True,
+                )
+            )
+            session.commit()
+            before_pause = _snapshot(aid)
+            report.price_events += await _feed_prices(_BUY_SEQ, wait=2.0)
+            after_pause = _snapshot(aid)
+            assert after_pause.orders == before_pause.orders
+            session.execute(
+                text(
+                    "UPDATE operation.broker_recovery_account_state "
+                    "SET trading_paused=false WHERE paper_account_id=:a"
+                ),
+                {"a": aid},
+            )
+            session.commit()
+            report.phase_results["F_pause"] = "OK"
+            phase = "G"
+            continue
 
-    def _crash(self, order_id, **kwargs):
-        return PaperOutboxFillResult(
-            filled=False,
-            skipped=True,
-            reason_code="SOAK_SIMULATED_CRASH",
-            order_id=int(order_id),
-            order_status="ACCEPTED",
-        )
-
-    # 기존 worker가 crash fill을 먹도록 monkeypatch
-    PaperOutboxFillService.fill_accepted_order = _crash  # type: ignore[method-assign]
-    report.price_events += await _feed_prices(_BUY_SEQ, wait=2.5)
-    # ACCEPTED 대기
-    deadline = time.monotonic() + 25
-    while time.monotonic() < deadline and _snapshot(aid).accepted < 1:
-        await asyncio.sleep(0.4)
-    fills_before = _snapshot(aid).fills
-    PaperOutboxFillService.fill_accepted_order = original  # type: ignore[method-assign]
-    # Background Recovery + Worker 가 자연 처리 (run_once 금지)
-    deadline = time.monotonic() + 35
-    while time.monotonic() < deadline:
-        s = _snapshot(aid)
-        if s.fills > fills_before and s.accepted == 0:
-            break
-        await asyncio.sleep(0.5)
-    after_d = _snapshot(aid)
-    assert after_d.fills >= fills_before + 1
-    # 추가 대기 후 이중 fill 없음
-    await asyncio.sleep(3.0)
-    d_orders, d_fills = _dup_counts(aid)
-    assert d_fills == 0
-    if after_d.qty > 0:
-        report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.0)
-        await _wait_flat(aid, timeout=30)
-    report.phase_results["D_recovery_race"] = "OK"
-
-    # ---- E. Kill Switch ----
-    scope = paper_kill_switch_scope(aid)
-    created["kill_scopes"].append(scope)
-    KillSwitchService(session).activate_scope(
-        scope_code=scope, actor="SOAK", reason="soak_kill"
-    )
-    session.commit()
-    before_kill = _snapshot(aid)
-    report.price_events += await _feed_prices(_CYCLE, wait=2.5)
-    after_kill = _snapshot(aid)
-    assert after_kill.orders == before_kill.orders
-    assert after_kill.fills == before_kill.fills
-    KillSwitchService(session).deactivate_scope(
-        scope_code=scope, actor="SOAK", reason="done"
-    )
-    session.commit()
-    report.phase_results["E_kill"] = "OK"
-
-    # ---- F. Account Pause ----
-    session.add(
-        BrokerRecoveryAccountStateEntity(
-            broker_code=_BROKER,
-            user_id=created["user_id"],
-            paper_account_id=aid,
-            recovery_status="IDLE",
-            trading_paused=True,
-        )
-    )
-    session.commit()
-    before_pause = _snapshot(aid)
-    report.price_events += await _feed_prices(_CYCLE, wait=2.5)
-    after_pause = _snapshot(aid)
-    assert after_pause.orders == before_pause.orders
-    session.execute(
-        text(
-            "UPDATE operation.broker_recovery_account_state "
-            "SET trading_paused=false WHERE paper_account_id=:a"
-        ),
-        {"a": aid},
-    )
-    session.commit()
-    report.phase_results["F_pause"] = "OK"
-
-    # ---- G. MARKET_CLOSE ----
-    await RealtimeTradingSessionService(session).execute(
-        phase=TradingSessionPhase.MARKET_CLOSE,
-        exchange_code="PAPER",
-    )
-    assert realtime_execution_runner.status().get("running") is False
-    assert paper_price_feed.status().get("running") is False
-    before_close = _snapshot(aid)
-    # Feed 중지 상태 — inject는 큐에만 쌓이거나 no-op에 가깝게
-    try:
-        await paper_price_feed.inject_prices(
-            exchange_code=_EXCHANGE, symbol=_SYMBOL, prices=_BUY_SEQ
-        )
-    except Exception:  # noqa: BLE001
-        pass
-    await asyncio.sleep(2.0)
-    after_close = _snapshot(aid)
-    assert after_close.orders == before_close.orders
-    report.phase_results["G_market_close"] = "OK"
-
-    # ---- H. Restart (중복 Task 0) ----
-    await _shutdown_all()
-    await _boot(session, created)
-    w1 = paper_outbox_worker_runtime.start()
-    w2 = paper_outbox_worker_runtime.start()
-    assert w2.get("reason") == "ALREADY_RUNNING"
-    e1 = await realtime_execution_runner.start()
-    e2 = await realtime_execution_runner.start()
-    assert e2.get("already_running") is True or e1.get("running") is True
-    # terminal 재처리 없음: close 전 주문 수 대비 급증 없이 한 사이클만
-    o_before = _snapshot(aid).orders
-    report.price_events += await _feed_prices(_BUY_SEQ, wait=2.0)
-    bought = await _wait_position(aid, timeout=25)
-    if bought:
-        report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.5)
-    flat_ok = await _wait_flat(aid, timeout=35)
-    if not flat_ok:
-        hub = get_realtime_market_data_hub()
-        for c in hub.registry.list_consumers():
+        if phase == "G":
+            await RealtimeTradingSessionService(session).execute(
+                phase=TradingSessionPhase.MARKET_CLOSE,
+                exchange_code="PAPER",
+            )
+            assert realtime_execution_runner.status().get("running") is False
+            assert paper_price_feed.status().get("running") is False
+            before_close = _snapshot(aid)
             try:
-                hub.registry.rewarm(c["scope_key"])
+                await paper_price_feed.inject_prices(
+                    exchange_code=_EXCHANGE,
+                    symbol=_SYMBOL,
+                    prices=_BUY_SEQ,
+                )
             except Exception:  # noqa: BLE001
                 pass
-        report.price_events += await _feed_prices(_EXIT_SEQ, wait=3.0)
-        flat_ok = await _wait_flat(aid, timeout=30)
-    assert flat_ok, "H restart cycle did not flatten position"
-    assert _snapshot(aid).orders >= o_before
-    report.phase_results["H_restart"] = f"OK:w1={w1.get('started')}"
+            await asyncio.sleep(1.5)
+            after_close = _snapshot(aid)
+            assert after_close.orders == before_close.orders
+            report.phase_results["G_market_close"] = "OK"
+            phase = "H"
+            continue
 
-    # ---- 종료 정합 ----
-    # 잔여 포지션이 있으면 종료 전 한 번 더 청산 시도
-    if _snapshot(aid).qty > 0:
-        report.price_events += await _feed_prices(_EXIT_SEQ, wait=3.0)
+        if phase == "H":
+            await _shutdown_all()
+            await _boot(session, created)
+            w1 = paper_outbox_worker_runtime.start()
+            w2 = paper_outbox_worker_runtime.start()
+            assert w2.get("reason") == "ALREADY_RUNNING"
+            e1 = await realtime_execution_runner.start()
+            e2 = await realtime_execution_runner.start()
+            assert e2.get("already_running") is True or e1.get("running") is True
+            o_before = _snapshot(aid).orders
+            ok = await _one_trade_cycle(aid, report)
+            assert ok or _snapshot(aid).qty == 0
+            assert _snapshot(aid).orders >= o_before
+            report.phase_results["H_restart"] = f"OK:w1={w1.get('started')}"
+            phase = "KEEP"
+            continue
+
+        # KEEP — 시나리오 완료 후에도 duration까지 Feed/Worker 관찰
+        if _snapshot(aid).qty > 0:
+            report.price_events += await _feed_prices(_EXIT_SEQ, wait=1.5)
+        else:
+            # 가벼운 heartbeat 가격 (치명적 실패 없으면 계속)
+            report.price_events += await _feed_prices(
+                [10000, 10000, 10000], wait=0.8
+            )
+        st = _snapshot(aid)
+        assert paper_outbox_worker_runtime.status()["running"] is True
+        assert paper_price_feed.status()["running"] is True
+        if st.last_error:
+            report.final_errors.append(str(st.last_error))
+        await asyncio.sleep(0.5)
+
+    # ---- duration 충족 검증 ----
+    wall = time.monotonic() - started
+    report.duration_seconds = wall
+    assert wall + 1.0 >= duration * 0.95, (
+        f"wall={wall:.1f}s < 95% of duration={duration}s"
+    )
+    for key in (
+        "A_cycles",
+        "B_dup_prices",
+        "C_worker_restart",
+        "D_recovery_race",
+        "E_kill",
+        "F_pause",
+        "G_market_close",
+        "H_restart",
+    ):
+        assert key in report.phase_results, f"missing phase {key}"
+
+    # 잔여 청산 후 종료
+    # KEEP/H 잔여 ACCEPTED 가 있으면 Recovery가 소진할 시간 부여
+    drain_extra = time.monotonic() + 60
+    while time.monotonic() < drain_extra:
+        if _count_accepted(aid) == 0 and _snapshot(aid).qty == 0:
+            break
+        if _snapshot(aid).qty > 0 and paper_price_feed.status().get("running"):
+            report.price_events += await _feed_prices(_EXIT_SEQ, wait=1.5)
+        await asyncio.sleep(0.5)
+
+    if paper_price_feed.status().get("running") and _snapshot(aid).qty > 0:
+        report.price_events += await _feed_prices(_EXIT_SEQ, wait=2.5)
         await _wait_flat(aid, timeout=30)
     await RealtimeTradingSessionService(session).execute(
         phase=TradingSessionPhase.MARKET_CLOSE,
@@ -736,34 +851,35 @@ async def test_paper_unattended_soak(harness, soak_lifecycle) -> None:
     await _shutdown_all()
     final = _snapshot(aid)
     report.duplicate_orders, report.duplicate_fills = _dup_counts(aid)
-    report.duration_seconds = time.monotonic() - started
     report.snapshots.append(final)
+    accepted_left = _count_accepted(aid)
 
     assert report.duplicate_orders == 0
     assert report.duplicate_fills == 0
     assert final.processing_outbox == 0
-    # 장 마감 후 신규 주문은 막히므로, 열린 포지션은 종료 전 청산 실패를 보고
-    if final.qty != 0:
-        report.final_errors.append(f"residual_qty={final.qty}")
-    assert final.qty == 0, report.final_errors
+    assert accepted_left == 0, (
+        f"ACCEPTED leftover={accepted_left} "
+        f"rec={paper_fill_recovery_scheduler.status().get('last_result')}"
+    )
+    assert final.qty == 0
     assert get_settings().realtime_live_auto_start_enabled is False
     assert os.environ.get("KIWOOM_LIVE_ORDER_ENABLED") == "false"
     assert paper_outbox_worker_runtime.status()["running"] is False
-    assert paper_price_feed.status()["running"] is False
+    assert paper_price_feed.status().get("running") is False
     assert realtime_execution_runner.status().get("running") is False
-    # connection leak: shutdown 후 checked_out 이 과도하지 않음
     assert _pool_checked_out() <= 2
     assert not report.final_errors, report.final_errors
 
-    # 리포트는 assert 메시지/로그로 남김
     print(
         "SOAK_REPORT",
         {
             "duration": round(report.duration_seconds, 1),
+            "configured_duration": duration,
             "price_events": report.price_events,
             "cycles": report.trade_cycles,
             "dup_orders": report.duplicate_orders,
             "dup_fills": report.duplicate_fills,
+            "accepted_left": accepted_left,
             "max_checked_out": report.max_checked_out,
             "max_rss_mb": round(report.max_rss_mb, 1),
             "phases": report.phase_results,

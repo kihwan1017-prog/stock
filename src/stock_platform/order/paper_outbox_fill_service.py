@@ -48,7 +48,16 @@ class PaperOutboxFillService:
         actor: str = "PAPER_OUTBOX_AUTO_FILL",
         environment_hint: str | None = None,
     ) -> PaperOutboxFillResult:
-        order = self._orders.get(int(order_id))
+        from sqlalchemy import select
+
+        from stock_platform.order.entities import TradingOrderEntity
+
+        # 경합 시 동일 주문 이중 Fill 방지 — row lock
+        order = self._session.scalar(
+            select(TradingOrderEntity)
+            .where(TradingOrderEntity.order_id == int(order_id))
+            .with_for_update()
+        )
         if order is None:
             return PaperOutboxFillResult(
                 filled=False,
@@ -133,15 +142,113 @@ class PaperOutboxFillService:
             )
         fill_price = Decimal(str(fill_price))
 
+        side = OrderSide(str(order.side_code).upper())
+        # SELL: 포지션 없으면 재시도 무의미 — CANCEL 로 ACCEPTED 고착 해소
+        if side == OrderSide.SELL:
+            from sqlalchemy import select
+
+            from stock_platform.trading.account_models import PaperPosition
+
+            held = self._session.scalar(
+                select(PaperPosition.quantity).where(
+                    PaperPosition.account_id == int(order.account_id),
+                    PaperPosition.symbol == str(order.symbol).upper(),
+                    PaperPosition.quantity > 0,
+                )
+            )
+            held_qty = Decimal(str(held or 0))
+            if held_qty <= 0:
+                # ACCEPTED → CANCELLED 직접 전이 불가: CANCEL_REQUESTED 경유
+                self._orders.change_status(
+                    entity=order,
+                    new_status=OrderStatus.CANCEL_REQUESTED,
+                    actor=actor,
+                    reason_code="PAPER_NO_POSITION_TO_FILL",
+                    message="SELL ACCEPTED without position — cancelling",
+                    commit=False,
+                )
+                self._orders.change_status(
+                    entity=order,
+                    new_status=OrderStatus.CANCELLED,
+                    actor=actor,
+                    reason_code="PAPER_NO_POSITION_TO_FILL",
+                    message="SELL ACCEPTED without position — cancelled",
+                    commit=False,
+                )
+                # PaperOrder가 ACCEPTED면 cancel로 terminal 처리 (고착 방지)
+                if existing_paper_id is not None:
+                    paper_entity = self._paper_orders._repository.get(
+                        int(existing_paper_id)
+                    )
+                    if paper_entity is not None:
+                        paper_status = str(
+                            getattr(paper_entity, "status_code", "")
+                            or getattr(paper_entity, "status", "")
+                            or ""
+                        ).upper()
+                        if paper_status in {
+                            OrderStatus.ACCEPTED.value,
+                            "PARTIALLY_FILLED",
+                        }:
+                            self._paper_orders.cancel(
+                                order_id=int(existing_paper_id)
+                            )
+                metadata["paper_auto_fill_last_error"] = "NO_POSITION_CANCELLED"
+                order.metadata_payload = metadata
+                return PaperOutboxFillResult(
+                    filled=False,
+                    skipped=True,
+                    reason_code="NO_POSITION_CANCELLED",
+                    order_id=order.order_id,
+                    order_status=OrderStatus.CANCELLED.value,
+                )
+            if remaining > held_qty:
+                remaining = held_qty
+
         try:
             if existing_paper_id is not None:
                 paper_order_id = int(existing_paper_id)
+                # PaperOrder가 이미 FILLED면 TradingOrder만 동기화 (이중 원장 금지)
+                existing_paper = self._paper_orders._repository.get(
+                    paper_order_id
+                )
+                if (
+                    existing_paper is not None
+                    and str(
+                        getattr(existing_paper, "status_code", "")
+                        or getattr(existing_paper, "status", "")
+                        or ""
+                    ).upper()
+                    == "FILLED"
+                ):
+                    order.filled_quantity = Decimal(str(order.order_quantity))
+                    order.remaining_quantity = Decimal("0")
+                    if order.average_fill_price is None:
+                        order.average_fill_price = fill_price
+                    self._orders.change_status(
+                        entity=order,
+                        new_status=OrderStatus.FILLED,
+                        actor=actor,
+                        reason_code="PAPER_OUTBOX_IDEMPOTENT_REPLAY",
+                        message=f"paper_order_id={paper_order_id}",
+                        commit=False,
+                    )
+                    metadata["paper_outbox_auto_fill"] = True
+                    order.metadata_payload = metadata
+                    return PaperOutboxFillResult(
+                        filled=True,
+                        skipped=False,
+                        reason_code="IDEMPOTENT_REPLAY",
+                        order_id=order.order_id,
+                        paper_order_id=paper_order_id,
+                        order_status=OrderStatus.FILLED.value,
+                    )
             else:
                 paper_order = self._paper_orders.create(
                     account_id=int(order.account_id),
                     exchange_code=str(order.exchange_code),
                     symbol=str(order.symbol),
-                    side=OrderSide(str(order.side_code).upper()),
+                    side=side,
                     order_type=OrderType(
                         str(order.order_type_code or "LIMIT").upper()
                     )
@@ -171,7 +278,10 @@ class PaperOutboxFillService:
             return PaperOutboxFillResult(
                 filled=False,
                 skipped=True,
-                reason_code=f"PAPER_LEDGER_BLOCKED:{type(exc).__name__}",
+                reason_code=(
+                    f"PAPER_LEDGER_BLOCKED:{type(exc).__name__}:"
+                    f"{str(exc)[:120]}"
+                ),
                 order_id=order.order_id,
                 order_status=order.status_code,
             )
@@ -197,6 +307,7 @@ class PaperOutboxFillService:
 
         metadata["paper_outbox_auto_fill"] = True
         metadata["paper_trade_id"] = fill_result.trade_id
+        metadata.pop("paper_auto_fill_last_error", None)
         order.metadata_payload = metadata
 
         return PaperOutboxFillResult(

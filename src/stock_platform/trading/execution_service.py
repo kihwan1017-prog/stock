@@ -116,6 +116,9 @@ class PaperExecutionService:
                 order_id=order.order_id,
             )
         except Exception:
+            # nested savepoint 안이면 전체 트랜잭션을 깨지 않는다
+            if self._session.in_nested_transaction():
+                raise
             self._session.rollback()
             raise
 

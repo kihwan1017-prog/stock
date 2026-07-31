@@ -499,12 +499,17 @@ class OrderOutboxWorker:
                             actor="OUTBOX_PAPER_AUTO_FILL",
                         )
                         # 실패를 숨기지 않음 — metadata에 기록 (Outbox DONE은 유지)
-                        if fill_result.skipped and fill_result.reason_code not in {
-                            "ALREADY_TERMINAL",
-                            "LIVE_ENVIRONMENT_BLOCKED",
-                            "USER_BROKER_ACCOUNT_BLOCKED",
-                            "NOT_ACCEPTED",
-                        }:
+                        if (
+                            fill_result.skipped
+                            and fill_result.reason_code
+                            not in {
+                                "ALREADY_TERMINAL",
+                                "LIVE_ENVIRONMENT_BLOCKED",
+                                "USER_BROKER_ACCOUNT_BLOCKED",
+                                "NOT_ACCEPTED",
+                                "IDEMPOTENT_REPLAY",
+                            }
+                        ):
                             meta = dict(order.metadata_payload or {})
                             meta["paper_auto_fill_last_error"] = (
                                 fill_result.reason_code
