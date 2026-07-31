@@ -8,10 +8,13 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 
-def alembic_script_directory() -> ScriptDirectory:
+def alembic_config() -> Config:
     root = Path(__file__).resolve().parents[1]
-    config = Config(str(root / "alembic.ini"))
-    return ScriptDirectory.from_config(config)
+    return Config(str(root / "alembic.ini"))
+
+
+def alembic_script_directory() -> ScriptDirectory:
+    return ScriptDirectory.from_config(alembic_config())
 
 
 def alembic_current_head() -> str:
@@ -39,4 +42,22 @@ def assert_revision_exists(revision_id: str) -> None:
     revisions = {rev.revision for rev in script.walk_revisions()}
     assert revision_id in revisions, (
         f"Revision {revision_id} missing from alembic history"
+    )
+
+
+def assert_revision_is_ancestor_of_head(revision_id: str) -> None:
+    """revision_id가 현재(단일) head까지 이어지는 조상 계열에 속하는지 검증.
+
+    이후 Migration이 추가되어 head가 바뀌어도 이 검증은 깨지지 않는다
+    (구 STEP12-1A 이전에는 head 문자열을 직접 하드코딩해 새 Migration이
+    추가될 때마다 실패했다).
+    """
+
+    script = alembic_script_directory()
+    head = alembic_current_head()
+    ancestors = {
+        rev.revision for rev in script.walk_revisions(base="base", head=head)
+    }
+    assert revision_id in ancestors, (
+        f"Revision {revision_id} is not an ancestor of current head {head!r}"
     )

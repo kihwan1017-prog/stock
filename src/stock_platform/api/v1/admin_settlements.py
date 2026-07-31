@@ -213,6 +213,14 @@ def run_paper_settlement(
     admin: AuthenticatedUser = Depends(require_admin),
     audit: AuditLogService = Depends(get_audit_service),
 ):
+    # STEP 2-5-3 — FK 위반(500)이 아니라 명확한 404로 응답하기 위한 최소
+    # 존재 검증. run_uba_settlement와 동일 패턴. Soft-deleted 계좌도
+    # 관리자 지연/복구 정산 목적상 계속 허용한다(운영자 전용 override).
+    from stock_platform.trading.account_models import PaperAccount
+
+    paper = session.get(PaperAccount, int(paper_id))
+    if paper is None:
+        raise HTTPException(status_code=404, detail="paper account not found")
     out = AccountDailySettlementService(session).settle_paper_account(
         paper_account_id=int(paper_id),
         market_date=body.market_date,

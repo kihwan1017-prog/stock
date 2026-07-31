@@ -43,7 +43,19 @@ class TradingOrderEntity(Base):
     order_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
     client_order_id: Mapped[str] = mapped_column(String(50), nullable=False)
     broker_order_id: Mapped[str | None] = mapped_column(String(100))
-    account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # STEP 2-5-2 — trading.paper_account.account_id 참조 (RESTRICT).
+    # 기존 데이터에 미해소 orphan 1건(order_id=250)이 있어 DB 제약은
+    # NOT VALID로 추가되며(향후 신규/변경 행부터 강제), ORM 메타데이터에는
+    # 정상적으로 FK로 반영한다.
+    account_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.paper_account.account_id",
+            ondelete="RESTRICT",
+            name="fk_trading_order_account",
+        ),
+        nullable=False,
+    )
     # STEP8-1 — 실계좌(UserBrokerAccount) 격리. Paper-only 주문은 NULL.
     user_broker_account_id: Mapped[int | None] = mapped_column(
         BigInteger,

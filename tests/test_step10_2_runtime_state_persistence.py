@@ -498,8 +498,8 @@ def test_step10_1_post_fill_regression_import() -> None:
 
 def test_step10_2_revision_head() -> None:
     from tests.migration_helpers import (
-        alembic_current_head,
         assert_revision_exists,
+        assert_revision_is_ancestor_of_head,
     )
 
     assert_revision_exists("w3d4e5f6a7b8")
@@ -507,4 +507,4 @@ def test_step10_2_revision_head() -> None:
     assert_revision_exists("y5f6a7b8c9d0")
     assert_revision_exists("z6a7b8c9d0e1")
     assert_revision_exists("aa1b2c3d4e5f")
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")

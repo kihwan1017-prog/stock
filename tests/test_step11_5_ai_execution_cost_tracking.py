@@ -45,9 +45,9 @@ def test_migration_file_exists() -> None:
 
 
 def test_head_is_execution() -> None:
-    from tests.migration_helpers import alembic_current_head
+    from tests.migration_helpers import assert_revision_is_ancestor_of_head
 
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")
 
 
 def test_cost_mock_not_applicable() -> None:

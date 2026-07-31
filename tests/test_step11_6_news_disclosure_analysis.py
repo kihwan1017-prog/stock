@@ -35,11 +35,11 @@ def test_news_disclosure_tasks_executable() -> None:
 
 
 def test_migration_and_head() -> None:
-    from tests.migration_helpers import alembic_current_head
+    from tests.migration_helpers import assert_revision_is_ancestor_of_head
 
     versions = Path("database/alembic/versions")
     assert any(p.name.startswith("x4e5f6a7b8c9") for p in versions.glob("*.py"))
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")
 
 
 def test_html_script_boilerplate_sanitized() -> None:

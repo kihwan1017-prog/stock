@@ -71,10 +71,12 @@ def run_krx_eod_settlement(
             )
 
     # Kiwoom LIVE UBA
+    # STEP 2-5-1 — 삭제(soft-deleted)/비활성 계좌는 정산 배치 대상에서 제외
     ubas = list(
         session.scalars(
             select(UserBrokerAccount).where(
-                UserBrokerAccount.broker_code == "KIWOOM"
+                UserBrokerAccount.broker_code == "KIWOOM",
+                UserBrokerAccount.is_active.is_(True),
             )
         )
     )
@@ -159,10 +161,12 @@ def run_upbit_daily_settlement(
                 }
             )
 
+    # STEP 2-5-1 — 삭제(soft-deleted)/비활성 계좌는 정산 배치 대상에서 제외
     ubas = list(
         session.scalars(
             select(UserBrokerAccount).where(
-                UserBrokerAccount.broker_code == "UPBIT"
+                UserBrokerAccount.broker_code == "UPBIT",
+                UserBrokerAccount.is_active.is_(True),
             )
         )
     )

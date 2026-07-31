@@ -44,6 +44,7 @@ class AdminBrokerAccountService:
         broker_code: str | None = None,
         owner_user_id: int | None = None,
         include_inactive: bool = True,
+        include_deleted: bool = False,
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -61,6 +62,10 @@ class AdminBrokerAccountService:
             )
         if not include_inactive:
             stmt = stmt.where(UserBrokerAccount.is_active.is_(True))
+        # STEP 2-5-1 — 관리자 목록은 기본적으로 삭제 계좌를 제외하고,
+        # include_deleted=True를 명시했을 때만 포함한다.
+        if not include_deleted:
+            stmt = stmt.where(UserBrokerAccount.deleted_at.is_(None))
         total = int(
             self._session.scalar(
                 select(func.count()).select_from(stmt.subquery())
@@ -108,11 +113,15 @@ class AdminBrokerAccountService:
             ref_hash = hash_account_ref(account_number)
         except ValueError as exc:
             raise UserAccountError(str(exc)) from exc
+        # STEP 2-5-1 — 삭제(soft-deleted)된 행은 "이미 연결됨"으로 보지 않는다.
+        # (동일 계좌 재연결은 아래 _accounts.create_account → _create_broker의
+        # revive 로직이 처리한다.)
         dup = self._session.scalar(
             select(UserBrokerAccount).where(
                 UserBrokerAccount.user_id == int(owner_user_id),
                 func.upper(UserBrokerAccount.broker_code) == code,
                 UserBrokerAccount.account_ref_hash == ref_hash,
+                UserBrokerAccount.deleted_at.is_(None),
             )
         )
         if dup is not None:
@@ -231,6 +240,10 @@ class AdminBrokerAccountService:
     ) -> dict[str, Any]:
         out = dict(base)
         out["user_broker_account_id"] = int(row.user_broker_account_id)
+        # STEP 2-5-1 — 관리자 조회 전용 필드(순수 추가, 기존 필드 무변경)
+        out["deleted_at"] = (
+            row.deleted_at.isoformat() if row.deleted_at else None
+        )
         out["live_order_enabled"] = bool(row.live_order_enabled)
         out["live_armed"] = bool(row.live_armed)
         out["arm_expires_at"] = (

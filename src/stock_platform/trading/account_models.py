@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Numeric,
     String,
     UniqueConstraint,
@@ -126,11 +127,15 @@ class UserBrokerAccount(Base):
 
     __tablename__ = "user_broker_account"
     __table_args__ = (
-        UniqueConstraint(
+        # STEP 2-5-1 — Soft Delete 전환: 삭제되지 않은 행에만 유니크성 강제
+        # (uq_user_broker_account_ref 전체 UniqueConstraint 대체, 삭제 후 재연결 허용)
+        Index(
+            "ux_user_broker_account_ref_active",
             "user_id",
             "broker_code",
             "account_ref_hash",
-            name="uq_user_broker_account_ref",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         {"schema": "trading"},
     )
@@ -251,6 +256,13 @@ class UserBrokerAccount(Base):
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+    # STEP 2-5-1 — Soft delete (PaperAccount와 동일 패턴). Hard Delete 금지.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
     )
 
 

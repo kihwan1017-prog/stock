@@ -63,8 +63,23 @@ class AccountDailySettlementEntity(Base):
     settlement_id: Mapped[int] = mapped_column(
         BigInteger, Identity(), primary_key=True
     )
-    user_broker_account_id: Mapped[int | None] = mapped_column(BigInteger)
-    paper_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    # STEP 2-5-3 — 계좌 참조 무결성. XOR CheckConstraint(위)는 그대로 유지.
+    user_broker_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.user_broker_account.user_broker_account_id",
+            ondelete="RESTRICT",
+            name="fk_account_daily_settlement_uba",
+        ),
+    )
+    paper_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.paper_account.account_id",
+            ondelete="RESTRICT",
+            name="fk_account_daily_settlement_paper_account",
+        ),
+    )
     broker_code: Mapped[str] = mapped_column(String(30), nullable=False)
     market_date: Mapped[date] = mapped_column(Date, nullable=False)
     calendar_revision: Mapped[int | None] = mapped_column(Integer)
@@ -230,8 +245,23 @@ class LedgerAdjustmentEntity(Base):
     ledger_adjustment_id: Mapped[int] = mapped_column(
         BigInteger, Identity(), primary_key=True
     )
-    user_broker_account_id: Mapped[int | None] = mapped_column(BigInteger)
-    paper_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    # STEP 2-5-3 — 계좌 참조 무결성. XOR CheckConstraint(위)는 그대로 유지.
+    user_broker_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.user_broker_account.user_broker_account_id",
+            ondelete="RESTRICT",
+            name="fk_ledger_adjustment_uba",
+        ),
+    )
+    paper_account_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.paper_account.account_id",
+            ondelete="RESTRICT",
+            name="fk_ledger_adjustment_paper_account",
+        ),
+    )
     market_date: Mapped[date | None] = mapped_column(Date)
     asset_code: Mapped[str] = mapped_column(String(40), nullable=False)
     adjustment_type: Mapped[str] = mapped_column(String(40), nullable=False)

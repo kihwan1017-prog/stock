@@ -231,6 +231,10 @@ class UserAccountService:
             self._session.refresh(resolved)
             return paper_to_view(resolved)
 
+        # STEP 2-5-1 — 삭제된 Broker 계좌는 일반 수정 경로로 되살릴 수 없음
+        # (재연결은 create_account revive 흐름을 통해서만 허용)
+        if resolved.deleted_at is not None:
+            raise UserAccountError("삭제된 Broker 계좌입니다. 재연결을 이용하세요.")
         if account_name is not None:
             alias = account_name.strip()
             if not alias:
@@ -282,14 +286,54 @@ class UserAccountService:
                 "hard_delete_allowed": False,
             }
 
+        # STEP 2-5-1 — Hard Delete → Soft Delete 전환
+        if resolved.deleted_at is not None:
+            raise UserAccountError("이미 삭제된 Broker 계좌입니다.")
+
         broker_id = int(resolved.user_broker_account_id)
-        self._session.delete(resolved)
-        self._session.commit()
+        now = datetime.now(timezone.utc)
+        resolved.deleted_at = now
+        resolved.is_active = False
+        resolved.is_default = False
+        resolved.connection_status = "DISCONNECTED"
+        resolved.live_order_enabled = False
+        resolved.live_armed = False
+        resolved.arm_token_hash = None
+        resolved.arm_expires_at = None
+        resolved.arm_armed_by = None
+        resolved.arm_armed_at = None
+        resolved.updated_at = now
+        self._session.flush()
+
+        # Credential Vault — CASCADE가 더 이상 발동하지 않으므로 명시적 revoke.
+        # revoke()가 내부에서 commit()하므로, 위에서 flush()한 UBA 변경도
+        # 이 트랜잭션 안에서 함께 커밋된다(사실상 단일 트랜잭션 효과).
+        # revoke 실패 시 전체 rollback하여 "계좌는 삭제, Credential은 활성"
+        # 상태가 남지 않도록 한다.
+        try:
+            from stock_platform.broker.credential_vault_service import (
+                BrokerCredentialVaultService,
+            )
+
+            BrokerCredentialVaultService(self._session).revoke(
+                user_broker_account_id=broker_id,
+                owner_user_id=None,
+                actor="ACCOUNT_DELETE",
+                admin=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._session.rollback()
+            raise UserAccountError(
+                "Broker 계좌 삭제 중 Credential revoke에 실패했습니다."
+            ) from exc
+
         return {
             "deleted": True,
             "account_type": "BROKER",
             "account_id": broker_id,
             "mode": "unlink",
+            "deletion_mode": "soft_delete",
+            "hard_delete_allowed": False,
             "message": "플랫폼 연결 정보만 제거했습니다. 실계좌는 삭제되지 않습니다.",
         }
 
@@ -335,6 +379,10 @@ class UserAccountService:
             self._session.commit()
             self._session.refresh(resolved)
             return paper_to_view(resolved)
+        # STEP 2-5-1 — 삭제된 Broker 계좌는 connect()로 되살릴 수 없음
+        # (재연결은 create_account revive 흐름을 통해서만 허용)
+        if resolved.deleted_at is not None:
+            raise UserAccountError("삭제된 Broker 계좌입니다. 재연결을 이용하세요.")
         resolved.is_active = True
         resolved.connection_status = "CONNECTED"
         self._session.commit()
@@ -389,6 +437,9 @@ class UserAccountService:
             self._session.commit()
             self._session.refresh(resolved)
             return paper_to_view(resolved)
+        # STEP 2-5-1 — 삭제된 Broker 계좌는 동기화 대상에서 제외
+        if resolved.deleted_at is not None:
+            raise UserAccountError("삭제된 Broker 계좌입니다.")
         resolved.last_synced_at = now
         resolved.connection_status = "CONNECTED"
         resolved.updated_at = now
@@ -497,6 +548,49 @@ class UserAccountService:
         if make_default:
             self._clear_broker_defaults(user_id, broker_code)
 
+        # STEP 2-5-1 — 재연결 Revive: 동일 (user_id, broker_code,
+        # account_ref_hash) 조합의 기존 행(활성/삭제 불문)을 먼저 조회한다.
+        existing = self._session.scalar(
+            select(UserBrokerAccount).where(
+                UserBrokerAccount.user_id == user_id,
+                UserBrokerAccount.broker_code == broker_code,
+                UserBrokerAccount.account_ref_hash == ref_hash,
+            )
+        )
+        if existing is not None and existing.deleted_at is None:
+            raise UserAccountError("이미 연결된 Broker 계좌입니다.")
+
+        if existing is not None:
+            # 삭제된 행 revive — 새 행을 만들지 않고 기존 행을 재사용.
+            # 폐기된 Credential은 여기서 재활성화하지 않는다(사용자 재등록 필요).
+            row = existing
+            row.account_alias = alias
+            row.masked_account_number = masked
+            row.currency_code = (currency_code or "KRW").upper()
+            row.is_default = make_default
+            row.is_active = True
+            row.connection_status = "PENDING"
+            row.live_order_enabled = False
+            row.live_armed = False
+            row.arm_token_hash = None
+            row.arm_expires_at = None
+            row.arm_armed_by = None
+            row.arm_armed_at = None
+            row.deleted_at = None
+            row.updated_at = datetime.now(timezone.utc)
+            try:
+                if auto_commit:
+                    self._session.commit()
+                else:
+                    self._session.flush()
+                self._session.refresh(row)
+            except IntegrityError as exc:
+                self._session.rollback()
+                raise UserAccountError(
+                    "이미 연결된 Broker 계좌입니다."
+                ) from exc
+            return broker_to_view(row)
+
         row = UserBrokerAccount(
             user_id=user_id,
             broker_code=broker_code,
@@ -518,6 +612,7 @@ class UserAccountService:
         except IntegrityError as exc:
             self._session.rollback()
             raise UserAccountError(
+                # 동시 재연결 레이스 안전망 — 부분 유니크 인덱스 위반
                 "이미 연결된 Broker 계좌입니다."
             ) from exc
         return broker_to_view(row)
@@ -552,6 +647,9 @@ class UserAccountService:
         stmt = select(UserBrokerAccount).where(
             UserBrokerAccount.user_id == user_id
         )
+        # STEP 2-5-1 — Soft-deleted 계좌는 목록에서 항상 제외
+        # (include_inactive는 "삭제되지 않았지만 비활성"만 포함 여부를 제어)
+        stmt = stmt.where(UserBrokerAccount.deleted_at.is_(None))
         if not include_inactive:
             stmt = stmt.where(UserBrokerAccount.is_active.is_(True))
         if default_only:

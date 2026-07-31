@@ -11,11 +11,11 @@ from stock_platform.ai.execution.constants import EXECUTABLE_TASK_TYPES
 
 
 def test_migration_head() -> None:
-    from tests.migration_helpers import alembic_current_head
+    from tests.migration_helpers import assert_revision_is_ancestor_of_head
 
     versions = Path("database/alembic/versions")
     assert any(p.name.startswith("ae5f6a7b8c9d") for p in versions.glob("*.py"))
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")
 
 
 def test_constants_and_transitions() -> None:
@@ -104,11 +104,11 @@ def test_docs_soft_expire_only() -> None:
 
 
 def test_step11_12_migration_still_exists() -> None:
-    from tests.migration_helpers import alembic_current_head
+    from tests.migration_helpers import assert_revision_is_ancestor_of_head
 
     versions = Path("database/alembic/versions")
     assert any(p.name.startswith("ad4e5f6a7b8c") for p in versions.glob("*.py"))
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")
 
 
 def test_promotion_commit_calls_ensure_lifecycle() -> None:

@@ -16,8 +16,8 @@ from stock_platform.order.outbox_fencing import (
 from stock_platform.order.outbox_models import OutboxStatus
 from stock_platform.order.outbox_repository import OrderOutboxRepository
 from tests.migration_helpers import (
-    alembic_current_head,
     assert_revision_exists,
+    assert_revision_is_ancestor_of_head,
 )
 
 
@@ -35,7 +35,7 @@ def test_step8_5_22_revision_head() -> None:
     assert_revision_exists("y5f6a7b8c9d0")
     assert_revision_exists("z6a7b8c9d0e1")
     assert_revision_exists("aa1b2c3d4e5f")
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")
 
 
 def test_request_hash_stable() -> None:

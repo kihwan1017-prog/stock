@@ -82,6 +82,9 @@ def admin_list_broker_accounts(
     broker_code: str | None = Query(default="UPBIT"),
     owner_user_id: int | None = Query(default=None),
     include_inactive: bool = Query(default=True),
+    # STEP 2-5-1 — 기본값 False: 관리자 목록도 삭제 계좌는 기본 제외,
+    # 명시적으로 true를 줘야만 삭제 계좌를 포함한다.
+    include_deleted: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_db_session),
@@ -92,6 +95,7 @@ def admin_list_broker_accounts(
             broker_code=broker_code,
             owner_user_id=owner_user_id,
             include_inactive=include_inactive,
+            include_deleted=include_deleted,
             limit=limit,
             offset=offset,
         )

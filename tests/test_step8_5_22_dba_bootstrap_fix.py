@@ -14,7 +14,7 @@ from database.alembic.bootstrap import (
     ensure_operation_schema,
     ensure_platform_schemas,
 )
-from tests.migration_helpers import alembic_current_head
+from tests.migration_helpers import assert_revision_is_ancestor_of_head
 
 
 def test_ensure_operation_schema_idempotent_postgresql() -> None:
@@ -80,7 +80,7 @@ def test_emit_platform_schema_sql_includes_operation_first_group() -> None:
 
 
 def test_ops_db_head_unchanged() -> None:
-    assert alembic_current_head() == "ae5f6a7b8c9d"
+    assert_revision_is_ancestor_of_head("ae5f6a7b8c9d")
 
 
 def test_ensure_operation_schema_on_live_connection() -> None:
