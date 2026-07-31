@@ -54,7 +54,7 @@ from stock_platform.ai.candidate_promotion.entities import (
 from stock_platform.ai.candidate_recommendation_queue.entities import (
     AICandidateRecommendationQueueEntity,
 )
-from stock_platform.ai.providers.security import sanitize_for_log
+from stock_platform.ai.providers.security import mask_pii
 
 
 class AICandidateLifecycleError(Exception):
@@ -172,7 +172,11 @@ class AICandidateLifecycleService:
         if reason_code:
             row.status_reason_code = reason_code
         if reason:
-            row.status_reason_message = sanitize_for_log(reason)[:2000]
+            # STEP12-1A: sanitize_for_log()는 dict payload용 시크릿 마스킹
+            # 함수라 문자열 reason에 호출하면 payload.items()에서
+            # AttributeError가 발생했다(expire/supersede 등 reason이 있는
+            # 모든 전이가 항상 실패). 자유 텍스트용 mask_pii()로 교체.
+            row.status_reason_message = mask_pii(reason)[:2000]
         row.health_status = compute_health(row)
         self._history(
             row.candidate_id,
