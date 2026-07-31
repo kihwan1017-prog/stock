@@ -1,34 +1,69 @@
 # Kiki Trade AI
 
 > AI 기반 주식·암호화폐 자동매매 플랫폼  
-> **Current release: v1.1.0** · Live 주문 기본 차단 (`KIWOOM_LIVE_ORDER_ENABLED=false`)
-> STEP74 판정: **CONDITIONAL APPROVAL** · STEP75: Production Release Packaging
+> **Current release packaging: v1.1.0** · Branch `release/v1.1.0` · Commit baseline `3554ef8`
 
-문서 포털: **[docs/README.md](docs/README.md)**
+**⚠️ 운영 준비 상태가 아닙니다.**  
+자동매매 운영: **NOT READY** · LIVE 거래: **NOT APPROVED** · Paper 무인 자동매매: **NOT READY**  
+(수치·근거: [docs/PROJECT_IMPLEMENTATION_STATUS.md](docs/PROJECT_IMPLEMENTATION_STATUS.md) — 추정치)
+
+문서 포털: **[docs/README.md](docs/README.md)** · AI/개발 SoT: **[AGENTS.md](AGENTS.md)** · Claude: **[CLAUDE.md](CLAUDE.md)**
 
 ---
 
 ## 한줄 소개
 
-Kiki Trade AI는 국내 주식(키움 REST)과 암호화폐(Upbit)를 대상으로 시세·지표·스크리닝·AI 분석을 결합한 자동매매 플랫폼입니다.  
-주문은 Risk Engine·Kill Switch를 거친 뒤 Broker(Outbox)로만 전달됩니다.
+Kiki Trade AI는 국내 주식(키움 REST)과 암호화폐(Upbit), Paper 계좌를 대상으로  
+시세·지표·스크리닝·AI 분석·전략 수명주기·리스크·주문을 다루는 플랫폼입니다.  
+주문은 Risk Engine·Kill Switch를 거친 뒤 Broker(Outbox)로만 전달되는 것이 설계 목표입니다.
+
+---
+
+## 현재 상태 경고
+
+| 항목 | 상태 (2026-07-31 추정치) |
+|------|--------------------------|
+| 개발 구현률 | ~76% |
+| Paper 자동매매 준비도 | ~72% |
+| LIVE 자동매매 준비도 | ~48% |
+| LIVE 주문 기본 | OFF (`KIWOOM_LIVE_ORDER_ENABLED` 등 fail-closed) |
+
+**P0 Blocking:** P0-1 Realtime `broker_code` 하드코딩 · P0-2 Kiwoom Fill→Position 단절 · P0-3 STEP12↔Runtime 불일치 · P0-4 Alembic Head 불일치 · P0-5 Paper Outbox 자동 Fill 부재  
+→ [docs/ROADMAP.md](docs/ROADMAP.md)
+
+워킹트리에 미커밋 STEP12·FE·Migration이 있을 수 있습니다. 배포 완료로 오해하지 마세요.
+
+---
+
+## Canonical 문서 (Source of Truth)
+
+| 문서 | 역할 |
+|------|------|
+| [AGENTS.md](AGENTS.md) | AI/개발 공통 최상위 규칙 |
+| [CLAUDE.md](CLAUDE.md) | Claude Code Bootstrap |
+| [docs/CURRENT_WORK.md](docs/CURRENT_WORK.md) | 현재 작업만 |
+| [docs/PROJECT_IMPLEMENTATION_STATUS.md](docs/PROJECT_IMPLEMENTATION_STATUS.md) | 구현 현황 SoT |
+| [docs/STEP_MASTER_STATUS.md](docs/STEP_MASTER_STATUS.md) | STEP 상태 SoT |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | P0–P5 잔여 작업 |
+| [docs/DECISION_LOG.md](docs/DECISION_LOG.md) | 장기 설계 결정 |
+| [docs/architecture/STRATEGY_LIFECYCLE_STEP12.md](docs/architecture/STRATEGY_LIFECYCLE_STEP12.md) | Strategy Lifecycle STEP12 |
+
+과거 릴리즈·감사 문서와 수치가 충돌하면 **Canonical + 실제 소스**를 우선합니다.
 
 ---
 
 ## 아키텍처
 
-상세: [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md)
+상세: [ARCHITECTURE.md](ARCHITECTURE.md) · [docs/architecture/ARCHITECTURE.md](docs/architecture/ARCHITECTURE.md) · [docs/AI_ARCHITECTURE.md](docs/AI_ARCHITECTURE.md)
 
 ```text
-Admin (Next.js) ──► FastAPI
-                      │
-         ┌────────────┼────────────┐
-      Market/AI    Orders/Risk   Ops/Jobs
-         └────────────┼────────────┘
-                      ▼
-              PostgreSQL (+ pgvector)
-                      │
-              Kiwoom / Upbit
+Admin/User (Next.js) ──► FastAPI
+                            │
+               Market/AI · Risk · Orders · Ops
+                            ▼
+                    PostgreSQL (+ pgvector)
+                            │
+                    Kiwoom / Upbit / Paper
 ```
 
 ---
@@ -38,10 +73,10 @@ Admin (Next.js) ──► FastAPI
 | 구성 | 버전 |
 |------|------|
 | OS | Windows 10/11 |
-| Backend | Python 3.12, FastAPI |
-| Frontend | Node.js 20+, Next.js 16 |
+| Backend | Python 3.12, FastAPI (`src/stock_platform/`) |
+| Frontend | Node.js 20+, Next.js (`frontend/`) |
 | Database | PostgreSQL 16/17 (Windows Service, **Docker 없음**) |
-| AI | Ollama + Qwen (로컬) |
+| AI | Ollama + Qwen (로컬) · Mock Provider 기본 |
 | 버전 | **1.1.0** (`APP_VERSION` / `GET /version`) |
 
 ---
@@ -64,9 +99,14 @@ Admin (Next.js) ──► FastAPI
 
 ---
 
-## 인증
+## 안전 주의사항
 
-시크릿 기본 경로:
+- **LIVE 주문 기본 OFF** — 명시 승인 없이 실주문·Broker 로그인·Runtime 무단 기동 금지
+- 공개 인터넷 직접 노출 금지 (VPN / 사설망 / 역프록시)
+- 시크릿·API 키를 문서·로그·채팅에 붙이지 말 것
+- 상세: [docs/AI_TRADING_SAFETY.md](docs/AI_TRADING_SAFETY.md) · [SECURITY.md](SECURITY.md)
+
+시크릿 기본 경로(로컬 운영 관례):
 
 ```text
 E:\StockTrading\secrets\stock-platform.env
@@ -77,44 +117,26 @@ E:\StockTrading\secrets\stock-platform.env
 | `APP_ENV=local` + `JWT_DEV_AUTO_SECRET=true` | 임시 시크릿 자동 생성 (경고 로그) |
 | `production` / `staging` | 기동 실패 |
 
-상세: [SECURITY.md](SECURITY.md) · [docs/deployment/CONFIGURATION.md](docs/deployment/CONFIGURATION.md)
-
 ---
 
-## 문서 인덱스 (v1.1.0)
+## 문서 인덱스 (v1.1.0 Historical)
 
 | 문서 | 용도 |
 |------|------|
 | [CHANGELOG.md](CHANGELOG.md) | 변경 이력 |
-| [RELEASE_NOTE_v1.1.0.md](RELEASE_NOTE_v1.1.0.md) | v1.1.0 릴리즈 노트 |
-| [FINAL_RELEASE_REPORT_v1.1.0.md](FINAL_RELEASE_REPORT_v1.1.0.md) | 최종 릴리즈 보고 |
+| [RELEASE_NOTE_v1.1.0.md](docs/archive/completion-reports/RELEASE_NOTE_v1.1.0.md) | v1.1.0 릴리즈 노트 (Historical) |
+| [FINAL_RELEASE_REPORT_v1.1.0.md](docs/archive/completion-reports/FINAL_RELEASE_REPORT_v1.1.0.md) | 최종 릴리즈 보고 (Historical) |
 | [docs/deployment/DEPLOY_v1.1.0.md](docs/deployment/DEPLOY_v1.1.0.md) | 배포 가이드 |
-| [docs/deployment/ROLLBACK_v1.1.0.md](docs/deployment/ROLLBACK_v1.1.0.md) | 롤백 |
 | [API.md](API.md) | API 개요 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 아키텍처 |
-| [DB_SCHEMA.md](DB_SCHEMA.md) | DB 스키마 |
-| [SECURITY.md](SECURITY.md) | 보안 |
-| [BACKUP.md](BACKUP.md) / [RECOVERY.md](RECOVERY.md) | 백업·복구 |
-| [RUNBOOK.md](RUNBOOK.md) | 일상 운영 |
-| [INCIDENT_RESPONSE.md](INCIDENT_RESPONSE.md) | 장애 대응 |
-| [GO_LIVE_CHECKLIST.md](GO_LIVE_CHECKLIST.md) | Go-Live |
-| [KNOWN_ISSUES.md](KNOWN_ISSUES.md) | 알려진 이슈 |
 | [docs/archive/steps/README_STEP74.md](docs/archive/steps/README_STEP74.md) | 사용자 통합 감사 |
 | [docs/archive/steps/README_STEP75.md](docs/archive/steps/README_STEP75.md) | v1.1.0 Release |
 | [LICENSE](LICENSE) | 라이선스 |
 
 한글 매뉴얼: [docs/manual/README.md](docs/manual/README.md)
 
----
-
-## 배포 전제 (중요)
-
-v1.1.0은 STEP74 **CONDITIONAL APPROVAL** 기준으로 다음을 전제합니다.
-
-- **공개 인터넷 직접 노출 금지** (VPN / 사설망 / 역프록시)
-- **Live 주문 기본 OFF** — 고객 SaaS Live는 STEP63 감사상 차단
-- 단일 운영자 · Windows 단일 인스턴스 · Paper + 사용자 Self 기능 중심
-- Telegram 실발송 DLQ·Watchlist 그룹·자동매매 UI 완성은 후속
+v1.1.0 STEP74 **CONDITIONAL APPROVAL** 전제(사설망·Live OFF·단일 운영자)는 유효하나,  
+**자동매매 완료·LIVE 승인으로 해석하지 마세요.**
 
 ---
 
@@ -123,13 +145,13 @@ v1.1.0은 STEP74 **CONDITIONAL APPROVAL** 기준으로 다음을 전제합니다
 ```text
 stock-platform/
 ├── src/                 # FastAPI
-├── frontend/            # Admin (Next.js)
+├── frontend/            # Admin/User (Next.js)
 ├── tests/
 ├── database/alembic/    # Canonical migrations
 ├── ops/                 # Windows 운영 스크립트
-├── docs/                # 도메인 문서
+├── docs/                # Canonical + 도메인 문서
 ├── scripts/
-├── LICENSE
+├── AGENTS.md / CLAUDE.md
 ├── README.md
 └── CHANGELOG.md
 ```

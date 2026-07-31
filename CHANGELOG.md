@@ -103,7 +103,7 @@
 | 운영 CORS localhost 단독 거부 | 실제 Origin 필수 |
 
 ### Known Issues
-상세: [KNOWN_ISSUES.md](KNOWN_ISSUES.md) · [FINAL_AUDIT_REPORT.md](FINAL_AUDIT_REPORT.md)
+상세: [KNOWN_ISSUES.md](KNOWN_ISSUES.md) · [FINAL_AUDIT_REPORT.md](docs/archive/completion-reports/FINAL_AUDIT_REPORT.md)
 
 - 일부 mutate API(pipeline/AI/sync/strategy-runtime 등) 무인증 잔존 → **공개망 배포 금지**
 - Order Outbox 기본 `PaperBrokerAdapter` 고정
@@ -121,7 +121,7 @@
 
 ## [1.0.0-RC1] — 2026-07-20
 
-Release Candidate. 내용 요약은 [RELEASE_NOTE_v1.0.0_RC1.md](RELEASE_NOTE_v1.0.0_RC1.md).
+Release Candidate. 내용 요약은 [RELEASE_NOTE_v1.0.0_RC1.md](docs/archive/completion-reports/RELEASE_NOTE_v1.0.0_RC1.md).
 
 ### Docs (pre-GA)
 - Domain documentation refactor under `docs/`

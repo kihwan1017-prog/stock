@@ -1,8 +1,8 @@
 # 문제 이슈사항 정리 (증권사 납품 기준)
 
 **종합 판정(감사 시점):** 51/100 · NO-GO  
-**근거:** `README_FINAL_AUDIT.md`, `README_AUDIT_API.md`, `README_AUDIT_DB.md`, `README_AUDIT_TEST.md`, `README_AUDIT_01.md`  
-**현행 조치:** 아래 상태열. 감사 스냅샷 동기화는 `PROJECT_FINAL_AUDIT.md` §0.
+**근거:** `docs/archive/completion-reports/README_FINAL_AUDIT.md`, `docs/archive/completion-reports/README_AUDIT_API.md`, `docs/archive/completion-reports/README_AUDIT_DB.md`, `docs/archive/completion-reports/README_AUDIT_TEST.md`, `docs/archive/completion-reports/README_AUDIT_01.md`
+**현행 조치:** 아래 상태열. 감사 스냅샷 동기화는 `docs/archive/completion-reports/PROJECT_FINAL_AUDIT.md` §0.
 
 ## P0 — 납품 차단
 

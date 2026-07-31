@@ -169,6 +169,6 @@
 
 ## 관련 문서
 
-- [FINAL_AUDIT_REPORT.md](FINAL_AUDIT_REPORT.md)
-- [RELEASE_RISK.md](RELEASE_RISK.md)
-- [PRODUCTION_SCORECARD.md](PRODUCTION_SCORECARD.md)
+- [FINAL_AUDIT_REPORT.md](docs/archive/completion-reports/FINAL_AUDIT_REPORT.md)
+- [RELEASE_RISK.md](docs/archive/completion-reports/RELEASE_RISK.md)
+- [PRODUCTION_SCORECARD.md](docs/archive/completion-reports/PRODUCTION_SCORECARD.md)
