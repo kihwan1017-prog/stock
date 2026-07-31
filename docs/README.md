@@ -1,7 +1,29 @@
 # Documentation Index — stock-platform
 
 > v1.0.0 · Docker 미사용 · PostgreSQL Windows 서비스  
-> 루트 포털: [../README.md](../README.md)
+> 루트 포털: [../README.md](../README.md) · AI SoT: [../AGENTS.md](../AGENTS.md)
+
+## Canonical Source of Truth (PHASE 2)
+
+| 문서 | 역할 |
+|------|------|
+| [CURRENT_WORK.md](CURRENT_WORK.md) | 현재 작업만 |
+| [PROJECT_IMPLEMENTATION_STATUS.md](PROJECT_IMPLEMENTATION_STATUS.md) | 구현 현황 SoT |
+| [STEP_MASTER_STATUS.md](STEP_MASTER_STATUS.md) | STEP 상태 SoT |
+| [ROADMAP.md](ROADMAP.md) | P0–P5 잔여 작업 |
+| [DECISION_LOG.md](DECISION_LOG.md) | 장기 설계 결정 |
+| [AI_PROJECT_CONTEXT.md](AI_PROJECT_CONTEXT.md) | AI 프로젝트 컨텍스트 |
+| [AI_ARCHITECTURE.md](AI_ARCHITECTURE.md) | 실행 흐름·GAP |
+| [AI_DEVELOPMENT_WORKFLOW.md](AI_DEVELOPMENT_WORKFLOW.md) | 개발 Gate |
+| [AI_CODING_RULE.md](AI_CODING_RULE.md) | 코딩 규칙 |
+| [AI_DB_RULE.md](AI_DB_RULE.md) | DB/Alembic |
+| [AI_TEST_RULE.md](AI_TEST_RULE.md) | 테스트 |
+| [AI_SECURITY_RULE.md](AI_SECURITY_RULE.md) | 보안 |
+| [AI_TRADING_SAFETY.md](AI_TRADING_SAFETY.md) | LIVE/PAPER 안전 |
+| [architecture/STRATEGY_LIFECYCLE_STEP12.md](architecture/STRATEGY_LIFECYCLE_STEP12.md) | Strategy STEP12 |
+| [audit/PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md](audit/PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md) | PHASE 2 완료보고 |
+
+운영: **NOT READY** · LIVE: **NOT APPROVED**. 상세는 IMPLEMENTATION_STATUS.
 
 ## Domain folders
 

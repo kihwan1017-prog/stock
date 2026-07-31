@@ -1,0 +1,18 @@
+---
+description: Database Alembic — single head, UBA, no rewrite
+globs: database/**/*.{py,sql};**/entities.py;**/models.py
+alwaysApply: false
+---
+
+# 30 — Database
+
+공통 SoT: [AGENTS.md](../../AGENTS.md) · 상세: [docs/AI_DB_RULE.md](../../docs/AI_DB_RULE.md)
+
+- Migration 체인: **`database/alembic/`만**. 루트 `alembic/versions` 적용 금지.
+- **단일 Head** 유지. 커밋 Head와 워킹트리 Head 불일치(P0-4)를 문서·커밋에 명시.
+- Entity ↔ Migration 일치. FK / UNIQUE / CHECK / Index를 임의로 약화하지 않음.
+- Scope: `user_id`, `user_broker_account_id`(UBA), Paper account 분리.
+- Soft delete·History·Audit 패턴을 기존 엔티티와 맞출 것.
+- Lock/Concurrency: SKIP LOCKED·분산 락 관례 존중.
+- **이미 적용된 Migration 수정 금지** (새 revision으로만).
+- SQLite 단위 테스트만으로 PostgreSQL 스키마 완료 판정 금지.

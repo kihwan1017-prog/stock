@@ -1,0 +1,15 @@
+---
+description: Trading safety — LIVE off, fail-closed, no auto broker
+alwaysApply: true
+---
+
+# 90 — Trading Safety
+
+상세: [docs/AI_TRADING_SAFETY.md](../../docs/AI_TRADING_SAFETY.md) · [AGENTS.md](../../AGENTS.md)
+
+- **LIVE 기본 OFF.** Startup fail-closed. 실주문은 **명시적 사용자 승인** 후에만.
+- AI/에이전트는 Broker 로그인 · 주문 생성/전송/취소/정정 · Runtime/Scheduler로 실거래 유발 **자동 실행 금지**.
+- Kill Switch · Account Pause · 계좌별 한도를 우회하지 않음.
+- LIVE와 PAPER 데이터·설정·계좌를 섞지 않음.
+- 민감정보(키·시크릿·토큰·전문 원문) 출력·커밋 금지.
+- P0-1~P0-5가 해소되기 전 LIVE **NOT APPROVED** 유지.

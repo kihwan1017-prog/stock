@@ -1,0 +1,16 @@
+---
+description: Frontend Next.js — RBAC, stubs, API alignment
+globs: frontend/**/*.{ts,tsx}
+alwaysApply: false
+---
+
+# 20 — Frontend
+
+공통 SoT: [AGENTS.md](../../AGENTS.md)
+
+- **App Router** · `(admin)` / `(user)` 레이아웃·권한 분리 유지.
+- API 타입·경로를 Backend와 맞출 것. **미구현 API를 완료 UX처럼 호출하지 않음.**
+- Stub/WIP는 UI에 명시. 워킹트리 전용 페이지를 운영 완료로 표시 금지.
+- 오류·로딩·권한 실패를 조용히 무시하지 않음.
+- 기존 Ant Design / query / route 패턴을 따름. 디자인 시스템 밖 새 테마 남발 금지.
+- 테스트: 해당 feature의 vitest·수동 권한 시나리오. Broker/LIVE 호출 UI는 안전 게이트 문구 유지.
