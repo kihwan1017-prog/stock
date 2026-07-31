@@ -1623,6 +1623,1086 @@ export async function cancelRevocationAiCandidateLifecycle(
   );
 }
 
+/** STEP 12-1 — AI Candidate -> Strategy Request 승인 게이트 (관리자 심사) */
+export async function listStrategyRequests(params?: {
+  status?: string;
+  candidate_id?: number;
+  user_id?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/strategy-requests", params);
+}
+
+export async function getStrategyRequest(
+  strategyRequestId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-requests/${strategyRequestId}`);
+}
+
+export async function getStrategyRequestHistory(
+  strategyRequestId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-requests/${strategyRequestId}/history`);
+}
+
+export async function approveStrategyRequest(
+  strategyRequestId: number,
+  body: { review_note?: string; correlation_id?: string },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/strategy-requests/${strategyRequestId}/approve`,
+    body,
+  );
+}
+
+export async function rejectStrategyRequest(
+  strategyRequestId: number,
+  body: { review_note: string; correlation_id?: string },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/strategy-requests/${strategyRequestId}/reject`,
+    body,
+  );
+}
+
+/** STEP 12-2-1 — 승인된 Strategy Request 위의 Strategy Draft 저장/버전관리 */
+export interface StrategyDraftContentFields {
+  title?: string;
+  summary?: string;
+  entry_rule?: string;
+  exit_rule?: string;
+  stop_loss_rule?: string;
+  take_profit_rule?: string;
+  position_sizing_rule?: string;
+  timeframe?: string;
+  market_type?: string;
+  risk_parameters?: Record<string, unknown>;
+  indicator_configuration?: Record<string, unknown>;
+  llm_provider?: string;
+  llm_model?: string;
+  prompt_version?: string;
+}
+
+export async function listStrategyDrafts(params?: {
+  strategy_request_id?: number;
+  version?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/strategy-drafts", params);
+}
+
+export async function getStrategyDraft(draftId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategy-drafts/${draftId}`);
+}
+
+export async function getStrategyDraftHistory(
+  draftId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-drafts/${draftId}/history`);
+}
+
+/** 새 Draft(새 Version) 생성 — strategy_request_id 기준 */
+export async function createStrategyDraft(
+  body: StrategyDraftContentFields & {
+    strategy_request_id: number;
+    correlation_id?: string;
+  },
+): Promise<JsonValue> {
+  return postJson("/admin/strategy-drafts", body);
+}
+
+/** 같은 Version 안에서 새 Revision 생성 — source_draft_id 기준 */
+export async function createStrategyDraftRevision(
+  body: StrategyDraftContentFields & {
+    strategy_request_id: number;
+    source_draft_id: number;
+    reason?: string;
+    correlation_id?: string;
+  },
+): Promise<JsonValue> {
+  return postJson("/admin/strategy-drafts", body);
+}
+
+export async function updateStrategyDraft(
+  draftId: number,
+  body: StrategyDraftContentFields & {
+    reason?: string;
+    correlation_id?: string;
+  },
+): Promise<JsonValue> {
+  return patchJson(`/admin/strategy-drafts/${draftId}`, body);
+}
+
+export async function archiveStrategyDraft(
+  draftId: number,
+  body?: { reason?: string; correlation_id?: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategy-drafts/${draftId}/archive`, body ?? {});
+}
+
+/** Version 조회 — 해당 Version의 전체 Revision 목록 */
+export async function getStrategyDraftVersion(
+  strategyRequestId: number,
+  version: number,
+): Promise<JsonValue> {
+  return getJson("/admin/strategy-drafts", {
+    strategy_request_id: strategyRequestId,
+    version,
+  });
+}
+
+/** STEP 12-2-2 — AI Strategy Draft Generator(관리자 전용, 검토 전 초안 생성) */
+export async function createStrategyDraftGeneration(body: {
+  strategy_request_id: number;
+  provider_id?: string;
+  model?: string;
+  idempotency_key?: string;
+}): Promise<JsonValue> {
+  return postJson("/admin/strategy-draft-generations", body);
+}
+
+export async function listStrategyDraftGenerations(params?: {
+  strategy_request_id?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/strategy-draft-generations", params);
+}
+
+export async function getStrategyDraftGeneration(
+  runId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-draft-generations/${runId}`);
+}
+
+export async function retryStrategyDraftGeneration(
+  runId: number,
+): Promise<JsonValue> {
+  return postJson(`/admin/strategy-draft-generations/${runId}/retry`, {});
+}
+
+/** STEP 12-2-3 — Generation Attempt 목록 */
+export async function listStrategyDraftGenerationAttempts(
+  runId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-draft-generations/${runId}/attempts`);
+}
+
+/** STEP 12-2-3 — Version/Revision 비교(동일 Strategy Request 내에서만 허용) */
+export async function getStrategyDraftComparison(
+  draftId: number,
+  compareDraftId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-drafts/${draftId}/comparison`, {
+    compare_draft_id: compareDraftId,
+  });
+}
+
+/** STEP 12-2-3 — Draft History + Generation Run 병합 Timeline */
+export async function getDraftTimeline(
+  strategyRequestId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-requests/${strategyRequestId}/draft-timeline`);
+}
+
+/** STEP 12-3 — Strategy Draft 관리자 최종 승인/반려/취소 */
+export async function approveStrategyDraft(
+  draftId: number,
+  body: { reason: string; idempotency_key?: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategy-drafts/${draftId}/approve`, body);
+}
+
+export async function rejectStrategyDraft(
+  draftId: number,
+  body: { reason: string; idempotency_key?: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategy-drafts/${draftId}/reject`, body);
+}
+
+export async function revokeStrategyDraftApproval(
+  approvalId: number,
+  body: { reason: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategy-draft-approvals/${approvalId}/revoke`, body);
+}
+
+export async function listStrategyDraftApprovals(params?: {
+  draft_id?: number;
+  strategy_request_id?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/strategy-draft-approvals", params);
+}
+
+export async function getStrategyDraftApproval(
+  approvalId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-draft-approvals/${approvalId}`);
+}
+
+export async function getStrategyDraftApprovalForDraft(
+  draftId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-drafts/${draftId}/approval`);
+}
+
+export async function getStrategyDraftApprovalHistory(
+  approvalId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategy-draft-approvals/${approvalId}/history`);
+}
+
+/** STEP 12-4 — Strategy Snapshot(승인으로 생성된 불변 Definition) 조회/이력/Export */
+export async function getStrategySnapshot(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/snapshot`);
+}
+
+export async function getStrategySnapshotHistory(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/snapshot/history`);
+}
+
+export async function exportStrategySnapshot(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/snapshot/export`);
+}
+
+/** STEP 12-5 — Backtest Readiness / Provenance Chain 검증 */
+export async function getStrategyReadiness(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/readiness`);
+}
+
+export async function getStrategyProvenance(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/provenance`);
+}
+
+/** STEP 12-6 — Backtest Executable Specification 컴파일(실행 아님) */
+export async function getStrategyBacktestSpecification(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/backtest-specification`);
+}
+
+/** STEP 12-8 — Backtest 결과 기반 Performance Analytics(Admin 전용, 조회) */
+export async function getBacktestRunPerformance(
+  backtestRunId: number,
+): Promise<JsonValue> {
+  return getJson(`/backtest-runs/${backtestRunId}/performance`);
+}
+
+export async function getBacktestRunScore(
+  backtestRunId: number,
+): Promise<JsonValue> {
+  return getJson(`/backtest-runs/${backtestRunId}/score`);
+}
+
+/** STEP 12-9 — 승인 Strategy Definition의 Walk-Forward Analysis(Admin 전용) */
+export async function runStrategyWalkForward(
+  strategyDefinitionId: number,
+  body: {
+    symbol: string;
+    exchange_code: string;
+    start_date: string;
+    end_date: string;
+    train_days: number;
+    test_days: number;
+    window_scheme: "ROLLING" | "EXPANDING";
+    initial_capital: string;
+    fee_ratio?: string;
+    sell_tax_ratio?: string;
+    slippage_ratio?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/walk-forward`, body);
+}
+
+export async function getStrategyWalkForward(
+  strategyDefinitionId: number,
+  runId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/walk-forward/${runId}`);
+}
+
+export async function getStrategyWalkForwardOverfitting(
+  strategyDefinitionId: number,
+  runId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/walk-forward/${runId}/overfitting`,
+  );
+}
+
+/** STEP 12-10 — Strategy Quality Gate(Admin 전용) */
+export async function runStrategyQualityGate(
+  strategyDefinitionId: number,
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/quality-gate`, {});
+}
+
+export async function getStrategyQualityGate(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/quality-gate/${reportId}`);
+}
+
+export async function getStrategyQualityGateRecommendation(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/quality-gate/${reportId}/recommendation`,
+  );
+}
+
+/** STEP 12-11 — Parameter Sensitivity Analysis(Admin 전용) */
+export async function runStrategyParameterSensitivity(
+  strategyDefinitionId: number,
+  body: {
+    symbol: string;
+    exchange_code: string;
+    start_date: string;
+    end_date: string;
+    initial_capital: string;
+    parameter_names: string[];
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/strategies/${strategyDefinitionId}/parameter-sensitivity`,
+    body,
+  );
+}
+
+export async function getStrategyParameterSensitivity(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/parameter-sensitivity/${reportId}`,
+  );
+}
+
+export async function getStrategyParameterSensitivitySummary(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/parameter-sensitivity/${reportId}/summary`,
+  );
+}
+
+export async function getStrategyParameterSensitivityVariations(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/parameter-sensitivity/${reportId}/variations`,
+  );
+}
+
+/** STEP 12-12 — Monte Carlo Simulation(Admin 전용, 기존 Backtest Trade 재사용) */
+export async function runStrategyMonteCarlo(
+  strategyDefinitionId: number,
+  body: {
+    backtest_run_id: number;
+    simulation_method: "TRADE_ORDER_SHUFFLE" | "BOOTSTRAP_WITH_REPLACEMENT" | "BLOCK_BOOTSTRAP";
+    simulation_count?: number;
+    random_seed?: number;
+    confidence_level?: string;
+    ruin_threshold_percent?: string;
+    block_size?: number;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/monte-carlo`, body);
+}
+
+export async function getStrategyMonteCarlo(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/monte-carlo/${reportId}`);
+}
+
+export async function getStrategyMonteCarloSummary(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/monte-carlo/${reportId}/summary`);
+}
+
+export async function getStrategyMonteCarloDistribution(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/monte-carlo/${reportId}/distribution`,
+  );
+}
+
+export async function getStrategyMonteCarloRepresentatives(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/strategies/${strategyDefinitionId}/monte-carlo/${reportId}/representatives`,
+  );
+}
+
+/**
+ * STEP 12-14 — Strategy Explainability & Decision Evidence Layer(Admin 전용).
+ * 이미 승인된 Strategy Definition과 이미 완료된 검증 Report만 읽어 사람이
+ * 이해할 수 있는 설명 + Evidence Reference로 재구성한다. 새 Backtest나
+ * 검증 계산을 수행하지 않고, 자동 승인·반려·Promotion을 수행하지 않는다.
+ */
+export async function runStrategyExplainability(
+  strategyDefinitionId: number,
+  body: {
+    backtest_run_id?: number;
+    walk_forward_run_id?: number;
+    quality_gate_report_id?: number;
+    parameter_sensitivity_report_id?: number;
+    monte_carlo_report_id?: number;
+    portfolio_validation_report_id?: number;
+    explanation_language?: string;
+    explanation_mode?: string;
+    use_latest_when_missing?: boolean;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/explainability`, body);
+}
+
+export async function getStrategyExplainability(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/explainability/${reportId}`);
+}
+
+export async function getStrategyExplainabilitySummary(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/explainability/${reportId}/summary`);
+}
+
+export async function getStrategyExplainabilityEvidence(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/explainability/${reportId}/evidence`);
+}
+
+export async function getStrategyExplainabilityChecklist(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/explainability/${reportId}/checklist`);
+}
+
+export async function getStrategyExplainabilityMissing(
+  strategyDefinitionId: number,
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/explainability/${reportId}/missing`);
+}
+
+/**
+ * STEP 12-15 — Decision Package & Human Decision(Admin 전용).
+ * 이미 생성된 Explainability/Quality Gate/Sensitivity/Monte Carlo/
+ * Portfolio Validation 결과를 하나의 동결된 Decision Package로 묶고,
+ * 관리자가 APPROVE_FOR_PROMOTION/REQUEST_CHANGES/REJECT 중 하나를
+ * 불변으로 기록한다. 실제 Promotion Commit은 수행하지 않는다.
+ */
+export async function createDecisionPackage(
+  strategyDefinitionId: number,
+  body: {
+    explainability_report_id: number;
+    quality_gate_report_id?: number;
+    parameter_sensitivity_report_id?: number;
+    monte_carlo_report_id?: number;
+    portfolio_validation_report_id?: number;
+    package_note?: string;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/decision-packages`, body);
+}
+
+export async function getDecisionPackage(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/decision-packages/${packageId}`);
+}
+
+export async function getDecisionPackageSummary(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/decision-packages/${packageId}/summary`);
+}
+
+export async function getDecisionPackageChecklist(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/decision-packages/${packageId}/checklist`);
+}
+
+export async function getDecisionPackageStaleness(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/decision-packages/${packageId}/staleness`);
+}
+
+export async function recordHumanDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+  body: {
+    decision_type: "APPROVE_FOR_PROMOTION" | "REQUEST_CHANGES" | "REJECT";
+    reason_code: string;
+    reason_text: string;
+    checklist_confirmations?: Record<string, boolean>;
+    acknowledged_warnings?: string[];
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/decision-packages/${packageId}/decisions`, body);
+}
+
+export async function getHumanDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/decision-packages/${packageId}/decision`);
+}
+
+export async function getPromotionReadiness(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/promotion-readiness`);
+}
+
+/**
+ * STEP 12-16 — Promotion Commit(Admin 전용).
+ * Decision Package/Human Decision(APPROVE_FOR_PROMOTION)을 최종
+ * 재검증한 뒤 관리자의 명시적 요청으로만 생성되는 불변 기록. Activation/
+ * Deployment/Runtime 등록은 수행하지 않는다.
+ */
+export async function createPromotionCommit(
+  strategyDefinitionId: number,
+  body: {
+    decision_package_id: number;
+    human_decision_id: number;
+    promotion_readiness_hash: string;
+    commit_reason: string;
+    confirmation_text: string;
+    acknowledge_same_actor_warning?: boolean;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/promotion-commits`, body);
+}
+
+export async function listPromotionCommits(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/promotion-commits`);
+}
+
+export async function getPromotionCommit(
+  strategyDefinitionId: number,
+  commitId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/promotion-commits/${commitId}`);
+}
+
+export async function getPromotionStatus(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/promotion-status`);
+}
+
+export async function getPromotionCommitProvenance(
+  strategyDefinitionId: number,
+  commitId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/promotion-commits/${commitId}/provenance`);
+}
+
+export async function getPromotionCommitHistory(
+  strategyDefinitionId: number,
+  commitId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/promotion-commits/${commitId}/history`);
+}
+
+/**
+ * STEP 12-17 — Activation Review & Activation Commit(Admin 전용).
+ * PROMOTION_COMMITTED Strategy를 대상으로 계좌/시장/브로커/리스크/운영
+ * 준비 상태를 검증하고 관리자의 명시적 Activation Commit으로 Strategy
+ * Promotion Status를 ACTIVATED로 전환한다. Runtime 등록/시작, Scheduler
+ * 등록, Broker 연결, 주문 실행은 수행하지 않는다.
+ */
+export async function createActivationReviewPackage(
+  strategyDefinitionId: number,
+  body: {
+    promotion_commit_id: number;
+    target_market_type: string;
+    target_broker_code: string;
+    target_account_kind: string;
+    target_user_broker_account_id?: number | null;
+    target_paper_account_id?: number | null;
+    requested_execution_mode: string;
+    requested_runtime_scope?: Record<string, unknown> | null;
+    requested_capital_limit?: string | null;
+    review_note?: string | null;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages`, body);
+}
+
+export async function listActivationReviewPackages(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages`);
+}
+
+export async function getActivationReviewPackage(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages/${packageId}`);
+}
+
+export async function getActivationReviewPackageChecklist(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages/${packageId}/checklist`);
+}
+
+export async function getActivationReviewPackageStaleness(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages/${packageId}/staleness`);
+}
+
+export async function recordActivationDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+  body: {
+    decision_type: string;
+    reason_code: string;
+    reason_text: string;
+    checklist_confirmations?: Record<string, boolean>;
+    acknowledged_warnings?: string[];
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages/${packageId}/decisions`, body);
+}
+
+export async function getActivationDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-review-packages/${packageId}/decision`);
+}
+
+export async function createActivationCommit(
+  strategyDefinitionId: number,
+  body: {
+    activation_review_package_id: number;
+    activation_decision_id: number;
+    activation_readiness_hash: string;
+    commit_reason: string;
+    confirmation_text: string;
+    acknowledge_same_actor_warning?: boolean;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/activation-commits`, body);
+}
+
+export async function getActivationStatus(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-status`);
+}
+
+export async function getActivationCommit(
+  strategyDefinitionId: number,
+  commitId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-commits/${commitId}`);
+}
+
+export async function getActivationCommitHistory(
+  strategyDefinitionId: number,
+  commitId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/activation-commits/${commitId}/history`);
+}
+
+/**
+ * STEP 12-18 — Runtime Registration Review Package & Commit(Admin 전용).
+ * ACTIVATED Strategy를 대상으로 계좌/시장/브로커/리스크/운영 준비 상태를
+ * 재검증하고, 관리자의 명시적 Commit으로 Runtime Registry에 비실행
+ * (enabled=false, running=false) 상태로만 등록한다. Runtime 시작,
+ * Scheduler 등록, Broker 연결/로그인, 실시간 시세 구독, Signal 계산,
+ * 주문 생성/전송은 수행하지 않는다.
+ */
+export async function createRuntimeRegistrationPackage(
+  strategyDefinitionId: number,
+  body: {
+    activation_commit_id: number;
+    activation_decision_id: number;
+    target_account_kind: string;
+    target_user_broker_account_id?: number | null;
+    target_paper_account_id?: number | null;
+    target_market_type: string;
+    target_broker_code: string;
+    execution_mode: string;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-packages`, body);
+}
+
+export async function getRuntimeRegistrationPackage(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-packages/${packageId}`);
+}
+
+export async function getRuntimeRegistrationPackageChecklist(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-packages/${packageId}/checklist`);
+}
+
+export async function recordRuntimeRegistrationDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+  body: {
+    decision_type: string;
+    reason_code: string;
+    reason_text: string;
+    checklist_confirmations?: Record<string, boolean>;
+    acknowledged_warnings?: string[];
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-packages/${packageId}/decisions`, body);
+}
+
+export async function getRuntimeRegistrationDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-packages/${packageId}/decision`);
+}
+
+export async function createRuntimeRegistrationCommit(
+  strategyDefinitionId: number,
+  body: {
+    runtime_registration_package_id: number;
+    runtime_registration_decision_id: number;
+    registration_input_hash: string;
+    decision_input_hash: string;
+    commit_reason: string;
+    confirmation_text: string;
+    acknowledge_same_actor_warning?: boolean;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-commits`, body);
+}
+
+export async function getRuntimeRegistrationStatus(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-status`);
+}
+
+export async function getRuntimeRegistrationHistory(
+  strategyDefinitionId: number,
+  params?: { runtime_scope_hash?: string },
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-history`, params);
+}
+
+/** STEP 12-19 Carry-forward — 다중 Runtime Scope 목록(단일 최신 Status로는
+ * 표현할 수 없는, Strategy당 여러 등록 상태를 개별 행으로 보여준다). */
+export async function getRuntimeRegistrationScopes(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/runtime-registration-scopes`);
+}
+
+/**
+ * STEP 12-19 — Runtime Deployment Readiness & Disabled Scheduler Plan
+ * (Admin 전용). REGISTERED(비실행) Runtime Scope를 대상으로 계좌/시장/
+ * 브로커/리스크/운영 준비 상태를 재검증하고, 관리자의 명시적 Deployment
+ * Commit으로 StrategyDeployment를 READY_TO_START 상태로만 확정한다.
+ * Scheduler Plan은 enabled=false/registered_to_scheduler=false로만
+ * 저장되며, Runtime 시작, 실제 Scheduler 등록, Broker 연결/로그인, 실시간
+ * 시세 구독, Signal 계산, 주문 생성/전송은 수행하지 않는다.
+ */
+export async function createDeploymentReadinessPackage(
+  strategyDefinitionId: number,
+  body: {
+    runtime_registration_commit_id: number;
+    runtime_registry_id: number;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-packages`, body);
+}
+
+export async function getDeploymentReadinessPackage(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-packages/${packageId}`);
+}
+
+export async function getDeploymentReadinessPackageChecklist(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-packages/${packageId}/checklist`);
+}
+
+export async function recordDeploymentReadinessDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+  body: {
+    decision_type: string;
+    reason_code: string;
+    reason_text: string;
+    checklist_confirmations?: Record<string, boolean>;
+    acknowledged_warnings?: string[];
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-packages/${packageId}/decisions`, body);
+}
+
+export async function getDeploymentReadinessDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-packages/${packageId}/decision`);
+}
+
+export async function createDeploymentReadinessCommit(
+  strategyDefinitionId: number,
+  body: {
+    deployment_readiness_package_id: number;
+    deployment_readiness_decision_id: number;
+    runtime_registration_commit_id: number;
+    runtime_scope_hash: string;
+    deployment_input_hash: string;
+    decision_input_hash: string;
+    commit_reason: string;
+    confirmation_text: string;
+    acknowledge_same_actor_warning?: boolean;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-commits`, body);
+}
+
+export async function getDeploymentReadinessStatus(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-status`);
+}
+
+export async function getDeploymentReadinessHistory(
+  strategyDefinitionId: number,
+  params?: { runtime_scope_hash?: string },
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-history`, params);
+}
+
+export async function getDeploymentReadinessScopes(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/deployment-readiness-scopes`);
+}
+
+export async function listSchedulerPlans(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/scheduler-plans`);
+}
+
+/**
+ * STEP 12-20 — Operation Readiness Certification(Admin 전용, STEP12
+ * 마지막 단계). READY_TO_START Deployment를 대상으로 Strategy/Promotion/
+ * Activation/Runtime Registration/Deployment/Scheduler Plan/Credential/
+ * Risk/Trading Flag/Kill Switch/Recovery/Account/Runtime Scope/Deployment
+ * Scope/History/Audit 15개 영역을 재검증하고, 관리자의 명시적 Operation
+ * Commit으로 같은 Deployment 행을 READY_TO_OPERATE로 전진시킨다. Runtime
+ * 시작, 실제 Scheduler 등록, Broker 연결/로그인, 실시간 시세 구독, 주문
+ * 생성/전송은 수행하지 않는다.
+ */
+export async function createOperationReadinessPackage(
+  strategyDefinitionId: number,
+  body: { deployment_readiness_commit_id: number; idempotency_key?: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-packages`, body);
+}
+
+export async function getOperationReadinessPackage(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-packages/${packageId}`);
+}
+
+export async function getOperationReadinessPackageChecklist(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-packages/${packageId}/checklist`);
+}
+
+export async function getOperationReadinessCertification(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-packages/${packageId}/certification`);
+}
+
+export async function recordOperationReadinessDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+  body: {
+    decision_type: string;
+    reason_code: string;
+    reason_text: string;
+    checklist_confirmations?: Record<string, boolean>;
+    acknowledged_warnings?: string[];
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-packages/${packageId}/decisions`, body);
+}
+
+export async function getOperationReadinessDecision(
+  strategyDefinitionId: number,
+  packageId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-packages/${packageId}/decision`);
+}
+
+export async function createOperationReadinessCommit(
+  strategyDefinitionId: number,
+  body: {
+    operation_readiness_package_id: number;
+    operation_readiness_decision_id: number;
+    deployment_readiness_commit_id: number;
+    runtime_scope_hash: string;
+    operation_input_hash: string;
+    decision_input_hash: string;
+    commit_reason: string;
+    confirmation_text: string;
+    acknowledge_same_actor_warning?: boolean;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-commits`, body);
+}
+
+export async function getOperationReadinessStatus(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-status`);
+}
+
+export async function listOperationReadinessCommits(strategyDefinitionId: number): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-commits`);
+}
+
+export async function getOperationReadinessHistory(
+  strategyDefinitionId: number,
+  params?: { runtime_scope_hash?: string },
+): Promise<JsonValue> {
+  return getJson(`/admin/strategies/${strategyDefinitionId}/operation-readiness-history`, params);
+}
+
+/**
+ * STEP 12-13 — Portfolio Validation(Admin 전용).
+ * 이미 승인된 복수 Strategy Definition의 기존 Backtest 결과만 조합해
+ * 상관관계/집중도/분산효과/위험기여도/중복노출을 검증한다. 새 Backtest를
+ * 실행하거나 실제 Portfolio/자금을 배분하지 않는다.
+ */
+export async function runPortfolioValidation(body: {
+  strategy_definition_ids: number[];
+  backtest_run_ids: number[];
+  weighting_method?: "EQUAL_WEIGHT" | "CUSTOM_WEIGHT";
+  strategy_weights?: Record<number, string>;
+  alignment_policy?: "INTERSECTION" | "UNION_FORWARD_FILL";
+  minimum_overlap_days?: number;
+  initial_capital?: string;
+  correlation_threshold?: string;
+  concentration_threshold?: string;
+  idempotency_key?: string;
+}): Promise<JsonValue> {
+  return postJson("/admin/portfolio-validations", body);
+}
+
+export async function getPortfolioValidation(reportId: number): Promise<JsonValue> {
+  return getJson(`/admin/portfolio-validations/${reportId}`);
+}
+
+export async function getPortfolioValidationSummary(
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/portfolio-validations/${reportId}/summary`);
+}
+
+export async function getPortfolioValidationCorrelations(
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/portfolio-validations/${reportId}/correlations`);
+}
+
+export async function getPortfolioValidationRiskContributions(
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/portfolio-validations/${reportId}/risk-contributions`);
+}
+
+export async function getPortfolioValidationExposures(
+  reportId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/portfolio-validations/${reportId}/exposures`);
+}
+
+/** STEP 12-7 — 승인 Strategy Definition 기반 과거 데이터 Backtest 실행(Admin 전용) */
+export async function runStrategyBacktest(
+  strategyDefinitionId: number,
+  body: {
+    symbol: string;
+    exchange_code: string;
+    start_date: string;
+    end_date: string;
+    initial_capital: string;
+    fee_ratio?: string;
+    sell_tax_ratio?: string;
+    slippage_ratio?: string;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/strategies/${strategyDefinitionId}/backtests`, body);
+}
+
 /** STEP 11-8 — AI 분석 품질 검토 (매매 승인 아님) */
 export async function listAiReviewAssignments(params?: {
   status?: string;

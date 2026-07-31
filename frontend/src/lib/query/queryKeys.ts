@@ -66,6 +66,93 @@ export const queryKeys = {
       ["admin", "ai-candidate-promotions"] as const,
     aiCandidateLifecycle: () =>
       ["admin", "ai-candidate-lifecycle"] as const,
+    // STEP12-1 — Strategy Request 심사(관리자)
+    strategyRequests: {
+      list: (params?: object) =>
+        ["admin", "strategy-requests", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["admin", "strategy-requests", "detail", id] as const,
+      history: (id: number) =>
+        ["admin", "strategy-requests", "history", id] as const,
+    },
+    // STEP12-2-1 — Strategy Draft 저장/버전관리(관리자)
+    strategyDrafts: {
+      list: (params?: object) =>
+        ["admin", "strategy-drafts", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["admin", "strategy-drafts", "detail", id] as const,
+      history: (id: number) =>
+        ["admin", "strategy-drafts", "history", id] as const,
+      version: (strategyRequestId: number, version: number) =>
+        [
+          "admin",
+          "strategy-drafts",
+          "version",
+          strategyRequestId,
+          version,
+        ] as const,
+    },
+    // STEP12-2-2/12-2-3 — AI Strategy Draft Generator(관리자)
+    strategyDraftGenerations: {
+      list: (params?: object) =>
+        ["admin", "strategy-draft-generations", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["admin", "strategy-draft-generations", "detail", id] as const,
+      attempts: (id: number) =>
+        ["admin", "strategy-draft-generations", "attempts", id] as const,
+    },
+    // STEP12-2-3 — 비교/Timeline
+    strategyDraftComparison: (draftId: number, compareDraftId: number) =>
+      ["admin", "strategy-drafts", "comparison", draftId, compareDraftId] as const,
+    draftTimeline: (strategyRequestId: number) =>
+      ["admin", "strategy-requests", "draft-timeline", strategyRequestId] as const,
+    // STEP12-3 — Strategy Draft 최종 승인
+    strategyDraftApprovals: {
+      forDraft: (draftId: number) =>
+        ["admin", "strategy-draft-approvals", "for-draft", draftId] as const,
+      detail: (id: number) =>
+        ["admin", "strategy-draft-approvals", "detail", id] as const,
+      history: (id: number) =>
+        ["admin", "strategy-draft-approvals", "history", id] as const,
+      list: (params?: object) =>
+        ["admin", "strategy-draft-approvals", "list", params ?? {}] as const,
+    },
+    // STEP12-4 — Strategy Snapshot(승인으로 생성된 불변 Definition)
+    strategySnapshot: {
+      detail: (id: number) => ["admin", "strategy-snapshot", "detail", id] as const,
+      history: (id: number) => ["admin", "strategy-snapshot", "history", id] as const,
+    },
+    // STEP12-5 — Backtest Readiness / Provenance Chain
+    strategyReadiness: (id: number) =>
+      ["admin", "strategy-readiness", id] as const,
+    strategyProvenance: (id: number) =>
+      ["admin", "strategy-provenance", id] as const,
+    // STEP12-6 — Backtest Executable Specification(컴파일 진단, 실행 아님)
+    strategyBacktestSpecification: (id: number) =>
+      ["admin", "strategy-backtest-specification", id] as const,
+    // STEP12-8 — Backtest 결과 기반 Performance Analytics
+    backtestRunPerformance: (backtestRunId: number) =>
+      ["admin", "backtest-run-performance", backtestRunId] as const,
+    // STEP12-9 — Walk-Forward Analysis / Overfitting Report
+    strategyWalkForward: (strategyDefinitionId: number, runId: number) =>
+      ["admin", "strategy-walk-forward", strategyDefinitionId, runId] as const,
+    strategyWalkForwardOverfitting: (strategyDefinitionId: number, runId: number) =>
+      ["admin", "strategy-walk-forward-overfitting", strategyDefinitionId, runId] as const,
+    // STEP12-10 — Strategy Quality Gate
+    strategyQualityGate: (strategyDefinitionId: number, reportId: number) =>
+      ["admin", "strategy-quality-gate", strategyDefinitionId, reportId] as const,
+    // STEP12-11 — Parameter Sensitivity Analysis
+    strategyParameterSensitivity: (strategyDefinitionId: number, reportId: number) =>
+      ["admin", "strategy-parameter-sensitivity", strategyDefinitionId, reportId] as const,
+    // STEP12-12 — Monte Carlo Simulation
+    strategyMonteCarlo: (strategyDefinitionId: number, reportId: number) =>
+      ["admin", "strategy-monte-carlo", strategyDefinitionId, reportId] as const,
+    // STEP12-13 — Portfolio Validation(복수 Strategy 조합)
+    portfolioValidation: (reportId: number) =>
+      ["admin", "portfolio-validation", reportId] as const,
+    // STEP12-14 — Strategy Explainability & Decision Evidence Layer
+    strategyExplainability: (strategyDefinitionId: number, reportId: number) =>
+      ["admin", "strategy-explainability", strategyDefinitionId, reportId] as const,
     strategyDefinitions: (params?: object) =>
       ["admin", "strategy-definitions", params ?? {}] as const,
     strategyRuntime: () => ["admin", "strategy-runtime"] as const,
@@ -228,6 +315,22 @@ export const queryKeys = {
         ["user", "user-disclosures", "ai-summaries-recent"] as const,
     },
     userAiStatus: () => ["user", "ai-status"] as const,
+    // STEP12-1 — Strategy Request 승인 게이트(내 요청)
+    strategyRequests: {
+      list: (params?: object) =>
+        ["user", "strategy-requests", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["user", "strategy-requests", "detail", id] as const,
+      candidateLifecycle: (candidateId: number) =>
+        ["user", "ai-candidate-lifecycle", candidateId] as const,
+    },
+    // STEP12-2-1 — Strategy Draft 조회(내 요청, 읽기 전용)
+    strategyDrafts: {
+      list: (params?: object) =>
+        ["user", "strategy-drafts", "list", params ?? {}] as const,
+      detail: (id: number) =>
+        ["user", "strategy-drafts", "detail", id] as const,
+    },
     // STEP70 — 사용자 AI 추천
     userAi: {
       status: () => ["user", "ai-status"] as const,

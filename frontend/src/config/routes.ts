@@ -23,6 +23,12 @@ export const adminRoutes = {
   aiCandidateRecommendationQueues: "/admin/ai/candidate-recommendation-queues",
   aiCandidatePromotions: "/admin/ai/candidate-promotions",
   aiCandidateLifecycle: "/admin/ai/candidate-lifecycle",
+  /** STEP12-1: AI Candidate -> Strategy Request 승인 게이트(관리자 심사) */
+  strategyRequests: "/admin/strategy-requests",
+  /** STEP12-2-1: 승인된 Strategy Request 위의 Strategy Draft 저장/버전관리 */
+  strategyDrafts: "/admin/strategy-drafts",
+  /** STEP12-13: 복수 승인 Strategy Definition의 기존 Backtest 결과 조합 검증 */
+  portfolioValidations: "/admin/portfolio-validations",
   news: "/admin/news",
   disclosures: "/admin/disclosures",
   portfolio: "/admin/portfolio",
@@ -92,6 +98,10 @@ export const userRoutes = {
   ordersPaper: "/user/orders/paper",
 
   ai: "/user/ai",
+  /** STEP12-1: AI Candidate -> Strategy Request 승인 게이트(내 요청) */
+  strategyRequests: "/user/strategy-requests",
+  /** STEP12-2-1: 내 Strategy Request 위의 Strategy Draft 조회(읽기 전용) */
+  strategyDrafts: "/user/strategy-drafts",
 
   /** 시장 정보 — STEP4-6: /user/market → /user/markets/{stocks|crypto}로 개편 */
   marketsStocks: "/user/markets/stocks",
@@ -166,6 +176,9 @@ const adminTitles: Record<string, string> = {
   [adminRoutes.aiCandidateRecommendationQueues]: "후보 추천 검토 큐",
   [adminRoutes.aiCandidatePromotions]: "Candidate Promotion Gateway",
   [adminRoutes.aiCandidateLifecycle]: "Candidate Lifecycle",
+  [adminRoutes.strategyRequests]: "Strategy Request 심사",
+  [adminRoutes.strategyDrafts]: "Strategy Draft 관리",
+  [adminRoutes.portfolioValidations]: "Portfolio Validation",
   [adminRoutes.news]: "뉴스관리",
   [adminRoutes.disclosures]: "공시관리",
   [adminRoutes.portfolio]: "잔고·손익",
@@ -214,6 +227,8 @@ const userTitles: Record<string, string> = {
   [userRoutes.ordersUpbit]: "업비트 주문·체결",
   [userRoutes.ordersPaper]: "Paper 주문·체결",
   [userRoutes.ai]: "AI 추천 · LLM 분석",
+  [userRoutes.strategyRequests]: "전략 요청",
+  [userRoutes.strategyDrafts]: "전략 초안",
   [userRoutes.marketsStocks]: "주식 시장정보",
   [userRoutes.marketsCrypto]: "암호화폐 시장정보",
   [userRoutes.candidatesStocks]: "주식 매매 후보",

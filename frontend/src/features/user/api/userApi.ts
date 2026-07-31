@@ -1859,6 +1859,127 @@ export async function getRecentDisclosureAiSummaries(
   };
 }
 
+/** STEP 12-1 — AI Candidate -> Strategy Request 승인 게이트 */
+export interface StrategyRequestItem {
+  strategy_request_id: number;
+  candidate_id: number;
+  user_id: number;
+  reviewer_user_id: number | null;
+  status: string;
+  candidate_lifecycle_status_snapshot: string;
+  request_note: string | null;
+  review_note: string | null;
+  version: number;
+  requested_at: string;
+  reviewed_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyRequestListResponse {
+  items: StrategyRequestItem[];
+  total: number;
+}
+
+/** 후보(Candidate)의 참조·검증·만료·철회 상태 — 매매 승인을 의미하지 않음 */
+export async function getUserAiCandidateLifecycle(
+  candidateId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/ai-candidates/${candidateId}/lifecycle`,
+  );
+  return data;
+}
+
+export async function createStrategyRequest(body: {
+  candidate_id: number;
+  request_note?: string;
+  correlation_id?: string;
+}): Promise<StrategyRequestItem> {
+  const { data } = await apiClient.post("/user/strategy-requests", body);
+  return data as StrategyRequestItem;
+}
+
+export async function listStrategyRequests(params?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<StrategyRequestListResponse> {
+  const { data } = await apiClient.get("/user/strategy-requests", { params });
+  return data as StrategyRequestListResponse;
+}
+
+export async function getStrategyRequest(
+  strategyRequestId: number,
+): Promise<StrategyRequestItem> {
+  const { data } = await apiClient.get(
+    `/user/strategy-requests/${strategyRequestId}`,
+  );
+  return data as StrategyRequestItem;
+}
+
+export async function cancelStrategyRequest(
+  strategyRequestId: number,
+  body?: { reason?: string; correlation_id?: string },
+): Promise<StrategyRequestItem> {
+  const { data } = await apiClient.post(
+    `/user/strategy-requests/${strategyRequestId}/cancel`,
+    body ?? {},
+  );
+  return data as StrategyRequestItem;
+}
+
+/** STEP 12-2-1 — 내 Strategy Request 위의 Strategy Draft 조회(읽기 전용) */
+export interface StrategyDraftItem {
+  draft_id: number;
+  strategy_request_id: number;
+  version: number;
+  revision: number;
+  label: string;
+  status: string;
+  title: string;
+  summary: string | null;
+  entry_rule: string | null;
+  exit_rule: string | null;
+  stop_loss_rule: string | null;
+  take_profit_rule: string | null;
+  position_sizing_rule: string | null;
+  timeframe: string;
+  market_type: string;
+  risk_parameters: Record<string, unknown> | null;
+  indicator_configuration: Record<string, unknown> | null;
+  llm_provider: string | null;
+  llm_model: string | null;
+  prompt_version: string | null;
+  candidate_fingerprint: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StrategyDraftListResponse {
+  items: StrategyDraftItem[];
+  total: number;
+}
+
+export async function listStrategyDrafts(params?: {
+  strategy_request_id?: number;
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<StrategyDraftListResponse> {
+  const { data } = await apiClient.get("/user/strategy-drafts", { params });
+  return data as StrategyDraftListResponse;
+}
+
+export async function getStrategyDraft(
+  draftId: number,
+): Promise<StrategyDraftItem> {
+  const { data } = await apiClient.get(`/user/strategy-drafts/${draftId}`);
+  return data as StrategyDraftItem;
+}
+
 /** STEP52 — 로그인 사용자 기본 Paper 계좌 */
 export async function getMyPaperAccount(): Promise<JsonValue> {
   const { data } = await apiClient.get("/paper-accounts/me");
