@@ -83,22 +83,51 @@ class RealtimeTradingSessionService:
             )
 
         if phase == TradingSessionPhase.MARKET_OPEN:
-            # STEP 9-5 — Scheduler와 Runner 분리 계약
-            # Runner는 /realtime-strategy/start · /realtime-execution/start 로만 기동
+            # Feature Flag ON 일 때만 Runner 자동 기동 (기본 OFF)
+            from stock_platform.realtime.execution_auto_start import (
+                maybe_auto_start_runners,
+            )
+            from stock_platform.order.paper_unattended_runtime import (
+                paper_fill_recovery_scheduler,
+                paper_outbox_worker_runtime,
+            )
+            from stock_platform.realtime.paper_price_feed import (
+                paper_price_feed,
+            )
+
+            # 세션 오픈 시 Paper 무인 보조 경로 재확인 (idempotent)
+            worker_status = paper_outbox_worker_runtime.start()
+            recovery_status = paper_fill_recovery_scheduler.start()
+            feed_status = paper_price_feed.start()
+
+            auto = await maybe_auto_start_runners(
+                source="MARKET_OPEN",
+                allow_live=False,  # 세션 스케줄러는 Paper만
+            )
             execution_status = realtime_execution_runner.status()
             strategy_status = realtime_strategy_runner.status()
             return TradingSessionResult(
                 phase=phase,
                 executed=True,
                 message=(
-                    "Market open marked; runners require explicit start "
-                    f"(execution_running={execution_status.get('running')}, "
-                    f"strategy_running={strategy_status.get('running')})"
+                    "Market open; auto_start="
+                    f"{auto.get('started_execution')} "
+                    f"reason={auto.get('skipped_reason')}; "
+                    f"worker={worker_status.get('started')}; "
+                    f"recovery={recovery_status.get('started')}; "
+                    f"feed={feed_status.get('started')}; "
+                    f"execution_running={execution_status.get('running')}, "
+                    f"strategy_running={strategy_status.get('running')}"
                 ),
                 executed_at=datetime.now(timezone.utc),
             )
 
         if phase == TradingSessionPhase.MARKET_CLOSE:
+            from stock_platform.realtime.paper_price_feed import (
+                paper_price_feed,
+            )
+
+            await paper_price_feed.shutdown()
             await realtime_execution_runner.stop()
             await realtime_strategy_runner.stop()
 
@@ -106,8 +135,8 @@ class RealtimeTradingSessionService:
                 phase=phase,
                 executed=True,
                 message=(
-                    "Realtime execution and strategy "
-                    "runners stopped"
+                    "Realtime execution, strategy runners, "
+                    "and paper price feed stopped"
                 ),
                 executed_at=datetime.now(timezone.utc),
             )

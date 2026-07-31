@@ -66,6 +66,23 @@ def get_recovery_status(
     return broker_recovery_manager.status()
 
 
+@router.post("/paper-fill/stalled")
+def recover_stalled_paper_fills(
+    limit: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """ACCEPTED Paper TradingOrder auto-fill 재시도."""
+
+    from stock_platform.order.paper_fill_recovery import (
+        recover_stalled_paper_accepted_orders,
+    )
+
+    return recover_stalled_paper_accepted_orders(
+        session, limit=limit
+    )
+
+
 @router.get("/runs")
 def list_recovery_runs(
     broker_code: str | None = None,

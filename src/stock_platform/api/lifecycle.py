@@ -416,11 +416,44 @@ class ApplicationLifecycle:
                 error=str(exc),
             )
 
+        # Feature Flag 기본 OFF — Paper Runner만 조건부 기동
+        try:
+            from stock_platform.realtime.execution_auto_start import (
+                maybe_auto_start_runners,
+            )
+
+            auto = await maybe_auto_start_runners(
+                source="LIFECYCLE_STARTUP",
+                allow_live=False,
+            )
+            logger.info("realtime_auto_start_startup", **auto)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "realtime_auto_start_startup_error",
+                error=str(exc),
+            )
+
     async def _start_schedulers(self) -> None:
         settings = get_settings()
 
-        # Outbox는 replica마다 기동해도 SKIP LOCKED로 안전
-        order_outbox_scheduler.start()
+        # Paper Outbox Worker — Feature Flag 기본 OFF (LIVE와 claim 분리)
+        from stock_platform.order.paper_unattended_runtime import (
+            paper_fill_recovery_scheduler,
+            paper_outbox_worker_runtime,
+        )
+
+        outbox_start = paper_outbox_worker_runtime.start()
+        logger.info("paper_outbox_worker_startup", **outbox_start)
+        recovery_start = paper_fill_recovery_scheduler.start()
+        logger.info("paper_fill_recovery_startup", **recovery_start)
+
+        # 레거시 무필터 Outbox는 Paper worker Flag ON일 때만 보조 기동하지 않음
+        # (중복 claim 방지 — paper_only worker 단일 경로)
+        if not bool(getattr(settings, "paper_outbox_worker_enabled", False)):
+            logger.info(
+                "legacy_order_outbox_scheduler_skipped",
+                reason="PAPER_OUTBOX_WORKER_DISABLED",
+            )
         # STEP 8-5-14 — DB Claim 기반이라 Leader Lock과 무관하게 항상 기동
         upbit_ambiguous_order_resolution_scheduler.start()
         # STEP 8-5-15 — 영속 Market Session Job Dispatcher/Reconcile 역시
@@ -533,7 +566,19 @@ class ApplicationLifecycle:
             )
 
     async def _shutdown_schedulers(self) -> None:
-        await order_outbox_scheduler.shutdown()
+        from stock_platform.order.paper_unattended_runtime import (
+            paper_fill_recovery_scheduler,
+            paper_outbox_worker_runtime,
+        )
+        from stock_platform.realtime.paper_price_feed import paper_price_feed
+
+        await paper_outbox_worker_runtime.shutdown()
+        await paper_fill_recovery_scheduler.shutdown()
+        await paper_price_feed.shutdown()
+        try:
+            await order_outbox_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
         await upbit_ambiguous_order_resolution_scheduler.shutdown()
         await market_session_job_scheduler.shutdown()
         await upbit_daily_settlement_scheduler.shutdown()

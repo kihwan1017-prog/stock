@@ -221,6 +221,38 @@ class OrderExecutionService:
                     "GLOBAL_KILL_SWITCH_ACTIVE"
                 )
 
+            # Account Pause(Recovery Lock) — Paper/UBA 신규·일반 주문 차단
+            try:
+                from stock_platform.broker.recovery_lock import (
+                    RecoveryAccountLockService,
+                )
+
+                lock = RecoveryAccountLockService(self._session)
+                paused = False
+                if environment != "LIVE":
+                    paused = (
+                        lock.is_trading_paused(
+                            paper_account_id=int(command.account_id),
+                            broker_code=str(command.broker_code),
+                        )
+                        is True
+                    )
+                elif command.user_broker_account_id is not None:
+                    paused = (
+                        lock.is_trading_paused(
+                            user_broker_account_id=int(
+                                command.user_broker_account_id
+                            ),
+                            broker_code=str(command.broker_code),
+                        )
+                        is True
+                    )
+                if paused:
+                    return self._blocked("ACCOUNT_PAUSED")
+            except Exception:  # noqa: BLE001
+                if command.side.value.upper() != "SELL":
+                    return self._blocked("ACCOUNT_PAUSE_CHECK_FAILED")
+
             # STEP 8-5-2 — LIVE UBA는 Risk 전에 Vault Credential 검사
             if (
                 environment == "LIVE"

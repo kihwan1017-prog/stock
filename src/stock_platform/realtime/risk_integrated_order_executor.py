@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from stock_platform.common.settings import get_settings
@@ -13,6 +14,7 @@ from stock_platform.order.execution_service import (
 from stock_platform.order.models import OrderSide, OrderType
 from stock_platform.realtime.execution_models import (
     RealtimeExecutionConfig,
+    RealtimeExecutionMode,
     RealtimeExecutionResult,
 )
 from stock_platform.realtime.order_executor import (
@@ -31,6 +33,34 @@ from stock_platform.risk_engine.kill_switch_guard import (
 from stock_platform.risk_engine.order_guard import (
     DatabaseBackedRiskOrderGuard,
 )
+
+
+def resolve_signal_broker_code(signal: RealtimeSignal) -> str:
+    """Scope/신호의 broker_code 우선, 없으면 거래소 휴리스틱."""
+
+    raw = getattr(signal, "broker_code", None)
+    if raw:
+        return str(raw).strip().upper()
+
+    exchange = str(signal.exchange_code or "").strip().upper()
+    if exchange in {"UPBIT", "CRYPTO", "BINANCE"}:
+        return "UPBIT"
+    return "KIWOOM"
+
+
+def resolve_execution_environment(
+    config: RealtimeExecutionConfig,
+    signal: RealtimeSignal,
+) -> str:
+    """실행 모드·계좌 종류로 PAPER/LIVE 결정 (기본 PAPER, Fail Closed)."""
+
+    if config.mode == RealtimeExecutionMode.LIVE:
+        return "LIVE"
+    account_kind = str(getattr(signal, "account_kind", "") or "").upper()
+    if account_kind == "USER_BROKER":
+        # Scope가 실계좌인데 mode가 PAPER면 LIVE enqueue 금지 — PAPER 유지
+        return "PAPER"
+    return "PAPER"
 
 
 class RiskIntegratedRealtimeOrderExecutor:
@@ -54,15 +84,74 @@ class RiskIntegratedRealtimeOrderExecutor:
         self,
         signal: RealtimeSignal,
     ) -> RealtimeExecutionResult:
-        account_number = (
-            get_settings().kiwoom_account_number.strip()
+        broker_code = resolve_signal_broker_code(signal)
+        environment = resolve_execution_environment(
+            self._execution_config, signal
         )
 
-        if not account_number:
+        # STEP 8-5-9 — Signal Scope 계좌 우선 (환경변수 기본 계좌 우회 금지)
+        exec_account_id = self._execution_config.account_id
+        user_broker_account_id = getattr(
+            self._execution_config, "user_broker_account_id", None
+        )
+        account_kind = str(
+            getattr(signal, "account_kind", "") or ""
+        ).upper()
+
+        if getattr(signal, "scope_key", None):
+            if not getattr(signal, "account_id", None):
+                return self._skipped(signal, "SCOPE_ACCOUNT_REQUIRED")
+            if account_kind == "PAPER":
+                exec_account_id = int(signal.account_id)
+                user_broker_account_id = None
+            elif account_kind == "USER_BROKER":
+                user_broker_account_id = int(signal.account_id)
+                # LIVE UBA 주문도 trading_order.account_id(Paper FK)는
+                # 설정 기본 Paper 계좌를 유지한다.
+                exec_account_id = self._execution_config.account_id
+
+        account_number = self._resolve_account_number(
+            broker_code=broker_code,
+            environment=environment,
+            user_broker_account_id=user_broker_account_id,
+            paper_account_id=exec_account_id,
+        )
+        if environment == "LIVE" and not account_number:
             return self._skipped(
                 signal,
                 "RISK_ACCOUNT_NUMBER_MISSING",
             )
+
+        # Account Pause(Recovery Lock) — Signal 경로에서도 차단
+        try:
+            from stock_platform.broker.recovery_lock import (
+                RecoveryAccountLockService,
+            )
+
+            lock = RecoveryAccountLockService(self._session)
+            paused = False
+            if environment != "LIVE":
+                paused = (
+                    lock.is_trading_paused(
+                        paper_account_id=int(exec_account_id),
+                        broker_code=broker_code,
+                    )
+                    is True
+                )
+            elif user_broker_account_id is not None:
+                paused = (
+                    lock.is_trading_paused(
+                        user_broker_account_id=int(user_broker_account_id),
+                        broker_code=broker_code,
+                    )
+                    is True
+                )
+            if paused:
+                return self._skipped(signal, "ACCOUNT_PAUSED")
+        except Exception:  # noqa: BLE001
+            # Pause 조회 실패 시 BUY는 fail-closed, SELL은 위험축소로 통과
+            if str(signal.action.value).upper() != "SELL":
+                return self._skipped(signal, "ACCOUNT_PAUSE_CHECK_FAILED")
 
         try:
             PersistentKillSwitchGuard(
@@ -71,6 +160,12 @@ class RiskIntegratedRealtimeOrderExecutor:
                 side=signal.action.value,
                 allow_sell=True,
                 exchange_code=signal.exchange_code,
+                user_broker_account_id=user_broker_account_id,
+                paper_account_id=(
+                    int(exec_account_id)
+                    if environment != "LIVE"
+                    else None
+                ),
             )
         except KillSwitchUnavailableError:
             return self._skipped(
@@ -88,23 +183,36 @@ class RiskIntegratedRealtimeOrderExecutor:
             / signal.signal_price
         ).quantize(Decimal("0.00000001"))
 
-        # STEP 8-5-9 — Signal Scope 계좌 우선 (환경변수 기본 계좌 우회 금지)
-        exec_account_id = self._execution_config.account_id
+        # Paper 매도: 보유 수량 초과 주문 방지 (청산/익절 경로)
         if (
-            getattr(signal, "scope_key", None)
+            signal.action.value.upper() == "SELL"
+            and str(getattr(signal, "account_kind", "") or "").upper()
+            == "PAPER"
             and getattr(signal, "account_id", None)
-            and signal.account_kind == "PAPER"
         ):
-            exec_account_id = int(signal.account_id)
-        elif getattr(signal, "scope_key", None) and not getattr(
-            signal, "account_id", None
-        ):
-            return self._skipped(signal, "SCOPE_ACCOUNT_REQUIRED")
+            from stock_platform.trading.account_models import (
+                PaperPosition,
+            )
+
+            held = self._session.scalar(
+                select(PaperPosition.quantity).where(
+                    PaperPosition.account_id == int(signal.account_id),
+                    PaperPosition.symbol == str(signal.symbol).upper(),
+                    PaperPosition.quantity > 0,
+                )
+            )
+            if held is not None:
+                held_qty = Decimal(str(held))
+                if held_qty <= 0:
+                    return self._skipped(signal, "NO_POSITION_TO_SELL")
+                if quantity > held_qty:
+                    quantity = held_qty
 
         risk_result = DatabaseBackedRiskOrderGuard(
-            self._session
+            self._session,
+            broker_code=broker_code,
         ).check(
-            account_number=account_number,
+            account_number=account_number or f"PAPER-{exec_account_id}",
             account_id=exec_account_id,
             exchange_code=signal.exchange_code,
             symbol=signal.symbol,
@@ -115,21 +223,12 @@ class RiskIntegratedRealtimeOrderExecutor:
                 getattr(signal, "user_id", None)
                 or getattr(self._execution_config, "user_id", None)
             ),
-            user_broker_account_id=(
-                int(signal.account_id)
-                if getattr(signal, "account_kind", None)
-                == "USER_BROKER"
-                and getattr(signal, "account_id", None)
-                else getattr(
-                    self._execution_config,
-                    "user_broker_account_id",
-                    None,
-                )
-            ),
+            user_broker_account_id=user_broker_account_id,
             order_source="AUTO",
             is_risk_reducing=(
                 signal.action.value.upper() == "SELL"
             ),
+            environment=environment,
         )
 
         if not risk_result.allowed:
@@ -142,7 +241,6 @@ class RiskIntegratedRealtimeOrderExecutor:
         from stock_platform.trading.account_models import (
             PaperPosition,
         )
-        from sqlalchemy import func, select
 
         open_position_count = self._session.scalar(
             select(func.count())
@@ -169,16 +267,16 @@ class RiskIntegratedRealtimeOrderExecutor:
         result = OrderExecutionService(self._session).submit(
             OrderExecutionCommand(
                 account_id=exec_account_id,
-                broker_code="KIWOOM",
+                broker_code=broker_code,
                 exchange_code=signal.exchange_code,
                 symbol=signal.symbol,
                 side=OrderSide(signal.action.value),
                 order_type=OrderType.LIMIT,
-                quantity=None,
-                order_amount=self._execution_config.order_amount,
+                quantity=quantity,
+                order_amount=None,
                 price=signal.signal_price,
                 strategy_code=signal.reason_code,
-                account_number=account_number,
+                account_number=account_number or None,
                 skip_risk_checks=True,  # 이미 상단에서 검증
                 metadata_payload={
                     "source": "REALTIME_SIGNAL",
@@ -186,20 +284,19 @@ class RiskIntegratedRealtimeOrderExecutor:
                     "execution_mode": (
                         self._execution_config.mode.value
                     ),
+                    "environment": environment,
+                    "resolved_broker_code": broker_code,
                 },
                 actor="REALTIME_EXECUTION",
                 order_source="AUTO",
+                environment=environment,
                 is_risk_reducing=(
                     signal.action.value.upper() == "SELL"
                 ),
                 user_id=getattr(
                     self._execution_config, "user_id", None
-                ),
-                user_broker_account_id=getattr(
-                    self._execution_config,
-                    "user_broker_account_id",
-                    None,
-                ),
+                ) or getattr(signal, "user_id", None),
+                user_broker_account_id=user_broker_account_id,
                 idempotency_key=(
                     f"RT:{signal.exchange_code}:"
                     f"{signal.symbol}:"
@@ -230,6 +327,44 @@ class RiskIntegratedRealtimeOrderExecutor:
             reason_code=result.reason_code,
             executed_at=datetime.now(timezone.utc),
         )
+
+    def _resolve_account_number(
+        self,
+        *,
+        broker_code: str,
+        environment: str,
+        user_broker_account_id: int | None,
+        paper_account_id: int,
+    ) -> str:
+        """LIVE는 UBA/설정, PAPER는 합성 식별자 (Kiwoom 전역 강제 금지)."""
+
+        if environment == "LIVE" and user_broker_account_id is not None:
+            from stock_platform.trading.account_models import (
+                UserBrokerAccount,
+            )
+
+            uba = self._session.get(
+                UserBrokerAccount, int(user_broker_account_id)
+            )
+            if uba is not None:
+                ref = (
+                    getattr(uba, "masked_account_ref", None)
+                    or getattr(uba, "account_alias", None)
+                    or ""
+                )
+                if ref:
+                    return str(ref)
+                return f"UBA:{int(user_broker_account_id)}"
+
+        if environment == "LIVE":
+            settings = get_settings()
+            if broker_code == "UPBIT":
+                return str(
+                    getattr(settings, "upbit_account_ref", "") or ""
+                ).strip()
+            return str(settings.kiwoom_account_number or "").strip()
+
+        return f"PAPER-{int(paper_account_id)}"
 
     def _skipped(
         self,

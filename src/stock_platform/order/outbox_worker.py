@@ -50,11 +50,19 @@ class OrderOutboxWorker:
         dispatcher: OrderOutboxDispatcher,
         worker_id: str,
         batch_size: int = 20,
+        paper_only: bool = False,
+        stale_processing_after: timedelta | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._dispatcher = dispatcher
         self._worker_id = worker_id
         self._batch_size = batch_size
+        self._paper_only = paper_only
+        self._stale_after = (
+            stale_processing_after
+            if stale_processing_after is not None
+            else self.STALE_PROCESSING_AFTER
+        )
 
     def run_once(self) -> OutboxRunSummary:
         claimed = 0
@@ -66,11 +74,12 @@ class OrderOutboxWorker:
         with self._session_factory() as session:
             repository = OrderOutboxRepository(session)
             repository.reclaim_stale_processing(
-                stale_after=self.STALE_PROCESSING_AFTER,
+                stale_after=self._stale_after,
             )
             rows = repository.claim_batch(
                 worker_id=self._worker_id,
                 batch_size=self._batch_size,
+                paper_only=self._paper_only,
             )
             claimed = len(rows)
             # claim 스냅샷 (fencing_token 포함)
@@ -471,6 +480,43 @@ class OrderOutboxWorker:
                     # 체결 동기화 실패가 submit 성공을 롤백하지 않음
                     # Reconcile/Tracker가 후속 처리
                     pass
+
+            # P0-5 — Paper Outbox ACCEPTED → Paper 원장 auto-fill (LIVE 혼입 금지)
+            if status == OrderStatus.ACCEPTED:
+                try:
+                    from stock_platform.common.settings import get_settings
+                    from stock_platform.order.paper_outbox_fill_service import (
+                        PaperOutboxFillService,
+                    )
+
+                    if bool(
+                        getattr(get_settings(), "paper_outbox_auto_fill", True)
+                    ):
+                        fill_result = PaperOutboxFillService(
+                            session
+                        ).fill_accepted_order(
+                            int(order.order_id),
+                            actor="OUTBOX_PAPER_AUTO_FILL",
+                        )
+                        # 실패를 숨기지 않음 — metadata에 기록 (Outbox DONE은 유지)
+                        if fill_result.skipped and fill_result.reason_code not in {
+                            "ALREADY_TERMINAL",
+                            "LIVE_ENVIRONMENT_BLOCKED",
+                            "USER_BROKER_ACCOUNT_BLOCKED",
+                            "NOT_ACCEPTED",
+                        }:
+                            meta = dict(order.metadata_payload or {})
+                            meta["paper_auto_fill_last_error"] = (
+                                fill_result.reason_code
+                            )
+                            order.metadata_payload = meta
+                except Exception as exc:  # noqa: BLE001
+                    meta = dict(getattr(order, "metadata_payload", None) or {})
+                    meta["paper_auto_fill_last_error"] = type(exc).__name__
+                    try:
+                        order.metadata_payload = meta
+                    except Exception:  # noqa: BLE001
+                        pass
             return
 
         if event_type == OutboxEventType.CANCEL_ORDER.value:

@@ -52,16 +52,19 @@ class RealtimeExecutionRunner:
         )
 
     async def start(self) -> dict:
-        if self._task is not None:
+        if self._task is not None and not self._task.done():
             return {
                 "already_running": True,
                 **self.status(),
             }
+        self._task = None
 
         self._task = asyncio.create_task(
             self.run_forever(),
             name="realtime-execution-runner",
         )
+        # 태스크가 _running 플래그를 올릴 때까지 짧게 양보
+        await asyncio.sleep(0)
         return self.status()
 
     async def run_forever(self) -> None:
@@ -116,11 +119,12 @@ class RealtimeExecutionRunner:
 
         self._task.cancel()
         try:
-            await self._task
-        except asyncio.CancelledError:
+            await asyncio.wait_for(self._task, timeout=2.0)
+        except (asyncio.CancelledError, TimeoutError):
             pass
         finally:
             self._task = None
+            self._running = False
 
     def status(self) -> dict:
         return {

@@ -84,6 +84,58 @@ class RealtimeDashboardService:
             "execution": (
                 realtime_execution_runner.status()
             ),
+            "auto_start_flags": {
+                "master": bool(
+                    getattr(
+                        self._settings,
+                        "realtime_execution_auto_start_enabled",
+                        False,
+                    )
+                ),
+                "paper": bool(
+                    getattr(
+                        self._settings,
+                        "realtime_paper_auto_start_enabled",
+                        False,
+                    )
+                ),
+                "live": bool(
+                    getattr(
+                        self._settings,
+                        "realtime_live_auto_start_enabled",
+                        False,
+                    )
+                ),
+                "paper_outbox_auto_fill": bool(
+                    getattr(
+                        self._settings,
+                        "paper_outbox_auto_fill",
+                        False,
+                    )
+                ),
+                "paper_outbox_worker_enabled": bool(
+                    getattr(
+                        self._settings,
+                        "paper_outbox_worker_enabled",
+                        False,
+                    )
+                ),
+                "paper_fill_recovery_enabled": bool(
+                    getattr(
+                        self._settings,
+                        "paper_fill_recovery_enabled",
+                        False,
+                    )
+                ),
+                "paper_price_feed_enabled": bool(
+                    getattr(
+                        self._settings,
+                        "paper_price_feed_enabled",
+                        False,
+                    )
+                ),
+            },
+            "paper_unattended": self._paper_unattended_status(),
             "safety": {
                 "daily_realized_loss": str(
                     realtime_safety_guard
@@ -127,6 +179,56 @@ class RealtimeDashboardService:
                 limit=recent_limit
             ),
         )
+
+    def _paper_unattended_status(self) -> dict[str, Any]:
+        from stock_platform.order.paper_unattended_runtime import (
+            paper_fill_recovery_scheduler,
+            paper_outbox_worker_runtime,
+        )
+        from stock_platform.realtime.paper_price_feed import paper_price_feed
+
+        pending = 0
+        stalled = 0
+        try:
+            pending = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.order_outbox o
+                        WHERE o.status_code IN ('PENDING', 'RETRY')
+                          AND o.user_broker_account_id IS NULL
+                          AND COALESCE(
+                            o.payload_json->>'environment', 'PAPER'
+                          ) <> 'LIVE'
+                        """
+                    )
+                ).scalar_one()
+            )
+            stalled = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.trading_order t
+                        WHERE t.status_code = 'ACCEPTED'
+                          AND t.user_broker_account_id IS NULL
+                          AND COALESCE(
+                            t.metadata_payload->>'environment', 'PAPER'
+                          ) <> 'LIVE'
+                        """
+                    )
+                ).scalar_one()
+            )
+        except Exception:  # noqa: BLE001
+            self._session.rollback()
+
+        return {
+            "runner": realtime_execution_runner.status(),
+            "outbox_worker": paper_outbox_worker_runtime.status(),
+            "fill_recovery": paper_fill_recovery_scheduler.status(),
+            "price_feed": paper_price_feed.status(),
+            "pending_outbox_count": pending,
+            "stalled_accepted_count": stalled,
+        }
 
     def _database_status(self) -> dict[str, Any]:
         try:

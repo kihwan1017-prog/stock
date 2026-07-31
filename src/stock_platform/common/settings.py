@@ -167,6 +167,25 @@ class Settings(BaseSettings):
     realtime_strategy_symbol: str = Field(default="")
     # 실시간 Paper 실행 기본 계좌 (환경변수 REALTIME_PAPER_ACCOUNT_ID)
     realtime_paper_account_id: int = Field(default=1, ge=1)
+    # Paper Outbox ACCEPTED → 자동 Fill (기본 OFF — 명시 활성화)
+    paper_outbox_auto_fill: bool = False
+    # Paper Outbox Worker 상시 Polling (기본 OFF)
+    paper_outbox_worker_enabled: bool = False
+    paper_outbox_worker_interval_seconds: float = 1.0
+    paper_outbox_worker_batch_size: int = 20
+    paper_outbox_worker_backoff_seconds: float = 2.0
+    paper_outbox_worker_stale_seconds: float = 30.0
+    # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
+    paper_fill_recovery_enabled: bool = False
+    paper_fill_recovery_interval_seconds: float = 5.0
+    paper_fill_recovery_batch_size: int = 50
+    # Paper 결정적/Replay 가격 공급 (기본 OFF, LIVE WS 미사용)
+    paper_price_feed_enabled: bool = False
+    paper_price_feed_interval_seconds: float = 1.0
+    # Runtime/Runner 자동 기동 Feature Flag (기본 OFF — Fail Closed)
+    realtime_execution_auto_start_enabled: bool = False
+    realtime_paper_auto_start_enabled: bool = False
+    realtime_live_auto_start_enabled: bool = False
     # STEP 8-5-9 — Realtime Hub / Scope
     realtime_hub_enabled: bool = True
     realtime_auto_connect: bool = True

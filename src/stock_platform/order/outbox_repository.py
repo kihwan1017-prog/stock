@@ -178,25 +178,53 @@ class OrderOutboxRepository:
         batch_size: int = 20,
         now: datetime | None = None,
         lease_ttl: timedelta | None = None,
+        paper_only: bool = False,
     ) -> list[OrderOutbox]:
         current = now or datetime.now(timezone.utc)
         ttl = lease_ttl or default_lease_ttl()
 
+        conditions = [
+            OrderOutbox.status_code.in_(
+                [
+                    OutboxStatus.PENDING.value,
+                    OutboxStatus.RETRY.value,
+                ]
+            ),
+            or_(
+                OrderOutbox.next_retry_at.is_(None),
+                OrderOutbox.next_retry_at <= current,
+            ),
+        ]
+        if paper_only:
+            # LIVE/UBA Outbox와 분리 — Paper만 claim (굶주림 방지)
+            env_expr = OrderOutbox.payload_json["environment"].astext
+            conditions.extend(
+                [
+                    OrderOutbox.user_broker_account_id.is_(None),
+                    or_(
+                        env_expr.is_(None),
+                        env_expr == "",
+                        env_expr == "PAPER",
+                    ),
+                    or_(
+                        OrderOutbox.broker_code.is_(None),
+                        OrderOutbox.broker_code.in_(
+                            ("PAPER", "KIWOOM", "UPBIT")
+                        ),
+                    ),
+                ]
+            )
+
+        order_clause = (
+            OrderOutbox.outbox_id.desc()
+            if paper_only
+            else OrderOutbox.outbox_id.asc()
+        )
         stmt = (
             select(OrderOutbox)
-            .where(
-                OrderOutbox.status_code.in_(
-                    [
-                        OutboxStatus.PENDING.value,
-                        OutboxStatus.RETRY.value,
-                    ]
-                ),
-                or_(
-                    OrderOutbox.next_retry_at.is_(None),
-                    OrderOutbox.next_retry_at <= current,
-                ),
-            )
-            .order_by(OrderOutbox.outbox_id)
+            .where(*conditions)
+            # Paper worker: 최신 건 우선으로 공유 DB 적체 시 굶주림 완화
+            .order_by(order_clause)
             .limit(batch_size)
             .with_for_update(skip_locked=True)
         )
@@ -214,6 +242,7 @@ class OrderOutboxRepository:
                     "outbox_id": row.outbox_id,
                     "fencing_token": row.fencing_token,
                     "worker_id": worker_id,
+                    "paper_only": paper_only,
                 },
                 actor=worker_id,
             )

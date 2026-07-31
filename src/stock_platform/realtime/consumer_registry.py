@@ -16,6 +16,7 @@ from stock_platform.realtime.strategy_models import (
 )
 from stock_platform.realtime.strategy_signal import StrategySignal
 from stock_platform.strategy_deployment.runtime_scope import (
+    AccountKind,
     RuntimeLifecycleStatus,
     StrategyRuntimeScope,
 )
@@ -23,6 +24,50 @@ from stock_platform.strategy_deployment.runtime_scope import (
 
 class ScopeRequiredError(ValueError):
     """Scope 없는 Consumer 등록 차단."""
+
+
+def _resolve_paper_position(
+    consumer: "ScopedRealtimeConsumer",
+    symbol: str,
+) -> RealtimePositionState | None:
+    """Paper 계좌 보유 수량을 Evaluator에 전달 (손절·익절·청산용)."""
+
+    if consumer.scope.account_kind != AccountKind.PAPER:
+        return None
+    try:
+        from decimal import Decimal
+
+        from sqlalchemy import select
+
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.trading.account_models import PaperPosition
+
+        session = get_session_factory()()
+        try:
+            row = session.scalar(
+                select(PaperPosition).where(
+                    PaperPosition.account_id == int(consumer.scope.account_id),
+                    PaperPosition.symbol == symbol.upper(),
+                    PaperPosition.quantity > 0,
+                )
+            )
+            if row is None:
+                return RealtimePositionState(
+                    quantity=Decimal("0"),
+                    average_entry_price=None,
+                )
+            return RealtimePositionState(
+                quantity=Decimal(str(row.quantity)),
+                average_entry_price=(
+                    Decimal(str(row.average_entry_price))
+                    if row.average_entry_price is not None
+                    else None
+                ),
+            )
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 @dataclass
@@ -285,9 +330,11 @@ class ScopeConsumerRegistry:
                 consumer.event_count += 1
                 consumer.last_event_at = now
                 before_fp = None
+                position = _resolve_paper_position(consumer, event.symbol)
                 # evaluate
                 signal = consumer.evaluator.evaluate(
                     event,
+                    position=position,
                     allow_signal=consumer.signals_allowed,
                 )
                 if signal is None:

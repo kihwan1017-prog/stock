@@ -160,7 +160,7 @@ class RecoveryAccountLockService:
                 == broker_code.upper()
             )
         row = self._session.scalar(stmt.limit(1))
-        if row is None:
+        if row is None or not hasattr(row, "trading_paused"):
             return False
         # TTL 만료 RUNNING 은 pause 유지하되 orphan lock 정리 가능
         if (
@@ -174,7 +174,7 @@ class RecoveryAccountLockService:
             # 실패로 pause 유지
             self._session.flush()
             return True
-        return bool(row.trading_paused)
+        return row.trading_paused is True
 
     def list_states(
         self,
