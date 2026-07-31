@@ -295,22 +295,21 @@ export function RecoverySchedulerPanel() {
         onCancel={() => setEditJob(null)}
         onOk={() => editForm.submit()}
         confirmLoading={updateMutation.isPending}
-        destroyOnHidden
-        afterOpenChange={(open) => {
-          if (!open || !editJob) return;
-          editForm.setFieldsValue({
-            cron_expression: editJob.cron_expression ?? undefined,
-            interval_minutes: editJob.interval_minutes ?? undefined,
-            timeout_seconds: editJob.timeout_seconds,
-            max_retries: editJob.max_retries,
-            concurrency: editJob.concurrency,
-          });
-        }}
+        forceRender
       >
-        <Form
-          form={editForm}
-          layout="vertical"
-          onFinish={(values) => {
+        {editJob ? (
+          <Form
+            key={editJob.job_id}
+            form={editForm}
+            layout="vertical"
+            initialValues={{
+              cron_expression: editJob.cron_expression ?? undefined,
+              interval_minutes: editJob.interval_minutes ?? undefined,
+              timeout_seconds: editJob.timeout_seconds,
+              max_retries: editJob.max_retries,
+              concurrency: editJob.concurrency,
+            }}
+            onFinish={(values) => {
             if (!editJob) return;
             if (
               editJob.trigger_type === "INTERVAL" &&
@@ -360,6 +359,7 @@ export function RecoverySchedulerPanel() {
             <InputNumber min={1} max={10} style={{ width: "100%" }} />
           </Form.Item>
         </Form>
+        ) : null}
       </Modal>
     </Card>
   );

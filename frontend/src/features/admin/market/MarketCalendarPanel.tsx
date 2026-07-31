@@ -256,6 +256,35 @@ export function MarketCalendarPanel() {
 
   const rows = extractRows(listQuery.data);
   const requestRows = extractRows(requestsQuery.data);
+
+  const editCalendarRow = useMemo(() => {
+    if (!editDate) return null;
+    return asRecord(
+      rows.find(
+        (row) => String(asRecord(row)?.calendar_date ?? "") === editDate,
+      ),
+    );
+  }, [editDate, rows]);
+
+  const calendarFormInitial = useMemo(() => {
+    if (!editCalendarRow) return undefined;
+    const r = editCalendarRow;
+    return {
+      is_trading_day: Boolean(r.is_trading_day),
+      session_type: r.session_type ?? "REGULAR",
+      holiday_name: r.holiday_name,
+      reason: "",
+      emergency: false,
+      source_reference: "",
+      regular_open_at: r.regular_open_at
+        ? dayjs(String(r.regular_open_at), "HH:mm:ss")
+        : null,
+      regular_close_at: r.regular_close_at
+        ? dayjs(String(r.regular_close_at), "HH:mm:ss")
+        : null,
+    };
+  }, [editCalendarRow]);
+
   const coverage = asRecord(asRecord(coverageQuery.data)?.coverage);
   const changeHealth = asRecord(changeHealthQuery.data);
   const busy =
@@ -607,35 +636,15 @@ export function MarketCalendarPanel() {
           confirmLoading={updateMut.isPending}
           onOk={() => form.submit()}
           okText="요청 생성·적용"
-          destroyOnHidden
-          afterOpenChange={(open) => {
-            if (!open || !editDate) return;
-            const r = asRecord(
-              rows.find(
-                (row) => String(asRecord(row)?.calendar_date ?? "") === editDate,
-              ),
-            );
-            if (!r) return;
-            form.setFieldsValue({
-              is_trading_day: Boolean(r.is_trading_day),
-              session_type: r.session_type ?? "REGULAR",
-              holiday_name: r.holiday_name,
-              reason: "",
-              emergency: false,
-              source_reference: "",
-              regular_open_at: r.regular_open_at
-                ? dayjs(String(r.regular_open_at), "HH:mm:ss")
-                : null,
-              regular_close_at: r.regular_close_at
-                ? dayjs(String(r.regular_close_at), "HH:mm:ss")
-                : null,
-            });
-          }}
+          forceRender
         >
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={(values) => {
+          {editOpen && editDate ? (
+            <Form
+              key={editDate}
+              form={form}
+              layout="vertical"
+              initialValues={calendarFormInitial}
+              onFinish={(values) => {
               const run = () => updateMut.mutate(values);
               if (values.emergency) {
                 Modal.confirm({
@@ -700,6 +709,7 @@ export function MarketCalendarPanel() {
               </Typography.Text>
             ) : null}
           </Form>
+          ) : null}
         </Modal>
       </Card>
 

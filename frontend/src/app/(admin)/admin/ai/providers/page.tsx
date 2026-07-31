@@ -17,9 +17,9 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
@@ -28,11 +28,11 @@ import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
 export default function AdminAiProvidersPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [reason, setReason] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [editForm] = Form.useForm();
 
   const listQuery = useQuery({
     queryKey: queryKeys.admin.aiProviderConfigurations(),
@@ -41,22 +41,6 @@ export default function AdminAiProvidersPage() {
 
   const items = extractRows(asRecord(listQuery.data)?.items);
   const selected = items.find((r) => Number(r.id) === selectedId) ?? null;
-
-  // Form은 selected 있을 때만 마운트 → 연결 후 값 주입 (미연결 setFieldsValue 경고 방지)
-  useEffect(() => {
-    if (!selected) return;
-    editForm.setFieldsValue({
-      display_name: selected.display_name,
-      model: selected.model,
-      // endpoint는 masked만 오므로 빈 값 = 기존 유지
-      endpoint: "",
-      priority: selected.priority,
-      timeout_sec: selected.timeout_sec,
-      retry_max: selected.retry_max,
-      max_tokens: selected.max_tokens,
-      temperature: selected.temperature,
-    });
-  }, [selected, editForm]);
 
   const invalidate = () =>
     queryClient.invalidateQueries({
@@ -226,8 +210,19 @@ export default function AdminAiProvidersPage() {
           >
             <Space orientation="vertical" style={{ width: "100%" }} size={12}>
               <Form
-                form={editForm}
+                key={`provider-edit-${selectedId}-${String(selected.config_version ?? "")}`}
                 layout="vertical"
+                initialValues={{
+                  display_name: selected.display_name,
+                  model: selected.model,
+                  // endpoint는 masked만 오므로 빈 값 = 기존 유지
+                  endpoint: "",
+                  priority: selected.priority,
+                  timeout_sec: selected.timeout_sec,
+                  retry_max: selected.retry_max,
+                  max_tokens: selected.max_tokens,
+                  temperature: selected.temperature,
+                }}
                 onFinish={(values) => {
                   if (!requireReason()) return;
                   const body: Record<string, unknown> = {

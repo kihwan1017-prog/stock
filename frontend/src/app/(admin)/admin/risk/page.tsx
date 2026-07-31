@@ -10,7 +10,7 @@ import {
   Space,
   Switch,
 } from "antd";
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -69,38 +69,39 @@ export default function AdminRiskPage() {
     enabled: targetUserId > 0,
   });
 
-  useEffect(() => {
-    const resolved = asRecord(asRecord(systemRisk.data)?.resolved);
-    if (!resolved) return;
-    systemForm.setFieldsValue({
-      max_order_amount: Number(resolved.max_order_amount ?? 0),
-      daily_max_order_amount: Number(resolved.daily_max_order_amount ?? 0),
-      max_total_investment_amount: Number(
-        resolved.max_total_investment_amount ?? 0,
-      ),
-      max_position_count: Number(resolved.max_position_count ?? 0),
-      stop_loss_rate_pct: rateToPercent(resolved.stop_loss_rate),
-      take_profit_rate_pct: rateToPercent(resolved.take_profit_rate),
-      trailing_stop_rate_pct: rateToPercent(resolved.trailing_stop_rate),
-      auto_trading_enabled: Boolean(resolved.auto_trading_enabled),
-      buy_enabled: Boolean(resolved.buy_enabled),
-      sell_only: Boolean(resolved.sell_only),
-    });
-  }, [systemRisk.data, systemForm]);
+  const systemResolved = asRecord(asRecord(systemRisk.data)?.resolved);
+  const userResolved = asRecord(asRecord(userRisk.data)?.resolved);
 
-  useEffect(() => {
-    const resolved = asRecord(asRecord(userRisk.data)?.resolved);
-    if (!resolved) return;
-    userForm.setFieldsValue({
-      max_order_amount: Number(resolved.max_order_amount ?? 0),
-      stop_loss_rate_pct: rateToPercent(resolved.stop_loss_rate),
-      take_profit_rate_pct: rateToPercent(resolved.take_profit_rate),
-      auto_trading_enabled: Boolean(resolved.auto_trading_enabled),
-      buy_enabled: Boolean(resolved.buy_enabled),
-      sell_only: Boolean(resolved.sell_only),
-      account_paused: Boolean(resolved.account_paused),
-    });
-  }, [userRisk.data, userForm]);
+  const systemInitialValues = useMemo(() => {
+    if (!systemResolved) return undefined;
+    return {
+      max_order_amount: Number(systemResolved.max_order_amount ?? 0),
+      daily_max_order_amount: Number(systemResolved.daily_max_order_amount ?? 0),
+      max_total_investment_amount: Number(
+        systemResolved.max_total_investment_amount ?? 0,
+      ),
+      max_position_count: Number(systemResolved.max_position_count ?? 0),
+      stop_loss_rate_pct: rateToPercent(systemResolved.stop_loss_rate),
+      take_profit_rate_pct: rateToPercent(systemResolved.take_profit_rate),
+      trailing_stop_rate_pct: rateToPercent(systemResolved.trailing_stop_rate),
+      auto_trading_enabled: Boolean(systemResolved.auto_trading_enabled),
+      buy_enabled: Boolean(systemResolved.buy_enabled),
+      sell_only: Boolean(systemResolved.sell_only),
+    };
+  }, [systemResolved]);
+
+  const userInitialValues = useMemo(() => {
+    if (!userResolved) return undefined;
+    return {
+      max_order_amount: Number(userResolved.max_order_amount ?? 0),
+      stop_loss_rate_pct: rateToPercent(userResolved.stop_loss_rate),
+      take_profit_rate_pct: rateToPercent(userResolved.take_profit_rate),
+      auto_trading_enabled: Boolean(userResolved.auto_trading_enabled),
+      buy_enabled: Boolean(userResolved.buy_enabled),
+      sell_only: Boolean(userResolved.sell_only),
+      account_paused: Boolean(userResolved.account_paused),
+    };
+  }, [userResolved]);
 
   const activate = useMutation({
     mutationFn: () => adminApi.activateKillSwitch(),
@@ -260,8 +261,10 @@ export default function AdminRiskPage() {
 
         <Card title="시스템 기본 리스크 정책" size="small" loading={systemRisk.isLoading}>
           <Form
+            key={`system-risk-${systemRisk.dataUpdatedAt}`}
             form={systemForm}
             layout="vertical"
+            initialValues={systemInitialValues}
             onFinish={(values) => {
               saveSystem.mutate({
                 max_order_amount: values.max_order_amount,
@@ -359,8 +362,10 @@ export default function AdminRiskPage() {
             </Button>
           </Space>
           <Form
+            key={`user-risk-${targetUserId}-${userRisk.dataUpdatedAt}`}
             form={userForm}
             layout="vertical"
+            initialValues={userInitialValues}
             onFinish={(values) => {
               saveUser.mutate({
                 max_order_amount: values.max_order_amount,

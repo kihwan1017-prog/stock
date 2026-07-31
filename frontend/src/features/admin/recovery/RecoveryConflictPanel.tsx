@@ -109,7 +109,7 @@ export function RecoveryConflictPanel() {
       }),
     onSuccess: async () => {
       messageApi.success("내부 주문·체결 기록을 가져왔습니다.");
-      noteForm.resetFields();
+      // Drawer destroyOnHidden — 닫기 전 미연결 reset 호출 금지
       setDetailId(null);
       await invalidate();
     },
@@ -121,7 +121,6 @@ export function RecoveryConflictPanel() {
       adminApi.ignoreRecoveryConflict(id, { note }),
     onSuccess: async () => {
       messageApi.success("무시 처리했습니다. (계좌 Pause는 자동 해제되지 않음)");
-      noteForm.resetFields();
       setDetailId(null);
       await invalidate();
     },
@@ -135,7 +134,6 @@ export function RecoveryConflictPanel() {
       messageApi.success(
         "History Preserve 처리했습니다. (Import/Ignore 아님 · Pause 유지)",
       );
-      noteForm.resetFields();
       setDetailId(null);
       await invalidate();
     },
@@ -147,7 +145,7 @@ export function RecoveryConflictPanel() {
       adminApi.holdRecoveryConflict(id, { note }),
     onSuccess: async () => {
       messageApi.success("보류 처리했습니다.");
-      noteForm.resetFields();
+      noteForm.resetFields(); // Drawer 열린 상태 — Form 연결됨
       await invalidate();
     },
     onError: (e) => messageApi.error(toApiError(e).message),
@@ -311,6 +309,11 @@ export function RecoveryConflictPanel() {
         size={560}
         onClose={() => setDetailId(null)}
         destroyOnHidden
+        afterOpenChange={(open) => {
+          if (open) {
+            noteForm.resetFields();
+          }
+        }}
       >
         {detail ? (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>

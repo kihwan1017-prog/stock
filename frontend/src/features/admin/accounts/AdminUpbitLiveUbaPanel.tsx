@@ -352,23 +352,10 @@ export function AdminUpbitLiveUbaPanel() {
       <Modal
         title="UPBIT UBA 생성"
         open={createOpen}
-        onCancel={() => {
-          setCreateOpen(false);
-          createForm.resetFields();
-        }}
+        onCancel={() => setCreateOpen(false)}
         onOk={() => createForm.submit()}
         confirmLoading={createMutation.isPending}
         forceRender
-        afterOpenChange={(open) => {
-          if (open) {
-            createForm.setFieldsValue({
-              broker_code: "UPBIT",
-              account_number: "MAIN",
-              apply_recommended_risk: true,
-              is_default: true,
-            });
-          }
-        }}
       >
         <Form
           form={createForm}
@@ -423,25 +410,20 @@ export function AdminUpbitLiveUbaPanel() {
       <Modal
         title={`UBA 수정 #${editTarget ? String(editTarget.user_broker_account_id ?? editTarget.account_id) : ""}`}
         open={editTarget != null}
-        onCancel={() => {
-          setEditTarget(null);
-          editForm.resetFields();
-        }}
+        onCancel={() => setEditTarget(null)}
         onOk={() => editForm.submit()}
         confirmLoading={updateMutation.isPending}
         forceRender
-        afterOpenChange={(open) => {
-          if (open && editTarget) {
-            editForm.setFieldsValue({
-              account_alias: String(editTarget.account_name ?? ""),
-              is_active: Boolean(editTarget.is_active),
-            });
-          }
-        }}
       >
+        {editTarget ? (
         <Form
+          key={String(editTarget.user_broker_account_id ?? editTarget.account_id)}
           form={editForm}
           layout="vertical"
+          initialValues={{
+            account_alias: String(editTarget.account_name ?? ""),
+            is_active: Boolean(editTarget.is_active),
+          }}
           onFinish={(values) => {
             if (!editTarget) return;
             const ubaId = Number(
@@ -463,28 +445,18 @@ export function AdminUpbitLiveUbaPanel() {
             <Switch />
           </Form.Item>
         </Form>
+        ) : null}
       </Modal>
 
       <Modal
         title={`Credential ${credTarget ?? ""}`}
         open={credTarget != null}
-        onCancel={() => {
-          setCredTarget(null);
-          credForm.resetFields();
-        }}
+        onCancel={() => setCredTarget(null)}
         onOk={() => credForm.submit()}
         confirmLoading={
           registerCredMutation.isPending || replaceCredMutation.isPending
         }
         forceRender
-        afterOpenChange={(open) => {
-          if (open) {
-            credForm.resetFields();
-          } else {
-            // 닫힐 때 시크릿 잔존 방지 (destroyOnHidden 대신 명시 reset)
-            credForm.resetFields();
-          }
-        }}
       >
         <Alert
           type="warning"
@@ -493,6 +465,7 @@ export function AdminUpbitLiveUbaPanel() {
           title="Access/Secret Key는 전송 후 Form에서 즉시 비웁니다. 서버 응답에도 원문이 없습니다."
         />
         <Form
+          key={credTarget ?? "closed"}
           form={credForm}
           layout="vertical"
           onFinish={(values) => {
@@ -514,7 +487,6 @@ export function AdminUpbitLiveUbaPanel() {
             } else {
               registerCredMutation.mutate({ ubaId: credTarget, body });
             }
-            credForm.resetFields();
           }}
         >
           <Form.Item

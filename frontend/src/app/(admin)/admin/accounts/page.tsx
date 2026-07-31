@@ -12,7 +12,7 @@ import {
   Switch,
   Typography,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   buildPaperAccountDeleteConfirmContent,
@@ -166,17 +166,6 @@ export default function AdminAccountsPage() {
     if (updatePaper.isPending) return;
     setEditTargetId(null);
   };
-
-  // Modal 오픈 후 상세 로드 완료 시 Form에 값 주입 (Form은 항상 마운트)
-  useEffect(() => {
-    if (editTargetId == null || !editAccount) return;
-    editForm.setFieldsValue({
-      account_name: editAccount.account_name,
-      is_active: Boolean(editAccount.is_active),
-      is_default: Boolean(editAccount.is_default),
-      initial_cash: Number(editAccount.initial_cash),
-    });
-  }, [editTargetId, editAccount, editForm]);
 
   const submitEdit = async () => {
     if (!editAccount || editTargetId === null || updatePaper.isPending) {
@@ -388,7 +377,7 @@ export default function AdminAccountsPage() {
         confirmLoading={updatePaper.isPending}
         okButtonProps={{ disabled: updatePaper.isPending || editDetail.isLoading }}
         onOk={() => void submitEdit()}
-        destroyOnHidden
+        // destroyOnHidden 없이 forceRender — Form·useForm 항상 연결
         forceRender
       >
         {editDetail.isLoading ? (
@@ -409,6 +398,16 @@ export default function AdminAccountsPage() {
           layout="vertical"
           disabled={updatePaper.isPending || !editAccount}
           style={{ display: editAccount ? undefined : "none" }}
+          initialValues={
+            editAccount
+              ? {
+                  account_name: editAccount.account_name,
+                  is_active: Boolean(editAccount.is_active),
+                  is_default: Boolean(editAccount.is_default),
+                  initial_cash: Number(editAccount.initial_cash),
+                }
+              : undefined
+          }
         >
             <Form.Item label="계좌 ID">
               <Input

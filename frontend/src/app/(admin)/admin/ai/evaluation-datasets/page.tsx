@@ -15,7 +15,7 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
 import { useState } from "react";
 
@@ -29,6 +29,7 @@ const DISCLAIMER =
   "평가 데이터셋은 AI 품질 벤치마크용입니다. 매매·주문 데이터가 아닙니다.";
 
 export default function AdminAiEvaluationDatasetsPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);

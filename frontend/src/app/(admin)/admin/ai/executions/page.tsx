@@ -17,7 +17,7 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
 import { useState } from "react";
 
@@ -28,6 +28,7 @@ import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
 export default function AdminAiExecutionsPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);

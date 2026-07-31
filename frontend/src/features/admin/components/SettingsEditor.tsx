@@ -13,7 +13,7 @@ import {
   Table,
   Typography,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import type { SettingItem } from "@/features/admin/api/adminApi";
@@ -42,7 +42,7 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
     [settingsQuery.data],
   );
 
-  useEffect(() => {
+  const initialValues = useMemo(() => {
     const initial: Record<string, unknown> = {};
     for (const item of items) {
       if (item.value_type === "bool") {
@@ -57,8 +57,8 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
         initial[item.key] = item.is_secret ? "" : item.value;
       }
     }
-    form.setFieldsValue(initial);
-  }, [form, items]);
+    return initial;
+  }, [items]);
 
   const saveMut = useMutation({
     mutationFn: (payload: Array<{ key: string; value: unknown }>) =>
@@ -105,7 +105,13 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
           {title}
         </Typography.Title>
       ) : null}
-      <Form form={form} layout="vertical" disabled={settingsQuery.isLoading}>
+      <Form
+        key={`${category}-${settingsQuery.dataUpdatedAt}`}
+        form={form}
+        layout="vertical"
+        disabled={settingsQuery.isLoading}
+        initialValues={initialValues}
+      >
         {items.map((item) => (
           <SettingField key={item.key} item={item} />
         ))}

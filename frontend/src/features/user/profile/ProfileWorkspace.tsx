@@ -230,13 +230,14 @@ export function ProfileWorkspace({
               extra={
                 <Button
                   type="primary"
-                  disabled={!dirty}
+                  disabled={!dirty || !profile}
                   loading={updateMutation.isPending}
-                  onClick={() =>
+                  onClick={() => {
+                    if (!profile) return;
                     void profileForm.validateFields().then((values) => {
                       updateMutation.mutate(values);
-                    })
-                  }
+                    });
+                  }}
                 >
                   저장
                 </Button>

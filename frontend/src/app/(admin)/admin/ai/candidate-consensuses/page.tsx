@@ -18,7 +18,7 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
 import { useMemo, useState } from "react";
 
@@ -45,6 +45,7 @@ function parseAssessmentIds(raw: string): number[] {
 }
 
 export default function AdminAiCandidateConsensusesPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);

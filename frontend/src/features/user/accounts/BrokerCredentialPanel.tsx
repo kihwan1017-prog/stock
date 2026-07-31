@@ -109,7 +109,10 @@ export function BrokerCredentialPanel({
           ? "Credential을 교체했습니다."
           : "Credential을 등록했습니다.",
       );
-      form.resetFields();
+      // destroyOnHidden Modal이 열려 있을 때만 reset
+      if (open) {
+        form.resetFields();
+      }
       await invalidate();
     },
     onError: (error) => messageApi.error(toApiError(error).message),
@@ -130,7 +133,9 @@ export function BrokerCredentialPanel({
       userApi.revokeUserBrokerCredential(account.account_id),
     onSuccess: async () => {
       messageApi.success("Credential을 폐기했습니다.");
-      form.resetFields();
+      if (open) {
+        form.resetFields();
+      }
       await invalidate();
     },
     onError: (error) => messageApi.error(toApiError(error).message),

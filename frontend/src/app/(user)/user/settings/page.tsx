@@ -51,31 +51,12 @@ export default function UserSettingsPage() {
     queryFn: () => userApi.listWatchlist(),
   });
 
+  // 테마만 effect로 반영. Form 값은 initialValues+key로 주입해
+  // Skeleton 분기 중 미연결 setFieldsValue 경고를 피한다.
   useEffect(() => {
     if (!settingsQuery.data) return;
-    const data = settingsQuery.data;
-    form.setFieldsValue({
-      theme: data.theme,
-      language: data.language,
-      timezone: data.timezone,
-      date_format: data.date_format,
-      number_format: data.number_format,
-      currency: data.currency,
-      default_market: data.default_market,
-      default_account_id: data.default_account_id,
-      default_watchlist_id: data.default_watchlist_id,
-      default_dashboard: data.default_dashboard,
-      items_per_page: data.items_per_page,
-      ai_enabled: data.ai_enabled,
-      ai_auto_summary: data.ai_auto_summary,
-      ai_recommendation_enabled: data.ai_recommendation_enabled,
-      notification_enabled: data.notification_enabled,
-      telegram_enabled: data.telegram_enabled,
-      email_enabled: data.email_enabled,
-      web_enabled: data.web_enabled,
-    });
-    setMode(applyThemeFromSettings(data));
-  }, [settingsQuery.data, form, setMode]);
+    setMode(applyThemeFromSettings(settingsQuery.data));
+  }, [settingsQuery.data, setMode]);
 
   const saveMutation = useMutation({
     mutationFn: (body: UserSettingsPatch) => userApi.patchUserSettings(body),
@@ -94,8 +75,8 @@ export default function UserSettingsPage() {
     mutationFn: () => userApi.resetUserSettings(),
     onSuccess: async (data) => {
       message.success("기본값으로 초기화되었습니다.");
+      // query 갱신 → Form key 변경으로 initialValues 재주입 (미연결 setFields 회피)
       queryClient.setQueryData(queryKeys.user.settings.get(), data);
-      form.setFieldsValue(data);
       setMode(applyThemeFromSettings(data));
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -142,17 +123,45 @@ export default function UserSettingsPage() {
         </Space>
       }
     >
-      {settingsQuery.isLoading ? (
-        <Skeleton active paragraph={{ rows: 12 }} />
-      ) : settingsQuery.isError ? (
+      {settingsQuery.isError ? (
         <Alert
           type="error"
           showIcon
           title="설정을 불러오지 못했습니다."
           description={toApiError(settingsQuery.error).message}
         />
-      ) : (
-        <Form form={form} layout="vertical" requiredMark={false}>
+      ) : null}
+      {settingsQuery.isLoading && !settingsQuery.data ? (
+        <Skeleton active paragraph={{ rows: 12 }} />
+      ) : null}
+      {settingsQuery.data ? (
+        <Form
+          key={`settings-${settingsQuery.dataUpdatedAt}`}
+          form={form}
+          layout="vertical"
+          requiredMark={false}
+          initialValues={{
+            theme: settingsQuery.data.theme,
+            language: settingsQuery.data.language,
+            timezone: settingsQuery.data.timezone,
+            date_format: settingsQuery.data.date_format,
+            number_format: settingsQuery.data.number_format,
+            currency: settingsQuery.data.currency,
+            default_market: settingsQuery.data.default_market,
+            default_account_id: settingsQuery.data.default_account_id,
+            default_watchlist_id: settingsQuery.data.default_watchlist_id,
+            default_dashboard: settingsQuery.data.default_dashboard,
+            items_per_page: settingsQuery.data.items_per_page,
+            ai_enabled: settingsQuery.data.ai_enabled,
+            ai_auto_summary: settingsQuery.data.ai_auto_summary,
+            ai_recommendation_enabled:
+              settingsQuery.data.ai_recommendation_enabled,
+            notification_enabled: settingsQuery.data.notification_enabled,
+            telegram_enabled: settingsQuery.data.telegram_enabled,
+            email_enabled: settingsQuery.data.email_enabled,
+            web_enabled: settingsQuery.data.web_enabled,
+          }}
+        >
           <Row gutter={[16, 16]}>
             <Col xs={24} lg={12}>
               <Card title="Appearance" size="small">
@@ -332,7 +341,7 @@ export default function UserSettingsPage() {
             </Col>
           </Row>
         </Form>
-      )}
+      ) : null}
     </UserPageShell>
   );
 }

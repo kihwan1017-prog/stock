@@ -77,6 +77,7 @@ export function AccountsView({ accountTypeFilter }: AccountsViewProps) {
   const [createForm] = Form.useForm();
   const [brokerForm] = Form.useForm();
   const [renameForm] = Form.useForm();
+  const [renameTarget, setRenameTarget] = useState<UserAccount | null>(null);
   const [credentialAccount, setCredentialAccount] =
     useState<UserAccount | null>(null);
 
@@ -122,7 +123,9 @@ export function AccountsView({ accountTypeFilter }: AccountsViewProps) {
       }),
     onSuccess: async () => {
       messageApi.success("Paper 계좌를 생성했습니다.");
-      createForm.resetFields();
+      if (showPaperCreate) {
+        createForm.resetFields();
+      }
       await invalidateAccounts();
     },
     onError: (error) => messageApi.error(toApiError(error).message),
@@ -141,7 +144,9 @@ export function AccountsView({ accountTypeFilter }: AccountsViewProps) {
       }),
     onSuccess: async () => {
       messageApi.success("Broker 계좌 연결을 등록했습니다.");
-      brokerForm.resetFields();
+      if (showBrokerConnect) {
+        brokerForm.resetFields();
+      }
       await invalidateAccounts();
     },
     onError: (error) => messageApi.error(toApiError(error).message),
@@ -222,35 +227,8 @@ export function AccountsView({ accountTypeFilter }: AccountsViewProps) {
   };
 
   const openRename = (account: UserAccount) => {
-    // Modal.confirm content 마운트 전 setFieldsValue 금지 — initialValues 사용
-    modalApi.confirm({
-      title: "계좌 이름 수정",
-      content: (
-        <Form
-          key={`rename-${account.account_id}`}
-          form={renameForm}
-          layout="vertical"
-          style={{ marginTop: 12 }}
-          initialValues={{ account_name: account.account_name }}
-        >
-          <Form.Item
-            name="account_name"
-            label="별칭"
-            rules={[{ required: true, message: "이름을 입력하세요" }]}
-          >
-            <Input maxLength={100} />
-          </Form.Item>
-        </Form>
-      ),
-      onOk: async () => {
-        const values = await renameForm.validateFields();
-        await runAction.mutateAsync({
-          action: "rename",
-          account,
-          account_name: values.account_name,
-        });
-      },
-    });
+    // Modal.confirm + Form 은 연결 타이밍 불안정 → 전용 Modal 사용
+    setRenameTarget(account);
   };
 
   const paperOptions = useMemo(
@@ -605,6 +583,41 @@ export function AccountsView({ accountTypeFilter }: AccountsViewProps) {
           </Card>
         ) : null}
       </Space>
+
+      <Modal
+        title="계좌 이름 수정"
+        open={renameTarget != null}
+        onCancel={() => setRenameTarget(null)}
+        confirmLoading={runAction.isPending}
+        forceRender
+        onOk={async () => {
+          if (!renameTarget) return;
+          const values = await renameForm.validateFields();
+          await runAction.mutateAsync({
+            action: "rename",
+            account: renameTarget,
+            account_name: values.account_name,
+          });
+          setRenameTarget(null);
+        }}
+      >
+        {renameTarget ? (
+          <Form
+            key={renameTarget.account_id}
+            form={renameForm}
+            layout="vertical"
+            initialValues={{ account_name: renameTarget.account_name }}
+          >
+            <Form.Item
+              name="account_name"
+              label="별칭"
+              rules={[{ required: true, message: "이름을 입력하세요" }]}
+            >
+              <Input maxLength={100} />
+            </Form.Item>
+          </Form>
+        ) : null}
+      </Modal>
 
       {credentialAccount ? (
         <BrokerCredentialPanel

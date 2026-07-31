@@ -17,7 +17,7 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
 import { useState } from "react";
 
@@ -32,6 +32,7 @@ const DISCLAIMER =
   "AI 분석 결과는 참고용이며, 매수·매도 신호 또는 주문 지시가 아닙니다.";
 
 export default function AdminAiMarketAnalysesPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);

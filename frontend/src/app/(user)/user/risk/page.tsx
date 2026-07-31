@@ -15,7 +15,7 @@ import {
   Tag,
 } from "antd";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { userRoutes } from "@/config/routes";
 import { asRecord } from "@/features/admin/utils/dataHelpers";
@@ -91,47 +91,47 @@ export default function UserRiskPage() {
     enabled: activeUbaId != null && activeUbaId > 0,
   });
 
-  useEffect(() => {
-    const resolved = asRecord(asRecord(riskQuery.data)?.resolved);
-    if (!resolved) return;
-    form.setFieldsValue({
-      max_order_amount: Number(resolved.max_order_amount ?? 0),
-      daily_max_order_amount: Number(resolved.daily_max_order_amount ?? 0),
-      max_total_investment_amount: Number(
-        resolved.max_total_investment_amount ?? 0,
-      ),
-      max_position_amount: Number(resolved.max_position_amount ?? 0),
-      max_position_count: Number(resolved.max_position_count ?? 0),
-      max_position_weight_pct: rateToPercent(resolved.max_position_weight),
-      daily_max_loss_amount: Number(resolved.daily_max_loss_amount ?? 0),
-      daily_max_loss_rate_pct: rateToPercent(resolved.daily_max_loss_rate),
-      stop_loss_rate_pct: rateToPercent(resolved.stop_loss_rate),
-      take_profit_rate_pct: rateToPercent(resolved.take_profit_rate),
-      trailing_stop_rate_pct: rateToPercent(resolved.trailing_stop_rate),
-      allow_duplicate_buy: Boolean(resolved.allow_duplicate_buy),
-      auto_trading_enabled: Boolean(resolved.auto_trading_enabled),
-      buy_enabled: Boolean(resolved.buy_enabled),
-      sell_enabled: Boolean(resolved.sell_enabled),
-      sell_only: Boolean(resolved.sell_only),
-      account_paused: Boolean(resolved.account_paused),
-    });
-  }, [riskQuery.data, form]);
+  const userResolved = asRecord(asRecord(riskQuery.data)?.resolved);
+  const accountResolved = asRecord(asRecord(accountRiskQuery.data)?.resolved);
 
-  useEffect(() => {
-    if (activeUbaId == null) return;
-    const resolved = asRecord(asRecord(accountRiskQuery.data)?.resolved);
-    if (!resolved) return;
-    accountForm.setFieldsValue({
-      max_order_amount: Number(resolved.max_order_amount ?? 0),
-      stop_loss_rate_pct: rateToPercent(resolved.stop_loss_rate),
-      take_profit_rate_pct: rateToPercent(resolved.take_profit_rate),
-      trailing_stop_rate_pct: rateToPercent(resolved.trailing_stop_rate),
-      auto_trading_enabled: Boolean(resolved.auto_trading_enabled),
-      buy_enabled: Boolean(resolved.buy_enabled),
-      sell_only: Boolean(resolved.sell_only),
-      account_paused: Boolean(resolved.account_paused),
-    });
-  }, [accountRiskQuery.data, accountForm, activeUbaId]);
+  const userInitialValues = useMemo(() => {
+    if (!userResolved) return undefined;
+    return {
+      max_order_amount: Number(userResolved.max_order_amount ?? 0),
+      daily_max_order_amount: Number(userResolved.daily_max_order_amount ?? 0),
+      max_total_investment_amount: Number(
+        userResolved.max_total_investment_amount ?? 0,
+      ),
+      max_position_amount: Number(userResolved.max_position_amount ?? 0),
+      max_position_count: Number(userResolved.max_position_count ?? 0),
+      max_position_weight_pct: rateToPercent(userResolved.max_position_weight),
+      daily_max_loss_amount: Number(userResolved.daily_max_loss_amount ?? 0),
+      daily_max_loss_rate_pct: rateToPercent(userResolved.daily_max_loss_rate),
+      stop_loss_rate_pct: rateToPercent(userResolved.stop_loss_rate),
+      take_profit_rate_pct: rateToPercent(userResolved.take_profit_rate),
+      trailing_stop_rate_pct: rateToPercent(userResolved.trailing_stop_rate),
+      allow_duplicate_buy: Boolean(userResolved.allow_duplicate_buy),
+      auto_trading_enabled: Boolean(userResolved.auto_trading_enabled),
+      buy_enabled: Boolean(userResolved.buy_enabled),
+      sell_enabled: Boolean(userResolved.sell_enabled),
+      sell_only: Boolean(userResolved.sell_only),
+      account_paused: Boolean(userResolved.account_paused),
+    };
+  }, [userResolved]);
+
+  const accountInitialValues = useMemo(() => {
+    if (!accountResolved) return undefined;
+    return {
+      max_order_amount: Number(accountResolved.max_order_amount ?? 0),
+      stop_loss_rate_pct: rateToPercent(accountResolved.stop_loss_rate),
+      take_profit_rate_pct: rateToPercent(accountResolved.take_profit_rate),
+      trailing_stop_rate_pct: rateToPercent(accountResolved.trailing_stop_rate),
+      auto_trading_enabled: Boolean(accountResolved.auto_trading_enabled),
+      buy_enabled: Boolean(accountResolved.buy_enabled),
+      sell_only: Boolean(accountResolved.sell_only),
+      account_paused: Boolean(accountResolved.account_paused),
+    };
+  }, [accountResolved]);
 
   const saveUser = useMutation({
     mutationFn: (body: RiskSettingsPayload) =>
@@ -292,8 +292,10 @@ export default function UserRiskPage() {
             />
           ) : null}
           <Form
+            key={`user-risk-${riskQuery.dataUpdatedAt}`}
             form={form}
             layout="vertical"
+            initialValues={userInitialValues}
             onFinish={(values) => {
               saveUser.mutate({
                 max_order_amount: values.max_order_amount,
@@ -435,8 +437,10 @@ export default function UserRiskPage() {
                 />
               ) : null}
               <Form
+                key={`account-risk-${activeUbaId}-${accountRiskQuery.dataUpdatedAt}`}
                 form={accountForm}
                 layout="vertical"
+                initialValues={accountInitialValues}
                 onFinish={(values) => {
                   if (!activeUbaId) return;
                   saveAccount.mutate({

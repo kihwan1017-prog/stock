@@ -18,7 +18,7 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
 import { useState } from "react";
 
@@ -34,6 +34,7 @@ const DISCLAIMER =
 const REVIEW_QUALITY_LABEL = "AI 후보 평가 품질 승인";
 
 export default function AdminAiCandidateAssessmentsPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);

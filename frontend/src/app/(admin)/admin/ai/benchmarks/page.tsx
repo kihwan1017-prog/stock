@@ -17,7 +17,7 @@ import {
   Table,
   Tag,
   Typography,
-  message,
+  App,
 } from "antd";
 import { useState } from "react";
 
@@ -31,6 +31,7 @@ const DISCLAIMER =
   "벤치마크는 AI 품질 측정용입니다. 매매·주문·후보/전략과 무관합니다.";
 
 export default function AdminAiBenchmarksPage() {
+  const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [reason, setReason] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
