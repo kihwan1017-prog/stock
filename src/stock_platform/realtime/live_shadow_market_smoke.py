@@ -763,45 +763,28 @@ async def run_kiwoom_real_market_shadow_smoke(
                 continue
             await asyncio.sleep(1.0)
 
-        # Account pause probe — ORM FK 메타 이슈 회피: SQL로 Pause
+        # Account pause probe — ORM Recovery Lock
+        paused_before = False
         try:
+            from stock_platform.broker.recovery_adapter import (
+                AccountRecoveryContext,
+            )
+            from stock_platform.broker.recovery_lock import (
+                RecoveryAccountLockService,
+            )
+
             with SessionLocal() as session:
-                exists = session.execute(
-                    text(
-                        """
-                        SELECT 1 FROM operation.broker_recovery_account_state
-                        WHERE broker_code='KIWOOM'
-                          AND user_broker_account_id=:uba
-                        LIMIT 1
-                        """
-                    ),
-                    {"uba": int(uba_id)},
-                ).scalar()
-                if exists:
-                    session.execute(
-                        text(
-                            """
-                            UPDATE operation.broker_recovery_account_state
-                            SET trading_paused = TRUE, updated_at = NOW()
-                            WHERE broker_code='KIWOOM'
-                              AND user_broker_account_id=:uba
-                            """
-                        ),
-                        {"uba": int(uba_id)},
-                    )
-                else:
-                    session.execute(
-                        text(
-                            """
-                            INSERT INTO operation.broker_recovery_account_state
-                              (broker_code, user_id, user_broker_account_id,
-                               recovery_status, trading_paused, updated_at)
-                            VALUES
-                              ('KIWOOM', :uid, :uba, 'IDLE', TRUE, NOW())
-                            """
-                        ),
-                        {"uid": user_id, "uba": int(uba_id)},
-                    )
+                lock = RecoveryAccountLockService(session)
+                ctx = AccountRecoveryContext(
+                    broker_code="KIWOOM",
+                    user_id=user_id,
+                    market_type="STOCK",
+                    user_broker_account_id=int(uba_id),
+                    paper_account_id=None,
+                )
+                _row, paused_before = lock.acquire(
+                    ctx, holder="SHADOW_MD_PAUSE", ttl_seconds=120
+                )
                 session.commit()
                 before = _shadow_count(
                     session, int(uba_id), since, side="BUY"
@@ -820,16 +803,21 @@ async def run_kiwoom_real_market_shadow_smoke(
                 report.pause_blocked = after <= before
                 report.detail["pause_before"] = before
                 report.detail["pause_after"] = after
-                session.execute(
-                    text(
-                        """
-                        UPDATE operation.broker_recovery_account_state
-                        SET trading_paused = FALSE, updated_at = NOW()
-                        WHERE broker_code='KIWOOM'
-                          AND user_broker_account_id=:uba
-                        """
-                    ),
-                    {"uba": int(uba_id)},
+                report.detail["pause_via_orm"] = True
+                lock = RecoveryAccountLockService(session)
+                ctx = AccountRecoveryContext(
+                    broker_code="KIWOOM",
+                    user_id=user_id,
+                    market_type="STOCK",
+                    user_broker_account_id=int(uba_id),
+                    paper_account_id=None,
+                )
+                lock.release(
+                    ctx,
+                    status_code="SUCCESS",
+                    keep_paused=False,
+                    run_id=None,
+                    paused_before=bool(paused_before),
                 )
                 session.commit()
         except Exception as exc:  # noqa: BLE001

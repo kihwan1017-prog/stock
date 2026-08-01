@@ -191,6 +191,8 @@ class Settings(BaseSettings):
     realtime_live_unlock_token: str = Field(default="")
     # LIVE Shadow — 실주문 HTTP 0, Intent만 기록 (기본 OFF)
     live_shadow_mode_enabled: bool = False
+    # LIVE Dry-Run — Risk 통과 후 submit 직전 Payload 검증·차단 (기본 OFF)
+    live_order_dry_run_enabled: bool = False
     # Kiwoom MOCK realtime loop (기본 OFF — Fail Closed, LIVE와 분리)
     realtime_kiwoom_mock_auto_start_enabled: bool = False
     kiwoom_mock_outbox_auto_fill: bool = False

@@ -198,15 +198,10 @@ class DatabaseBackedRiskOrderGuard:
 
         # STEP 8-5-7/8-5-13 — KRX LIVE: Calendar Fail Closed (Upbit 제외)
         # PAPER는 paper_stock_follow_krx_calendar 설정으로 게이트한다
-        # (LIVE는 설정과 무관하게 항상 Fail Closed).
-        # LIVE_SHADOW는 실주문 전송 없이 Intent만 남기므로 장외에도 허용.
-        from stock_platform.order.live_shadow import is_live_shadow_mode
-
+        # (LIVE/LIVE_SHADOW 모두 설정과 무관하게 Fail Closed — Shadow는 submit만 차단).
         environment_upper = (environment or "LIVE").upper()
-        shadow_mode = is_live_shadow_mode()
         calendar_gated = (
-            not shadow_mode
-            and self._broker_code.upper() == "KIWOOM"
+            self._broker_code.upper() == "KIWOOM"
             and exchange_code.upper() == "KRX"
             and (
                 environment_upper == "LIVE"

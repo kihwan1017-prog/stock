@@ -20,6 +20,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from stock_platform.database.base import Base
 
+from stock_platform.broker.recovery_entities import (  # noqa: E402, F401
+    BrokerRecoveryRunEntity,
+)
+
 
 class BrokerRecoveryLockEntity(Base):
     __tablename__ = "broker_recovery_lock"

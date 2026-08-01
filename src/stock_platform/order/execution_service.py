@@ -352,12 +352,129 @@ class OrderExecutionService:
         if plan_payload:
             metadata["position_plan"] = plan_payload
 
-        # LIVE Shadow — Intent만 기록, Outbox/Broker 전송 없음
+        # LIVE Dry-Run — Risk 통과 후 submit 직전 Payload 검증, Broker 전송 없음
+        from stock_platform.order.live_dry_run import (
+            is_live_dry_run_mode,
+            mark_dry_run_metadata,
+            validate_pre_submit_payload,
+        )
         from stock_platform.order.live_shadow import (
             is_live_shadow_mode,
             mark_shadow_metadata,
         )
 
+        dry_run_live = environment == "LIVE" and (
+            is_live_dry_run_mode()
+            or bool(metadata.get("dry_run"))
+            or str(metadata.get("dry_run_mode") or "").upper()
+            == "LIVE_DRY_RUN"
+        )
+        if dry_run_live:
+            metadata = mark_dry_run_metadata(metadata)
+            pre_submit_payload = {
+                "client_order_id": client_order_id,
+                "account_id": command.account_id,
+                "broker_code": command.broker_code,
+                "exchange_code": command.exchange_code,
+                "symbol": command.symbol,
+                "side": command.side.value
+                if hasattr(command.side, "value")
+                else str(command.side),
+                "order_type": command.order_type.value
+                if hasattr(command.order_type, "value")
+                else str(command.order_type),
+                "quantity": str(quantity),
+                "price": None if price is None else str(price),
+                "user_broker_account_id": command.user_broker_account_id,
+                "user_id": command.user_id,
+                "environment": "LIVE",
+                "runtime_scope": metadata.get("runtime_scope")
+                or metadata.get("scope_key"),
+                "strategy_code": command.strategy_code,
+            }
+            pre_errors = validate_pre_submit_payload(pre_submit_payload)
+            metadata["pre_submit_payload"] = pre_submit_payload
+            metadata["pre_submit_ok"] = len(pre_errors) == 0
+            metadata["pre_submit_errors"] = pre_errors
+            order = self._order_service.create(
+                CreateOrderCommand(
+                    account_id=command.account_id,
+                    user_broker_account_id=command.user_broker_account_id,
+                    broker_code=command.broker_code,
+                    exchange_code=command.exchange_code,
+                    symbol=command.symbol,
+                    side=command.side,
+                    order_type=command.order_type,
+                    quantity=quantity,
+                    price=price,
+                    time_in_force=command.time_in_force,
+                    strategy_code=command.strategy_code,
+                    strategy_deployment_id=(
+                        command.strategy_deployment_id
+                    ),
+                    portfolio_id=command.portfolio_id,
+                    position_id=command.position_id,
+                    client_order_id=client_order_id,
+                    metadata_payload=metadata,
+                ),
+                actor=command.actor,
+                commit=False,
+            )
+            order.broker_order_id = None
+            order.reject_code = "DRY_RUN_BLOCKED"
+            order.reject_message = (
+                "LIVE dry-run — pre-submit validated; broker submit blocked"
+            )
+            self._session.commit()
+            self._session.refresh(order)
+            try:
+                from stock_platform.order.outbox_fencing import (
+                    record_outbox_audit,
+                )
+
+                record_outbox_audit(
+                    self._session,
+                    event_type="LIVE_DRY_RUN_BLOCKED",
+                    detail={
+                        "order_id": order.order_id,
+                        "broker_code": order.broker_code,
+                        "symbol": order.symbol,
+                        "side": order.side_code,
+                        "quantity": str(order.order_quantity),
+                        "price": (
+                            None
+                            if order.order_price is None
+                            else str(order.order_price)
+                        ),
+                        "user_broker_account_id": (
+                            order.user_broker_account_id
+                        ),
+                        "client_order_id": order.client_order_id,
+                        "status_code": order.status_code,
+                        "pre_submit_ok": len(pre_errors) == 0,
+                        "pre_submit_errors": pre_errors,
+                        "runtime_scope": pre_submit_payload.get(
+                            "runtime_scope"
+                        ),
+                    },
+                    actor=command.actor,
+                )
+                self._session.commit()
+            except Exception:  # noqa: BLE001
+                pass
+            return OrderExecutionResult(
+                allowed=True,
+                reason_code="DRY_RUN_BLOCKED",
+                order_id=order.order_id,
+                outbox_id=None,
+                status_code=order.status_code,
+                client_order_id=order.client_order_id,
+                quantity=order.order_quantity,
+                price=order.order_price,
+                position_plan=plan_payload,
+            )
+
+        # LIVE Shadow — Intent만 기록, Outbox/Broker 전송 없음
         shadow_live = environment == "LIVE" and (
             is_live_shadow_mode()
             or bool(metadata.get("shadow"))

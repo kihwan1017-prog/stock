@@ -21,6 +21,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from stock_platform.database.base import Base
 
+# FK 대상 테이블을 Base.metadata에 먼저 등록 (NoReferencedTableError 방지)
+from stock_platform.broker.recovery_entities import (  # noqa: E402, F401
+    BrokerRecoveryRunEntity,
+)
+
 
 class BrokerRecoveryAccountStateEntity(Base):
     """계좌별 Recovery Lock·거래 일시차단 상태."""

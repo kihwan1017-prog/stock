@@ -8,6 +8,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+# recovery_run 테이블 메타데이터를 계정 상태보다 먼저 등록
+from stock_platform.broker.recovery_entities import (  # noqa: F401
+    BrokerRecoveryRunEntity,
+)
 from stock_platform.broker.recovery_account_state import (
     BrokerRecoveryAccountStateEntity,
 )

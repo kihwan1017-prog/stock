@@ -238,13 +238,11 @@ class RiskIntegratedRealtimeOrderExecutor:
                 quantity = Decimal(str(held))
 
         # MOCK/LIVE SELL: 원장 전량 캡 — Paper Risk 보유검사 스킵
-        # LIVE_SHADOW: 실주문 없음 — Intent 파이프라인만 검증(장외·한도 우회)
-        from stock_platform.order.live_shadow import is_live_shadow_mode
-
+        # LIVE_SHADOW/DRY_RUN도 LIVE와 동일 Risk·세션 정책 적용 (submit만 차단)
         if (
             environment in {"MOCK", "LIVE"}
             and signal.action.value.upper() == "SELL"
-        ) or (environment == "LIVE" and is_live_shadow_mode()):
+        ):
             risk_allowed = True
             risk_blocked = None
         else:
@@ -330,6 +328,7 @@ class RiskIntegratedRealtimeOrderExecutor:
                 decision.reason_code,
             )
 
+        from stock_platform.order.live_dry_run import is_live_dry_run_mode
         from stock_platform.order.live_shadow import is_live_shadow_mode
 
         meta = {
@@ -338,8 +337,15 @@ class RiskIntegratedRealtimeOrderExecutor:
             "execution_mode": self._execution_config.mode.value,
             "environment": environment,
             "resolved_broker_code": broker_code,
+            "scope_key": getattr(signal, "scope_key", None),
+            "runtime_scope": getattr(signal, "scope_key", None),
+            "strategy_id": getattr(signal, "strategy_id", None),
+            "strategy_version": getattr(signal, "strategy_version", None),
         }
-        if environment == "LIVE" and is_live_shadow_mode():
+        if environment == "LIVE" and is_live_dry_run_mode():
+            meta["dry_run"] = True
+            meta["dry_run_mode"] = "LIVE_DRY_RUN"
+        elif environment == "LIVE" and is_live_shadow_mode():
             meta["shadow"] = True
             meta["shadow_mode"] = "LIVE_SHADOW"
 
