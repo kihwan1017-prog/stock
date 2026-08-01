@@ -238,10 +238,13 @@ class RiskIntegratedRealtimeOrderExecutor:
                 quantity = Decimal(str(held))
 
         # MOCK/LIVE SELL: 원장 전량 캡 — Paper Risk 보유검사 스킵
+        # LIVE_SHADOW: 실주문 없음 — Intent 파이프라인만 검증(장외·한도 우회)
+        from stock_platform.order.live_shadow import is_live_shadow_mode
+
         if (
             environment in {"MOCK", "LIVE"}
             and signal.action.value.upper() == "SELL"
-        ):
+        ) or (environment == "LIVE" and is_live_shadow_mode()):
             risk_allowed = True
             risk_blocked = None
         else:

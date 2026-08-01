@@ -227,6 +227,19 @@ class TradingTimeRule(RiskRule):
     """STEP 8-5-13 — 고정 09:00~15:20 대신 Calendar Session Phase 사용."""
 
     def evaluate(self, *, order, account, policy):
+        # LIVE_SHADOW Intent는 실주문 없이 파이프라인만 검증 — 장외 허용
+        try:
+            from stock_platform.order.live_shadow import is_live_shadow_mode
+
+            if is_live_shadow_mode():
+                return RiskRuleResult(
+                    rule_code="TRADING_TIME",
+                    level=RiskDecisionLevel.PASS,
+                    message="LIVE_SHADOW skips KRX market-hour gate",
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
         if (
             order.exchange_code.upper() != "KRX"
             or not policy.enforce_krx_market_hours

@@ -390,21 +390,11 @@ class OrderExecutionService:
                 actor=command.actor,
                 commit=False,
             )
-            order = self._order_repository.change_status(
-                entity=order,
-                new_status=OrderStatus.REJECTED,
-                actor=command.actor,
-                reason_code="LIVE_SHADOW_INTENT",
-                message=(
-                    "Shadow intent recorded; broker submit blocked"
-                ),
-                commit=False,
-            )
-            # broker_order_id 없음 보장
+            # Shadow Intent: 상태 전이 없이 CREATED 유지 (실주문 경로와 분리)
             order.broker_order_id = None
             order.reject_code = "LIVE_SHADOW_MODE"
             order.reject_message = (
-                "LIVE shadow mode — order not sent to broker"
+                "LIVE shadow intent — broker submit not performed"
             )
             self._session.commit()
             self._session.refresh(order)
@@ -431,6 +421,7 @@ class OrderExecutionService:
                             order.user_broker_account_id
                         ),
                         "client_order_id": order.client_order_id,
+                        "status_code": order.status_code,
                     },
                     actor=command.actor,
                 )
