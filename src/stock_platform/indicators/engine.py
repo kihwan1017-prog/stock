@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal, getcontext
+from typing import Any
 
 from stock_platform.indicators.models import (
     REQUIRED_INDICATOR_FIELDS,
@@ -148,28 +149,32 @@ def _rsi_from_averages(
 
 def _macd(
     values: Sequence[Decimal],
+    *,
+    fast: int = 12,
+    slow: int = 26,
+    signal: int = 9,
 ) -> tuple[
     list[Decimal | None],
     list[Decimal | None],
     list[Decimal | None],
 ]:
-    ema12 = _ema(values, 12)
-    ema26 = _ema(values, 26)
+    ema_fast = _ema(values, fast)
+    ema_slow = _ema(values, slow)
 
     macd_values: list[Decimal | None] = [None] * len(values)
 
     for index in range(len(values)):
-        if ema12[index] is not None and ema26[index] is not None:
-            macd_values[index] = ema12[index] - ema26[index]
+        if ema_fast[index] is not None and ema_slow[index] is not None:
+            macd_values[index] = ema_fast[index] - ema_slow[index]
 
     available_macd = [
         value
         for value in macd_values
         if value is not None
     ]
-    signal_available = _ema(available_macd, 9)
+    signal_available = _ema(available_macd, signal)
 
-    signal: list[Decimal | None] = [None] * len(values)
+    signal_out: list[Decimal | None] = [None] * len(values)
     histogram: list[Decimal | None] = [None] * len(values)
 
     available_index = 0
@@ -178,14 +183,14 @@ def _macd(
             continue
 
         signal_value = signal_available[available_index]
-        signal[index] = signal_value
+        signal_out[index] = signal_value
 
         if signal_value is not None:
             histogram[index] = macd_value - signal_value
 
         available_index += 1
 
-    return macd_values, signal, histogram
+    return macd_values, signal_out, histogram
 
 
 def _bollinger(
@@ -306,9 +311,23 @@ class IndicatorEngine:
     def calculate(
         self,
         bars: Sequence[PriceBar],
+        params: Any | None = None,
     ) -> list[DailyIndicator]:
         if not bars:
             return []
+
+        # 시스템 Default — DB 설정은 호출측에서 resolve 후 전달
+        ma5_p = int(getattr(params, "ma5", 5) or 5)
+        ma20_p = int(getattr(params, "ma20", 20) or 20)
+        ma60_p = int(getattr(params, "ma60", 60) or 60)
+        ema12_p = int(getattr(params, "ema12", 12) or 12)
+        ema26_p = int(getattr(params, "ema26", 26) or 26)
+        rsi_p = int(getattr(params, "rsi_period", 14) or 14)
+        macd_fast = int(getattr(params, "macd_fast", 12) or 12)
+        macd_slow = int(getattr(params, "macd_slow", 26) or 26)
+        macd_signal = int(getattr(params, "macd_signal", 9) or 9)
+        bb_p = int(getattr(params, "bollinger_period", 20) or 20)
+        atr_p = int(getattr(params, "atr_period", 14) or 14)
 
         ordered_bars = sorted(
             bars,
@@ -318,26 +337,29 @@ class IndicatorEngine:
         closes = [bar.close_price for bar in ordered_bars]
         volumes = [bar.volume for bar in ordered_bars]
 
-        ma5 = _rolling_mean(closes, 5)
-        ma20 = _rolling_mean(closes, 20)
-        ma60 = _rolling_mean(closes, 60)
-        volume_ma20 = _rolling_mean(volumes, 20)
+        ma5 = _rolling_mean(closes, ma5_p)
+        ma20 = _rolling_mean(closes, ma20_p)
+        ma60 = _rolling_mean(closes, ma60_p)
+        volume_ma20 = _rolling_mean(volumes, ma20_p)
 
-        ema12 = _ema(closes, 12)
-        ema26 = _ema(closes, 26)
-        rsi14 = _rsi_wilder(closes, 14)
+        ema12 = _ema(closes, ema12_p)
+        ema26 = _ema(closes, ema26_p)
+        rsi14 = _rsi_wilder(closes, rsi_p)
 
-        macd, macd_signal, macd_histogram = _macd(
-            closes
+        macd, macd_signal_series, macd_histogram = _macd(
+            closes,
+            fast=macd_fast,
+            slow=macd_slow,
+            signal=macd_signal,
         )
 
         (
             bollinger_middle,
             bollinger_upper,
             bollinger_lower,
-        ) = _bollinger(closes, 20)
+        ) = _bollinger(closes, bb_p)
 
-        atr14 = _atr_wilder(ordered_bars, 14)
+        atr14 = _atr_wilder(ordered_bars, atr_p)
         high_52w, low_52w = _rolling_52w(ordered_bars)
 
         result: list[DailyIndicator] = []
@@ -370,7 +392,7 @@ class IndicatorEngine:
                     ema26=ema26[index],
                     rsi14=rsi14[index],
                     macd=macd[index],
-                    macd_signal=macd_signal[index],
+                    macd_signal=macd_signal_series[index],
                     macd_histogram=macd_histogram[index],
                     bollinger_middle=bollinger_middle[index],
                     bollinger_upper=bollinger_upper[index],

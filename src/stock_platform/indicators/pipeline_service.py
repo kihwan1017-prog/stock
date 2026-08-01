@@ -86,6 +86,27 @@ class IndicatorPipelineService:
         self._repository = indicator_repository
         self._instrument_service = instrument_service
 
+    def _resolve_params(self, exchange_code: str) -> object | None:
+        try:
+            session = getattr(self._repository, "_session", None)
+            if session is None:
+                return None
+            from stock_platform.indicators.parameter_service import (
+                IndicatorParameterService,
+            )
+
+            market_type = (
+                "CRYPTO"
+                if exchange_code.upper() in {"UPBIT", "BINANCE"}
+                else "STOCK"
+            )
+            return IndicatorParameterService(session).resolve_engine_params(
+                market_type=market_type,
+                timeframe="1D",
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
     def compute_and_save(
         self,
         *,
@@ -108,6 +129,7 @@ class IndicatorPipelineService:
             symbol=symbol,
             start_date=start_date,
             end_date=end_date,
+            engine_params=self._resolve_params(exchange_code),
         )
 
         now = datetime.now(timezone.utc)
