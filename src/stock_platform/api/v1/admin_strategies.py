@@ -3369,6 +3369,137 @@ def get_deployment_readiness_commit_provenance_endpoint(
     return result
 
 
+class PromoteDeploymentToActiveRequest(BaseModel):
+    strategy_deployment_id: int = Field(..., ge=1)
+    confirmation_text: str = Field(..., min_length=1)
+    enable_registry: bool = True
+    activate_account_links: bool = True
+
+
+@router.post("/{strategy_id}/runtime-start")
+async def promote_deployment_to_active_endpoint(
+    strategy_id: int,
+    body: PromoteDeploymentToActiveRequest,
+    http_request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """READY_* → ACTIVE 명시 승인. Runner 자동 기동은 Feature Flag(기본 OFF)."""
+
+    from stock_platform.strategy_deployment.entities import (
+        StrategyDeploymentEntity,
+    )
+    from stock_platform.strategy_deployment.runtime_start_service import (
+        RuntimeStartError,
+        promote_deployment_to_active,
+        runtime_start_result_to_dict,
+    )
+
+    deployment = session.get(
+        StrategyDeploymentEntity, int(body.strategy_deployment_id)
+    )
+    if deployment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "DEPLOYMENT_NOT_FOUND", "message": "not found"},
+        )
+    dep_strategy_id = getattr(deployment, "strategy_id", None)
+    if dep_strategy_id is not None and int(dep_strategy_id) != int(strategy_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "STRATEGY_MISMATCH",
+                "message": "deployment does not belong to strategy_id",
+            },
+        )
+
+    try:
+        result = promote_deployment_to_active(
+            session,
+            strategy_deployment_id=int(body.strategy_deployment_id),
+            actor=f"admin:{user.user_id}",
+            confirmation_text=body.confirmation_text,
+            enable_registry=body.enable_registry,
+            activate_account_links=body.activate_account_links,
+            start_execution_runner=False,
+        )
+    except RuntimeStartError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+    payload = runtime_start_result_to_dict(result)
+    # ACTIVE 후 Scope Runtime bootstrap (Runner 자동기동은 Feature Flag)
+    bootstrap: dict = {"attempted": False}
+    try:
+        from stock_platform.strategy_deployment.runtime_manager import (
+            dynamic_strategy_runtime_manager,
+        )
+
+        bootstrap["attempted"] = True
+        bootstrap_result = await dynamic_strategy_runtime_manager.initialize()
+        bootstrap["result"] = {
+            k: bootstrap_result.get(k)
+            for k in (
+                "link_count",
+                "created_running",
+                "created_paused",
+                "failed",
+            )
+            if k in bootstrap_result
+        }
+    except Exception as exc:  # noqa: BLE001
+        bootstrap["error"] = type(exc).__name__
+
+    try:
+        from stock_platform.realtime.execution_auto_start import (
+            maybe_auto_start_runners,
+        )
+
+        auto = await maybe_auto_start_runners(
+            source="RUNTIME_START_API",
+            allow_live=False,
+        )
+        payload["auto_start"] = auto
+    except Exception as exc:  # noqa: BLE001
+        payload["auto_start"] = {"error": type(exc).__name__}
+
+    # LIVE Flag·Unlock·UBA 충족 시 별도 LIVE auto-start 시도 (기본 OFF)
+    try:
+        from stock_platform.realtime.live_runtime_control import (
+            live_auto_start_allowed,
+        )
+        from stock_platform.realtime.execution_auto_start import (
+            maybe_auto_start_runners as _maybe_live,
+        )
+
+        live_gate = live_auto_start_allowed(allow_live=True)
+        if live_gate.get("allowed"):
+            payload["live_auto_start"] = await _maybe_live(
+                source="RUNTIME_START_API_LIVE",
+                allow_live=True,
+            )
+        else:
+            payload["live_auto_start"] = {
+                "skipped_reason": live_gate.get("reason"),
+            }
+    except Exception as exc:  # noqa: BLE001
+        payload["live_auto_start"] = {"error": type(exc).__name__}
+
+    payload["bootstrap"] = bootstrap
+    audit.record(
+        event_type="RUNTIME_START_PROMOTED",
+        actor=user.username,
+        request_id=getattr(http_request.state, "request_id", None),
+        strategy_id=str(strategy_id),
+        detail=payload,
+    )
+    session.commit()
+    return payload
+
+
 @router.get("/{strategy_id}/deployment-readiness-status")
 def get_deployment_readiness_status_endpoint(
     strategy_id: int, http_request: Request,
