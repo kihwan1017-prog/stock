@@ -543,14 +543,29 @@ class DynamicStrategyRuntimeManager:
                 entry.updated_at = datetime.now(timezone.utc)
             return keys
 
-    async def pause_all(self, *, reason: str) -> int:
+    async def pause_all(
+        self,
+        *,
+        reason: str,
+        except_brokers: set[str] | frozenset[str] | None = None,
+    ) -> int:
+        skip = {
+            str(b).upper() for b in (except_brokers or set()) if b
+        }
         async with self._lock:
+            count = 0
             for entry in self._runtimes.values():
+                broker = str(
+                    getattr(entry.scope, "broker_code", "") or ""
+                ).upper()
+                if broker and broker in skip:
+                    continue
                 entry.status = RuntimeLifecycleStatus.PAUSED
                 entry.pause_reason = reason
                 entry.last_paused_at = datetime.now(timezone.utc)
                 entry.updated_at = datetime.now(timezone.utc)
-            return len(self._runtimes)
+                count += 1
+            return count
 
     async def stop_account_runtimes(
         self,

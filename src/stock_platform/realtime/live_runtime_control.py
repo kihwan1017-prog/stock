@@ -241,10 +241,13 @@ async def maybe_start_live_market_feeds(
     return result
 
 
-async def stop_live_market_feeds() -> dict[str, Any]:
-    """LIVE 시세/주문 WS 정지 (Paper 피드는 건드리지 않음)."""
+async def stop_live_market_feeds(
+    *,
+    keep_upbit: bool = False,
+) -> dict[str, Any]:
+    """LIVE/시세 WS 정지. keep_upbit=True면 Upbit 공개시세는 유지."""
 
-    result: dict[str, Any] = {}
+    result: dict[str, Any] = {"keep_upbit": keep_upbit}
     try:
         from stock_platform.broker.kiwoom.ws_manager import (
             kiwoom_order_websocket_manager,
@@ -258,8 +261,25 @@ async def stop_live_market_feeds() -> dict[str, Any]:
     try:
         from stock_platform.realtime.manager import realtime_manager
 
-        await realtime_manager.stop_all()
-        result["market_data"] = "stopped"
+        if keep_upbit:
+            stopped: list[str] = []
+            for client_id in list(
+                getattr(realtime_manager, "_tasks", {}) or {}
+            ):
+                if str(client_id).upper() == "UPBIT":
+                    continue
+                await realtime_manager.stop(str(client_id))
+                stopped.append(str(client_id))
+            result["market_data"] = {
+                "stopped": stopped,
+                "kept": ["UPBIT"]
+                if "UPBIT"
+                in (getattr(realtime_manager, "_tasks", {}) or {})
+                else [],
+            }
+        else:
+            await realtime_manager.stop_all()
+            result["market_data"] = "stopped"
     except Exception as exc:  # noqa: BLE001
         result["market_data"] = type(exc).__name__
     return result

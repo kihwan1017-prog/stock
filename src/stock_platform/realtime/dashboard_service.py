@@ -290,7 +290,18 @@ class RealtimeDashboardService:
                 getattr(self._settings, "live_order_dry_run_enabled", False)
             ),
             "upbit": self._upbit_live_ops_slice(),
+            "integrated_lifecycle": self._integrated_lifecycle_slice(),
         }
+
+    def _integrated_lifecycle_slice(self) -> dict[str, Any]:
+        try:
+            from stock_platform.realtime.integrated_runtime_lifecycle import (
+                lifecycle_monitoring_snapshot,
+            )
+
+            return lifecycle_monitoring_snapshot()
+        except Exception as exc:  # noqa: BLE001
+            return {"error": type(exc).__name__}
 
     def _upbit_live_ops_slice(self) -> dict[str, Any]:
         """Upbit 시세 WS·원장·Recovery 요약 (실주문 호출 없음)."""

@@ -10,9 +10,6 @@ from stock_platform.operation.calendar_repository import (
 from stock_platform.operation.calendar_service import (
     TradingCalendarService,
 )
-from stock_platform.realtime.manager import (
-    realtime_manager,
-)
 from stock_platform.realtime.runtime import (
     realtime_execution_runner,
     realtime_safety_guard,
@@ -83,45 +80,21 @@ class RealtimeTradingSessionService:
             )
 
         if phase == TradingSessionPhase.MARKET_OPEN:
-            # Feature Flag ON 일 때만 Runner 자동 기동 (기본 OFF)
-            from stock_platform.realtime.execution_auto_start import (
-                maybe_auto_start_runners,
-            )
-            from stock_platform.order.paper_unattended_runtime import (
-                paper_fill_recovery_scheduler,
-                paper_outbox_worker_runtime,
-            )
-            from stock_platform.realtime.paper_price_feed import (
-                paper_price_feed,
-            )
-            from stock_platform.realtime.live_runtime_control import (
-                live_auto_start_allowed,
+            from stock_platform.realtime.integrated_runtime_lifecycle import (
+                on_market_open,
             )
 
-            # 세션 오픈 시 Paper 무인 보조 경로 재확인 (idempotent)
-            worker_status = paper_outbox_worker_runtime.start()
-            recovery_status = paper_fill_recovery_scheduler.start()
-            feed_status = paper_price_feed.start()
-
-            # LIVE는 Flag+Unlock+UBA 충족 시에만 allow_live (기본 Fail Closed)
-            live_gate = live_auto_start_allowed(allow_live=True)
-            auto = await maybe_auto_start_runners(
-                source="MARKET_OPEN",
-                allow_live=bool(live_gate.get("allowed")),
-            )
+            opened = await on_market_open()
             execution_status = realtime_execution_runner.status()
             strategy_status = realtime_strategy_runner.status()
             return TradingSessionResult(
                 phase=phase,
                 executed=True,
                 message=(
-                    "Market open; auto_start="
-                    f"{auto.get('started_execution')} "
-                    f"reason={auto.get('skipped_reason')}; "
-                    f"live_gate={live_gate.get('reason')}; "
-                    f"worker={worker_status.get('started')}; "
-                    f"recovery={recovery_status.get('started')}; "
-                    f"feed={feed_status.get('started')}; "
+                    "Market open; "
+                    f"lifecycle={opened.get('skipped_reason') or 'ok'}; "
+                    f"auto={opened.get('auto_start', {}).get('skipped_reason')}; "
+                    f"upbit={opened.get('upbit_quotes')}; "
                     f"execution_running={execution_status.get('running')}, "
                     f"strategy_running={strategy_status.get('running')}"
                 ),
@@ -129,46 +102,44 @@ class RealtimeTradingSessionService:
             )
 
         if phase == TradingSessionPhase.MARKET_CLOSE:
-            from stock_platform.realtime.paper_price_feed import (
-                paper_price_feed,
-            )
-            from stock_platform.realtime.execution_models import (
-                RealtimeExecutionMode,
-            )
-            from stock_platform.realtime.live_runtime_control import (
-                revert_realtime_execution_to_paper,
-                stop_live_market_feeds,
+            from stock_platform.realtime.integrated_runtime_lifecycle import (
+                on_market_close,
             )
 
-            was_live = (
-                realtime_execution_runner._config.mode
-                == RealtimeExecutionMode.LIVE
-            )
-            live_stop: dict = {}
-            if was_live:
-                live_stop = await stop_live_market_feeds()
-                revert_realtime_execution_to_paper()
-
-            await paper_price_feed.shutdown()
-            await realtime_execution_runner.stop()
-            await realtime_strategy_runner.stop()
-
+            closed = await on_market_close()
             return TradingSessionResult(
                 phase=phase,
                 executed=True,
                 message=(
-                    "Realtime execution, strategy runners, "
-                    "and paper price feed stopped"
-                    + (f"; live_stop={live_stop}" if was_live else "")
+                    "Market close; "
+                    f"keep_upbit={closed.get('keep_upbit')}; "
+                    f"runners={closed.get('runners')}; "
+                    f"feeds={closed.get('feeds')}"
                 ),
                 executed_at=datetime.now(timezone.utc),
             )
 
-        await realtime_manager.stop_all()
+        # POST_MARKET 등 — Upbit 유지 옵션 반영
+        from stock_platform.common.settings import get_settings
+        from stock_platform.realtime.live_runtime_control import (
+            stop_live_market_feeds,
+        )
+
+        keep_upbit = bool(
+            getattr(
+                get_settings(),
+                "realtime_upbit_shadow_auto_start_enabled",
+                False,
+            )
+        )
+        await stop_live_market_feeds(keep_upbit=keep_upbit)
 
         return TradingSessionResult(
             phase=phase,
             executed=True,
-            message="Realtime market data clients stopped",
+            message=(
+                "Realtime market data clients stopped"
+                + (" (upbit kept)" if keep_upbit else "")
+            ),
             executed_at=datetime.now(timezone.utc),
         )

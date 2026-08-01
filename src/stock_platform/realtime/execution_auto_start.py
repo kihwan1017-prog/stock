@@ -61,6 +61,20 @@ async def maybe_auto_start_runners(
         result["skipped_reason"] = "MASTER_FLAG_OFF"
         return result
 
+    # Kill Switch — 자동 기동 Fail Closed
+    try:
+        from stock_platform.realtime.integrated_runtime_lifecycle import (
+            _kill_switch_blocks,
+        )
+
+        blocked, kill_reason = _kill_switch_blocks()
+        if blocked:
+            result["skipped_reason"] = kill_reason
+            return result
+    except Exception as exc:  # noqa: BLE001
+        result["skipped_reason"] = f"KILL_GATE_ERROR:{type(exc).__name__}"
+        return result
+
     mode = realtime_execution_runner._config.mode
     if mode == RealtimeExecutionMode.LIVE or (
         live_on and allow_live and mode != RealtimeExecutionMode.MOCK
@@ -72,37 +86,77 @@ async def maybe_auto_start_runners(
 
         gate = live_auto_start_allowed(allow_live=allow_live)
         if not gate.get("allowed"):
-            result["skipped_reason"] = (
-                f"LIVE_AUTO_START_BLOCKED:{gate.get('reason')}"
-            )
-            logger.info(
-                "realtime_auto_start_blocked_live",
-                source=source,
-                reason=gate.get("reason"),
-            )
-            return result
-        applied = apply_realtime_live_execution_config()
-        if not applied.get("applied"):
-            result["skipped_reason"] = (
-                f"LIVE_CONFIG_BLOCKED:{applied.get('reason')}"
-            )
-            return result
-        result["live_config"] = applied
-        mode = RealtimeExecutionMode.LIVE
-    elif mode == RealtimeExecutionMode.MOCK:
+            # LIVE 불가 시 Paper/MOCK 폴백 가능하면 계속
+            if mock_on:
+                from stock_platform.realtime.integrated_runtime_lifecycle import (
+                    apply_realtime_mock_execution_config,
+                )
+
+                applied_mock = apply_realtime_mock_execution_config()
+                if not applied_mock.get("applied"):
+                    result["skipped_reason"] = (
+                        f"LIVE_BLOCKED:{gate.get('reason')};"
+                        f"MOCK_BLOCKED:{applied_mock.get('reason')}"
+                    )
+                    return result
+                result["mock_config"] = applied_mock
+                mode = RealtimeExecutionMode.MOCK
+            elif paper_on:
+                result["live_blocked"] = gate.get("reason")
+                mode = RealtimeExecutionMode.PAPER
+            else:
+                result["skipped_reason"] = (
+                    f"LIVE_AUTO_START_BLOCKED:{gate.get('reason')}"
+                )
+                logger.info(
+                    "realtime_auto_start_blocked_live",
+                    source=source,
+                    reason=gate.get("reason"),
+                )
+                return result
+        else:
+            applied = apply_realtime_live_execution_config()
+            if not applied.get("applied"):
+                result["skipped_reason"] = (
+                    f"LIVE_CONFIG_BLOCKED:{applied.get('reason')}"
+                )
+                return result
+            result["live_config"] = applied
+            mode = RealtimeExecutionMode.LIVE
+    elif mock_on or mode == RealtimeExecutionMode.MOCK:
         if not mock_on:
             result["skipped_reason"] = "MOCK_AUTO_START_OFF"
             return result
-        # LIVE 충돌 방지
         if live_on or bool(
             getattr(settings, "kiwoom_live_order_enabled", False)
         ):
             result["skipped_reason"] = "MOCK_BLOCKED_BY_LIVE_FLAG"
             return result
+        from stock_platform.realtime.integrated_runtime_lifecycle import (
+            apply_realtime_mock_execution_config,
+        )
+
+        applied_mock = apply_realtime_mock_execution_config()
+        if not applied_mock.get("applied"):
+            result["skipped_reason"] = (
+                f"MOCK_CONFIG_BLOCKED:{applied_mock.get('reason')}"
+            )
+            return result
+        result["mock_config"] = applied_mock
+        mode = RealtimeExecutionMode.MOCK
     else:
         if not paper_on:
             result["skipped_reason"] = "PAPER_AUTO_START_OFF"
             return result
+        mode = RealtimeExecutionMode.PAPER
+        # 모드가 MOCK/LIVE로 남아 있으면 Paper로 복귀
+        if realtime_execution_runner._config.mode != RealtimeExecutionMode.PAPER:
+            from stock_platform.realtime.live_runtime_control import (
+                revert_realtime_execution_to_paper,
+            )
+
+            revert_realtime_execution_to_paper()
+            mode = RealtimeExecutionMode.PAPER
 
     try:
         if mode != RealtimeExecutionMode.LIVE:

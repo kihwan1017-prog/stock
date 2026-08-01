@@ -193,6 +193,9 @@ class Settings(BaseSettings):
     live_shadow_mode_enabled: bool = False
     # LIVE Dry-Run — Risk 통과 후 submit 직전 Payload 검증·차단 (기본 OFF)
     live_order_dry_run_enabled: bool = False
+    # Upbit 24/7 Shadow 시세·Candidate Runtime (기본 OFF, 실주문 Flag와 분리)
+    realtime_upbit_shadow_auto_start_enabled: bool = False
+    realtime_upbit_default_symbol: str = "KRW-BTC"
     # Kiwoom MOCK realtime loop (기본 OFF — Fail Closed, LIVE와 분리)
     realtime_kiwoom_mock_auto_start_enabled: bool = False
     kiwoom_mock_outbox_auto_fill: bool = False

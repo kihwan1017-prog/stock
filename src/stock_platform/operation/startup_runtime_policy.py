@@ -125,10 +125,26 @@ class RuntimeStartupPolicy:
         }
 
         await self._force_runtime_paused()
+        except_brokers: set[str] = set()
+        try:
+            from stock_platform.common.settings import get_settings
+
+            if bool(
+                getattr(
+                    get_settings(),
+                    "realtime_upbit_shadow_auto_start_enabled",
+                    False,
+                )
+            ):
+                except_brokers.add("UPBIT")
+        except Exception:  # noqa: BLE001
+            pass
         paused_scopes = await dynamic_strategy_runtime_manager.pause_all(
-            reason="startup_forced_idle"
+            reason="startup_forced_idle",
+            except_brokers=except_brokers or None,
         )
         result["strategy_runtime_paused_count"] = paused_scopes
+        result["startup_except_brokers"] = sorted(except_brokers)
         emit_live_safety_audit(
             self._session,
             event_type="STRATEGY_RUNTIME_STARTUP_FORCED_IDLE",
@@ -152,6 +168,21 @@ class RuntimeStartupPolicy:
             migration_at_head=migration_at_head(self._session),
         )
         result["scheduler_restore"] = restore
+
+        # Upbit 24/7 Shadow Runtime — Flag ON일 때만 (LIVE 실주문 아님)
+        try:
+            from stock_platform.realtime.integrated_runtime_lifecycle import (
+                ensure_upbit_runtime_after_startup,
+            )
+
+            result["upbit_shadow_runtime"] = (
+                await ensure_upbit_runtime_after_startup()
+            )
+        except Exception as exc:  # noqa: BLE001
+            result["upbit_shadow_runtime"] = {
+                "started": False,
+                "error": type(exc).__name__,
+            }
         return result
 
     def _force_live_off(self) -> int:
