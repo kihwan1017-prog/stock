@@ -234,6 +234,15 @@ class UpbitFillSyncService:
                 actor=actor,
             )
 
+        # LIVE/UBA 원장 — 신규 체결만 Position/Cash 반영
+        if new_ids and getattr(order, "user_broker_account_id", None):
+            self._apply_live_fill_ledger(
+                order=order,
+                remote=remote,
+                new_execution_ids=new_ids,
+                actor=actor,
+            )
+
         return UpbitFillSyncResult(
             order_id=int(order.order_id),
             duplicate_executions=dup,
@@ -442,6 +451,63 @@ class UpbitFillSyncService:
                 reason_code="UPBIT_FILL_NORMALIZE",
                 commit=False,
             )
+
+    def _apply_live_fill_ledger(
+        self,
+        *,
+        order: Any,
+        remote: dict[str, Any],
+        new_execution_ids: list[int],
+        actor: str,
+    ) -> None:
+        """신규 Upbit 체결 → LiveFillLedgerService (Position/Cash)."""
+
+        try:
+            from stock_platform.broker.kiwoom.execution_models import (
+                KiwoomExecutionEvent,
+            )
+            from stock_platform.broker.live_fill_ledger_service import (
+                LiveFillLedgerService,
+            )
+            from stock_platform.trading.execution_entities import (
+                TradingExecution,
+            )
+
+            ledger = LiveFillLedgerService(self._session)
+            for eid in new_execution_ids:
+                row = self._session.get(TradingExecution, int(eid))
+                if row is None:
+                    continue
+                qty = Decimal(str(row.execution_quantity or 0))
+                price = Decimal(str(row.execution_price or 0))
+                if qty <= ZERO or price <= ZERO:
+                    continue
+                event = KiwoomExecutionEvent(
+                    broker_order_id=str(
+                        row.broker_order_id or order.broker_order_id or ""
+                    ),
+                    broker_execution_id=str(row.broker_execution_id),
+                    symbol=str(order.symbol),
+                    side_code=str(order.side_code or ""),
+                    execution_price=price,
+                    execution_quantity=qty,
+                    remaining_quantity=Decimal(
+                        str(order.remaining_quantity or 0)
+                    ),
+                    executed_at=row.executed_at
+                    or datetime.now(timezone.utc),
+                    raw_payload={
+                        "source": "UPBIT_FILL_SYNC",
+                        "remote": _safe_remote(remote),
+                    },
+                )
+                ledger.apply_execution(
+                    order=order, event=event, actor=actor
+                )
+            self._session.flush()
+        except Exception:  # noqa: BLE001
+            # 원장 실패가 fill sync 성공을 롤백하지 않음
+            pass
 
     def _resolve_client(self, order: Any) -> Any:
         if self._order_client is not None:

@@ -70,15 +70,16 @@ def _resolve_paper_position(
         return None
 
 
-def _resolve_mock_uba_position(
+def _resolve_uba_ledger_position(
     consumer: "ScopedRealtimeConsumer",
     symbol: str,
 ) -> RealtimePositionState | None:
-    """Kiwoom MOCK UBA — BrokerPositionSnapshot 기반 손절·익절."""
+    """USER_BROKER UBA — BrokerPositionSnapshot 기반 손절·익절 (MOCK/LIVE 원장)."""
 
     if consumer.scope.account_kind != AccountKind.USER_BROKER:
         return None
-    if str(consumer.scope.broker_code or "").upper() != "KIWOOM":
+    broker = str(consumer.scope.broker_code or "").upper()
+    if broker not in {"KIWOOM", "UPBIT"}:
         return None
     try:
         from decimal import Decimal
@@ -88,13 +89,7 @@ def _resolve_mock_uba_position(
         from stock_platform.broker.account_models import (
             BrokerPositionSnapshotEntity,
         )
-        from stock_platform.common.settings import get_settings
         from stock_platform.database.session import get_session_factory
-
-        # LIVE 실주문 모드에서는 이 MOCK 스냅샷 경로를 쓰지 않음
-        settings = get_settings()
-        if bool(getattr(settings, "kiwoom_live_order_enabled", False)):
-            return None
 
         session = get_session_factory()()
         try:
@@ -114,15 +109,20 @@ def _resolve_mock_uba_position(
             return RealtimePositionState(
                 quantity=Decimal(str(row.quantity)),
                 average_entry_price=(
-                    Decimal(str(avg)) if avg is not None and Decimal(str(avg)) > 0 else None
+                    Decimal(str(avg))
+                    if avg is not None and Decimal(str(avg)) > 0
+                    else None
                 ),
             )
         finally:
             session.close()
     except Exception as exc:  # noqa: BLE001
-        # 디버그용 마지막 오류 — consumer에 남기지 않고 None
         _ = exc
         return None
+
+
+# 하위 호환 alias
+_resolve_mock_uba_position = _resolve_uba_ledger_position
 
 
 @dataclass
@@ -387,7 +387,7 @@ class ScopeConsumerRegistry:
                 before_fp = None
                 position = _resolve_paper_position(consumer, event.symbol)
                 if position is None:
-                    position = _resolve_mock_uba_position(
+                    position = _resolve_uba_ledger_position(
                         consumer, event.symbol
                     )
                 # evaluate

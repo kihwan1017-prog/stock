@@ -215,7 +215,10 @@ class RiskIntegratedRealtimeOrderExecutor:
                         return self._skipped(signal, "NO_POSITION_TO_SELL")
                     if quantity > held_qty:
                         quantity = held_qty
-            elif account_kind_u == "USER_BROKER" and environment == "MOCK":
+            elif account_kind_u == "USER_BROKER" and environment in {
+                "MOCK",
+                "LIVE",
+            }:
                 from stock_platform.broker.account_models import (
                     BrokerPositionSnapshotEntity,
                 )
@@ -231,11 +234,14 @@ class RiskIntegratedRealtimeOrderExecutor:
                 )
                 if held is None or Decimal(str(held)) <= 0:
                     return self._skipped(signal, "NO_POSITION_TO_SELL")
-                # MOCK 자동매매: SELL 신호 시 전량 청산 (부분 잔량 고착 방지)
+                # MOCK/LIVE 자동매매: SELL 신호 시 전량 청산
                 quantity = Decimal(str(held))
 
-        # MOCK SELL: 원장 수량을 이미 전량으로 캡함 — Paper Risk 보유검사 스킵
-        if environment == "MOCK" and signal.action.value.upper() == "SELL":
+        # MOCK/LIVE SELL: 원장 전량 캡 — Paper Risk 보유검사 스킵
+        if (
+            environment in {"MOCK", "LIVE"}
+            and signal.action.value.upper() == "SELL"
+        ):
             risk_allowed = True
             risk_blocked = None
         else:
@@ -274,21 +280,46 @@ class RiskIntegratedRealtimeOrderExecutor:
             PaperPosition,
         )
 
-        open_position_count = self._session.scalar(
-            select(func.count())
-            .select_from(PaperPosition)
-            .where(
-                PaperPosition.account_id
-                == exec_account_id,
-                PaperPosition.quantity > 0,
+        if (
+            environment in {"LIVE", "MOCK"}
+            and user_broker_account_id is not None
+        ):
+            from stock_platform.broker.account_models import (
+                BrokerPositionSnapshotEntity,
             )
-        ) or 0
+
+            open_position_count = self._session.scalar(
+                select(func.count())
+                .select_from(BrokerPositionSnapshotEntity)
+                .where(
+                    BrokerPositionSnapshotEntity.user_broker_account_id
+                    == int(user_broker_account_id),
+                    BrokerPositionSnapshotEntity.quantity > 0,
+                )
+            ) or 0
+        else:
+            open_position_count = self._session.scalar(
+                select(func.count())
+                .select_from(PaperPosition)
+                .where(
+                    PaperPosition.account_id
+                    == exec_account_id,
+                    PaperPosition.quantity > 0,
+                )
+            ) or 0
+
+        unlock_token = None
+        if self._execution_config.mode == RealtimeExecutionMode.LIVE:
+            unlock_token = getattr(
+                self._safety_guard._config, "live_unlock_token", None
+            )
 
         decision = self._safety_guard.evaluate(
             signal=signal,
             mode=self._execution_config.mode,
             order_amount=self._execution_config.order_amount,
             open_position_count=int(open_position_count),
+            live_unlock_token=unlock_token,
         )
         if not decision.allowed:
             return self._skipped(
