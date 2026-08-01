@@ -19,6 +19,7 @@ import { PageContainer } from "@/components/common/PageContainer";
 import { userRoutes } from "@/config/routes";
 import type { TradeExecution, TradeOrder, UserAccount } from "@/features/user/api/userApi";
 import * as userApi from "@/features/user/api/userApi";
+import { AccountStrategyPerformancePanel } from "@/features/user/orders/AccountStrategyPerformancePanel";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -269,6 +270,11 @@ export default function UserOrdersPage() {
                 ]}
               />
             </Card>
+
+            <AccountStrategyPerformancePanel
+              accountId={selectedAccountId}
+              accountType="PAPER"
+            />
 
             <Card title="체결 내역" size="small">
               {executionsQuery.error ? (

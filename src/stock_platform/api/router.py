@@ -134,6 +134,15 @@ from stock_platform.api.v1.user_strategy_ownership import (
 from stock_platform.api.v1.user_account_strategies import (
     router as user_account_strategies_router,
 )
+from stock_platform.api.v1.user_account_strategy_performance import (
+    router as user_account_strategy_performance_router,
+)
+from stock_platform.api.v1.admin_indicator_parameters import (
+    router as admin_indicator_parameters_router,
+)
+from stock_platform.api.v1.admin_member_cleanup import (
+    router as admin_member_cleanup_router,
+)
 from stock_platform.api.v1.admin_strategies import (
     router as admin_strategies_router,
 )
@@ -432,6 +441,9 @@ _ROUTER_GROUPS = (
     user_strategies_router,
     user_strategy_ownership_router,
     user_account_strategies_router,
+    user_account_strategy_performance_router,
+    admin_indicator_parameters_router,
+    admin_member_cleanup_router,
     user_backtests_router,
     roles_router,
     audit_router,

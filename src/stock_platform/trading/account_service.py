@@ -191,6 +191,22 @@ class PaperAccountService:
 
         self._repository.save_position(position)
 
+        prov_kwargs: dict = {}
+        if order_id is not None:
+            try:
+                from stock_platform.trading.models import PaperOrder
+                from stock_platform.trading.order_strategy_provenance import (
+                    provenance_from_order_entity,
+                )
+
+                paper_order = self._repository._session.get(PaperOrder, order_id)
+                if paper_order is not None:
+                    prov_kwargs = provenance_from_order_entity(
+                        paper_order
+                    ).as_column_kwargs()
+            except Exception:  # noqa: BLE001
+                prov_kwargs = {}
+
         trade = PaperTrade(
             account_id=account_id,
             order_id=order_id,
@@ -201,6 +217,7 @@ class PaperAccountService:
             fill_price=fill_price,
             trade_amount=trade_amount,
             realized_profit_loss=realized_profit_loss,
+            **prov_kwargs,
         )
 
         return self._repository.save_trade(trade)

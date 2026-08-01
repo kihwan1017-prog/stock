@@ -228,6 +228,10 @@ export const queryKeys = {
       ["admin", "dart-disclosures", params ?? {}] as const,
     logsAudit: (params?: object) =>
       ["admin", "logs-audit", params ?? {}] as const,
+    indicatorParameters: (params?: object) =>
+      ["admin", "indicator-parameters", params ?? {}] as const,
+    memberCleanupCandidates: (params?: object) =>
+      ["admin", "member-cleanup-candidates", params ?? {}] as const,
     docsList: () => ["admin", "docs-list"] as const,
     docDetail: (slug: string) => ["admin", "doc", slug] as const,
   },
@@ -262,6 +266,20 @@ export const queryKeys = {
     orders: (params?: object) => ["user", "orders", params ?? {}] as const,
     executions: (params?: object) =>
       ["user", "executions", params ?? {}] as const,
+    accountStrategyPerformance: (accountId: number, params?: object) =>
+      ["user", "account-strategy-performance", accountId, params ?? {}] as const,
+    accountStrategyTrades: (
+      accountId: number,
+      strategyKey: string,
+      params?: object,
+    ) =>
+      [
+        "user",
+        "account-strategy-trades",
+        accountId,
+        strategyKey,
+        params ?? {},
+      ] as const,
     paperOrders: (params?: object) =>
       ["user", "paper-orders", params ?? {}] as const,
     topCandidates: (ex: string) => ["user", "top-candidates", ex] as const,

@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -413,6 +414,16 @@ class PaperTrade(Base):
         nullable=False,
         server_default=text("0"),
     )
+
+    # 전략 Provenance (주문에서 복사, 미식별 NULL)
+    strategy_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    strategy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runtime_scope_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    account_strategy_link_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     traded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -607,6 +607,104 @@ export async function listExecutions(params?: {
   return (Array.isArray(data) ? data : []) as TradeExecution[];
 }
 
+/** 계좌 원장 기준 전략별 성과 (백테스트와 분리) */
+export interface AccountStrategyPerformanceItem {
+  strategy_id?: number | null;
+  strategy_name?: string | null;
+  strategy_code?: string | null;
+  strategy_version?: string | null;
+  attribution?: string;
+  order_count?: number;
+  fill_count?: number;
+  buy_quantity?: string;
+  sell_quantity?: string;
+  realized_pnl?: string;
+  unrealized_pnl?: string;
+  fee_tax?: string;
+  net_pnl?: string;
+  win_count?: number;
+  loss_count?: number;
+  win_rate?: number | null;
+  period_return_rate?: number | null;
+  last_trade_at?: string | null;
+  source?: string;
+}
+
+export interface AccountStrategyPerformanceResponse {
+  account_id: number;
+  account_type: string;
+  source: string;
+  unattributed_label?: string;
+  items: AccountStrategyPerformanceItem[];
+}
+
+export interface AccountStrategyTradeItem {
+  order_id?: number;
+  execution_id?: number;
+  trade_id?: number;
+  symbol?: string;
+  side_code?: string;
+  quantity?: string | number;
+  price?: string | number;
+  realized_pnl?: string | number;
+  traded_at?: string | null;
+  strategy_key?: string;
+  source?: string;
+  [key: string]: unknown;
+}
+
+export interface AccountStrategyTradesResponse {
+  account_id: number;
+  strategy_key: string;
+  source: string;
+  items: AccountStrategyTradeItem[];
+}
+
+export async function getAccountStrategyPerformance(
+  accountId: number,
+  opts?: {
+    account_type?: string;
+    date_from?: string;
+    date_to?: string;
+  },
+): Promise<AccountStrategyPerformanceResponse> {
+  const { data } = await apiClient.get<AccountStrategyPerformanceResponse>(
+    `/user/accounts/${accountId}/strategy-performance`,
+    {
+      params: {
+        account_type: opts?.account_type ?? "PAPER",
+        date_from: opts?.date_from,
+        date_to: opts?.date_to,
+      },
+    },
+  );
+  return data;
+}
+
+export async function getAccountStrategyTrades(
+  accountId: number,
+  strategyKey: string,
+  opts?: {
+    account_type?: string;
+    date_from?: string;
+    date_to?: string;
+    limit?: number;
+  },
+): Promise<AccountStrategyTradesResponse> {
+  const { data } = await apiClient.get<AccountStrategyTradesResponse>(
+    `/user/accounts/${accountId}/strategy-performance/${encodeURIComponent(strategyKey)}/trades`,
+    {
+      params: {
+        account_type: opts?.account_type ?? "PAPER",
+        date_from: opts?.date_from,
+        date_to: opts?.date_to,
+        limit: opts?.limit ?? 100,
+      },
+    },
+  );
+  return data;
+}
+
 export async function listPaperOrders(params?: {
   account_id?: number;
   exchange_code?: string;

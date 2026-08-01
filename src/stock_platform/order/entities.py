@@ -79,6 +79,29 @@ class TradingOrderEntity(Base):
         ),
         nullable=True,
     )
+    # 계좌 성과 귀속 — 기존 strategy_code 와 별도 (공식 strategy_definition FK)
+    strategy_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_definition.strategy_id",
+            ondelete="SET NULL",
+            name="fk_trading_order_strategy_id",
+        ),
+        nullable=True,
+    )
+    strategy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runtime_scope_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    account_strategy_link_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.account_strategy_link.account_strategy_link_id",
+            ondelete="SET NULL",
+            name="fk_trading_order_account_strategy_link",
+        ),
+        nullable=True,
+    )
+    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
     portfolio_id: Mapped[int | None] = mapped_column(BigInteger)
     position_id: Mapped[int | None] = mapped_column(BigInteger)
     side_code: Mapped[str] = mapped_column(String(10), nullable=False)

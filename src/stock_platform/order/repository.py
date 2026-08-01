@@ -36,6 +36,14 @@ class TradingOrderRepository:
             symbol=command.symbol.upper(),
             strategy_code=command.strategy_code,
             strategy_deployment_id=command.strategy_deployment_id,
+            strategy_id=command.strategy_id,
+            strategy_version=command.strategy_version,
+            runtime_scope_hash=command.runtime_scope_hash,
+            account_strategy_link_id=command.account_strategy_link_id,
+            user_id=command.user_id,
+            execution_mode=(
+                (command.execution_mode or "").strip().upper() or None
+            ),
             portfolio_id=command.portfolio_id,
             position_id=command.position_id,
             side_code=command.side.value,

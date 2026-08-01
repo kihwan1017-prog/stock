@@ -9,6 +9,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Integer,
     Numeric,
     String,
     Text,
@@ -126,6 +127,16 @@ class PaperOrder(Base):
         Text,
         nullable=True,
     )
+
+    # 전략 Provenance (nullable — 미식별은 NULL)
+    strategy_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    strategy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runtime_scope_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    account_strategy_link_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

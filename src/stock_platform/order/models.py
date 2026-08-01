@@ -61,6 +61,12 @@ class CreateOrderCommand:
     time_in_force: OrderTimeInForce = OrderTimeInForce.DAY
     strategy_code: str | None = None
     strategy_deployment_id: int | None = None
+    strategy_id: int | None = None
+    strategy_version: int | None = None
+    runtime_scope_hash: str | None = None
+    account_strategy_link_id: int | None = None
+    user_id: int | None = None
+    execution_mode: str | None = None
     portfolio_id: int | None = None
     position_id: int | None = None
     client_order_id: str | None = None
