@@ -124,6 +124,17 @@ def admin_live_ops_readiness(
         and armed_count > 0
         and trading_running is False
     )
+
+    pipeline: dict = {}
+    try:
+        from stock_platform.trading.upbit_live_pipeline_readiness import (
+            UpbitLivePipelineReadinessService,
+        )
+
+        pipeline = UpbitLivePipelineReadinessService(session).evaluate()
+    except Exception as exc:  # noqa: BLE001
+        pipeline = {"error": type(exc).__name__}
+
     return {
         "dry_run_ready": dry_run_ready,
         "live_execution_ready": live_execution_ready,
@@ -143,6 +154,7 @@ def admin_live_ops_readiness(
         "global_live_order_enabled": bool(
             getattr(settings, "global_live_order_enabled", False)
         ),
+        "pipeline": pipeline,
         "schedulers": {
             "trading": {
                 "desired": "PAUSE",
@@ -180,5 +192,6 @@ def admin_live_ops_readiness(
             "이 API는 조회 전용이다.",
             "ARM / LIVE ON / create_order / cancel_order 를 수행하지 않는다.",
             "dry_run_ready 와 live_execution_ready 를 분리한다.",
+            "pipeline 은 Shadow/Dry-run·Fill·Recovery 훅 준비 상태다.",
         ],
     }

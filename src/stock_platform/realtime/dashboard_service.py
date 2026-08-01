@@ -286,6 +286,56 @@ class RealtimeDashboardService:
             "shadow_mode_enabled": bool(
                 getattr(self._settings, "live_shadow_mode_enabled", False)
             ),
+            "dry_run_mode_enabled": bool(
+                getattr(self._settings, "live_order_dry_run_enabled", False)
+            ),
+            "upbit": self._upbit_live_ops_slice(),
+        }
+
+    def _upbit_live_ops_slice(self) -> dict[str, Any]:
+        """Upbit 시세 WS·원장·Recovery 요약 (실주문 호출 없음)."""
+
+        quote_ws: dict[str, Any] = {"running": False}
+        try:
+            clients = getattr(realtime_manager, "_clients", {}) or {}
+            upbit_obj = clients.get("UPBIT")
+            upbit = upbit_obj.status() if upbit_obj is not None else {}
+            quote_ws = {
+                "running": bool(upbit_obj),
+                "connected": bool(upbit.get("connected")),
+                "received_count": upbit.get("received_count"),
+                "reconnect_count": upbit.get("reconnect_count"),
+                "last_error": upbit.get("last_error"),
+            }
+        except Exception:  # noqa: BLE001
+            pass
+
+        pipeline: dict[str, Any] = {}
+        try:
+            from stock_platform.trading.upbit_live_pipeline_readiness import (
+                UpbitLivePipelineReadinessService,
+            )
+
+            pipeline = UpbitLivePipelineReadinessService(
+                self._session
+            ).evaluate()
+        except Exception as exc:  # noqa: BLE001
+            pipeline = {"error": type(exc).__name__}
+
+        return {
+            "quote_ws": quote_ws,
+            "pipeline_ops_ready": bool(pipeline.get("ops_ready")),
+            "pipeline_blockers": pipeline.get("blockers") or [],
+            "pipeline_warnings": pipeline.get("warnings") or [],
+            "candidate_path": (
+                (pipeline.get("checks") or {})
+                .get("modes", {})
+                .get("candidate_path")
+            ),
+            "hooks": (pipeline.get("checks") or {}).get("hooks"),
+            "recent_candidates_24h": (
+                (pipeline.get("checks") or {}).get("recent_candidates_24h")
+            ),
         }
 
     def _paper_unattended_status(self) -> dict[str, Any]:

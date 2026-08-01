@@ -98,6 +98,7 @@ class UpbitRealtimeClient:
         self._connected = False
         self._last_error: str | None = None
         self._received_count = 0
+        self._reconnect_count = 0
         self._last_received_at: datetime | None = None
 
     async def run_forever(self) -> None:
@@ -112,9 +113,11 @@ class UpbitRealtimeClient:
             except Exception as exc:
                 self._connected = False
                 self._last_error = str(exc)
+                self._reconnect_count += 1
                 logger.exception(
                     "upbit_realtime_connection_failed",
                     retry_seconds=retry_seconds,
+                    reconnect_count=self._reconnect_count,
                 )
 
                 try:
@@ -218,6 +221,7 @@ class UpbitRealtimeClient:
             "symbols": self._symbols,
             "channels": self._channels,
             "received_count": self._received_count,
+            "reconnect_count": self._reconnect_count,
             "last_received_at": (
                 self._last_received_at.isoformat()
                 if self._last_received_at
