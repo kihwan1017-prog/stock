@@ -327,6 +327,19 @@ class RiskIntegratedRealtimeOrderExecutor:
                 decision.reason_code,
             )
 
+        from stock_platform.order.live_shadow import is_live_shadow_mode
+
+        meta = {
+            "source": "REALTIME_SIGNAL",
+            "signal_reason": signal.reason_code,
+            "execution_mode": self._execution_config.mode.value,
+            "environment": environment,
+            "resolved_broker_code": broker_code,
+        }
+        if environment == "LIVE" and is_live_shadow_mode():
+            meta["shadow"] = True
+            meta["shadow_mode"] = "LIVE_SHADOW"
+
         result = OrderExecutionService(self._session).submit(
             OrderExecutionCommand(
                 account_id=exec_account_id,
@@ -341,15 +354,7 @@ class RiskIntegratedRealtimeOrderExecutor:
                 strategy_code=signal.reason_code,
                 account_number=account_number or None,
                 skip_risk_checks=True,  # 이미 상단에서 검증
-                metadata_payload={
-                    "source": "REALTIME_SIGNAL",
-                    "signal_reason": signal.reason_code,
-                    "execution_mode": (
-                        self._execution_config.mode.value
-                    ),
-                    "environment": environment,
-                    "resolved_broker_code": broker_code,
-                },
+                metadata_payload=meta,
                 actor="REALTIME_EXECUTION",
                 order_source="AUTO",
                 environment=environment,

@@ -189,6 +189,8 @@ class Settings(BaseSettings):
     # LIVE Runner 대상 UBA / Unlock (기본 미설정 — Fail Closed)
     realtime_live_user_broker_account_id: int = 0
     realtime_live_unlock_token: str = Field(default="")
+    # LIVE Shadow — 실주문 HTTP 0, Intent만 기록 (기본 OFF)
+    live_shadow_mode_enabled: bool = False
     # Kiwoom MOCK realtime loop (기본 OFF — Fail Closed, LIVE와 분리)
     realtime_kiwoom_mock_auto_start_enabled: bool = False
     kiwoom_mock_outbox_auto_fill: bool = False

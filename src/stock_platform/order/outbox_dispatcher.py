@@ -41,6 +41,16 @@ class OrderOutboxDispatcher:
     ) -> dict[str, Any]:
         event = OutboxEventType(event_type)
         active_session = session or self._session
+
+        # LIVE Shadow — Adapter resolve / Broker HTTP 이전 차단
+        from stock_platform.order.live_shadow import (
+            shadow_block_dispatch_result,
+            should_block_live_broker_call,
+        )
+
+        if should_block_live_broker_call(payload):
+            return shadow_block_dispatch_result(event_type=event.value)
+
         adapter = (
             self._fixed_adapter
             if self._fixed_adapter is not None

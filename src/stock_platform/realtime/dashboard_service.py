@@ -283,6 +283,9 @@ class RealtimeDashboardService:
             "live_orders_24h": live_orders,
             "live_stalled_orders": live_stalled,
             "recovery_paused_accounts": recovery_paused,
+            "shadow_mode_enabled": bool(
+                getattr(self._settings, "live_shadow_mode_enabled", False)
+            ),
         }
 
     def _paper_unattended_status(self) -> dict[str, Any]:

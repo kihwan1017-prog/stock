@@ -141,6 +141,28 @@ class OrderOutboxWorker:
                     # LIVE safety: intent 후에도 재확인 (전송 직전)
                     self._assert_live_dispatch_allowed(session, payload)
 
+                    from stock_platform.order.live_shadow import (
+                        should_block_live_broker_call,
+                        shadow_block_dispatch_result,
+                    )
+
+                    if should_block_live_broker_call(payload):
+                        # Shadow — Broker API 0, Outbox DONE 처리
+                        blocked = shadow_block_dispatch_result(
+                            event_type=entity.event_type
+                        )
+                        repository.mark_done(
+                            entity=entity,
+                            fencing_token=fencing_token,
+                            worker_id=self._worker_id,
+                        )
+                        entity.last_error = blocked.get(
+                            "reject_message"
+                        )
+                        succeeded += 1
+                        session.commit()
+                        continue
+
                     record = idempotency.begin(
                         idempotency_key=entity.idempotency_key,
                         request_hash=request_hash,
