@@ -106,6 +106,20 @@ class RealtimeDashboardService:
                         False,
                     )
                 ),
+                "kiwoom_live_order": bool(
+                    getattr(
+                        self._settings,
+                        "kiwoom_live_order_enabled",
+                        False,
+                    )
+                ),
+                "upbit_live_order": bool(
+                    getattr(
+                        self._settings,
+                        "upbit_live_order_enabled",
+                        False,
+                    )
+                ),
                 "paper_outbox_auto_fill": bool(
                     getattr(
                         self._settings,
@@ -136,6 +150,7 @@ class RealtimeDashboardService:
                 ),
             },
             "paper_unattended": self._paper_unattended_status(),
+            "live_autotrading": self._live_autotrading_status(),
             "safety": {
                 "daily_realized_loss": str(
                     realtime_safety_guard
@@ -179,6 +194,96 @@ class RealtimeDashboardService:
                 limit=recent_limit
             ),
         )
+
+    def _live_autotrading_status(self) -> dict[str, Any]:
+        """LIVE Runtime / Order / Recovery / Broker WS 요약."""
+
+        from stock_platform.realtime.execution_models import (
+            RealtimeExecutionMode,
+        )
+        from stock_platform.realtime.live_runtime_control import (
+            live_auto_start_allowed,
+            live_order_flags_ready,
+        )
+
+        mode = str(realtime_execution_runner._config.mode)
+        uba = getattr(
+            realtime_execution_runner._config,
+            "user_broker_account_id",
+            None,
+        )
+        gate = live_auto_start_allowed(allow_live=True)
+        kiwoom_ws: dict[str, Any] = {"running": False}
+        try:
+            from stock_platform.broker.kiwoom.ws_manager import (
+                kiwoom_order_websocket_manager,
+            )
+
+            kiwoom_ws = kiwoom_order_websocket_manager.status()
+        except Exception:  # noqa: BLE001
+            pass
+
+        live_orders = 0
+        live_stalled = 0
+        try:
+            live_orders = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.trading_order
+                        WHERE metadata_payload->>'environment' = 'LIVE'
+                          AND created_at >= NOW() - INTERVAL '1 day'
+                        """
+                    )
+                ).scalar_one()
+            )
+            live_stalled = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.trading_order
+                        WHERE metadata_payload->>'environment' = 'LIVE'
+                          AND status_code IN ('ACCEPTED', 'PENDING', 'SUBMITTING')
+                          AND updated_at < NOW() - INTERVAL '5 minutes'
+                        """
+                    )
+                ).scalar_one()
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        recovery_paused = 0
+        try:
+            recovery_paused = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM operation.broker_recovery_account_state
+                        WHERE trading_paused IS TRUE
+                        """
+                    )
+                ).scalar_one()
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        return {
+            "execution_mode": mode,
+            "is_live_mode": mode == RealtimeExecutionMode.LIVE.value,
+            "runner_running": bool(
+                realtime_execution_runner.status().get("running")
+            ),
+            "user_broker_account_id": uba,
+            "order_flags_ready": live_order_flags_ready(self._settings),
+            "auto_start_gate": gate,
+            "kiwoom_order_ws": {
+                "running": bool(kiwoom_ws.get("running")),
+                "connected": bool(kiwoom_ws.get("connected")),
+            },
+            "live_orders_24h": live_orders,
+            "live_stalled_orders": live_stalled,
+            "recovery_paused_accounts": recovery_paused,
+        }
 
     def _paper_unattended_status(self) -> dict[str, Any]:
         from stock_platform.order.paper_unattended_runtime import (
