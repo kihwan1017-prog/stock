@@ -58,6 +58,8 @@ export const adminRoutes = {
   notifications: "/admin/notifications",
   telegram: "/admin/telegram",
   docs: "/admin/docs",
+  /** 운영관리 → 문서관리 → 매뉴얼 (화면 내 통합 조회) */
+  docsManual: "/admin/docs/manual",
   operations: "/admin/operations",
   operationsDashboard: "/admin/operations-dashboard",
   /** STEP4-6: 관리자 내 정보 — 준비중(ComingSoon) */
@@ -206,7 +208,8 @@ const adminTitles: Record<string, string> = {
   [adminRoutes.batch]: "배치 관리",
   [adminRoutes.notifications]: "알림 관리",
   [adminRoutes.telegram]: "Telegram 운영",
-  [adminRoutes.docs]: "문서 관리",
+  [adminRoutes.docs]: "문서 CMS",
+  [adminRoutes.docsManual]: "매뉴얼",
   [adminRoutes.profile]: "관리자 내 정보",
 };
 
