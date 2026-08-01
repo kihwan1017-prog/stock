@@ -22,6 +22,7 @@ import * as adminApi from "@/features/admin/api/adminApi";
 import type { MemberRecord } from "@/features/admin/api/adminApi";
 import { AdminDataTable } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { MemberCleanupPreviewPanel } from "@/features/admin/members/MemberCleanupPreviewPanel";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -223,6 +224,8 @@ export default function AdminMembersPage() {
         </PermissionButton>
       }
     >
+      <MemberCleanupPreviewPanel />
+
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Form
           layout="inline"

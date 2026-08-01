@@ -5,6 +5,7 @@ import { App, Button, InputNumber, Space, Typography } from "antd";
 import { useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
+import { AdminUpbitLiveUbaPanel } from "@/features/admin/accounts/AdminUpbitLiveUbaPanel";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { UpbitAmbiguousOrdersPanel } from "@/features/admin/upbit/UpbitAmbiguousOrdersPanel";
@@ -17,11 +18,6 @@ export default function AdminUpbitPage() {
   const qc = useQueryClient();
   const [ubaId, setUbaId] = useState<number | null>(null);
 
-  const markets = useQuery({
-    queryKey: queryKeys.admin.upbitMarkets(),
-    queryFn: adminApi.getUpbitMarkets,
-  });
-
   const accountStatus = useQuery({
     queryKey: queryKeys.admin.upbitAccountStatus(),
     queryFn: adminApi.getUpbitAccountStatus,
@@ -32,15 +28,6 @@ export default function AdminUpbitPage() {
     queryFn: () => adminApi.getUpbitAccountSnapshot(ubaId as number),
     enabled: ubaId != null,
     retry: false,
-  });
-
-  const syncInstruments = useMutation({
-    mutationFn: adminApi.syncUpbitInstruments,
-    onSuccess: () => {
-      message.success("업비트 종목 동기화 요청 완료");
-      void qc.invalidateQueries({ queryKey: queryKeys.admin.upbitMarkets() });
-    },
-    onError: (e) => message.error(toApiError(e).message),
   });
 
   const connectionTest = useMutation({
@@ -100,12 +87,6 @@ export default function AdminUpbitPage() {
     onError: (e) => message.error(toApiError(e).message),
   });
 
-  const rows = extractRows(markets.data).length
-    ? extractRows(markets.data)
-    : Array.isArray(markets.data)
-      ? (markets.data as Record<string, unknown>[])
-      : [];
-
   const snapshotPositions =
     accountSnapshot.data &&
     typeof accountSnapshot.data === "object" &&
@@ -117,8 +98,8 @@ export default function AdminUpbitPage() {
 
   return (
     <AdminPageShell
-      title="업비트 관리"
-      description="시세·종목 동기화 · 인증/잔고 스냅샷 (STEP2)"
+      title="업비트 계좌"
+      description="UBA 연결 · 인증/잔고 스냅샷 · Ambiguous 주문 (시세/종목은 업비트 시세 메뉴)"
       extra={
         <Space wrap>
           <InputNumber
@@ -146,13 +127,6 @@ export default function AdminUpbitPage() {
           >
             체결 동기화
           </Button>
-          <Button
-            type="primary"
-            loading={syncInstruments.isPending}
-            onClick={() => syncInstruments.mutate()}
-          >
-            종목 동기화
-          </Button>
         </Space>
       }
     >
@@ -162,6 +136,8 @@ export default function AdminUpbitPage() {
           `UPBIT_USE_MOCK=true`이면 실호출 없이 mock 잔고로 검증합니다. 실주문은
           비활성(`UPBIT_LIVE_ORDER_ENABLED=false`)이 기본입니다.
         </Typography.Paragraph>
+
+        <AdminUpbitLiveUbaPanel />
 
         <AdminJsonCard
           title="GET /broker/upbit/account/status"
@@ -301,25 +277,6 @@ export default function AdminUpbitPage() {
           Ambiguous 주문 (STEP 8-5-12)
         </Typography.Title>
         <UpbitAmbiguousOrdersPanel />
-
-        <AdminDataTable
-          title="GET /upbit/markets"
-          loading={markets.isLoading}
-          error={markets.error ? toApiError(markets.error) : null}
-          rowKey={(r) => cell(r.market ?? r.symbol ?? JSON.stringify(r))}
-          columns={[
-            { title: "market", dataIndex: "market", sorter: true },
-            { title: "korean_name", dataIndex: "korean_name" },
-            { title: "english_name", dataIndex: "english_name" },
-          ]}
-          dataSource={rows}
-        />
-        <AdminJsonCard
-          title="마켓 원본 응답"
-          loading={markets.isLoading}
-          error={markets.error ? toApiError(markets.error) : null}
-          data={markets.data}
-        />
       </Space>
     </AdminPageShell>
   );

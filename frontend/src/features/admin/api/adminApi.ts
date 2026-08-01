@@ -4796,3 +4796,138 @@ export function openApiDocsUrl(): string {
   if (base) return `${base}/docs`;
   return "/docs";
 }
+
+// --- Admin Indicator Parameters ---
+
+export interface IndicatorParameterRecord {
+  indicator_parameter_config_id: number;
+  indicator_code: string;
+  market_type: string;
+  exchange_code?: string | null;
+  timeframe: string;
+  parameter_payload: Record<string, unknown>;
+  version: number;
+  is_active: boolean;
+  effective_from?: string | null;
+  created_by?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface IndicatorParameterListResponse {
+  items: IndicatorParameterRecord[];
+  system_defaults?: Record<string, unknown>;
+  resolved_engine_params?: Record<string, unknown>;
+}
+
+export async function listIndicatorParameters(params?: {
+  indicator_code?: string;
+  active_only?: boolean;
+}): Promise<IndicatorParameterListResponse> {
+  const { data } = await apiClient.get<IndicatorParameterListResponse>(
+    "/admin/indicator-parameters",
+    { params },
+  );
+  return data;
+}
+
+export async function createIndicatorParameter(body: {
+  indicator_code: string;
+  market_type?: string;
+  exchange_code?: string | null;
+  timeframe?: string;
+  parameter_payload: Record<string, unknown>;
+  activate?: boolean;
+}): Promise<IndicatorParameterRecord> {
+  const { data } = await apiClient.post<IndicatorParameterRecord>(
+    "/admin/indicator-parameters",
+    body,
+  );
+  return data;
+}
+
+export async function updateIndicatorParameter(
+  configId: number,
+  body: {
+    parameter_payload?: Record<string, unknown>;
+    is_active?: boolean;
+  },
+): Promise<IndicatorParameterRecord> {
+  const { data } = await apiClient.put<IndicatorParameterRecord>(
+    `/admin/indicator-parameters/${configId}`,
+    body,
+  );
+  return data;
+}
+
+export async function previewIndicatorParameter(body: {
+  indicator_code: string;
+  market_type?: string;
+  exchange_code?: string | null;
+  timeframe?: string;
+  parameter_payload: Record<string, unknown>;
+}): Promise<JsonValue> {
+  return postJson("/admin/indicator-parameters/preview", body);
+}
+
+export async function restoreIndicatorParameterDefaults(body?: {
+  indicator_code?: string | null;
+  market_type?: string | null;
+  timeframe?: string | null;
+}): Promise<JsonValue> {
+  return postJson("/admin/indicator-parameters/restore-defaults", body ?? {});
+}
+
+// --- Admin Member Cleanup ---
+
+export interface MemberCleanupCandidate {
+  user_id: number;
+  username: string;
+  email?: string | null;
+  display_name?: string | null;
+  is_active: boolean;
+  deleted_at?: string | null;
+  roles?: string[];
+  protected: boolean;
+  is_self: boolean;
+  ref_counts: Record<string, number>;
+  can_deactivate: boolean;
+  can_soft_delete: boolean;
+  hard_delete_allowed: boolean;
+  recommended_action: string;
+}
+
+export interface MemberCleanupCandidatesResponse {
+  protected_usernames: string[];
+  policy: Record<string, unknown>;
+  items: MemberCleanupCandidate[];
+  candidate_count: number;
+}
+
+export async function listMemberCleanupCandidates(params?: {
+  include_deleted?: boolean;
+}): Promise<MemberCleanupCandidatesResponse> {
+  const { data } = await apiClient.get<MemberCleanupCandidatesResponse>(
+    "/admin/member-cleanup/candidates",
+    { params },
+  );
+  return data;
+}
+
+export async function previewMemberCleanup(body: {
+  user_ids: number[];
+  mode?: "deactivate" | "soft_delete";
+  confirm_phrase: string;
+  backup_confirmed?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/member-cleanup/preview", body);
+}
+
+export async function executeMemberCleanup(body: {
+  user_ids: number[];
+  mode?: "deactivate" | "soft_delete";
+  confirm_phrase: string;
+  backup_confirmed: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/member-cleanup/execute", body);
+}

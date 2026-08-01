@@ -9,6 +9,10 @@ export interface OperationCenterTile {
   /** live | partial | planned */
   support: "live" | "partial" | "planned";
   apis: string[];
+  /** planned 타일 — 비활성 버튼에 표시할 사유 */
+  plannedReason?: string;
+  /** planned 타일 — 관련 화면 링크 (없으면 href 사용) */
+  relatedHref?: string;
 }
 
 export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
@@ -102,19 +106,23 @@ export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
   },
   {
     id: "logs",
-    title: "Log Viewer",
-    description: "감사 로그 (앱 로그 테일 없음)",
+    title: "Log Tail",
+    description: "앱 로그 파일 테일 — API 미구현",
     href: adminRoutes.logs,
-    support: "partial",
-    apis: ["GET /audit/events"],
+    relatedHref: adminRoutes.logs,
+    support: "planned",
+    plannedReason: "앱 로그 테일 API 미구현",
+    apis: ["TODO: GET /ops/logs/tail", "GET /audit/events (감사 로그만)"],
   },
   {
     id: "backup",
-    title: "Backup",
-    description: "백업 도구 점검 (웹 dump 없음)",
+    title: "Backup Dump",
+    description: "웹에서 pg_dump 실행 — API 미구현",
     href: adminRoutes.db,
-    support: "partial",
-    apis: ["GET /ops/backup/status"],
+    relatedHref: adminRoutes.db,
+    support: "planned",
+    plannedReason: "웹 Backup dump API 미구현",
+    apis: ["GET /ops/backup/status", "TODO: POST /ops/backup/dump"],
   },
   {
     id: "telegram",
@@ -141,7 +149,9 @@ export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
     title: "Restore",
     description: "웹 restore 미지원 — CLI 매뉴얼",
     href: adminRoutes.db,
+    relatedHref: adminRoutes.db,
     support: "planned",
+    plannedReason: "웹 Restore API 미구현",
     apis: ["TODO: POST /ops/backup/restore"],
   },
 ];

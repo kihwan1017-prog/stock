@@ -359,39 +359,62 @@ export default function AdminOperationCenterPage() {
 
         <Card size="small" title="운영 기능 바로가기">
           <Row gutter={[12, 12]}>
-            {OPERATION_CENTER_TILES.map((tile) => (
-              <Col xs={24} sm={12} md={8} lg={6} key={tile.id}>
-                <Card
-                  size="small"
-                  type="inner"
-                  title={
-                    <Space>
-                      <span>{tile.title}</span>
-                      <Tag color={supportColor(tile.support)}>
-                        {tile.support}
-                      </Tag>
-                    </Space>
-                  }
-                  actions={[
-                    <Link key="go" href={tile.href}>
-                      <Button type="link" size="small">
-                        열기
-                      </Button>
-                    </Link>,
-                  ]}
-                >
-                  <Typography.Paragraph
-                    type="secondary"
-                    style={{ minHeight: 40, marginBottom: 8 }}
+            {OPERATION_CENTER_TILES.map((tile) => {
+              const isPlanned = tile.support === "planned";
+              const linkHref = tile.relatedHref ?? tile.href;
+              return (
+                <Col xs={24} sm={12} md={8} lg={6} key={tile.id}>
+                  <Card
+                    size="small"
+                    type="inner"
+                    title={
+                      <Space>
+                        <span>{tile.title}</span>
+                        <Tag color={supportColor(tile.support)}>
+                          {tile.support}
+                        </Tag>
+                      </Space>
+                    }
+                    actions={[
+                      isPlanned ? (
+                        <Button
+                          key="disabled"
+                          type="link"
+                          size="small"
+                          disabled
+                          title={tile.plannedReason}
+                        >
+                          {tile.plannedReason ?? "준비 중"}
+                        </Button>
+                      ) : (
+                        <Link key="go" href={tile.href}>
+                          <Button type="link" size="small">
+                            열기
+                          </Button>
+                        </Link>
+                      ),
+                      isPlanned && linkHref ? (
+                        <Link key="related" href={linkHref}>
+                          <Button type="link" size="small">
+                            관련 화면
+                          </Button>
+                        </Link>
+                      ) : null,
+                    ].filter(Boolean)}
                   >
-                    {tile.description}
-                  </Typography.Paragraph>
-                  <Typography.Text style={{ fontSize: 11 }} type="secondary">
-                    {tile.apis.slice(0, 2).join(" · ")}
-                  </Typography.Text>
-                </Card>
-              </Col>
-            ))}
+                    <Typography.Paragraph
+                      type="secondary"
+                      style={{ minHeight: 40, marginBottom: 8 }}
+                    >
+                      {tile.description}
+                    </Typography.Paragraph>
+                    <Typography.Text style={{ fontSize: 11 }} type="secondary">
+                      {tile.apis.slice(0, 2).join(" · ")}
+                    </Typography.Text>
+                  </Card>
+                </Col>
+              );
+            })}
           </Row>
         </Card>
 

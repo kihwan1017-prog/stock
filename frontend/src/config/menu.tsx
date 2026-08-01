@@ -165,7 +165,7 @@ export const adminMenuItems: AdminMenuItem[] = [
       {
         key: "upbit-market",
         label: "업비트 시세",
-        path: adminRoutes.upbit,
+        path: adminRoutes.upbitMarkets,
         icon: <ApiOutlined />,
         enabled: true,
         permission: "menu:upbit",

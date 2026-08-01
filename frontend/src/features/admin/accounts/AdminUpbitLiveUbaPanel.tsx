@@ -413,17 +413,18 @@ export function AdminUpbitLiveUbaPanel() {
         onCancel={() => setEditTarget(null)}
         onOk={() => editForm.submit()}
         confirmLoading={updateMutation.isPending}
-        forceRender
-      >
-        {editTarget ? (
-        <Form
-          key={String(editTarget.user_broker_account_id ?? editTarget.account_id)}
-          form={editForm}
-          layout="vertical"
-          initialValues={{
+        destroyOnHidden
+        afterOpenChange={(opened) => {
+          if (!opened || !editTarget) return;
+          editForm.setFieldsValue({
             account_alias: String(editTarget.account_name ?? ""),
             is_active: Boolean(editTarget.is_active),
-          }}
+          });
+        }}
+      >
+        <Form
+          form={editForm}
+          layout="vertical"
           onFinish={(values) => {
             if (!editTarget) return;
             const ubaId = Number(
@@ -445,7 +446,6 @@ export function AdminUpbitLiveUbaPanel() {
             <Switch />
           </Form.Item>
         </Form>
-        ) : null}
       </Modal>
 
       <Modal

@@ -48,6 +48,7 @@ export const adminRoutes = {
   ollama: "/admin/ollama",
   kiwoom: "/admin/kiwoom",
   upbit: "/admin/upbit",
+  upbitMarkets: "/admin/upbit/markets",
   liveValidationUpbit: "/admin/live-validation/upbit",
   /** STEP4-6: 기술지표 관리 — 준비중(ComingSoon) */
   indicators: "/admin/indicators",
@@ -197,7 +198,8 @@ const adminTitles: Record<string, string> = {
   [adminRoutes.api]: "API 관리",
   [adminRoutes.ollama]: "Ollama 관리",
   [adminRoutes.kiwoom]: "키움 계좌",
-  [adminRoutes.upbit]: "업비트 계좌·시세",
+  [adminRoutes.upbit]: "업비트 계좌",
+  [adminRoutes.upbitMarkets]: "업비트 시세",
   [adminRoutes.liveValidationUpbit]: "업비트 소액 LIVE 검증",
   [adminRoutes.indicators]: "기술지표 관리",
   [adminRoutes.recovery]: "장애 복구",
