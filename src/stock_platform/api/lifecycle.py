@@ -231,6 +231,10 @@ class ApplicationLifecycle:
                 "market data persistence",
                 market_data_persistence_worker.start,
             )
+            await self._run_optional(
+                "release configuration validation",
+                self._startup_release_validation,
+            )
 
             self._started = True
             logger.info("Application startup complete")
@@ -313,6 +317,26 @@ class ApplicationLifecycle:
             raise
         finally:
             session.close()
+
+    async def _startup_release_validation(self) -> None:
+        """Release v1.2 — Configuration / Fail-Closed / Lifecycle 검증."""
+
+        from stock_platform.operation.release_operation_readiness import (
+            run_startup_configuration_validation,
+        )
+
+        result = run_startup_configuration_validation()
+        logger.info(
+            "release_configuration_validation",
+            overall=result.get("overall"),
+            fail_count=result.get("fail_count"),
+            warn_count=result.get("warn_count"),
+            failed_checks=result.get("failed_checks"),
+            live_submit_blocked=result.get("fail_closed", {}).get(
+                "live_submit_blocked"
+            ),
+            lifecycle=result.get("lifecycle", {}).get("status"),
+        )
 
     async def _startup_ai_execution_recovery(self) -> None:
         """STEP 11-5 — stale RUNNING/QUEUED → ABANDONED (자동 외부 재호출 0)."""

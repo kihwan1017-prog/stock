@@ -144,6 +144,16 @@ class OpsMonitoringDashboardService:
         overall = compute_overall_status(
             {"errors": errors, "warnings": warnings}
         )
+        release_ops: dict[str, Any] = {}
+        try:
+            from stock_platform.operation.release_operation_readiness import (
+                build_operation_dashboard_slice,
+            )
+
+            release_ops = build_operation_dashboard_slice(self._session)
+        except Exception as exc:  # noqa: BLE001
+            release_ops = {"error": type(exc).__name__}
+
         return {
             "overall_status": overall,
             "checked_at": checked_at.isoformat(),
@@ -159,6 +169,7 @@ class OpsMonitoringDashboardService:
                 "active_account_count": active_account_ks,
             },
             "alerts": alerts,
+            "release_ops": release_ops,
         }
 
     # ------------------------------------------------------------------ accounts

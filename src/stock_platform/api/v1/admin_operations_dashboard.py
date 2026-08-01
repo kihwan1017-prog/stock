@@ -139,3 +139,17 @@ def get_notifications(
     _: AuthenticatedUser = Depends(require_admin),
 ):
     return _svc(session).notifications(limit=limit)
+
+
+@router.get("/release-readiness")
+def get_release_readiness(
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Release v1.2 운영 준비 리포트 (조회 전용, LIVE 활성화 없음)."""
+
+    from stock_platform.operation.release_operation_readiness import (
+        build_release_readiness_report,
+    )
+
+    return build_release_readiness_report(session)

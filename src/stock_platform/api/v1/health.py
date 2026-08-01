@@ -51,6 +51,20 @@ async def health_ready(response: Response):
     return payload
 
 
+@router.get("/ops")
+async def health_ops():
+    """운영 Health — Runtime/Scheduler/Recovery/Outbox/WS 등."""
+
+    from stock_platform.operation.release_operation_readiness import (
+        build_operation_health,
+        get_last_startup_validation,
+    )
+
+    payload = build_operation_health()
+    payload["startup_validation"] = get_last_startup_validation()
+    return payload
+
+
 @router.get("")
 async def health():
     """상세 컴포넌트 헬스.
@@ -75,4 +89,21 @@ async def health():
         if error:
             payload["components"]["database"]["message"] = "unavailable"
         return payload
-    return await SystemHealthService().build()
+    base = await SystemHealthService().build()
+    try:
+        from stock_platform.operation.release_operation_readiness import (
+            build_operation_health,
+        )
+
+        ops = build_operation_health()
+        comps = dict(base.get("components") or {})
+        for key, value in (ops.get("components") or {}).items():
+            comps.setdefault(key, value)
+        base["components"] = comps
+        base["operation_health"] = {
+            "status": ops.get("status"),
+            "checked_at": ops.get("checked_at"),
+        }
+    except Exception:  # noqa: BLE001
+        pass
+    return base
