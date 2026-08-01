@@ -9,6 +9,7 @@ from enum import StrEnum
 class RealtimeExecutionMode(StrEnum):
     PAPER = "PAPER"
     LIVE = "LIVE"
+    MOCK = "MOCK"
 
 
 @dataclass(frozen=True, slots=True)

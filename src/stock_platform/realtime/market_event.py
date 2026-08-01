@@ -17,6 +17,8 @@ class RealtimeMarketEvent:
     event_type: str
     event_time: datetime
     received_at: datetime
+    # 시세 거래소(PAPER/KRX/UPBIT). broker_code(데이터 소스)와 분리
+    exchange_code: str | None = None
     price: Decimal | None = None
     volume: Decimal | None = None
     bid: Decimal | None = None

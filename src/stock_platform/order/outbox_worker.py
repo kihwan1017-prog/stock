@@ -97,6 +97,8 @@ class OrderOutboxWorker:
                 if entity is None:
                     continue
 
+                mock_fill_order_id: int | None = None
+                mock_fill_payload: dict[str, Any] | None = None
                 try:
                     payload = dict(entity.payload_json or {})
                     # 레거시 payload에 order_id 누락 시 보강
@@ -159,6 +161,11 @@ class OrderOutboxWorker:
                         )
                         succeeded += 1
                         session.commit()
+                        if result.get("accepted"):
+                            self._maybe_mock_auto_fill(
+                                order_id=int(entity.order_id),
+                                payload=payload,
+                            )
                         continue
 
                     try:
@@ -231,7 +238,11 @@ class OrderOutboxWorker:
                     )
                     succeeded += 1
                     session.commit()
+                    mock_fill_order_id = int(entity.order_id)
+                    mock_fill_payload = dict(payload)
                 except OutboxFencingError as exc:
+                    mock_fill_order_id = None
+                    mock_fill_payload = None
                     session.rollback()
                     record_outbox_audit(
                         session,
@@ -245,6 +256,8 @@ class OrderOutboxWorker:
                     )
                     session.commit()
                 except OutboxAmbiguousError as exc:
+                    mock_fill_order_id = None
+                    mock_fill_payload = None
                     session.rollback()
                     with self._session_factory() as amb_session:
                         amb_repo = OrderOutboxRepository(amb_session)
@@ -259,6 +272,8 @@ class OrderOutboxWorker:
                             amb_session.commit()
                             ambiguous += 1
                 except Exception as exc:
+                    mock_fill_order_id = None
+                    mock_fill_payload = None
                     session.rollback()
                     with self._session_factory() as retry_session:
                         retry_repository = OrderOutboxRepository(
@@ -268,9 +283,15 @@ class OrderOutboxWorker:
                         if retry_entity is None:
                             continue
 
-                        # intent 이후 불명 오류 → Ambiguous
+                        # intent 이후 불명 오류 → Ambiguous (MOCK은 재시도)
                         msg = str(exc)
-                        uncertain = any(
+                        env = str(
+                            (retry_entity.payload_json or {}).get(
+                                "environment"
+                            )
+                            or "PAPER"
+                        ).upper()
+                        uncertain = env != "MOCK" and any(
                             x in msg.upper()
                             for x in (
                                 "TIMEOUT",
@@ -334,6 +355,14 @@ class OrderOutboxWorker:
                             else:
                                 retried += 1
                         retry_session.commit()
+                    continue
+                else:
+                    # try 성공 시에만 MOCK fill (예외 핸들러와 분리)
+                    if mock_fill_order_id is not None and mock_fill_payload:
+                        self._maybe_mock_auto_fill(
+                            order_id=mock_fill_order_id,
+                            payload=mock_fill_payload,
+                        )
 
         return OutboxRunSummary(
             claimed=claimed,
@@ -342,6 +371,35 @@ class OrderOutboxWorker:
             failed=failed,
             ambiguous=ambiguous,
         )
+
+    @staticmethod
+    def _maybe_mock_auto_fill(
+        *,
+        order_id: int,
+        payload: dict[str, Any],
+    ) -> None:
+        """Outbox DONE 이후 Kiwoom MOCK 체결 (전용 세션)."""
+
+        try:
+            from stock_platform.common.settings import get_settings
+            from stock_platform.broker.kiwoom.mock_outbox_fill import (
+                fill_mock_accepted_order,
+            )
+
+            env = str(payload.get("environment") or "PAPER").upper()
+            if env != "MOCK":
+                return
+            if not bool(
+                getattr(get_settings(), "kiwoom_mock_outbox_auto_fill", False)
+            ):
+                return
+            fill_mock_accepted_order(
+                None,  # type: ignore[arg-type]
+                int(order_id),
+                actor="OUTBOX_KIWOOM_MOCK_AUTO_FILL",
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     @staticmethod
     def _order_already_has_broker_id(
@@ -482,6 +540,7 @@ class OrderOutboxWorker:
                     pass
 
             # P0-5 — Paper Outbox ACCEPTED → Paper 원장 auto-fill (LIVE 혼입 금지)
+            # Kiwoom MOCK fill은 Outbox DONE commit 이후에 별도 세션으로 수행
             if status == OrderStatus.ACCEPTED:
                 try:
                     from stock_platform.common.settings import get_settings
@@ -489,8 +548,15 @@ class OrderOutboxWorker:
                         PaperOutboxFillService,
                     )
 
-                    if bool(
-                        getattr(get_settings(), "paper_outbox_auto_fill", True)
+                    settings = get_settings()
+                    meta_env = str(
+                        (order.metadata_payload or {}).get("environment")
+                        or "PAPER"
+                    ).upper()
+                    if meta_env == "MOCK":
+                        pass  # commit 후 처리
+                    elif bool(
+                        getattr(settings, "paper_outbox_auto_fill", True)
                     ):
                         fill_result = PaperOutboxFillService(
                             session
@@ -498,7 +564,6 @@ class OrderOutboxWorker:
                             int(order.order_id),
                             actor="OUTBOX_PAPER_AUTO_FILL",
                         )
-                        # 실패를 숨기지 않음 — metadata에 기록 (Outbox DONE은 유지)
                         if (
                             fill_result.skipped
                             and fill_result.reason_code

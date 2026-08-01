@@ -28,6 +28,7 @@ async def maybe_auto_start_runners(
 
     - realtime_execution_auto_start_enabled 가 False 면 아무 것도 하지 않음
     - Paper: realtime_paper_auto_start_enabled
+    - MOCK: realtime_kiwoom_mock_auto_start_enabled (LIVE HTTP 금지)
     - LIVE: realtime_live_auto_start_enabled AND allow_live
     """
 
@@ -38,6 +39,9 @@ async def maybe_auto_start_runners(
     paper_on = bool(
         getattr(settings, "realtime_paper_auto_start_enabled", False)
     )
+    mock_on = bool(
+        getattr(settings, "realtime_kiwoom_mock_auto_start_enabled", False)
+    )
     live_on = bool(
         getattr(settings, "realtime_live_auto_start_enabled", False)
     )
@@ -46,6 +50,7 @@ async def maybe_auto_start_runners(
         "source": source,
         "master_enabled": master,
         "paper_enabled": paper_on,
+        "mock_enabled": mock_on,
         "live_enabled": live_on,
         "started_execution": False,
         "started_strategy": False,
@@ -61,6 +66,16 @@ async def maybe_auto_start_runners(
         if not live_on or not allow_live:
             result["skipped_reason"] = "LIVE_AUTO_START_BLOCKED"
             logger.info("realtime_auto_start_blocked_live", source=source)
+            return result
+    elif mode == RealtimeExecutionMode.MOCK:
+        if not mock_on:
+            result["skipped_reason"] = "MOCK_AUTO_START_OFF"
+            return result
+        # LIVE 충돌 방지
+        if live_on or bool(
+            getattr(settings, "kiwoom_live_order_enabled", False)
+        ):
+            result["skipped_reason"] = "MOCK_BLOCKED_BY_LIVE_FLAG"
             return result
     else:
         if not paper_on:

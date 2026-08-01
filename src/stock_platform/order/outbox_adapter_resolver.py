@@ -59,6 +59,14 @@ def resolve_outbox_adapter(
             ),
         )
 
+    # Kiwoom MOCK — LIVE HTTP 없이 결정적 접수
+    if environment == "MOCK" and broker_code == "KIWOOM":
+        from stock_platform.broker.kiwoom.mock_adapter import (
+            KiwoomMockBrokerAdapter,
+        )
+
+        return KiwoomMockBrokerAdapter()
+
     # PAPER 경로: 업비트는 mock adapter로 주문 경로 스모크
     if broker_code == "UPBIT":
         return UpbitBrokerAdapter(settings=get_settings())

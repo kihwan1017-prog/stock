@@ -182,6 +182,7 @@ class RealtimeMarketDataHub:
             event_type=event_type,
             event_time=quote.event_time,
             received_at=quote.received_at,
+            exchange_code=exchange,
             price=quote.trade_price,
             volume=quote.trade_volume,
             change_rate=quote.change_rate,

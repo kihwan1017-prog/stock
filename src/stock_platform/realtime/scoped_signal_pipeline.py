@@ -139,33 +139,45 @@ def _guards_allow(signal: StrategySignal) -> bool:
     except Exception:  # noqa: BLE001
         pass
 
-    # KRX Calendar — STOCK LIVE만 Fail Closed
+    # KRX Calendar — STOCK LIVE만 Fail Closed (MOCK은 결정적 시세 허용)
     if (
         signal.market_type.upper() in {"STOCK", "KRX", "KOSPI", "KOSDAQ"}
         and signal.broker_code.upper() == "KIWOOM"
     ):
         try:
-            from stock_platform.operation.calendar_service import (
-                TradingCalendarService,
-            )
-            from stock_platform.database.session import get_session_factory
+            from stock_platform.common.settings import get_settings
 
-            session = get_session_factory()()
-            try:
+            settings = get_settings()
+            is_live = bool(
+                getattr(settings, "kiwoom_live_order_enabled", False)
+            ) and not bool(getattr(settings, "kiwoom_use_mock", True))
+            if is_live:
+                from stock_platform.operation.calendar_service import (
+                    TradingCalendarService,
+                )
+                from stock_platform.database.session import get_session_factory
                 from datetime import date
 
-                svc = TradingCalendarService(session)
-                decision = svc.evaluate(
-                    exchange_code="KRX",
-                    calendar_date=date.today(),
-                )
-                if not getattr(decision, "live_allowed", True):
-                    return False
-            finally:
-                session.close()
+                session = get_session_factory()()
+                try:
+                    svc = TradingCalendarService(session)
+                    decision = svc.evaluate(
+                        exchange_code="KRX",
+                        calendar_date=date.today(),
+                    )
+                    if not getattr(decision, "live_allowed", True):
+                        return False
+                finally:
+                    session.close()
         except Exception:  # noqa: BLE001
-            # Calendar 장애 시 LIVE 신호 차단(보수적)
-            return False
+            # Calendar 장애 시 LIVE 신호 차단(보수적) — MOCK은 통과
+            from stock_platform.common.settings import get_settings
+
+            settings = get_settings()
+            if bool(getattr(settings, "kiwoom_live_order_enabled", False)) and not bool(
+                getattr(settings, "kiwoom_use_mock", True)
+            ):
+                return False
 
     # Upbit Rate Limit — UBA cooldown/418
     if signal.broker_code.upper() == "UPBIT" and signal.account_kind != "PAPER":

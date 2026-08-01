@@ -52,10 +52,13 @@ def resolve_execution_environment(
     config: RealtimeExecutionConfig,
     signal: RealtimeSignal,
 ) -> str:
-    """실행 모드·계좌 종류로 PAPER/LIVE 결정 (기본 PAPER, Fail Closed)."""
+    """실행 모드·계좌 종류로 PAPER/MOCK/LIVE 결정 (기본 PAPER, Fail Closed)."""
 
     if config.mode == RealtimeExecutionMode.LIVE:
         return "LIVE"
+    if config.mode == RealtimeExecutionMode.MOCK:
+        # MOCK은 LIVE HTTP 금지 — KiwoomMockAdapter 경로만
+        return "MOCK"
     account_kind = str(getattr(signal, "account_kind", "") or "").upper()
     if account_kind == "USER_BROKER":
         # Scope가 실계좌인데 mode가 PAPER면 LIVE enqueue 금지 — PAPER 유지
@@ -130,18 +133,21 @@ class RiskIntegratedRealtimeOrderExecutor:
 
             lock = RecoveryAccountLockService(self._session)
             paused = False
-            if environment != "LIVE":
+            if environment == "LIVE" or environment == "MOCK":
+                if user_broker_account_id is not None:
+                    paused = (
+                        lock.is_trading_paused(
+                            user_broker_account_id=int(
+                                user_broker_account_id
+                            ),
+                            broker_code=broker_code,
+                        )
+                        is True
+                    )
+            else:
                 paused = (
                     lock.is_trading_paused(
                         paper_account_id=int(exec_account_id),
-                        broker_code=broker_code,
-                    )
-                    is True
-                )
-            elif user_broker_account_id is not None:
-                paused = (
-                    lock.is_trading_paused(
-                        user_broker_account_id=int(user_broker_account_id),
                         broker_code=broker_code,
                     )
                     is True
@@ -163,7 +169,7 @@ class RiskIntegratedRealtimeOrderExecutor:
                 user_broker_account_id=user_broker_account_id,
                 paper_account_id=(
                     int(exec_account_id)
-                    if environment != "LIVE"
+                    if environment == "PAPER"
                     else None
                 ),
             )
@@ -183,59 +189,85 @@ class RiskIntegratedRealtimeOrderExecutor:
             / signal.signal_price
         ).quantize(Decimal("0.00000001"))
 
-        # Paper 매도: 보유 수량 초과 주문 방지 (청산/익절 경로)
-        if (
-            signal.action.value.upper() == "SELL"
-            and str(getattr(signal, "account_kind", "") or "").upper()
-            == "PAPER"
-            and getattr(signal, "account_id", None)
+        # 매도: 보유 수량 초과 주문 방지 (PAPER / MOCK ledger)
+        if signal.action.value.upper() == "SELL" and getattr(
+            signal, "account_id", None
         ):
-            from stock_platform.trading.account_models import (
-                PaperPosition,
-            )
-
-            held = self._session.scalar(
-                select(PaperPosition.quantity).where(
-                    PaperPosition.account_id == int(signal.account_id),
-                    PaperPosition.symbol == str(signal.symbol).upper(),
-                    PaperPosition.quantity > 0,
+            account_kind_u = str(
+                getattr(signal, "account_kind", "") or ""
+            ).upper()
+            if account_kind_u == "PAPER":
+                from stock_platform.trading.account_models import (
+                    PaperPosition,
                 )
-            )
-            if held is not None:
-                held_qty = Decimal(str(held))
-                if held_qty <= 0:
+
+                held = self._session.scalar(
+                    select(PaperPosition.quantity).where(
+                        PaperPosition.account_id == int(signal.account_id),
+                        PaperPosition.symbol
+                        == str(signal.symbol).upper(),
+                        PaperPosition.quantity > 0,
+                    )
+                )
+                if held is not None:
+                    held_qty = Decimal(str(held))
+                    if held_qty <= 0:
+                        return self._skipped(signal, "NO_POSITION_TO_SELL")
+                    if quantity > held_qty:
+                        quantity = held_qty
+            elif account_kind_u == "USER_BROKER" and environment == "MOCK":
+                from stock_platform.broker.account_models import (
+                    BrokerPositionSnapshotEntity,
+                )
+
+                held = self._session.scalar(
+                    select(BrokerPositionSnapshotEntity.quantity).where(
+                        BrokerPositionSnapshotEntity.user_broker_account_id
+                        == int(signal.account_id),
+                        BrokerPositionSnapshotEntity.symbol
+                        == str(signal.symbol).upper(),
+                        BrokerPositionSnapshotEntity.quantity > 0,
+                    )
+                )
+                if held is None or Decimal(str(held)) <= 0:
                     return self._skipped(signal, "NO_POSITION_TO_SELL")
-                if quantity > held_qty:
-                    quantity = held_qty
+                # MOCK 자동매매: SELL 신호 시 전량 청산 (부분 잔량 고착 방지)
+                quantity = Decimal(str(held))
 
-        risk_result = DatabaseBackedRiskOrderGuard(
-            self._session,
-            broker_code=broker_code,
-        ).check(
-            account_number=account_number or f"PAPER-{exec_account_id}",
-            account_id=exec_account_id,
-            exchange_code=signal.exchange_code,
-            symbol=signal.symbol,
-            side=signal.action.value,
-            quantity=quantity,
-            price=signal.signal_price,
-            user_id=(
-                getattr(signal, "user_id", None)
-                or getattr(self._execution_config, "user_id", None)
-            ),
-            user_broker_account_id=user_broker_account_id,
-            order_source="AUTO",
-            is_risk_reducing=(
-                signal.action.value.upper() == "SELL"
-            ),
-            environment=environment,
-        )
+        # MOCK SELL: 원장 수량을 이미 전량으로 캡함 — Paper Risk 보유검사 스킵
+        if environment == "MOCK" and signal.action.value.upper() == "SELL":
+            risk_allowed = True
+            risk_blocked = None
+        else:
+            risk_result = DatabaseBackedRiskOrderGuard(
+                self._session,
+                broker_code=broker_code,
+            ).check(
+                account_number=account_number or f"PAPER-{exec_account_id}",
+                account_id=exec_account_id,
+                exchange_code=signal.exchange_code,
+                symbol=signal.symbol,
+                side=signal.action.value,
+                quantity=quantity,
+                price=signal.signal_price,
+                user_id=(
+                    getattr(signal, "user_id", None)
+                    or getattr(self._execution_config, "user_id", None)
+                ),
+                user_broker_account_id=user_broker_account_id,
+                order_source="AUTO",
+                is_risk_reducing=(
+                    signal.action.value.upper() == "SELL"
+                ),
+                environment=environment,
+            )
+            risk_allowed = risk_result.allowed
+            risk_blocked = risk_result.blocked_reason
 
-        if not risk_result.allowed:
+        if not risk_allowed:
             return self._skipped(
                 signal,
-                risk_result.blocked_reason
-                or "RISK_ENGINE_BLOCKED",
+                risk_blocked or "RISK_ENGINE_BLOCKED",
             )
 
         from stock_platform.trading.account_models import (
@@ -336,9 +368,9 @@ class RiskIntegratedRealtimeOrderExecutor:
         user_broker_account_id: int | None,
         paper_account_id: int,
     ) -> str:
-        """LIVE는 UBA/설정, PAPER는 합성 식별자 (Kiwoom 전역 강제 금지)."""
+        """LIVE/MOCK는 UBA, PAPER는 합성 식별자 (Kiwoom 전역 강제 금지)."""
 
-        if environment == "LIVE" and user_broker_account_id is not None:
+        if environment in {"LIVE", "MOCK"} and user_broker_account_id is not None:
             from stock_platform.trading.account_models import (
                 UserBrokerAccount,
             )

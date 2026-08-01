@@ -70,6 +70,61 @@ def _resolve_paper_position(
         return None
 
 
+def _resolve_mock_uba_position(
+    consumer: "ScopedRealtimeConsumer",
+    symbol: str,
+) -> RealtimePositionState | None:
+    """Kiwoom MOCK UBA — BrokerPositionSnapshot 기반 손절·익절."""
+
+    if consumer.scope.account_kind != AccountKind.USER_BROKER:
+        return None
+    if str(consumer.scope.broker_code or "").upper() != "KIWOOM":
+        return None
+    try:
+        from decimal import Decimal
+
+        from sqlalchemy import select
+
+        from stock_platform.broker.account_models import (
+            BrokerPositionSnapshotEntity,
+        )
+        from stock_platform.common.settings import get_settings
+        from stock_platform.database.session import get_session_factory
+
+        # LIVE 실주문 모드에서는 이 MOCK 스냅샷 경로를 쓰지 않음
+        settings = get_settings()
+        if bool(getattr(settings, "kiwoom_live_order_enabled", False)):
+            return None
+
+        session = get_session_factory()()
+        try:
+            row = session.scalar(
+                select(BrokerPositionSnapshotEntity).where(
+                    BrokerPositionSnapshotEntity.user_broker_account_id
+                    == int(consumer.scope.account_id),
+                    BrokerPositionSnapshotEntity.symbol == symbol.upper(),
+                )
+            )
+            if row is None or Decimal(str(row.quantity or 0)) <= 0:
+                return RealtimePositionState(
+                    quantity=Decimal("0"),
+                    average_entry_price=None,
+                )
+            avg = row.average_purchase_price
+            return RealtimePositionState(
+                quantity=Decimal(str(row.quantity)),
+                average_entry_price=(
+                    Decimal(str(avg)) if avg is not None and Decimal(str(avg)) > 0 else None
+                ),
+            )
+        finally:
+            session.close()
+    except Exception as exc:  # noqa: BLE001
+        # 디버그용 마지막 오류 — consumer에 남기지 않고 None
+        _ = exc
+        return None
+
+
 @dataclass
 class ScopedRealtimeConsumer:
     scope: StrategyRuntimeScope
@@ -331,6 +386,10 @@ class ScopeConsumerRegistry:
                 consumer.last_event_at = now
                 before_fp = None
                 position = _resolve_paper_position(consumer, event.symbol)
+                if position is None:
+                    position = _resolve_mock_uba_position(
+                        consumer, event.symbol
+                    )
                 # evaluate
                 signal = consumer.evaluator.evaluate(
                     event,

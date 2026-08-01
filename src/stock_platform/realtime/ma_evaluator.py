@@ -104,21 +104,10 @@ class MovingAverageStrategyEvaluator:
         short_avg = self._average(state.prices, self.config.short_window)
         long_avg = self._average(state.prices, self.config.long_window)
 
-        if len(state.prices) < self.config.long_window + 1:
-            state.warmup_status = ConsumerWarmupStatus.WARMING_UP
-            state.previous_short = short_avg
-            state.previous_long = long_avg
-            return None
-
-        state.warmup_status = ConsumerWarmupStatus.READY
-        if not allow_signal:
-            state.previous_short = short_avg
-            state.previous_long = long_avg
-            return None
-
-        # 손절·익절
+        # 보유 중 손절·익절은 warmup 여부와 무관하게 즉시 평가
         if (
-            position.quantity > ZERO
+            allow_signal
+            and position.quantity > ZERO
             and position.average_entry_price is not None
         ):
             stop = position.average_entry_price * (
@@ -135,6 +124,18 @@ class MovingAverageStrategyEvaluator:
                 return self._emit(
                     event, state, SignalType.SELL, "TAKE_PROFIT", short_avg, long_avg
                 )
+
+        if len(state.prices) < self.config.long_window + 1:
+            state.warmup_status = ConsumerWarmupStatus.WARMING_UP
+            state.previous_short = short_avg
+            state.previous_long = long_avg
+            return None
+
+        state.warmup_status = ConsumerWarmupStatus.READY
+        if not allow_signal:
+            state.previous_short = short_avg
+            state.previous_long = long_avg
+            return None
 
         prev_s = state.previous_short
         prev_l = state.previous_long
@@ -288,7 +289,10 @@ class MovingAverageStrategyEvaluator:
                 "long_average": (
                     str(long_avg) if long_avg is not None else None
                 ),
-                "exchange_code": event.broker_code,
+                # 주문/원장 키는 시세 exchange (broker_code=데이터소스와 혼동 금지)
+                "exchange_code": (
+                    event.exchange_code or event.broker_code
+                ),
             },
         )
         state.last_fingerprint = fingerprint

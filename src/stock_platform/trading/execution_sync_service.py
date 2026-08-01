@@ -134,6 +134,25 @@ class ExecutionSyncService:
         )
         self._session.commit()
 
+        # P0 LIVE Ledger — 기존 BrokerPositionSnapshot에 fill-driven 반영
+        try:
+            from stock_platform.broker.live_fill_ledger_service import (
+                LiveFillLedgerService,
+            )
+
+            LiveFillLedgerService(self._session).apply_execution(
+                order=order,
+                event=event,
+                actor=actor,
+            )
+            self._session.commit()
+        except Exception:  # noqa: BLE001
+            # 원장 실패가 체결 반영을 롤백하지 않음
+            try:
+                self._session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
         # STEP 8-8 — LIVE 체결 후 Position 검증 (불일치 시 Kill Switch)
         if new_status == OrderStatus.FILLED:
             try:

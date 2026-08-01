@@ -133,7 +133,14 @@ class OrderOutboxRepository:
         retried = 0
         for row in rows:
             has_intent = getattr(row, "dispatch_intent_at", None) is not None
-            if has_intent:
+            payload = getattr(row, "payload_json", None) or {}
+            env = str(
+                (payload if isinstance(payload, dict) else {}).get(
+                    "environment"
+                )
+                or "PAPER"
+            ).upper()
+            if has_intent and env != "MOCK":
                 row.status_code = OutboxStatus.AMBIGUOUS.value
                 if hasattr(row, "ambiguous_at"):
                     row.ambiguous_at = current
@@ -163,6 +170,10 @@ class OrderOutboxRepository:
                 row.locked_by = None
                 if hasattr(row, "lease_expires_at"):
                     row.lease_expires_at = None
+                if has_intent and env == "MOCK":
+                    row.dispatch_intent_at = None
+                    if hasattr(row, "dispatch_fencing_token"):
+                        row.dispatch_fencing_token = None
                 row.last_error = (
                     row.last_error or "STALE_PROCESSING_RECLAIMED_NO_INTENT"
                 )
@@ -196,23 +207,23 @@ class OrderOutboxRepository:
             ),
         ]
         if paper_only:
-            # LIVE/UBA Outbox와 분리 — Paper만 claim (굶주림 방지)
+            # LIVE Outbox와 분리 — Paper + Kiwoom MOCK만 claim (LIVE 굶주림/혼입 방지)
             env_expr = OrderOutbox.payload_json["environment"].astext
-            conditions.extend(
-                [
-                    OrderOutbox.user_broker_account_id.is_(None),
-                    or_(
-                        env_expr.is_(None),
-                        env_expr == "",
-                        env_expr == "PAPER",
-                    ),
-                    or_(
-                        OrderOutbox.broker_code.is_(None),
-                        OrderOutbox.broker_code.in_(
-                            ("PAPER", "KIWOOM", "UPBIT")
+            conditions.append(
+                or_(
+                    and_(
+                        OrderOutbox.user_broker_account_id.is_(None),
+                        or_(
+                            env_expr.is_(None),
+                            env_expr == "",
+                            env_expr == "PAPER",
                         ),
                     ),
-                ]
+                    and_(
+                        env_expr == "MOCK",
+                        OrderOutbox.broker_code == "KIWOOM",
+                    ),
+                )
             )
 
         order_clause = (
