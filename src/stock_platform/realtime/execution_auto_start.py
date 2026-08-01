@@ -62,11 +62,33 @@ async def maybe_auto_start_runners(
         return result
 
     mode = realtime_execution_runner._config.mode
-    if mode == RealtimeExecutionMode.LIVE:
-        if not live_on or not allow_live:
-            result["skipped_reason"] = "LIVE_AUTO_START_BLOCKED"
-            logger.info("realtime_auto_start_blocked_live", source=source)
+    if mode == RealtimeExecutionMode.LIVE or (
+        live_on and allow_live and mode != RealtimeExecutionMode.MOCK
+    ):
+        from stock_platform.realtime.live_runtime_control import (
+            apply_realtime_live_execution_config,
+            live_auto_start_allowed,
+        )
+
+        gate = live_auto_start_allowed(allow_live=allow_live)
+        if not gate.get("allowed"):
+            result["skipped_reason"] = (
+                f"LIVE_AUTO_START_BLOCKED:{gate.get('reason')}"
+            )
+            logger.info(
+                "realtime_auto_start_blocked_live",
+                source=source,
+                reason=gate.get("reason"),
+            )
             return result
+        applied = apply_realtime_live_execution_config()
+        if not applied.get("applied"):
+            result["skipped_reason"] = (
+                f"LIVE_CONFIG_BLOCKED:{applied.get('reason')}"
+            )
+            return result
+        result["live_config"] = applied
+        mode = RealtimeExecutionMode.LIVE
     elif mode == RealtimeExecutionMode.MOCK:
         if not mock_on:
             result["skipped_reason"] = "MOCK_AUTO_START_OFF"
@@ -83,13 +105,20 @@ async def maybe_auto_start_runners(
             return result
 
     try:
-        apply_realtime_paper_account_from_settings()
+        if mode != RealtimeExecutionMode.LIVE:
+            apply_realtime_paper_account_from_settings()
         exec_status = await realtime_execution_runner.start()
         strat_status = await realtime_strategy_runner.start()
         result["started_execution"] = True
         result["started_strategy"] = True
         result["execution"] = exec_status
         result["strategy"] = strat_status
+        if mode == RealtimeExecutionMode.LIVE:
+            from stock_platform.realtime.live_runtime_control import (
+                maybe_start_live_market_feeds,
+            )
+
+            result["live_feeds"] = await maybe_start_live_market_feeds()
         logger.info(
             "realtime_auto_start_ok",
             source=source,

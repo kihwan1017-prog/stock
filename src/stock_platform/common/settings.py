@@ -186,6 +186,9 @@ class Settings(BaseSettings):
     realtime_execution_auto_start_enabled: bool = False
     realtime_paper_auto_start_enabled: bool = False
     realtime_live_auto_start_enabled: bool = False
+    # LIVE Runner 대상 UBA / Unlock (기본 미설정 — Fail Closed)
+    realtime_live_user_broker_account_id: int = 0
+    realtime_live_unlock_token: str = Field(default="")
     # Kiwoom MOCK realtime loop (기본 OFF — Fail Closed, LIVE와 분리)
     realtime_kiwoom_mock_auto_start_enabled: bool = False
     kiwoom_mock_outbox_auto_fill: bool = False

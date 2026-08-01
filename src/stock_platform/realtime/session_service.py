@@ -94,15 +94,20 @@ class RealtimeTradingSessionService:
             from stock_platform.realtime.paper_price_feed import (
                 paper_price_feed,
             )
+            from stock_platform.realtime.live_runtime_control import (
+                live_auto_start_allowed,
+            )
 
             # 세션 오픈 시 Paper 무인 보조 경로 재확인 (idempotent)
             worker_status = paper_outbox_worker_runtime.start()
             recovery_status = paper_fill_recovery_scheduler.start()
             feed_status = paper_price_feed.start()
 
+            # LIVE는 Flag+Unlock+UBA 충족 시에만 allow_live (기본 Fail Closed)
+            live_gate = live_auto_start_allowed(allow_live=True)
             auto = await maybe_auto_start_runners(
                 source="MARKET_OPEN",
-                allow_live=False,  # 세션 스케줄러는 Paper만
+                allow_live=bool(live_gate.get("allowed")),
             )
             execution_status = realtime_execution_runner.status()
             strategy_status = realtime_strategy_runner.status()
@@ -113,6 +118,7 @@ class RealtimeTradingSessionService:
                     "Market open; auto_start="
                     f"{auto.get('started_execution')} "
                     f"reason={auto.get('skipped_reason')}; "
+                    f"live_gate={live_gate.get('reason')}; "
                     f"worker={worker_status.get('started')}; "
                     f"recovery={recovery_status.get('started')}; "
                     f"feed={feed_status.get('started')}; "
@@ -126,6 +132,22 @@ class RealtimeTradingSessionService:
             from stock_platform.realtime.paper_price_feed import (
                 paper_price_feed,
             )
+            from stock_platform.realtime.execution_models import (
+                RealtimeExecutionMode,
+            )
+            from stock_platform.realtime.live_runtime_control import (
+                revert_realtime_execution_to_paper,
+                stop_live_market_feeds,
+            )
+
+            was_live = (
+                realtime_execution_runner._config.mode
+                == RealtimeExecutionMode.LIVE
+            )
+            live_stop: dict = {}
+            if was_live:
+                live_stop = await stop_live_market_feeds()
+                revert_realtime_execution_to_paper()
 
             await paper_price_feed.shutdown()
             await realtime_execution_runner.stop()
@@ -137,6 +159,7 @@ class RealtimeTradingSessionService:
                 message=(
                     "Realtime execution, strategy runners, "
                     "and paper price feed stopped"
+                    + (f"; live_stop={live_stop}" if was_live else "")
                 ),
                 executed_at=datetime.now(timezone.utc),
             )
