@@ -28,12 +28,22 @@ export interface UserAccount {
   recovery_review_required?: boolean;
   recovery_status?: string | null;
   recovery_user_message?: string | null;
+  /** 사용자용 친절한 일시중지 원인 목록 (내부 코드 비노출) */
+  pause_reasons?: string[];
   /** STEP 8-5-8 — Upbit Rate Limit 요약 */
   upbit_api_status?: string | null;
   upbit_rate_limit_message?: string | null;
   upbit_retry_scheduled_at?: string | null;
   /** STEP 8-7 — LIVE 실주문 승인 (읽기 전용) */
   live_order_enabled?: boolean;
+  /** LIVE ARM 상태 (읽기 전용) */
+  live_armed?: boolean;
+  /** LIVE+ARM 모두 켜져 실주문 가능 여부 */
+  live_trading_ready?: boolean;
+  /** Trading Scheduler 상태 (읽기 전용) */
+  trading_scheduler_state?: string | null;
+  trading_scheduler_desired?: string | null;
+  trading_scheduler_actual?: string | null;
 }
 
 export interface UserAccountListResponse {
@@ -317,6 +327,69 @@ export async function getUpbitLiveValidationRun(
   const { data } = await apiClient.get(
     `/user/live-validation/upbit/runs/${runId}`,
   );
+  return data;
+}
+
+/** Controlled Live Order Smoke — 계좌 단위 Pre-flight / Preview / Confirm */
+export async function getLiveOrderPreflight(
+  ubaId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/accounts/${ubaId}/live-order-preflight`,
+  );
+  return data;
+}
+
+export async function postLiveOrderPreview(
+  ubaId: number,
+  body: {
+    market: string;
+    side: string;
+    amount?: number;
+    limit_price?: number;
+    idempotency_key?: string;
+  },
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${ubaId}/live-order-preview`,
+    body,
+  );
+  return data;
+}
+
+export async function postLiveOrderConfirm(
+  ubaId: number,
+  body: {
+    market: string;
+    side: string;
+    amount: number;
+    limit_price: number;
+    confirmation_text: string;
+    arm_token?: string;
+    execute_live?: boolean;
+    idempotency_key?: string;
+    preview_id?: string;
+  },
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${ubaId}/live-order-confirm`,
+    body,
+  );
+  return data;
+}
+
+export async function getLiveOrderSmokeRun(
+  ubaId: number,
+  runId: string,
+): Promise<JsonValue> {
+  const { data } = await apiClient.get(
+    `/user/accounts/${ubaId}/live-order-smoke/${runId}`,
+  );
+  return data;
+}
+
+export async function getLiveOrderSmokeMeta(): Promise<JsonValue> {
+  const { data } = await apiClient.get("/user/accounts/live-order-smoke/meta");
   return data;
 }
 

@@ -47,6 +47,7 @@ export const queryKeys = {
     liveOpsDashboard: () => ["admin", "live-ops-dashboard"] as const,
     operationsCenterSummary: () =>
       ["admin", "operations-center", "summary"] as const,
+    runtimePreflight: () => ["admin", "runtime", "preflight"] as const,
     aiProviderConfigurations: () =>
       ["admin", "ai-provider-configurations"] as const,
     aiPromptTemplates: () => ["admin", "ai-prompt-templates"] as const,

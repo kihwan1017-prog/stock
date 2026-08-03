@@ -341,9 +341,12 @@ export async function getAdminLiveOrderAccount(
 export async function setAdminLiveOrderEnabled(
   userBrokerAccountId: number,
   liveOrderEnabled: boolean,
+  options?: { reason?: string; correlation_id?: string },
 ): Promise<JsonValue> {
   return putJson(`/admin/live-order/accounts/${userBrokerAccountId}`, {
     live_order_enabled: liveOrderEnabled,
+    reason: options?.reason ?? null,
+    correlation_id: options?.correlation_id ?? null,
   });
 }
 
@@ -370,20 +373,31 @@ export async function updateAdminLiveRiskLimits(
 /** STEP 8-8 — ARM / Dashboard */
 export async function armAdminLiveOrder(
   userBrokerAccountId: number,
-  ttlSeconds?: number,
+  options?: {
+    ttl_seconds?: number | null;
+    reason?: string;
+    correlation_id?: string;
+  },
 ): Promise<JsonValue> {
   return postJson(`/admin/live-order/accounts/${userBrokerAccountId}/arm`, {
-    ttl_seconds: ttlSeconds ?? null,
+    ttl_seconds: options?.ttl_seconds ?? null,
+    reason: options?.reason ?? null,
+    correlation_id: options?.correlation_id ?? null,
   });
 }
 
 export async function disarmAdminLiveOrder(
   userBrokerAccountId: number,
-  body?: { turn_live_off?: boolean; reason?: string },
+  body?: {
+    turn_live_off?: boolean;
+    reason?: string;
+    correlation_id?: string;
+  },
 ): Promise<JsonValue> {
   return postJson(`/admin/live-order/accounts/${userBrokerAccountId}/disarm`, {
     turn_live_off: body?.turn_live_off ?? false,
     reason: body?.reason ?? "MANUAL",
+    correlation_id: body?.correlation_id ?? null,
   });
 }
 
@@ -675,6 +689,123 @@ export async function applyAdminBrokerRecommendedRisk(
 
 export async function getAdminLiveOpsReadiness(): Promise<JsonValue> {
   return getJson("/admin/live-ops/readiness");
+}
+
+/** STEP 9-7 — LIVE ON 전 Runtime Pre-flight */
+export const PREFLIGHT_TTL_SECONDS = 60;
+
+export interface RuntimePreflightCheck {
+  code: string;
+  name: string;
+  status: "PASS" | "WARN" | "FAIL" | "NOT_APPLICABLE" | string;
+  blocking?: boolean;
+  message: string;
+  detail?: Record<string, unknown>;
+  checked_at?: string;
+  remediation?: string | null;
+}
+
+export interface RuntimePreflightResponse {
+  mode?: "LIVE_ON" | "SCHEDULER_RUN" | string;
+  overall?: string;
+  overall_status: "READY_FOR_LIVE" | "BLOCKED" | string;
+  /** "NOW" | null — 근거 없는 시각 추측 금지 */
+  estimated_ready: "NOW" | null | string;
+  live_on_allowed?: boolean;
+  checked_at?: string;
+  expires_at?: string;
+  freshness?: {
+    ttl_seconds?: number;
+    checked_at?: string;
+    expires_at?: string;
+    status?: "FRESH" | "STALE" | string;
+  };
+  checks: RuntimePreflightCheck[];
+  warnings: Array<{
+    code?: string;
+    message?: string;
+    status?: string;
+    remediation?: string | null;
+  }>;
+  blockers: Array<{
+    code?: string;
+    message?: string;
+    status?: string;
+    remediation?: string | null;
+  }>;
+  summary?: {
+    pass?: number;
+    warn?: number;
+    fail?: number;
+    not_applicable?: number;
+    total?: number;
+  };
+}
+
+const PREFLIGHT_SENSITIVE_KEY_RE =
+  /^(access_key|secret_key|api_key|api_secret|arm_token|access_token|refresh_token|authorization|ciphertext|encrypted|private_key|password|secret|token|traceback|stack|exc_info)$|_secret$|_token$|_password$|_ciphertext$|_key$|traceback|stack_trace/i;
+
+/** JSON/PDF 내보내기용 클라이언트 살균 (서버 살균 이중 안전) */
+export function sanitizePreflightExport(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizePreflightExport(item));
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+      if (PREFLIGHT_SENSITIVE_KEY_RE.test(key)) continue;
+      out[key] = sanitizePreflightExport(raw);
+    }
+    return out;
+  }
+  return value;
+}
+
+/** 검사 결과 최신성 (기본 TTL 60초) */
+export function evaluatePreflightFreshness(
+  checkedAtIso: string | null | undefined,
+  ttlSeconds: number = PREFLIGHT_TTL_SECONDS,
+  nowMs: number = Date.now(),
+): { status: "FRESH" | "STALE"; fresh: boolean; ageSeconds: number | null } {
+  if (!checkedAtIso) {
+    return { status: "STALE", fresh: false, ageSeconds: null };
+  }
+  const checkedMs = Date.parse(checkedAtIso);
+  if (Number.isNaN(checkedMs)) {
+    return { status: "STALE", fresh: false, ageSeconds: null };
+  }
+  const ageSeconds = (nowMs - checkedMs) / 1000;
+  const fresh = ageSeconds <= ttlSeconds;
+  return {
+    status: fresh ? "FRESH" : "STALE",
+    fresh,
+    ageSeconds: Math.round(ageSeconds * 1000) / 1000,
+  };
+}
+
+export function isPreflightLiveOnAllowed(
+  report: RuntimePreflightResponse | null | undefined,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!report) return false;
+  if (String(report.overall_status).toUpperCase() !== "READY_FOR_LIVE") {
+    return false;
+  }
+  const ttl =
+    Number(report.freshness?.ttl_seconds) || PREFLIGHT_TTL_SECONDS;
+  const freshness = evaluatePreflightFreshness(
+    report.checked_at ?? report.freshness?.checked_at,
+    ttl,
+    nowMs,
+  );
+  return freshness.fresh;
+}
+
+export async function getRuntimePreflight(params?: {
+  mode?: "LIVE_ON" | "SCHEDULER_RUN";
+}): Promise<RuntimePreflightResponse> {
+  const data = await getJson("/admin/runtime/preflight", params);
+  return data as RuntimePreflightResponse;
 }
 
 /** STEP 10-3 — Operations Center 통합 Summary (Read-only) */
@@ -2977,6 +3108,28 @@ export async function startRealtimeTradingScheduler(): Promise<JsonValue> {
   return postJson("/realtime-sessions/start-scheduler", {});
 }
 
+/** STEP 9-5 — Trading Scheduler Start/Pause (LIVE/ARM gate) */
+export async function getTradingSchedulerStatus(): Promise<JsonValue> {
+  return getJson("/admin/trading-scheduler/status");
+}
+
+export async function startTradingScheduler(body: {
+  reason: string;
+  correlation_id: string;
+  user_broker_account_id: number;
+  min_arm_remaining_seconds?: number;
+}): Promise<JsonValue> {
+  return postJson("/admin/trading-scheduler/start", body);
+}
+
+export async function pauseTradingScheduler(body: {
+  reason: string;
+  correlation_id: string;
+  user_broker_account_id?: number | null;
+}): Promise<JsonValue> {
+  return postJson("/admin/trading-scheduler/pause", body);
+}
+
 export interface BrokerRecoveryStatus {
   running: boolean;
   last_result: {
@@ -3504,6 +3657,73 @@ export async function resumeRecoveryAccount(
   body: { reason: string; correlation_id: string },
 ): Promise<JsonValue> {
   return postJson(`/admin/recovery/accounts/${ubaId}/resume`, body);
+}
+
+export async function clearRecoveryAccountConflicts(
+  ubaId: number,
+  body: { note: string },
+): Promise<JsonValue> {
+  // Deprecated — 서버에서 bulk_clear_disabled 반환
+  return postJson(
+    `/admin/recovery/accounts/${ubaId}/clear-conflicts`,
+    body,
+  );
+}
+
+export async function getRecoveryResumeCheck(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/recovery/accounts/${ubaId}/resume-check`);
+}
+
+export async function getRecoveryConflictSummary(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/recovery/accounts/${ubaId}/conflict-summary`);
+}
+
+export async function dryRunResolveRecoveryConflicts(
+  ubaId: number,
+  body: {
+    conflict_ids: number[];
+    resolution: string;
+    reason: string;
+    expected_status?: string | null;
+  },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/recovery/accounts/${ubaId}/conflicts/resolve-dry-run`,
+    body,
+  );
+}
+
+/** feature flag OFF 시 서버가 execute_disabled 반환 — UI는 dry-run only */
+export async function resolveSelectedRecoveryConflicts(
+  ubaId: number,
+  body: {
+    conflict_ids: number[];
+    resolution: string;
+    reason: string;
+    expected_status?: string | null;
+  },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/recovery/accounts/${ubaId}/conflicts/resolve-selected`,
+    body,
+  );
+}
+
+export async function unlockRecoveryAccount(
+  ubaId: number,
+  body: { note: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/recovery/accounts/${ubaId}/unlock`, body);
+}
+
+export async function getAdminBrokerAccountOpsStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/broker-accounts/${ubaId}/ops-status`);
 }
 
 export async function activateKillSwitch(body?: {

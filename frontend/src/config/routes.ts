@@ -62,6 +62,8 @@ export const adminRoutes = {
   docsManual: "/admin/docs/manual",
   operations: "/admin/operations",
   operationsDashboard: "/admin/operations-dashboard",
+  /** STEP 9-7: LIVE ON 전 Pre-flight Check */
+  operationsPreflight: "/admin/operations/preflight",
   /** STEP4-6: 관리자 내 정보 — 준비중(ComingSoon) */
   profile: "/admin/profile",
   // 하위 호환·리다이렉트용

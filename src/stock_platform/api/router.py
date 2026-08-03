@@ -22,6 +22,9 @@ from stock_platform.api.v1.admin_broker_accounts import (
 from stock_platform.api.v1.admin_live_ops_readiness import (
     router as admin_live_ops_readiness_router,
 )
+from stock_platform.api.v1.admin_runtime_preflight import (
+    router as admin_runtime_preflight_router,
+)
 from stock_platform.api.v1.admin_operations_dashboard import (
     router as admin_operations_dashboard_router,
 )
@@ -101,6 +104,9 @@ from stock_platform.api.v1.live_order_safety import (
 from stock_platform.api.v1.upbit_live_validation import (
     admin_router as admin_upbit_live_validation_router,
     user_router as user_upbit_live_validation_router,
+)
+from stock_platform.api.v1.user_live_order_smoke import (
+    router as user_live_order_smoke_router,
 )
 from stock_platform.api.v1.user_portfolio import router as user_portfolio_router
 from stock_platform.api.v1.user_watchlist import router as user_watchlist_router
@@ -380,6 +386,7 @@ _ROUTER_GROUPS = (
     auth_router,
     users_router,
     user_accounts_router,
+    user_live_order_smoke_router,
     user_broker_credentials_router,
     user_risk_settings_router,
     admin_risk_settings_router,
@@ -390,6 +397,7 @@ _ROUTER_GROUPS = (
     admin_broker_credentials_router,
     admin_broker_accounts_router,
     admin_live_ops_readiness_router,
+    admin_runtime_preflight_router,
     admin_operations_dashboard_router,
     admin_dashboard_ops_router,
     admin_ai_providers_router,

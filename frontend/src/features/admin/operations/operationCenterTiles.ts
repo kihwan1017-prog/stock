@@ -25,6 +25,14 @@ export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
     apis: ["GET /health", "GET /version"],
   },
   {
+    id: "preflight",
+    title: "Pre-flight Check",
+    description: "LIVE ON 전 운영 조건 자동 점검",
+    href: adminRoutes.operationsPreflight,
+    support: "live",
+    apis: ["GET /admin/runtime/preflight"],
+  },
+  {
     id: "scheduler",
     title: "Scheduler",
     description: "잡 목록 · 실행 · 히스토리",

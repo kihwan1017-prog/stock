@@ -1,15 +1,17 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Alert, Card, Space, Table, Tag } from "antd";
+import { Alert, Space } from "antd";
 
+import { GuidedUpbitLiveSmokePanel } from "@/features/user/trading/GuidedUpbitLiveSmokePanel";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
+import { useQuery } from "@tanstack/react-query";
+import { Table, Tag, Card } from "antd";
+
 import { asRecord } from "@/features/admin/utils/dataHelpers";
 import * as userApi from "@/features/user/api/userApi";
 
 /**
- * User — Upbit 소액 LIVE 검증 읽기 전용.
- * 실행·취소·ARM 변경 불가.
+ * User — Upbit Guided LIVE Smoke + 이력.
  */
 export default function UserUpbitLiveValidationPage() {
   const runsQuery = useQuery({
@@ -17,66 +19,25 @@ export default function UserUpbitLiveValidationPage() {
     queryFn: () => userApi.listUpbitLiveValidationRuns(),
     refetchInterval: 20_000,
   });
-  const accountsQuery = useQuery({
-    queryKey: ["user", "live-order-status"],
-    queryFn: () => userApi.listMyLiveOrderStatus(),
-  });
 
   const items =
     (asRecord(runsQuery.data)?.items as Record<string, unknown>[] | undefined) ??
     [];
-  const accounts =
-    (asRecord(accountsQuery.data)?.items as
-      | Record<string, unknown>[]
-      | undefined) ??
-    (Array.isArray(accountsQuery.data)
-      ? (accountsQuery.data as Record<string, unknown>[])
-      : []);
 
   return (
     <UserPageShell
       title="업비트 LIVE 검증"
-      description="본인 계좌의 소액 LIVE 검증 상태만 조회합니다. 실행·취소는 관리자만 가능합니다."
+      description="계좌 단위 Pre-flight → Preview → 확인문구 → (선택) 실주문. Cursor 기본은 Dry-run만."
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
           type="info"
           showIcon
-          title="읽기 전용"
-          description="LIVE ON/OFF·ARM·주문 실행은 Admin 전용입니다."
+          title="경로: 매매(주문 실행) → 업비트 LIVE 검증"
+          description="실주문 Flag/ARM/Unlock은 이 작업에서 켜지 않습니다. 확인문구 불일치 시 주문 API 호출 0."
         />
 
-        <Card title="내 UBA LIVE/ARM" size="small" loading={accountsQuery.isLoading}>
-          <Table
-            size="small"
-            rowKey={(r) => String(r.user_broker_account_id)}
-            pagination={false}
-            dataSource={accounts.filter(
-              (a) => String(a.broker_code || "").toUpperCase() === "UPBIT",
-            )}
-            columns={[
-              { title: "UBA", dataIndex: "user_broker_account_id" },
-              {
-                title: "LIVE",
-                dataIndex: "live_order_enabled",
-                render: (v: boolean) => (
-                  <Tag color={v ? "green" : "default"}>
-                    {v ? "ON" : "OFF"}
-                  </Tag>
-                ),
-              },
-              {
-                title: "ARMED",
-                dataIndex: "live_armed",
-                render: (v: boolean) => (
-                  <Tag color={v ? "orange" : "default"}>
-                    {v ? "ARMED" : "DISARMED"}
-                  </Tag>
-                ),
-              },
-            ]}
-          />
-        </Card>
+        <GuidedUpbitLiveSmokePanel />
 
         <Card title="검증 Run 이력" size="small" loading={runsQuery.isLoading}>
           <Table
@@ -92,7 +53,9 @@ export default function UserUpbitLiveValidationPage() {
               {
                 title: "live",
                 dataIndex: "execute_live",
-                render: (v: boolean) => (v ? "Y" : "N"),
+                render: (v: boolean) => (
+                  <Tag color={v ? "red" : "default"}>{v ? "Y" : "N"}</Tag>
+                ),
               },
             ]}
           />

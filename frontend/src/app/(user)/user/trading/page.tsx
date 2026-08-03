@@ -345,6 +345,9 @@ export default function UserTradingPage() {
       extra={
         <Space wrap>
           <Button size="small">
+            <Link href={userRoutes.liveValidationUpbit}>업비트 LIVE 검증</Link>
+          </Button>
+          <Button size="small">
             <Link href={userRoutes.portfolio}>포트폴리오</Link>
           </Button>
           <Button size="small">

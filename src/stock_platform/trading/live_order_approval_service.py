@@ -12,9 +12,6 @@ from stock_platform.broker.credential_vault_service import (
     BrokerCredentialVaultError,
     BrokerCredentialVaultService,
 )
-from stock_platform.broker.recovery_account_state import (
-    BrokerRecoveryAccountStateEntity,
-)
 from stock_platform.broker.recovery_conflict_constants import (
     ACTIVE_REVIEW_STATUSES,
 )
@@ -25,7 +22,8 @@ from stock_platform.broker.recovery_conflict_service import (
     BrokerRecoveryConflictService,
 )
 from stock_platform.order.live_safety_audit import (
-    LIVE_APPROVED,
+    LIVE_OFF,
+    LIVE_ON,
     emit_live_safety_audit,
 )
 from stock_platform.operation.live_health_gate import (
@@ -37,6 +35,11 @@ from stock_platform.risk_engine.resolved_policy import (
 )
 from stock_platform.trading.account_identity import uba_kill_switch_scope
 from stock_platform.trading.account_models import UserBrokerAccount
+from stock_platform.trading.runtime_control_gates import (
+    assert_recovery_ready,
+    assert_risk_account_not_paused,
+    assert_uba_connection_ready,
+)
 from stock_platform.trading.upbit_scheduler_readiness import (
     collect_scheduler_readiness,
 )
@@ -129,16 +132,20 @@ class LiveOrderApprovalService:
                 "arm_must_be_off",
                 "ARM must be OFF before LIVE enable in STEP gate",
             )
-        pause = self._session.scalar(
-            select(BrokerRecoveryAccountStateEntity).where(
-                BrokerRecoveryAccountStateEntity.user_broker_account_id
-                == uba_id
-            )
+        assert_uba_connection_ready(
+            uba,
+            raise_error=lambda c, m: LiveOrderApprovalError(c, m),
         )
-        if pause is not None and bool(pause.trading_paused):
-            raise LiveOrderApprovalError(
-                "trading_paused", "Account trading is paused"
-            )
+        recovery = assert_recovery_ready(
+            self._session,
+            uba_id,
+            raise_error=lambda c, m: LiveOrderApprovalError(c, m),
+        )
+        risk = assert_risk_account_not_paused(
+            self._session,
+            uba,
+            raise_error=lambda c, m: LiveOrderApprovalError(c, m),
+        )
         active = int(
             self._session.scalar(
                 select(func.count())
@@ -225,6 +232,8 @@ class LiveOrderApprovalService:
             "trading_scheduler_actual": trading.trading_scheduler_actual_state,
             "live_armed": bool(uba.live_armed),
             "health_status": health.get("status"),
+            "recovery_status": recovery.get("recovery_status"),
+            "account_paused": risk.get("account_paused"),
         }
 
     def set_live_enabled(
@@ -275,9 +284,36 @@ class LiveOrderApprovalService:
                 )
                 return status
             if enforce_enable_gates:
+                # 서버에서 Pre-flight 재계산 — 프론트 결과만 신뢰하지 않음
+                from stock_platform.operation.runtime_preflight_service import (
+                    RuntimePreflightService,
+                )
+
+                RuntimePreflightService(
+                    self._session
+                ).assert_ready_for_live_on()
                 self.assert_live_enable_preconditions(
                     int(user_broker_account_id)
                 )
+        else:
+            # LIVE OFF — 역순: Scheduler PAUSE → ARM OFF → LIVE OFF
+            if enforce_enable_gates:
+                if bool(getattr(uba, "live_armed", False)):
+                    raise LiveOrderApprovalError(
+                        "arm_must_be_off",
+                        "ARM must be OFF before LIVE disable",
+                    )
+                trading = collect_scheduler_readiness()
+                if trading.trading_scheduler_actual_state != "PAUSED":
+                    raise LiveOrderApprovalError(
+                        "trading_scheduler_not_paused",
+                        "Trading Scheduler must be PAUSED before LIVE OFF",
+                    )
+                if trading.trading_scheduler_desired_state != "PAUSE":
+                    raise LiveOrderApprovalError(
+                        "trading_scheduler_desired_not_pause",
+                        "Trading Scheduler desired must be PAUSE before LIVE OFF",
+                    )
 
         uba.live_order_enabled = bool(enabled)
         if enabled:
@@ -289,7 +325,7 @@ class LiveOrderApprovalService:
         # ARM 필드는 절대 변경하지 않음
         self._session.flush()
 
-        event = LIVE_APPROVED if enabled else "LIVE_DISABLED"
+        event = LIVE_ON if enabled else LIVE_OFF
         emit_live_safety_audit(
             self._session,
             event_type=event,
@@ -308,6 +344,13 @@ class LiveOrderApprovalService:
                 "broker_code": uba.broker_code.upper(),
                 "reason": (reason or "")[:2000] or None,
                 "correlation_id": (correlation_id or "")[:128] or None,
+                "result": "SUCCESS",
+                "admin_user_id": actor,
+                "previous_state": {"live": before, "arm": before_arm},
+                "new_state": {
+                    "live": bool(enabled),
+                    "arm": bool(getattr(uba, "live_armed", False)),
+                },
             },
             commit=False,
         )

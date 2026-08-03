@@ -402,6 +402,14 @@ export const adminMenuItems: AdminMenuItem[] = [
         permission: "menu:scheduler",
       },
       {
+        key: "operations-preflight",
+        label: "Pre-flight Check",
+        path: adminRoutes.operationsPreflight,
+        icon: <SafetyCertificateOutlined />,
+        enabled: true,
+        permission: "menu:scheduler",
+      },
+      {
         key: "operations-dashboard",
         label: "통합 모니터링",
         path: adminRoutes.operationsDashboard,
