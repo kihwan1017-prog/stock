@@ -88,6 +88,7 @@ def test_startup_restore_skips_when_desired_pause() -> None:
 
 
 def test_startup_restore_run_when_safe() -> None:
+    """재시작 시 desired=RUN이어도 자동 RUN 금지 — FORCED_PAUSE."""
     session = MagicMock()
     row = SimpleNamespace(
         desired_state="RUN",
@@ -114,43 +115,31 @@ def test_startup_restore_run_when_safe() -> None:
             "stock_platform.trading.trading_scheduler_control_service.realtime_trading_scheduler"
         ) as sched,
         patch(
-            "stock_platform.trading.trading_scheduler_control_service.realtime_strategy_runner"
-        ) as st,
-        patch(
-            "stock_platform.trading.trading_scheduler_control_service.realtime_execution_runner"
-        ) as ex,
-        patch(
-            "stock_platform.trading.trading_scheduler_control_service.KillSwitchService"
-        ) as ks,
-        patch(
-            "stock_platform.trading.trading_scheduler_control_service.evaluate_live_order_health",
-            return_value={"live_orders_allowed": True, "status": "HEALTHY"},
+            "stock_platform.trading.trading_scheduler_control_service.set_trading_scheduler_desired_state"
         ),
         patch(
-            "stock_platform.trading.trading_scheduler_control_service.count_global_submission_unknown",
-            return_value=0,
+            "stock_platform.trading.trading_scheduler_control_service.hydrate_trading_scheduler_control"
         ),
         patch(
             "stock_platform.trading.trading_scheduler_control_service.emit_live_safety_audit"
         ),
     ):
         sched.scheduler.running = False
-        st.status.return_value = {"running": False, "active_scopes": 0}
-        ex.status.return_value = {"running": False}
-        ks.return_value.is_active.return_value = False
-        session.scalar.return_value = 0
         result = TradingSchedulerControlService(
             session
         ).attempt_startup_restore(
             process_instance_id="pid-test",
             migration_at_head=True,
         )
-    assert result["restored"] is True
-    assert result["result"] == "RESTORED"
-    sched.start.assert_called_once()
+    assert result["restored"] is False
+    assert result["result"] == "FORCED_PAUSE"
+    assert result["blocked_reason"] == "OPERATOR_SEQUENCE_REQUIRED"
+    assert result["actual_state"] == "PAUSED"
+    sched.start.assert_not_called()
 
 
 def test_startup_restore_blocked_kill_switch() -> None:
+    """Kill Switch와 무관하게 startup은 FORCED_PAUSE (운영자 순서 강제)."""
     session = MagicMock()
     row = SimpleNamespace(
         desired_state="RUN",
@@ -167,22 +156,24 @@ def test_startup_restore_blocked_kill_switch() -> None:
             "stock_platform.trading.trading_scheduler_control_service.realtime_trading_scheduler"
         ) as sched,
         patch(
-            "stock_platform.trading.trading_scheduler_control_service.KillSwitchService"
-        ) as ks,
+            "stock_platform.trading.trading_scheduler_control_service.set_trading_scheduler_desired_state"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.hydrate_trading_scheduler_control"
+        ),
         patch(
             "stock_platform.trading.trading_scheduler_control_service.emit_live_safety_audit"
         ),
     ):
         sched.scheduler.running = False
-        ks.return_value.is_active.return_value = True
         result = TradingSchedulerControlService(
             session
         ).attempt_startup_restore(
             process_instance_id="pid-test",
             migration_at_head=True,
         )
-    assert result["result"] == "BLOCKED"
-    assert result["blocked_reason"] == "KILL_SWITCH_ACTIVE"
+    assert result["result"] == "FORCED_PAUSE"
+    assert result["blocked_reason"] == "OPERATOR_SEQUENCE_REQUIRED"
     sched.start.assert_not_called()
 
 
@@ -190,7 +181,11 @@ def test_startup_restore_blocked_submission_unknown() -> None:
     session = MagicMock()
     svc = TradingSchedulerControlService(session)
     with (
-        patch.object(svc, "evaluate_startup_restore_conditions") as ev,
+        patch.object(
+            svc,
+            "evaluate_startup_restore_conditions",
+            return_value=(False, "SUBMISSION_UNKNOWN_PRESENT"),
+        ),
         patch(
             "stock_platform.trading.trading_scheduler_control_service.RuntimeControlRepository"
         ) as repo_cls,
@@ -198,10 +193,15 @@ def test_startup_restore_blocked_submission_unknown() -> None:
             "stock_platform.trading.trading_scheduler_control_service.realtime_trading_scheduler"
         ) as sched,
         patch(
+            "stock_platform.trading.trading_scheduler_control_service.set_trading_scheduler_desired_state"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.hydrate_trading_scheduler_control"
+        ),
+        patch(
             "stock_platform.trading.trading_scheduler_control_service.emit_live_safety_audit"
         ),
     ):
-        ev.return_value = (False, "SUBMISSION_UNKNOWN_PRESENT")
         repo_cls.return_value.get_trading_scheduler_row.return_value = (
             SimpleNamespace(desired_state="RUN", control_id=1)
         )
@@ -210,6 +210,7 @@ def test_startup_restore_blocked_submission_unknown() -> None:
             process_instance_id="pid",
             migration_at_head=True,
         )
+    assert result["result"] == "FORCED_PAUSE"
     assert result["blocked_reason"] == "SUBMISSION_UNKNOWN_PRESENT"
 
 

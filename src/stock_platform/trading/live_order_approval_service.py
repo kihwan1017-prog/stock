@@ -247,7 +247,11 @@ class LiveOrderApprovalService:
         run_id: str | None = None,
         enforce_enable_gates: bool = True,
     ) -> dict[str, Any]:
-        """LIVE 플래그만 변경. ARM·Scheduler·Runtime은 변경하지 않는다."""
+        """LIVE 플래그 변경.
+
+        LIVE OFF 시 Scheduler가 RUN이면 Fail Closed로 자동 PAUSE한다.
+        ARM은 변경하지 않으며, LIVE OFF 전 ARM OFF는 계속 강제한다.
+        """
         uba = self._session.get(
             UserBrokerAccount, int(user_broker_account_id)
         )
@@ -256,6 +260,7 @@ class LiveOrderApprovalService:
 
         before = bool(uba.live_order_enabled)
         before_arm = bool(getattr(uba, "live_armed", False))
+        scheduler_auto_paused = False
 
         if enabled:
             if not (reason or "").strip():
@@ -291,12 +296,12 @@ class LiveOrderApprovalService:
 
                 RuntimePreflightService(
                     self._session
-                ).assert_ready_for_live_on()
+                ).assert_ready_for_live_on(int(user_broker_account_id))
                 self.assert_live_enable_preconditions(
                     int(user_broker_account_id)
                 )
         else:
-            # LIVE OFF — 역순: Scheduler PAUSE → ARM OFF → LIVE OFF
+            # LIVE OFF — ARM OFF 필수, Scheduler RUN이면 자동 PAUSE (Fail Closed)
             if enforce_enable_gates:
                 if bool(getattr(uba, "live_armed", False)):
                     raise LiveOrderApprovalError(
@@ -304,16 +309,51 @@ class LiveOrderApprovalService:
                         "ARM must be OFF before LIVE disable",
                     )
                 trading = collect_scheduler_readiness()
-                if trading.trading_scheduler_actual_state != "PAUSED":
-                    raise LiveOrderApprovalError(
-                        "trading_scheduler_not_paused",
-                        "Trading Scheduler must be PAUSED before LIVE OFF",
+                needs_pause = (
+                    trading.trading_scheduler_actual_state != "PAUSED"
+                    or trading.trading_scheduler_desired_state != "PAUSE"
+                )
+                if needs_pause:
+                    from stock_platform.trading.trading_scheduler_control_service import (
+                        TradingSchedulerControlError,
+                        TradingSchedulerControlService,
                     )
-                if trading.trading_scheduler_desired_state != "PAUSE":
-                    raise LiveOrderApprovalError(
-                        "trading_scheduler_desired_not_pause",
-                        "Trading Scheduler desired must be PAUSE before LIVE OFF",
-                    )
+
+                    try:
+                        TradingSchedulerControlService(self._session).pause(
+                            actor=actor,
+                            reason=(
+                                (
+                                    (reason or "LIVE_OFF").strip()[:1800]
+                                    + ":auto_pause_before_live_off"
+                                )[:2000]
+                            ),
+                            correlation_id=(
+                                (correlation_id or "").strip()
+                                or f"live-off-pause-{int(user_broker_account_id)}"
+                            )[:128],
+                            user_broker_account_id=int(
+                                user_broker_account_id
+                            ),
+                            require_correlation_id=False,
+                        )
+                        scheduler_auto_paused = True
+                    except TradingSchedulerControlError as exc:
+                        raise LiveOrderApprovalError(
+                            "trading_scheduler_pause_failed",
+                            "Fail Closed: Scheduler PAUSE failed before "
+                            f"LIVE OFF ({exc.code})",
+                        ) from exc
+                    trading = collect_scheduler_readiness()
+                    if (
+                        trading.trading_scheduler_actual_state != "PAUSED"
+                        or trading.trading_scheduler_desired_state != "PAUSE"
+                    ):
+                        raise LiveOrderApprovalError(
+                            "trading_scheduler_pause_failed",
+                            "Fail Closed: Scheduler still not PAUSED "
+                            "after auto-pause",
+                        )
 
         uba.live_order_enabled = bool(enabled)
         if enabled:
@@ -346,6 +386,7 @@ class LiveOrderApprovalService:
                 "correlation_id": (correlation_id or "")[:128] or None,
                 "result": "SUCCESS",
                 "admin_user_id": actor,
+                "scheduler_auto_paused": scheduler_auto_paused,
                 "previous_state": {"live": before, "arm": before_arm},
                 "new_state": {
                     "live": bool(enabled),
@@ -363,6 +404,7 @@ class LiveOrderApprovalService:
                 "arm_unchanged": before_arm
                 == bool(getattr(uba, "live_armed", False)),
                 "previous_live": before,
+                "scheduler_auto_paused": scheduler_auto_paused,
                 "reason": (reason or "")[:2000] or None,
                 "correlation_id": (correlation_id or "")[:128] or None,
                 "actor": actor,

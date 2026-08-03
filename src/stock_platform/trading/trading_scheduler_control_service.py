@@ -27,7 +27,11 @@ from stock_platform.broker.recovery_conflict_service import (
 from stock_platform.operation.live_health_gate import (
     evaluate_live_order_health,
 )
-from stock_platform.order.live_safety_audit import emit_live_safety_audit
+from stock_platform.order.live_safety_audit import (
+    SCHEDULER_PAUSE,
+    SCHEDULER_RUN,
+    emit_live_safety_audit,
+)
 from stock_platform.realtime.runtime import (
     realtime_execution_runner,
     realtime_strategy_runner,
@@ -38,6 +42,11 @@ from stock_platform.realtime.session_runtime import (
 from stock_platform.risk_engine.kill_switch_service import KillSwitchService
 from stock_platform.trading.account_identity import uba_kill_switch_scope
 from stock_platform.trading.account_models import UserBrokerAccount
+from stock_platform.trading.runtime_control_gates import (
+    assert_recovery_ready,
+    assert_risk_account_not_paused,
+    assert_uba_connection_ready,
+)
 from stock_platform.operation.runtime_control_repository import (
     RuntimeControlConflictError,
     RuntimeControlRepository,
@@ -160,6 +169,20 @@ class TradingSchedulerControlService:
             raise TradingSchedulerControlError(
                 "arm_required", "ARM must be ON"
             )
+        assert_uba_connection_ready(
+            uba,
+            raise_error=lambda c, m: TradingSchedulerControlError(c, m),
+        )
+        assert_recovery_ready(
+            self._session,
+            uba_id,
+            raise_error=lambda c, m: TradingSchedulerControlError(c, m),
+        )
+        assert_risk_account_not_paused(
+            self._session,
+            uba,
+            raise_error=lambda c, m: TradingSchedulerControlError(c, m),
+        )
         now = datetime.now(timezone.utc)
         expires = uba.arm_expires_at
         if expires is None:
@@ -177,17 +200,6 @@ class TradingSchedulerControlService:
             raise TradingSchedulerControlError(
                 "arm_ttl_insufficient",
                 f"ARM remaining {remaining}s < {min_arm_remaining_seconds}s",
-            )
-
-        pause = self._session.scalar(
-            select(BrokerRecoveryAccountStateEntity).where(
-                BrokerRecoveryAccountStateEntity.user_broker_account_id
-                == uba_id
-            )
-        )
-        if pause is not None and bool(pause.trading_paused):
-            raise TradingSchedulerControlError(
-                "trading_paused", "Account trading is paused"
             )
 
         active = int(
@@ -342,10 +354,29 @@ class TradingSchedulerControlService:
         prev_running = bool(realtime_trading_scheduler.scheduler.running)
         gate: dict[str, Any] = {}
         if enforce_gates:
-            gate = self.assert_start_preconditions(
-                user_broker_account_id=int(user_broker_account_id),
-                min_arm_remaining_seconds=min_arm_remaining_seconds,
-            )
+            try:
+                gate = self.assert_start_preconditions(
+                    user_broker_account_id=int(user_broker_account_id),
+                    min_arm_remaining_seconds=min_arm_remaining_seconds,
+                )
+            except TradingSchedulerControlError as exc:
+                # 이미 RUN인데 LIVE/ARM 게이트 실패 → Fail Closed PAUSE
+                if prev_running and exc.code in {
+                    "live_required",
+                    "arm_required",
+                    "arm_expired",
+                    "arm_ttl_missing",
+                    "arm_ttl_insufficient",
+                    "uba_inactive",
+                }:
+                    self.pause(
+                        actor=actor,
+                        reason=f"fail_closed_gate:{exc.code}",
+                        correlation_id=correlation_id.strip()[:128],
+                        user_broker_account_id=int(user_broker_account_id),
+                        require_correlation_id=False,
+                    )
+                raise
 
         if prev_running:
             # Idempotent — 재시작·Audit 없음
@@ -427,22 +458,67 @@ class TradingSchedulerControlService:
         realtime_trading_scheduler.start()
         repo.touch_heartbeat(last_actual_state="RUNNING")
 
+        def _compensate_scheduler_start(code: str, message: str) -> None:
+            """프로세스 Scheduler 기동 후 검증 실패 시 PAUSE로 보상."""
+            try:
+                if realtime_trading_scheduler.scheduler.running:
+                    realtime_trading_scheduler.scheduler.shutdown(wait=False)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                set_trading_scheduler_desired_state(
+                    "PAUSE",
+                    actor=actor,
+                    reason=f"COMPENSATE:{code}:{message}"[:2000],
+                    correlation_id=correlation_id.strip()[:128],
+                )
+                repo.update_trading_scheduler_desired(
+                    desired_state="PAUSE",
+                    actor=actor,
+                    reason=f"COMPENSATE:{code}"[:2000],
+                    correlation_id=correlation_id.strip()[:128],
+                    last_actual_state="PAUSED",
+                    blocked_reason=code,
+                )
+                repo.touch_heartbeat(last_actual_state="PAUSED")
+            except Exception:  # noqa: BLE001
+                pass
+            emit_live_safety_audit(
+                self._session,
+                event_type="SCHEDULER_RUN_COMPENSATED",
+                actor=actor,
+                run_id=correlation_id.strip()[:128],
+                user_id=gate.get("user_id"),
+                account_id=int(user_broker_account_id),
+                strategy_id=None,
+                detail={
+                    "result": "COMPENSATED",
+                    "failure_reason": message,
+                    "code": code,
+                    "correlation_id": correlation_id.strip()[:128],
+                    "user_broker_account_id": int(user_broker_account_id),
+                    "admin_user_id": actor,
+                },
+                commit=False,
+            )
+            raise TradingSchedulerControlError(code, message)
+
         # LIVE/ARM 미변경 재확인
         if uba is not None:
             self._session.refresh(uba)
             if bool(uba.live_order_enabled) != bool(live_before):
-                raise TradingSchedulerControlError(
+                _compensate_scheduler_start(
                     "live_mutated", "LIVE changed during scheduler start"
                 )
             if bool(uba.live_armed) != bool(arm_before):
-                raise TradingSchedulerControlError(
+                _compensate_scheduler_start(
                     "arm_mutated", "ARM changed during scheduler start"
                 )
             after_exp = (
                 uba.arm_expires_at.isoformat() if uba.arm_expires_at else None
             )
             if after_exp != arm_expires_before:
-                raise TradingSchedulerControlError(
+                _compensate_scheduler_start(
                     "arm_ttl_refreshed",
                     "ARM TTL must not be refreshed by scheduler start",
                 )
@@ -451,12 +527,12 @@ class TradingSchedulerControlService:
         st_after = realtime_strategy_runner.status()
         ex_after = realtime_execution_runner.status()
         if int(st_after.get("active_scopes") or 0) > 0:
-            raise TradingSchedulerControlError(
+            _compensate_scheduler_start(
                 "strategy_scopes_started",
                 "Scheduler start must not activate strategy scopes",
             )
         if bool(ex_after.get("running")):
-            raise TradingSchedulerControlError(
+            _compensate_scheduler_start(
                 "execution_runner_started",
                 "Scheduler start must not start execution runner",
             )
@@ -480,7 +556,7 @@ class TradingSchedulerControlService:
         }
         emit_live_safety_audit(
             self._session,
-            event_type="TRADING_SCHEDULER_STARTED",
+            event_type="SCHEDULER_RUN",
             actor=actor,
             run_id=correlation_id.strip()[:128],
             user_id=gate.get("user_id"),
@@ -596,7 +672,7 @@ class TradingSchedulerControlService:
         status = self.status()
         emit_live_safety_audit(
             self._session,
-            event_type="TRADING_SCHEDULER_PAUSED",
+            event_type="SCHEDULER_PAUSE",
             actor=actor,
             run_id=(correlation_id or "")[:128] or None,
             user_id=None,
@@ -632,56 +708,15 @@ class TradingSchedulerControlService:
         *,
         migration_at_head: bool,
     ) -> tuple[bool, str | None]:
-        """Scheduler RUN 복원 안전 조건 (LIVE/ARM OFF 필수, 주문 경로 차단)."""
+        """Startup RUN 자동복원 조건.
 
-        if not migration_at_head:
-            return False, "MIGRATION_NOT_AT_HEAD"
+        Fail Closed: LIVE OFF + Scheduler RUN 불변식 위반을 막기 위해
+        재시작 시 RUN 자동복원을 허용하지 않는다.
+        운영 순서 Resume → Pre-flight → LIVE ON → ARM ON → Scheduler RUN.
+        """
 
-        try:
-            if KillSwitchService(self._session).is_active():
-                return False, "KILL_SWITCH_ACTIVE"
-        except Exception:  # noqa: BLE001
-            return False, "KILL_SWITCH_UNAVAILABLE"
-
-        health = evaluate_live_order_health(self._session)
-        if not health.get("live_orders_allowed"):
-            return False, f"BROKER_UNHEALTHY:{health.get('status')}"
-
-        if count_global_submission_unknown(self._session) > 0:
-            return False, "SUBMISSION_UNKNOWN_PRESENT"
-
-        st = realtime_strategy_runner.status()
-        ex = realtime_execution_runner.status()
-        if int(st.get("active_scopes") or 0) > 0:
-            return False, "STRATEGY_SCOPES_ACTIVE"
-        if bool(ex.get("running")):
-            return False, "EXECUTION_RUNNER_ACTIVE"
-        if bool(st.get("running")):
-            return False, "STRATEGY_RUNNER_ACTIVE"
-
-        live_on = int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(UserBrokerAccount)
-                .where(UserBrokerAccount.live_order_enabled.is_(True))
-            )
-            or 0
-        )
-        if live_on > 0:
-            return False, "LIVE_MUST_BE_OFF"
-
-        armed = int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(UserBrokerAccount)
-                .where(UserBrokerAccount.live_armed.is_(True))
-            )
-            or 0
-        )
-        if armed > 0:
-            return False, "ARM_MUST_BE_OFF"
-
-        return True, None
+        _ = migration_at_head
+        return False, "OPERATOR_SEQUENCE_REQUIRED"
 
     def attempt_startup_restore(
         self,
@@ -689,7 +724,7 @@ class TradingSchedulerControlService:
         process_instance_id: str,
         migration_at_head: bool,
     ) -> dict[str, Any]:
-        """Startup 시 desired=RUN이면 조건부 actual 복원."""
+        """Startup 시 desired=RUN이어도 자동 RUN 금지 — PAUSE로 Fail Closed."""
 
         repo = RuntimeControlRepository(self._session)
         row = repo.get_trading_scheduler_row(create_if_missing=True)
@@ -718,6 +753,8 @@ class TradingSchedulerControlService:
         )
 
         if desired != "RUN":
+            if realtime_trading_scheduler.scheduler.running:
+                realtime_trading_scheduler.scheduler.shutdown(wait=False)
             repo.update_trading_scheduler_desired(
                 desired_state="PAUSE",
                 actor="STARTUP",
@@ -748,104 +785,68 @@ class TradingSchedulerControlService:
                 "actual_state": "PAUSED",
             }
 
-        ok, blocked = self.evaluate_startup_restore_conditions(
+        _ok, blocked = self.evaluate_startup_restore_conditions(
             migration_at_head=migration_at_head
         )
-        if not ok:
-            repo.update_trading_scheduler_desired(
-                desired_state="RUN",
-                actor="STARTUP",
-                reason="startup_restore_blocked",
-                correlation_id=process_instance_id,
-                last_actual_state="PAUSED",
-                startup_restore_attempted=True,
-                startup_restore_result="BLOCKED",
-                process_instance_id=process_instance_id,
-                blocked_reason=blocked,
-            )
-            hydrate_trading_scheduler_control(
-                desired_state="RUN",
-                persisted=True,
-                blocked_reason=blocked,
-                startup_restore_attempted=True,
-                startup_restore_result="BLOCKED",
-                restored_on_startup=False,
-            )
-            emit_live_safety_audit(
-                self._session,
-                event_type="TRADING_SCHEDULER_STARTUP_RESTORE_BLOCKED",
-                actor="STARTUP",
-                run_id=process_instance_id,
-                user_id=None,
-                account_id=None,
-                strategy_id=None,
-                detail={
-                    "desired_state": "RUN",
-                    "actual_state": "PAUSED",
-                    "blocked_reason": blocked,
-                    "process_instance_id": process_instance_id,
-                },
-                commit=False,
-            )
-            repo.touch_heartbeat(
-                last_actual_state="PAUSED",
-                process_instance_id=process_instance_id,
-            )
-            return {
-                "attempted": True,
-                "restored": False,
-                "result": "BLOCKED",
-                "blocked_reason": blocked,
-                "actual_state": "PAUSED",
-            }
-
-        if not realtime_trading_scheduler.scheduler.running:
-            realtime_trading_scheduler.start()
-
-        repo.update_trading_scheduler_desired(
-            desired_state="RUN",
+        blocked = blocked or "OPERATOR_SEQUENCE_REQUIRED"
+        if realtime_trading_scheduler.scheduler.running:
+            realtime_trading_scheduler.scheduler.shutdown(wait=False)
+        set_trading_scheduler_desired_state(
+            "PAUSE",
             actor="STARTUP",
-            reason="startup_restore_success",
+            reason="startup_force_pause_operator_sequence",
             correlation_id=process_instance_id,
-            last_actual_state="RUNNING",
+        )
+        repo.update_trading_scheduler_desired(
+            desired_state="PAUSE",
+            actor="STARTUP",
+            reason="startup_force_pause_operator_sequence",
+            correlation_id=process_instance_id,
+            last_actual_state="PAUSED",
             startup_restore_attempted=True,
-            startup_restore_result="RESTORED",
+            startup_restore_result="FORCED_PAUSE",
             process_instance_id=process_instance_id,
-            blocked_reason=None,
+            blocked_reason=blocked,
         )
         hydrate_trading_scheduler_control(
-            desired_state="RUN",
+            desired_state="PAUSE",
             persisted=True,
-            blocked_reason=None,
+            blocked_reason=blocked,
             startup_restore_attempted=True,
-            startup_restore_result="RESTORED",
-            restored_on_startup=True,
+            startup_restore_result="FORCED_PAUSE",
+            restored_on_startup=False,
         )
         emit_live_safety_audit(
             self._session,
-            event_type="TRADING_SCHEDULER_STARTUP_RESTORED",
+            event_type="TRADING_SCHEDULER_STARTUP_RESTORE_BLOCKED",
             actor="STARTUP",
             run_id=process_instance_id,
             user_id=None,
             account_id=None,
             strategy_id=None,
             detail={
-                "desired_state": "RUN",
-                "actual_state": "RUNNING",
+                "desired_state": "PAUSE",
+                "previous_desired": "RUN",
+                "actual_state": "PAUSED",
+                "blocked_reason": blocked,
                 "process_instance_id": process_instance_id,
+                "note": (
+                    "Scheduler RUN not auto-restored; "
+                    "require LIVE ON → ARM ON → Scheduler RUN"
+                ),
             },
             commit=False,
         )
         repo.touch_heartbeat(
-            last_actual_state="RUNNING",
+            last_actual_state="PAUSED",
             process_instance_id=process_instance_id,
         )
         return {
             "attempted": True,
-            "restored": True,
-            "result": "RESTORED",
-            "blocked_reason": None,
-            "actual_state": "RUNNING",
+            "restored": False,
+            "result": "FORCED_PAUSE",
+            "blocked_reason": blocked,
+            "actual_state": "PAUSED",
         }
 
     def _strategy_runtime_counts(self, uba_id: int) -> dict[str, int]:

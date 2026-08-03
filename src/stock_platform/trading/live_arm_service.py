@@ -19,9 +19,6 @@ from stock_platform.broker.credential_vault_service import (
     BrokerCredentialVaultError,
     BrokerCredentialVaultService,
 )
-from stock_platform.broker.recovery_account_state import (
-    BrokerRecoveryAccountStateEntity,
-)
 from stock_platform.broker.recovery_conflict_constants import (
     ACTIVE_REVIEW_STATUSES,
 )
@@ -35,6 +32,9 @@ from stock_platform.operation.live_health_gate import (
     evaluate_live_order_health,
 )
 from stock_platform.order.live_safety_audit import (
+    ARM_OFF,
+    ARM_ON,
+    LIVE_ARM_EXPIRED,
     emit_live_order_telegram,
     emit_live_safety_audit,
 )
@@ -45,13 +45,18 @@ from stock_platform.risk_engine.resolved_policy import (
 from stock_platform.trading.account_identity import uba_kill_switch_scope
 from stock_platform.trading.account_models import UserBrokerAccount
 from stock_platform.trading.live_arm_entities import LiveArmEvent
+from stock_platform.trading.runtime_control_gates import (
+    assert_recovery_ready,
+    assert_risk_account_not_paused,
+    assert_uba_connection_ready,
+)
 from stock_platform.trading.upbit_scheduler_readiness import (
     collect_scheduler_readiness,
 )
 
-LIVE_ARM = "LIVE_ARM"
-LIVE_DISARM = "LIVE_DISARM"
-LIVE_ARM_EXPIRED = "LIVE_ARM_EXPIRED"
+LIVE_ARM = ARM_ON
+LIVE_DISARM = ARM_OFF
+# LIVE_ARM_EXPIRED 는 live_safety_audit 에서 import
 DEFAULT_ARM_TTL_SECONDS = 300
 
 
@@ -116,16 +121,20 @@ class LiveArmService:
                 "live_required",
                 "LIVE must be ON before ARM enable",
             )
-        pause = self._session.scalar(
-            select(BrokerRecoveryAccountStateEntity).where(
-                BrokerRecoveryAccountStateEntity.user_broker_account_id
-                == uba_id
-            )
+        assert_uba_connection_ready(
+            uba,
+            raise_error=lambda c, m: LiveArmError(c, m),
         )
-        if pause is not None and bool(pause.trading_paused):
-            raise LiveArmError(
-                "trading_paused", "Account trading is paused"
-            )
+        recovery = assert_recovery_ready(
+            self._session,
+            uba_id,
+            raise_error=lambda c, m: LiveArmError(c, m),
+        )
+        risk = assert_risk_account_not_paused(
+            self._session,
+            uba,
+            raise_error=lambda c, m: LiveArmError(c, m),
+        )
 
         active = int(
             self._session.scalar(
@@ -231,6 +240,9 @@ class LiveArmService:
             "trading_scheduler_actual": trading.trading_scheduler_actual_state,
             "live_order_enabled": bool(uba.live_order_enabled),
             "health_status": health.get("status"),
+            "recovery_status": recovery.get("recovery_status"),
+            "account_paused": risk.get("account_paused"),
+            "arm_ttl_seconds": risk.get("arm_ttl_seconds"),
         }
 
     def arm(
@@ -415,6 +427,18 @@ class LiveArmService:
                 "correlation_id_required",
                 "correlation_id is required",
             )
+        # 역순: Scheduler PAUSE 후에만 DISARM
+        trading_gate = collect_scheduler_readiness()
+        if trading_gate.trading_scheduler_actual_state != "PAUSED":
+            raise LiveArmError(
+                "trading_scheduler_not_paused",
+                "Trading Scheduler must be PAUSED before DISARM",
+            )
+        if trading_gate.trading_scheduler_desired_state != "PAUSE":
+            raise LiveArmError(
+                "trading_scheduler_desired_not_pause",
+                "Trading Scheduler desired must be PAUSE before DISARM",
+            )
         uba = self._require_uba(user_broker_account_id)
         before_live = bool(uba.live_order_enabled)
         before_arm = bool(uba.live_armed)
@@ -563,6 +587,26 @@ class LiveArmService:
         return True
 
     def _expire_uba(self, uba: UserBrokerAccount, *, actor: str) -> None:
+        # Fail Closed: Scheduler RUN이면 LIVE OFF 전에 자동 PAUSE
+        scheduler_auto_paused = False
+        try:
+            from stock_platform.trading.trading_scheduler_control_service import (
+                TradingSchedulerControlService,
+            )
+
+            pause_out = TradingSchedulerControlService(self._session).pause(
+                actor=actor or "SYSTEM",
+                reason="ARM_EXPIRED:auto_pause_before_live_off",
+                correlation_id=f"arm-expire-pause-{int(uba.user_broker_account_id)}",
+                user_broker_account_id=int(uba.user_broker_account_id),
+                require_correlation_id=False,
+            )
+            scheduler_auto_paused = True
+            _ = pause_out
+        except Exception:  # noqa: BLE001
+            # pause 실패해도 ARM/LIVE OFF는 진행 (주문 경로 차단 우선)
+            scheduler_auto_paused = False
+
         self._clear_arm(uba)
         # ARM 만료 시 LIVE OFF로 되돌림 (Fail Closed)
         uba.live_order_enabled = False
@@ -575,7 +619,10 @@ class LiveArmService:
                 arm_token_hash=None,
                 actor=actor,
                 expires_at=None,
-                detail_json={"action": "LIVE_OFF"},
+                detail_json={
+                    "action": "LIVE_OFF",
+                    "scheduler_auto_paused": scheduler_auto_paused,
+                },
             )
         )
         self._session.flush()
@@ -587,17 +634,23 @@ class LiveArmService:
             user_id=int(uba.user_id),
             account_id=int(uba.user_broker_account_id),
             strategy_id=None,
-            detail={"action": "LIVE_OFF"},
+            detail={
+                "action": "LIVE_OFF",
+                "scheduler_auto_paused": scheduler_auto_paused,
+            },
             commit=False,
         )
         emit_live_order_telegram(
             event_type=LIVE_ARM_EXPIRED,
             title="LIVE ARM EXPIRED",
             message=(
-                f"UBA {uba.user_broker_account_id} ARM expired → LIVE OFF"
+                f"UBA {uba.user_broker_account_id} ARM expired → "
+                f"LIVE OFF"
+                + (" + Scheduler PAUSE" if scheduler_auto_paused else "")
             ),
             detail={
                 "user_broker_account_id": int(uba.user_broker_account_id),
+                "scheduler_auto_paused": scheduler_auto_paused,
             },
         )
 

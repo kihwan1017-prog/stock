@@ -192,6 +192,7 @@ def _check_broker(session: Session) -> dict[str, Any]:
 
 
 def _check_credential(session: Session) -> dict[str, Any]:
+    """전역 스캔 — 타 계좌 미검증은 WARN(Reference). LIVE ON 은 UBA 스코프 검사."""
     try:
         from stock_platform.broker.credential_vault_service import (
             BrokerCredentialVaultService,
@@ -211,6 +212,7 @@ def _check_credential(session: Session) -> dict[str, Any]:
         vault = BrokerCredentialVaultService(session)
         verified = 0
         unverified = 0
+        unverified_ids: list[int] = []
         for uba in ubas:
             try:
                 # status() 만 사용 — 복호화/원문 접근 금지
@@ -222,24 +224,27 @@ def _check_credential(session: Session) -> dict[str, Any]:
                     verified += 1
                 else:
                     unverified += 1
+                    unverified_ids.append(int(uba.user_broker_account_id))
             except Exception:  # noqa: BLE001
                 unverified += 1
+                unverified_ids.append(int(uba.user_broker_account_id))
         detail = {
+            "scope": "global_reference",
             "active_uba_checked": len(ubas),
             "verified": verified,
             "unverified_or_missing": unverified,
+            "unverified_uba_ids_sample": unverified_ids[:20],
         }
-        if ubas and (verified == 0 or unverified > 0):
+        if ubas and unverified > 0:
             return _item(
                 code="CREDENTIAL",
                 name="Credential",
-                status="FAIL",
+                status="WARN",
                 message=(
-                    "Credential 미검증"
-                    if verified == 0
-                    else f"Credential 미검증 계좌 {unverified}건"
+                    f"타 계좌 Credential 미검증 {unverified}건 "
+                    f"(선택 UBA LIVE ON 비차단 · Reference)"
                 ),
-                remediation="관리자 Credential 등록·검증을 완료하세요.",
+                remediation="LIVE ON 은 선택 UBA 단위 Pre-flight 로 재검증합니다.",
                 detail=detail,
             )
         return _item(
@@ -261,6 +266,7 @@ def _check_credential(session: Session) -> dict[str, Any]:
 
 
 def _check_connection(session: Session) -> dict[str, Any]:
+    """전역 스캔 — 미연결 타 계좌는 WARN(Reference)."""
     try:
         from stock_platform.trading.account_models import UserBrokerAccount
 
@@ -283,31 +289,22 @@ def _check_connection(session: Session) -> dict[str, Any]:
             else:
                 not_connected_ids.append(int(row.user_broker_account_id))
         detail = {
+            "scope": "global_reference",
             "active_uba": len(rows),
             "connected": connected,
             "not_connected_count": len(not_connected_ids),
-            # ID 만 — 내부 UUID/비밀 없음
             "not_connected_uba_ids_sample": not_connected_ids[:20],
         }
-        if rows and connected == 0:
-            return _item(
-                code="CONNECTION",
-                name="Connection",
-                status="FAIL",
-                message="활성 계좌 connection_status 가 CONNECTED 가 아닙니다.",
-                remediation="Credential 검증 후 connection_status=CONNECTED 로 맞추세요.",
-                detail=detail,
-            )
         if not_connected_ids:
             return _item(
                 code="CONNECTION",
                 name="Connection",
-                status="FAIL",
+                status="WARN",
                 message=(
                     f"connection_status != CONNECTED 계좌 "
-                    f"{len(not_connected_ids)}건"
+                    f"{len(not_connected_ids)}건 (선택 UBA LIVE ON 비차단 · Reference)"
                 ),
-                remediation="미연결 계좌를 CONNECTED 로 복구하세요.",
+                remediation="LIVE ON 은 선택 UBA 단위 Pre-flight 로 재검증합니다.",
                 detail=detail,
             )
         return _item(
@@ -328,7 +325,18 @@ def _check_connection(session: Session) -> dict[str, Any]:
         )
 
 
+def _safe_int_id(value: Any) -> int | None:
+    """NULL PK/FK 를 int() 하지 않음 — TypeError 방지."""
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _check_recovery(session: Session) -> dict[str, Any]:
+    """전역 Recovery — 타 계좌 paused/비정상은 WARN. int(None) TypeError 금지."""
     try:
         from stock_platform.broker.recovery_account_state import (
             BrokerRecoveryAccountStateEntity,
@@ -349,36 +357,36 @@ def _check_recovery(session: Session) -> dict[str, Any]:
                 if status in {"MANUAL_REVIEW", "RUNNING", "FAILED"}:
                     abnormal += 1
                     if len(abnormal_sample) < 10:
+                        uba_id = _safe_int_id(
+                            getattr(row, "user_broker_account_id", None)
+                        )
+                        paper_id = _safe_int_id(
+                            getattr(row, "paper_account_id", None)
+                        )
                         abnormal_sample.append(
                             {
-                                "uba_id": int(
-                                    row.user_broker_account_id
-                                ),
+                                "uba_id": uba_id,
+                                "paper_account_id": paper_id,
                                 "recovery_status": status,
                             }
                         )
         detail = {
+            "scope": "global_reference",
             "states_checked": len(rows),
             "trading_paused_count": paused,
             "abnormal_recovery_count": abnormal,
             "abnormal_sample": abnormal_sample,
         }
-        if paused > 0:
+        if paused > 0 or abnormal > 0:
             return _item(
                 code="RECOVERY",
                 name="Recovery",
-                status="FAIL",
-                message=f"trading_paused=true 계좌 {paused}건",
-                remediation="Resume Trading 승인·실행 후 재검사하세요.",
-                detail=detail,
-            )
-        if abnormal > 0:
-            return _item(
-                code="RECOVERY",
-                name="Recovery",
-                status="FAIL",
-                message=f"Recovery 비정상 상태 {abnormal}건",
-                remediation="Recovery 실패/검토 상태를 해소한 뒤 재검사하세요.",
+                status="WARN",
+                message=(
+                    f"타 계좌 Recovery 이슈 paused={paused} abnormal={abnormal} "
+                    f"(선택 UBA LIVE ON 비차단 · Reference)"
+                ),
+                remediation="LIVE ON 은 선택 UBA 단위 Pre-flight 로 재검증합니다.",
                 detail=detail,
             )
         return _item(
@@ -400,6 +408,7 @@ def _check_recovery(session: Session) -> dict[str, Any]:
 
 
 def _check_conflict(session: Session) -> dict[str, Any]:
+    """전역 Conflict — 활성 Conflict 는 WARN(Reference). UBA 스코프에서 FAIL."""
     try:
         from stock_platform.broker.recovery_conflict_constants import (
             ACTIVE_REVIEW_STATUSES,
@@ -420,14 +429,20 @@ def _check_conflict(session: Session) -> dict[str, Any]:
             )
             or 0
         )
-        detail = {"active_blocking_conflicts": active}
+        detail = {
+            "scope": "global_reference",
+            "active_blocking_conflicts": active,
+        }
         if active > 0:
             return _item(
                 code="CONFLICT",
                 name="Conflict",
-                status="FAIL",
-                message=f"활성 차단 Conflict {active}건",
-                remediation="활성 Conflict 를 안전하게 해소한 뒤 재검사하세요.",
+                status="WARN",
+                message=(
+                    f"활성 Conflict {active}건 "
+                    f"(선택 UBA LIVE ON 비차단 · Reference)"
+                ),
+                remediation="LIVE ON 은 선택 UBA 단위 Pre-flight 로 재검증합니다.",
                 detail=detail,
             )
         return _item(
@@ -503,7 +518,6 @@ def _check_scheduler() -> dict[str, Any]:
             "",
         }
         if paused:
-            # LIVE ON 전 정상 대기 — BLOCKED 아님
             return _item(
                 code="SCHEDULER",
                 name="Scheduler",
@@ -527,6 +541,71 @@ def _check_scheduler() -> dict[str, Any]:
             status="WARN",
             message=f"Scheduler 점검 실패: {exc.__class__.__name__}",
             remediation="비필수 Scheduler 모니터링을 확인하세요.",
+            detail={"error_type": exc.__class__.__name__},
+        )
+
+
+def _check_scheduler_live_invariant(session: Session) -> dict[str, Any]:
+    """Scheduler RUN 이면 최소 1개 UBA LIVE ON 필수 (불변식)."""
+    try:
+        from stock_platform.trading.account_models import UserBrokerAccount
+        from stock_platform.trading.upbit_scheduler_readiness import (
+            collect_scheduler_readiness,
+        )
+
+        snap = collect_scheduler_readiness()
+        desired = str(snap.trading_scheduler_desired_state or "").upper()
+        actual = str(snap.trading_scheduler_actual_state or "").upper()
+        running = bool(getattr(snap, "trading_running", False)) or actual in {
+            "RUN",
+            "RUNNING",
+        }
+        desired_run = desired in {"RUN", "RUNNING"}
+        live_on = int(
+            session.scalar(
+                select(func.count())
+                .select_from(UserBrokerAccount)
+                .where(
+                    UserBrokerAccount.is_active.is_(True),
+                    UserBrokerAccount.deleted_at.is_(None),
+                    UserBrokerAccount.live_order_enabled.is_(True),
+                )
+            )
+            or 0
+        )
+        detail = {
+            "desired_state": desired,
+            "actual_state": actual,
+            "trading_running": running,
+            "live_on_count": live_on,
+        }
+        if (running or desired_run) and live_on <= 0:
+            return _item(
+                code="SCHEDULER_LIVE_INVARIANT",
+                name="Scheduler↔LIVE",
+                status="FAIL",
+                message="Scheduler RUN + LIVE OFF (불변식 위반)",
+                remediation=(
+                    "Fail Closed: Scheduler PAUSE 후 "
+                    "Resume → Pre-flight → LIVE ON → ARM ON → Scheduler RUN"
+                ),
+                detail=detail,
+            )
+        return _item(
+            code="SCHEDULER_LIVE_INVARIANT",
+            name="Scheduler↔LIVE",
+            status="PASS",
+            message="Scheduler/LIVE 불변식 OK",
+            remediation=None,
+            detail=detail,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _item(
+            code="SCHEDULER_LIVE_INVARIANT",
+            name="Scheduler↔LIVE",
+            status="WARN",
+            message=f"불변식 점검 실패: {exc.__class__.__name__}",
+            remediation="Scheduler·LIVE 상태를 수동 확인하세요.",
             detail={"error_type": exc.__class__.__name__},
         )
 
@@ -616,6 +695,7 @@ def _check_risk(session: Session) -> dict[str, Any]:
             or 0
         )
         detail = {
+            "scope": "global_reference",
             "kill_switch_active": kill_active,
             "account_paused_count": paused_accounts,
         }
@@ -632,9 +712,12 @@ def _check_risk(session: Session) -> dict[str, Any]:
             return _item(
                 code="RISK",
                 name="Risk",
-                status="FAIL",
-                message=f"account_paused=true 계좌 {paused_accounts}건",
-                remediation="Risk account_paused 를 해제한 뒤 재검사하세요.",
+                status="WARN",
+                message=(
+                    f"account_paused=true 계좌 {paused_accounts}건 "
+                    f"(선택 UBA LIVE ON 비차단 · Reference)"
+                ),
+                remediation="LIVE ON 은 선택 UBA 단위 Pre-flight 로 재검증합니다.",
                 detail=detail,
             )
         return _item(
@@ -969,6 +1052,7 @@ class RuntimePreflightService:
             _check_conflict(self._session),
             _check_runtime(),
             _check_scheduler(),
+            _check_scheduler_live_invariant(self._session),
             _check_live_arm_flags(self._session),
             _check_risk(self._session),
             _check_strategy(mode=mode),
@@ -1395,6 +1479,31 @@ class RuntimePreflightService:
                     checked_at=checked_at,
                 )
             )
+            # UBA 단위: Scheduler RUN + 이 UBA LIVE OFF → FAIL
+            running = actual in {"RUN", "RUNNING"} or desired in {
+                "RUN",
+                "RUNNING",
+            }
+            uba_live = bool(uba.live_order_enabled)
+            if running and not uba_live:
+                checks.append(
+                    _item(
+                        code="SCHEDULER_LIVE_INVARIANT",
+                        name="Scheduler↔LIVE",
+                        status="FAIL",
+                        message="Scheduler RUN + 이 UBA LIVE OFF (불변식 위반)",
+                        remediation=(
+                            "Fail Closed: Scheduler PAUSE 후 "
+                            "LIVE ON → ARM ON → Scheduler RUN"
+                        ),
+                        detail={
+                            "desired_state": desired,
+                            "actual_state": actual,
+                            "uba_live_order_enabled": uba_live,
+                        },
+                        checked_at=checked_at,
+                    )
+                )
         except Exception as exc:  # noqa: BLE001
             checks.append(
                 _item(
@@ -1617,13 +1726,18 @@ class RuntimePreflightService:
             }
         )
 
-    def assert_ready_for_live_on(self) -> dict[str, Any]:
-        """LIVE ON 서버 gate — Pre-flight 를 재계산하여 FAIL 이면 거부."""
+    def assert_ready_for_live_on(
+        self, user_broker_account_id: int
+    ) -> dict[str, Any]:
+        """LIVE ON 서버 gate — 선택 UBA 단위 Pre-flight 재계산."""
         from stock_platform.trading.live_order_approval_service import (
             LiveOrderApprovalError,
         )
 
-        report = self.run(mode="LIVE_ON")
+        report = self.run_for_uba(
+            user_broker_account_id=int(user_broker_account_id),
+            mode="LIVE_ON",
+        )
         if report.get("overall_status") != "READY_FOR_LIVE":
             blocker_codes = [
                 str(b.get("code") or "")
@@ -1631,7 +1745,7 @@ class RuntimePreflightService:
             ]
             raise LiveOrderApprovalError(
                 "preflight_blocked",
-                "Runtime Pre-flight is BLOCKED: "
+                "UBA Pre-flight is BLOCKED: "
                 + (",".join(blocker_codes) if blocker_codes else "FAIL"),
             )
         return report
