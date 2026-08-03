@@ -33,12 +33,17 @@ logger = structlog.get_logger(__name__)
 
 
 def infer_operation(method: str, endpoint: str) -> UpbitOperationType:
-    ep = endpoint.lower()
+    ep = endpoint.lower().rstrip("/")
     m = method.upper()
-    if m == "POST" and "/orders" in ep and not ep.rstrip("/").endswith("order"):
+    # 공식 주문 생성 테스트 — 실주문 CREATE 와 분리
+    if m == "POST" and ep.endswith("/orders/test"):
+        return UpbitOperationType.ORDER_TEST
+    if m == "POST" and "/orders" in ep and not ep.endswith("/order"):
         return UpbitOperationType.ORDER_CREATE
     if m == "DELETE" and "/order" in ep:
         return UpbitOperationType.ORDER_CANCEL
+    if "/orders/chance" in ep:
+        return UpbitOperationType.ORDER_QUERY
     if "/orders" in ep or ep.endswith("/order"):
         return UpbitOperationType.ORDER_QUERY
     if "/accounts" in ep:
@@ -49,6 +54,7 @@ def infer_operation(method: str, endpoint: str) -> UpbitOperationType:
 def infer_group(operation: UpbitOperationType) -> str:
     if operation in {
         UpbitOperationType.ORDER_CREATE,
+        UpbitOperationType.ORDER_TEST,
         UpbitOperationType.ORDER_CANCEL,
         UpbitOperationType.ORDER_QUERY,
     }:

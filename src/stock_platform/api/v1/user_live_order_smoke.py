@@ -43,6 +43,20 @@ class LiveOrderConfirmBody(BaseModel):
     execute_live: bool = False
     idempotency_key: str | None = Field(default=None, max_length=128)
     preview_id: str | None = None
+    order_test_fingerprint: str | None = Field(default=None, max_length=128)
+    order_test_tested_at: str | None = None
+    smoke_buy_run_id: str | None = None
+
+
+class LiveOrderTestBody(BaseModel):
+    market: str = Field(min_length=3, max_length=30)
+    side: str = Field(min_length=3, max_length=4)
+    amount: Decimal | None = Field(default=None, gt=0)
+    limit_price: Decimal | None = Field(default=None, gt=0)
+    identifier: str | None = Field(default=None, max_length=36)
+    smoke_buy_run_id: str | None = None
+    # 네트워크 스킵은 서버 테스트 전용 — 운영 API에서는 항상 False
+    skip_network: bool = False
 
 
 def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
@@ -113,6 +127,36 @@ def user_live_order_preview(
         raise _map_error(exc) from exc
 
 
+@router.post("/{uba_id}/live-order-test")
+def user_live_order_test(
+    uba_id: int,
+    body: LiveOrderTestBody,
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
+    session: Session = Depends(get_db_session),
+):
+    """공식 주문 생성 테스트 (POST /v1/orders/test). 실주문 아님."""
+
+    try:
+        result = ControlledLiveOrderSmokeService(session).order_test(
+            uba_id=int(uba_id),
+            user_id=int(user.user_id),
+            actor=user.username,
+            market=body.market,
+            side=body.side,
+            amount=body.amount,
+            limit_price=body.limit_price,
+            identifier=body.identifier,
+            # 운영 경로: 네트워크 스킵 강제 금지
+            skip_network=False,
+            smoke_buy_run_id=body.smoke_buy_run_id,
+        )
+        session.commit()
+        return result
+    except ControlledLiveOrderSmokeError as exc:
+        session.rollback()
+        raise _map_error(exc) from exc
+
+
 @router.post("/{uba_id}/live-order-confirm")
 def user_live_order_confirm(
     uba_id: int,
@@ -134,6 +178,9 @@ def user_live_order_confirm(
             execute_live=bool(body.execute_live),
             idempotency_key=body.idempotency_key,
             preview_id=body.preview_id,
+            order_test_fingerprint=body.order_test_fingerprint,
+            order_test_tested_at=body.order_test_tested_at,
+            smoke_buy_run_id=body.smoke_buy_run_id,
         )
         session.commit()
         return result

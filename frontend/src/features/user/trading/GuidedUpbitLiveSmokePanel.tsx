@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Guided Upbit LIVE Smoke — Preview/Confirm.
- * 기본 execute_live=false. 확인문구 없으면 주문 API 0.
+ * Guided Upbit LIVE Smoke — Pre-flight → Preview → Order Test → Confirm.
+ * 기본 execute_live=false. ORDER_TEST_PASSED 전에는 실주문 버튼 비활성.
  */
 
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -20,7 +20,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { asRecord } from "@/features/admin/utils/dataHelpers";
 import * as userApi from "@/features/user/api/userApi";
@@ -28,14 +28,6 @@ import { toApiError } from "@/lib/api/apiError";
 
 const BUY_CONFIRM = "UPBIT LIVE BUY CONFIRM";
 const SELL_CONFIRM = "UPBIT LIVE SELL CONFIRM";
-
-type StepKey =
-  | "account"
-  | "preflight"
-  | "market"
-  | "preview"
-  | "confirm"
-  | "result";
 
 export function GuidedUpbitLiveSmokePanel() {
   const [step, setStep] = useState(0);
@@ -47,7 +39,11 @@ export function GuidedUpbitLiveSmokePanel() {
   const [confirmText, setConfirmText] = useState("");
   const [armToken, setArmToken] = useState("");
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
+  const [orderTest, setOrderTest] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [smokeBuyRunId, setSmokeBuyRunId] = useState<string | null>(null);
 
   const accountsQuery = useQuery({
     queryKey: ["user", "live-order-status"],
@@ -70,6 +66,11 @@ export function GuidedUpbitLiveSmokePanel() {
     enabled: ubaId != null && step >= 1,
   });
 
+  // 입력 변경 시 Order Test 무효화
+  useEffect(() => {
+    setOrderTest(null);
+  }, [ubaId, market, side, amount, limitPrice]);
+
   const previewMutation = useMutation({
     mutationFn: () =>
       userApi.postLiveOrderPreview(Number(ubaId), {
@@ -90,8 +91,23 @@ export function GuidedUpbitLiveSmokePanel() {
     },
   });
 
-  const confirmMutation = useMutation({
+  const orderTestMutation = useMutation({
     mutationFn: () =>
+      userApi.postLiveOrderTest(Number(ubaId), {
+        market,
+        side,
+        amount: amount ?? undefined,
+        limit_price: limitPrice ?? undefined,
+        smoke_buy_run_id: side === "SELL" ? smokeBuyRunId ?? undefined : undefined,
+      }),
+    onSuccess: (data) => {
+      setOrderTest(asRecord(data));
+      setStep(4);
+    },
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: (executeLive: boolean) =>
       userApi.postLiveOrderConfirm(Number(ubaId), {
         market,
         side,
@@ -99,51 +115,66 @@ export function GuidedUpbitLiveSmokePanel() {
         limit_price: Number(limitPrice),
         confirmation_text: confirmText,
         arm_token: armToken || undefined,
-        // Cursor/기본: 실주문 OFF — 사용자만 화면에서 명시 ON
-        execute_live: false,
+        execute_live: executeLive,
         preview_id: String(preview?.preview_id ?? ""),
+        order_test_fingerprint: String(
+          orderTest?.order_test_fingerprint ?? "",
+        ),
+        order_test_tested_at: String(orderTest?.tested_at ?? ""),
+        smoke_buy_run_id: side === "SELL" ? smokeBuyRunId ?? undefined : undefined,
       }),
     onSuccess: (data) => {
-      setResult(asRecord(data));
-      setStep(5);
+      const rec = asRecord(data);
+      setResult(rec);
+      if (side === "BUY" && rec?.run_id) {
+        setSmokeBuyRunId(String(rec.run_id));
+      }
+      setStep(6);
     },
   });
 
   const requiredConfirm = side === "BUY" ? BUY_CONFIRM : SELL_CONFIRM;
   const pf = asRecord(preflightQuery.data);
   const overall = String(pf?.overall_status ?? "-");
+  const orderTestPassed = Boolean(orderTest?.test_passed);
+  const orderTestFresh =
+    orderTestPassed &&
+    !!orderTest?.expires_at &&
+    Date.parse(String(orderTest.expires_at)) > Date.now();
+  const liveButtonEnabled =
+    orderTestPassed &&
+    orderTestFresh &&
+    confirmText === requiredConfirm &&
+    !(side === "SELL" && !smokeBuyRunId);
 
-  const steps: { title: string; key: StepKey }[] = [
-    { title: "계좌", key: "account" },
-    { title: "Pre-flight", key: "preflight" },
-    { title: "종목", key: "market" },
-    { title: "Preview", key: "preview" },
-    { title: "확인", key: "confirm" },
-    { title: "결과", key: "result" },
+  const steps = [
+    { title: "계좌" },
+    { title: "Pre-flight" },
+    { title: "종목" },
+    { title: "Preview" },
+    { title: "Order Test" },
+    { title: "확인" },
+    { title: "결과" },
   ];
 
   return (
     <Card
       title="업비트 LIVE 검증 (Guided Smoke)"
       size="small"
-      extra={<Tag>실주문 기본 OFF</Tag>}
+      extra={<Tag>실주문 기본 OFF · Order Test 필수</Tag>}
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
           type="warning"
           showIcon
           title="안전 모드"
-          description="Preview/Confirm(execute_live=false)만 기본 실행합니다. 실주문은 확인문구 + 서버 Gate + 사용자가 execute_live를 켠 경우에만 가능합니다. 자동 반복 없음."
+          description="공식 POST /v1/orders/test 통과(ORDER_TEST_PASSED)+FRESH 후에만 실주문 버튼이 활성화됩니다. Cursor 기본은 Dry-run Confirm만 사용합니다. Runtime STOP·자동 반복 OFF."
         />
 
-        <Steps
-          size="small"
-          current={step}
-          items={steps.map((s) => ({ title: s.title }))}
-        />
+        <Steps size="small" current={step} items={steps} />
 
         <Form layout="vertical">
-          <Form.Item label="1. UPBIT 계좌">
+          <Form.Item label="1. UPBIT 계좌 (사용자 선택)">
             <Select
               placeholder="UBA 선택"
               value={ubaId ?? undefined}
@@ -155,6 +186,7 @@ export function GuidedUpbitLiveSmokePanel() {
                 setUbaId(Number(v));
                 setStep(1);
                 setPreview(null);
+                setOrderTest(null);
                 setResult(null);
               }}
               style={{ width: "100%" }}
@@ -170,71 +202,79 @@ export function GuidedUpbitLiveSmokePanel() {
                   setStep(1);
                 }}
               >
-                2. 계좌 Pre-flight
+                2~3. 계좌 Pre-flight
               </Button>
               <Tag color={overall === "READY_FOR_LIVE" ? "green" : "red"}>
                 {overall}
-              </Tag>
-              <Tag>
-                manual_order_allowed=
-                {String(pf?.manual_order_allowed ?? false)}
               </Tag>
             </Space>
           ) : null}
 
           {step >= 1 ? (
-            <>
-              <Form.Item label="3. 종목 / 방향" style={{ marginTop: 12 }}>
-                <Space wrap>
-                  <Select
-                    value={market}
-                    options={[
-                      { value: "KRW-BTC", label: "KRW-BTC" },
-                      { value: "KRW-ETH", label: "KRW-ETH" },
-                      { value: "KRW-XRP", label: "KRW-XRP" },
-                    ]}
-                    onChange={setMarket}
-                    style={{ width: 140 }}
-                  />
-                  <Select
-                    value={side}
-                    options={[
-                      { value: "BUY", label: "매수" },
-                      { value: "SELL", label: "매도" },
-                    ]}
-                    onChange={(v) => setSide(v)}
-                    style={{ width: 100 }}
-                  />
-                  <InputNumber
-                    placeholder="LIMIT 가격"
-                    value={limitPrice ?? undefined}
-                    onChange={(v) => setLimitPrice(v == null ? null : Number(v))}
-                    style={{ width: 160 }}
-                  />
-                  <InputNumber
-                    placeholder="금액(KRW)"
-                    value={amount ?? undefined}
-                    onChange={(v) => setAmount(v == null ? null : Number(v))}
-                    style={{ width: 140 }}
-                  />
-                  <Button
-                    type="primary"
-                    loading={previewMutation.isPending}
-                    disabled={ubaId == null}
-                    onClick={() => {
-                      setStep(2);
-                      previewMutation.mutate();
-                    }}
-                  >
-                    4~9. Preview
-                  </Button>
-                </Space>
-              </Form.Item>
-            </>
+            <Form.Item label="4. 종목 / 방향 (자동 선택 없음)" style={{ marginTop: 12 }}>
+              <Space wrap>
+                <Select
+                  value={market}
+                  options={[
+                    { value: "KRW-BTC", label: "KRW-BTC" },
+                    { value: "KRW-ETH", label: "KRW-ETH" },
+                    { value: "KRW-XRP", label: "KRW-XRP" },
+                  ]}
+                  onChange={setMarket}
+                  style={{ width: 140 }}
+                />
+                <Select
+                  value={side}
+                  options={[
+                    { value: "BUY", label: "매수" },
+                    { value: "SELL", label: "매도" },
+                  ]}
+                  onChange={(v) => setSide(v)}
+                  style={{ width: 100 }}
+                />
+                <InputNumber
+                  placeholder="LIMIT 가격"
+                  value={limitPrice ?? undefined}
+                  onChange={(v) => setLimitPrice(v == null ? null : Number(v))}
+                  style={{ width: 160 }}
+                />
+                <InputNumber
+                  placeholder="금액(KRW)"
+                  value={amount ?? undefined}
+                  onChange={(v) => setAmount(v == null ? null : Number(v))}
+                  style={{ width: 140 }}
+                />
+                <Button
+                  type="primary"
+                  loading={previewMutation.isPending}
+                  disabled={ubaId == null}
+                  onClick={() => {
+                    setStep(2);
+                    previewMutation.mutate();
+                  }}
+                >
+                  5~6. Preview
+                </Button>
+                <Button
+                  loading={orderTestMutation.isPending}
+                  disabled={ubaId == null || !preview}
+                  onClick={() => orderTestMutation.mutate()}
+                >
+                  7. 업비트 주문 생성 테스트
+                </Button>
+              </Space>
+            </Form.Item>
           ) : null}
 
           {previewMutation.error ? (
             <Alert type="error" showIcon title={toApiError(previewMutation.error).message} />
+          ) : null}
+          {orderTestMutation.error ? (
+            <Alert
+              type="error"
+              showIcon
+              title={toApiError(orderTestMutation.error).message}
+            />
           ) : null}
 
           {preview ? (
@@ -242,7 +282,7 @@ export function GuidedUpbitLiveSmokePanel() {
               <Descriptions.Item label="stage">
                 {String(preview.stage)}
               </Descriptions.Item>
-              <Descriptions.Item label="adapter_calls">
+              <Descriptions.Item label="adapter_create">
                 {String(preview.adapter_create_order_calls ?? 0)}
               </Descriptions.Item>
               <Descriptions.Item label="수량">
@@ -257,11 +297,39 @@ export function GuidedUpbitLiveSmokePanel() {
               <Descriptions.Item label="최소금액">
                 {String(preview.min_notional_krw)}
               </Descriptions.Item>
-              <Descriptions.Item label="계좌">
-                {String(preview.masked_account ?? `UBA ${ubaId}`)}
+            </Descriptions>
+          ) : null}
+
+          {orderTest ? (
+            <Descriptions
+              size="small"
+              bordered
+              column={2}
+              title="Order Test (POST /v1/orders/test)"
+              style={{ marginTop: 8 }}
+            >
+              <Descriptions.Item label="status">
+                <Tag color={orderTestPassed ? "green" : "red"}>
+                  {String(orderTest.status)}
+                </Tag>
               </Descriptions.Item>
-              <Descriptions.Item label="확인문구">
-                {String(preview.confirmation_text_required)}
+              <Descriptions.Item label="fresh">
+                {orderTestFresh ? "FRESH" : "STALE/FAIL"}
+              </Descriptions.Item>
+              <Descriptions.Item label="min_amount">
+                {String(orderTest.minimum_order_amount)}
+              </Descriptions.Item>
+              <Descriptions.Item label="available">
+                {String(orderTest.available_balance ?? "-")}
+              </Descriptions.Item>
+              <Descriptions.Item label="fee">
+                {String(orderTest.estimated_fee)}
+              </Descriptions.Item>
+              <Descriptions.Item label="create_order_calls">
+                {String(orderTest.adapter_create_order_calls ?? 0)}
+              </Descriptions.Item>
+              <Descriptions.Item label="errors" span={2}>
+                {JSON.stringify(orderTest.validation_errors ?? [])}
               </Descriptions.Item>
             </Descriptions>
           ) : null}
@@ -271,6 +339,14 @@ export function GuidedUpbitLiveSmokePanel() {
               <Typography.Paragraph type="secondary">
                 정확히 입력: <code>{requiredConfirm}</code>
               </Typography.Paragraph>
+              {side === "SELL" && !smokeBuyRunId ? (
+                <Alert
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 8 }}
+                  title="매수 체결(run) 확인 전 매도 비활성"
+                />
+              ) : null}
               <Input
                 value={confirmText}
                 onChange={(e) => setConfirmText(e.target.value)}
@@ -280,23 +356,35 @@ export function GuidedUpbitLiveSmokePanel() {
                 style={{ marginTop: 8 }}
                 value={armToken}
                 onChange={(e) => setArmToken(e.target.value)}
-                placeholder="ARM token (실주문 시에만 필요)"
+                placeholder="ARM token (실주문 시에만)"
               />
-              <Button
-                style={{ marginTop: 12 }}
-                danger
-                disabled={confirmText !== requiredConfirm}
-                loading={confirmMutation.isPending}
-                onClick={() => {
-                  setStep(4);
-                  confirmMutation.mutate();
-                }}
-              >
-                Dry-run Confirm (실주문 OFF)
-              </Button>
+              <Space wrap style={{ marginTop: 12 }}>
+                <Button
+                  disabled={confirmText !== requiredConfirm}
+                  loading={confirmMutation.isPending}
+                  onClick={() => {
+                    setStep(5);
+                    confirmMutation.mutate(false);
+                  }}
+                >
+                  Dry-run Confirm (실주문 OFF)
+                </Button>
+                <Button
+                  danger
+                  disabled={!liveButtonEnabled}
+                  loading={confirmMutation.isPending}
+                  onClick={() => {
+                    setStep(5);
+                    // 사용자 명시 시에만 — Cursor는 이 버튼을 누르지 않음
+                    confirmMutation.mutate(true);
+                  }}
+                >
+                  실주문 Confirm (ORDER_TEST 필수)
+                </Button>
+              </Space>
               <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-                이 화면 기본값은 execute_live=false 입니다. 실주문 Flag/ARM/Unlock을
-                Cursor가 켜지 않습니다.
+                실주문 버튼은 ORDER_TEST_PASSED+FRESH+확인문구 일치 시에만 활성.
+                Flag/ARM/Unlock은 Cursor가 변경하지 않습니다.
               </Typography.Paragraph>
             </Card>
           ) : null}
@@ -309,8 +397,8 @@ export function GuidedUpbitLiveSmokePanel() {
             <Alert
               type="success"
               showIcon
-              title="11~12. Confirm 결과"
-              description={`stage/status=${String(result.stage ?? result.status)} · adapter_calls=${String(result.adapter_create_order_calls ?? 0)} · run_id=${String(result.run_id ?? "-")}`}
+              title="결과"
+              description={`status=${String(result.stage ?? result.status)} · create_calls=${String(result.adapter_create_order_calls ?? 0)} · run_id=${String(result.run_id ?? "-")}`}
             />
           ) : null}
         </Form>

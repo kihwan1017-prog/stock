@@ -357,6 +357,24 @@ export async function postLiveOrderPreview(
   return data;
 }
 
+export async function postLiveOrderTest(
+  ubaId: number,
+  body: {
+    market: string;
+    side: string;
+    amount?: number;
+    limit_price?: number;
+    identifier?: string;
+    smoke_buy_run_id?: string;
+  },
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${ubaId}/live-order-test`,
+    body,
+  );
+  return data;
+}
+
 export async function postLiveOrderConfirm(
   ubaId: number,
   body: {
@@ -369,6 +387,9 @@ export async function postLiveOrderConfirm(
     execute_live?: boolean;
     idempotency_key?: string;
     preview_id?: string;
+    order_test_fingerprint?: string;
+    order_test_tested_at?: string;
+    smoke_buy_run_id?: string;
   },
 ): Promise<JsonValue> {
   const { data } = await apiClient.post(

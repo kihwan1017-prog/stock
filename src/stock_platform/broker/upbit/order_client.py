@@ -55,6 +55,31 @@ class UpbitOrderRestClient:
             operation=UpbitOperationType.ORDER_CREATE,
         )
 
+    def test_create_order(self, body: dict[str, Any]) -> dict[str, Any]:
+        """공식 주문 생성 테스트 — POST /v1/orders/test (실주문·수수료 없음)."""
+
+        return self._request(
+            "POST",
+            "/v1/orders/test",
+            params=body,
+            json_body=body,
+            operation=UpbitOperationType.ORDER_TEST,
+        )
+
+    def get_order_chance(self, *, market: str) -> dict[str, Any]:
+        """주문 가능 정보 — GET /v1/orders/chance."""
+
+        params = {"market": str(market).strip().upper()}
+        payload = self._request(
+            "GET",
+            "/v1/orders/chance",
+            params=params,
+            operation=UpbitOperationType.ORDER_QUERY,
+        )
+        if not isinstance(payload, dict):
+            raise UpbitRequestError("Upbit orders/chance response was not an object")
+        return payload
+
     def cancel_order(
         self,
         *,
