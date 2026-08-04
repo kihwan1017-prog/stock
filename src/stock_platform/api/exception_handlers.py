@@ -219,16 +219,34 @@ def register_exception_handlers(app: FastAPI) -> None:
         if isinstance(detail, str):
             message = detail
             body_detail: dict | list | str | None = None
+            code = _code_for_status(exc.status_code)
+        elif isinstance(detail, dict):
+            body_detail = detail
+            message = str(
+                detail.get("message")
+                or detail.get("error_code")
+                or detail.get("code")
+                or ERROR_CATALOG.get(
+                    _code_for_status(exc.status_code),
+                    {},
+                ).get("message", "HTTP error")
+            )
+            code = str(
+                detail.get("error_code")
+                or detail.get("code")
+                or _code_for_status(exc.status_code)
+            )
         else:
             message = ERROR_CATALOG.get(
                 _code_for_status(exc.status_code),
                 {},
             ).get("message", "HTTP error")
             body_detail = detail  # type: ignore[assignment]
+            code = _code_for_status(exc.status_code)
         return _error_response(
             request=request,
             status_code=exc.status_code,
-            code=_code_for_status(exc.status_code),
+            code=code,
             message=message,
             detail=body_detail,
         )

@@ -84,8 +84,14 @@ function extractCode(data: unknown): string | undefined {
   if (typeof data.code === "string") {
     return data.code;
   }
+  if (typeof data.error_code === "string") {
+    return data.error_code;
+  }
   if (isRecord(data.error) && typeof data.error.code === "string") {
     return data.error.code;
+  }
+  if (isRecord(data.detail) && typeof data.detail.error_code === "string") {
+    return data.detail.error_code;
   }
   if (isRecord(data.detail) && typeof data.detail.code === "string") {
     return data.detail.code;

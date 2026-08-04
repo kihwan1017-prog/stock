@@ -692,12 +692,27 @@ class UpbitLiveTrackingService:
         self._set_internal(
             run, InternalStatus.MANUAL_REVIEW_REQUIRED.value, actor=actor
         )
-        run.failure_code = reason_code
+        from stock_platform.trading.failure_code_normalize import (
+            apply_failure_fields,
+        )
+
+        code, summary = apply_failure_fields(
+            failure_code=reason_code,
+            failure_summary=str(reason_code) if reason_code else None,
+            fallback="UNKNOWN_FAILURE",
+        )
+        run.failure_code = code
+        if summary and (
+            " " in str(reason_code or "")
+            or ";" in str(reason_code or "")
+            or len(str(reason_code or "")) > 80
+        ):
+            run.failure_summary = summary
         self._audit(
             UPBIT_LIVE_SMOKE_STATUS_UNKNOWN,
             run,
             actor=actor,
-            reason_code=reason_code,
+            reason_code=code,
         )
         self._audit(
             UPBIT_LIVE_SMOKE_MANUAL_REVIEW_REQUIRED,
@@ -743,11 +758,26 @@ class UpbitLiveTrackingService:
         actor: str,
         reason_code: str,
     ) -> dict[str, Any]:
-        run.failure_code = reason_code
+        from stock_platform.trading.failure_code_normalize import (
+            apply_failure_fields,
+        )
+
+        code, summary = apply_failure_fields(
+            failure_code=reason_code,
+            failure_summary=str(reason_code) if reason_code else None,
+            fallback="UNKNOWN_FAILURE",
+        )
+        run.failure_code = code
+        if summary and (
+            " " in str(reason_code or "")
+            or ";" in str(reason_code or "")
+            or len(str(reason_code or "")) > 80
+        ):
+            run.failure_summary = summary
         run.manual_review_required = True
         try:
             KillSwitchService(self._session).activate(
-                reason=f"UPBIT_LIVE_SMOKE:{reason_code}",
+                reason=f"UPBIT_LIVE_SMOKE:{code}",
                 actor=actor,
             )
         except Exception:  # noqa: BLE001
@@ -756,7 +786,7 @@ class UpbitLiveTrackingService:
             LiveArmService(self._session).disarm(
                 int(run.user_broker_account_id),
                 actor=actor,
-                reason=f"UPBIT_LIVE_SMOKE:{reason_code}",
+                reason=f"UPBIT_LIVE_SMOKE:{code}",
                 turn_live_off=True,
             )
         except Exception:  # noqa: BLE001
@@ -769,12 +799,12 @@ class UpbitLiveTrackingService:
             UPBIT_LIVE_SMOKE_FAILED_CLOSED,
             run,
             actor=actor,
-            reason_code=reason_code,
+            reason_code=code,
         )
         self._telegram(
             run,
             title="Upbit LIVE Smoke Fail Closed",
-            message=f"run={run.run_id} Kill+LIVE OFF reason={reason_code}",
+            message=f"run={run.run_id} Kill+LIVE OFF reason={code}",
             event_type=UPBIT_LIVE_SMOKE_FAILED_CLOSED,
         )
         self._session.flush()

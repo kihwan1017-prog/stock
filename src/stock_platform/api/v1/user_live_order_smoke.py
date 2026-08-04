@@ -30,6 +30,8 @@ class LiveOrderPreviewBody(BaseModel):
     side: str = Field(min_length=3, max_length=4)
     amount: Decimal | None = Field(default=None, gt=0)
     limit_price: Decimal | None = Field(default=None, gt=0)
+    # MARKET | LIMIT — Preview는 업비트 4경로(시장/지정 × 매수/매도) 지원
+    order_type: str | None = Field(default="MARKET", max_length=10)
     idempotency_key: str | None = Field(default=None, max_length=128)
 
 
@@ -53,6 +55,7 @@ class LiveOrderTestBody(BaseModel):
     side: str = Field(min_length=3, max_length=4)
     amount: Decimal | None = Field(default=None, gt=0)
     limit_price: Decimal | None = Field(default=None, gt=0)
+    order_type: str | None = Field(default="MARKET", max_length=10)
     identifier: str | None = Field(default=None, max_length=36)
     smoke_buy_run_id: str | None = None
     # 네트워크 스킵은 서버 테스트 전용 — 운영 API에서는 항상 False
@@ -60,15 +63,43 @@ class LiveOrderTestBody(BaseModel):
 
 
 def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
-    code = str(exc)
+    code = str(getattr(exc, "code", None) or exc)
+    http_status = int(getattr(exc, "http_status", 0) or 0)
+    details = list(getattr(exc, "details", []) or [])
+    message = str(getattr(exc, "message", None) or code)
+
     if code in {"FORBIDDEN", "UBA_NOT_FOUND"}:
         status_code = (
             status.HTTP_403_FORBIDDEN
             if code == "FORBIDDEN"
             else status.HTTP_404_NOT_FOUND
         )
+    elif http_status in {409, 422}:
+        status_code = http_status
+    elif code.startswith("RISK_") or code == "RISK_ENGINE_BLOCKED":
+        status_code = status.HTTP_409_CONFLICT
     else:
         status_code = status.HTTP_400_BAD_REQUEST
+
+    # Risk 거절 등 구조화 detail (FE / Axios error.response.data)
+    if details or code.startswith("RISK_"):
+        detail: dict[str, object] = {
+            "error_code": code if code.startswith("RISK_") else code,
+            "code": code,
+            "message": message,
+            "details": details,
+            "order_submitted": bool(
+                getattr(exc, "order_submitted", False)
+            ),
+            "create_order_calls": int(
+                getattr(exc, "create_order_calls", 0) or 0
+            ),
+            "broker_order_id": None,
+            "status": getattr(exc, "status_code", None) or "REJECTED",
+            "run_id": getattr(exc, "run_id", None),
+        }
+        return HTTPException(status_code=status_code, detail=detail)
+
     return HTTPException(status_code=status_code, detail=code)
 
 
@@ -78,7 +109,8 @@ def user_live_order_smoke_meta():
         "confirmation_buy": confirmation_text_for_side("BUY"),
         "confirmation_sell": confirmation_text_for_side("SELL"),
         "max_amount": str(MAX_SMOKE_AMOUNT),
-        "order_type": "LIMIT_ONLY",
+        "order_type_preview": ["MARKET", "LIMIT"],
+        "order_type_confirm": "LIMIT_ONLY",
         "repeat_orders": False,
     }
 
@@ -118,6 +150,7 @@ def user_live_order_preview(
             side=body.side,
             amount=body.amount,
             limit_price=body.limit_price,
+            order_type=body.order_type,
             idempotency_key=body.idempotency_key,
         )
         session.commit()
@@ -145,6 +178,7 @@ def user_live_order_test(
             side=body.side,
             amount=body.amount,
             limit_price=body.limit_price,
+            order_type=body.order_type,
             identifier=body.identifier,
             # 운영 경로: 네트워크 스킵 강제 금지
             skip_network=False,

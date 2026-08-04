@@ -24,7 +24,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { asRecord } from "@/features/admin/utils/dataHelpers";
 import * as userApi from "@/features/user/api/userApi";
+import {
+  normalizeUpbitAccounts,
+  pickDefaultUba,
+} from "@/features/user/trading/guidedUpbitAccountHelpers";
 import { toApiError } from "@/lib/api/apiError";
+import { formatLiveSmokeConfirmError } from "@/features/user/trading/liveSmokeConfirmError";
 
 const BUY_CONFIRM = "UPBIT LIVE BUY CONFIRM";
 const SELL_CONFIRM = "UPBIT LIVE SELL CONFIRM";
@@ -34,6 +39,7 @@ export function GuidedUpbitLiveSmokePanel() {
   const [ubaId, setUbaId] = useState<number | null>(null);
   const [market, setMarket] = useState("KRW-BTC");
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+  const [orderType, setOrderType] = useState<"MARKET" | "LIMIT">("MARKET");
   const [limitPrice, setLimitPrice] = useState<number | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [confirmText, setConfirmText] = useState("");
@@ -50,56 +56,102 @@ export function GuidedUpbitLiveSmokePanel() {
     queryFn: () => userApi.listMyLiveOrderStatus(),
   });
 
-  const upbitAccounts = useMemo(() => {
-    const raw = accountsQuery.data;
-    const items =
-      (asRecord(raw)?.items as Record<string, unknown>[] | undefined) ??
-      (Array.isArray(raw) ? (raw as Record<string, unknown>[]) : []);
-    return items.filter(
-      (a) => String(a.broker_code || "").toUpperCase() === "UPBIT",
-    );
-  }, [accountsQuery.data]);
+  const liveParsedEmpty =
+    accountsQuery.isSuccess &&
+    normalizeUpbitAccounts(accountsQuery.data, null).length === 0;
+
+  const userAccountsQuery = useQuery({
+    queryKey: ["user", "accounts", "upbit-fallback"],
+    queryFn: () => userApi.listUserAccounts({ include_inactive: false }),
+    enabled: liveParsedEmpty,
+  });
+
+  const upbitAccounts = useMemo(
+    () => normalizeUpbitAccounts(accountsQuery.data, userAccountsQuery.data),
+    [accountsQuery.data, userAccountsQuery.data],
+  );
+
+  // 기본/단일 계좌 자동 선택 → Pre-flight 단계
+  useEffect(() => {
+    if (ubaId != null) return;
+    if (upbitAccounts.length === 0) return;
+    const selected = pickDefaultUba(upbitAccounts);
+    if (selected == null) return;
+    setUbaId(selected);
+    setStep(1);
+    setPreview(null);
+    setOrderTest(null);
+    setResult(null);
+  }, [upbitAccounts, ubaId]);
 
   const preflightQuery = useQuery({
     queryKey: ["user", "live-order-preflight", ubaId],
     queryFn: () => userApi.getLiveOrderPreflight(Number(ubaId)),
-    enabled: ubaId != null && step >= 1,
+    enabled: ubaId != null,
+    refetchOnMount: "always",
   });
 
-  // 입력 변경 시 Order Test 무효화
+  useEffect(() => {
+    if (ubaId != null && preflightQuery.isSuccess && step < 1) {
+      setStep(1);
+    }
+  }, [ubaId, preflightQuery.isSuccess, step]);
+
   useEffect(() => {
     setOrderTest(null);
-  }, [ubaId, market, side, amount, limitPrice]);
+  }, [ubaId, market, side, orderType, amount, limitPrice]);
 
   const previewMutation = useMutation({
     mutationFn: () =>
       userApi.postLiveOrderPreview(Number(ubaId), {
         market,
         side,
+        order_type: orderType,
         amount: amount ?? undefined,
-        limit_price: limitPrice ?? undefined,
+        // 시장가는 지정가 미전송 — 현재가로 수량 추정
+        limit_price:
+          orderType === "LIMIT" ? (limitPrice ?? undefined) : undefined,
       }),
     onSuccess: (data) => {
-      setPreview(asRecord(data));
+      const rec = asRecord(data);
+      setPreview(rec);
       const min = Number(
-        (asRecord(data)?.min_notional_krw as string | undefined) ?? 5000,
+        (rec?.min_notional_krw as string | undefined) ?? 5000,
       );
       if (amount == null) setAmount(min);
-      const lp = Number(asRecord(data)?.limit_price);
-      if (Number.isFinite(lp) && limitPrice == null) setLimitPrice(lp);
+      // LIMIT만 지정가 자동 채움 (MARKET은 금액≠가격 혼동 방지)
+      if (orderType === "LIMIT" && limitPrice == null) {
+        const lp = Number(rec?.limit_price ?? rec?.reference_price);
+        if (Number.isFinite(lp) && lp > 0) setLimitPrice(lp);
+      }
       setStep(3);
     },
   });
 
   const orderTestMutation = useMutation({
-    mutationFn: () =>
-      userApi.postLiveOrderTest(Number(ubaId), {
+    mutationFn: () => {
+      const testPrice = Number(
+        limitPrice ??
+          preview?.limit_price ??
+          preview?.reference_price ??
+          undefined,
+      );
+      return userApi.postLiveOrderTest(Number(ubaId), {
         market,
         side,
+        order_type: orderType,
         amount: amount ?? undefined,
-        limit_price: limitPrice ?? undefined,
-        smoke_buy_run_id: side === "SELL" ? smokeBuyRunId ?? undefined : undefined,
-      }),
+        // MARKET는 지정가 미전송 — Preview와 동일
+        limit_price:
+          orderType === "LIMIT" &&
+          Number.isFinite(testPrice) &&
+          testPrice > 0
+            ? testPrice
+            : undefined,
+        smoke_buy_run_id:
+          side === "SELL" ? smokeBuyRunId ?? undefined : undefined,
+      });
+    },
     onSuccess: (data) => {
       setOrderTest(asRecord(data));
       setStep(4);
@@ -107,12 +159,19 @@ export function GuidedUpbitLiveSmokePanel() {
   });
 
   const confirmMutation = useMutation({
-    mutationFn: (executeLive: boolean) =>
-      userApi.postLiveOrderConfirm(Number(ubaId), {
+    mutationFn: (executeLive: boolean) => {
+      // Confirm API는 아직 LIMIT 경로 — MARKET Preview 시 현재가를 지정가 슬롯에 전달
+      const confirmPrice = Number(
+        limitPrice ??
+          preview?.limit_price ??
+          preview?.reference_price ??
+          0,
+      );
+      return userApi.postLiveOrderConfirm(Number(ubaId), {
         market,
         side,
         amount: Number(amount),
-        limit_price: Number(limitPrice),
+        limit_price: confirmPrice,
         confirmation_text: confirmText,
         arm_token: armToken || undefined,
         execute_live: executeLive,
@@ -121,8 +180,10 @@ export function GuidedUpbitLiveSmokePanel() {
           orderTest?.order_test_fingerprint ?? "",
         ),
         order_test_tested_at: String(orderTest?.tested_at ?? ""),
-        smoke_buy_run_id: side === "SELL" ? smokeBuyRunId ?? undefined : undefined,
-      }),
+        smoke_buy_run_id:
+          side === "SELL" ? smokeBuyRunId ?? undefined : undefined,
+      });
+    },
     onSuccess: (data) => {
       const rec = asRecord(data);
       setResult(rec);
@@ -147,6 +208,10 @@ export function GuidedUpbitLiveSmokePanel() {
     confirmText === requiredConfirm &&
     !(side === "SELL" && !smokeBuyRunId);
 
+  const accountsLoading =
+    accountsQuery.isLoading ||
+    (userAccountsQuery.isFetching && upbitAccounts.length === 0);
+
   const steps = [
     { title: "계좌" },
     { title: "Pre-flight" },
@@ -162,25 +227,48 @@ export function GuidedUpbitLiveSmokePanel() {
       title="업비트 LIVE 검증 (Guided Smoke)"
       size="small"
       extra={<Tag>실주문 기본 OFF · Order Test 필수</Tag>}
+      loading={accountsLoading}
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
           type="warning"
           showIcon
           title="안전 모드"
-          description="공식 POST /v1/orders/test 통과(ORDER_TEST_PASSED)+FRESH 후에만 실주문 버튼이 활성화됩니다. Cursor 기본은 Dry-run Confirm만 사용합니다. Runtime STOP·자동 반복 OFF."
+          description="공식 POST /v1/orders/test 통과(ORDER_TEST_PASSED)+FRESH 후에만 실주문 버튼이 활성화됩니다. Runtime STOP·자동 반복 OFF."
         />
+
+        {accountsQuery.isError ? (
+          <Alert
+            type="error"
+            showIcon
+            title={toApiError(accountsQuery.error).message}
+          />
+        ) : null}
+
+        {!accountsLoading && upbitAccounts.length === 0 ? (
+          <Alert
+            type="info"
+            showIcon
+            title="업비트 계좌 없음"
+            description="내 계좌에서 UPBIT UBA를 연결·활성화한 뒤 다시 열어주세요."
+          />
+        ) : null}
 
         <Steps size="small" current={step} items={steps} />
 
         <Form layout="vertical">
-          <Form.Item label="1. UPBIT 계좌 (사용자 선택)">
+          <Form.Item label="1. UPBIT 계좌 (1건이면 자동 선택)">
             <Select
-              placeholder="UBA 선택"
+              placeholder={accountsLoading ? "계좌 로딩 중…" : "UBA 선택"}
+              loading={accountsLoading}
               value={ubaId ?? undefined}
               options={upbitAccounts.map((a) => ({
-                value: Number(a.user_broker_account_id),
-                label: `UBA ${a.user_broker_account_id} · LIVE=${a.live_order_enabled ? "ON" : "OFF"} · ARM=${a.live_armed ? "ON" : "OFF"}`,
+                value: a.user_broker_account_id,
+                label: `UBA ${a.user_broker_account_id}${
+                  a.account_alias ? ` · ${a.account_alias}` : ""
+                } · LIVE=${a.live_order_enabled ? "ON" : "OFF"} · ARM=${
+                  a.live_armed ? "ON" : "OFF"
+                }`,
               }))}
               onChange={(v) => {
                 setUbaId(Number(v));
@@ -205,13 +293,29 @@ export function GuidedUpbitLiveSmokePanel() {
                 2~3. 계좌 Pre-flight
               </Button>
               <Tag color={overall === "READY_FOR_LIVE" ? "green" : "red"}>
-                {overall}
+                {preflightQuery.isLoading ? "LOADING" : overall}
               </Tag>
+              {preflightQuery.isFetching ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Pre-flight 자동 실행 중…
+                </Typography.Text>
+              ) : null}
             </Space>
           ) : null}
 
+          {preflightQuery.isError ? (
+            <Alert
+              type="error"
+              showIcon
+              title={toApiError(preflightQuery.error).message}
+            />
+          ) : null}
+
           {step >= 1 ? (
-            <Form.Item label="4. 종목 / 방향 (자동 선택 없음)" style={{ marginTop: 12 }}>
+            <Form.Item
+              label="4. 종목 / 주문유형 / 금액"
+              style={{ marginTop: 12 }}
+            >
               <Space wrap>
                 <Select
                   value={market}
@@ -232,12 +336,29 @@ export function GuidedUpbitLiveSmokePanel() {
                   onChange={(v) => setSide(v)}
                   style={{ width: 100 }}
                 />
-                <InputNumber
-                  placeholder="LIMIT 가격"
-                  value={limitPrice ?? undefined}
-                  onChange={(v) => setLimitPrice(v == null ? null : Number(v))}
-                  style={{ width: 160 }}
+                <Select
+                  value={orderType}
+                  options={[
+                    { value: "MARKET", label: "시장가" },
+                    { value: "LIMIT", label: "지정가" },
+                  ]}
+                  onChange={(v) => {
+                    setOrderType(v);
+                    setPreview(null);
+                    setOrderTest(null);
+                  }}
+                  style={{ width: 110 }}
                 />
+                {orderType === "LIMIT" ? (
+                  <InputNumber
+                    placeholder="지정가 (원)"
+                    value={limitPrice ?? undefined}
+                    onChange={(v) =>
+                      setLimitPrice(v == null ? null : Number(v))
+                    }
+                    style={{ width: 160 }}
+                  />
+                ) : null}
                 <InputNumber
                   placeholder="금액(KRW)"
                   value={amount ?? undefined}
@@ -263,11 +384,22 @@ export function GuidedUpbitLiveSmokePanel() {
                   7. 업비트 주문 생성 테스트
                 </Button>
               </Space>
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}
+              >
+                시장가 매수 5000원 → 수량은 BTC 현재가 기준(금액÷현재가).
+                지정가에서만 &quot;가격&quot; 입력. 금액 칸에 가격을 넣지 마세요.
+              </Typography.Paragraph>
             </Form.Item>
           ) : null}
 
           {previewMutation.error ? (
-            <Alert type="error" showIcon title={toApiError(previewMutation.error).message} />
+            <Alert
+              type="error"
+              showIcon
+              title={toApiError(previewMutation.error).message}
+            />
           ) : null}
           {orderTestMutation.error ? (
             <Alert
@@ -279,23 +411,46 @@ export function GuidedUpbitLiveSmokePanel() {
 
           {preview ? (
             <Descriptions size="small" bordered column={2} title="Preview">
+              <Descriptions.Item label="order_type">
+                {String(preview.order_type)} / {String(preview.upbit_ord_type)}
+              </Descriptions.Item>
               <Descriptions.Item label="stage">
                 {String(preview.stage)}
               </Descriptions.Item>
-              <Descriptions.Item label="adapter_create">
-                {String(preview.adapter_create_order_calls ?? 0)}
+              <Descriptions.Item label="현재가(reference)">
+                {String(preview.reference_price ?? "-")}
               </Descriptions.Item>
-              <Descriptions.Item label="수량">
+              <Descriptions.Item label="지정가">
+                {String(preview.limit_price ?? "-")}
+              </Descriptions.Item>
+              <Descriptions.Item label="수량(qty)">
                 {String(preview.quantity)}
               </Descriptions.Item>
-              <Descriptions.Item label="예상금액">
+              <Descriptions.Item label="qty 산출">
+                {String(preview.quantity_note ?? "-")}
+              </Descriptions.Item>
+              <Descriptions.Item label="요청 금액">
+                {String(preview.requested_amount ?? preview.estimated_amount)}
+              </Descriptions.Item>
+              <Descriptions.Item label="추정 체결금액">
                 {String(preview.estimated_amount)}
               </Descriptions.Item>
               <Descriptions.Item label="수수료(예상)">
                 {String(preview.estimated_fee)}
               </Descriptions.Item>
+              <Descriptions.Item label="volume 전송">
+                {String(preview.volume_sent)}
+              </Descriptions.Item>
+              <Descriptions.Item label="adapter_create">
+                {String(preview.adapter_create_order_calls ?? 0)}
+              </Descriptions.Item>
               <Descriptions.Item label="최소금액">
-                {String(preview.min_notional_krw)}
+                {String(preview.min_notional_krw ?? "-")}
+              </Descriptions.Item>
+              <Descriptions.Item label="업비트 body" span={2}>
+                <Typography.Text code style={{ fontSize: 11 }}>
+                  {JSON.stringify(preview.broker_body ?? {})}
+                </Typography.Text>
               </Descriptions.Item>
             </Descriptions>
           ) : null}
@@ -312,6 +467,19 @@ export function GuidedUpbitLiveSmokePanel() {
                 <Tag color={orderTestPassed ? "green" : "red"}>
                   {String(orderTest.status)}
                 </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="fault_layer">
+                {String(
+                  (asRecord(orderTest.diagnostics) as Record<string, unknown> | null)
+                    ?.fault_layer ?? "-",
+                )}
+              </Descriptions.Item>
+              <Descriptions.Item label="ord_type">
+                {String(
+                  orderTest.upbit_ord_type ??
+                    asRecord(orderTest.request)?.ord_type ??
+                    "-",
+                )}
               </Descriptions.Item>
               <Descriptions.Item label="fresh">
                 {orderTestFresh ? "FRESH" : "STALE/FAIL"}
@@ -330,6 +498,20 @@ export function GuidedUpbitLiveSmokePanel() {
               </Descriptions.Item>
               <Descriptions.Item label="errors" span={2}>
                 {JSON.stringify(orderTest.validation_errors ?? [])}
+              </Descriptions.Item>
+              <Descriptions.Item label="request body" span={2}>
+                <Typography.Text code style={{ fontSize: 11 }}>
+                  {JSON.stringify(
+                    asRecord(orderTest.request)?.broker_body ??
+                      orderTest.request ??
+                      {},
+                  )}
+                </Typography.Text>
+              </Descriptions.Item>
+              <Descriptions.Item label="diagnostics" span={2}>
+                <Typography.Text code style={{ fontSize: 11 }}>
+                  {JSON.stringify(orderTest.diagnostics ?? {})}
+                </Typography.Text>
               </Descriptions.Item>
             </Descriptions>
           ) : null}
@@ -375,22 +557,52 @@ export function GuidedUpbitLiveSmokePanel() {
                   loading={confirmMutation.isPending}
                   onClick={() => {
                     setStep(5);
-                    // 사용자 명시 시에만 — Cursor는 이 버튼을 누르지 않음
                     confirmMutation.mutate(true);
                   }}
                 >
                   실주문 Confirm (ORDER_TEST 필수)
                 </Button>
               </Space>
-              <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-                실주문 버튼은 ORDER_TEST_PASSED+FRESH+확인문구 일치 시에만 활성.
-                Flag/ARM/Unlock은 Cursor가 변경하지 않습니다.
-              </Typography.Paragraph>
             </Card>
           ) : null}
 
           {confirmMutation.error ? (
-            <Alert type="error" showIcon title={toApiError(confirmMutation.error).message} />
+            (() => {
+              const view = formatLiveSmokeConfirmError(confirmMutation.error);
+              if (view.isRiskRejection) {
+                return (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    title={view.title}
+                    description={
+                      <Space orientation="vertical" size={4}>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {view.detailLines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                        <Typography.Text type="secondary">
+                          실제 주문 전송: 없음 · Upbit 주문 UUID: 없음 ·
+                          create_order_calls: {view.createOrderCalls}
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          다음 조치: 관리자/사용자 Risk 설정 확인
+                          {view.errorCode ? ` (${view.errorCode})` : ""}
+                        </Typography.Text>
+                      </Space>
+                    }
+                  />
+                );
+              }
+              return (
+                <Alert
+                  type="error"
+                  showIcon
+                  title={toApiError(confirmMutation.error).message}
+                />
+              );
+            })()
           ) : null}
 
           {result ? (

@@ -7,10 +7,17 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlencode
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from stock_platform.broker.fee_policy import UpbitFeePolicy
+from stock_platform.broker.upbit.auth import build_query_hash
+from stock_platform.broker.upbit.market_snapshot import (
+    UpbitMarketQuoteError,
+    fetch_market_snapshots,
+)
 from stock_platform.broker.upbit.rules import (
     UPBIT_MIN_NOTIONAL_KRW,
     round_upbit_price,
@@ -45,7 +52,220 @@ from stock_platform.trading.upbit_live_smoke_service import (
 )
 
 class ControlledLiveOrderSmokeError(ValueError):
-    """Controlled smoke 거부."""
+    """Controlled smoke 거부 (비즈니스 Risk 거절 포함)."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        message: str | None = None,
+        details: list[str] | None = None,
+        http_status: int = 400,
+        order_submitted: bool = False,
+        create_order_calls: int = 0,
+        run_id: str | None = None,
+        status_code: str | None = None,
+    ) -> None:
+        from stock_platform.trading.failure_code_normalize import (
+            normalize_failure_code,
+        )
+
+        # INVALID_TRANSITION 등 콜론 포함 레거시 코드는 원문 유지(str)
+        raw = str(code or "").strip()
+        if ":" in raw or raw.startswith("PREFLIGHT_NOT_READY:"):
+            self.code = raw[:200]
+        else:
+            self.code = normalize_failure_code(raw, fallback="UNKNOWN_FAILURE")
+        self.message = message or self.code
+        self.details = list(details or [])
+        self.http_status = int(http_status)
+        self.order_submitted = bool(order_submitted)
+        self.create_order_calls = int(create_order_calls)
+        self.run_id = run_id
+        self.status_code = status_code
+        super().__init__(self.code)
+
+_FEE = UpbitFeePolicy()
+ZERO = Decimal("0")
+
+
+def build_order_test_request_diagnostics(body: dict[str, Any]) -> dict[str, Any]:
+    """Order Test 요청 진단 (시크릿 미포함). Body/JWT/Header/URI 판정용."""
+
+    items = [(str(k), str(v)) for k, v in body.items()]
+    query_string = urlencode(items, doseq=True)
+    query_bytes = query_string.encode("utf-8")
+    qh, alg = build_query_hash(body)
+    # 공식 시장가 매수 예제 (문서/샘플 키 순서)
+    official_price_buy_keys = ("market", "side", "price", "ord_type")
+    our_keys = tuple(body.keys())
+    return {
+        "uri": "POST /v1/orders/test",
+        "create_order_uri": "POST /v1/orders",
+        "request_body": dict(body),
+        "query_string_for_hash": query_string,
+        "query_string_utf8_bytes_hex": query_bytes.hex(),
+        "query_string_utf8_len": len(query_bytes),
+        "query_hash_sha512": qh,
+        "query_hash_alg": alg,
+        "jwt_claims_template": {
+            "access_key": "<redacted>",
+            "nonce": "<uuid>",
+            "query_hash": qh,
+            "query_hash_alg": alg,
+        },
+        "headers": {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": "Bearer <redacted JWT HS256>",
+        },
+        "body_keys_order": list(our_keys),
+        "official_market_buy_key_order": list(official_price_buy_keys),
+        "key_order_matches_official_market_buy": our_keys == official_price_buy_keys
+        or (
+            body.get("ord_type") == "price"
+            and set(our_keys) == set(official_price_buy_keys)
+            and "volume" not in body
+        ),
+        "volume_present": "volume" in body,
+        "create_order_vs_test": {
+            "auth_path_identical": True,
+            "param_source": "same JSON body dict for JWT query_hash",
+            "uri_diff_only": "/v1/orders vs /v1/orders/test",
+        },
+    }
+
+
+def compute_upbit_order_preview(
+    *,
+    market: str,
+    side: str,
+    order_type: str,
+    amount: Decimal,
+    limit_price: Decimal | None,
+    reference_price: Decimal,
+) -> dict[str, Any]:
+    """업비트 주문 바디와 동일한 Preview 수량·금액 산출 (create_order 없음).
+
+    - MARKET BUY: ord_type=price, price=KRW 금액, volume 미전송
+      → 표시 수량 = amount / 현재가 (ROUND_DOWN)
+    - LIMIT BUY/SELL: ord_type=limit, volume=qty, price=지정가
+      → qty = amount / limit_price
+    - MARKET SELL: ord_type=market, volume만
+      → qty = amount / 현재가 (금액→수량 환산)
+    """
+
+    market_u = str(market or "").strip().upper()
+    side_u = str(side or "").strip().upper()
+    type_u = str(order_type or "").strip().upper()
+    if side_u not in {"BUY", "SELL"}:
+        raise ControlledLiveOrderSmokeError("INVALID_SIDE")
+    if type_u not in {"MARKET", "LIMIT"}:
+        raise ControlledLiveOrderSmokeError("INVALID_ORDER_TYPE")
+
+    amount_d = Decimal(str(amount))
+    if amount_d <= ZERO:
+        raise ControlledLiveOrderSmokeError("INVALID_AMOUNT")
+
+    ref = Decimal(str(reference_price))
+    if ref <= ZERO:
+        raise ControlledLiveOrderSmokeError("TICKER_NO_PRICE")
+    ref = round_upbit_price(ref)
+
+    upbit_side = "bid" if side_u == "BUY" else "ask"
+    fee_est = _FEE.fee_amount(notional=amount_d, is_maker=False)
+
+    if type_u == "MARKET" and side_u == "BUY":
+        # 실주문: price=KRW 주문금액, volume 없음
+        # 공식 샘플 키 순서: market → side → price → ord_type
+        qty = round_upbit_volume(amount_d / ref)
+        estimated_notional = amount_d
+        return {
+            "order_type": "MARKET",
+            "side": side_u,
+            "market": market_u,
+            "upbit_side": upbit_side,
+            "upbit_ord_type": "price",
+            "quantity": qty,
+            "quantity_note": "estimated_from_trade_price",
+            "limit_price": None,
+            "reference_price": ref,
+            "requested_amount": amount_d,
+            "estimated_amount": estimated_notional,
+            "estimated_fee": fee_est,
+            "broker_body": {
+                "market": market_u,
+                "side": upbit_side,
+                "price": str(amount_d),
+                "ord_type": "price",
+            },
+            "volume_sent": False,
+        }
+
+    if type_u == "MARKET" and side_u == "SELL":
+        qty = round_upbit_volume(amount_d / ref)
+        if qty <= ZERO:
+            raise ControlledLiveOrderSmokeError("QTY_TOO_SMALL")
+        estimated_notional = (qty * ref).quantize(Decimal("0.01"))
+        fee_est = _FEE.fee_amount(notional=estimated_notional, is_maker=False)
+        return {
+            "order_type": "MARKET",
+            "side": side_u,
+            "market": market_u,
+            "upbit_side": upbit_side,
+            "upbit_ord_type": "market",
+            "quantity": qty,
+            "quantity_note": "volume_from_krw_via_trade_price",
+            "limit_price": None,
+            "reference_price": ref,
+            "requested_amount": amount_d,
+            "estimated_amount": estimated_notional,
+            "estimated_fee": fee_est,
+            "broker_body": {
+                "market": market_u,
+                "side": upbit_side,
+                "volume": str(qty),
+                "ord_type": "market",
+            },
+            "volume_sent": True,
+        }
+
+    # LIMIT BUY / LIMIT SELL — 공식 샘플 키 순서: market→side→volume→price→ord_type
+    if limit_price is not None and Decimal(str(limit_price)) > ZERO:
+        price_d = round_upbit_price(Decimal(str(limit_price)))
+    else:
+        # 지정가 미입력 시 현재가로 미리보기 (주문 전송 전 참고)
+        price_d = ref
+    if price_d <= ZERO:
+        raise ControlledLiveOrderSmokeError("INVALID_LIMIT_PRICE")
+
+    qty = round_upbit_volume(amount_d / price_d)
+    if qty <= ZERO:
+        raise ControlledLiveOrderSmokeError("QTY_TOO_SMALL")
+    estimated_notional = (qty * price_d).quantize(Decimal("0.01"))
+    fee_est = _FEE.fee_amount(notional=estimated_notional, is_maker=True)
+    return {
+        "order_type": "LIMIT",
+        "side": side_u,
+        "market": market_u,
+        "upbit_side": upbit_side,
+        "upbit_ord_type": "limit",
+        "quantity": qty,
+        "quantity_note": "volume_equals_amount_div_limit_price",
+        "limit_price": price_d,
+        "reference_price": ref,
+        "requested_amount": amount_d,
+        "estimated_amount": estimated_notional,
+        "estimated_fee": fee_est,
+        "broker_body": {
+            "market": market_u,
+            "side": upbit_side,
+            "volume": str(qty),
+            "price": str(price_d),
+            "ord_type": "limit",
+        },
+        "volume_sent": True,
+    }
 
 
 class ControlledLiveOrderSmokeService:
@@ -119,19 +339,27 @@ class ControlledLiveOrderSmokeService:
         side: str,
         amount: Decimal | None,
         limit_price: Decimal | None,
+        order_type: str | None = None,
         identifier: str | None = None,
         skip_network: bool = False,
         smoke_buy_run_id: str | None = None,
         order_client: Any | None = None,
+        reference_price: Decimal | None = None,
     ) -> dict[str, Any]:
-        """공식 POST /v1/orders/test — 실주문·수수료 없음. create_order 미호출."""
+        """공식 POST /v1/orders/test — 실주문·수수료 없음. create_order 미호출.
+
+        Preview와 동일한 업비트 broker_body(ord_type=price|market|limit)를 사용한다.
+        """
 
         uba = self._load_owned_upbit(uba_id=uba_id, user_id=user_id)
         self._assert_runtime_stopped()
         market_u = str(market or "").strip().upper()
         side_u = str(side or "").strip().upper()
+        type_u = str(order_type or "MARKET").strip().upper()
         if side_u not in {"BUY", "SELL"}:
             raise ControlledLiveOrderSmokeError("INVALID_SIDE")
+        if type_u not in {"MARKET", "LIMIT"}:
+            raise ControlledLiveOrderSmokeError("INVALID_ORDER_TYPE")
         if side_u == "SELL" and not smoke_buy_run_id:
             raise ControlledLiveOrderSmokeError(
                 "EXISTING_POSITION_SELL_BLOCKED"
@@ -149,14 +377,7 @@ class ControlledLiveOrderSmokeService:
         if market_u not in allowlist:
             raise ControlledLiveOrderSmokeError("MARKET_NOT_ALLOWED")
 
-        price_d = round_upbit_price(
-            Decimal(str(limit_price))
-            if limit_price is not None and Decimal(str(limit_price)) > 0
-            else Decimal("1000000")
-        )
         amount_d = Decimal(str(amount)) if amount is not None else Decimal("0")
-        upbit_side = "bid" if side_u == "BUY" else "ask"
-        ord_type = "limit"
         tested_at = datetime.now(timezone.utc)
         expires_at = tested_at + timedelta(seconds=ORDER_TEST_TTL_SECONDS)
         validation_errors: list[str] = []
@@ -164,6 +385,8 @@ class ControlledLiveOrderSmokeService:
         test_response: dict[str, Any] = {}
         create_order_calls = 0
         test_order_calls = 0
+        http_diag: dict[str, Any] = {}
+        fault_layer = "UNKNOWN"
 
         client = order_client
         if client is None and not skip_network:
@@ -212,7 +435,7 @@ class ControlledLiveOrderSmokeService:
         except Exception as exc:  # noqa: BLE001
             validation_errors.append(f"chance:{exc.__class__.__name__}")
 
-        # min_total — chance 응답 우선 (하드코딩 Fail Closed 대비)
+        # min_total — chance 응답 우선
         min_total = None
         try:
             market_meta = chance.get("market") if isinstance(chance, dict) else {}
@@ -233,16 +456,39 @@ class ControlledLiveOrderSmokeService:
         if amount_d > MAX_SMOKE_AMOUNT:
             validation_errors.append("AMOUNT_EXCEEDS_MAX")
 
-        volume = round_upbit_volume(amount_d / price_d)
-        body = {
-            "market": market_u,
-            "side": upbit_side,
-            "ord_type": ord_type,
-            "volume": str(volume),
-            "price": str(price_d),
-        }
+        # 현재가 (Preview와 동일)
+        if reference_price is not None and Decimal(str(reference_price)) > ZERO:
+            ref_price = Decimal(str(reference_price))
+        else:
+            try:
+                ticker, _book = fetch_market_snapshots(market_u)
+                ref_price = Decimal(str(ticker.trade_price))
+            except Exception:  # noqa: BLE001
+                # LIMIT이면 limit_price로 폴백
+                if (
+                    type_u == "LIMIT"
+                    and limit_price is not None
+                    and Decimal(str(limit_price)) > ZERO
+                ):
+                    ref_price = Decimal(str(limit_price))
+                else:
+                    raise ControlledLiveOrderSmokeError("TICKER_UNAVAILABLE")
+
+        quote = compute_upbit_order_preview(
+            market=market_u,
+            side=side_u,
+            order_type=type_u,
+            amount=amount_d,
+            limit_price=limit_price,
+            reference_price=ref_price,
+        )
+        body = dict(quote["broker_body"])
         if identifier:
             body["identifier"] = str(identifier)[:36]
+        upbit_ord_type = str(quote["upbit_ord_type"])
+        volume_str = str(body.get("volume") or "")
+        price_str = str(body.get("price") or "")
+        request_diag = build_order_test_request_diagnostics(body)
 
         fee_rate = Decimal(
             str(
@@ -258,33 +504,64 @@ class ControlledLiveOrderSmokeService:
             for e in validation_errors
         ):
             test_passed = False
+            fault_layer = "VALIDATION"
         elif skip_network and client is None:
             test_passed = not any(
                 e.startswith("chance:") for e in validation_errors
             )
             test_response = {
                 "uuid": f"test-mock-{uuid.uuid4().hex[:8]}",
-                "side": upbit_side,
-                "ord_type": ord_type,
+                "side": body.get("side"),
+                "ord_type": upbit_ord_type,
                 "mock": True,
             }
             test_order_calls = 0
+            fault_layer = "NONE" if test_passed else "VALIDATION"
         elif client is not None:
             try:
-                # 실주문 경로 금지 — test_create_order 만
                 if hasattr(client, "create_order"):
-                    # 스파이 카운터 호환: create_order 미호출 증명용
                     pass
                 test_response = client.test_create_order(body) or {}
                 test_order_calls = 1
                 test_passed = True
+                fault_layer = "NONE"
             except Exception as exc:  # noqa: BLE001
                 validation_errors.append(f"order_test:{exc.__class__.__name__}")
-                detail = getattr(exc, "payload", None) or getattr(exc, "detail", None)
+                http_diag = {
+                    "http_status": getattr(exc, "http_status", None),
+                    "error_code": getattr(exc, "error_code", None),
+                    "error_message": str(exc)[:800],
+                    "raw_response_excerpt": str(
+                        getattr(exc, "payload", None)
+                        or getattr(exc, "detail", None)
+                        or getattr(exc, "error_code", None)
+                        or ""
+                    )[:800],
+                }
+                detail = getattr(exc, "payload", None) or getattr(
+                    exc, "detail", None
+                )
                 if isinstance(detail, dict):
-                    err_name = str(detail.get("error", {}).get("name") or "")
+                    err_name = str(
+                        (detail.get("error") or {}).get("name")
+                        or detail.get("error_code")
+                        or ""
+                    )
                     if err_name:
                         validation_errors.append(err_name)
+                    http_diag["raw_response_body"] = detail
+                # 400 InvalidRequest → Body 가능성 높음 (JWT면 보통 401)
+                status_code = getattr(exc, "http_status", None)
+                if status_code == 401:
+                    fault_layer = "JWT"
+                elif status_code == 404:
+                    fault_layer = "URI"
+                elif status_code == 400:
+                    fault_layer = "BODY"
+                elif status_code in {415, 406}:
+                    fault_layer = "HEADER"
+                else:
+                    fault_layer = "BODY_OR_SERVER"
                 test_passed = False
                 test_order_calls = 1
 
@@ -292,13 +569,12 @@ class ControlledLiveOrderSmokeService:
             uba_id=int(uba_id),
             market=market_u,
             side=side_u,
-            ord_type=ord_type,
-            volume=str(volume),
-            price=str(price_d),
+            ord_type=upbit_ord_type,
+            volume=volume_str,
+            price=price_str,
             amount=str(amount_d),
         )
         status = "ORDER_TEST_PASSED" if test_passed else "ORDER_TEST_FAILED"
-        # available balance from chance
         available = None
         try:
             if side_u == "BUY":
@@ -308,6 +584,13 @@ class ControlledLiveOrderSmokeService:
         except Exception:  # noqa: BLE001
             available = None
 
+        # 판정 요약
+        if not test_passed and fault_layer == "UNKNOWN":
+            if "volume" in body and upbit_ord_type == "price":
+                fault_layer = "BODY"
+            elif upbit_ord_type == "limit" and type_u == "MARKET":
+                fault_layer = "BODY"
+
         payload = sanitize_preflight_payload(
             {
                 "status": status,
@@ -315,8 +598,11 @@ class ControlledLiveOrderSmokeService:
                 "validation_errors": validation_errors,
                 "minimum_order_amount": str(min_total),
                 "available_balance": available,
-                "allowed_order_type": ["limit"],
-                "price_unit": str(price_d),
+                "allowed_order_type": ["price", "market", "limit"],
+                "order_type": type_u,
+                "upbit_ord_type": upbit_ord_type,
+                "reference_price": str(quote["reference_price"]),
+                "price_unit": price_str or str(quote["reference_price"]),
                 "estimated_fee": str(estimated_fee),
                 "tested_at": tested_at.isoformat(),
                 "expires_at": expires_at.isoformat(),
@@ -326,11 +612,22 @@ class ControlledLiveOrderSmokeService:
                 "request": {
                     "market": market_u,
                     "side": side_u,
-                    "ord_type": ord_type,
-                    "volume": str(volume),
-                    "price": str(price_d),
+                    "order_type": type_u,
+                    "ord_type": upbit_ord_type,
+                    "volume": volume_str or None,
+                    "price": price_str or None,
                     "amount": str(amount_d),
                     "identifier": body.get("identifier"),
+                    "broker_body": body,
+                },
+                "diagnostics": {
+                    **request_diag,
+                    "http": http_diag,
+                    "fault_layer": fault_layer,
+                    "verdict": (
+                        "BODY mismatch fixed path uses Preview-identical "
+                        f"ord_type={upbit_ord_type}; fault_layer={fault_layer}"
+                    ),
                 },
                 "chance_summary": {
                     "bid_fee": chance.get("bid_fee"),
@@ -385,19 +682,40 @@ class ControlledLiveOrderSmokeService:
         limit_price: Decimal,
         order_test_fingerprint: str | None,
         order_test_tested_at: str | None,
+        order_type: str | None = None,
+        reference_price: Decimal | None = None,
     ) -> None:
         if not order_test_fingerprint or not order_test_tested_at:
             raise ControlledLiveOrderSmokeError("ORDER_TEST_REQUIRED")
-        price_d = round_upbit_price(Decimal(str(limit_price)))
+        type_u = str(order_type or "MARKET").strip().upper()
         amount_d = Decimal(str(amount))
-        volume = round_upbit_volume(amount_d / price_d)
+        ref = (
+            Decimal(str(reference_price))
+            if reference_price is not None and Decimal(str(reference_price)) > ZERO
+            else (
+                Decimal(str(limit_price))
+                if limit_price is not None and Decimal(str(limit_price)) > ZERO
+                else Decimal("0")
+            )
+        )
+        if ref <= ZERO:
+            raise ControlledLiveOrderSmokeError("ORDER_TEST_STALE_INPUT_CHANGED")
+        quote = compute_upbit_order_preview(
+            market=str(market).upper(),
+            side=str(side).upper(),
+            order_type=type_u,
+            amount=amount_d,
+            limit_price=limit_price,
+            reference_price=ref,
+        )
+        body = quote["broker_body"]
         expected = self.build_order_test_fingerprint(
             uba_id=int(uba_id),
             market=str(market).upper(),
             side=str(side).upper(),
-            ord_type="limit",
-            volume=str(volume),
-            price=str(price_d),
+            ord_type=str(quote["upbit_ord_type"]),
+            volume=str(body.get("volume") or ""),
+            price=str(body.get("price") or ""),
             amount=str(amount_d),
         )
         if expected != str(order_test_fingerprint):
@@ -444,15 +762,24 @@ class ControlledLiveOrderSmokeService:
         side: str,
         amount: Decimal | None,
         limit_price: Decimal | None,
+        order_type: str | None = None,
         idempotency_key: str | None = None,
+        reference_price: Decimal | None = None,
     ) -> dict[str, Any]:
-        """주문 Adapter 호출 0 — Dry-run Preview + Risk 요약."""
+        """주문 Adapter 호출 0 — Dry-run Preview + Risk 요약.
+
+        수량/금액은 업비트 주문 규약과 동일하게 산출한다.
+        공개 ticker만 조회하며 create_order는 호출하지 않는다.
+        """
 
         uba = self._load_owned_upbit(uba_id=uba_id, user_id=user_id)
         market_u = str(market or "").strip().upper()
         side_u = str(side or "").strip().upper()
+        type_u = str(order_type or "MARKET").strip().upper()
         if side_u not in {"BUY", "SELL"}:
             raise ControlledLiveOrderSmokeError("INVALID_SIDE")
+        if type_u not in {"MARKET", "LIMIT"}:
+            raise ControlledLiveOrderSmokeError("INVALID_ORDER_TYPE")
 
         settings = get_settings()
         allowlist_raw = str(
@@ -472,15 +799,45 @@ class ControlledLiveOrderSmokeService:
         if amount_d > MAX_SMOKE_AMOUNT:
             raise ControlledLiveOrderSmokeError("AMOUNT_EXCEEDS_MAX")
 
-        # 가격: 요청값 없으면 최소금액 기준 더미 LIMIT (네트워크 없이 static)
-        price_d = (
-            Decimal(str(limit_price))
-            if limit_price is not None and Decimal(str(limit_price)) > 0
-            else Decimal("1000000")
+        # 현재가: 공개 ticker (create_order 없음). 테스트용 reference_price 주입 가능.
+        if reference_price is not None and Decimal(str(reference_price)) > ZERO:
+            ref_price = Decimal(str(reference_price))
+            ticker_meta: dict[str, Any] = {
+                "source": "injected",
+                "trade_price": str(ref_price),
+            }
+        else:
+            try:
+                ticker, _book = fetch_market_snapshots(market_u)
+                ref_price = Decimal(str(ticker.trade_price))
+                ticker_meta = {
+                    "source": "upbit_public_ticker",
+                    **ticker.to_dict(),
+                }
+            except UpbitMarketQuoteError as exc:
+                raise ControlledLiveOrderSmokeError(
+                    f"TICKER_UNAVAILABLE:{exc.reason_code}"
+                ) from exc
+            except Exception as exc:  # noqa: BLE001
+                raise ControlledLiveOrderSmokeError(
+                    "TICKER_UNAVAILABLE"
+                ) from exc
+
+        if ref_price <= ZERO:
+            raise ControlledLiveOrderSmokeError("TICKER_NO_PRICE")
+
+        quote = compute_upbit_order_preview(
+            market=market_u,
+            side=side_u,
+            order_type=type_u,
+            amount=amount_d,
+            limit_price=limit_price,
+            reference_price=ref_price,
         )
-        price_d = round_upbit_price(price_d)
-        qty = round_upbit_volume(amount_d / price_d)
-        fee_est = (amount_d * Decimal("0.0005")).quantize(Decimal("0.01"))
+        qty = quote["quantity"]
+        price_d = quote["limit_price"]
+        fee_est = quote["estimated_fee"]
+        amount_est = quote["estimated_amount"]
 
         uba_pf = RuntimePreflightService(self._session).run_for_uba(
             user_broker_account_id=int(uba_id),
@@ -495,12 +852,18 @@ class ControlledLiveOrderSmokeService:
         else:
             stage = "PRE_SUBMIT_READY"
 
+        # Risk/order preflight는 LIMIT 가격 또는 현재가 기준 참고값
+        preflight_price = (
+            Decimal(str(price_d))
+            if price_d is not None
+            else Decimal(str(ref_price))
+        )
         order_preflight = UpbitLivePreflightService(self._session).run(
             user_broker_account_id=int(uba_id),
             market=market_u,
             side=side_u,
             amount=amount_d,
-            limit_price=price_d,
+            limit_price=preflight_price,
             actor=actor,
             skip_live_network=True,
             purpose="dry_run",
@@ -524,13 +887,22 @@ class ControlledLiveOrderSmokeService:
                 "masked_account": uba.masked_account_number,
                 "market": market_u,
                 "side": side_u,
-                "order_type": "LIMIT",
+                "order_type": type_u,
+                "upbit_ord_type": quote["upbit_ord_type"],
                 "quantity": str(qty),
-                "limit_price": str(price_d),
-                "estimated_amount": str(amount_d),
+                "quantity_note": quote["quantity_note"],
+                "volume_sent": bool(quote["volume_sent"]),
+                "limit_price": (
+                    str(price_d) if price_d is not None else None
+                ),
+                "reference_price": str(quote["reference_price"]),
+                "requested_amount": str(amount_d),
+                "estimated_amount": str(amount_est),
                 "estimated_fee": str(fee_est),
                 "min_notional_krw": str(UPBIT_MIN_NOTIONAL_KRW),
                 "max_smoke_amount": str(MAX_SMOKE_AMOUNT),
+                "ticker": ticker_meta,
+                "broker_body": quote["broker_body"],
                 "confirmation_text_required": confirmation_text_for_side(
                     side_u
                 ),
@@ -585,7 +957,10 @@ class ControlledLiveOrderSmokeService:
             detail={
                 "stage": stage,
                 "side": side_u,
-                "estimated_amount": str(amount_d),
+                "order_type": type_u,
+                "estimated_amount": str(amount_est),
+                "quantity": str(qty),
+                "reference_price": str(quote["reference_price"]),
                 "adapter_create_order_calls": 0,
             },
             commit=False,
@@ -697,6 +1072,8 @@ class ControlledLiveOrderSmokeService:
             limit_price=Decimal(str(limit_price)),
             order_test_fingerprint=order_test_fingerprint,
             order_test_tested_at=order_test_tested_at,
+            order_type="MARKET",
+            reference_price=Decimal(str(limit_price)),
         )
 
         # 서버 Gate 재검증 후 기존 smoke execute 위임
@@ -739,10 +1116,32 @@ class ControlledLiveOrderSmokeService:
                 user_id=int(user_id),
                 account_id=int(uba_id),
                 strategy_id=None,
-                detail={"reason": str(exc)},
+                detail={
+                    "reason": getattr(exc, "code", str(exc)),
+                    "details": list(getattr(exc, "details", []) or []),
+                    "order_submitted": bool(
+                        getattr(exc, "order_submitted", False)
+                    ),
+                    "create_order_calls": int(
+                        getattr(exc, "create_order_calls", 0) or 0
+                    ),
+                },
                 commit=False,
             )
-            raise ControlledLiveOrderSmokeError(str(exc)) from exc
+            raise ControlledLiveOrderSmokeError(
+                getattr(exc, "code", str(exc)),
+                message=getattr(exc, "message", None),
+                details=list(getattr(exc, "details", []) or []),
+                http_status=int(getattr(exc, "http_status", 400) or 400),
+                order_submitted=bool(
+                    getattr(exc, "order_submitted", False)
+                ),
+                create_order_calls=int(
+                    getattr(exc, "create_order_calls", 0) or 0
+                ),
+                run_id=getattr(exc, "run_id", None),
+                status_code=getattr(exc, "status_code", None),
+            ) from exc
 
         emit_live_safety_audit(
             self._session,

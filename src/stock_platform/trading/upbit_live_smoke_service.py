@@ -34,6 +34,7 @@ from stock_platform.trading.upbit_live_smoke_constants import (
     CONFIRMATION_TEXT,
     LiveValidationRunStatus,
     MAX_SMOKE_AMOUNT,
+    TERMINAL_INTERNAL_STATUSES,
     UPBIT_LIVE_SMOKE_COMPLETED,
     UPBIT_LIVE_SMOKE_EXECUTION_REQUESTED,
     UPBIT_LIVE_SMOKE_FAILED_CLOSED,
@@ -41,11 +42,42 @@ from stock_platform.trading.upbit_live_smoke_constants import (
     UPBIT_LIVE_SMOKE_ORDER_SUBMITTED,
     UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
 )
+from stock_platform.trading.failure_code_normalize import (
+    apply_failure_fields,
+    classify_risk_blocked_reason,
+    normalize_failure_code,
+)
 
 
 class UpbitLiveSmokeError(ValueError):
-    """스모크 실행 거부."""
+    """스모크 실행 거부 (비즈니스 거절 포함)."""
 
+    def __init__(
+        self,
+        code: str,
+        *,
+        message: str | None = None,
+        details: list[str] | None = None,
+        http_status: int = 400,
+        order_submitted: bool = False,
+        create_order_calls: int = 0,
+        run_id: str | None = None,
+        status_code: str | None = None,
+    ) -> None:
+        raw = str(code or "").strip()
+        # INVALID_TRANSITION:A->B 등 레거시 진단 코드는 정규화로 깨지므로 보존
+        if ":" in raw or "->" in raw:
+            self.code = raw[:200]
+        else:
+            self.code = normalize_failure_code(raw, fallback="UNKNOWN_FAILURE")
+        self.message = message or self.code
+        self.details = list(details or [])
+        self.http_status = int(http_status)
+        self.order_submitted = bool(order_submitted)
+        self.create_order_calls = int(create_order_calls)
+        self.run_id = run_id
+        self.status_code = status_code
+        super().__init__(self.code)
 
 class UpbitLiveSmokeService:
     """수동 1건 검증. 실주문은 명시적 플래그 3종 모두 필요."""
@@ -296,12 +328,60 @@ class UpbitLiveSmokeService:
             )
             exec_result = OrderExecutionService(self._session).submit(cmd)
             if not exec_result.allowed:
+                raw_code = str(exec_result.reason_code or "ORDER_REJECTED")
+                plan = exec_result.position_plan or {}
+                plan_msg = (
+                    str(plan.get("message") or "").strip()
+                    if isinstance(plan, dict)
+                    else ""
+                )
+                # 긴 메시지는 summary/details, code는 짧은 안정값만
+                if (
+                    " " in raw_code
+                    or ";" in raw_code
+                    or plan_msg
+                    or raw_code.startswith("RISK_")
+                ):
+                    source = plan_msg or raw_code
+                    code, details, summary = classify_risk_blocked_reason(
+                        source
+                    )
+                    if (
+                        raw_code.startswith("RISK_")
+                        and " " not in raw_code
+                        and ";" not in raw_code
+                    ):
+                        code = normalize_failure_code(
+                            raw_code, fallback="RISK_ENGINE_BLOCKED"
+                        )
+                else:
+                    code, summary = apply_failure_fields(
+                        failure_code=raw_code,
+                        failure_summary=None,
+                        fallback="ORDER_REJECTED",
+                    )
+                    details = [code]
+
+                code, summary = apply_failure_fields(
+                    failure_code=code,
+                    failure_summary=summary or plan_msg or None,
+                    fallback="RISK_ENGINE_BLOCKED",
+                )
+                if not details:
+                    details = [summary] if summary else [code]
+
                 self._transition(
                     run,
                     LiveValidationRunStatus.REJECTED.value,
                     actor=actor,
                 )
-                run.failure_code = exec_result.reason_code
+                run.failure_code = code
+                run.failure_summary = summary
+                detail = dict(run.detail or {})
+                detail["risk_details"] = details
+                detail["order_submitted"] = False
+                detail["create_order_calls"] = 0
+                run.detail = detail
                 emit_live_safety_audit(
                     self._session,
                     event_type=UPBIT_LIVE_SMOKE_ORDER_REJECTED,
@@ -312,13 +392,24 @@ class UpbitLiveSmokeService:
                     strategy_id=None,
                     detail={
                         "run_id": run.run_id,
-                        "reason_code": exec_result.reason_code,
+                        "reason_code": code,
+                        "details": details,
+                        "order_submitted": False,
+                        "create_order_calls": 0,
                     },
                     commit=False,
                 )
-                result["status"] = run.status_code
-                result["reason_code"] = exec_result.reason_code
-                return result
+                self._session.flush()
+                raise UpbitLiveSmokeError(
+                    code,
+                    message="Risk policy blocked this order.",
+                    details=details,
+                    http_status=409,
+                    order_submitted=False,
+                    create_order_calls=0,
+                    run_id=run.run_id,
+                    status_code=LiveValidationRunStatus.REJECTED.value,
+                )
 
             run.order_id = exec_result.order_id
             run.order_status = exec_result.status_code
@@ -367,29 +458,82 @@ class UpbitLiveSmokeService:
         except UpbitLiveSmokeError:
             raise
         except Exception as exc:  # noqa: BLE001
-            self._transition(
-                run,
-                LiveValidationRunStatus.UNKNOWN.value,
-                actor=actor,
-            )
-            run.failure_code = type(exc).__name__
-            run.failure_summary = str(exc)[:200]
-            emit_live_safety_audit(
-                self._session,
-                event_type=UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
-                actor=actor,
-                run_id=run.run_id,
-                user_id=preflight.user_id,
-                account_id=user_broker_account_id,
-                strategy_id=None,
-                detail={
-                    "run_id": run.run_id,
-                    "error": type(exc).__name__,
-                },
-                commit=False,
-            )
+            from sqlalchemy.exc import SQLAlchemyError
+
+            is_db_error = isinstance(exc, SQLAlchemyError)
+            if is_db_error:
+                try:
+                    self._session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                result["status"] = getattr(run, "status_code", None)
+                result["error"] = normalize_failure_code(
+                    type(exc).__name__, fallback="ADAPTER_ERROR"
+                )
+                result["order_submitted"] = False
+                result["create_order_calls"] = 0
+                return result
+
+            current = str(getattr(run, "status_code", "") or "")
+            if current in TERMINAL_INTERNAL_STATUSES:
+                # terminal 유지 — UNKNOWN 덮어쓰기 금지
+                code, summary = apply_failure_fields(
+                    failure_code=type(exc).__name__,
+                    failure_summary=str(exc)[:500],
+                    fallback="UNKNOWN_FAILURE",
+                )
+                run.failure_code = code
+                if summary and not run.failure_summary:
+                    run.failure_summary = summary
+                try:
+                    self._safe_flush()
+                except Exception:  # noqa: BLE001
+                    pass
+                result["status"] = current
+                result["error"] = code
+                result["order_submitted"] = False
+                result["create_order_calls"] = 0
+                return result
+
+            try:
+                self._transition(
+                    run,
+                    LiveValidationRunStatus.UNKNOWN.value,
+                    actor=actor,
+                )
+                code, summary = apply_failure_fields(
+                    failure_code=type(exc).__name__,
+                    failure_summary=str(exc)[:500],
+                    fallback="UNKNOWN_FAILURE",
+                )
+                run.failure_code = code
+                run.failure_summary = summary
+                emit_live_safety_audit(
+                    self._session,
+                    event_type=UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
+                    actor=actor,
+                    run_id=run.run_id,
+                    user_id=preflight.user_id,
+                    account_id=user_broker_account_id,
+                    strategy_id=None,
+                    detail={
+                        "run_id": run.run_id,
+                        "error": code,
+                    },
+                    commit=False,
+                )
+                self._safe_flush()
+            except Exception:  # noqa: BLE001
+                try:
+                    self._session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
             result["status"] = run.status_code
-            result["error"] = type(exc).__name__
+            result["error"] = normalize_failure_code(
+                type(exc).__name__, fallback="UNKNOWN_FAILURE"
+            )
+            result["order_submitted"] = False
+            result["create_order_calls"] = 0
             return result
         finally:
             self._finalize_protect(
@@ -551,6 +695,14 @@ class UpbitLiveSmokeService:
         allowed = ALLOWED_TRANSITIONS.get(current, frozenset())
         if new_status == current:
             return
+        # terminal → UNKNOWN 금지 (예외 경로 보호)
+        if (
+            new_status == LiveValidationRunStatus.UNKNOWN.value
+            and current in TERMINAL_INTERNAL_STATUSES
+        ):
+            raise UpbitLiveSmokeError(
+                f"INVALID_TRANSITION:{current}->{new_status}"
+            )
         if new_status not in allowed and current not in {
             LiveValidationRunStatus.CREATED.value
         }:
@@ -642,6 +794,33 @@ class UpbitLiveSmokeService:
             "track": track_view,
         }
 
+    def _safe_flush(self) -> bool:
+        """failed transaction에서는 flush하지 않고 rollback."""
+
+        from sqlalchemy.exc import SQLAlchemyError
+
+        try:
+            if not self._session.is_active:
+                try:
+                    self._session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                return False
+            self._session.flush()
+            return True
+        except SQLAlchemyError:
+            try:
+                self._session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
+        except Exception:  # noqa: BLE001
+            try:
+                self._session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+            return False
+
     def _finalize_protect(
         self,
         *,
@@ -649,7 +828,23 @@ class UpbitLiveSmokeService:
         run: LiveValidationRunEntity,
         actor: str,
     ) -> None:
-        """성공/실패/예외와 무관 — DISARM + LIVE OFF + Pause 유지."""
+        """성공/실패/예외와 무관 — DISARM + LIVE OFF + Pause 유지.
+
+        failed Session에서는 flush를 시도하지 않는다.
+        REJECTED(비즈니스 거절)는 UNKNOWN/FAILED_CLOSED로 덮지 않는다.
+        """
+
+        session_ok = True
+        try:
+            if not self._session.is_active:
+                try:
+                    self._session.rollback()
+                except Exception:  # noqa: BLE001
+                    session_ok = False
+                else:
+                    session_ok = bool(self._session.is_active)
+        except Exception:  # noqa: BLE001
+            session_ok = False
 
         try:
             LiveArmService(self._session).disarm(
@@ -661,7 +856,10 @@ class UpbitLiveSmokeService:
         except Exception:  # noqa: BLE001
             pass
         self._pause_uba_scope(user_broker_account_id, actor=actor)
-        # Broker 미확정 시 COMPLETED 금지
+
+        if not session_ok:
+            return
+
         from stock_platform.trading.upbit_live_smoke_constants import (
             BrokerOrderStatus,
             TERMINAL_BROKER_STATUSES,
@@ -675,15 +873,39 @@ class UpbitLiveSmokeService:
                 LiveValidationRunStatus.VERIFIED.value,
             }
         )
-        if run.status_code not in {
+        # REJECTED는 비즈니스 terminal — 상태 유지 + protect audit만
+        if run.status_code == LiveValidationRunStatus.REJECTED.value:
+            try:
+                emit_live_safety_audit(
+                    self._session,
+                    event_type=UPBIT_LIVE_SMOKE_FAILED_CLOSED,
+                    actor=actor,
+                    run_id=run.run_id,
+                    user_id=run.user_id,
+                    account_id=user_broker_account_id,
+                    strategy_id=None,
+                    detail={
+                        "run_id": run.run_id,
+                        "status": run.status_code,
+                        "broker_order_status": broker_status,
+                        "protect": "DISARM_LIVE_OFF",
+                        "status_preserved": "REJECTED",
+                    },
+                    commit=False,
+                )
+            except Exception:  # noqa: BLE001
+                try:
+                    self._session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+        elif run.status_code not in {
             LiveValidationRunStatus.COMPLETED.value,
             LiveValidationRunStatus.DRY_RUN_COMPLETED.value,
             LiveValidationRunStatus.FAILED_CLOSED.value,
         }:
             try:
-                if run.status_code in {
-                    LiveValidationRunStatus.REJECTED.value,
-                } or broker_status == BrokerOrderStatus.UNKNOWN.value:
+                if broker_status == BrokerOrderStatus.UNKNOWN.value:
                     if run.internal_status != (
                         LiveValidationRunStatus.FAILED_CLOSED.value
                     ):
@@ -716,17 +938,17 @@ class UpbitLiveSmokeService:
                         LiveValidationRunStatus.COMPLETED.value,
                         actor=actor,
                     )
-                # 그 외(OUTBOX_PENDING/BROKER_TRACKING/CANCEL_PENDING)는
-                # 추적 Scheduler가 계속 처리 — finally에서 COMPLETED 금지
             except UpbitLiveSmokeError:
                 pass
+
         if terminal_ok and run.internal_status in {
             LiveValidationRunStatus.COMPLETED.value,
             LiveValidationRunStatus.FAILED_CLOSED.value,
             LiveValidationRunStatus.DRY_RUN_COMPLETED.value,
         }:
             run.completed_at = datetime.now(timezone.utc)
-        self._session.flush()
+        if not self._safe_flush():
+            return
         self._telegram(
             title="Upbit LIVE Smoke Finished (protect)",
             message=(

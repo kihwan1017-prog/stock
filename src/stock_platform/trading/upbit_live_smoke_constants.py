@@ -96,6 +96,20 @@ TERMINAL_BROKER_STATUSES = frozenset(
     }
 )
 
+# 예외 처리 시 UNKNOWN으로 덮어쓰지 않을 내부 terminal 상태
+TERMINAL_INTERNAL_STATUSES = frozenset(
+    {
+        InternalStatus.REJECTED.value,
+        InternalStatus.FILLED.value,
+        InternalStatus.CANCELED.value,
+        InternalStatus.FAILED_CLOSED.value,
+        InternalStatus.COMPLETED.value,
+        InternalStatus.DRY_RUN_COMPLETED.value,
+        InternalStatus.VERIFIED.value,
+        InternalStatus.PREFLIGHT_FAILED.value,
+    }
+)
+
 TRACKABLE_BROKER_STATUSES = frozenset(
     {
         BrokerOrderStatus.SUBMISSION_UNKNOWN.value,

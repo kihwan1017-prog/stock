@@ -296,9 +296,16 @@ class OrderExecutionService:
                 environment=environment,
             )
             if not risk_result.allowed:
-                return self._blocked(
+                from stock_platform.trading.failure_code_normalize import (
+                    classify_risk_blocked_reason,
+                )
+
+                code, _details, summary = classify_risk_blocked_reason(
                     risk_result.blocked_reason
-                    or "RISK_ENGINE_BLOCKED",
+                )
+                return self._blocked(
+                    code,
+                    message=summary,
                 )
 
         client_order_id = (
