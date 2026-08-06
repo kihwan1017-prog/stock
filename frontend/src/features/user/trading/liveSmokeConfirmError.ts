@@ -1,6 +1,6 @@
 /**
- * Guided LIVE Smoke — Risk 거절 응답 표시 헬퍼.
- * Axios error.response.data 우선, 네트워크 오류로 오인하지 않음.
+ * Guided LIVE Smoke — Confirm 오류 표시 헬퍼.
+ * Risk 거절(409) vs DB 오류(500 LIVE_SMOKE_*) 구분.
  */
 
 import { toApiError, type ApiError } from "@/lib/api/apiError";
@@ -36,17 +36,24 @@ function extractDetailsFromPayload(data: unknown): string[] {
   return [];
 }
 
-export type RiskRejectionView = {
-  isRiskRejection: boolean;
+export type ConfirmErrorView = {
+  kind: "risk" | "db_error" | "other";
   title: string;
   detailLines: string[];
   orderSubmitted: boolean;
   createOrderCalls: number;
   brokerOrderId: string | null;
   errorCode: string | null;
+  status: string | null;
+  retryForbidden: boolean;
+  /** @deprecated risk 전용 호환 */
+  isRiskRejection: boolean;
 };
 
-export function formatLiveSmokeConfirmError(error: unknown): RiskRejectionView {
+/** @deprecated 이름 유지 — ConfirmErrorView 사용 */
+export type RiskRejectionView = ConfirmErrorView;
+
+export function formatLiveSmokeConfirmError(error: unknown): ConfirmErrorView {
   const apiErr: ApiError = toApiError(error);
   const data = apiErr.details;
   const detailRecord = isRecord(data)
@@ -62,6 +69,39 @@ export function formatLiveSmokeConfirmError(error: unknown): RiskRejectionView {
       "",
   );
   const details = extractDetailsFromPayload(data);
+  const statusLabel =
+    detailRecord && typeof detailRecord.status === "string"
+      ? detailRecord.status
+      : null;
+
+  const isDbError =
+    code.startsWith("LIVE_SMOKE_") ||
+    apiErr.status === 500 ||
+    apiErr.status === 503 ||
+    Boolean(detailRecord?.retry_forbidden);
+
+  if (isDbError) {
+    return {
+      kind: "db_error",
+      isRiskRejection: false,
+      title: "실주문 요청을 저장하지 못했습니다.",
+      detailLines: [
+        `상태: ${statusLabel || "FAILED"}`,
+        `오류 코드: ${code || "LIVE_SMOKE_DB_ERROR"}`,
+        "실제 주문 전송: 없음",
+        "Upbit 주문 UUID: 없음",
+        "재시도 금지",
+        "관리자 로그에서 correlation_id / run_id 확인",
+      ],
+      orderSubmitted: false,
+      createOrderCalls: Number(detailRecord?.create_order_calls ?? 0) || 0,
+      brokerOrderId: null,
+      errorCode: code || "LIVE_SMOKE_DB_ERROR",
+      status: statusLabel || "FAILED",
+      retryForbidden: true,
+    };
+  }
+
   const isRisk =
     apiErr.status === 409 ||
     apiErr.status === 422 ||
@@ -70,6 +110,7 @@ export function formatLiveSmokeConfirmError(error: unknown): RiskRejectionView {
 
   if (!isRisk) {
     return {
+      kind: "other",
       isRiskRejection: false,
       title: apiErr.message,
       detailLines: [],
@@ -77,6 +118,8 @@ export function formatLiveSmokeConfirmError(error: unknown): RiskRejectionView {
       createOrderCalls: 0,
       brokerOrderId: null,
       errorCode: code || null,
+      status: statusLabel,
+      retryForbidden: false,
     };
   }
 
@@ -89,11 +132,10 @@ export function formatLiveSmokeConfirmError(error: unknown): RiskRejectionView {
   const createOrderCalls = Number(detailRecord?.create_order_calls ?? 0) || 0;
   const brokerRaw = detailRecord?.broker_order_id;
   const brokerOrderId =
-    brokerRaw == null || brokerRaw === ""
-      ? null
-      : String(brokerRaw);
+    brokerRaw == null || brokerRaw === "" ? null : String(brokerRaw);
 
   return {
+    kind: "risk",
     isRiskRejection: true,
     title: "주문이 Risk 정책에 의해 차단되었습니다.",
     detailLines,
@@ -101,5 +143,7 @@ export function formatLiveSmokeConfirmError(error: unknown): RiskRejectionView {
     createOrderCalls,
     brokerOrderId,
     errorCode: code || "RISK_ENGINE_BLOCKED",
+    status: statusLabel || "REJECTED",
+    retryForbidden: false,
   };
 }

@@ -45,6 +45,34 @@ describe("formatLiveSmokeConfirmError", () => {
     });
     const view = formatLiveSmokeConfirmError(err);
     expect(view.isRiskRejection).toBe(false);
+    expect(view.kind).toBe("other");
     expect(view.title).toBe("CONFIRMATION_TEXT_MISMATCH");
+  });
+
+  it("renders LIVE_SMOKE_DB_ERROR as failed storage (not success)", () => {
+    const err = new ApiError({
+      status: 500,
+      code: "LIVE_SMOKE_DB_ERROR",
+      message: "실주문 요청을 저장하지 못했습니다.",
+      details: {
+        detail: {
+          error_code: "LIVE_SMOKE_DB_ERROR",
+          status: "FAILED",
+          broker_order_status: "NOT_SUBMITTED",
+          order_submitted: false,
+          create_order_calls: 0,
+          retry_forbidden: true,
+          run_id: "uvs-test",
+        },
+      },
+    });
+    const view = formatLiveSmokeConfirmError(err);
+    expect(view.kind).toBe("db_error");
+    expect(view.isRiskRejection).toBe(false);
+    expect(view.title).toContain("저장하지 못했습니다");
+    expect(view.errorCode).toBe("LIVE_SMOKE_DB_ERROR");
+    expect(view.status).toBe("FAILED");
+    expect(view.retryForbidden).toBe(true);
+    expect(view.detailLines.some((l) => l.includes("재시도 금지"))).toBe(true);
   });
 });

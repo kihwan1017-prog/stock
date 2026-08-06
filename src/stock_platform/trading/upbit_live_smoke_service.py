@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -31,6 +32,7 @@ from stock_platform.trading.upbit_live_preflight_service import (
 )
 from stock_platform.trading.upbit_live_smoke_constants import (
     ALLOWED_TRANSITIONS,
+    BrokerOrderStatus,
     CONFIRMATION_TEXT,
     LiveValidationRunStatus,
     MAX_SMOKE_AMOUNT,
@@ -42,6 +44,94 @@ from stock_platform.trading.upbit_live_smoke_constants import (
     UPBIT_LIVE_SMOKE_ORDER_SUBMITTED,
     UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _session_identity_class_names(session: Session) -> dict[str, list[str]]:
+    """세션 객체 클래스명만 (SQL/시크릿 미포함)."""
+
+    def _names(objects: Any) -> list[str]:
+        out: list[str] = []
+        try:
+            for obj in objects:
+                out.append(type(obj).__name__)
+        except Exception:  # noqa: BLE001
+            return out
+        return out
+
+    return {
+        "new": _names(getattr(session, "new", ()) or ()),
+        "dirty": _names(getattr(session, "dirty", ()) or ()),
+        "deleted": _names(getattr(session, "deleted", ()) or ()),
+    }
+
+
+def _extract_pg_sqlstate(exc: BaseException) -> str | None:
+    orig = getattr(exc, "orig", None)
+    if orig is None:
+        return None
+    for attr in ("pgcode", "sqlstate"):
+        value = getattr(orig, attr, None)
+        if value:
+            return str(value)
+    return None
+
+
+def _extract_db_constraint_hint(exc: BaseException) -> str | None:
+    """constraint/table/column 힌트만 — SQL 전문 금지."""
+
+    parts: list[str] = []
+    diag = getattr(getattr(exc, "orig", None), "diag", None)
+    if diag is not None:
+        for attr in (
+            "constraint_name",
+            "table_name",
+            "column_name",
+            "schema_name",
+        ):
+            value = getattr(diag, attr, None)
+            if value:
+                parts.append(f"{attr}={value}")
+    text = str(getattr(exc, "orig", None) or exc)
+    # 긴 SQL 본문 절단
+    if "unique" in text.lower() and "constraint" in text.lower():
+        parts.append("hint=unique_violation")
+    if "stringdatarighttruncation" in text.lower() or "value too long" in text.lower():
+        parts.append("hint=value_too_long")
+    return ";".join(parts) if parts else None
+
+
+def log_live_smoke_db_error(
+    *,
+    exc: BaseException,
+    stage: str,
+    last_ok_stage: str | None,
+    run_id: str | None,
+    uba_id: int | None,
+    order_id_present: bool,
+    session: Session | None,
+) -> None:
+    """DB 예외 sanitized 로그 — 시크릿/SQL 파라미터 금지."""
+
+    identity = (
+        _session_identity_class_names(session) if session is not None else {}
+    )
+    logger.error(
+        "live_smoke_db_error class=%s sqlstate=%s constraint=%s "
+        "stage=%s last_ok=%s run_id=%s uba_id=%s order_id_present=%s "
+        "session=%s",
+        type(exc).__name__,
+        _extract_pg_sqlstate(exc),
+        _extract_db_constraint_hint(exc),
+        stage,
+        last_ok_stage,
+        run_id,
+        uba_id,
+        order_id_present,
+        identity,
+    )
+
 from stock_platform.trading.failure_code_normalize import (
     apply_failure_fields,
     classify_risk_blocked_reason,
@@ -263,13 +353,28 @@ class UpbitLiveSmokeService:
             "run_id": run.run_id,
             "execute_live": True,
             "preflight": preflight.to_dict(),
+            "pipeline_markers": [],
+            "order_submitted": False,
+            "create_order_calls": 0,
+            "broker_order_status": BrokerOrderStatus.NOT_SUBMITTED.value,
         }
+        markers: list[str] = result["pipeline_markers"]  # type: ignore[assignment]
+        stage = "AFTER_CREATE_RUN"
+        last_ok_stage: str | None = "AFTER_CREATE_RUN"
+
+        def _mark(name: str) -> None:
+            markers.append(name)
+
         try:
+            stage = "TRANSITION_EXECUTION_REQUESTED"
             self._transition(
                 run,
                 LiveValidationRunStatus.EXECUTION_REQUESTED.value,
                 actor=actor,
             )
+            last_ok_stage = stage
+
+            stage = "EMIT_AUDIT"
             emit_live_safety_audit(
                 self._session,
                 event_type=UPBIT_LIVE_SMOKE_EXECUTION_REQUESTED,
@@ -289,7 +394,11 @@ class UpbitLiveSmokeService:
                 },
                 commit=False,
             )
+            last_ok_stage = stage
+
+            stage = "PAUSE_UBA_SCOPE"
             self._pause_uba_scope(user_broker_account_id, actor=actor)
+            last_ok_stage = stage
 
             # 실주문 — OrderExecutionService (Adapter 우회 금지)
             from stock_platform.order.execution_service import (
@@ -326,8 +435,16 @@ class UpbitLiveSmokeService:
                     "preflight_id": preflight.preflight_id,
                 },
             )
+            stage = "BEFORE_ORDER_EXECUTION_SUBMIT"
+            _mark("BEFORE_ORDER_EXECUTION_SUBMIT")
+            last_ok_stage = stage
+            stage = "ORDER_EXECUTION_SUBMIT"
             exec_result = OrderExecutionService(self._session).submit(cmd)
+            _mark("AFTER_ORDER_EXECUTION_SUBMIT")
+            last_ok_stage = "AFTER_ORDER_EXECUTION_SUBMIT"
+
             if not exec_result.allowed:
+                _mark("SUBMIT_BLOCKED")
                 raw_code = str(exec_result.reason_code or "ORDER_REJECTED")
                 plan = exec_result.position_plan or {}
                 plan_msg = (
@@ -370,6 +487,7 @@ class UpbitLiveSmokeService:
                 if not details:
                     details = [summary] if summary else [code]
 
+                stage = "REJECT_FLUSH"
                 self._transition(
                     run,
                     LiveValidationRunStatus.REJECTED.value,
@@ -381,7 +499,11 @@ class UpbitLiveSmokeService:
                 detail["risk_details"] = details
                 detail["order_submitted"] = False
                 detail["create_order_calls"] = 0
+                detail["pipeline_markers"] = list(markers)
                 run.detail = detail
+                run.broker_order_status = (
+                    BrokerOrderStatus.NOT_SUBMITTED.value
+                )
                 emit_live_safety_audit(
                     self._session,
                     event_type=UPBIT_LIVE_SMOKE_ORDER_REJECTED,
@@ -400,6 +522,7 @@ class UpbitLiveSmokeService:
                     commit=False,
                 )
                 self._session.flush()
+                last_ok_stage = stage
                 raise UpbitLiveSmokeError(
                     code,
                     message="Risk policy blocked this order.",
@@ -411,9 +534,41 @@ class UpbitLiveSmokeService:
                     status_code=LiveValidationRunStatus.REJECTED.value,
                 )
 
+            # 실주문 큐 성공 = QUEUED + order_id + outbox_id (adapter 전송 전)
+            if (
+                str(exec_result.reason_code or "") != "QUEUED"
+                or exec_result.order_id is None
+                or exec_result.outbox_id is None
+            ):
+                _mark("SUBMIT_NOT_QUEUED")
+                raise UpbitLiveSmokeError(
+                    "LIVE_SMOKE_NOT_QUEUED",
+                    message=(
+                        "OrderExecution did not queue a live order "
+                        f"(reason={exec_result.reason_code})"
+                    ),
+                    http_status=500,
+                    order_submitted=False,
+                    create_order_calls=0,
+                    run_id=run.run_id,
+                    status_code=LiveValidationRunStatus.FAILED.value,
+                )
+
+            _mark("SUBMIT_ALLOWED")
+            stage = "BEFORE_QUEUE_COMMIT"
+            _mark("BEFORE_QUEUE_COMMIT")
+            # submit() 내부에서 이미 commit됨 — 마커만 기록
+            _mark("AFTER_QUEUE_COMMIT")
+            last_ok_stage = "AFTER_QUEUE_COMMIT"
+
             run.order_id = exec_result.order_id
             run.order_status = exec_result.status_code
             run.submitted_at = datetime.now(timezone.utc)
+            self._transition(
+                run,
+                LiveValidationRunStatus.QUEUED.value,
+                actor=actor,
+            )
             # Outbox 대기 — Broker ACCEPTED로 오인 금지
             from stock_platform.trading.upbit_live_tracking_service import (
                 UpbitLiveTrackingService,
@@ -438,9 +593,11 @@ class UpbitLiveSmokeService:
                 detail={
                     "run_id": run.run_id,
                     "order_id": exec_result.order_id,
-                    "status": "OUTBOX_PENDING",
+                    "outbox_id": exec_result.outbox_id,
+                    "status": "QUEUED",
                     "internal_status": run.internal_status,
                     "broker_order_status": run.broker_order_status,
+                    "reason_code": "QUEUED",
                 },
                 commit=False,
             )
@@ -449,11 +606,22 @@ class UpbitLiveSmokeService:
                 order_id=int(exec_result.order_id or 0),
                 actor=actor,
             )
+            detail = dict(run.detail or {})
+            detail["pipeline_markers"] = list(markers)
+            run.detail = detail
             result.update(watch)
             result["order_id"] = exec_result.order_id
-            result["status"] = run.internal_status
+            result["outbox_id"] = exec_result.outbox_id
+            result["reason_code"] = "QUEUED"
+            result["status"] = LiveValidationRunStatus.QUEUED.value
             result["internal_status"] = run.internal_status
-            result["broker_order_status"] = run.broker_order_status
+            result["broker_order_status"] = (
+                run.broker_order_status
+                or BrokerOrderStatus.NOT_SUBMITTED.value
+            )
+            result["order_submitted"] = False  # 브로커 전송 전
+            result["queued"] = True
+            result["pipeline_markers"] = list(markers)
             return result
         except UpbitLiveSmokeError:
             raise
@@ -461,18 +629,69 @@ class UpbitLiveSmokeService:
             from sqlalchemy.exc import SQLAlchemyError
 
             is_db_error = isinstance(exc, SQLAlchemyError)
+            order_id_present = bool(getattr(run, "order_id", None))
             if is_db_error:
+                log_live_smoke_db_error(
+                    exc=exc,
+                    stage=stage,
+                    last_ok_stage=last_ok_stage,
+                    run_id=getattr(run, "run_id", None),
+                    uba_id=int(user_broker_account_id),
+                    order_id_present=order_id_present,
+                    session=self._session,
+                )
                 try:
                     self._session.rollback()
                 except Exception:  # noqa: BLE001
                     pass
-                result["status"] = getattr(run, "status_code", None)
-                result["error"] = normalize_failure_code(
-                    type(exc).__name__, fallback="ADAPTER_ERROR"
-                )
-                result["order_submitted"] = False
-                result["create_order_calls"] = 0
-                return result
+                # rollback 후 실패 audit 재시도 (성공 이벤트 금지)
+                try:
+                    emit_live_safety_audit(
+                        self._session,
+                        event_type=UPBIT_LIVE_SMOKE_FAILED_CLOSED,
+                        actor=actor,
+                        run_id=getattr(run, "run_id", None),
+                        user_id=getattr(preflight, "user_id", None),
+                        account_id=user_broker_account_id,
+                        strategy_id=None,
+                        detail={
+                            "error_code": "LIVE_SMOKE_DB_ERROR",
+                            "status": LiveValidationRunStatus.FAILED.value,
+                            "broker_order_status": (
+                                BrokerOrderStatus.NOT_SUBMITTED.value
+                            ),
+                            "order_submitted": False,
+                            "create_order_calls": 0,
+                            "stage": stage,
+                            "last_ok_stage": last_ok_stage,
+                            "exception_class": type(exc).__name__,
+                            "sqlstate": _extract_pg_sqlstate(exc),
+                            "pipeline_markers": list(markers),
+                        },
+                        commit=True,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.error(
+                        "live_smoke_db_error_audit_failed run_id=%s stage=%s",
+                        getattr(run, "run_id", None),
+                        stage,
+                    )
+                raise UpbitLiveSmokeError(
+                    "LIVE_SMOKE_DB_ERROR",
+                    message=(
+                        "실주문 요청을 저장하지 못했습니다. "
+                        "실제 주문 전송 없음."
+                    ),
+                    details=[
+                        f"stage={stage}",
+                        f"exception={type(exc).__name__}",
+                    ],
+                    http_status=500,
+                    order_submitted=False,
+                    create_order_calls=0,
+                    run_id=getattr(run, "run_id", None),
+                    status_code=LiveValidationRunStatus.FAILED.value,
+                ) from exc
 
             current = str(getattr(run, "status_code", "") or "")
             if current in TERMINAL_INTERNAL_STATUSES:
@@ -489,16 +708,20 @@ class UpbitLiveSmokeService:
                     self._safe_flush()
                 except Exception:  # noqa: BLE001
                     pass
-                result["status"] = current
-                result["error"] = code
-                result["order_submitted"] = False
-                result["create_order_calls"] = 0
-                return result
+                raise UpbitLiveSmokeError(
+                    code,
+                    message=summary or code,
+                    http_status=500,
+                    order_submitted=False,
+                    create_order_calls=0,
+                    run_id=getattr(run, "run_id", None),
+                    status_code=current,
+                ) from exc
 
             try:
                 self._transition(
                     run,
-                    LiveValidationRunStatus.UNKNOWN.value,
+                    LiveValidationRunStatus.FAILED.value,
                     actor=actor,
                 )
                 code, summary = apply_failure_fields(
@@ -508,6 +731,9 @@ class UpbitLiveSmokeService:
                 )
                 run.failure_code = code
                 run.failure_summary = summary
+                run.broker_order_status = (
+                    BrokerOrderStatus.NOT_SUBMITTED.value
+                )
                 emit_live_safety_audit(
                     self._session,
                     event_type=UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
@@ -519,6 +745,7 @@ class UpbitLiveSmokeService:
                     detail={
                         "run_id": run.run_id,
                         "error": code,
+                        "status": LiveValidationRunStatus.FAILED.value,
                     },
                     commit=False,
                 )
@@ -528,13 +755,16 @@ class UpbitLiveSmokeService:
                     self._session.rollback()
                 except Exception:  # noqa: BLE001
                     pass
-            result["status"] = run.status_code
-            result["error"] = normalize_failure_code(
-                type(exc).__name__, fallback="UNKNOWN_FAILURE"
-            )
-            result["order_submitted"] = False
-            result["create_order_calls"] = 0
-            return result
+            raise UpbitLiveSmokeError(
+                "LIVE_SMOKE_INTERNAL_ERROR",
+                message="Live smoke internal error — order was not submitted.",
+                details=[type(exc).__name__],
+                http_status=500,
+                order_submitted=False,
+                create_order_calls=0,
+                run_id=getattr(run, "run_id", None),
+                status_code=LiveValidationRunStatus.FAILED.value,
+            ) from exc
         finally:
             self._finalize_protect(
                 user_broker_account_id=user_broker_account_id,

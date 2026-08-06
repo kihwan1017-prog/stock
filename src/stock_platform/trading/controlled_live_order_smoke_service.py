@@ -1112,12 +1112,13 @@ class ControlledLiveOrderSmokeService:
                 self._session,
                 event_type=LIVE_ORDER_SMOKE_FAILED,
                 actor=actor,
-                run_id=preview_id,
+                run_id=getattr(exc, "run_id", None) or preview_id,
                 user_id=int(user_id),
                 account_id=int(uba_id),
                 strategy_id=None,
                 detail={
                     "reason": getattr(exc, "code", str(exc)),
+                    "error_code": getattr(exc, "code", str(exc)),
                     "details": list(getattr(exc, "details", []) or []),
                     "order_submitted": bool(
                         getattr(exc, "order_submitted", False)
@@ -1125,6 +1126,8 @@ class ControlledLiveOrderSmokeService:
                     "create_order_calls": int(
                         getattr(exc, "create_order_calls", 0) or 0
                     ),
+                    "status": getattr(exc, "status_code", None) or "FAILED",
+                    "broker_order_status": "NOT_SUBMITTED",
                 },
                 commit=False,
             )
@@ -1143,6 +1146,44 @@ class ControlledLiveOrderSmokeService:
                 status_code=getattr(exc, "status_code", None),
             ) from exc
 
+        # SUBMITTED audit = 실제 QUEUED 성공만 (false-success 금지)
+        queued_ok = (
+            bool(result.get("queued"))
+            or str(result.get("reason_code") or "") == "QUEUED"
+        ) and result.get("order_id") is not None and result.get(
+            "outbox_id"
+        ) is not None
+        if not queued_ok:
+            emit_live_safety_audit(
+                self._session,
+                event_type=LIVE_ORDER_SMOKE_FAILED,
+                actor=actor,
+                run_id=str(result.get("run_id") or preview_id),
+                user_id=int(user_id),
+                account_id=int(uba_id),
+                strategy_id=None,
+                detail={
+                    "error_code": "LIVE_SMOKE_NOT_QUEUED",
+                    "status": "FAILED",
+                    "broker_order_status": "NOT_SUBMITTED",
+                    "order_submitted": False,
+                    "create_order_calls": 0,
+                    "reason_code": result.get("reason_code"),
+                    "order_id": result.get("order_id"),
+                    "outbox_id": result.get("outbox_id"),
+                },
+                commit=False,
+            )
+            raise ControlledLiveOrderSmokeError(
+                "LIVE_SMOKE_NOT_QUEUED",
+                message="실주문 요청이 큐에 저장되지 않았습니다.",
+                http_status=500,
+                order_submitted=False,
+                create_order_calls=0,
+                run_id=str(result.get("run_id") or "") or None,
+                status_code="FAILED",
+            )
+
         emit_live_safety_audit(
             self._session,
             event_type=LIVE_ORDER_SMOKE_SUBMITTED,
@@ -1152,7 +1193,16 @@ class ControlledLiveOrderSmokeService:
             account_id=int(uba_id),
             strategy_id=None,
             symbol=str(market).upper(),
-            detail={"execute_live": True, "order_test_required": True},
+            detail={
+                "execute_live": True,
+                "order_test_required": True,
+                "reason_code": "QUEUED",
+                "order_id": result.get("order_id"),
+                "outbox_id": result.get("outbox_id"),
+                "status": "QUEUED",
+                "broker_order_status": result.get("broker_order_status")
+                or "NOT_SUBMITTED",
+            },
             commit=False,
         )
         return sanitize_preflight_payload(result)

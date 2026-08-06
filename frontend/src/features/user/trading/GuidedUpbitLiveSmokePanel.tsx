@@ -569,6 +569,24 @@ export function GuidedUpbitLiveSmokePanel() {
           {confirmMutation.error ? (
             (() => {
               const view = formatLiveSmokeConfirmError(confirmMutation.error);
+              if (view.kind === "db_error") {
+                return (
+                  <Alert
+                    type="error"
+                    showIcon
+                    title={view.title}
+                    description={
+                      <Space orientation="vertical" size={4}>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {view.detailLines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      </Space>
+                    }
+                  />
+                );
+              }
               if (view.isRiskRejection) {
                 return (
                   <Alert
@@ -606,12 +624,34 @@ export function GuidedUpbitLiveSmokePanel() {
           ) : null}
 
           {result ? (
-            <Alert
-              type="success"
-              showIcon
-              title="결과"
-              description={`status=${String(result.stage ?? result.status)} · create_calls=${String(result.adapter_create_order_calls ?? 0)} · run_id=${String(result.run_id ?? "-")}`}
-            />
+            (() => {
+              const statusRaw = String(
+                result.status ?? result.stage ?? "",
+              ).toUpperCase();
+              const isFailed =
+                statusRaw === "FAILED" ||
+                statusRaw === "REJECTED" ||
+                statusRaw.includes("FAIL") ||
+                Boolean(result.error_code);
+              const isQueued =
+                statusRaw === "QUEUED" ||
+                statusRaw === "OUTBOX_PENDING" ||
+                Boolean(result.queued);
+              return (
+                <Alert
+                  type={isFailed ? "error" : isQueued ? "success" : "info"}
+                  showIcon
+                  title={
+                    isFailed
+                      ? "실주문 실패"
+                      : isQueued
+                        ? "큐 저장 완료 (브로커 전송 전)"
+                        : "결과"
+                  }
+                  description={`status=${String(result.stage ?? result.status)} · create_calls=${String(result.adapter_create_order_calls ?? result.create_order_calls ?? 0)} · run_id=${String(result.run_id ?? "-")} · order_id=${String(result.order_id ?? "없음")}`}
+                />
+              );
+            })()
           ) : null}
         </Form>
       </Space>

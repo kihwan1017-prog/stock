@@ -54,10 +54,12 @@ class InternalStatus(StrEnum):
     POST_FILL_VERIFYING = "POST_FILL_VERIFYING"
     MANUAL_REVIEW_REQUIRED = "MANUAL_REVIEW_REQUIRED"
     COMPLETED = "COMPLETED"
+    FAILED = "FAILED"  # DB/내부 예외 — 실주문 미전송
     FAILED_CLOSED = "FAILED_CLOSED"
     DRY_RUN_COMPLETED = "DRY_RUN_COMPLETED"
     # 레거시 호환 alias (status_code에 남을 수 있음)
     ORDER_SUBMITTED = "ORDER_SUBMITTED"
+    QUEUED = "QUEUED"  # trading_order + outbox commit 완료 (브로커 전송 전)
     ORDER_ACCEPTED = "ORDER_ACCEPTED"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"
@@ -102,6 +104,7 @@ TERMINAL_INTERNAL_STATUSES = frozenset(
         InternalStatus.REJECTED.value,
         InternalStatus.FILLED.value,
         InternalStatus.CANCELED.value,
+        InternalStatus.FAILED.value,
         InternalStatus.FAILED_CLOSED.value,
         InternalStatus.COMPLETED.value,
         InternalStatus.DRY_RUN_COMPLETED.value,
@@ -127,6 +130,7 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             InternalStatus.PREFLIGHT_RUNNING.value,
             InternalStatus.PREFLIGHT_FAILED.value,
             InternalStatus.READY.value,
+            InternalStatus.FAILED.value,
             InternalStatus.FAILED_CLOSED.value,
             InternalStatus.EXECUTION_REQUESTED.value,
         }
@@ -149,11 +153,29 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     InternalStatus.EXECUTION_REQUESTED.value: frozenset(
         {
             InternalStatus.OUTBOX_PENDING.value,
+            InternalStatus.QUEUED.value,
             InternalStatus.ORDER_SUBMITTED.value,
             InternalStatus.REJECTED.value,
             InternalStatus.UNKNOWN.value,
+            InternalStatus.FAILED.value,
             InternalStatus.FAILED_CLOSED.value,
             InternalStatus.BROKER_SUBMISSION_PENDING.value,
+        }
+    ),
+    InternalStatus.QUEUED.value: frozenset(
+        {
+            InternalStatus.OUTBOX_PENDING.value,
+            InternalStatus.OUTBOX_DISPATCHING.value,
+            InternalStatus.BROKER_SUBMISSION_PENDING.value,
+            InternalStatus.ORDER_SUBMITTED.value,
+            InternalStatus.FAILED.value,
+            InternalStatus.FAILED_CLOSED.value,
+            InternalStatus.UNKNOWN.value,
+        }
+    ),
+    InternalStatus.FAILED.value: frozenset(
+        {
+            InternalStatus.FAILED_CLOSED.value,
         }
     ),
     InternalStatus.OUTBOX_PENDING.value: frozenset(

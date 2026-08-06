@@ -74,17 +74,24 @@ def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
             if code == "FORBIDDEN"
             else status.HTTP_404_NOT_FOUND
         )
-    elif http_status in {409, 422}:
+    elif code in {"LIVE_SMOKE_DB_ERROR", "LIVE_SMOKE_NOT_QUEUED", "LIVE_SMOKE_INTERNAL_ERROR"}:
+        status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    elif http_status in {409, 422, 500, 503}:
         status_code = http_status
     elif code.startswith("RISK_") or code == "RISK_ENGINE_BLOCKED":
         status_code = status.HTTP_409_CONFLICT
     else:
         status_code = status.HTTP_400_BAD_REQUEST
 
-    # Risk 거절 등 구조화 detail (FE / Axios error.response.data)
-    if details or code.startswith("RISK_"):
+    # 구조화 detail (FE / Axios) — Secret/Traceback 미포함
+    if (
+        details
+        or code.startswith("RISK_")
+        or code.startswith("LIVE_SMOKE_")
+        or http_status in {409, 500, 503}
+    ):
         detail: dict[str, object] = {
-            "error_code": code if code.startswith("RISK_") else code,
+            "error_code": code,
             "code": code,
             "message": message,
             "details": details,
@@ -95,8 +102,15 @@ def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
                 getattr(exc, "create_order_calls", 0) or 0
             ),
             "broker_order_id": None,
-            "status": getattr(exc, "status_code", None) or "REJECTED",
+            "status": getattr(exc, "status_code", None)
+            or (
+                "FAILED"
+                if code.startswith("LIVE_SMOKE_")
+                else "REJECTED"
+            ),
+            "broker_order_status": "NOT_SUBMITTED",
             "run_id": getattr(exc, "run_id", None),
+            "retry_forbidden": code.startswith("LIVE_SMOKE_"),
         }
         return HTTPException(status_code=status_code, detail=detail)
 
