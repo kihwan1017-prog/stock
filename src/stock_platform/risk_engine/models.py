@@ -57,8 +57,12 @@ class RiskOrderRequest:
     side: RiskOrderSide
     quantity: Decimal
     price: Decimal
-    account_id: int
     requested_at: datetime
+    # Paper: account_id 필수 / LIVE: user_broker_account_id 필수 (XOR)
+    account_id: int | None = None
+    user_broker_account_id: int | None = None
+    # PAPER | LIVE | LIVE_SHADOW | MOCK
+    environment: str = "PAPER"
     market_data_age_seconds: int | None = None
     broker_error_rate: Decimal | None = None
     # STEP 8-2
@@ -70,6 +74,24 @@ class RiskOrderRequest:
     @property
     def order_amount(self) -> Decimal:
         return self.quantity * self.price
+
+    @property
+    def is_live(self) -> bool:
+        return str(self.environment or "").upper() in {
+            "LIVE",
+            "LIVE_SHADOW",
+        }
+
+    @property
+    def is_paper(self) -> bool:
+        return str(self.environment or "").upper() in {
+            "PAPER",
+            "PAPER_TRADING",
+        }
+
+    @property
+    def is_mock(self) -> bool:
+        return str(self.environment or "").upper() == "MOCK"
 
 
 @dataclass(frozen=True, slots=True)

@@ -62,8 +62,9 @@ def check_realtime_risk(
                 side=request.side,
                 quantity=request.quantity,
                 price=request.price,
-                account_id=request.account_id,
                 requested_at=request.requested_at,
+                account_id=request.account_id,
+                environment="PAPER",
             ),
             account=RiskAccountState(
                 cash_balance=request.cash_balance,

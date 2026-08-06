@@ -152,6 +152,7 @@ class UpbitLiveSmokeError(ValueError):
         order_submitted: bool = False,
         create_order_calls: int = 0,
         run_id: str | None = None,
+        correlation_id: str | None = None,
         status_code: str | None = None,
     ) -> None:
         raw = str(code or "").strip()
@@ -166,6 +167,7 @@ class UpbitLiveSmokeError(ValueError):
         self.order_submitted = bool(order_submitted)
         self.create_order_calls = int(create_order_calls)
         self.run_id = run_id
+        self.correlation_id = correlation_id or run_id
         self.status_code = status_code
         super().__init__(self.code)
 
@@ -718,6 +720,30 @@ class UpbitLiveSmokeService:
                     status_code=current,
                 ) from exc
 
+            correlation_id = (
+                getattr(run, "correlation_id", None)
+                or getattr(run, "run_id", None)
+            )
+            try:
+                import structlog
+
+                structlog.get_logger(__name__).exception(
+                    "upbit_live_smoke_internal_error",
+                    run_id=getattr(run, "run_id", None),
+                    uba_id=int(user_broker_account_id),
+                    stage=stage,
+                    exception_type=type(exc).__name__,
+                    correlation_id=correlation_id,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "upbit_live_smoke_internal_error run_id=%s uba_id=%s "
+                    "stage=%s exception_type=%s",
+                    getattr(run, "run_id", None),
+                    user_broker_account_id,
+                    stage,
+                    type(exc).__name__,
+                )
             try:
                 self._transition(
                     run,
@@ -744,6 +770,7 @@ class UpbitLiveSmokeService:
                     strategy_id=None,
                     detail={
                         "run_id": run.run_id,
+                        "correlation_id": correlation_id,
                         "error": code,
                         "status": LiveValidationRunStatus.FAILED.value,
                     },
@@ -755,14 +782,16 @@ class UpbitLiveSmokeService:
                     self._session.rollback()
                 except Exception:  # noqa: BLE001
                     pass
+            # 사용자 응답: correlation_id만 (secret/traceback/예외명 미노출)
             raise UpbitLiveSmokeError(
                 "LIVE_SMOKE_INTERNAL_ERROR",
                 message="Live smoke internal error — order was not submitted.",
-                details=[type(exc).__name__],
+                details=[],
                 http_status=500,
                 order_submitted=False,
                 create_order_calls=0,
                 run_id=getattr(run, "run_id", None),
+                correlation_id=correlation_id,
                 status_code=LiveValidationRunStatus.FAILED.value,
             ) from exc
         finally:
@@ -967,15 +996,25 @@ class UpbitLiveSmokeService:
         self._session.flush()
 
     def _pause_uba_scope(self, uba_id: int, *, actor: str) -> None:
+        """UBA runtime pause — sync 문맥에서 coroutine을 버리지 않는다."""
+
         try:
+            import asyncio
+
             from stock_platform.strategy_deployment.runtime_manager import (
                 dynamic_strategy_runtime_manager,
             )
 
-            dynamic_strategy_runtime_manager.pause_account_runtimes(
+            coro = dynamic_strategy_runtime_manager.pause_account_runtimes(
                 user_broker_account_id=int(uba_id),
                 reason=f"upbit_live_smoke:{actor}",
             )
+            try:
+                # 이미 running loop면 task로 스케줄 (중첩 asyncio.run 금지)
+                loop = asyncio.get_running_loop()
+                loop.create_task(coro)
+            except RuntimeError:
+                asyncio.run(coro)
         except Exception:  # noqa: BLE001
             pass
 

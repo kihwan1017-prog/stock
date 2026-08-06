@@ -64,6 +64,7 @@ class ControlledLiveOrderSmokeError(ValueError):
         order_submitted: bool = False,
         create_order_calls: int = 0,
         run_id: str | None = None,
+        correlation_id: str | None = None,
         status_code: str | None = None,
     ) -> None:
         from stock_platform.trading.failure_code_normalize import (
@@ -82,6 +83,7 @@ class ControlledLiveOrderSmokeError(ValueError):
         self.order_submitted = bool(order_submitted)
         self.create_order_calls = int(create_order_calls)
         self.run_id = run_id
+        self.correlation_id = correlation_id or run_id
         self.status_code = status_code
         super().__init__(self.code)
 
@@ -1143,6 +1145,8 @@ class ControlledLiveOrderSmokeService:
                     getattr(exc, "create_order_calls", 0) or 0
                 ),
                 run_id=getattr(exc, "run_id", None),
+                correlation_id=getattr(exc, "correlation_id", None)
+                or getattr(exc, "run_id", None),
                 status_code=getattr(exc, "status_code", None),
             ) from exc
 

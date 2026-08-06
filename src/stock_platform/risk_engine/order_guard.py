@@ -10,6 +10,9 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from stock_platform.order.entities import TradingOrderEntity
+from stock_platform.risk_engine.account_ownership import (
+    validate_account_ownership,
+)
 from stock_platform.risk_engine.account_state_service import (
     RiskAccountStateService,
 )
@@ -67,11 +70,6 @@ class DatabaseBackedRiskOrderGuard:
         # STEP 8-5-13 — PAPER는 paper_stock_follow_krx_calendar로 게이트
         environment: str = "LIVE",
     ) -> RiskCheckedOrderResult:
-        from stock_platform.risk_engine.models import RiskEvaluationResult
-        from stock_platform.trading.account_identity import (
-            AccountIdentityErrorCode,
-        )
-
         environment_upper = (environment or "LIVE").upper()
         now = datetime.now(timezone.utc)
 
@@ -88,32 +86,43 @@ class DatabaseBackedRiskOrderGuard:
                 ),
             )
 
-        # STEP 8-5-18 — LIVE는 UBA, Paper는 paper_account_id 필수
-        if environment_upper == "LIVE":
-            if user_broker_account_id is None:
+        # Paper XOR LIVE — 환경별 소유권 강제
+        try:
+            paper_account_id, uba_id = validate_account_ownership(
+                account_id=account_id,
+                user_broker_account_id=user_broker_account_id,
+                environment=environment_upper,
+            )
+        except ValueError as exc:
+            from stock_platform.trading.account_identity import (
+                AccountIdentityErrorCode,
+            )
+
+            code = str(exc) or AccountIdentityErrorCode.ACCOUNT_CONTEXT_MISSING.value
+            # 레거시 account_number-only LIVE 호출 구분
+            if (
+                code == AccountIdentityErrorCode.UBA_REQUIRED.value
+                and environment_upper == "LIVE"
+                and (account_number or "").strip()
+            ):
                 code = (
                     AccountIdentityErrorCode.LEGACY_ACCOUNT_NUMBER_ONLY.value
-                    if (account_number or "").strip()
-                    else AccountIdentityErrorCode.UBA_REQUIRED.value
                 )
-                return _reject(code)
-        else:
-            if account_id is None or int(account_id) <= 0:
-                return _reject(
-                    AccountIdentityErrorCode.PAPER_ACCOUNT_REQUIRED.value
-                )
+            return _reject(code)
+
+        is_live = environment_upper in {"LIVE", "LIVE_SHADOW"}
 
         resolved = self._resolver.resolve(
             user_id=user_id,
-            user_broker_account_id=user_broker_account_id,
+            user_broker_account_id=uba_id,
         )
         policy = resolved.to_engine_policy()
 
-        # LIVE: UBA ACTIVE Snapshot / Paper: 레거시 load + PaperPosition 보강
-        if environment_upper == "LIVE":
+        # LIVE: UBA snapshot만 / Paper: PaperAccount+PaperPosition만 (혼합 금지)
+        if is_live:
             try:
                 account_state = self._account_state_service.load_by_uba(
-                    user_broker_account_id=int(user_broker_account_id),
+                    user_broker_account_id=int(uba_id),
                     exchange_code=exchange_code,
                     symbol=symbol,
                 )
@@ -129,10 +138,15 @@ class DatabaseBackedRiskOrderGuard:
                     open_position_count=0,
                     symbol_position_quantity=ZERO,
                 )
+            symbol_invested = self._uba_symbol_invested_amount(
+                user_broker_account_id=int(uba_id),
+                exchange_code=exchange_code,
+                symbol=symbol,
+            )
         else:
             try:
                 account_state = self._account_state_service.load_by_paper_account(
-                    paper_account_id=int(account_id),
+                    paper_account_id=int(paper_account_id),
                     exchange_code=exchange_code,
                     symbol=symbol,
                 )
@@ -149,30 +163,39 @@ class DatabaseBackedRiskOrderGuard:
                     symbol_position_quantity=ZERO,
                 )
 
-        # Paper 계좌면 포지션 수를 PaperPosition 기준으로 보강
-        paper_open = self._paper_open_position_count(account_id)
-        if paper_open is not None:
-            from stock_platform.risk_engine.models import RiskAccountState
+            # Paper 전용: PaperPosition 기준 보강
+            paper_open = self._paper_open_position_count(
+                int(paper_account_id)
+            )
+            if paper_open is not None:
+                from stock_platform.risk_engine.models import RiskAccountState
 
-            account_state = RiskAccountState(
-                cash_balance=account_state.cash_balance,
-                total_asset_value=account_state.total_asset_value,
-                invested_amount=account_state.invested_amount,
-                daily_realized_profit_loss=(
-                    account_state.daily_realized_profit_loss
-                ),
-                daily_unrealized_profit_loss=(
-                    account_state.daily_unrealized_profit_loss
-                ),
-                open_position_count=max(
-                    account_state.open_position_count, paper_open
-                ),
-                symbol_position_quantity=(
-                    self._paper_symbol_qty(
-                        account_id, exchange_code, symbol
-                    )
-                    or account_state.symbol_position_quantity
-                ),
+                account_state = RiskAccountState(
+                    cash_balance=account_state.cash_balance,
+                    total_asset_value=account_state.total_asset_value,
+                    invested_amount=account_state.invested_amount,
+                    daily_realized_profit_loss=(
+                        account_state.daily_realized_profit_loss
+                    ),
+                    daily_unrealized_profit_loss=(
+                        account_state.daily_unrealized_profit_loss
+                    ),
+                    open_position_count=max(
+                        account_state.open_position_count, paper_open
+                    ),
+                    symbol_position_quantity=(
+                        self._paper_symbol_qty(
+                            int(paper_account_id),
+                            exchange_code,
+                            symbol,
+                        )
+                        or account_state.symbol_position_quantity
+                    ),
+                )
+            symbol_invested = self._paper_symbol_invested_amount(
+                account_id=int(paper_account_id),
+                exchange_code=exchange_code,
+                symbol=symbol,
             )
 
         order = RiskOrderRequest(
@@ -181,30 +204,27 @@ class DatabaseBackedRiskOrderGuard:
             side=RiskOrderSide(side.upper()),
             quantity=quantity,
             price=price,
-            account_id=account_id,
             requested_at=datetime.now(timezone.utc),
+            account_id=paper_account_id,
+            user_broker_account_id=uba_id,
+            environment=environment_upper,
             order_source=order_source.upper(),
             is_risk_reducing=is_risk_reducing,
             daily_ordered_amount=self._daily_ordered_amount(
-                account_id=account_id,
-                user_broker_account_id=user_broker_account_id,
+                account_id=paper_account_id,
+                user_broker_account_id=uba_id,
             ),
-            symbol_invested_amount=self._symbol_invested_amount(
-                account_id=account_id,
-                exchange_code=exchange_code,
-                symbol=symbol,
-            ),
+            symbol_invested_amount=symbol_invested,
         )
 
         # STEP 8-5-7/8-5-13 — KRX LIVE: Calendar Fail Closed (Upbit 제외)
         # PAPER는 paper_stock_follow_krx_calendar 설정으로 게이트한다
         # (LIVE/LIVE_SHADOW 모두 설정과 무관하게 Fail Closed — Shadow는 submit만 차단).
-        environment_upper = (environment or "LIVE").upper()
         calendar_gated = (
             self._broker_code.upper() == "KIWOOM"
             and exchange_code.upper() == "KRX"
             and (
-                environment_upper == "LIVE"
+                is_live
                 or self._paper_follows_krx_calendar()
             )
         )
@@ -256,9 +276,9 @@ class DatabaseBackedRiskOrderGuard:
         position_result = DatabasePositionLimitRule(
             self._session,
             broker_code=self._broker_code,
-            user_broker_account_id=user_broker_account_id,
+            user_broker_account_id=uba_id,
             paper_account_id=(
-                int(account_id) if environment_upper != "LIVE" else None
+                int(paper_account_id) if not is_live else None
             ),
             default_policy=position_default,
         ).evaluate(
@@ -435,7 +455,7 @@ class DatabaseBackedRiskOrderGuard:
     def _daily_ordered_amount(
         self,
         *,
-        account_id: int,
+        account_id: int | None,
         user_broker_account_id: int | None,
     ) -> Decimal:
         """당일 BUY 주문 금액 합 (CREATED~FILLED 계열)."""
@@ -461,25 +481,29 @@ class DatabaseBackedRiskOrderGuard:
         if user_broker_account_id is not None:
             stmt = stmt.where(
                 TradingOrderEntity.user_broker_account_id
-                == user_broker_account_id
+                == int(user_broker_account_id)
+            )
+        elif account_id is not None:
+            stmt = stmt.where(
+                TradingOrderEntity.account_id == int(account_id)
             )
         else:
-            stmt = stmt.where(
-                TradingOrderEntity.account_id == account_id
-            )
+            return ZERO
         value = self._session.scalar(stmt)
         return Decimal(str(value or 0))
 
-    def _symbol_invested_amount(
+    def _paper_symbol_invested_amount(
         self,
         *,
         account_id: int,
         exchange_code: str,
         symbol: str,
     ) -> Decimal:
+        """PaperPosition 기준 심볼 투자금액."""
+
         row = self._session.scalar(
             select(PaperPosition).where(
-                PaperPosition.account_id == account_id,
+                PaperPosition.account_id == int(account_id),
                 PaperPosition.exchange_code == exchange_code.upper(),
                 PaperPosition.symbol == symbol.upper(),
             )
@@ -490,3 +514,32 @@ class DatabaseBackedRiskOrderGuard:
             Decimal(str(row.quantity))
             * Decimal(str(row.average_entry_price))
         )
+
+    def _uba_symbol_invested_amount(
+        self,
+        *,
+        user_broker_account_id: int,
+        exchange_code: str,
+        symbol: str,
+    ) -> Decimal:
+        """Broker position snapshot 기준 심볼 투자금액 (Paper lookup 금지)."""
+
+        from stock_platform.broker.account_repository import (
+            BrokerAccountSnapshotRepository,
+        )
+
+        _account, positions = BrokerAccountSnapshotRepository(
+            self._session
+        ).get_active_by_uba(int(user_broker_account_id))
+        for item in positions:
+            if (
+                str(item.exchange_code).upper() == exchange_code.upper()
+                and str(item.symbol).upper() == symbol.upper()
+            ):
+                eval_amt = Decimal(str(item.evaluation_amount or 0))
+                if eval_amt > ZERO:
+                    return eval_amt
+                return Decimal(str(item.quantity or 0)) * Decimal(
+                    str(item.average_purchase_price or 0)
+                )
+        return ZERO

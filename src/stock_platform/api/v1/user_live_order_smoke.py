@@ -110,6 +110,8 @@ def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
             ),
             "broker_order_status": "NOT_SUBMITTED",
             "run_id": getattr(exc, "run_id", None),
+            "correlation_id": getattr(exc, "correlation_id", None)
+            or getattr(exc, "run_id", None),
             "retry_forbidden": code.startswith("LIVE_SMOKE_"),
         }
         return HTTPException(status_code=status_code, detail=detail)
