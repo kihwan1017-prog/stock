@@ -157,18 +157,34 @@ class RiskAccountStateService:
             ZERO,
         )
 
-        unrealized_profit_loss = sum(
-            (
-                Decimal(item.profit_loss)
-                for item in positions
-            ),
-            ZERO,
-        )
-
         total_asset_value = (
             Decimal(account.deposit_amount)
             + invested_amount
         )
+
+        # 일일 손익: 누적 total_profit_loss / 포지션 미실현 금지
+        # → UBA daily equity baseline (current_daily_pnl)
+        daily_realized = ZERO
+        daily_unrealized = ZERO
+        uba_id = getattr(account, "user_broker_account_id", None)
+        if uba_id is not None:
+            try:
+                from stock_platform.risk_engine.uba_daily_loss_service import (
+                    UbaDailyLossService,
+                )
+
+                breakdown = UbaDailyLossService(self._session).diagnose(
+                    user_broker_account_id=int(uba_id),
+                    loss_limit=Decimal("0"),
+                )
+                # DailyLossRule은 realized+unrealized 합으로 평가
+                daily_pnl = Decimal(str(breakdown.current_daily_pnl))
+                daily_realized = daily_pnl
+                daily_unrealized = ZERO
+            except Exception:  # noqa: BLE001
+                # baseline/스냅샷 없으면 당일 손익 0 (누적손익 오용 방지)
+                daily_realized = ZERO
+                daily_unrealized = ZERO
 
         return RiskAccountState(
             cash_balance=Decimal(
@@ -176,12 +192,8 @@ class RiskAccountStateService:
             ),
             total_asset_value=total_asset_value,
             invested_amount=invested_amount,
-            daily_realized_profit_loss=Decimal(
-                account.total_profit_loss
-            ),
-            daily_unrealized_profit_loss=(
-                unrealized_profit_loss
-            ),
+            daily_realized_profit_loss=daily_realized,
+            daily_unrealized_profit_loss=daily_unrealized,
             open_position_count=len(positions),
             symbol_position_quantity=(
                 Decimal(symbol_position.quantity)

@@ -240,7 +240,9 @@ export function AdminUpbitLiveUbaPanel() {
   const riskMutation = useMutation({
     mutationFn: adminApi.applyAdminBrokerRecommendedRisk,
     onSuccess: async () => {
-      notifySuccess("권장 Risk 적용 (5000 / 1 / 1)");
+      notifySuccess(
+        "권장 Risk 적용 (주문 5000 / 비율·일손실·포지션 한도 포함)",
+      );
       await invalidate();
     },
     onError: (err) => notifyError(err),
@@ -1311,7 +1313,7 @@ export function AdminUpbitLiveUbaPanel() {
           </Form.Item>
           <Form.Item
             name="apply_recommended_risk"
-            label="권장 Risk(5000/1/1)"
+            label="권장 Risk(엔진 필드 포함)"
             valuePropName="checked"
           >
             <Switch />

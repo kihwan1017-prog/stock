@@ -124,6 +124,7 @@ def test_slippage_fail_when_ticker_missing() -> None:
         max_position_amount=Decimal("200000"),
         max_position_count=5,
         max_position_weight=Decimal("0.2"),
+        max_investment_ratio=Decimal("0.70"),
         allow_duplicate_buy=True,
         daily_max_loss_amount=Decimal("30000"),
         daily_max_loss_rate=Decimal("0.05"),

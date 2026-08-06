@@ -55,6 +55,9 @@ class SystemRiskSetting(Base):
     max_position_weight: Mapped[Decimal] = mapped_column(
         Numeric(10, 6), nullable=False
     )
+    max_investment_ratio: Mapped[Decimal] = mapped_column(
+        Numeric(10, 6), nullable=False, server_default=text("'0.70'")
+    )
     allow_duplicate_buy: Mapped[bool] = mapped_column(Boolean, nullable=False)
     daily_max_loss_amount: Mapped[Decimal] = mapped_column(
         Numeric(20, 2), nullable=False
@@ -135,6 +138,7 @@ class UserRiskSetting(Base):
     max_position_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
     max_position_count: Mapped[int | None] = mapped_column(Integer)
     max_position_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    max_investment_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     allow_duplicate_buy: Mapped[bool | None] = mapped_column(Boolean)
     daily_max_loss_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
     daily_max_loss_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
@@ -202,6 +206,7 @@ class UserBrokerAccountRiskSetting(Base):
     max_position_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
     max_position_count: Mapped[int | None] = mapped_column(Integer)
     max_position_weight: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    max_investment_ratio: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     allow_duplicate_buy: Mapped[bool | None] = mapped_column(Boolean)
     daily_max_loss_amount: Mapped[Decimal | None] = mapped_column(Numeric(20, 2))
     daily_max_loss_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))

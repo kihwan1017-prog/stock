@@ -306,6 +306,7 @@ def test_resolved_to_engine_policy_maps_limits() -> None:
         max_position_amount=Decimal("4"),
         max_position_count=2,
         max_position_weight=Decimal("0.1"),
+        max_investment_ratio=Decimal("0.85"),
         allow_duplicate_buy=False,
         daily_max_loss_amount=Decimal("5"),
         daily_max_loss_rate=Decimal("0.02"),
@@ -334,3 +335,6 @@ def test_resolved_to_engine_policy_maps_limits() -> None:
     assert policy.allow_duplicate_buy is False
     assert policy.max_order_quantity == Decimal("100")
     assert policy.daily_order_limit == 20
+    assert policy.max_investment_ratio == Decimal("0.85")
+    assert policy.max_daily_loss == Decimal("5")
+    assert policy.max_position_amount == Decimal("4")

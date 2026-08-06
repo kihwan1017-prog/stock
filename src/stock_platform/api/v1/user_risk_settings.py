@@ -39,6 +39,9 @@ class RiskSettingUpdateRequest(BaseModel):
     max_position_weight: Decimal | None = Field(
         default=None, ge=0, le=1
     )
+    max_investment_ratio: Decimal | None = Field(
+        default=None, ge=0, le=1
+    )
     allow_duplicate_buy: bool | None = None
     daily_max_loss_amount: Decimal | None = Field(default=None, ge=0)
     daily_max_loss_rate: Decimal | None = Field(

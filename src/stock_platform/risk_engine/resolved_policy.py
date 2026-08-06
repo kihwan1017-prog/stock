@@ -28,6 +28,7 @@ _OVERLAY_FIELDS: tuple[str, ...] = (
     "max_position_amount",
     "max_position_count",
     "max_position_weight",
+    "max_investment_ratio",
     "allow_duplicate_buy",
     "daily_max_loss_amount",
     "daily_max_loss_rate",
@@ -60,6 +61,7 @@ class ResolvedRiskPolicy:
     max_position_amount: Decimal
     max_position_count: int
     max_position_weight: Decimal
+    max_investment_ratio: Decimal
     allow_duplicate_buy: bool
     daily_max_loss_amount: Decimal
     daily_max_loss_rate: Decimal
@@ -88,7 +90,7 @@ class ResolvedRiskPolicy:
             max_order_amount=self.max_order_amount,
             max_order_quantity=self.max_order_quantity,
             max_open_positions=self.max_position_count,
-            max_investment_ratio=realtime_risk_policy.max_investment_ratio,
+            max_investment_ratio=self.max_investment_ratio,
             max_daily_loss=self.daily_max_loss_amount,
             trading_start_time=realtime_risk_policy.trading_start_time,
             trading_end_time=realtime_risk_policy.trading_end_time,
@@ -145,6 +147,7 @@ def _code_fallback_system() -> dict[str, Any]:
         "max_position_amount": Decimal("1000000"),
         "max_position_count": realtime_risk_policy.max_open_positions,
         "max_position_weight": Decimal("0.20"),
+        "max_investment_ratio": realtime_risk_policy.max_investment_ratio,
         "allow_duplicate_buy": True,
         "daily_max_loss_amount": realtime_risk_policy.max_daily_loss,
         "daily_max_loss_rate": Decimal("0.05"),
@@ -243,6 +246,7 @@ class ResolvedRiskPolicyResolver:
             max_position_amount=Decimal(str(base["max_position_amount"])),
             max_position_count=int(base["max_position_count"]),
             max_position_weight=Decimal(str(base["max_position_weight"])),
+            max_investment_ratio=Decimal(str(base["max_investment_ratio"])),
             allow_duplicate_buy=bool(base["allow_duplicate_buy"]),
             daily_max_loss_amount=Decimal(
                 str(base["daily_max_loss_amount"])

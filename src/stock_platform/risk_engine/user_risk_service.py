@@ -31,6 +31,7 @@ _AMOUNT_FIELDS = frozenset(
 _RATE_FIELDS = frozenset(
     {
         "max_position_weight",
+        "max_investment_ratio",
         "daily_max_loss_rate",
         "stop_loss_rate",
         "take_profit_rate",

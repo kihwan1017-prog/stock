@@ -16,7 +16,8 @@ def test_builds_risk_account_state_by_uba(monkeypatch) -> None:
     account = SimpleNamespace(
         deposit_amount=Decimal("1000000"),
         available_order_amount=Decimal("800000"),
-        total_profit_loss=Decimal("10000"),
+        total_profit_loss=Decimal("-999999"),  # 누적손익 — 무시해야 함
+        user_broker_account_id=42,
     )
     positions = [
         SimpleNamespace(
@@ -43,9 +44,25 @@ def test_builds_risk_account_state_by_uba(monkeypatch) -> None:
             assert uba_id == 42
             return account, positions
 
+    class FakeDaily:
+        def __init__(self, session):
+            pass
+
+        def diagnose(self, *, user_broker_account_id, loss_limit):
+            assert user_broker_account_id == 42
+            return SimpleNamespace(
+                current_daily_pnl=Decimal("-1500"),
+                realized_pnl=Decimal("0"),
+                unrealized_pnl=Decimal("-1500"),
+            )
+
     monkeypatch.setattr(
         "stock_platform.broker.account_repository.BrokerAccountSnapshotRepository",
         FakeRepo,
+    )
+    monkeypatch.setattr(
+        "stock_platform.risk_engine.uba_daily_loss_service.UbaDailyLossService",
+        FakeDaily,
     )
 
     state = service.load_by_uba(
@@ -59,6 +76,9 @@ def test_builds_risk_account_state_by_uba(monkeypatch) -> None:
     assert state.total_asset_value == Decimal("2620000")
     assert state.open_position_count == 2
     assert state.symbol_position_quantity == Decimal("10")
+    # 당일 손익만 — 누적 -999999 사용 금지
+    assert state.daily_realized_profit_loss == Decimal("-1500")
+    assert state.daily_unrealized_profit_loss == Decimal("0")
 
 
 def test_legacy_load_raises() -> None:

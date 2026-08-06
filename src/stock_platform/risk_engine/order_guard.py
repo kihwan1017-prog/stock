@@ -240,6 +240,19 @@ class DatabaseBackedRiskOrderGuard:
             policy=policy,
         )
 
+        # operation.position_limit 없으면 ResolvedRiskPolicy 한도 사용
+        position_default = PositionLimitPolicy(
+            max_symbol_quantity=(
+                Decimal(str(resolved.max_order_quantity))
+                if resolved.max_order_quantity > ZERO
+                else Decimal("1000000")
+            ),
+            max_symbol_amount=Decimal(str(resolved.max_position_amount)),
+            max_symbol_weight=Decimal(str(resolved.max_position_weight)),
+            max_total_invested_amount=Decimal(
+                str(resolved.max_total_investment_amount)
+            ),
+        )
         position_result = DatabasePositionLimitRule(
             self._session,
             broker_code=self._broker_code,
@@ -247,7 +260,7 @@ class DatabaseBackedRiskOrderGuard:
             paper_account_id=(
                 int(account_id) if environment_upper != "LIVE" else None
             ),
-            default_policy=PositionLimitPolicy(),
+            default_policy=position_default,
         ).evaluate(
             order=order,
             account=account_state,
