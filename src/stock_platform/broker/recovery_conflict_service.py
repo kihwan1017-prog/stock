@@ -53,10 +53,7 @@ from stock_platform.order.models import (
 from stock_platform.order.id_generator import ClientOrderIdGenerator
 from stock_platform.order.repository import TradingOrderRepository
 from stock_platform.order.service import TradingOrderService
-from stock_platform.trading.account_models import (
-    PaperAccount,
-    UserBrokerAccount,
-)
+from stock_platform.trading.account_models import UserBrokerAccount
 from stock_platform.trading.execution_entities import TradingExecution
 
 
@@ -642,7 +639,7 @@ class BrokerRecoveryConflictService:
                 "invalid_fill", "Executed quantity exceeds order quantity"
             )
 
-        account_id = self._resolve_account_id(int(uba.user_id))
+        account_id = None  # LIVE — Paper FK unused; UBA only
         side = OrderSide.BUY if row.side_code == "BUY" else OrderSide.SELL
         order_type = (
             OrderType.MARKET
@@ -1080,22 +1077,10 @@ class BrokerRecoveryConflictService:
             user_broker_account_id=int(uba_id),
         )
 
-    def _resolve_account_id(self, user_id: int) -> int:
-        """LIVE 주문도 account_id 컬럼 필요 — 사용자 Paper 기본 계좌 사용."""
+    def _resolve_account_id(self, user_id: int) -> int | None:
+        """Legacy helper — LIVE orders do not use paper account_id.
 
-        paper = self._session.scalar(
-            select(PaperAccount)
-            .where(
-                PaperAccount.user_id == int(user_id),
-                PaperAccount.deleted_at.is_(None),
-                PaperAccount.is_active.is_(True),
-            )
-            .order_by(PaperAccount.is_default.desc())
-            .limit(1)
-        )
-        if paper is None:
-            raise RecoveryConflictError(
-                "paper_account_required",
-                "User needs a Paper account row for order.account_id",
-            )
-        return int(paper.account_id)
+        Call sites pass account_id=None with user_broker_account_id set.
+        """
+
+        return None

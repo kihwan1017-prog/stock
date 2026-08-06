@@ -50,7 +50,8 @@ TERMINAL_ORDER_STATUSES: frozenset[OrderStatus] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class CreateOrderCommand:
-    account_id: int
+    # Paper: paper_account.account_id 필수 / LIVE: 반드시 None
+    account_id: int | None
     broker_code: str
     exchange_code: str
     symbol: str
@@ -71,5 +72,5 @@ class CreateOrderCommand:
     position_id: int | None = None
     client_order_id: str | None = None
     metadata_payload: dict[str, Any] | None = None
-    # STEP8-1 — LIVE 키움·업비트는 UserBrokerAccount FK
+    # LIVE 키움·업비트는 UserBrokerAccount FK (Paper는 NULL)
     user_broker_account_id: int | None = None

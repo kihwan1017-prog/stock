@@ -144,8 +144,40 @@ def test_dry_run_flag_default_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_validate_pre_submit_payload() -> None:
-    ok = validate_pre_submit_payload(
+    paper_ok = validate_pre_submit_payload(
         {
+            "environment": "PAPER",
+            "client_order_id": "C1",
+            "account_id": 1,
+            "broker_code": "UPBIT",
+            "exchange_code": "UPBIT",
+            "symbol": "KRW-BTC",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "quantity": "0.001",
+            "price": "100",
+        }
+    )
+    assert paper_ok == []
+    live_ok = validate_pre_submit_payload(
+        {
+            "environment": "LIVE",
+            "client_order_id": "C1",
+            "account_id": None,
+            "broker_code": "UPBIT",
+            "exchange_code": "UPBIT",
+            "symbol": "KRW-BTC",
+            "side": "BUY",
+            "order_type": "LIMIT",
+            "quantity": "0.001",
+            "price": "100",
+            "user_broker_account_id": 58,
+        }
+    )
+    assert live_ok == []
+    live_bad = validate_pre_submit_payload(
+        {
+            "environment": "LIVE",
             "client_order_id": "C1",
             "account_id": 1,
             "broker_code": "UPBIT",
@@ -158,7 +190,7 @@ def test_validate_pre_submit_payload() -> None:
             "user_broker_account_id": 58,
         }
     )
-    assert ok == []
+    assert "LIVE_MUST_NOT_SET_PAPER_ACCOUNT_ID" in live_bad
     bad = validate_pre_submit_payload({"order_type": "LIMIT"})
     assert "MISSING_SYMBOL" in bad
     assert "MISSING_PRICE" in bad
@@ -179,7 +211,7 @@ def test_dispatcher_dry_run_blocks_adapter(
         "environment": "LIVE",
         "dry_run": True,
         "client_order_id": "D1",
-        "account_id": 1,
+        "account_id": None,
         "broker_code": "UPBIT",
         "exchange_code": "UPBIT",
         "symbol": "KRW-BTC",
@@ -215,7 +247,7 @@ def test_execution_service_dry_run_blocked(
     created = SimpleNamespace(
         order_id=501,
         client_order_id="C-DRY",
-        account_id=1,
+        account_id=None,
         user_broker_account_id=58,
         broker_code="UPBIT",
         exchange_code="UPBIT",
@@ -250,7 +282,7 @@ def test_execution_service_dry_run_blocked(
     ):
         result = svc.submit(
             OrderExecutionCommand(
-                account_id=1,
+                account_id=None,
                 broker_code="UPBIT",
                 exchange_code="UPBIT",
                 symbol="KRW-BTC",

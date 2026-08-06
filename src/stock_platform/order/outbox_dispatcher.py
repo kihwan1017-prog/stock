@@ -163,11 +163,16 @@ class OrderOutboxDispatcher:
         type_raw = str(payload["order_type"]).upper()
         uba_raw = payload.get("user_broker_account_id")
         owner_raw = payload.get("owner_user_id")
+        account_raw = payload.get("account_id")
         return BrokerOrderRequest(
             client_order_id=str(
                 payload["client_order_id"]
             ),
-            account_id=int(payload["account_id"]),
+            account_id=(
+                None
+                if account_raw in (None, "")
+                else int(account_raw)
+            ),
             exchange_code=str(
                 payload.get("exchange_code", "KRX")
             ),

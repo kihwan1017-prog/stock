@@ -56,22 +56,33 @@ def should_block_live_dry_run(payload: dict[str, Any] | None) -> bool:
 def validate_pre_submit_payload(payload: dict[str, Any]) -> list[str]:
     """Broker submit 직전 필수 필드 검증. 누락 시 오류 코드 목록."""
 
+    env = str(payload.get("environment") or "PAPER").upper()
     required = (
         "client_order_id",
-        "account_id",
         "broker_code",
         "exchange_code",
         "symbol",
         "side",
         "order_type",
         "quantity",
-        "user_broker_account_id",
     )
     missing: list[str] = []
     for key in required:
         value = payload.get(key)
         if value is None or str(value).strip() == "":
             missing.append(f"MISSING_{key.upper()}")
+    # LIVE: UBA 필수 / Paper FK(account_id) 금지
+    # PAPER: paper account_id 필수
+    if env == "LIVE":
+        uba = payload.get("user_broker_account_id")
+        if uba is None or str(uba).strip() == "":
+            missing.append("MISSING_USER_BROKER_ACCOUNT_ID")
+        if payload.get("account_id") not in (None, ""):
+            missing.append("LIVE_MUST_NOT_SET_PAPER_ACCOUNT_ID")
+    else:
+        paper = payload.get("account_id")
+        if paper is None or str(paper).strip() == "":
+            missing.append("MISSING_ACCOUNT_ID")
     # price: LIMIT만 필수
     order_type = str(payload.get("order_type") or "").upper()
     if order_type == "LIMIT":

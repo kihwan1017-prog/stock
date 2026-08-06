@@ -54,7 +54,7 @@ class DatabaseBackedRiskOrderGuard:
         self,
         *,
         account_number: str,
-        account_id: int,
+        account_id: int | None,
         exchange_code: str,
         symbol: str,
         side: str,

@@ -479,15 +479,22 @@ class OrderOutboxWorker:
         assert_live_orders_allowed(session)
         LiveTradingTransitionGuard(session).require_active()
 
-        # STEP 8-7 — dispatch 직전 계좌 LIVE 승인 재확인
+        # STEP 8-7 — dispatch 직전 계좌 LIVE 승인 재확인 (UBA only)
         uba_raw = payload.get("user_broker_account_id")
         if uba_raw is None:
             raise PermissionError("UBA_REQUIRED")
+        # LIVE 는 PaperAccount 조회 금지 — paper account_id 가 있어도 무시
         from stock_platform.trading.account_models import UserBrokerAccount
 
         uba = session.get(UserBrokerAccount, int(uba_raw))
         if uba is None or not bool(uba.is_active):
             raise PermissionError("ACCOUNT_INACTIVE")
+        expected_broker = str(payload.get("broker_code") or "").upper()
+        if expected_broker and str(uba.broker_code).upper() != expected_broker:
+            raise PermissionError("UBA_BROKER_MISMATCH")
+        owner_raw = payload.get("owner_user_id")
+        if owner_raw not in (None, "") and int(uba.user_id) != int(owner_raw):
+            raise PermissionError("UBA_OWNERSHIP_MISMATCH")
         if not bool(getattr(uba, "live_order_enabled", False)):
             raise PermissionError("LIVE_ORDER_DISABLED")
         # STEP 8-8 — ARM 유효성 (토큰 원문은 Outbox에 저장하지 않음)

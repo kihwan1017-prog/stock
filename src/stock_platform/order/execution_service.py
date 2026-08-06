@@ -38,7 +38,8 @@ from stock_platform.risk_engine.order_guard import (
 class OrderExecutionCommand:
     """단일 주문 진입점 입력."""
 
-    account_id: int
+    # Paper: paper_account.account_id / LIVE: None (UBA 만 사용)
+    account_id: int | None
     broker_code: str
     exchange_code: str
     symbol: str
@@ -63,7 +64,7 @@ class OrderExecutionCommand:
     actor: str = "ORDER_EXECUTION"
     # PAPER(기본) | LIVE — LIVE는 이중 게이트 + transition 필요
     environment: str = "PAPER"
-    # STEP8-1 — LIVE 키움·업비트 UserBrokerAccount 격리
+    # LIVE 키움·업비트 UserBrokerAccount 격리
     user_broker_account_id: int | None = None
     # 마스킹된 외부 계좌 식별자 (Outbox/Adapter 전달용)
     external_account_ref: str | None = None
@@ -123,6 +124,13 @@ class OrderExecutionService:
             )
         if environment == "LIVE" and command.user_broker_account_id is None:
             return self._blocked("UBA_REQUIRED")
+        try:
+            paper_account_id, uba_id = self._resolve_account_ownership(
+                account_id=command.account_id,
+                user_broker_account_id=command.user_broker_account_id,
+            )
+        except ValueError as exc:
+            return self._blocked(str(exc) or "ACCOUNT_OWNERSHIP_INVALID")
         if not account_number and not command.skip_risk_checks:
             if environment == "LIVE":
                 account_number = (
@@ -205,12 +213,8 @@ class OrderExecutionService:
                     side=command.side.value,
                     allow_sell=True,
                     exchange_code=command.exchange_code,
-                    user_broker_account_id=command.user_broker_account_id,
-                    paper_account_id=(
-                        command.account_id
-                        if environment != "LIVE"
-                        else None
-                    ),
+                    user_broker_account_id=uba_id,
+                    paper_account_id=paper_account_id,
                 )
             except KillSwitchUnavailableError:
                 return self._blocked(
@@ -283,14 +287,14 @@ class OrderExecutionService:
                 broker_code=command.broker_code,
             ).check(
                 account_number=account_number,
-                account_id=command.account_id,
+                account_id=paper_account_id,
                 exchange_code=command.exchange_code,
                 symbol=command.symbol,
                 side=command.side.value,
                 quantity=quantity,
                 price=price,
                 user_id=command.user_id or command.owner_user_id,
-                user_broker_account_id=command.user_broker_account_id,
+                user_broker_account_id=uba_id,
                 order_source=command.order_source,
                 is_risk_reducing=command.is_risk_reducing,
                 environment=environment,
@@ -380,7 +384,7 @@ class OrderExecutionService:
             metadata = mark_dry_run_metadata(metadata)
             pre_submit_payload = {
                 "client_order_id": client_order_id,
-                "account_id": command.account_id,
+                "account_id": paper_account_id,
                 "broker_code": command.broker_code,
                 "exchange_code": command.exchange_code,
                 "symbol": command.symbol,
@@ -392,7 +396,7 @@ class OrderExecutionService:
                 else str(command.order_type),
                 "quantity": str(quantity),
                 "price": None if price is None else str(price),
-                "user_broker_account_id": command.user_broker_account_id,
+                "user_broker_account_id": uba_id,
                 "user_id": command.user_id,
                 "environment": "LIVE",
                 "runtime_scope": metadata.get("runtime_scope")
@@ -405,8 +409,8 @@ class OrderExecutionService:
             metadata["pre_submit_errors"] = pre_errors
             order = self._order_service.create(
                 CreateOrderCommand(
-                    account_id=command.account_id,
-                    user_broker_account_id=command.user_broker_account_id,
+                    account_id=paper_account_id,
+                    user_broker_account_id=uba_id,
                     broker_code=command.broker_code,
                     exchange_code=command.exchange_code,
                     symbol=command.symbol,
@@ -492,8 +496,8 @@ class OrderExecutionService:
             metadata = mark_shadow_metadata(metadata)
             order = self._order_service.create(
                 CreateOrderCommand(
-                    account_id=command.account_id,
-                    user_broker_account_id=command.user_broker_account_id,
+                    account_id=paper_account_id,
+                    user_broker_account_id=uba_id,
                     broker_code=command.broker_code,
                     exchange_code=command.exchange_code,
                     symbol=command.symbol,
@@ -567,8 +571,8 @@ class OrderExecutionService:
         # 주문+Outbox를 한 트랜잭션에 묶어 orphan CREATED 방지
         order = self._order_service.create(
             CreateOrderCommand(
-                account_id=command.account_id,
-                user_broker_account_id=command.user_broker_account_id,
+                account_id=paper_account_id,
+                user_broker_account_id=uba_id,
                 broker_code=command.broker_code,
                 exchange_code=command.exchange_code,
                 symbol=command.symbol,
@@ -840,6 +844,27 @@ class OrderExecutionService:
                 ),
             },
         )
+
+    @staticmethod
+    def _resolve_account_ownership(
+        *,
+        account_id: int | None,
+        user_broker_account_id: int | None,
+    ) -> tuple[int | None, int | None]:
+        """Paper XOR LIVE 계좌 소유권.
+
+        LIVE/UBA: paper account_id=None, user_broker_account_id 필수.
+        Paper: account_id 필수, user_broker_account_id=None.
+        호출자가 UBA id 를 account_id 에 넣어도 LIVE 경로에서는 무시한다.
+        """
+
+        if user_broker_account_id is not None:
+            if int(user_broker_account_id) <= 0:
+                raise ValueError("UBA_REQUIRED")
+            return None, int(user_broker_account_id)
+        if account_id is None or int(account_id) <= 0:
+            raise ValueError("PAPER_ACCOUNT_REQUIRED")
+        return int(account_id), None
 
     @staticmethod
     def _blocked(

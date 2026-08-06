@@ -28,8 +28,19 @@ class TradingOrderService:
 
     @staticmethod
     def _validate(command: CreateOrderCommand):
-        if command.account_id <= 0:
-            raise ValueError("account_id must be greater than zero")
+        # Paper XOR LIVE — 혼용 금지
+        uba = command.user_broker_account_id
+        paper_id = command.account_id
+        if uba is not None:
+            if int(uba) <= 0:
+                raise ValueError("user_broker_account_id must be greater than zero")
+            if paper_id is not None:
+                raise ValueError(
+                    "LIVE/UBA orders must not set paper account_id"
+                )
+        else:
+            if paper_id is None or int(paper_id) <= 0:
+                raise ValueError("account_id must be greater than zero")
         if command.quantity <= Decimal("0"):
             raise ValueError("quantity must be greater than zero")
         if not command.broker_code.strip() or not command.exchange_code.strip() or not command.symbol.strip():

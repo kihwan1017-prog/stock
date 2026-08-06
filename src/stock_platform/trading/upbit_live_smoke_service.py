@@ -413,7 +413,7 @@ class UpbitLiveSmokeService:
                 raise UpbitLiveSmokeError("UBA_NOT_FOUND")
 
             cmd = OrderExecutionCommand(
-                account_id=int(uba.user_broker_account_id),
+                account_id=None,  # LIVE — Paper FK 슬롯 사용 금지
                 broker_code="UPBIT",
                 exchange_code="UPBIT",
                 symbol=str(market).upper(),
