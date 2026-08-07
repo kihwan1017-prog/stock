@@ -317,7 +317,25 @@ export default function AdminUpbitLiveValidationPage() {
             }
             columns={[
               { title: "run_id", dataIndex: "run_id" },
-              { title: "internal", dataIndex: "internal_status" },
+              {
+                title: "internal",
+                dataIndex: "internal_status",
+                render: (v: unknown, row: Record<string, unknown>) => {
+                  const status = String(
+                    v ?? row.status ?? "",
+                  ).toUpperCase();
+                  const broker = String(
+                    row.broker_order_status ?? "",
+                  ).toUpperCase();
+                  if (
+                    status === "CANCELED" &&
+                    (broker === "NOT_SUBMITTED" || broker === "")
+                  ) {
+                    return <Tag>내부 폐기됨</Tag>;
+                  }
+                  return <Tag>{status || "-"}</Tag>;
+                },
+              },
               { title: "broker", dataIndex: "broker_order_status" },
               { title: "market", dataIndex: "market" },
               { title: "live", dataIndex: "execute_live" },

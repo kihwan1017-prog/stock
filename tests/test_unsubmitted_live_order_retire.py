@@ -199,13 +199,44 @@ def test_retire_blocks_when_not_retirable() -> None:
     assert "broker_order_id_present" in exc.value.blockers
 
 
-def test_idempotent_already_retired() -> None:
+def test_idempotent_already_retired_syncs_run() -> None:
     order = _order(status_code=OrderStatus.CANCELLED.value)
     outbox = _outbox(
         status_code=OutboxStatus.FAILED.value,
         last_error=f"{OUTBOX_ERROR}:done",
     )
     svc, _ = _service(order, outbox)
-    result = svc.retire(1679, reason="again", actor="admin")
+    with patch.object(
+        svc, "_sync_linked_validation_runs", return_value=["uvs-1"]
+    ) as sync:
+        result = svc.retire(1679, reason="again", actor="admin")
     assert result["idempotent"] is True
+    assert result["synced_run_ids"] == ["uvs-1"]
+    sync.assert_called_once()
     svc._orders.change_status.assert_not_called()
+
+
+def test_retire_syncs_validation_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    order = _order()
+    outbox = _outbox()
+    svc, session = _service(order, outbox)
+
+    def change_status(*, entity, new_status, commit=True, **kwargs):
+        entity.status_code = new_status.value
+        return entity
+
+    svc._orders.change_status.side_effect = change_status
+    with (
+        patch(
+            "stock_platform.order.live_safety_audit.emit_live_safety_audit"
+        ),
+        patch.object(
+            svc, "_sync_linked_validation_runs", return_value=["uvs-x"]
+        ) as sync,
+    ):
+        result = svc.retire(1679, reason="retire", actor="admin")
+    assert result["synced_run_ids"] == ["uvs-x"]
+    sync.assert_called_once()
+    assert result["broker_api_calls"] == 0

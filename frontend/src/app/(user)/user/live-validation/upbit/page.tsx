@@ -46,7 +46,34 @@ export default function UserUpbitLiveValidationPage() {
             dataSource={items}
             columns={[
               { title: "run_id", dataIndex: "run_id" },
-              { title: "status", dataIndex: "status" },
+              {
+                title: "status",
+                dataIndex: "status",
+                render: (v: unknown, row: Record<string, unknown>) => {
+                  const status = String(v ?? "").toUpperCase();
+                  const broker = String(
+                    row.broker_order_status ?? "",
+                  ).toUpperCase();
+                  const isInternalRetire =
+                    status === "CANCELED" &&
+                    (broker === "NOT_SUBMITTED" || broker === "");
+                  if (isInternalRetire) {
+                    return (
+                      <Tag color="default">
+                        내부 폐기됨 ({status})
+                      </Tag>
+                    );
+                  }
+                  return <Tag>{status || "-"}</Tag>;
+                },
+              },
+              {
+                title: "broker",
+                dataIndex: "broker_order_status",
+                render: (v: unknown) => (
+                  <Tag>{String(v ?? "NOT_SUBMITTED")}</Tag>
+                ),
+              },
               { title: "market", dataIndex: "market" },
               { title: "side", dataIndex: "side" },
               { title: "order_id", dataIndex: "order_id" },

@@ -162,6 +162,17 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             InternalStatus.BROKER_SUBMISSION_PENDING.value,
         }
     ),
+    InternalStatus.OUTBOX_PENDING.value: frozenset(
+        {
+            InternalStatus.OUTBOX_DISPATCHING.value,
+            InternalStatus.BROKER_SUBMISSION_PENDING.value,
+            InternalStatus.UNKNOWN.value,
+            InternalStatus.FAILED_CLOSED.value,
+            InternalStatus.REJECTED.value,
+            # 미전송 주문 내부 폐기 — 브로커 미호출 terminal
+            InternalStatus.CANCELED.value,
+        }
+    ),
     InternalStatus.QUEUED.value: frozenset(
         {
             InternalStatus.OUTBOX_PENDING.value,
@@ -171,20 +182,12 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             InternalStatus.FAILED.value,
             InternalStatus.FAILED_CLOSED.value,
             InternalStatus.UNKNOWN.value,
+            InternalStatus.CANCELED.value,
         }
     ),
     InternalStatus.FAILED.value: frozenset(
         {
             InternalStatus.FAILED_CLOSED.value,
-        }
-    ),
-    InternalStatus.OUTBOX_PENDING.value: frozenset(
-        {
-            InternalStatus.OUTBOX_DISPATCHING.value,
-            InternalStatus.BROKER_SUBMISSION_PENDING.value,
-            InternalStatus.UNKNOWN.value,
-            InternalStatus.FAILED_CLOSED.value,
-            InternalStatus.REJECTED.value,
         }
     ),
     InternalStatus.OUTBOX_DISPATCHING.value: frozenset(

@@ -130,14 +130,13 @@ class UnsubmittedLiveOrderRetireService:
 
         order, outbox, blockers = self._evaluate(int(order_id))
         if blockers:
-            # 이미 동일 사유로 폐기된 terminal → idempotent
-            if (
-                order is not None
-                and order.status_code == OrderStatus.CANCELLED.value
-                and outbox is not None
-                and outbox.status_code == OutboxStatus.FAILED.value
-                and str(outbox.last_error or "").startswith(OUTBOX_ERROR)
-            ):
+            # 이미 동일 사유로 폐기된 terminal → idempotent + Run 동기화
+            if self._is_already_retired(order, outbox):
+                synced = self._sync_linked_validation_runs(
+                    order_id=int(order.order_id),
+                    actor=actor,
+                    reason=reason_clean,
+                )
                 return {
                     "ok": True,
                     "idempotent": True,
@@ -145,6 +144,8 @@ class UnsubmittedLiveOrderRetireService:
                     "outbox_id": int(outbox.outbox_id),
                     "order_status": order.status_code,
                     "outbox_status": outbox.status_code,
+                    "synced_run_ids": synced,
+                    "broker_api_calls": 0,
                 }
             raise UnsubmittedLiveOrderRetireError(
                 blockers[0],
@@ -189,6 +190,12 @@ class UnsubmittedLiveOrderRetireService:
         outbox.processed_at = datetime.now(timezone.utc)
         self._session.flush()
 
+        synced = self._sync_linked_validation_runs(
+            order_id=int(order.order_id),
+            actor=actor,
+            reason=reason_clean,
+        )
+
         from stock_platform.order.live_safety_audit import (
             emit_live_safety_audit,
         )
@@ -197,7 +204,7 @@ class UnsubmittedLiveOrderRetireService:
             self._session,
             event_type=AUDIT_EVENT,
             actor=actor,
-            run_id=None,
+            run_id=(synced[0] if synced else None),
             user_id=None,
             account_id=uba_id,
             strategy_id=None,
@@ -214,6 +221,8 @@ class UnsubmittedLiveOrderRetireService:
                 "broker_order_id": None,
                 "submission_attempt_count": 0,
                 "broker_api_calls": 0,
+                "synced_run_ids": synced,
+                "validation_run_status": "CANCELED",
             },
             commit=False,
         )
@@ -232,7 +241,105 @@ class UnsubmittedLiveOrderRetireService:
             "broker_order_id": None,
             "submission_attempt_count": 0,
             "broker_api_calls": 0,
+            "synced_run_ids": synced,
         }
+
+    @staticmethod
+    def _is_already_retired(
+        order: TradingOrderEntity | None,
+        outbox: OrderOutbox | None,
+    ) -> bool:
+        if order is None or outbox is None:
+            return False
+        return (
+            order.status_code == OrderStatus.CANCELLED.value
+            and outbox.status_code == OutboxStatus.FAILED.value
+            and str(outbox.last_error or "").startswith(OUTBOX_ERROR)
+        )
+
+    def _sync_linked_validation_runs(
+        self,
+        *,
+        order_id: int,
+        actor: str,
+        reason: str,
+    ) -> list[str]:
+        """연결된 LiveValidationRun을 CANCELED(미전송 폐기)로 동기화.
+
+        브로커 API / adapter 호출 없음.
+        """
+
+        from datetime import datetime, timezone
+
+        from stock_platform.trading.live_validation_entities import (
+            LiveValidationRunEntity,
+        )
+        from stock_platform.trading.upbit_live_smoke_constants import (
+            BrokerOrderStatus,
+            InternalStatus,
+            TERMINAL_INTERNAL_STATUSES,
+        )
+        from stock_platform.trading.upbit_live_smoke_service import (
+            UpbitLiveSmokeService,
+        )
+
+        rows = list(
+            self._session.scalars(
+                select(LiveValidationRunEntity).where(
+                    LiveValidationRunEntity.order_id == int(order_id)
+                )
+            )
+        )
+        if not rows:
+            return []
+
+        smoke = UpbitLiveSmokeService(self._session)
+        synced: list[str] = []
+        now = datetime.now(timezone.utc)
+        for run in rows:
+            current = str(run.internal_status or run.status_code or "")
+            if current in TERMINAL_INTERNAL_STATUSES:
+                # 이미 terminal — broker_status/order_status만 보강
+                if not run.broker_order_status:
+                    run.broker_order_status = (
+                        BrokerOrderStatus.NOT_SUBMITTED.value
+                    )
+                if run.order_status != OrderStatus.CANCELLED.value:
+                    run.order_status = OrderStatus.CANCELLED.value
+                if run.completed_at is None and current == (
+                    InternalStatus.CANCELED.value
+                ):
+                    run.completed_at = now
+                run.next_track_at = None
+                continue
+
+            # OUTBOX_PENDING / QUEUED 등 → CANCELED
+            smoke._transition(
+                run,
+                InternalStatus.CANCELED.value,
+                actor=actor,
+            )
+            run.broker_order_status = BrokerOrderStatus.NOT_SUBMITTED.value
+            run.order_status = OrderStatus.CANCELLED.value
+            run.completed_at = now
+            run.next_track_at = None
+            run.failure_code = REASON_CODE
+            run.failure_summary = (
+                f"unsubmitted order retired (no broker submit): {reason[:200]}"
+            )
+            detail = dict(run.detail or {})
+            detail["unsubmitted_retire"] = {
+                "order_id": int(order_id),
+                "actor": actor,
+                "reason": reason[:500],
+                "at": now.isoformat(),
+                "broker_api_calls": 0,
+            }
+            run.detail = detail
+            synced.append(str(run.run_id))
+
+        self._session.flush()
+        return synced
 
     def _evaluate(
         self, order_id: int
