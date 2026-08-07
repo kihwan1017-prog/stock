@@ -121,6 +121,13 @@ class OrderOutboxWorker:
                             fencing_token=fencing_token,
                             worker_id=self._worker_id,
                         )
+                        self._finalize_smoke_one_shot_if_needed(
+                            session,
+                            order_id=int(entity.order_id),
+                            outbox_id=int(outbox_id),
+                            outcome="DUPLICATE_BLOCKED",
+                            worker_id=self._worker_id,
+                        )
                         succeeded += 1
                         session.commit()
                         continue
@@ -139,7 +146,9 @@ class OrderOutboxWorker:
                         continue
 
                     # LIVE safety: intent 후에도 재확인 (전송 직전)
-                    self._assert_live_dispatch_allowed(session, payload)
+                    self._assert_live_dispatch_allowed(
+                        session, payload, outbox_id=int(outbox_id)
+                    )
 
                     from stock_platform.order.live_dry_run import (
                         dry_run_block_dispatch_result,
@@ -163,6 +172,13 @@ class OrderOutboxWorker:
                         entity.last_error = blocked.get(
                             "reject_message"
                         )
+                        self._finalize_smoke_one_shot_if_needed(
+                            session,
+                            order_id=int(entity.order_id),
+                            outbox_id=int(outbox_id),
+                            outcome="DRY_RUN_BLOCKED",
+                            worker_id=self._worker_id,
+                        )
                         succeeded += 1
                         session.commit()
                         continue
@@ -179,6 +195,13 @@ class OrderOutboxWorker:
                         )
                         entity.last_error = blocked.get(
                             "reject_message"
+                        )
+                        self._finalize_smoke_one_shot_if_needed(
+                            session,
+                            order_id=int(entity.order_id),
+                            outbox_id=int(outbox_id),
+                            outcome="SHADOW_BLOCKED",
+                            worker_id=self._worker_id,
                         )
                         succeeded += 1
                         session.commit()
@@ -200,6 +223,13 @@ class OrderOutboxWorker:
                         repository.mark_done(
                             entity=entity,
                             fencing_token=fencing_token,
+                            worker_id=self._worker_id,
+                        )
+                        self._finalize_smoke_one_shot_if_needed(
+                            session,
+                            order_id=int(entity.order_id),
+                            outbox_id=int(outbox_id),
+                            outcome="IDEMPOTENT_REPLAY",
                             worker_id=self._worker_id,
                         )
                         succeeded += 1
@@ -247,6 +277,13 @@ class OrderOutboxWorker:
                             fencing_token=fencing_token,
                             worker_id=self._worker_id,
                         )
+                        self._finalize_smoke_one_shot_if_needed(
+                            session,
+                            order_id=int(entity.order_id),
+                            outbox_id=int(outbox_id),
+                            outcome="AMBIGUOUS",
+                            worker_id=self._worker_id,
+                        )
                         ambiguous += 1
                         session.commit()
                         continue
@@ -277,6 +314,13 @@ class OrderOutboxWorker:
                     repository.mark_done(
                         entity=entity,
                         fencing_token=fencing_token,
+                        worker_id=self._worker_id,
+                    )
+                    self._finalize_smoke_one_shot_if_needed(
+                        session,
+                        order_id=int(entity.order_id),
+                        outbox_id=int(outbox_id),
+                        outcome="SUBMITTED",
                         worker_id=self._worker_id,
                     )
                     succeeded += 1
@@ -310,6 +354,13 @@ class OrderOutboxWorker:
                                 entity=amb_entity,
                                 reason=str(exc),
                                 fencing_token=fencing_token,
+                                worker_id=self._worker_id,
+                            )
+                            self._finalize_smoke_one_shot_if_needed(
+                                amb_session,
+                                order_id=int(amb_entity.order_id),
+                                outbox_id=int(outbox_id),
+                                outcome="AMBIGUOUS",
                                 worker_id=self._worker_id,
                             )
                             amb_session.commit()
@@ -354,6 +405,13 @@ class OrderOutboxWorker:
                                 fencing_token=fencing_token,
                                 worker_id=self._worker_id,
                             )
+                            self._finalize_smoke_one_shot_if_needed(
+                                retry_session,
+                                order_id=int(retry_entity.order_id),
+                                outbox_id=int(outbox_id),
+                                outcome="AMBIGUOUS",
+                                worker_id=self._worker_id,
+                            )
                             ambiguous += 1
                             retry_session.commit()
                             continue
@@ -373,6 +431,13 @@ class OrderOutboxWorker:
                                 order_id=retry_entity.order_id,
                                 error_message=msg,
                                 event_type=retry_entity.event_type,
+                            )
+                            self._finalize_smoke_one_shot_if_needed(
+                                retry_session,
+                                order_id=int(retry_entity.order_id),
+                                outbox_id=int(outbox_id),
+                                outcome="FAILED",
+                                worker_id=self._worker_id,
                             )
                             failed += 1
                         else:
@@ -454,8 +519,37 @@ class OrderOutboxWorker:
         return bool(order and order.broker_order_id)
 
     @staticmethod
+    def _finalize_smoke_one_shot_if_needed(
+        session: Session,
+        *,
+        order_id: int,
+        outbox_id: int,
+        outcome: str,
+        worker_id: str,
+    ) -> None:
+        """Smoke terminal dispatch 후 grant 소비 + LIVE OFF/DISARM."""
+
+        try:
+            from stock_platform.trading.upbit_live_smoke_service import (
+                UpbitLiveSmokeService,
+            )
+
+            UpbitLiveSmokeService.finalize_after_smoke_dispatch(
+                session,
+                order_id=int(order_id),
+                outbox_id=int(outbox_id),
+                actor=str(worker_id),
+                outcome=str(outcome),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    @staticmethod
     def _assert_live_dispatch_allowed(
-        session: Session, payload: dict[str, Any]
+        session: Session,
+        payload: dict[str, Any],
+        *,
+        outbox_id: int | None = None,
     ) -> None:
         env = str(payload.get("environment") or "PAPER").upper()
         if env != "LIVE":
@@ -495,16 +589,78 @@ class OrderOutboxWorker:
         owner_raw = payload.get("owner_user_id")
         if owner_raw not in (None, "") and int(uba.user_id) != int(owner_raw):
             raise PermissionError("UBA_OWNERSHIP_MISMATCH")
-        if not bool(getattr(uba, "live_order_enabled", False)):
-            raise PermissionError("LIVE_ORDER_DISABLED")
-        # STEP 8-8 — ARM 유효성 (토큰 원문은 Outbox에 저장하지 않음)
+
+        live_on = bool(getattr(uba, "live_order_enabled", False))
         from stock_platform.trading.live_arm_service import LiveArmService
 
-        if LiveArmService(session).expire_if_needed(int(uba_raw)):
-            raise PermissionError("LIVE_ARM_EXPIRED")
+        # ARM 만료 시 LIVE OFF — 일반 경로 차단 (one-shot은 grant deadline 사용)
+        expired = LiveArmService(session).expire_if_needed(int(uba_raw))
         uba = session.get(UserBrokerAccount, int(uba_raw))
-        if uba is None or not bool(getattr(uba, "live_armed", False)):
-            raise PermissionError("LIVE_NOT_ARMED")
+        if uba is None:
+            raise PermissionError("ACCOUNT_INACTIVE")
+        # expire 후 플래그 재평가 (DISARM 반영)
+        live_on = bool(getattr(uba, "live_order_enabled", False))
+        armed = bool(getattr(uba, "live_armed", False))
+
+        if live_on and armed and not expired:
+            return
+
+        # 설계 B — Smoke one-shot: LIVE/ARM OFF 여도 해당 outbox 1건만 허용
+        if outbox_id is None:
+            if not live_on:
+                raise PermissionError("LIVE_ORDER_DISABLED")
+            if expired or not armed:
+                raise PermissionError(
+                    "LIVE_ARM_EXPIRED" if expired else "LIVE_NOT_ARMED"
+                )
+            return
+
+        from stock_platform.order.live_safety_audit import (
+            emit_live_safety_audit,
+        )
+        from stock_platform.trading.smoke_one_shot_dispatch_grant import (
+            SmokeOneShotGrantError,
+            assert_smoke_one_shot_dispatch_allowed,
+        )
+        from stock_platform.trading.upbit_live_smoke_constants import (
+            UPBIT_LIVE_SMOKE_ONE_SHOT_DISPATCH_ALLOWED,
+        )
+
+        try:
+            grant = assert_smoke_one_shot_dispatch_allowed(
+                session, payload, outbox_id=int(outbox_id)
+            )
+        except SmokeOneShotGrantError as exc:
+            if not live_on:
+                raise PermissionError(
+                    f"LIVE_ORDER_DISABLED:{exc}"
+                ) from exc
+            raise PermissionError(
+                f"{'LIVE_ARM_EXPIRED' if expired else 'LIVE_NOT_ARMED'}:{exc}"
+            ) from exc
+
+        try:
+            emit_live_safety_audit(
+                session,
+                event_type=UPBIT_LIVE_SMOKE_ONE_SHOT_DISPATCH_ALLOWED,
+                actor="OUTBOX_WORKER",
+                run_id=str(grant.get("run_id") or ""),
+                user_id=int(grant.get("owner_user_id") or 0) or None,
+                account_id=int(uba_raw),
+                strategy_id=None,
+                order_id=int(payload.get("order_id") or 0) or None,
+                detail={
+                    "outbox_id": int(outbox_id),
+                    "order_id": grant.get("order_id"),
+                    "run_id": grant.get("run_id"),
+                    "arm_deadline_at": grant.get("arm_deadline_at"),
+                    "live_on": live_on,
+                    "armed": armed,
+                },
+                commit=False,
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     @staticmethod
     def _apply_order_broker_result(

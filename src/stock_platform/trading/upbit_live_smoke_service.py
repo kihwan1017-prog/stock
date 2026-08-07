@@ -40,6 +40,7 @@ from stock_platform.trading.upbit_live_smoke_constants import (
     UPBIT_LIVE_SMOKE_COMPLETED,
     UPBIT_LIVE_SMOKE_EXECUTION_REQUESTED,
     UPBIT_LIVE_SMOKE_FAILED_CLOSED,
+    UPBIT_LIVE_SMOKE_ONE_SHOT_GRANT_ISSUED,
     UPBIT_LIVE_SMOKE_ORDER_REJECTED,
     UPBIT_LIVE_SMOKE_ORDER_SUBMITTED,
     UPBIT_LIVE_SMOKE_ORDER_UNKNOWN,
@@ -583,6 +584,15 @@ class UpbitLiveSmokeService:
                 actor=actor,
                 outbox_pending=True,
             )
+            # QUEUED 직후 finalize 가 LIVE OFF/DISARM 하므로
+            # Worker 단건 전송용 one-shot grant 발급 (설계 B)
+            grant = self._issue_one_shot_dispatch_grant(
+                run=run,
+                order_id=int(exec_result.order_id),
+                outbox_id=int(exec_result.outbox_id),
+                user_broker_account_id=int(user_broker_account_id),
+                actor=actor,
+            )
             emit_live_safety_audit(
                 self._session,
                 event_type=UPBIT_LIVE_SMOKE_ORDER_SUBMITTED,
@@ -600,6 +610,11 @@ class UpbitLiveSmokeService:
                     "internal_status": run.internal_status,
                     "broker_order_status": run.broker_order_status,
                     "reason_code": "QUEUED",
+                    "one_shot_grant": {
+                        "status": grant.get("status"),
+                        "outbox_id": grant.get("outbox_id"),
+                        "arm_deadline_at": grant.get("arm_deadline_at"),
+                    },
                 },
                 commit=False,
             )
@@ -1017,6 +1032,170 @@ class UpbitLiveSmokeService:
                 asyncio.run(coro)
         except Exception:  # noqa: BLE001
             pass
+
+    def _issue_one_shot_dispatch_grant(
+        self,
+        *,
+        run: LiveValidationRunEntity,
+        order_id: int,
+        outbox_id: int,
+        user_broker_account_id: int,
+        actor: str,
+    ) -> dict[str, Any]:
+        """QUEUED 성공 직후 — finalize DISARM 전에 단건 Worker 권한 발급."""
+
+        from stock_platform.trading.smoke_one_shot_dispatch_grant import (
+            issue_grant_on_run,
+        )
+
+        uba = self._session.get(
+            UserBrokerAccount, int(user_broker_account_id)
+        )
+        if uba is None:
+            raise UpbitLiveSmokeError("UBA_NOT_FOUND")
+        if not bool(getattr(uba, "live_armed", False)):
+            raise UpbitLiveSmokeError(
+                "LIVE_NOT_ARMED",
+                message="one-shot grant requires ARM before finalize",
+            )
+        deadline = getattr(uba, "arm_expires_at", None)
+        if deadline is None:
+            raise UpbitLiveSmokeError(
+                "LIVE_ARM_EXPIRES_MISSING",
+                message="arm_expires_at required for one-shot grant",
+            )
+        grant = issue_grant_on_run(
+            run,
+            order_id=int(order_id),
+            outbox_id=int(outbox_id),
+            uba_id=int(user_broker_account_id),
+            owner_user_id=int(uba.user_id),
+            arm_deadline_at=deadline,
+            idempotency_key=f"smoke:{run.run_id}",
+        )
+        try:
+            emit_live_safety_audit(
+                self._session,
+                event_type=UPBIT_LIVE_SMOKE_ONE_SHOT_GRANT_ISSUED,
+                actor=actor,
+                run_id=run.run_id,
+                user_id=int(uba.user_id),
+                account_id=int(user_broker_account_id),
+                strategy_id=None,
+                order_id=int(order_id),
+                detail={
+                    "run_id": run.run_id,
+                    "order_id": int(order_id),
+                    "outbox_id": int(outbox_id),
+                    "arm_deadline_at": grant.get("arm_deadline_at"),
+                    "status": grant.get("status"),
+                },
+                commit=False,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        self._safe_flush()
+        return grant
+
+    @staticmethod
+    def finalize_after_smoke_dispatch(
+        session: Session,
+        *,
+        order_id: int,
+        outbox_id: int,
+        actor: str,
+        outcome: str,
+    ) -> dict[str, Any]:
+        """Worker terminal 이후 grant 소비 + LIVE OFF/DISARM 재확인."""
+
+        from stock_platform.order.repository import TradingOrderRepository
+        from stock_platform.trading.smoke_one_shot_dispatch_grant import (
+            GRANT_DETAIL_KEY,
+            consume_grant_on_run,
+            read_grant_from_run_detail,
+        )
+        from stock_platform.trading.upbit_live_smoke_constants import (
+            UPBIT_LIVE_SMOKE_ONE_SHOT_GRANT_CONSUMED,
+        )
+
+        order = TradingOrderRepository(session).get(int(order_id))
+        if order is None:
+            return {"applied": False, "reason": "order_not_found"}
+        meta = dict(order.metadata_payload or {})
+        smoke_run_id = str(meta.get("smoke_run_id") or "").strip()
+        if not smoke_run_id:
+            return {"applied": False, "reason": "not_smoke_order"}
+
+        run = session.scalar(
+            select(LiveValidationRunEntity).where(
+                LiveValidationRunEntity.run_id == smoke_run_id,
+                LiveValidationRunEntity.order_id == int(order_id),
+            )
+        )
+        if run is None:
+            return {"applied": False, "reason": "run_not_found"}
+
+        grant = read_grant_from_run_detail(getattr(run, "detail", None))
+        if grant is None:
+            # grant 없는 레거시 queued — 그래도 LIVE OFF 보장
+            pass
+        elif int(grant.get("outbox_id") or 0) not in (0, int(outbox_id)):
+            return {"applied": False, "reason": "outbox_mismatch"}
+        else:
+            consume_grant_on_run(run, outcome=str(outcome))
+
+        uba_id = int(
+            run.user_broker_account_id
+            or order.user_broker_account_id
+            or 0
+        )
+        if uba_id <= 0:
+            return {"applied": False, "reason": "uba_missing"}
+
+        try:
+            LiveArmService(session).disarm(
+                uba_id,
+                actor=actor,
+                reason=f"UPBIT_LIVE_SMOKE_DISPATCH_{outcome}",
+                turn_live_off=True,
+                run_id=str(run.run_id),
+            )
+        except Exception:  # noqa: BLE001
+            # Scheduler 미PAUSE 등 — best effort; Worker는 계속
+            pass
+
+        try:
+            emit_live_safety_audit(
+                session,
+                event_type=UPBIT_LIVE_SMOKE_ONE_SHOT_GRANT_CONSUMED,
+                actor=actor,
+                run_id=run.run_id,
+                user_id=getattr(run, "user_id", None),
+                account_id=uba_id,
+                strategy_id=None,
+                order_id=int(order_id),
+                detail={
+                    "run_id": run.run_id,
+                    "order_id": int(order_id),
+                    "outbox_id": int(outbox_id),
+                    "outcome": str(outcome),
+                    "grant": (run.detail or {}).get(GRANT_DETAIL_KEY),
+                    "protect": "DISARM_LIVE_OFF",
+                },
+                commit=False,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            session.flush()
+        except Exception:  # noqa: BLE001
+            pass
+        return {
+            "applied": True,
+            "run_id": run.run_id,
+            "uba_id": uba_id,
+            "outcome": str(outcome),
+        }
 
     def _watch_and_maybe_cancel(
         self,

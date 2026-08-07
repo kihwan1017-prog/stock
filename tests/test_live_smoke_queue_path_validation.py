@@ -198,13 +198,21 @@ def test_order_execution_submit_queues_without_adapter() -> None:
 def test_smoke_execute_queued_markers_and_no_adapter() -> None:
     """execute() → markers → QUEUED, Adapter create_order 0."""
 
+    from datetime import datetime, timedelta, timezone
+
     session = MagicMock()
     session.is_active = True
     session.new = set()
     session.dirty = set()
     session.deleted = set()
     session.get.return_value = SimpleNamespace(
-        user_broker_account_id=1380, user_id=61
+        user_broker_account_id=1380,
+        user_id=61,
+        live_armed=True,
+        live_order_enabled=True,
+        arm_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+        broker_code="UPBIT",
+        is_active=True,
     )
     run = _run_entity()
     transitions: list[str] = []
