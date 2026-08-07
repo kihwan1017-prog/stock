@@ -10,6 +10,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Select,
   Space,
   Tag,
@@ -20,6 +21,7 @@ import { useMemo, useState } from "react";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { canShowUnsubmittedRetireButton } from "@/features/admin/orders/unsubmittedRetireGate";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
@@ -43,6 +45,12 @@ export default function AdminOrdersPage() {
     offset: number;
   }>({ limit: 50, offset: 0 });
   const [detailId, setDetailId] = useState<number | null>(null);
+  const [retireRow, setRetireRow] = useState<OrderRow | null>(null);
+  const [retireReason, setRetireReason] = useState("");
+  const [retirePreview, setRetirePreview] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   const killSwitch = useQuery({
     queryKey: queryKeys.admin.killSwitch(),
@@ -90,6 +98,40 @@ export default function AdminOrdersPage() {
     mutationFn: (orderId: number) => adminApi.cancelTradingOrder(orderId),
     onSuccess: () => {
       message.success("주문 취소 요청 완료");
+      invalidateOrders();
+    },
+    onError: (err) => message.error(toApiError(err).message),
+  });
+
+  const openRetireModal = async (row: OrderRow) => {
+    const orderId = Number(row.order_id ?? row.id);
+    if (!Number.isFinite(orderId)) return;
+    try {
+      const preview = (await adminApi.previewRetireUnsubmittedOrder(
+        orderId,
+      )) as Record<string, unknown>;
+      setRetirePreview(preview);
+      if (preview.retirable !== true) {
+        message.error(
+          `폐기 불가: ${Array.isArray(preview.blockers) ? preview.blockers.join(", ") : "blocked"}`,
+        );
+        return;
+      }
+      setRetireRow(row);
+      setRetireReason("");
+    } catch (err) {
+      message.error(toApiError(err).message);
+    }
+  };
+
+  const retireUnsubmitted = useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: number; reason: string }) =>
+      adminApi.retireUnsubmittedOrder(orderId, reason),
+    onSuccess: () => {
+      message.success("미전송 주문을 내부 폐기했습니다 (Upbit 미호출)");
+      setRetireRow(null);
+      setRetirePreview(null);
+      setRetireReason("");
       invalidateOrders();
     },
     onError: (err) => message.error(toApiError(err).message),
@@ -311,17 +353,28 @@ export default function AdminOrdersPage() {
             {
               title: "취소",
               render: (_, row) => (
-                <PermissionButton
-                  permission="trading:write"
-                  size="small"
-                  danger
-                  loading={cancelTrading.isPending}
-                  onClick={() =>
-                    cancelTrading.mutate(Number(row.order_id ?? row.id))
-                  }
-                >
-                  취소
-                </PermissionButton>
+                <Space size={4} wrap>
+                  <PermissionButton
+                    permission="trading:write"
+                    size="small"
+                    danger
+                    loading={cancelTrading.isPending}
+                    onClick={() =>
+                      cancelTrading.mutate(Number(row.order_id ?? row.id))
+                    }
+                  >
+                    취소
+                  </PermissionButton>
+                  {canShowUnsubmittedRetireButton(row) ? (
+                    <PermissionButton
+                      permission="trading:write"
+                      size="small"
+                      onClick={() => void openRetireModal(row)}
+                    >
+                      미전송 주문 폐기
+                    </PermissionButton>
+                  ) : null}
+                </Space>
               ),
             },
             {
@@ -472,6 +525,72 @@ export default function AdminOrdersPage() {
           data={detail.data}
         />
       </Drawer>
+
+      <Modal
+        title="미전송 LIVE 주문을 내부 폐기하시겠습니까?"
+        open={retireRow != null}
+        onCancel={() => {
+          setRetireRow(null);
+          setRetirePreview(null);
+          setRetireReason("");
+        }}
+        okText="내부 폐기"
+        okButtonProps={{
+          danger: true,
+          disabled: retireReason.trim().length < 1,
+          loading: retireUnsubmitted.isPending,
+        }}
+        onOk={() => {
+          const orderId = Number(retireRow?.order_id ?? retireRow?.id);
+          if (!Number.isFinite(orderId) || retireReason.trim().length < 1) {
+            return;
+          }
+          retireUnsubmitted.mutate({
+            orderId,
+            reason: retireReason.trim(),
+          });
+        }}
+        destroyOnHidden
+      >
+        <Space direction="vertical" size="small" style={{ width: "100%" }}>
+          <Typography.Text>
+            Order ID: {cell(retirePreview?.order_id ?? retireRow?.order_id)}
+          </Typography.Text>
+          <Typography.Text>
+            UBA: {cell(retirePreview?.user_broker_account_id)}
+          </Typography.Text>
+          <Typography.Text>
+            종목: {cell(retirePreview?.symbol ?? retireRow?.symbol)}
+          </Typography.Text>
+          <Typography.Text>
+            방향: {cell(retirePreview?.side ?? retireRow?.side_code)}
+          </Typography.Text>
+          <Typography.Text>
+            주문금액:{" "}
+            {cell(
+              retirePreview?.estimated_amount ??
+                (retireRow?.order_quantity != null &&
+                retireRow?.order_price != null
+                  ? Number(retireRow.order_quantity) *
+                    Number(retireRow.order_price)
+                  : null),
+            )}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            broker UUID 없음 · submission attempt 0
+          </Typography.Text>
+          <Typography.Text type="warning">
+            업비트에는 취소 요청을 보내지 않습니다.
+          </Typography.Text>
+          <Input.TextArea
+            rows={3}
+            value={retireReason}
+            onChange={(e) => setRetireReason(e.target.value)}
+            placeholder="폐기 사유 (필수)"
+            maxLength={2000}
+          />
+        </Space>
+      </Modal>
     </AdminPageShell>
   );
 }

@@ -4021,6 +4021,21 @@ export async function cancelTradingOrder(
   });
 }
 
+/** Preview retire for unsubmitted LIVE order (no state change) */
+export async function previewRetireUnsubmittedOrder(
+  orderId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/orders/${orderId}/retire-unsubmitted/preview`);
+}
+
+/** Retire unsubmitted LIVE order — no Upbit API call */
+export async function retireUnsubmittedOrder(
+  orderId: number,
+  reason: string,
+): Promise<JsonValue> {
+  return postJson(`/admin/orders/${orderId}/retire-unsubmitted`, { reason });
+}
+
 export async function listExecutions(params?: Params): Promise<JsonValue> {
   return getJson("/executions", params);
 }

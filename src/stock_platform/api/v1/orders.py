@@ -33,6 +33,7 @@ def _safe_order_dict(order: TradingOrderEntity) -> dict[str, Any]:
     return {
         "order_id": int(order.order_id),
         "client_order_id": order.client_order_id,
+        "broker_order_id": order.broker_order_id,
         "account_id": order.account_id,
         "user_broker_account_id": order.user_broker_account_id,
         "broker_code": order.broker_code,
@@ -53,6 +54,9 @@ def _safe_order_dict(order: TradingOrderEntity) -> dict[str, Any]:
         "reject_message": order.reject_message,
         "failure_code": order.failure_code,
         "failure_message": order.failure_message,
+        "submission_attempt_count": int(
+            getattr(order, "submission_attempt_count", 0) or 0
+        ),
         "submission_generation": order.submission_generation,
         "ambiguous_since": (
             order.ambiguous_since.isoformat()

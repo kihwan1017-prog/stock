@@ -6,6 +6,7 @@ from stock_platform.order.state_models import InvalidOrderStateTransition
 @pytest.mark.parametrize(('current','target'), [
     (OrderStatus.CREATED, OrderStatus.PENDING),
     (OrderStatus.PENDING, OrderStatus.SENT),
+    (OrderStatus.PENDING, OrderStatus.CANCELLED),
     (OrderStatus.SENT, OrderStatus.ACCEPTED),
     (OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED),
     (OrderStatus.ACCEPTED, OrderStatus.FILLED),
