@@ -32,6 +32,9 @@ class ValidateTransitionRequest(BaseModel):
     max_order_amount: Decimal = Field(gt=0)
     max_daily_loss: Decimal = Field(gt=0)
     paper_validation_approved: bool = False
+    scope: str = Field(default="BROKER", max_length=40)
+    broker_code: str | None = Field(default=None, max_length=30)
+    user_broker_account_id: int | None = None
 
 
 class RequestTransitionRequest(
@@ -54,8 +57,8 @@ class ApproveTransitionRequest(BaseModel):
     )
     reason: str | None = Field(default=None, max_length=500)
     ttl_hours: int | None = Field(default=None, ge=1, le=72)
-    scope: str = Field(default="BROKER", max_length=40)
-    broker_code: str = Field(default="KIWOOM", max_length=30)
+    scope: str | None = Field(default=None, max_length=40)
+    broker_code: str | None = Field(default=None, max_length=30)
     user_broker_account_id: int | None = None
 
 
@@ -80,6 +83,9 @@ def validate_live_transition(
         paper_validation_approved=(
             request.paper_validation_approved
         ),
+        scope=request.scope,
+        broker_code=request.broker_code,
+        user_broker_account_id=request.user_broker_account_id,
     )
 
 
@@ -98,6 +104,9 @@ def request_live_transition(
         paper_validation_approved=(
             request.paper_validation_approved
         ),
+        scope=request.scope,
+        broker_code=request.broker_code,
+        user_broker_account_id=request.user_broker_account_id,
     )
     audit.record(
         event_type="LIVE_TRANSITION_REQUEST",

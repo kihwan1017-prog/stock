@@ -68,7 +68,12 @@ class BrokerAdapterFactory:
                 )
                 raise PermissionError(f"{cfg.code}: {cfg.message}")
 
-        LiveTradingTransitionGuard(session).require_active()
+        LiveTradingTransitionGuard(session).require_active(
+            broker_code=code,
+            user_broker_account_id=user_broker_account_id
+            if user_broker_account_id is not None
+            else parse_user_broker_credential_ref(credential_ref),
+        )
 
         uba_id = user_broker_account_id
         if uba_id is None:

@@ -571,21 +571,25 @@ class OrderOutboxWorker:
         }:
             raise PermissionError(cfg.code)
         assert_live_orders_allowed(session)
-        LiveTradingTransitionGuard(session).require_active()
 
-        # STEP 8-7 — dispatch 직전 계좌 LIVE 승인 재확인 (UBA only)
+        # STEP 8-7 — UBA/broker 먼저 확정 후 Activation scope 검사
         uba_raw = payload.get("user_broker_account_id")
         if uba_raw is None:
             raise PermissionError("UBA_REQUIRED")
-        # LIVE 는 PaperAccount 조회 금지 — paper account_id 가 있어도 무시
         from stock_platform.trading.account_models import UserBrokerAccount
 
         uba = session.get(UserBrokerAccount, int(uba_raw))
         if uba is None or not bool(uba.is_active):
             raise PermissionError("ACCOUNT_INACTIVE")
         expected_broker = str(payload.get("broker_code") or "").upper()
-        if expected_broker and str(uba.broker_code).upper() != expected_broker:
+        uba_broker = str(uba.broker_code).upper()
+        if expected_broker and uba_broker != expected_broker:
             raise PermissionError("UBA_BROKER_MISMATCH")
+        dispatch_broker = expected_broker or uba_broker
+        LiveTradingTransitionGuard(session).require_active(
+            broker_code=dispatch_broker,
+            user_broker_account_id=int(uba_raw),
+        )
         owner_raw = payload.get("owner_user_id")
         if owner_raw not in (None, "") and int(uba.user_id) != int(owner_raw):
             raise PermissionError("UBA_OWNERSHIP_MISMATCH")
@@ -656,6 +660,8 @@ class OrderOutboxWorker:
                     "arm_deadline_at": grant.get("arm_deadline_at"),
                     "live_on": live_on,
                     "armed": armed,
+                    "activation_broker": dispatch_broker,
+                    "activation_uba": int(uba_raw),
                 },
                 commit=False,
             )

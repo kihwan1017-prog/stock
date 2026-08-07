@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -33,6 +34,7 @@ def test_validate_blocks_large_order(monkeypatch) -> None:
     service = LiveTradingTransitionService.__new__(
         LiveTradingTransitionService
     )
+    service._session = MagicMock()
 
     plan = service.validate(
         max_order_amount=Decimal("200000"),
@@ -49,6 +51,7 @@ def test_validate_passes_safe_initial_limits(monkeypatch) -> None:
     service = LiveTradingTransitionService.__new__(
         LiveTradingTransitionService
     )
+    service._session = MagicMock()
 
     plan = service.validate(
         max_order_amount=Decimal("10000"),

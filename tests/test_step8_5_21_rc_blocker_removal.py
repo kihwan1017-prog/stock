@@ -70,7 +70,7 @@ def test_activation_missing_expires_disables(monkeypatch) -> None:
         expires_at=None,
         activation_status="ACTIVE",
     )
-    session.scalar.return_value = entity
+    session.scalars.return_value = [entity]
     service = LiveTradingTransitionService(session)
     assert service.get_active() is None
     assert entity.enabled is False
@@ -87,7 +87,7 @@ def test_activation_expired_disables() -> None:
         expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
         activation_status="ACTIVE",
     )
-    session.scalar.return_value = entity
+    session.scalars.return_value = [entity]
     service = LiveTradingTransitionService(session)
     assert service.get_active() is None
     assert entity.activation_status == "EXPIRED"
