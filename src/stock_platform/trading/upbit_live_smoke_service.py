@@ -260,7 +260,10 @@ class UpbitLiveSmokeService:
         preflight_id: str | None = None,
         skip_live_network: bool = False,
     ) -> dict[str, Any]:
-        """실주문은 execute_live + confirmation + arm_token 모두 필수."""
+        """실주문은 execute_live + confirmation 필수.
+
+        ARM은 원문 token challenge 또는 UBA ARM state(Design A)로 검증.
+        """
 
         if not execute_live:
             return self.dry_run(
@@ -276,8 +279,18 @@ class UpbitLiveSmokeService:
 
         if confirmation_text != CONFIRMATION_TEXT:
             raise UpbitLiveSmokeError("CONFIRMATION_TEXT_MISMATCH")
-        if not arm_token:
-            raise UpbitLiveSmokeError("ARM_TOKEN_REQUIRED")
+        # ARM 원문 미전달 허용 — 서버가 UBA ARM state로 검증
+        from stock_platform.trading.live_arm_service import LiveArmService
+
+        ok_arm, arm_reason = LiveArmService(
+            self._session
+        ).validate_arm_authorization(
+            int(user_broker_account_id),
+            arm_token=arm_token,
+            require_token_challenge=False,
+        )
+        if not ok_arm:
+            raise UpbitLiveSmokeError(arm_reason)
         if Decimal(str(amount)) > MAX_SMOKE_AMOUNT:
             raise UpbitLiveSmokeError("AMOUNT_EXCEEDS_MAX")
 

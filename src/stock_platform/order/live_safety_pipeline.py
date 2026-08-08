@@ -172,8 +172,11 @@ class LiveOrderSafetyPipeline:
             from stock_platform.trading.live_arm_service import LiveArmService
 
             arm_service = LiveArmService(self._session)
-            ok_arm, arm_reason = arm_service.validate_arm_token(
-                uba_id, arm_token
+            # 원문 token이 있으면 challenge, 없으면 UBA ARM state만 검증
+            ok_arm, arm_reason = arm_service.validate_arm_authorization(
+                uba_id,
+                arm_token=arm_token,
+                require_token_challenge=False,
             )
             if not ok_arm:
                 audit = (

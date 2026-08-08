@@ -1078,6 +1078,35 @@ class ControlledLiveOrderSmokeService:
             reference_price=Decimal(str(limit_price)),
         )
 
+        # Activation ACTIVE + UPBIT/ACCOUNT/UBA scope (Fail Closed)
+        from stock_platform.broker.live_transition_guard import (
+            LiveTradingTransitionGuard,
+        )
+
+        try:
+            LiveTradingTransitionGuard(self._session).require_active(
+                broker_code="UPBIT",
+                user_broker_account_id=int(uba_id),
+            )
+        except PermissionError as exc:
+            raise ControlledLiveOrderSmokeError(
+                "ACTIVATION_INACTIVE",
+                message=str(exc),
+            ) from exc
+
+        # ARM authorization — 원문 token 없이 UBA state 검증 가능 (Design A)
+        from stock_platform.trading.live_arm_service import LiveArmService
+
+        ok_arm, arm_reason = LiveArmService(
+            self._session
+        ).validate_arm_authorization(
+            int(uba_id),
+            arm_token=arm_token,
+            require_token_challenge=False,
+        )
+        if not ok_arm:
+            raise ControlledLiveOrderSmokeError(arm_reason)
+
         # 서버 Gate 재검증 후 기존 smoke execute 위임
         uba_pf = RuntimePreflightService(self._session).run_for_uba(
             user_broker_account_id=int(uba_id),

@@ -43,7 +43,6 @@ export function GuidedUpbitLiveSmokePanel() {
   const [limitPrice, setLimitPrice] = useState<number | null>(null);
   const [amount, setAmount] = useState<number | null>(null);
   const [confirmText, setConfirmText] = useState("");
-  const [armToken, setArmToken] = useState("");
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null);
   const [orderTest, setOrderTest] = useState<Record<string, unknown> | null>(
     null,
@@ -173,7 +172,6 @@ export function GuidedUpbitLiveSmokePanel() {
         amount: Number(amount),
         limit_price: confirmPrice,
         confirmation_text: confirmText,
-        arm_token: armToken || undefined,
         execute_live: executeLive,
         preview_id: String(preview?.preview_id ?? ""),
         order_test_fingerprint: String(
@@ -534,12 +532,55 @@ export function GuidedUpbitLiveSmokePanel() {
                 onChange={(e) => setConfirmText(e.target.value)}
                 placeholder={requiredConfirm}
               />
-              <Input.Password
-                style={{ marginTop: 8 }}
-                value={armToken}
-                onChange={(e) => setArmToken(e.target.value)}
-                placeholder="ARM token (실주문 시에만)"
-              />
+              {(() => {
+                const selected = upbitAccounts.find(
+                  (a) => Number(a.user_broker_account_id) === Number(ubaId),
+                );
+                const liveRec = asRecord(selected);
+                const armed = Boolean(
+                  liveRec?.live_armed ?? pf?.live_armed ?? false,
+                );
+                const liveOn = Boolean(
+                  liveRec?.live_order_enabled ?? pf?.live_order_enabled ?? false,
+                );
+                const expiresAt = String(
+                  liveRec?.arm_expires_at ?? pf?.arm_expires_at ?? "",
+                );
+                const remainingSec =
+                  expiresAt && Date.parse(expiresAt) > Date.now()
+                    ? Math.max(
+                        0,
+                        Math.floor((Date.parse(expiresAt) - Date.now()) / 1000),
+                      )
+                    : 0;
+                return (
+                  <Alert
+                    style={{ marginTop: 8 }}
+                    type={armed && liveOn && remainingSec > 0 ? "success" : "warning"}
+                    showIcon
+                    title="ARM authorization (서버 검증)"
+                    description={
+                      <Space orientation="vertical" size={0}>
+                        <Typography.Text>
+                          LIVE: {liveOn ? "ON" : "OFF"} · ARM:{" "}
+                          {armed ? "ARMED" : "OFF"}
+                        </Typography.Text>
+                        {armed ? (
+                          <Typography.Text type="secondary">
+                            expires_at: {expiresAt || "-"} · remaining:{" "}
+                            {remainingSec}s
+                          </Typography.Text>
+                        ) : (
+                          <Typography.Text type="secondary">
+                            관리자가 ARM ON 한 뒤 Confirm 하세요. token 수동
+                            입력은 필요 없습니다.
+                          </Typography.Text>
+                        )}
+                      </Space>
+                    }
+                  />
+                );
+              })()}
               <Space wrap style={{ marginTop: 12 }}>
                 <Button
                   disabled={confirmText !== requiredConfirm}

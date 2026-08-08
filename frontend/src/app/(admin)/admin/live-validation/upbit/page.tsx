@@ -110,7 +110,6 @@ export default function AdminUpbitLiveValidationPage() {
     return (
       ready &&
       blockers.length === 0 &&
-      armToken.trim().length > 0 &&
       confirmText === CONFIRMATION &&
       amount > 0 &&
       amount <= 10000 &&
@@ -120,7 +119,6 @@ export default function AdminUpbitLiveValidationPage() {
   }, [
     ready,
     blockers.length,
-    armToken,
     confirmText,
     locked,
     executeMut.isPending,
@@ -134,7 +132,7 @@ export default function AdminUpbitLiveValidationPage() {
   return (
     <AdminPageShell
       title="Upbit 소액 LIVE 검증"
-      description="기본 DRY-RUN. 실주문은 승인·플래그·확인문구·ARM 토큰이 모두 있을 때만."
+      description="기본 DRY-RUN. 실주문은 승인·플래그·확인문구·서버 ARM state가 모두 있을 때만."
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Alert
@@ -268,8 +266,14 @@ export default function AdminUpbitLiveValidationPage() {
             </Descriptions.Item>
           </Descriptions>
           <Space orientation="vertical" style={{ width: "100%", marginTop: 12 }}>
+            <Alert
+              type="info"
+              showIcon
+              title="ARM authorization"
+              description="원문 token 입력이 필요 없습니다. 관리자 ARM ON 상태(UBA binding + TTL)를 서버가 검증합니다. (선택) challenge용 arm_token은 아래 필드에만 임시 입력."
+            />
             <Input.Password
-              placeholder="arm_token (저장하지 않음)"
+              placeholder="arm_token (선택·challenge, 저장하지 않음)"
               value={armToken}
               onChange={(e) => setArmToken(e.target.value)}
               disabled={locked}
@@ -294,7 +298,7 @@ export default function AdminUpbitLiveValidationPage() {
                   side: String(values.side).toUpperCase(),
                   amount: Number(values.amount),
                   limit_price: Number(values.limit_price),
-                  arm_token: armToken,
+                  arm_token: armToken.trim() ? armToken : null,
                   execute_live: true,
                   confirmation_text: confirmText,
                   preflight_id: String(preflight?.preflight_id ?? ""),

@@ -547,12 +547,20 @@ class LiveArmService:
                 count += 1
         return count
 
-    def validate_arm_token(
+    def validate_arm_authorization(
         self,
         user_broker_account_id: int,
-        arm_token: str | None,
+        *,
+        arm_token: str | None = None,
+        require_token_challenge: bool = False,
     ) -> tuple[bool, str]:
-        """주문 직전 ARM 토큰 검증. 만료 시 LIVE OFF."""
+        """주문 직전 ARM 권한 검증. 만료 시 LIVE OFF.
+
+        Design A — 인증된 서버 경로에서는 원문 token 없이
+        UBA의 LIVE ON + ARM ON + TTL + hash 존재로 검증한다.
+        arm_token이 전달되거나 require_token_challenge=True이면
+        기존 challenge(원문↔hash)도 강제한다.
+        """
 
         uba = self._require_uba(user_broker_account_id)
         if self._expire_if_needed(uba, actor="SYSTEM", commit=False):
@@ -561,13 +569,28 @@ class LiveArmService:
             return False, "LIVE_ORDER_DISABLED"
         if not bool(uba.live_armed) or not uba.arm_token_hash:
             return False, "LIVE_NOT_ARMED"
-        if not arm_token:
-            return False, "ARM_TOKEN_MISSING"
-        if not secrets.compare_digest(
-            uba.arm_token_hash, self.hash_token(arm_token)
-        ):
-            return False, "ARM_TOKEN_MISMATCH"
+        token = (arm_token or "").strip()
+        if require_token_challenge or token:
+            if not token:
+                return False, "ARM_TOKEN_MISSING"
+            if not secrets.compare_digest(
+                uba.arm_token_hash, self.hash_token(token)
+            ):
+                return False, "ARM_TOKEN_MISMATCH"
         return True, "ARM_OK"
+
+    def validate_arm_token(
+        self,
+        user_broker_account_id: int,
+        arm_token: str | None,
+    ) -> tuple[bool, str]:
+        """레거시 challenge — 원문 token 필수."""
+
+        return self.validate_arm_authorization(
+            user_broker_account_id,
+            arm_token=arm_token,
+            require_token_challenge=True,
+        )
 
     def _expire_if_needed(
         self,

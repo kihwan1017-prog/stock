@@ -349,23 +349,36 @@ class UpbitLivePreflightService:
                 "DISARMED",
                 live_only=True,
             )
+        # Design A — 원문 없으면 UBA ARM state, 있으면 challenge
+        ok_auth, auth_reason = arm.validate_arm_authorization(
+            int(uba.user_broker_account_id),
+            arm_token=arm_token,
+            require_token_challenge=False,
+        )
         if arm_token:
-            ok_tok, reason = arm.validate_arm_token(
-                int(uba.user_broker_account_id), arm_token
-            )
             _add(
-                "ARM_TOKEN",
-                "arm_token 일치",
-                "PASS" if ok_tok else "FAIL",
-                reason,
+                "ARM_AUTHORIZATION",
+                "ARM 권한(challenge)",
+                "PASS" if ok_auth else "FAIL",
+                auth_reason,
                 live_only=True,
             )
+        elif purpose_u == "dry_run":
+            _add(
+                "ARM_AUTHORIZATION",
+                "ARM 권한(state)",
+                "PASS" if ok_auth else "WARNING",
+                auth_reason if ok_auth else f"{auth_reason} (dry-run)",
+                live_only=True,
+            )
+            if not ok_auth:
+                live_blockers.append(f"ARM_AUTHORIZATION: {auth_reason}")
         else:
             _add(
-                "ARM_TOKEN",
-                "arm_token 일치",
-                "WARNING" if purpose_u == "dry_run" else "FAIL",
-                "token not provided",
+                "ARM_AUTHORIZATION",
+                "ARM 권한(state)",
+                "PASS" if ok_auth else "FAIL",
+                auth_reason if ok_auth else auth_reason,
                 live_only=True,
             )
 
