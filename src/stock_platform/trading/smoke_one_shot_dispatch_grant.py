@@ -1,12 +1,13 @@
 """Smoke QUEUED 후 LIVE OFF/DISARM 이어도 단건 Outbox만 Worker 전송 허용.
 
-설계 B — LIVE/ARM 재활성 없이 run/order/outbox/UBA가 일치하는
-one-shot grant 1건만 통과. 넓은 PENDING 예외 금지.
+설계 A — Confirm 순간 유효 ARM을 근거로 짧은 dispatch TTL grant를 발급.
+LIVE/ARM 재활성 없이 run/order/outbox/UBA가 일치하는 1건만 통과.
+넓은 PENDING 예외 금지. ARM deadline 복사는 Worker TTL로 쓰지 않는다.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -15,7 +16,10 @@ from sqlalchemy.orm import Session
 GRANT_DETAIL_KEY = "smoke_one_shot_dispatch_grant"
 GRANT_STATUS_ISSUED = "ISSUED"
 GRANT_STATUS_CONSUMED = "CONSUMED"
-GRANT_VERSION = 1
+GRANT_VERSION = 2
+
+# 기본 dispatch TTL (Settings 없을 때 / 테스트 override)
+DEFAULT_SMOKE_ONE_SHOT_DISPATCH_TTL_SECONDS = 90
 
 
 class SmokeOneShotGrantError(PermissionError):
@@ -37,6 +41,25 @@ def _parse_aware(value: str | datetime | None) -> datetime | None:
     return dt.astimezone(timezone.utc)
 
 
+def resolve_smoke_one_shot_dispatch_ttl_seconds(
+    override: int | None = None,
+) -> int:
+    """Settings 기반 TTL. override가 있으면 우선."""
+
+    if override is not None:
+        ttl = int(override)
+    else:
+        try:
+            from stock_platform.common.settings import get_settings
+
+            ttl = int(get_settings().smoke_one_shot_dispatch_ttl_seconds)
+        except Exception:  # noqa: BLE001
+            ttl = DEFAULT_SMOKE_ONE_SHOT_DISPATCH_TTL_SECONDS
+    if ttl < 1:
+        raise ValueError("smoke_one_shot_dispatch_ttl_seconds_invalid")
+    return ttl
+
+
 def build_smoke_one_shot_grant(
     *,
     run_id: str,
@@ -44,15 +67,36 @@ def build_smoke_one_shot_grant(
     outbox_id: int,
     uba_id: int,
     owner_user_id: int,
-    arm_deadline_at: datetime,
+    arm_snapshot_expires_at: datetime,
     idempotency_key: str,
+    dispatch_ttl_seconds: int | None = None,
+    dispatch_expires_at: datetime | None = None,
+    issued_at: datetime | None = None,
 ) -> dict[str, Any]:
-    """발급 시점 스냅샷 — ARM TTL을 grant에 고정."""
+    """발급 시점 스냅샷 — dispatch TTL은 Confirm/발급 시각 기준.
 
-    deadline = _parse_aware(arm_deadline_at)
-    if deadline is None:
-        raise ValueError("arm_deadline_at_required")
-    now = datetime.now(timezone.utc)
+    arm_snapshot_expires_at: Confirm 순간 ARM expires 감사 스냅샷 (Worker TTL 아님).
+    dispatch_expires_at: Worker 허용 만료. 미지정 시 issued_at + TTL.
+    """
+
+    arm_snap = _parse_aware(arm_snapshot_expires_at)
+    if arm_snap is None:
+        raise ValueError("arm_snapshot_expires_at_required")
+
+    now = _parse_aware(issued_at) or datetime.now(timezone.utc)
+    assert now is not None
+
+    if dispatch_expires_at is not None:
+        dispatch_dl = _parse_aware(dispatch_expires_at)
+        if dispatch_dl is None:
+            raise ValueError("dispatch_expires_at_invalid")
+    else:
+        ttl = resolve_smoke_one_shot_dispatch_ttl_seconds(dispatch_ttl_seconds)
+        dispatch_dl = now + timedelta(seconds=ttl)
+
+    if dispatch_dl <= now:
+        raise ValueError("dispatch_expires_at_must_be_future")
+
     return {
         "version": GRANT_VERSION,
         "status": GRANT_STATUS_ISSUED,
@@ -62,7 +106,10 @@ def build_smoke_one_shot_grant(
         "uba_id": int(uba_id),
         "owner_user_id": int(owner_user_id),
         "idempotency_key": str(idempotency_key),
-        "arm_deadline_at": deadline.isoformat(),
+        # 감사: Confirm 순간 ARM 만료 시각 (Worker gate 아님)
+        "arm_deadline_at": arm_snap.isoformat(),
+        # Worker gate: Confirm 발급 시각 + 짧은 dispatch TTL
+        "dispatch_expires_at": dispatch_dl.isoformat(),
         "issued_at": now.isoformat(),
         "consumed_at": None,
     }
@@ -82,8 +129,10 @@ def issue_grant_on_run(
     outbox_id: int,
     uba_id: int,
     owner_user_id: int,
-    arm_deadline_at: datetime,
+    arm_snapshot_expires_at: datetime,
     idempotency_key: str,
+    dispatch_ttl_seconds: int | None = None,
+    dispatch_expires_at: datetime | None = None,
 ) -> dict[str, Any]:
     """LiveValidationRun.detail 에 grant 기록 (flush는 호출자)."""
 
@@ -93,8 +142,10 @@ def issue_grant_on_run(
         outbox_id=int(outbox_id),
         uba_id=int(uba_id),
         owner_user_id=int(owner_user_id),
-        arm_deadline_at=arm_deadline_at,
+        arm_snapshot_expires_at=arm_snapshot_expires_at,
         idempotency_key=idempotency_key,
+        dispatch_ttl_seconds=dispatch_ttl_seconds,
+        dispatch_expires_at=dispatch_expires_at,
     )
     detail = dict(run.detail or {})
     detail[GRANT_DETAIL_KEY] = grant
@@ -141,6 +192,7 @@ def assert_smoke_one_shot_dispatch_allowed(
     payload: dict[str, Any],
     *,
     outbox_id: int,
+    outbox_idempotency_key: str | None = None,
 ) -> dict[str, Any]:
     """LIVE OFF/DISARM 대체 경로 — 단건 grant 엄격 검증.
 
@@ -167,7 +219,7 @@ def assert_smoke_one_shot_dispatch_allowed(
     if order is None:
         raise SmokeOneShotGrantError("SMOKE_GRANT_ORDER_NOT_FOUND")
     if order.broker_order_id:
-        # UUID 존재 시 재전송 절대 금지 (attempt>0 재시도는 동일 outbox만 허용)
+        # UUID 존재 시 재전송 절대 금지
         raise SmokeOneShotGrantError("SMOKE_GRANT_BROKER_UUID_EXISTS")
 
     meta = dict(order.metadata_payload or {})
@@ -213,19 +265,22 @@ def assert_smoke_one_shot_dispatch_allowed(
             raise SmokeOneShotGrantError("SMOKE_GRANT_OWNER_MISMATCH")
 
     expected_idem = str(grant.get("idempotency_key") or "")
-    # Outbox idempotency_key 는 entity에서 검사 — payload에 없을 수 있음
     meta_idem = str(meta.get("idempotency_key") or "")
     if meta_idem and meta_idem != expected_idem:
         raise SmokeOneShotGrantError("SMOKE_GRANT_IDEMPOTENCY_MISMATCH")
     if expected_idem != f"smoke:{smoke_run_id}":
         raise SmokeOneShotGrantError("SMOKE_GRANT_IDEMPOTENCY_SHAPE")
+    if outbox_idempotency_key not in (None, ""):
+        if str(outbox_idempotency_key) != expected_idem:
+            raise SmokeOneShotGrantError("SMOKE_GRANT_IDEMPOTENCY_MISMATCH")
 
-    deadline = _parse_aware(grant.get("arm_deadline_at"))
-    if deadline is None:
-        raise SmokeOneShotGrantError("SMOKE_GRANT_ARM_DEADLINE_MISSING")
+    # Worker TTL — ARM snapshot이 아니라 Confirm 기준 dispatch_expires_at
+    dispatch_dl = _parse_aware(grant.get("dispatch_expires_at"))
+    if dispatch_dl is None:
+        raise SmokeOneShotGrantError("SMOKE_GRANT_DISPATCH_EXPIRES_MISSING")
     now = datetime.now(timezone.utc)
-    if now >= deadline:
-        raise SmokeOneShotGrantError("SMOKE_GRANT_ARM_DEADLINE_EXPIRED")
+    if now >= dispatch_dl:
+        raise SmokeOneShotGrantError("SMOKE_GRANT_DISPATCH_EXPIRED")
 
     uba = session.get(UserBrokerAccount, uba_id)
     if uba is None or not bool(uba.is_active):
@@ -235,6 +290,8 @@ def assert_smoke_one_shot_dispatch_allowed(
     expected_broker = str(payload.get("broker_code") or "").upper()
     if expected_broker and str(uba.broker_code).upper() != expected_broker:
         raise SmokeOneShotGrantError("SMOKE_GRANT_BROKER_MISMATCH")
+    if expected_broker and expected_broker != "UPBIT":
+        raise SmokeOneShotGrantError("SMOKE_GRANT_BROKER_NOT_UPBIT")
     if int(uba.user_id) != int(grant.get("owner_user_id") or 0):
         raise SmokeOneShotGrantError("SMOKE_GRANT_UBA_OWNERSHIP")
 
@@ -271,7 +328,7 @@ def dry_run_order_reusable_with_grant(
     has_grant_issued: bool,
     broker_order_id: str | None,
     submission_attempt_count: int,
-    arm_deadline_at: str | datetime | None,
+    dispatch_expires_at: str | datetime | None,
 ) -> str:
     """기존 queued 주문 재사용 판정 — 상태 변경 없음."""
 
@@ -281,7 +338,7 @@ def dry_run_order_reusable_with_grant(
         return "MUST_RETIRE"
     if not has_grant_issued:
         return "MUST_RETIRE"
-    deadline = _parse_aware(arm_deadline_at)
+    deadline = _parse_aware(dispatch_expires_at)
     if deadline is None or datetime.now(timezone.utc) >= deadline:
         return "MUST_RETIRE"
     return "REUSABLE"

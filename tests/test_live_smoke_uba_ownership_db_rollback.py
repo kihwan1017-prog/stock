@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import uuid
 from contextlib import ExitStack
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -37,6 +38,7 @@ from stock_platform.trading.account_masking import (
     mask_account_number,
 )
 from stock_platform.trading.account_models import UserBrokerAccount
+from stock_platform.trading.live_arm_service import LiveArmService
 from stock_platform.trading.live_validation_entities import LiveValidationRunEntity
 from stock_platform.trading.upbit_live_smoke_constants import (
     CONFIRMATION_TEXT,
@@ -253,6 +255,8 @@ def test_live_smoke_uba_only_queue_insert_rollback() -> None:
             is_active=True,
             live_order_enabled=True,
             live_armed=True,
+            arm_expires_at=datetime.now(timezone.utc) + timedelta(minutes=5),
+            arm_token_hash=LiveArmService.hash_token("tok-uba-own"),
             connection_status="CONNECTED",
         )
         session.add(uba)

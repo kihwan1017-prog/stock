@@ -405,6 +405,8 @@ class Settings(BaseSettings):
 
     # STEP 8-5-6 — PostgreSQL Distributed Recovery Lock
     recovery_distributed_lock_enabled: bool = True
+    # Conflict 선택 Resolve 실제 실행 (기본 False = dry-run only)
+    recovery_conflict_resolve_execute_enabled: bool = False
     recovery_lock_lease_seconds: int = 120
     recovery_lock_heartbeat_seconds: int = 30
     recovery_lock_acquire_timeout_seconds: float = 5.0
@@ -483,6 +485,8 @@ class Settings(BaseSettings):
     upbit_live_smoke_treat_scheduler_paused: bool = False
     upbit_live_smoke_default_amount: float = 5000.0
     upbit_live_smoke_max_amount: float = 10000.0
+    # Confirm 발급 시각 기준 one-shot Worker dispatch TTL (ARM TTL과 분리)
+    smoke_one_shot_dispatch_ttl_seconds: int = Field(default=90, ge=30, le=300)
     # STEP 8-9A — Broker 추적 (거래 Scheduler와 분리)
     upbit_live_track_enabled: bool = True
     upbit_live_track_poll_seconds: int = 2

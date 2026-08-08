@@ -147,7 +147,12 @@ class OrderOutboxWorker:
 
                     # LIVE safety: intent 후에도 재확인 (전송 직전)
                     self._assert_live_dispatch_allowed(
-                        session, payload, outbox_id=int(outbox_id)
+                        session,
+                        payload,
+                        outbox_id=int(outbox_id),
+                        outbox_idempotency_key=getattr(
+                            entity, "idempotency_key", None
+                        ),
                     )
 
                     from stock_platform.order.live_dry_run import (
@@ -550,6 +555,7 @@ class OrderOutboxWorker:
         payload: dict[str, Any],
         *,
         outbox_id: int | None = None,
+        outbox_idempotency_key: str | None = None,
     ) -> None:
         env = str(payload.get("environment") or "PAPER").upper()
         if env != "LIVE":
@@ -632,7 +638,10 @@ class OrderOutboxWorker:
 
         try:
             grant = assert_smoke_one_shot_dispatch_allowed(
-                session, payload, outbox_id=int(outbox_id)
+                session,
+                payload,
+                outbox_id=int(outbox_id),
+                outbox_idempotency_key=outbox_idempotency_key,
             )
         except SmokeOneShotGrantError as exc:
             if not live_on:
@@ -658,6 +667,7 @@ class OrderOutboxWorker:
                     "order_id": grant.get("order_id"),
                     "run_id": grant.get("run_id"),
                     "arm_deadline_at": grant.get("arm_deadline_at"),
+                    "dispatch_expires_at": grant.get("dispatch_expires_at"),
                     "live_on": live_on,
                     "armed": armed,
                     "activation_broker": dispatch_broker,

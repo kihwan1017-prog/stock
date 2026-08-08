@@ -627,6 +627,9 @@ class UpbitLiveSmokeService:
                         "status": grant.get("status"),
                         "outbox_id": grant.get("outbox_id"),
                         "arm_deadline_at": grant.get("arm_deadline_at"),
+                        "dispatch_expires_at": grant.get(
+                            "dispatch_expires_at"
+                        ),
                     },
                 },
                 commit=False,
@@ -1055,10 +1058,18 @@ class UpbitLiveSmokeService:
         user_broker_account_id: int,
         actor: str,
     ) -> dict[str, Any]:
-        """QUEUED 성공 직후 — finalize DISARM 전에 단건 Worker 권한 발급."""
+        """QUEUED 성공 직후 — finalize DISARM 전에 단건 Worker 권한 발급.
 
+        Confirm 순간 LIVE ON + ARM ON(미만료)을 요구하고,
+        Worker용 TTL은 ARM expires가 아니라 Settings dispatch TTL로 분리한다.
+        """
+
+        from datetime import timezone as _tz
+
+        from stock_platform.common.settings import get_settings
         from stock_platform.trading.smoke_one_shot_dispatch_grant import (
             issue_grant_on_run,
+            resolve_smoke_one_shot_dispatch_ttl_seconds,
         )
 
         uba = self._session.get(
@@ -1066,24 +1077,43 @@ class UpbitLiveSmokeService:
         )
         if uba is None:
             raise UpbitLiveSmokeError("UBA_NOT_FOUND")
+        if not bool(getattr(uba, "live_order_enabled", False)):
+            raise UpbitLiveSmokeError(
+                "LIVE_ORDER_DISABLED",
+                message="one-shot grant requires LIVE ON before finalize",
+            )
         if not bool(getattr(uba, "live_armed", False)):
             raise UpbitLiveSmokeError(
                 "LIVE_NOT_ARMED",
                 message="one-shot grant requires ARM before finalize",
             )
-        deadline = getattr(uba, "arm_expires_at", None)
-        if deadline is None:
+        arm_expires = getattr(uba, "arm_expires_at", None)
+        if arm_expires is None:
             raise UpbitLiveSmokeError(
                 "LIVE_ARM_EXPIRES_MISSING",
                 message="arm_expires_at required for one-shot grant",
             )
+        if getattr(arm_expires, "tzinfo", None) is None:
+            arm_expires = arm_expires.replace(tzinfo=_tz.utc)
+        else:
+            arm_expires = arm_expires.astimezone(_tz.utc)
+        now = datetime.now(_tz.utc)
+        if now >= arm_expires:
+            raise UpbitLiveSmokeError(
+                "LIVE_ARM_EXPIRED",
+                message="one-shot grant requires unexpired ARM at Confirm",
+            )
+        ttl = resolve_smoke_one_shot_dispatch_ttl_seconds(
+            int(get_settings().smoke_one_shot_dispatch_ttl_seconds)
+        )
         grant = issue_grant_on_run(
             run,
             order_id=int(order_id),
             outbox_id=int(outbox_id),
             uba_id=int(user_broker_account_id),
             owner_user_id=int(uba.user_id),
-            arm_deadline_at=deadline,
+            arm_snapshot_expires_at=arm_expires,
+            dispatch_ttl_seconds=ttl,
             idempotency_key=f"smoke:{run.run_id}",
         )
         try:
@@ -1101,6 +1131,8 @@ class UpbitLiveSmokeService:
                     "order_id": int(order_id),
                     "outbox_id": int(outbox_id),
                     "arm_deadline_at": grant.get("arm_deadline_at"),
+                    "dispatch_expires_at": grant.get("dispatch_expires_at"),
+                    "dispatch_ttl_seconds": ttl,
                     "status": grant.get("status"),
                 },
                 commit=False,
