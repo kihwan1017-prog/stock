@@ -224,12 +224,26 @@ print('DB_OK')
     # --- start backend ---
     if ($startBackend) {
         Write-Step "starting backend (uvicorn reload)"
+        # OS/PowerShell process env가 secrets env 파일보다 우선하므로,
+        # LIVE 관련 override를 자식 프로세스에서 제거해 env 파일을 공식 source로 둔다.
         $backendCmd = @"
 `$ErrorActionPreference='Continue'
 Set-Location -LiteralPath '$ProjectRoot'
 `$env:STOCK_PLATFORM_ENV_FILE='$EnvFile'
 `$env:PYTHONPATH='$(Join-Path $ProjectRoot "src")'
-# LIVE flags are NOT set here — env file / process env only
+`$liveEnvKeys = @(
+    'GLOBAL_LIVE_ORDER_ENABLED',
+    'UPBIT_LIVE_ORDER_ENABLED',
+    'UPBIT_USE_MOCK',
+    'LIVE_OUTBOX_WORKER_ENABLED',
+    'LIVE_OUTBOX_WORKER_AUTO_START',
+    'KIWOOM_LIVE_ORDER_ENABLED',
+    'KIWOOM_USE_MOCK'
+)
+foreach (`$key in `$liveEnvKeys) {
+    Remove-Item -LiteralPath ("Env:" + `$key) -ErrorAction SilentlyContinue
+}
+Write-Host '[start-dev] LIVE-related process env overrides cleared; env file is source of truth'
 cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --app-dir src >> `"$BackendLog`" 2>&1"
 "@
         $backendProc = Start-Process -FilePath "powershell.exe" `

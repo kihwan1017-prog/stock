@@ -177,10 +177,14 @@ class Settings(BaseSettings):
     paper_outbox_worker_stale_seconds: float = 30.0
     # LIVE Outbox Worker 상시 Polling (기본 OFF — Fail Closed, Paper와 claim 분리)
     live_outbox_worker_enabled: bool = False
+    # enabled=true여도 기동 시 자동 start 금지 (명시 Admin/ops start 필요)
+    live_outbox_worker_auto_start: bool = False
     live_outbox_worker_interval_seconds: float = 1.0
     live_outbox_worker_batch_size: int = 20
     live_outbox_worker_backoff_seconds: float = 2.0
     live_outbox_worker_stale_seconds: float = 30.0
+    # AUTO LIVE readiness — 시세 stale 임계(초). 초과 시 BLOCKER
+    autotrading_market_feed_stale_seconds: float = 30.0
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0

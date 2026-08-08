@@ -92,6 +92,13 @@ def evaluate_uba_autotrading_ready(
         )
         market = str(getattr(strategy, "market_type", "") or "").upper()
         upbit_ok = market in {"CRYPTO", "UPBIT", "MULTI", ""}
+        payload = getattr(strategy, "parameter_payload", None) or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        symbol_hint = (
+            str(payload.get("symbol") or payload.get("market") or "").strip()
+            or None
+        )
         item = {
             "link_id": int(link.account_strategy_link_id),
             "strategy_id": int(link.strategy_id),
@@ -108,6 +115,7 @@ def evaluate_uba_autotrading_ready(
             ),
             "market_type": market or None,
             "upbit_compatible": upbit_ok,
+            "symbol": symbol_hint.upper() if symbol_hint else None,
             "code": getattr(strategy, "strategy_code", None)
             or getattr(strategy, "code", None),
             "name": getattr(strategy, "name", None),
@@ -303,19 +311,19 @@ def evaluate_uba_autotrading_ready(
                 warnings.append(str(w))
         feed = checks["pipeline"].get("quote_ws") or {}
         hub = checks["pipeline"].get("hub_status") or {}
-        feed_ok = bool(feed.get("ok") or feed.get("connected"))
-        hub_ok = bool(hub.get("ok") or hub.get("running"))
-        checks["market_feed"] = {
-            "ok": feed_ok or hub_ok,
-            "quote_ws": feed,
-            "hub": hub,
-            "policy": "WARN_IF_UNHEALTHY",
-        }
-        if not (feed_ok or hub_ok):
-            warnings.append("MARKET_FEED_UNHEALTHY")
+        feed_eval = _evaluate_market_feed_for_auto_live(
+            quote_ws=feed,
+            hub=hub,
+            strategy_symbols=_strategy_symbols_from_rows(approved_active),
+        )
+        checks["market_feed"] = feed_eval
+        if not bool(feed_eval.get("ok")):
+            # AUTO LIVE만 Fail Closed — Paper/Shadow 조회 WARN 정책은 유지
+            blockers.append("MARKET_FEED_UNHEALTHY")
     except Exception as exc:  # noqa: BLE001
         checks["pipeline"] = {"error": type(exc).__name__}
         warnings.append("PIPELINE_READINESS_UNAVAILABLE")
+        blockers.append("MARKET_FEED_UNHEALTHY")
 
     # Conflict count
     try:
@@ -451,6 +459,159 @@ def evaluate_uba_autotrading_ready(
         checks=checks,
         runtime_status=runtime_status,
     )
+
+
+def _strategy_symbols_from_rows(rows: list[dict[str, Any]]) -> list[str]:
+    """승인 active strategy row에서 심볼 힌트 추출 (없으면 기본 KRW-XRP)."""
+
+    symbols: list[str] = []
+    for row in rows:
+        for key in ("symbol", "symbols", "primary_symbol"):
+            raw = row.get(key)
+            if isinstance(raw, str) and raw.strip():
+                symbols.append(raw.strip().upper())
+            elif isinstance(raw, (list, tuple)):
+                for item in raw:
+                    if str(item).strip():
+                        symbols.append(str(item).strip().upper())
+    # 중복 제거 유지 순서
+    uniq: list[str] = []
+    for sym in symbols:
+        if sym not in uniq:
+            uniq.append(sym)
+    return uniq
+
+
+def _parse_iso_utc(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def _evaluate_market_feed_for_auto_live(
+    *,
+    quote_ws: dict[str, Any],
+    hub: dict[str, Any],
+    strategy_symbols: list[str],
+) -> dict[str, Any]:
+    """AUTO LIVE용 Market Feed 판정 — stale/unhealthy면 Fail Closed.
+
+    Paper/Shadow readiness의 WARN 정책을 바꾸지 않는다.
+    """
+
+    from stock_platform.common.settings import get_settings
+
+    settings = get_settings()
+    stale_limit = float(
+        getattr(settings, "autotrading_market_feed_stale_seconds", 30.0)
+        or 30.0
+    )
+    now = datetime.now(timezone.utc)
+    symbols = strategy_symbols or [
+        str(
+            getattr(settings, "realtime_upbit_default_symbol", "") or "KRW-XRP"
+        ).upper()
+    ]
+
+    connected = bool(
+        quote_ws.get("ok")
+        or quote_ws.get("connected")
+        or quote_ws.get("running")
+    )
+    hub_running = bool(
+        hub.get("ok")
+        or hub.get("running")
+        or hub.get("dispatch_running")
+    )
+    last_received = _parse_iso_utc(quote_ws.get("last_received_at"))
+    last_hub_event = _parse_iso_utc(hub.get("last_event_at"))
+    freshest = last_received or last_hub_event
+    age_sec: float | None = None
+    if freshest is not None:
+        age_sec = max(0.0, (now - freshest).total_seconds())
+
+    # cache에 목표 심볼 시세가 있으면 보조 확인 (실주문 없음)
+    cache_hit: dict[str, Any] | None = None
+    try:
+        from stock_platform.realtime.manager import realtime_manager
+
+        cache = getattr(realtime_manager, "cache", None)
+        items = getattr(cache, "_items", None) if cache is not None else None
+        if isinstance(items, dict):
+            for sym in symbols:
+                key = f"UPBIT:{sym.upper()}"
+                hit = items.get(key)
+                if hit is None:
+                    continue
+                recv = getattr(hit, "received_at", None) or getattr(
+                    hit, "event_time", None
+                )
+                price = getattr(hit, "trade_price", None)
+                cache_hit = {
+                    "symbol": sym.upper(),
+                    "trade_price": (
+                        str(price) if price is not None else None
+                    ),
+                    "received_at": (
+                        recv.isoformat()
+                        if hasattr(recv, "isoformat")
+                        else str(recv)
+                        if recv
+                        else None
+                    ),
+                }
+                if recv is not None and hasattr(recv, "tzinfo"):
+                    rdt = recv
+                    if rdt.tzinfo is None:
+                        rdt = rdt.replace(tzinfo=timezone.utc)
+                    else:
+                        rdt = rdt.astimezone(timezone.utc)
+                    cache_age = max(0.0, (now - rdt).total_seconds())
+                    if age_sec is None or cache_age < age_sec:
+                        age_sec = cache_age
+                        freshest = rdt
+                break
+    except Exception:  # noqa: BLE001
+        cache_hit = None
+
+    fresh = age_sec is not None and age_sec <= stale_limit
+    ok = bool(connected and hub_running and fresh)
+    reason = "OK"
+    if not connected:
+        reason = "QUOTE_WS_NOT_CONNECTED"
+    elif not hub_running:
+        reason = "HUB_DISPATCH_NOT_RUNNING"
+    elif age_sec is None:
+        reason = "NO_RECENT_QUOTE"
+    elif not fresh:
+        reason = "QUOTE_STALE"
+
+    return {
+        "ok": ok,
+        "policy": "BLOCK_IF_UNHEALTHY_FOR_AUTO_LIVE",
+        "stale_limit_seconds": stale_limit,
+        "age_seconds": age_sec,
+        "last_received_at": freshest.isoformat() if freshest else None,
+        "symbols": symbols,
+        "quote_ws": quote_ws,
+        "hub": hub,
+        "cache_hit": cache_hit,
+        "reason": reason,
+        "evaluator_path": (
+            "UpbitTicker→QuoteHub→MovingAverageStrategyEvaluator"
+        ),
+    }
 
 
 def _result(

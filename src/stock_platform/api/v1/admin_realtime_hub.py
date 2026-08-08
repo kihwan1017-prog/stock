@@ -80,6 +80,25 @@ def get_scope(
     }
 
 
+@admin_router.post("/hub/start-dispatch")
+async def start_hub_dispatch(
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Hub dispatch만 기동 — 주문/Signal 강제 없음."""
+
+    hub = get_realtime_market_data_hub()
+    result = await hub.start_dispatch()
+    audit.record(
+        event_type="ADMIN_REALTIME_HUB_START_DISPATCH",
+        actor=user.username or f"admin:{user.user_id}",
+        request_id=getattr(request.state, "request_id", None),
+        detail={"force_signal": False, "force_order": False},
+    )
+    return {"started": True, "hub": result, "force_signal": False}
+
+
 @admin_router.post("/scopes/{scope_key:path}/reconnect")
 async def reconnect_scope(
     scope_key: str,

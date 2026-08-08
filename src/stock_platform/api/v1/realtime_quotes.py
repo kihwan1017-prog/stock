@@ -35,10 +35,28 @@ async def start_upbit_realtime(
     request: StartUpbitRequest,
 ):
     try:
-        return await realtime_manager.start_upbit(
+        status_payload = await realtime_manager.start_upbit(
             symbols=request.symbols,
             channels=request.channels,
         )
+        # Quote → Hub → Evaluator 경로 준비 (주문/Signal 강제 없음)
+        try:
+            from stock_platform.realtime.market_data_hub import (
+                get_realtime_market_data_hub,
+            )
+
+            hub = get_realtime_market_data_hub()
+            hub_status = await hub.start_dispatch()
+            status_payload = {
+                **status_payload,
+                "hub_dispatch": hub_status,
+            }
+        except Exception as hub_exc:  # noqa: BLE001
+            status_payload = {
+                **status_payload,
+                "hub_dispatch_error": type(hub_exc).__name__,
+            }
+        return status_payload
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

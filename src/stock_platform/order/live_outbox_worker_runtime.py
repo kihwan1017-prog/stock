@@ -137,10 +137,14 @@ class LiveOutboxWorkerRuntime:
                 continue
 
     def status(self) -> dict[str, Any]:
+        settings = get_settings()
         running = self._task is not None and not self._task.done()
         return {
             "enabled": bool(
-                getattr(get_settings(), "live_outbox_worker_enabled", False)
+                getattr(settings, "live_outbox_worker_enabled", False)
+            ),
+            "auto_start": bool(
+                getattr(settings, "live_outbox_worker_auto_start", False)
             ),
             "running": running,
             "started_at": (
@@ -154,6 +158,10 @@ class LiveOutboxWorkerRuntime:
             "consecutive_failures": self._consecutive_failures,
             "worker_id": "live-outbox-1",
             "live_only": True,
+            "note": (
+                "enabled=준비 설정; running=polling 중. "
+                "dispatch는 LIVE/ARM/Activation gate 필요"
+            ),
         }
 
 

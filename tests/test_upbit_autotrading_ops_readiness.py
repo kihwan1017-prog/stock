@@ -235,13 +235,38 @@ def test_link_activate_requires_live_approval() -> None:
         )
 
 
-def test_worker_disabled_by_default_startup_fail_safe() -> None:
+def test_worker_disabled_by_default_startup_fail_safe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LIVE_OUTBOX_WORKER_ENABLED", "false")
+    monkeypatch.setenv("LIVE_OUTBOX_WORKER_AUTO_START", "false")
+    from stock_platform.common.settings import clear_settings_cache
+
+    clear_settings_cache()
     runtime = LiveOutboxWorkerRuntime()
     st = runtime.status()
     assert st["enabled"] is False
+    assert st.get("auto_start") is False
     started = runtime.start()
     assert started["started"] is False
     assert started["reason"] == "LIVE_OUTBOX_WORKER_DISABLED"
+
+
+def test_market_feed_unhealthy_is_auto_live_blocker() -> None:
+    """AUTO LIVE readiness에서 feed unhealthy는 WARN이 아니라 BLOCKER."""
+
+    from stock_platform.trading.autotrading_master_gate import (
+        _evaluate_market_feed_for_auto_live,
+    )
+
+    out = _evaluate_market_feed_for_auto_live(
+        quote_ws={"connected": False, "running": False},
+        hub={"dispatch_running": False},
+        strategy_symbols=["KRW-XRP"],
+    )
+    assert out["ok"] is False
+    assert out["policy"] == "BLOCK_IF_UNHEALTHY_FOR_AUTO_LIVE"
+    assert out["reason"] == "QUOTE_WS_NOT_CONNECTED"
 
 
 def test_upbit_not_blocked_by_krx_market_hours() -> None:
@@ -378,9 +403,10 @@ def test_master_gate_blockers_live_arm_worker_kill_risk() -> None:
         "LIVE_OUTBOX_WORKER_DISABLED",
         "KILL_SWITCH_ACTIVE",
         "RISK_POLICY_MISSING",
+        "MARKET_FEED_UNHEALTHY",
     ):
         assert code in out["blockers"]
-    assert "MARKET_FEED_UNHEALTHY" in out["warnings"]
+    assert "MARKET_FEED_UNHEALTHY" not in out["warnings"]
     # active approved link → Runtime READY (RUN 아님)
     assert out["runtime_status"] == "READY"
 

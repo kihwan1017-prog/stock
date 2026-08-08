@@ -471,12 +471,20 @@ class ApplicationLifecycle:
         recovery_start = paper_fill_recovery_scheduler.start()
         logger.info("paper_fill_recovery_startup", **recovery_start)
 
-        # LIVE Outbox Worker — paper_only와 claim 분리, 기본 OFF
+        # LIVE Outbox Worker — enabled만으로 polling 시작하지 않음 (Fail Closed)
+        # LIVE_OUTBOX_WORKER_AUTO_START=true 일 때만 start(); 기본은 준비 상태만
         from stock_platform.order.live_outbox_worker_runtime import (
             live_outbox_worker_runtime,
         )
 
-        live_outbox_start = live_outbox_worker_runtime.start()
+        if bool(getattr(settings, "live_outbox_worker_auto_start", False)):
+            live_outbox_start = live_outbox_worker_runtime.start()
+        else:
+            live_outbox_start = {
+                "started": False,
+                "reason": "LIVE_OUTBOX_WORKER_AUTO_START_DISABLED",
+                **live_outbox_worker_runtime.status(),
+            }
         logger.info("live_outbox_worker_startup", **live_outbox_start)
 
         # 레거시 무필터 Outbox는 Paper/LIVE 전용 worker Flag ON일 때 보조 기동하지 않음

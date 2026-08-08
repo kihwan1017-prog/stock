@@ -86,11 +86,15 @@ class RealtimeStrategyRunner:
             await task
 
     async def stop(self) -> None:
-        from stock_platform.realtime.market_data_hub import (
-            get_realtime_market_data_hub,
+        # Shared Hub는 Quote→Evaluator 공용 인프라.
+        # 레거시 runner stop이 Hub dispatch를 끄면 시세 경로가 끊긴다.
+        logger.info(
+            "realtime_strategy_runner_stop_deprecated",
+            message=(
+                "Shared RealtimeMarketDataHub dispatch left running "
+                "(do not stop hub from deprecated runner)"
+            ),
         )
-
-        await get_realtime_market_data_hub().stop_dispatch()
 
     def set_position(
         self,
