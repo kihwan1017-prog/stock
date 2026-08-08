@@ -166,9 +166,14 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         {
             InternalStatus.OUTBOX_DISPATCHING.value,
             InternalStatus.BROKER_SUBMISSION_PENDING.value,
+            InternalStatus.BROKER_TRACKING.value,
+            InternalStatus.ORDER_SUBMITTED.value,
+            InternalStatus.ORDER_ACCEPTED.value,
             InternalStatus.UNKNOWN.value,
+            InternalStatus.FAILED.value,
             InternalStatus.FAILED_CLOSED.value,
             InternalStatus.REJECTED.value,
+            InternalStatus.MANUAL_REVIEW_REQUIRED.value,
             # 미전송 주문 내부 폐기 — 브로커 미호출 terminal
             InternalStatus.CANCELED.value,
         }
@@ -178,10 +183,13 @@ ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             InternalStatus.OUTBOX_PENDING.value,
             InternalStatus.OUTBOX_DISPATCHING.value,
             InternalStatus.BROKER_SUBMISSION_PENDING.value,
+            InternalStatus.BROKER_TRACKING.value,
             InternalStatus.ORDER_SUBMITTED.value,
+            InternalStatus.ORDER_ACCEPTED.value,
             InternalStatus.FAILED.value,
             InternalStatus.FAILED_CLOSED.value,
             InternalStatus.UNKNOWN.value,
+            InternalStatus.MANUAL_REVIEW_REQUIRED.value,
             InternalStatus.CANCELED.value,
         }
     ),

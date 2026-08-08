@@ -194,6 +194,28 @@ class SmokeOneShotDispatchService:
 
         # 결과 스냅샷 (별도 세션 — worker가 commit함)
         with factory() as after:
+            # Worker finalize가 sync를 수행. 누락 시 idempotent 재동기화.
+            from stock_platform.trading.smoke_run_dispatch_sync import (
+                sync_live_validation_run_after_dispatch,
+            )
+
+            sync_live_validation_run_after_dispatch(
+                after,
+                order_id=order_id,
+                outbox_id=outbox_id,
+                actor=worker_id,
+                outcome=(
+                    "AMBIGUOUS"
+                    if summary.ambiguous
+                    else (
+                        "SUBMITTED"
+                        if summary.succeeded
+                        else ("FAILED" if summary.failed else None)
+                    )
+                ),
+            )
+            after.commit()
+
             order2 = TradingOrderRepository(after).get(order_id)
             outbox2 = OrderOutboxRepository(after).get(outbox_id)
             run2 = after.scalar(
@@ -221,6 +243,9 @@ class SmokeOneShotDispatchService:
                 if run2
                 else None
             )
+            run_uuid = (
+                getattr(run2, "broker_order_uuid", None) if run2 else None
+            )
 
         outcome = "UNKNOWN"
         if summary.ambiguous:
@@ -233,6 +258,13 @@ class SmokeOneShotDispatchService:
             outcome = "CLAIM_FAILED"
         elif summary.retried:
             outcome = "RETRY"
+
+        # UUID 있으면 NOT_SUBMITTED 응답 금지
+        if broker_id and (
+            not run_broker_status
+            or str(run_broker_status).upper() == "NOT_SUBMITTED"
+        ):
+            run_broker_status = "ACCEPTED"
 
         return {
             "run_id": str(run_id),
@@ -247,9 +279,9 @@ class SmokeOneShotDispatchService:
             "retried": int(summary.retried),
             "outbox_status": outbox_status,
             "broker_order_status": run_broker_status
-            or ("BROKER_SUBMITTED" if broker_id else "NOT_SUBMITTED"),
+            or ("ACCEPTED" if broker_id else "NOT_SUBMITTED"),
             "internal_status": run_internal,
-            "broker_uuid_masked": mask_broker_uuid(broker_id),
+            "broker_uuid_masked": mask_broker_uuid(broker_id or run_uuid),
             "one_shot_grant": grant_public_view(grant2),
             "scheduler_required": False,
             "batch_worker_required": False,

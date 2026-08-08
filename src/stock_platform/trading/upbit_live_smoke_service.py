@@ -1198,6 +1198,19 @@ class UpbitLiveSmokeService:
         else:
             consume_grant_on_run(run, outcome=str(outcome))
 
+        # TradingOrder/Outbox ↔ Run 상태 동기화 (NOT_SUBMITTED 잔류 방지)
+        from stock_platform.trading.smoke_run_dispatch_sync import (
+            sync_live_validation_run_after_dispatch,
+        )
+
+        sync_info = sync_live_validation_run_after_dispatch(
+            session,
+            order_id=int(order_id),
+            outbox_id=int(outbox_id),
+            actor=actor,
+            outcome=str(outcome),
+        )
+
         uba_id = int(
             run.user_broker_account_id
             or order.user_broker_account_id
@@ -1249,6 +1262,7 @@ class UpbitLiveSmokeService:
             "run_id": run.run_id,
             "uba_id": uba_id,
             "outcome": str(outcome),
+            "run_sync": sync_info,
         }
 
     def _watch_and_maybe_cancel(
@@ -1503,6 +1517,9 @@ class UpbitLiveSmokeService:
         from stock_platform.trading.smoke_one_shot_dispatch_service import (
             grant_public_view,
         )
+        from stock_platform.trading.smoke_run_dispatch_sync import (
+            public_run_display_status,
+        )
         from stock_platform.trading.upbit_live_smoke_constants import (
             mask_broker_uuid,
         )
@@ -1522,6 +1539,13 @@ class UpbitLiveSmokeService:
             "execute_live": bool(row.execute_live),
             "status": row.internal_status or row.status_code,
             "internal_status": row.internal_status or row.status_code,
+            "display_status": public_run_display_status(
+                internal_status=row.internal_status or row.status_code,
+                broker_order_status=getattr(
+                    row, "broker_order_status", None
+                ),
+                broker_order_uuid=getattr(row, "broker_order_uuid", None),
+            ),
             "broker_order_status": getattr(
                 row, "broker_order_status", "NOT_SUBMITTED"
             ),

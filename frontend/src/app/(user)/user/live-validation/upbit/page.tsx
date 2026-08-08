@@ -48,35 +48,74 @@ export default function UserUpbitLiveValidationPage() {
               { title: "run_id", dataIndex: "run_id" },
               {
                 title: "status",
-                dataIndex: "status",
+                dataIndex: "display_status",
                 render: (v: unknown, row: Record<string, unknown>) => {
-                  const status = String(v ?? "").toUpperCase();
+                  const display = String(
+                    v ?? row.status ?? "",
+                  ).toUpperCase();
                   const broker = String(
                     row.broker_order_status ?? "",
                   ).toUpperCase();
                   const isInternalRetire =
-                    status === "CANCELED" &&
+                    display === "CANCELED" &&
                     (broker === "NOT_SUBMITTED" || broker === "");
                   if (isInternalRetire) {
                     return (
                       <Tag color="default">
-                        내부 폐기됨 ({status})
+                        내부 폐기됨 (CANCELED)
                       </Tag>
                     );
                   }
-                  return <Tag>{status || "-"}</Tag>;
+                  const color =
+                    display === "WAIT" || display === "SUBMITTED"
+                      ? "processing"
+                      : display === "FILLED"
+                        ? "success"
+                        : display === "AMBIGUOUS"
+                          ? "warning"
+                          : display === "NOT_SUBMITTED" ||
+                              display === "QUEUED"
+                            ? "default"
+                            : display === "CANCELED"
+                              ? "default"
+                              : "default";
+                  return <Tag color={color}>{display || "-"}</Tag>;
                 },
               },
               {
                 title: "broker",
                 dataIndex: "broker_order_status",
-                render: (v: unknown) => (
-                  <Tag>{String(v ?? "NOT_SUBMITTED")}</Tag>
-                ),
+                render: (v: unknown, row: Record<string, unknown>) => {
+                  const broker = String(v ?? "NOT_SUBMITTED").toUpperCase();
+                  const display = String(
+                    row.display_status ?? "",
+                  ).toUpperCase();
+                  // UUID 있는데 NOT_SUBMITTED면 display 우선
+                  if (
+                    broker === "NOT_SUBMITTED" &&
+                    row.broker_uuid_masked &&
+                    display &&
+                    display !== "NOT_SUBMITTED"
+                  ) {
+                    return <Tag color="processing">{display}</Tag>;
+                  }
+                  const label =
+                    broker === "OPEN"
+                      ? "WAIT"
+                      : broker === "ACCEPTED"
+                        ? "SUBMITTED"
+                        : broker;
+                  return <Tag>{label}</Tag>;
+                },
+              },
+              { title: "order_id", dataIndex: "order_id" },
+              {
+                title: "UUID",
+                dataIndex: "broker_uuid_masked",
+                render: (v: unknown) => String(v ?? "-"),
               },
               { title: "market", dataIndex: "market" },
               { title: "side", dataIndex: "side" },
-              { title: "order_id", dataIndex: "order_id" },
               {
                 title: "live",
                 dataIndex: "execute_live",

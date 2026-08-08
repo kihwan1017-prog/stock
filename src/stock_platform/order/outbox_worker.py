@@ -705,6 +705,45 @@ class OrderOutboxWorker:
             pass
 
     @staticmethod
+    def _record_submission_attempt(
+        *,
+        session: Session,
+        order: Any,
+        result_type: str,
+        external_uuid: str | None = None,
+        ambiguous: bool = False,
+        http_status: int | None = None,
+        upbit_error_code: str | None = None,
+    ) -> None:
+        """order_submission_attempt + submission_attempt_count 갱신."""
+
+        from datetime import datetime, timezone
+
+        from stock_platform.order.entities import (
+            OrderSubmissionAttemptEntity,
+        )
+
+        next_num = int(getattr(order, "submission_attempt_count", 0) or 0) + 1
+        order.submission_attempt_count = next_num
+        if hasattr(order, "last_submission_attempt_at"):
+            order.last_submission_attempt_at = datetime.now(timezone.utc)
+        row = OrderSubmissionAttemptEntity(
+            order_id=int(order.order_id),
+            client_order_identifier=getattr(
+                order, "client_order_identifier", None
+            ),
+            attempt_number=next_num,
+            completed_at=datetime.now(timezone.utc),
+            result_type=str(result_type)[:40],
+            http_status=http_status,
+            upbit_error_code=upbit_error_code,
+            external_order_uuid=external_uuid,
+            ambiguous=bool(ambiguous),
+            correlation_id=f"outbox-worker:{order.order_id}",
+        )
+        session.add(row)
+
+    @staticmethod
     def _apply_order_broker_result(
         *,
         session: Session,
@@ -725,6 +764,20 @@ class OrderOutboxWorker:
             broker_order_id = result.get("broker_order_id")
             if broker_order_id:
                 order.broker_order_id = str(broker_order_id)
+            # LIVE 성공 제출 Attempt 기록 (ambiguous_resolver 외 경로 누락 보완)
+            try:
+                OrderOutboxWorker._record_submission_attempt(
+                    session=session,
+                    order=order,
+                    result_type="ACCEPTED",
+                    external_uuid=(
+                        str(broker_order_id) if broker_order_id else None
+                    ),
+                    ambiguous=False,
+                    http_status=None,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             status = OrderStatus(order.status_code)
             if status in {
                 OrderStatus.ACCEPTED,
