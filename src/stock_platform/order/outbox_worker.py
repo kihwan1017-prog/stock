@@ -65,12 +65,6 @@ class OrderOutboxWorker:
         )
 
     def run_once(self) -> OutboxRunSummary:
-        claimed = 0
-        succeeded = 0
-        retried = 0
-        failed = 0
-        ambiguous = 0
-
         with self._session_factory() as session:
             repository = OrderOutboxRepository(session)
             repository.reclaim_stale_processing(
@@ -81,13 +75,45 @@ class OrderOutboxWorker:
                 batch_size=self._batch_size,
                 paper_only=self._paper_only,
             )
-            claimed = len(rows)
-            # claim 스냅샷 (fencing_token 포함)
             claims = [
                 (int(r.outbox_id), int(r.fencing_token))
                 for r in rows
             ]
             session.commit()
+
+        return self._run_claimed(claims)
+
+    def dispatch_one(self, outbox_id: int) -> OutboxRunSummary:
+        """정확히 지정 outbox 1건만 claim+dispatch (batch worker 아님)."""
+
+        with self._session_factory() as session:
+            repository = OrderOutboxRepository(session)
+            row = repository.claim_one(
+                outbox_id=int(outbox_id),
+                worker_id=self._worker_id,
+            )
+            if row is None:
+                session.commit()
+                return OutboxRunSummary(
+                    claimed=0,
+                    succeeded=0,
+                    retried=0,
+                    failed=0,
+                    ambiguous=0,
+                )
+            claims = [(int(row.outbox_id), int(row.fencing_token))]
+            session.commit()
+
+        return self._run_claimed(claims)
+
+    def _run_claimed(
+        self, claims: list[tuple[int, int]]
+    ) -> OutboxRunSummary:
+        claimed = len(claims)
+        succeeded = 0
+        retried = 0
+        failed = 0
+        ambiguous = 0
 
         for outbox_id, fencing_token in claims:
             with self._session_factory() as session:

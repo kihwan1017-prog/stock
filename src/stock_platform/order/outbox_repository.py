@@ -260,6 +260,60 @@ class OrderOutboxRepository:
         self._session.flush()
         return rows
 
+    def claim_one(
+        self,
+        *,
+        outbox_id: int,
+        worker_id: str,
+        now: datetime | None = None,
+        lease_ttl: timedelta | None = None,
+    ) -> OrderOutbox | None:
+        """특정 outbox 1건만 claim — smoke one-shot 전용.
+
+        PENDING/RETRY 이고 retry 시각이 도래한 행만. 다른 건은 건드리지 않는다.
+        """
+
+        current = now or datetime.now(timezone.utc)
+        ttl = lease_ttl or default_lease_ttl()
+        stmt = (
+            select(OrderOutbox)
+            .where(
+                OrderOutbox.outbox_id == int(outbox_id),
+                OrderOutbox.status_code.in_(
+                    [
+                        OutboxStatus.PENDING.value,
+                        OutboxStatus.RETRY.value,
+                    ]
+                ),
+                or_(
+                    OrderOutbox.next_retry_at.is_(None),
+                    OrderOutbox.next_retry_at <= current,
+                ),
+            )
+            .with_for_update(skip_locked=True)
+        )
+        row = self._session.scalar(stmt)
+        if row is None:
+            return None
+        row.fencing_token = int(row.fencing_token or 0) + 1
+        row.status_code = OutboxStatus.PROCESSING.value
+        row.locked_at = current
+        row.locked_by = worker_id
+        row.lease_expires_at = current + ttl
+        record_outbox_audit(
+            self._session,
+            event_type="OUTBOX_CLAIMED",
+            detail={
+                "outbox_id": row.outbox_id,
+                "fencing_token": row.fencing_token,
+                "worker_id": worker_id,
+                "claim_mode": "ONE_SHOT",
+            },
+            actor=worker_id,
+        )
+        self._session.flush()
+        return row
+
     def create_dispatch_intent(
         self,
         *,

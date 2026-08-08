@@ -655,6 +655,11 @@ class UpbitLiveSmokeService:
             result["order_submitted"] = False  # 브로커 전송 전
             result["queued"] = True
             result["pipeline_markers"] = list(markers)
+            from stock_platform.trading.smoke_one_shot_dispatch_service import (
+                grant_public_view,
+            )
+
+            result["one_shot_grant"] = grant_public_view(grant)
             return result
         except UpbitLiveSmokeError:
             raise
@@ -1488,10 +1493,17 @@ class UpbitLiveSmokeService:
 
     @staticmethod
     def _row_dict(row: LiveValidationRunEntity) -> dict[str, Any]:
+        from stock_platform.trading.smoke_one_shot_dispatch_grant import (
+            read_grant_from_run_detail,
+        )
+        from stock_platform.trading.smoke_one_shot_dispatch_service import (
+            grant_public_view,
+        )
         from stock_platform.trading.upbit_live_smoke_constants import (
             mask_broker_uuid,
         )
 
+        grant = read_grant_from_run_detail(getattr(row, "detail", None))
         return {
             "run_id": row.run_id,
             "preflight_id": row.preflight_id,
@@ -1515,6 +1527,8 @@ class UpbitLiveSmokeService:
             ),
             "order_id": row.order_id,
             "order_status": row.order_status,
+            "outbox_id": (grant or {}).get("outbox_id"),
+            "one_shot_grant": grant_public_view(grant),
             "manual_review_required": bool(
                 getattr(row, "manual_review_required", False)
             ),

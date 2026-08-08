@@ -34,6 +34,13 @@ import { formatLiveSmokeConfirmError } from "@/features/user/trading/liveSmokeCo
 const BUY_CONFIRM = "UPBIT LIVE BUY CONFIRM";
 const SELL_CONFIRM = "UPBIT LIVE SELL CONFIRM";
 
+function grantRemainingSeconds(expiresAt: unknown): number {
+  if (!expiresAt) return 0;
+  const ms = Date.parse(String(expiresAt));
+  if (!Number.isFinite(ms)) return 0;
+  return Math.max(0, Math.floor((ms - Date.now()) / 1000));
+}
+
 export function GuidedUpbitLiveSmokePanel() {
   const [step, setStep] = useState(0);
   const [ubaId, setUbaId] = useState<number | null>(null);
@@ -48,6 +55,11 @@ export function GuidedUpbitLiveSmokePanel() {
     null,
   );
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [dispatchResult, setDispatchResult] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [grantTick, setGrantTick] = useState(0);
   const [smokeBuyRunId, setSmokeBuyRunId] = useState<string | null>(null);
 
   const accountsQuery = useQuery({
@@ -81,6 +93,7 @@ export function GuidedUpbitLiveSmokePanel() {
     setPreview(null);
     setOrderTest(null);
     setResult(null);
+    setDispatchResult(null);
   }, [upbitAccounts, ubaId]);
 
   const preflightQuery = useQuery({
@@ -153,6 +166,8 @@ export function GuidedUpbitLiveSmokePanel() {
     },
     onSuccess: (data) => {
       setOrderTest(asRecord(data));
+      // 이전 Confirm 실패(ORDER_TEST_STALE 등) 잔존 표시 제거
+      confirmMutation.reset();
       setStep(4);
     },
   });
@@ -185,12 +200,78 @@ export function GuidedUpbitLiveSmokePanel() {
     onSuccess: (data) => {
       const rec = asRecord(data);
       setResult(rec);
+      setDispatchResult(null);
       if (side === "BUY" && rec?.run_id) {
         setSmokeBuyRunId(String(rec.run_id));
       }
       setStep(6);
     },
   });
+
+  const dispatchMutation = useMutation({
+    mutationFn: () => {
+      const runId = String(result?.run_id ?? "");
+      return userApi.postLiveOrderSmokeDispatch(Number(ubaId), runId);
+    },
+    onSuccess: (data) => {
+      const rec = asRecord(data);
+      setDispatchResult(rec);
+      setResult((prev) => ({
+        ...(prev ?? {}),
+        ...rec,
+        status: String(rec?.internal_status ?? rec?.outcome ?? prev?.status),
+        broker_order_status: rec?.broker_order_status,
+        one_shot_grant: rec?.one_shot_grant ?? prev?.one_shot_grant,
+        queued: false,
+      }));
+    },
+  });
+
+  const grantInfo = asRecord(result?.one_shot_grant);
+  const grantExpiresAt = grantInfo?.dispatch_expires_at;
+  const grantRemaining = useMemo(
+    () => grantRemainingSeconds(grantExpiresAt),
+    // grantTick으로 1초마다 재계산
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick drives refresh
+    [grantExpiresAt, grantTick],
+  );
+
+  useEffect(() => {
+    if (!grantExpiresAt) return;
+    if (grantRemaining <= 0) return;
+    const id = window.setInterval(() => {
+      setGrantTick((n) => n + 1);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [grantExpiresAt, grantRemaining]);
+
+  const brokerStatus = String(
+    result?.broker_order_status ?? "NOT_SUBMITTED",
+  ).toUpperCase();
+  const statusRawForDispatch = String(
+    result?.status ?? result?.stage ?? result?.internal_status ?? "",
+  ).toUpperCase();
+  const isOutboxPending =
+    statusRawForDispatch === "QUEUED" ||
+    statusRawForDispatch === "OUTBOX_PENDING" ||
+    Boolean(result?.queued);
+  const grantIssued =
+    String(grantInfo?.status ?? "").toUpperCase() === "ISSUED" &&
+    !grantInfo?.consumed_at;
+  const ambiguousBlocked =
+    brokerStatus.includes("AMBIGUOUS") ||
+    statusRawForDispatch.includes("AMBIGUOUS") ||
+    String(dispatchResult?.outcome ?? "").toUpperCase() === "AMBIGUOUS" ||
+    Boolean(result?.manual_review_required);
+  const dispatchEnabled =
+    Boolean(ubaId && result?.run_id && result?.order_id) &&
+    isOutboxPending &&
+    brokerStatus === "NOT_SUBMITTED" &&
+    grantIssued &&
+    grantRemaining > 0 &&
+    !ambiguousBlocked &&
+    !dispatchMutation.isPending &&
+    !dispatchMutation.isSuccess;
 
   const requiredConfirm = side === "BUY" ? BUY_CONFIRM : SELL_CONFIRM;
   const pf = asRecord(preflightQuery.data);
@@ -274,6 +355,8 @@ export function GuidedUpbitLiveSmokePanel() {
                 setPreview(null);
                 setOrderTest(null);
                 setResult(null);
+                setDispatchResult(null);
+                dispatchMutation.reset();
               }}
               style={{ width: "100%" }}
             />
@@ -679,18 +762,110 @@ export function GuidedUpbitLiveSmokePanel() {
                 statusRaw === "OUTBOX_PENDING" ||
                 Boolean(result.queued);
               return (
-                <Alert
-                  type={isFailed ? "error" : isQueued ? "success" : "info"}
-                  showIcon
-                  title={
-                    isFailed
-                      ? "실주문 실패"
-                      : isQueued
-                        ? "큐 저장 완료 (브로커 전송 전)"
-                        : "결과"
-                  }
-                  description={`status=${String(result.stage ?? result.status)} · create_calls=${String(result.adapter_create_order_calls ?? result.create_order_calls ?? 0)} · run_id=${String(result.run_id ?? "-")} · order_id=${String(result.order_id ?? "없음")}`}
-                />
+                <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+                  <Alert
+                    type={
+                      isFailed
+                        ? "error"
+                        : isQueued
+                          ? "success"
+                          : "info"
+                    }
+                    showIcon
+                    title={
+                      isFailed
+                        ? "실주문 실패"
+                        : isQueued
+                          ? "큐 저장 완료 (브로커 전송 전)"
+                          : "결과"
+                    }
+                    description={
+                      <Space orientation="vertical" size={4}>
+                        <Typography.Text>
+                          status={String(result.stage ?? result.status)} ·
+                          broker={brokerStatus} · run_id=
+                          {String(result.run_id ?? "-")} · order_id=
+                          {String(result.order_id ?? "없음")} · outbox_id=
+                          {String(result.outbox_id ?? grantInfo?.outbox_id ?? "-")}
+                        </Typography.Text>
+                        {grantExpiresAt ? (
+                          <Typography.Text>
+                            grant TTL 남은 시간:{" "}
+                            {grantRemaining > 0
+                              ? `${grantRemaining}초`
+                              : "GRANT_EXPIRED"}
+                          </Typography.Text>
+                        ) : null}
+                        {result.broker_uuid_masked ? (
+                          <Typography.Text>
+                            Upbit UUID(masked):{" "}
+                            {String(result.broker_uuid_masked)}
+                          </Typography.Text>
+                        ) : null}
+                      </Space>
+                    }
+                  />
+
+                  {isQueued && grantExpiresAt && grantRemaining <= 0 ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      title="GRANT_EXPIRED"
+                      description="미전송 주문 폐기 후 신규 Smoke Confirm이 필요합니다. grant 자동 연장/재발급은 없습니다."
+                    />
+                  ) : null}
+
+                  {isQueued && !ambiguousBlocked ? (
+                    <>
+                      <Alert
+                        type="error"
+                        showIcon
+                        title="실전송 경고"
+                        description="이 버튼을 누르면 해당 주문 1건이 실제 Upbit로 전송될 수 있습니다. Dry-run과 다릅니다."
+                      />
+                      <Button
+                        type="primary"
+                        danger
+                        loading={dispatchMutation.isPending}
+                        disabled={!dispatchEnabled}
+                        onClick={() => dispatchMutation.mutate()}
+                      >
+                        이 주문 1건 실전송
+                      </Button>
+                    </>
+                  ) : null}
+
+                  {ambiguousBlocked ? (
+                    <Alert
+                      type="warning"
+                      showIcon
+                      title="AMBIGUOUS / MANUAL_REVIEW"
+                      description="전송 여부가 불명확합니다. 즉시 재전송하지 말고 관리자 확인이 필요합니다."
+                    />
+                  ) : null}
+
+                  {dispatchMutation.error ? (
+                    <Alert
+                      type="error"
+                      showIcon
+                      title={toApiError(dispatchMutation.error).message}
+                    />
+                  ) : null}
+
+                  {dispatchResult ? (
+                    <Alert
+                      type={
+                        String(dispatchResult.outcome).toUpperCase() ===
+                        "AMBIGUOUS"
+                          ? "warning"
+                          : "success"
+                      }
+                      showIcon
+                      title={`Dispatch: ${String(dispatchResult.outcome ?? "-")}`}
+                      description={`outbox=${String(dispatchResult.outbox_status ?? "-")} · broker=${String(dispatchResult.broker_order_status ?? "-")} · uuid=${String(dispatchResult.broker_uuid_masked ?? "없음")}`}
+                    />
+                  ) : null}
+                </Space>
               );
             })()
           ) : null}

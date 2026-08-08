@@ -14,6 +14,10 @@ from stock_platform.trading.controlled_live_order_smoke_service import (
     ControlledLiveOrderSmokeError,
     ControlledLiveOrderSmokeService,
 )
+from stock_platform.trading.smoke_one_shot_dispatch_service import (
+    SmokeOneShotDispatchError,
+    SmokeOneShotDispatchService,
+)
 from stock_platform.trading.upbit_live_smoke_constants import (
     MAX_SMOKE_AMOUNT,
     confirmation_text_for_side,
@@ -62,7 +66,7 @@ class LiveOrderTestBody(BaseModel):
     skip_network: bool = False
 
 
-def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
+def _map_error(exc: ControlledLiveOrderSmokeError | SmokeOneShotDispatchError) -> HTTPException:
     code = str(getattr(exc, "code", None) or exc)
     http_status = int(getattr(exc, "http_status", 0) or 0)
     details = list(getattr(exc, "details", []) or [])
@@ -74,12 +78,22 @@ def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
             if code == "FORBIDDEN"
             else status.HTTP_404_NOT_FOUND
         )
+    elif code in {
+        "SMOKE_RUN_NOT_FOUND",
+        "ORDER_NOT_FOUND",
+        "OUTBOX_NOT_FOUND",
+    }:
+        status_code = status.HTTP_404_NOT_FOUND
     elif code in {"LIVE_SMOKE_DB_ERROR", "LIVE_SMOKE_NOT_QUEUED", "LIVE_SMOKE_INTERNAL_ERROR"}:
         status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    elif http_status in {409, 422, 500, 503}:
+    elif http_status in {403, 404, 409, 422, 500, 503}:
         status_code = http_status
     elif code.startswith("RISK_") or code == "RISK_ENGINE_BLOCKED":
         status_code = status.HTTP_409_CONFLICT
+    elif "EXPIRED" in code or code.startswith("SMOKE_GRANT_"):
+        status_code = status.HTTP_409_CONFLICT if "EXPIRED" in code else (
+            http_status or status.HTTP_400_BAD_REQUEST
+        )
     else:
         status_code = status.HTTP_400_BAD_REQUEST
 
@@ -88,7 +102,10 @@ def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
         details
         or code.startswith("RISK_")
         or code.startswith("LIVE_SMOKE_")
+        or code.startswith("SMOKE_GRANT_")
+        or code.startswith("OUTBOX_")
         or http_status in {409, 500, 503}
+        or isinstance(exc, SmokeOneShotDispatchError)
     ):
         detail: dict[str, object] = {
             "error_code": code,
@@ -112,7 +129,9 @@ def _map_error(exc: ControlledLiveOrderSmokeError) -> HTTPException:
             "run_id": getattr(exc, "run_id", None),
             "correlation_id": getattr(exc, "correlation_id", None)
             or getattr(exc, "run_id", None),
-            "retry_forbidden": code.startswith("LIVE_SMOKE_"),
+            "retry_forbidden": code.startswith("LIVE_SMOKE_")
+            or "AMBIGUOUS" in code
+            or "EXPIRED" in code,
         }
         return HTTPException(status_code=status_code, detail=detail)
 
@@ -235,6 +254,29 @@ def user_live_order_confirm(
         session.commit()
         return result
     except ControlledLiveOrderSmokeError as exc:
+        session.rollback()
+        raise _map_error(exc) from exc
+
+
+@router.post("/{uba_id}/live-order-smoke/{run_id}/dispatch")
+def user_live_order_smoke_dispatch(
+    uba_id: int,
+    run_id: str,
+    user: AuthenticatedUser = Depends(require_permission("trading:write")),
+    session: Session = Depends(get_db_session),
+):
+    """Confirm 후 grant v2 단건만 Outbox dispatch — Scheduler/batch Worker 불필요."""
+
+    try:
+        result = SmokeOneShotDispatchService(session).dispatch(
+            uba_id=int(uba_id),
+            user_id=int(user.user_id),
+            run_id=str(run_id),
+            actor=str(user.username or user.user_id),
+        )
+        # worker가 별도 세션으로 commit — request session은 읽기만
+        return result
+    except SmokeOneShotDispatchError as exc:
         session.rollback()
         raise _map_error(exc) from exc
 

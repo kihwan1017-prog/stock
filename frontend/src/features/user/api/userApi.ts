@@ -347,6 +347,7 @@ export async function postLiveOrderPreview(
     side: string;
     amount?: number;
     limit_price?: number;
+    order_type?: "MARKET" | "LIMIT" | string;
     idempotency_key?: string;
   },
 ): Promise<JsonValue> {
@@ -364,6 +365,7 @@ export async function postLiveOrderTest(
     side: string;
     amount?: number;
     limit_price?: number;
+    order_type?: "MARKET" | "LIMIT" | string;
     identifier?: string;
     smoke_buy_run_id?: string;
   },
@@ -395,6 +397,17 @@ export async function postLiveOrderConfirm(
   const { data } = await apiClient.post(
     `/user/accounts/${ubaId}/live-order-confirm`,
     body,
+  );
+  return data;
+}
+
+/** Confirm 후 grant v2 단건 Outbox 실전송 (batch Worker/Scheduler 아님) */
+export async function postLiveOrderSmokeDispatch(
+  ubaId: number,
+  runId: string,
+): Promise<JsonValue> {
+  const { data } = await apiClient.post(
+    `/user/accounts/${ubaId}/live-order-smoke/${encodeURIComponent(runId)}/dispatch`,
   );
   return data;
 }
