@@ -594,6 +594,23 @@ class OrderExecutionService:
             commit=False,
         )
 
+        # 자동매매 signal provenance — 기존 컬럼 재사용
+        signal_fp = (
+            metadata.get("source_signal_fingerprint")
+            or metadata.get("fingerprint")
+            or metadata.get("signal_id")
+        )
+        if signal_fp:
+            order.source_signal_fingerprint = str(signal_fp)[:64]
+        strategy_id_meta = metadata.get("strategy_id")
+        if strategy_id_meta is not None and getattr(
+            order, "strategy_id", None
+        ) is None:
+            try:
+                order.strategy_id = int(strategy_id_meta)
+            except (TypeError, ValueError):
+                pass
+
         order = self._order_repository.change_status(
             entity=order,
             new_status=OrderStatus.PENDING,

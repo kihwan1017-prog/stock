@@ -471,8 +471,16 @@ class ApplicationLifecycle:
         recovery_start = paper_fill_recovery_scheduler.start()
         logger.info("paper_fill_recovery_startup", **recovery_start)
 
-        # 레거시 무필터 Outbox는 Paper worker Flag ON일 때만 보조 기동하지 않음
-        # (중복 claim 방지 — paper_only worker 단일 경로)
+        # LIVE Outbox Worker — paper_only와 claim 분리, 기본 OFF
+        from stock_platform.order.live_outbox_worker_runtime import (
+            live_outbox_worker_runtime,
+        )
+
+        live_outbox_start = live_outbox_worker_runtime.start()
+        logger.info("live_outbox_worker_startup", **live_outbox_start)
+
+        # 레거시 무필터 Outbox는 Paper/LIVE 전용 worker Flag ON일 때 보조 기동하지 않음
+        # (중복 claim 방지 — paper_only / live_only 단일 경로)
         if not bool(getattr(settings, "paper_outbox_worker_enabled", False)):
             logger.info(
                 "legacy_order_outbox_scheduler_skipped",
@@ -594,9 +602,13 @@ class ApplicationLifecycle:
             paper_fill_recovery_scheduler,
             paper_outbox_worker_runtime,
         )
+        from stock_platform.order.live_outbox_worker_runtime import (
+            live_outbox_worker_runtime,
+        )
         from stock_platform.realtime.paper_price_feed import paper_price_feed
 
         await paper_outbox_worker_runtime.shutdown()
+        await live_outbox_worker_runtime.shutdown()
         await paper_fill_recovery_scheduler.shutdown()
         await paper_price_feed.shutdown()
         try:

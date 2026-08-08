@@ -190,7 +190,10 @@ class OrderOutboxRepository:
         now: datetime | None = None,
         lease_ttl: timedelta | None = None,
         paper_only: bool = False,
+        live_only: bool = False,
     ) -> list[OrderOutbox]:
+        if paper_only and live_only:
+            raise ValueError("paper_only and live_only are mutually exclusive")
         current = now or datetime.now(timezone.utc)
         ttl = lease_ttl or default_lease_ttl()
 
@@ -206,9 +209,9 @@ class OrderOutboxRepository:
                 OrderOutbox.next_retry_at <= current,
             ),
         ]
+        env_expr = OrderOutbox.payload_json["environment"].astext
         if paper_only:
             # LIVE Outbox와 분리 — Paper + Kiwoom MOCK만 claim (LIVE 굶주림/혼입 방지)
-            env_expr = OrderOutbox.payload_json["environment"].astext
             conditions.append(
                 or_(
                     and_(
@@ -225,6 +228,9 @@ class OrderOutboxRepository:
                     ),
                 )
             )
+        elif live_only:
+            # 자동 LIVE / Smoke LIVE outbox만 — Paper worker와 claim 분리
+            conditions.append(env_expr == "LIVE")
 
         order_clause = (
             OrderOutbox.outbox_id.desc()
@@ -254,6 +260,7 @@ class OrderOutboxRepository:
                     "fencing_token": row.fencing_token,
                     "worker_id": worker_id,
                     "paper_only": paper_only,
+                    "live_only": live_only,
                 },
                 actor=worker_id,
             )

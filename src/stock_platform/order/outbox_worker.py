@@ -51,13 +51,17 @@ class OrderOutboxWorker:
         worker_id: str,
         batch_size: int = 20,
         paper_only: bool = False,
+        live_only: bool = False,
         stale_processing_after: timedelta | None = None,
     ) -> None:
+        if paper_only and live_only:
+            raise ValueError("paper_only and live_only are mutually exclusive")
         self._session_factory = session_factory
         self._dispatcher = dispatcher
         self._worker_id = worker_id
         self._batch_size = batch_size
         self._paper_only = paper_only
+        self._live_only = live_only
         self._stale_after = (
             stale_processing_after
             if stale_processing_after is not None
@@ -74,6 +78,7 @@ class OrderOutboxWorker:
                 worker_id=self._worker_id,
                 batch_size=self._batch_size,
                 paper_only=self._paper_only,
+                live_only=self._live_only,
             )
             claims = [
                 (int(r.outbox_id), int(r.fencing_token))

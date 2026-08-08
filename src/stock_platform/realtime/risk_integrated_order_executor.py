@@ -251,7 +251,15 @@ class RiskIntegratedRealtimeOrderExecutor:
                 broker_code=broker_code,
             ).check(
                 account_number=account_number or f"PAPER-{exec_account_id}",
-                account_id=exec_account_id,
+                # LIVE/UBA: Paper FK와 XOR — Risk ownership Fail Closed
+                account_id=(
+                    None
+                    if (
+                        environment in {"LIVE", "MOCK"}
+                        and user_broker_account_id is not None
+                    )
+                    else exec_account_id
+                ),
                 exchange_code=signal.exchange_code,
                 symbol=signal.symbol,
                 side=signal.action.value,
@@ -341,6 +349,11 @@ class RiskIntegratedRealtimeOrderExecutor:
             "runtime_scope": getattr(signal, "scope_key", None),
             "strategy_id": getattr(signal, "strategy_id", None),
             "strategy_version": getattr(signal, "strategy_version", None),
+            "signal_id": getattr(signal, "signal_id", None),
+            "source_signal_fingerprint": getattr(
+                signal, "fingerprint", None
+            ),
+            "order_source": "AUTO",
         }
         if environment == "LIVE" and is_live_dry_run_mode():
             meta["dry_run"] = True
@@ -348,6 +361,20 @@ class RiskIntegratedRealtimeOrderExecutor:
         elif environment == "LIVE" and is_live_shadow_mode():
             meta["shadow"] = True
             meta["shadow_mode"] = "LIVE_SHADOW"
+
+        from stock_platform.realtime.autotrading_idempotency import (
+            build_autotrading_idempotency_key,
+        )
+
+        idem_key = build_autotrading_idempotency_key(
+            signal,
+            user_broker_account_id=user_broker_account_id,
+            paper_account_id=(
+                int(exec_account_id)
+                if environment == "PAPER" and exec_account_id is not None
+                else None
+            ),
+        )
 
         result = OrderExecutionService(self._session).submit(
             OrderExecutionCommand(
@@ -374,12 +401,7 @@ class RiskIntegratedRealtimeOrderExecutor:
                     self._execution_config, "user_id", None
                 ) or getattr(signal, "user_id", None),
                 user_broker_account_id=user_broker_account_id,
-                idempotency_key=(
-                    f"RT:{signal.exchange_code}:"
-                    f"{signal.symbol}:"
-                    f"{signal.action.value}:"
-                    f"{signal.generated_at.isoformat()}"
-                ),
+                idempotency_key=idem_key,
             )
         )
 

@@ -175,6 +175,12 @@ class Settings(BaseSettings):
     paper_outbox_worker_batch_size: int = 20
     paper_outbox_worker_backoff_seconds: float = 2.0
     paper_outbox_worker_stale_seconds: float = 30.0
+    # LIVE Outbox Worker 상시 Polling (기본 OFF — Fail Closed, Paper와 claim 분리)
+    live_outbox_worker_enabled: bool = False
+    live_outbox_worker_interval_seconds: float = 1.0
+    live_outbox_worker_batch_size: int = 20
+    live_outbox_worker_backoff_seconds: float = 2.0
+    live_outbox_worker_stale_seconds: float = 30.0
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0
