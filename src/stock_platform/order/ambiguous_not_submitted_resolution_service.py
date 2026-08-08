@@ -185,7 +185,7 @@ class AmbiguousNotSubmittedResolutionService:
             )
 
         assert order is not None and outbox is not None
-        identifier = str(order.client_order_identifier or "").strip()
+        identifier = self._resolve_identifier(order, outbox)
         if not identifier:
             raise AmbiguousNotSubmittedResolutionError(
                 "identifier_missing",
@@ -201,7 +201,9 @@ class AmbiguousNotSubmittedResolutionService:
                 "identifier": identifier,
             }
         else:
-            broker_lookup = self._verify_upbit_not_found(identifier)
+            broker_lookup = self._verify_upbit_not_found(
+                identifier, order_id=int(order.order_id)
+            )
 
         # retire lifecycle (AMBIGUOUS 허용 — regular retire와 분리)
         prev_order = order.status_code
@@ -315,7 +317,12 @@ class AmbiguousNotSubmittedResolutionService:
             "create_order_calls": 0,
         }
 
-    def _verify_upbit_not_found(self, identifier: str) -> dict[str, Any]:
+    def _verify_upbit_not_found(
+        self,
+        identifier: str,
+        *,
+        order_id: int | None = None,
+    ) -> dict[str, Any]:
         from stock_platform.broker.upbit.exceptions import (
             UpbitOrderNotFoundError,
             UpbitError,
@@ -325,7 +332,15 @@ class AmbiguousNotSubmittedResolutionService:
             UpbitRateLimitError,
         )
 
-        lookup = self._upbit_order_lookup or self._default_upbit_lookup
+        if self._upbit_order_lookup is not None:
+            lookup = self._upbit_order_lookup
+        else:
+
+            def lookup(ident: str) -> dict[str, Any] | None:
+                return self._default_upbit_lookup(
+                    ident, order_id=order_id
+                )
+
         try:
             found = lookup(identifier)
         except UpbitOrderNotFoundError:
@@ -375,7 +390,12 @@ class AmbiguousNotSubmittedResolutionService:
             blockers=["broker_lookup_unexpected", "STILL_AMBIGUOUS"],
         )
 
-    def _default_upbit_lookup(self, identifier: str) -> dict[str, Any] | None:
+    def _default_upbit_lookup(
+        self,
+        identifier: str,
+        *,
+        order_id: int | None = None,
+    ) -> dict[str, Any] | None:
         """READ-ONLY GET /v1/order — POST 금지. last_used touch 금지."""
 
         from stock_platform.broker.credential_adapter_factory import (
@@ -391,12 +411,16 @@ class AmbiguousNotSubmittedResolutionService:
             UpbitOrderRestClient,
         )
 
-        # UBA는 호출 전에 order에서 이미 확정됨 — identifier로 order 재조회
-        order = self._session.scalar(
-            select(TradingOrderEntity).where(
-                TradingOrderEntity.client_order_identifier == identifier
+        order = None
+        if order_id is not None:
+            order = self._orders.get(int(order_id))
+        if order is None:
+            order = self._session.scalar(
+                select(TradingOrderEntity).where(
+                    TradingOrderEntity.client_order_identifier
+                    == identifier
+                )
             )
-        )
         if order is None or order.user_broker_account_id is None:
             raise AmbiguousNotSubmittedResolutionError(
                 "identifier_uba_missing",
@@ -496,7 +520,8 @@ class AmbiguousNotSubmittedResolutionService:
         if self._has_broker_submit_audit(int(order.order_id)):
             blockers.append("broker_submit_audit_present")
 
-        if not str(order.client_order_identifier or "").strip():
+        identifier = self._resolve_identifier(order, outbox)
+        if not identifier:
             blockers.append("identifier_missing")
 
         evidence = self._local_failure_evidence(order, outbox)
@@ -510,6 +535,50 @@ class AmbiguousNotSubmittedResolutionService:
                 seen.add(b)
                 uniq.append(b)
         return order, outbox, uniq, evidence
+
+    def _resolve_identifier(
+        self,
+        order: TradingOrderEntity,
+        outbox: OrderOutbox | None,
+    ) -> str | None:
+        """주문/outbox/결정적 factory 순으로 Upbit identifier 확보.
+
+        mapper 로컬 실패로 identifier 전 rollback 된 경우에도
+        generation 기반 factory 값으로 READ-ONLY 조회가 가능하다.
+        """
+
+        existing = str(order.client_order_identifier or "").strip()
+        if existing:
+            return existing
+        if outbox is not None:
+            payload = dict(outbox.payload_json or {})
+            for key in (
+                "upbit_client_identifier",
+                "client_order_identifier",
+                "identifier",
+            ):
+                raw = str(payload.get(key) or "").strip()
+                if raw:
+                    return raw
+        if str(order.broker_code or "").upper() != "UPBIT":
+            return None
+        uba = order.user_broker_account_id
+        if uba is None:
+            return None
+        try:
+            from stock_platform.broker.upbit.client_order_identifier import (
+                UpbitClientOrderIdentifierFactory,
+            )
+
+            gen = int(order.submission_generation or 1)
+            return UpbitClientOrderIdentifierFactory.build(
+                broker_code="UPBIT",
+                user_broker_account_id=int(uba),
+                local_order_id=int(order.order_id),
+                submission_generation=gen,
+            )
+        except Exception:  # noqa: BLE001
+            return None
 
     def _local_failure_evidence(
         self,
@@ -685,7 +754,7 @@ class AmbiguousNotSubmittedResolutionService:
             broker_code=str(order.broker_code or "").upper(),
             outbox_status=outbox.status_code if outbox else None,
             order_status=order.status_code,
-            identifier=str(order.client_order_identifier or "") or None,
+            identifier=self._resolve_identifier(order, outbox),
             local_failure_evidence=evidence,
             broker_lookup_required=True,
         )

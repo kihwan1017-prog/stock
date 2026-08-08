@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from stock_platform.broker.upbit.rules import (
     round_upbit_price,
     round_upbit_volume,
+    volume_from_krw_buy_amount,
 )
 from stock_platform.common.settings import get_settings
 from stock_platform.order.live_safety_audit import (
@@ -354,11 +355,14 @@ class UpbitLiveSmokeService:
         order_type = OrderType.LIMIT
         side_enum = OrderSide.BUY if side.upper() == "BUY" else OrderSide.SELL
         price = round_upbit_price(Decimal(str(limit_price)))
-        qty = (
-            Decimal(str(preflight.quantity))
-            if preflight.quantity
-            else round_upbit_volume(Decimal(str(amount)) / price)
-        )
+        if preflight.quantity:
+            qty = Decimal(str(preflight.quantity))
+        elif side.upper() == "BUY":
+            qty = volume_from_krw_buy_amount(
+                amount=Decimal(str(amount)), price=price
+            )
+        else:
+            qty = round_upbit_volume(Decimal(str(amount)) / price)
 
         run = self._create_run(
             preflight=preflight.to_dict(),

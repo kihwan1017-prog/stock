@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from decimal import ROUND_DOWN, Decimal
+from decimal import ROUND_DOWN, ROUND_UP, Decimal
 
 
 ZERO = Decimal("0")
 # 업비트 KRW 마켓 최소 주문 금액(원)
 UPBIT_MIN_NOTIONAL_KRW = Decimal("5000")
+# 업비트 수량 소수점 자리 (quantize 단위)
+UPBIT_VOLUME_STEP = Decimal("0.00000001")
 
 
 def upbit_tick_size(price: Decimal) -> Decimal:
@@ -49,7 +51,43 @@ def round_upbit_volume(volume: Decimal) -> Decimal:
 
     if volume <= ZERO:
         return ZERO
-    return volume.quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    return volume.quantize(UPBIT_VOLUME_STEP, rounding=ROUND_DOWN)
+
+
+def volume_from_krw_buy_amount(
+    *,
+    amount: Decimal,
+    price: Decimal,
+    min_notional: Decimal = UPBIT_MIN_NOTIONAL_KRW,
+) -> Decimal:
+    """KRW BUY 금액→수량 (Decimal).
+
+    requested_amount >= min 이면 final_qty * price 가
+    requested_amount(및 min) 미만으로 떨어지지 않도록 수량 step ROUND_UP.
+    requested_amount < min 이면 보정하지 않아 validate_upbit_notional 이 BLOCK.
+    """
+
+    amount_d = Decimal(str(amount))
+    price_d = Decimal(str(price))
+    min_d = Decimal(str(min_notional))
+    if amount_d <= ZERO or price_d <= ZERO:
+        return ZERO
+
+    raw = amount_d / price_d
+    if amount_d < min_d:
+        # 최소금액 미만 요청은 임의로 5000원 주문으로 올리지 않음
+        return raw.quantize(UPBIT_VOLUME_STEP, rounding=ROUND_DOWN)
+
+    qty = raw.quantize(UPBIT_VOLUME_STEP, rounding=ROUND_UP)
+    guard = 0
+    # ROUND_UP 후에도 이론상 미달이면 step만 추가 (과도 증가 금지)
+    while qty * price_d < amount_d and guard < 16:
+        qty += UPBIT_VOLUME_STEP
+        guard += 1
+    while qty * price_d < min_d and guard < 32:
+        qty += UPBIT_VOLUME_STEP
+        guard += 1
+    return qty
 
 
 def validate_upbit_notional(

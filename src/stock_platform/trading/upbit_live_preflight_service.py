@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from stock_platform.broker.upbit.rules import (
     UPBIT_MIN_NOTIONAL_KRW,
     round_upbit_volume,
+    volume_from_krw_buy_amount,
 )
 from stock_platform.common.settings import get_settings
 from stock_platform.order.entities import TradingOrderEntity
@@ -631,19 +632,28 @@ class UpbitLivePreflightService:
             _add("LIMIT_PRICE", "지정가", "FAIL", "price <= 0")
             qty = None
         else:
-            qty = round_upbit_volume(amount_d / price_d)
-            est = qty * price_d
-            if est > MAX_SMOKE_AMOUNT:
-                # 수량 재조정
-                qty = round_upbit_volume(MAX_SMOKE_AMOUNT / price_d)
-                est = qty * price_d
+            if side_u == "BUY":
+                qty = volume_from_krw_buy_amount(
+                    amount=amount_d, price=price_d
+                )
+            else:
+                qty = round_upbit_volume(amount_d / price_d)
+            est = qty * price_d if qty is not None else ZERO
+            # 보정 후 max 초과 시 Risk 우회 금지 — 수량 축소로 숨기지 않음
+            if qty is not None and est > effective_max:
+                _add(
+                    "AMOUNT_LIMIT",
+                    "주문금액 한도",
+                    "FAIL",
+                    f"adjusted_notional={est} > effective_max={effective_max}",
+                )
             _add(
                 "LIMIT_PRICE",
                 "지정가",
                 "PASS",
                 f"price={price_d} qty={qty} est={est}",
             )
-            if qty <= ZERO:
+            if qty is None or qty <= ZERO:
                 _add("QUANTITY", "수량", "FAIL", "qty <= 0")
             elif qty > Decimal(str(policy.max_order_quantity)):
                 _add(

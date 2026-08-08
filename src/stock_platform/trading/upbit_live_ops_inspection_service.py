@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from decimal import ROUND_UP, Decimal
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ from stock_platform.broker.upbit.rules import (
     round_upbit_price,
     round_upbit_volume,
     upbit_tick_size,
+    volume_from_krw_buy_amount,
 )
 from stock_platform.common.settings import get_settings
 from stock_platform.order.entities import TradingOrderEntity
@@ -1111,20 +1112,9 @@ class UpbitLiveOpsInspectionService:
 
     @staticmethod
     def _qty_for_amount(amount: Decimal, price: Decimal) -> Decimal:
-        """최소 주문금액 충족을 위해 수량을 올림 보정."""
+        """KRW BUY 금액→수량 — 공통 volume_from_krw_buy_amount 재사용."""
 
-        if price <= ZERO or amount <= ZERO:
-            return ZERO
-        qty = (amount / price).quantize(
-            Decimal("0.00000001"), rounding=ROUND_UP
-        )
-        # 여전히 미달이면 1e-8 단위로 증가
-        step = Decimal("0.00000001")
-        guard = 0
-        while (qty * price) < UPBIT_MIN_NOTIONAL_KRW and guard < 1000:
-            qty += step
-            guard += 1
-        return qty
+        return volume_from_krw_buy_amount(amount=amount, price=price)
 
     def _db_open_orders(self, uba_id: int) -> int:
         open_statuses = (

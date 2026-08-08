@@ -22,6 +22,7 @@ from stock_platform.broker.upbit.rules import (
     UPBIT_MIN_NOTIONAL_KRW,
     round_upbit_price,
     round_upbit_volume,
+    volume_from_krw_buy_amount,
 )
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.runtime_preflight_service import (
@@ -241,10 +242,16 @@ def compute_upbit_order_preview(
     if price_d <= ZERO:
         raise ControlledLiveOrderSmokeError("INVALID_LIMIT_PRICE")
 
-    qty = round_upbit_volume(amount_d / price_d)
+    # BUY: 금액→수량 ROUND_UP으로 최소/요청 notional 미달 방지. SELL은 기존 ROUND_DOWN.
+    if side_u == "BUY":
+        qty = volume_from_krw_buy_amount(amount=amount_d, price=price_d)
+        quantity_note = "volume_from_krw_buy_amount_round_up"
+    else:
+        qty = round_upbit_volume(amount_d / price_d)
+        quantity_note = "volume_equals_amount_div_limit_price"
     if qty <= ZERO:
         raise ControlledLiveOrderSmokeError("QTY_TOO_SMALL")
-    estimated_notional = (qty * price_d).quantize(Decimal("0.01"))
+    estimated_notional = qty * price_d
     fee_est = _FEE.fee_amount(notional=estimated_notional, is_maker=True)
     return {
         "order_type": "LIMIT",
@@ -253,7 +260,7 @@ def compute_upbit_order_preview(
         "upbit_side": upbit_side,
         "upbit_ord_type": "limit",
         "quantity": qty,
-        "quantity_note": "volume_equals_amount_div_limit_price",
+        "quantity_note": quantity_note,
         "limit_price": price_d,
         "reference_price": ref,
         "requested_amount": amount_d,

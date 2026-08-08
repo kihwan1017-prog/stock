@@ -32,7 +32,8 @@ def _order(**kwargs):
     base = dict(
         order_id=1684,
         client_order_id="ORD-TEST-1684",
-        client_order_identifier="spu-test-identifier-1684",
+        client_order_identifier=None,  # factory 복원 경로 검증
+        submission_generation=1,
         status_code=OrderStatus.PENDING.value,
         broker_order_id=None,
         submission_attempt_count=0,
