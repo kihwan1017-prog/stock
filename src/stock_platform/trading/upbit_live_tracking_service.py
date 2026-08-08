@@ -633,6 +633,34 @@ class UpbitLiveTrackingService:
     ) -> None:
         if raw_result is None:
             return
+        remote = raw_result if isinstance(raw_result, dict) else None
+        if remote is None and isinstance(
+            getattr(raw_result, "raw", None), dict
+        ):
+            remote = getattr(raw_result, "raw")
+        if isinstance(remote, dict):
+            from stock_platform.broker.upbit.order_status import (
+                upbit_fill_summary,
+            )
+
+            summary = upbit_fill_summary(remote)
+            executed = summary["executed_volume"]
+            avg = summary["avg_price"]
+            funds = summary["funds"]
+            paid_fee = summary["paid_fee"]
+            zero = Decimal("0")
+            if executed > zero:
+                run.filled_quantity = executed
+            if avg > zero:
+                run.avg_fill_price = avg
+            if funds > zero:
+                run.filled_amount = funds
+            elif executed > zero and avg > zero:
+                run.filled_amount = executed * avg
+            if paid_fee is not None:
+                run.fee_amount = paid_fee
+            return
+
         mapping = (
             ("filled_quantity", "filled_quantity"),
             ("executed_volume", "filled_quantity"),
@@ -646,6 +674,9 @@ class UpbitLiveTrackingService:
             if val is None and isinstance(raw_result, dict):
                 val = raw_result.get(attr)
             if val is not None:
+                # Upbit avg_price는 fee 포함 가능 — dict 경로는 위에서 처리
+                if field == "avg_fill_price":
+                    continue
                 setattr(run, field, Decimal(str(val)))
         if run.filled_quantity and run.avg_fill_price:
             run.filled_amount = Decimal(str(run.filled_quantity)) * Decimal(

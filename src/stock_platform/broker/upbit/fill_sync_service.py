@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from stock_platform.broker.upbit.order_status import (
     ZERO,
     _dec,
+    _dec_str,
     normalize_upbit_order_status,
     upbit_fill_summary,
 )
@@ -99,6 +100,14 @@ class UpbitFillSyncService:
         if payload is None:
             client = self._resolve_client(order)
             payload = client.get_order(uuid=broker_uuid)
+        else:
+            # trades_count>0 인데 trades[] 누락 → fee-inclusive avg_price 위험
+            # 공식 GET으로 재조회 (WRITE 없음)
+            payload = self._ensure_trades_payload(
+                order=order,
+                payload=payload,
+                broker_uuid=broker_uuid,
+            )
 
         return self.apply_remote(
             order=order,
@@ -126,15 +135,20 @@ class UpbitFillSyncService:
                 detail={"error": "UNMAPPED_STATE", "summary": _jsonable(summary)},
             )
 
-        # 이미 최종 상태면 execution만 멱등 보강.
-        # STEP 9-6처럼 수동 Reconcile만 FILLED 된 경우 Post-fill이
-        # 없을 수 있으므로, 체결이 있으면 Post-fill을 멱등 enqueue 한다.
+        # 이미 최종 상태면 execution 멱등 보강 + fill 필드 재동기화.
+        # (과거 fee-inclusive avg / synthetic execution 정합화 포함)
         current = OrderStatus(order.status_code)
         if current in {OrderStatus.FILLED, OrderStatus.CANCELLED} and (
             current == target
         ):
             dup, new_ids = self._upsert_trades(
                 order=order, remote=remote, actor=actor
+            )
+            self._apply_fill_fields(
+                order=order, summary=summary, target=target
+            )
+            self._sync_live_validation_run(
+                order=order, summary=summary, remote=remote, actor=actor
             )
             post_fill = False
             if target in {
@@ -172,22 +186,10 @@ class UpbitFillSyncService:
             order=order, remote=remote, actor=actor
         )
 
-        executed = summary["executed_volume"]
-        avg = summary["avg_price"]
-        if executed > ZERO:
-            order.filled_quantity = executed
-            order_qty = Decimal(str(order.order_quantity or 0))
-            # 시장가 매수는 order_quantity placeholder일 수 있음 → remaining=0
-            if target == OrderStatus.FILLED:
-                order.remaining_quantity = ZERO
-            else:
-                order.remaining_quantity = max(ZERO, order_qty - executed)
-            if avg > ZERO:
-                order.average_fill_price = avg
-            order.filled_amount = (
-                Decimal(str(order.filled_quantity))
-                * Decimal(str(order.average_fill_price or avg or 0))
-            )
+        self._apply_fill_fields(order=order, summary=summary, target=target)
+        self._sync_live_validation_run(
+            order=order, summary=summary, remote=remote, actor=actor
+        )
 
         if OrderStatus(order.status_code) != target:
             # CANCELLED→FILLED 등 잘못된 선행 매핑은 허용하지 않음
@@ -224,6 +226,7 @@ class UpbitFillSyncService:
             commit=False,
         )
 
+        executed = summary["executed_volume"]
         post_fill = False
         if target in {OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED} and (
             executed > ZERO or new_ids
@@ -263,34 +266,47 @@ class UpbitFillSyncService:
         trades = remote.get("trades")
         if not isinstance(trades, list) or not trades:
             # trades 없으면 executed_volume 기반 synthetic id
+            # Upbit avg_price는 fee 포함일 수 있어 사용 금지
             executed = _dec(remote.get("executed_volume"))
             if executed <= ZERO:
                 return 0, []
             broker_uuid = str(remote.get("uuid") or order.broker_order_id)
             synthetic_id = f"{broker_uuid}:executed:{executed}"
+            ord_type = str(remote.get("ord_type") or "").strip().lower()
+            unit = _dec(remote.get("price"))
+            # limit 단가만 신뢰. 시장가(price/market)는 trades 재조회 대기
+            price = unit if ord_type == "limit" and unit > ZERO else ZERO
             return self._insert_one(
                 order=order,
                 broker_order_id=broker_uuid,
                 broker_execution_id=synthetic_id,
-                price=_dec(remote.get("avg_price"))
-                or _dec(remote.get("price")),
+                price=price,
                 quantity=executed,
                 executed_at=datetime.now(timezone.utc),
-                raw={"source": "executed_volume", "remote": _safe_remote(remote)},
+                raw={
+                    "source": "executed_volume",
+                    "remote": _safe_remote(remote),
+                    "synthetic": True,
+                    "note": "trades_missing_fallback",
+                },
             )
 
         dup = 0
         new_ids: list[int] = []
         broker_uuid = str(remote.get("uuid") or order.broker_order_id)
+        real_trade_uuids: list[str] = []
         for trade in trades:
             if not isinstance(trade, dict):
                 continue
             trade_uuid = str(trade.get("uuid") or "").strip()
             if not trade_uuid:
+                # trade UUID 없을 때만 합성 fallback
                 trade_uuid = (
                     f"{broker_uuid}:{trade.get('created_at')}:"
                     f"{trade.get('volume')}:{trade.get('price')}"
                 )
+            else:
+                real_trade_uuids.append(trade_uuid)
             d, ids = self._insert_one(
                 order=order,
                 broker_order_id=broker_uuid,
@@ -313,13 +329,187 @@ class UpbitFillSyncService:
                         )
                         if k in trade
                     },
-                    "paid_fee": remote.get("paid_fee"),
+                    # order-level fee만 참고 저장 (trade별 분할 금지)
+                    "order_paid_fee": remote.get("paid_fee"),
                     "actor": actor,
                 },
             )
             dup += d
             new_ids.extend(ids)
+
+        if real_trade_uuids:
+            self._supersede_synthetic_executions(
+                order=order,
+                broker_uuid=broker_uuid,
+                real_trade_uuids=real_trade_uuids,
+            )
         return dup, new_ids
+
+    def _apply_fill_fields(
+        self,
+        *,
+        order: Any,
+        summary: dict[str, Any],
+        target: OrderStatus,
+    ) -> None:
+        """average_fill_price=fee 제외 VWAP, filled_amount=Σ funds."""
+
+        executed = summary["executed_volume"]
+        avg = summary["avg_price"]
+        funds = summary["funds"]
+        paid_fee = summary["paid_fee"]
+        if executed <= ZERO:
+            return
+
+        order.filled_quantity = executed
+        order_qty = Decimal(str(order.order_quantity or 0))
+        if target == OrderStatus.FILLED:
+            order.remaining_quantity = ZERO
+        else:
+            order.remaining_quantity = max(ZERO, order_qty - executed)
+
+        if avg > ZERO:
+            order.average_fill_price = avg
+        if funds > ZERO:
+            order.filled_amount = funds
+        elif avg > ZERO:
+            order.filled_amount = executed * avg
+
+        # fee는 주문 컬럼이 없으므로 metadata에 공식 값 보관
+        meta = dict(getattr(order, "metadata_payload", None) or {})
+        meta["upbit_paid_fee"] = _dec_str(paid_fee)
+        meta["upbit_fill_funds"] = _dec_str(funds)
+        if avg > ZERO:
+            meta["upbit_avg_fill_price"] = _dec_str(avg)
+        # total_cost = funds + fee (참고용)
+        meta["upbit_total_cost"] = _dec_str(funds + paid_fee)
+        order.metadata_payload = meta
+        try:
+            from sqlalchemy.orm.attributes import flag_modified
+
+            flag_modified(order, "metadata_payload")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _supersede_synthetic_executions(
+        self,
+        *,
+        order: Any,
+        broker_uuid: str,
+        real_trade_uuids: list[str],
+    ) -> None:
+        """실 trade UUID가 오면 synthetic row는 hard delete 대신 supersede."""
+
+        prefix = f"{broker_uuid}:executed:"
+        listed = self._executions.list_by_order_id(int(order.order_id))
+        if not isinstance(listed, (list, tuple)):
+            return
+        rows = listed
+        now = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            eid = str(getattr(row, "broker_execution_id", "") or "")
+            if not eid.startswith(prefix):
+                continue
+            raw = dict(getattr(row, "raw_json", None) or {})
+            if raw.get("superseded"):
+                continue
+            raw["superseded"] = True
+            raw["superseded_at"] = now
+            raw["superseded_by"] = list(real_trade_uuids)
+            raw["supersede_reason"] = "REAL_TRADE_UUID_AVAILABLE"
+            row.raw_json = raw
+        self._session.flush()
+
+    def _sync_live_validation_run(
+        self,
+        *,
+        order: Any,
+        summary: dict[str, Any],
+        remote: dict[str, Any],
+        actor: str,
+    ) -> None:
+        """FILLED run에 filled_qty/amount/avg/fee 동기화 (기존 컬럼 재사용)."""
+
+        meta = getattr(order, "metadata_payload", None) or {}
+        smoke_run_id = str(meta.get("smoke_run_id") or "").strip()
+        if not smoke_run_id:
+            return
+        try:
+            from sqlalchemy import select
+
+            from stock_platform.trading.live_validation_entities import (
+                LiveValidationRunEntity,
+            )
+
+            # PK는 live_validation_run_pk — run_id로 조회
+            with self._session.begin_nested():
+                run = self._session.scalar(
+                    select(LiveValidationRunEntity).where(
+                        LiveValidationRunEntity.run_id == smoke_run_id
+                    )
+                )
+                if run is None:
+                    return
+                executed = summary["executed_volume"]
+                avg = summary["avg_price"]
+                funds = summary["funds"]
+                paid_fee = summary["paid_fee"]
+                if executed > ZERO:
+                    run.filled_quantity = executed
+                if avg > ZERO:
+                    run.avg_fill_price = avg
+                if funds > ZERO:
+                    run.filled_amount = funds
+                elif executed > ZERO and avg > ZERO:
+                    run.filled_amount = executed * avg
+                if paid_fee >= ZERO and summary.get("paid_fee") is not None:
+                    run.fee_amount = paid_fee
+                uuid = str(
+                    remote.get("uuid") or order.broker_order_id or ""
+                ).strip()
+                if uuid:
+                    run.broker_order_uuid = uuid
+                if OrderStatus(order.status_code) == OrderStatus.FILLED:
+                    run.broker_order_status = "FILLED"
+                    run.order_status = OrderStatus.FILLED.value
+                detail = dict(run.detail or {})
+                detail["fill_sync"] = {
+                    "actor": actor,
+                    "avg_fill_price": _dec_str(avg) if avg > ZERO else None,
+                    "filled_amount": _dec_str(funds) if funds > ZERO else None,
+                    "paid_fee": _dec_str(paid_fee),
+                    "executed_volume": _dec_str(executed),
+                }
+                run.detail = detail
+                from sqlalchemy.orm.attributes import flag_modified
+
+                flag_modified(run, "detail")
+                self._session.flush()
+        except Exception:  # noqa: BLE001
+            return
+
+    def _ensure_trades_payload(
+        self,
+        *,
+        order: Any,
+        payload: dict[str, Any],
+        broker_uuid: str,
+    ) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            return payload
+        trades = payload.get("trades")
+        trades_count = int(payload.get("trades_count") or 0)
+        has_trades = isinstance(trades, list) and bool(trades)
+        if has_trades or trades_count <= 0 or not broker_uuid:
+            return payload
+        try:
+            client = self._resolve_client(order)
+            refreshed = client.get_order(uuid=broker_uuid)
+            if isinstance(refreshed, dict):
+                return refreshed
+        except Exception:  # noqa: BLE001
+            pass
+        return payload
 
     def _insert_one(
         self,
@@ -372,38 +562,44 @@ class UpbitFillSyncService:
                 PostFillVerifyRunner,
             )
 
-            PostFillVerifyRunner(self._session).verify_after_order_fill(
-                order=order,
-                execution_id=execution_id,
-                actor=actor,
-            )
-            emit_live_safety_audit(
-                self._session,
-                event_type="POST_FILL_STARTED",
-                actor=actor,
-                run_id=None,
-                user_id=getattr(order, "user_id", None),
-                account_id=getattr(order, "user_broker_account_id", None),
-                strategy_id=None,
-                detail={"order_id": int(order.order_id)},
-                commit=False,
-            )
+            # savepoint — post-fill 실패가 fill sync commit을 깨지 않게
+            with self._session.begin_nested():
+                PostFillVerifyRunner(self._session).verify_after_order_fill(
+                    order=order,
+                    execution_id=execution_id,
+                    actor=actor,
+                )
+                emit_live_safety_audit(
+                    self._session,
+                    event_type="POST_FILL_STARTED",
+                    actor=actor,
+                    run_id=None,
+                    user_id=getattr(order, "user_id", None),
+                    account_id=getattr(order, "user_broker_account_id", None),
+                    strategy_id=None,
+                    detail={"order_id": int(order.order_id)},
+                    commit=False,
+                )
             return True
         except Exception as exc:  # noqa: BLE001
-            emit_live_safety_audit(
-                self._session,
-                event_type="POST_FILL_FAILED",
-                actor=actor,
-                run_id=None,
-                user_id=getattr(order, "user_id", None),
-                account_id=getattr(order, "user_broker_account_id", None),
-                strategy_id=None,
-                detail={
-                    "order_id": int(order.order_id),
-                    "error": f"{type(exc).__name__}:{exc}"[:300],
-                },
-                commit=False,
-            )
+            try:
+                with self._session.begin_nested():
+                    emit_live_safety_audit(
+                        self._session,
+                        event_type="POST_FILL_FAILED",
+                        actor=actor,
+                        run_id=None,
+                        user_id=getattr(order, "user_id", None),
+                        account_id=getattr(order, "user_broker_account_id", None),
+                        strategy_id=None,
+                        detail={
+                            "order_id": int(order.order_id),
+                            "error": f"{type(exc).__name__}:{exc}"[:300],
+                        },
+                        commit=False,
+                    )
+            except Exception:  # noqa: BLE001
+                pass
             return False
 
     def _ensure_accepted(self, *, order: Any, actor: str) -> None:
@@ -543,7 +739,7 @@ def _jsonable(payload: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in payload.items():
         if isinstance(value, Decimal):
-            out[key] = str(value)
+            out[key] = _dec_str(value)
         else:
             out[key] = value
     return out

@@ -33,6 +33,7 @@ class PostFillVerifyRunner:
         broker_cash: Decimal | None = None,
         actor: str = "POST_FILL_VERIFY",
         activate_kill_on_mismatch: bool = True,
+        allow_live_off_for_submitted: bool = False,
     ) -> PostFillVerifyResult:
         """Broker 잔고(또는 주입값)와 기대 DB 포지션을 비교한다."""
 
@@ -50,13 +51,15 @@ class PostFillVerifyRunner:
                 reason_code="UBA_NOT_FOUND_SKIP",
                 detail={"user_broker_account_id": user_broker_account_id},
             )
-        # LIVE OFF 계좌는 검증 생략 (Paper/Mock 경로 보호)
+        # LIVE OFF = 신규 주문 금지. 이미 broker UUID가 있는 주문의
+        # READ/reconciliation/post-fill 검증은 허용한다.
         if not bool(getattr(uba, "live_order_enabled", False)):
-            return PostFillVerifyResult(
-                ok=True,
-                reason_code="LIVE_OFF_SKIP",
-                detail={"user_broker_account_id": user_broker_account_id},
-            )
+            if not allow_live_off_for_submitted:
+                return PostFillVerifyResult(
+                    ok=True,
+                    reason_code="LIVE_OFF_SKIP",
+                    detail={"user_broker_account_id": user_broker_account_id},
+                )
 
         resolved_broker_positions = broker_positions
         resolved_broker_cash = broker_cash
@@ -239,6 +242,9 @@ class PostFillVerifyRunner:
             broker_positions=broker_positions,
             broker_cash=None,
             actor=actor,
+            allow_live_off_for_submitted=bool(
+                str(getattr(order, "broker_order_id", "") or "").strip()
+            ),
         )
         if row is not None:
             svc.handle_immediate_result(

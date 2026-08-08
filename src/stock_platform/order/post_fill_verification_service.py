@@ -561,6 +561,20 @@ class PostFillVerificationService:
 
     def _reverify(self, row: PostFillVerificationEntity) -> dict[str, Any]:
         runner = PostFillVerifyRunner(self._session)
+        allow_live_off = False
+        if row.order_id is not None:
+            try:
+                from stock_platform.order.entities import TradingOrderEntity
+
+                linked = self._session.get(
+                    TradingOrderEntity, int(row.order_id)
+                )
+                if linked is not None and str(
+                    getattr(linked, "broker_order_id", "") or ""
+                ).strip():
+                    allow_live_off = True
+            except Exception:  # noqa: BLE001
+                allow_live_off = False
         result = runner.verify_uba_against_expected(
             user_broker_account_id=int(row.user_broker_account_id),
             user_id=row.user_id,
@@ -572,6 +586,7 @@ class PostFillVerificationService:
                 else None
             ),
             actor="POST_FILL_WORKER",
+            allow_live_off_for_submitted=allow_live_off,
             # Kill은 서비스가 상태 전환 후 verifier를 통해 처리
             # verify_uba 내부 verifier는 activate_kill_on_mismatch=True
         )

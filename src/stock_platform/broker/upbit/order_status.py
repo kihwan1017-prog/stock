@@ -61,30 +61,63 @@ def normalize_upbit_order_status(remote: dict[str, Any]) -> OrderStatus | None:
     return None
 
 
+def _dec_str(value: Decimal) -> str:
+    """JSON/metadata용 — 과학적 표기 방지."""
+
+    text = format(value, "f")
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def upbit_fill_summary(remote: dict[str, Any]) -> dict[str, Any]:
-    """체결 요약 (Decimal 문자열)."""
+    """체결 요약 (Decimal).
+
+    정책:
+    - average_fill_price = Σ(price×volume) / Σ(volume)  (fee 제외)
+    - filled funds = Σ(trade.funds) 또는 Σ(price×volume)
+    - Upbit 응답의 avg_price는 fee 포함일 수 있어 사용하지 않음
+    - trades[]가 없고 limit이면 unit price 필드를 fallback
+    """
 
     executed = _dec(remote.get("executed_volume"))
+    paid_fee = _dec(remote.get("paid_fee"))
     trades = remote.get("trades") if isinstance(remote.get("trades"), list) else []
-    funds = ZERO
+
+    notional = ZERO
     volume = ZERO
     for trade in trades:
         if not isinstance(trade, dict):
             continue
-        funds += _dec(trade.get("funds"))
-        volume += _dec(trade.get("volume"))
+        price = _dec(trade.get("price"))
+        vol = _dec(trade.get("volume"))
+        funds_t = _dec(trade.get("funds"))
+        if vol <= ZERO:
+            continue
+        volume += vol
+        if funds_t > ZERO:
+            notional += funds_t
+        else:
+            notional += price * vol
+
     avg = ZERO
+    funds = notional
     if volume > ZERO:
-        avg = funds / volume
-    elif executed > ZERO and remote.get("avg_price") not in (None, ""):
-        avg = _dec(remote.get("avg_price"))
-    elif executed > ZERO and trades:
-        avg = _dec(trades[0].get("price"))
+        avg = notional / volume
+    elif executed > ZERO:
+        # trades 누락 — Upbit avg_price(fee 포함 가능)는 절대 사용하지 않음
+        ord_type = str(remote.get("ord_type") or "").strip().lower()
+        unit = _dec(remote.get("price"))
+        if ord_type == "limit" and unit > ZERO:
+            avg = unit
+            funds = executed * unit
+
     return {
         "executed_volume": executed,
         "avg_price": avg,
-        "paid_fee": _dec(remote.get("paid_fee")),
+        "paid_fee": paid_fee,
         "trades_count": int(remote.get("trades_count") or len(trades) or 0),
         "funds": funds,
         "state": str(remote.get("state") or ""),
+        "has_trades": bool(trades) and volume > ZERO,
     }
