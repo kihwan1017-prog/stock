@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 import structlog
@@ -33,10 +34,29 @@ def _config_from_entry(entry: ScopedRuntimeEntry) -> RealtimeStrategyConfig:
         short = int(payload.get("short_window", payload.get("short", 5)))
         long = int(payload.get("long_window", payload.get("long", 20)))
         cool = int(payload.get("cooldown_seconds", 30))
+        # SL/TP — payload 없으면 RealtimeStrategyConfig 기본값
+        stop = Decimal(
+            str(
+                payload.get(
+                    "stop_loss_ratio",
+                    payload.get("stop_loss", "0.03"),
+                )
+            )
+        )
+        take = Decimal(
+            str(
+                payload.get(
+                    "take_profit_ratio",
+                    payload.get("take_profit", "0.06"),
+                )
+            )
+        )
         return RealtimeStrategyConfig(
             short_window=max(1, short),
             long_window=max(short + 1, long),
             cooldown_seconds=max(0, cool),
+            stop_loss_ratio=max(Decimal("0"), stop),
+            take_profit_ratio=max(Decimal("0"), take),
         )
     except (TypeError, ValueError):
         return RealtimeStrategyConfig()
