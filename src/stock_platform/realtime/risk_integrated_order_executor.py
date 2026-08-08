@@ -184,10 +184,51 @@ class RiskIntegratedRealtimeOrderExecutor:
                 "GLOBAL_KILL_SWITCH_ACTIVE",
             )
 
-        quantity = (
-            self._execution_config.order_amount
-            / signal.signal_price
-        ).quantize(Decimal("0.00000001"))
+        # MA Signal → AI Gate (LLM은 주문 생성/한도 확대 금지)
+        order_amount = Decimal(str(self._execution_config.order_amount))
+        try:
+            from stock_platform.realtime.ai_signal_gate import (
+                evaluate_ai_signal_gate,
+            )
+            from stock_platform.realtime.ai_signal_gate_models import (
+                AiSignalGateDecision,
+            )
+
+            gate = evaluate_ai_signal_gate(
+                self._session,
+                signal,
+                environment=environment,
+            )
+            if gate.decision == AiSignalGateDecision.HOLD:
+                return self._skipped(signal, gate.reason_code)
+            if gate.decision == AiSignalGateDecision.REDUCE:
+                order_amount = (
+                    order_amount * Decimal(str(gate.size_multiplier))
+                )
+        except Exception:  # noqa: BLE001
+            # LIVE Fail Closed — gate 예외 시 신규 AI-gated 주문 차단
+            if (
+                environment == "LIVE"
+                and bool(
+                    getattr(
+                        get_settings(),
+                        "autotrading_ai_live_fail_closed",
+                        True,
+                    )
+                )
+                and bool(
+                    getattr(
+                        get_settings(),
+                        "autotrading_ai_signal_gate_enabled",
+                        False,
+                    )
+                )
+            ):
+                return self._skipped(signal, "AI_GATE_EXCEPTION")
+
+        quantity = (order_amount / signal.signal_price).quantize(
+            Decimal("0.00000001")
+        )
 
         # 매도: 보유 수량 초과 주문 방지 (PAPER / MOCK ledger)
         if signal.action.value.upper() == "SELL" and getattr(
@@ -326,7 +367,7 @@ class RiskIntegratedRealtimeOrderExecutor:
         decision = self._safety_guard.evaluate(
             signal=signal,
             mode=self._execution_config.mode,
-            order_amount=self._execution_config.order_amount,
+            order_amount=order_amount,
             open_position_count=int(open_position_count),
             live_unlock_token=unlock_token,
         )

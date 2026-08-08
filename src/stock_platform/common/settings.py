@@ -185,6 +185,12 @@ class Settings(BaseSettings):
     live_outbox_worker_stale_seconds: float = 30.0
     # AUTO LIVE readiness — 시세 stale 임계(초). 초과 시 BLOCKER
     autotrading_market_feed_stale_seconds: float = 30.0
+    # MA Signal → AI Gate (기본 OFF). LIVE에서 AI 장애/STALE 시 HOLD
+    autotrading_ai_signal_gate_enabled: bool = False
+    autotrading_ai_analysis_ttl_seconds: float = 900.0
+    autotrading_ai_live_fail_closed: bool = True
+    autotrading_ai_min_confidence: float = 0.4
+    autotrading_ai_reduce_ratio: float = 0.5
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0

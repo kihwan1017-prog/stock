@@ -696,6 +696,52 @@ export function AdminUpbitLiveUbaPanel() {
                   ).join(", ")}
                 </Typography.Text>
               ) : null}
+              {(() => {
+                const ai = (
+                  autotradingReadyQuery.data as {
+                    checks?: {
+                      ai_signal_gate?: {
+                        enabled?: boolean;
+                        stale?: boolean;
+                        age_seconds?: number | null;
+                        latest?: {
+                          recommendation?: string | null;
+                          confidence?: number | string | null;
+                          news_sentiment?: string | null;
+                          provider?: string | null;
+                          model?: string | null;
+                          analysis_at?: string | null;
+                        } | null;
+                        live_fail_closed?: boolean;
+                      };
+                    };
+                  }
+                ).checks?.ai_signal_gate;
+                if (!ai) return null;
+                const latest = ai.latest;
+                return (
+                  <Typography.Text type="secondary">
+                    AI Gate: {ai.enabled ? "ON" : "OFF"}
+                    {" · "}
+                    {latest?.provider ?? "-"}/{latest?.model ?? "-"}
+                    {" · "}
+                    freshness:{" "}
+                    {ai.stale
+                      ? "STALE"
+                      : ai.age_seconds != null
+                        ? `OK (${Math.round(Number(ai.age_seconds))}s)`
+                        : "N/A"}
+                    {" · "}
+                    rec: {latest?.recommendation ?? "-"}
+                    {" · "}
+                    conf: {String(latest?.confidence ?? "-")}
+                    {" · "}
+                    news: {latest?.news_sentiment ?? "-"}
+                    {" · "}
+                    fail-closed: {ai.live_fail_closed ? "YES" : "NO"}
+                  </Typography.Text>
+                );
+              })()}
             </Space>
           }
         />

@@ -443,6 +443,32 @@ def evaluate_uba_autotrading_ready(
         "note": "전역 RealtimeExecutionConfig — 다계좌 동시 LIVE는 미지원",
     }
 
+    # AI Signal Gate 스냅샷 (조회 전용 — Runtime/주문 없음)
+    try:
+        from stock_platform.realtime.ai_signal_gate import (
+            snapshot_ai_signal_gate_status,
+        )
+
+        symbols = _strategy_symbols_from_rows(approved_active) or ["KRW-XRP"]
+        primary_symbol = symbols[0]
+        ai_snap = snapshot_ai_signal_gate_status(
+            session,
+            exchange_code="UPBIT",
+            symbol=primary_symbol,
+        )
+        checks["ai_signal_gate"] = ai_snap
+        if bool(ai_snap.get("enabled")) and bool(ai_snap.get("stale", True)):
+            warnings.append("AI_ANALYSIS_STALE_OR_MISSING")
+    except Exception as exc:  # noqa: BLE001
+        checks["ai_signal_gate"] = {"error": type(exc).__name__}
+        warnings.append("AI_SIGNAL_GATE_STATUS_UNAVAILABLE")
+
+    # Candle / News / Provider 상태 (조회 전용)
+    checks["market_context"] = _snapshot_market_context_for_ai(
+        session,
+        symbol=(_strategy_symbols_from_rows(approved_active) or ["KRW-XRP"])[0],
+    )
+
     # 최종 상태 — 승인 Strategy 없으면 STRATEGY_REQUIRED 우선 표시
     if "STRATEGY_REQUIRED" in blockers:
         status = STATUS_STRATEGY_REQUIRED
@@ -704,3 +730,103 @@ def admin_set_uba_strategy_link_active(
         "runtime_started": False,
         "orders_submitted": 0,
     }
+
+
+def _snapshot_market_context_for_ai(
+    session: Session,
+    *,
+    symbol: str,
+) -> dict[str, Any]:
+    """Candle/News/Ollama 조회 스냅샷 — 수집 Job·Runtime 시작 없음."""
+
+    out: dict[str, Any] = {
+        "symbol": symbol.upper(),
+        "candle": {"count": None, "ok": False},
+        "news": {"count_today": None, "ok": False, "crypto_dedicated": False},
+        "ollama_provider": {"enabled": None, "is_default": None},
+        "limitations": [],
+    }
+    try:
+        from sqlalchemy import text
+
+        candle_n = session.execute(
+            text(
+                """
+                SELECT COUNT(*)
+                FROM market.candle_minute c
+                JOIN market.instrument i ON i.instrument_id = c.instrument_id
+                WHERE i.exchange_code = 'UPBIT' AND i.symbol = :symbol
+                """
+            ),
+            {"symbol": symbol.upper()},
+        ).scalar()
+        out["candle"] = {
+            "count": int(candle_n or 0),
+            "ok": int(candle_n or 0) > 0,
+            "sync_via": "POST /api/v1/upbit/minute/sync",
+            "timeframes": [1, 3, 5, 15],
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["candle"] = {"error": type(exc).__name__, "ok": False}
+
+    try:
+        from sqlalchemy import text
+
+        news_n = session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM news.news_article
+                WHERE UPPER(exchange_code) IN ('UPBIT', 'CRYPTO')
+                  AND created_at >= (NOW() AT TIME ZONE 'utc')::date
+                """
+            )
+        ).scalar()
+        out["news"] = {
+            "count_today": int(news_n or 0),
+            "ok": int(news_n or 0) > 0,
+            "crypto_dedicated": False,
+            "reuse": "WatchlistNewsSyncJob + Naver (watchlist news_enabled)",
+            "note": "KRX/DART disclosure is not used for crypto",
+        }
+        out["limitations"].append(
+            "CRYPTO_NEWS_VIA_WATCHLIST_NAVER_ONLY_NO_DEDICATED_CRAWLER"
+        )
+    except Exception as exc:  # noqa: BLE001
+        out["news"] = {
+            "error": type(exc).__name__,
+            "ok": False,
+            "crypto_dedicated": False,
+        }
+        out["limitations"].append("NEWS_STATUS_UNAVAILABLE")
+
+    try:
+        from stock_platform.ai.providers.management_entities import (
+            AIProviderConfigurationEntity,
+        )
+
+        rows = list(
+            session.scalars(select(AIProviderConfigurationEntity))
+        )
+        ollama = next(
+            (
+                r
+                for r in rows
+                if str(r.provider_code).lower() == "ollama"
+            ),
+            None,
+        )
+        default = next((r for r in rows if r.is_default), None)
+        out["ollama_provider"] = {
+            "enabled": bool(ollama.enabled) if ollama else False,
+            "is_default": bool(ollama.is_default) if ollama else False,
+            "model": getattr(ollama, "model", None) if ollama else None,
+            "default_provider": (
+                getattr(default, "provider_code", None) if default else None
+            ),
+            "enable_via": "POST /api/v1/admin/ai/provider-configurations/{id}/enable",
+        }
+    except Exception as exc:  # noqa: BLE001
+        out["ollama_provider"] = {"error": type(exc).__name__}
+
+    return out
+
