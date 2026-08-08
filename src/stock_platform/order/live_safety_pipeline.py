@@ -474,19 +474,12 @@ class LiveOrderSafetyPipeline:
         )
 
     def _count_orders_today(self, uba_id: int) -> int:
-        now_kst = datetime.now(KST)
-        day_start = datetime(
-            now_kst.year, now_kst.month, now_kst.day, tzinfo=KST
-        ).astimezone(timezone.utc)
-        count = self._session.scalar(
-            select(func.count())
-            .select_from(TradingOrderEntity)
-            .where(
-                TradingOrderEntity.user_broker_account_id == uba_id,
-                TradingOrderEntity.created_at >= day_start,
-            )
+        # 미전송 내부 폐기(UNSUBMITTED_LIVE_RETIRED)는 Risk 일일 건수에서 제외
+        from stock_platform.order.daily_risk_order_count import (
+            count_daily_risk_orders,
         )
-        return int(count or 0)
+
+        return count_daily_risk_orders(self._session, int(uba_id))
 
     def _is_duplicate(
         self,

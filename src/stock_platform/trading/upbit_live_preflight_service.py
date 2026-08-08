@@ -1022,23 +1022,12 @@ class UpbitLivePreflightService:
         )
 
     def _daily_order_count(self, uba_id: int) -> int:
-        from zoneinfo import ZoneInfo
-
-        now_kst = datetime.now(ZoneInfo("Asia/Seoul"))
-        day_start = datetime(
-            now_kst.year, now_kst.month, now_kst.day, tzinfo=ZoneInfo("Asia/Seoul")
-        ).astimezone(timezone.utc)
-        return int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(TradingOrderEntity)
-                .where(
-                    TradingOrderEntity.user_broker_account_id == uba_id,
-                    TradingOrderEntity.created_at >= day_start,
-                )
-            )
-            or 0
+        # LIVE Risk daily_order_limit 과 동일 집계 (미전송 retire 제외)
+        from stock_platform.order.daily_risk_order_count import (
+            count_daily_risk_orders,
         )
+
+        return count_daily_risk_orders(self._session, int(uba_id))
 
     def _fetch_price_book(
         self, market: str, *, skip_network: bool
