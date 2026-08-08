@@ -4036,6 +4036,25 @@ export async function retireUnsubmittedOrder(
   return postJson(`/admin/orders/${orderId}/retire-unsubmitted`, { reason });
 }
 
+/** Preview CONFIRMED_NOT_SUBMITTED resolution (AMBIGUOUS only) */
+export async function previewResolveNotSubmittedOrder(
+  orderId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/orders/${orderId}/resolve-not-submitted/preview`,
+  );
+}
+
+/** Resolve AMBIGUOUS as not-submitted then retire — Upbit READ-ONLY lookup only */
+export async function resolveNotSubmittedOrder(
+  orderId: number,
+  reason: string,
+): Promise<JsonValue> {
+  return postJson(`/admin/orders/${orderId}/resolve-not-submitted`, {
+    reason,
+  });
+}
+
 export async function listExecutions(params?: Params): Promise<JsonValue> {
   return getJson("/executions", params);
 }

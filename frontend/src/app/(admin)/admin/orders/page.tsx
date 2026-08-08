@@ -21,6 +21,10 @@ import { useMemo, useState } from "react";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import {
+  canShowResolveNotSubmittedButton,
+  outboxStatusForOrder,
+} from "@/features/admin/orders/resolveNotSubmittedGate";
 import { canShowUnsubmittedRetireButton } from "@/features/admin/orders/unsubmittedRetireGate";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
@@ -32,6 +36,9 @@ type OrderRow = Record<string, unknown>;
 const DEFAULT_PAPER_ACCOUNT_ID = Number(
   process.env.NEXT_PUBLIC_DEFAULT_PAPER_ACCOUNT_ID ?? "1",
 );
+
+const RESOLVE_WARNING =
+  "브로커 미전송 여부를 서버에서 재검증합니다. 확인되지 않으면 폐기할 수 없습니다.";
 
 export default function AdminOrdersPage() {
   const { message } = App.useApp();
@@ -48,6 +55,12 @@ export default function AdminOrdersPage() {
   const [retireRow, setRetireRow] = useState<OrderRow | null>(null);
   const [retireReason, setRetireReason] = useState("");
   const [retirePreview, setRetirePreview] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
+  const [resolveRow, setResolveRow] = useState<OrderRow | null>(null);
+  const [resolveReason, setResolveReason] = useState("");
+  const [resolvePreview, setResolvePreview] = useState<Record<
     string,
     unknown
   > | null>(null);
@@ -137,6 +150,42 @@ export default function AdminOrdersPage() {
     onError: (err) => message.error(toApiError(err).message),
   });
 
+  const openResolveModal = async (row: OrderRow) => {
+    const orderId = Number(row.order_id ?? row.id);
+    if (!Number.isFinite(orderId)) return;
+    try {
+      const preview = (await adminApi.previewResolveNotSubmittedOrder(
+        orderId,
+      )) as Record<string, unknown>;
+      setResolvePreview(preview);
+      if (preview.resolvable !== true) {
+        message.error(
+          `미전송 확인 불가: ${Array.isArray(preview.blockers) ? preview.blockers.join(", ") : "blocked"}`,
+        );
+        return;
+      }
+      setResolveRow(row);
+      setResolveReason("");
+    } catch (err) {
+      message.error(toApiError(err).message);
+    }
+  };
+
+  const resolveNotSubmitted = useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: number; reason: string }) =>
+      adminApi.resolveNotSubmittedOrder(orderId, reason),
+    onSuccess: () => {
+      message.success(
+        "미전송 확인(CONFIRMED_NOT_SUBMITTED) 후 내부 폐기 완료",
+      );
+      setResolveRow(null);
+      setResolvePreview(null);
+      setResolveReason("");
+      invalidateOrders();
+    },
+    onError: (err) => message.error(toApiError(err).message),
+  });
+
   const createPaper = useMutation({
     mutationFn: adminApi.createPaperOrder,
     onSuccess: () => {
@@ -156,6 +205,10 @@ export default function AdminOrdersPage() {
   });
 
   const rows = useMemo(() => extractRows(list.data) as OrderRow[], [list.data]);
+  const outboxRows = useMemo(
+    () => extractRows(outbox.data) as OrderRow[],
+    [outbox.data],
+  );
   const paperRows = useMemo(
     () => extractRows(paperOrders.data) as OrderRow[],
     [paperOrders.data],
@@ -365,15 +418,41 @@ export default function AdminOrdersPage() {
                   >
                     취소
                   </PermissionButton>
-                  {canShowUnsubmittedRetireButton(row) ? (
-                    <PermissionButton
-                      permission="trading:write"
-                      size="small"
-                      onClick={() => void openRetireModal(row)}
-                    >
-                      미전송 주문 폐기
-                    </PermissionButton>
-                  ) : null}
+                  {(() => {
+                    const oid = Number(row.order_id ?? row.id);
+                    const ox = Number.isFinite(oid)
+                      ? outboxStatusForOrder(oid, outboxRows)
+                      : null;
+                    const showResolve = canShowResolveNotSubmittedButton(
+                      row,
+                      ox,
+                    );
+                    const showRetire =
+                      !showResolve && canShowUnsubmittedRetireButton(row);
+                    return (
+                      <>
+                        {showResolve ? (
+                          <PermissionButton
+                            permission="trading:write"
+                            size="small"
+                            danger
+                            onClick={() => void openResolveModal(row)}
+                          >
+                            미전송 확인 후 폐기
+                          </PermissionButton>
+                        ) : null}
+                        {showRetire ? (
+                          <PermissionButton
+                            permission="trading:write"
+                            size="small"
+                            onClick={() => void openRetireModal(row)}
+                          >
+                            미전송 주문 폐기
+                          </PermissionButton>
+                        ) : null}
+                      </>
+                    );
+                  })()}
                 </Space>
               ),
             },
@@ -552,7 +631,7 @@ export default function AdminOrdersPage() {
         }}
         destroyOnHidden
       >
-        <Space direction="vertical" size="small" style={{ width: "100%" }}>
+        <Space orientation="vertical" size="small" style={{ width: "100%" }}>
           <Typography.Text>
             Order ID: {cell(retirePreview?.order_id ?? retireRow?.order_id)}
           </Typography.Text>
@@ -587,6 +666,63 @@ export default function AdminOrdersPage() {
             value={retireReason}
             onChange={(e) => setRetireReason(e.target.value)}
             placeholder="폐기 사유 (필수)"
+            maxLength={2000}
+          />
+        </Space>
+      </Modal>
+
+      <Modal
+        title="미전송 확인 후 폐기 (CONFIRMED_NOT_SUBMITTED)"
+        open={resolveRow != null}
+        onCancel={() => {
+          setResolveRow(null);
+          setResolvePreview(null);
+          setResolveReason("");
+        }}
+        okText="미전송 확인 후 폐기"
+        okButtonProps={{
+          danger: true,
+          disabled: resolveReason.trim().length < 1,
+          loading: resolveNotSubmitted.isPending,
+        }}
+        onOk={() => {
+          const orderId = Number(resolveRow?.order_id ?? resolveRow?.id);
+          if (!Number.isFinite(orderId) || resolveReason.trim().length < 1) {
+            return;
+          }
+          resolveNotSubmitted.mutate({
+            orderId,
+            reason: resolveReason.trim(),
+          });
+        }}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" size="small" style={{ width: "100%" }}>
+          <Typography.Text type="warning">{RESOLVE_WARNING}</Typography.Text>
+          <Typography.Text>
+            Order ID: {cell(resolvePreview?.order_id ?? resolveRow?.order_id)}
+          </Typography.Text>
+          <Typography.Text>
+            Outbox: {cell(resolvePreview?.outbox_id)} (
+            {cell(resolvePreview?.outbox_status)})
+          </Typography.Text>
+          <Typography.Text>
+            UBA: {cell(resolvePreview?.user_broker_account_id)}
+          </Typography.Text>
+          <Typography.Text>
+            identifier: {cell(resolvePreview?.identifier)}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            로컬 실패 증거: {cell(resolvePreview?.local_failure_evidence)}
+          </Typography.Text>
+          <Typography.Text type="secondary">
+            일반 미전송 폐기는 계속 BLOCK · POST /v1/orders 없음
+          </Typography.Text>
+          <Input.TextArea
+            rows={3}
+            value={resolveReason}
+            onChange={(e) => setResolveReason(e.target.value)}
+            placeholder="확인·폐기 사유 (필수)"
             maxLength={2000}
           />
         </Space>

@@ -326,6 +326,9 @@ from stock_platform.api.v1.admin_upbit_ambiguous_orders import (
 from stock_platform.api.v1.admin_orders_retire import (
     admin_router as admin_orders_retire_router,
 )
+from stock_platform.api.v1.admin_ambiguous_not_submitted import (
+    admin_router as admin_ambiguous_not_submitted_router,
+)
 from stock_platform.api.v1.admin_upbit_ambiguous_resolver import (
     admin_router as admin_upbit_ambiguous_resolver_router,
 )
@@ -543,6 +546,7 @@ _ROUTER_GROUPS = (
     admin_upbit_rate_limits_router,
     admin_upbit_ambiguous_orders_router,
     admin_orders_retire_router,
+    admin_ambiguous_not_submitted_router,
     admin_upbit_ambiguous_resolver_router,
     admin_market_session_jobs_router,
     admin_settlements_router,
