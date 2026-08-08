@@ -32,6 +32,9 @@ from stock_platform.order.live_safety_audit import (
     SCHEDULER_RUN,
     emit_live_safety_audit,
 )
+from stock_platform.realtime.live_runtime_control import (
+    should_keep_upbit_on_krx_close,
+)
 from stock_platform.realtime.runtime import (
     realtime_execution_runner,
     realtime_strategy_runner,
@@ -147,6 +150,17 @@ class TradingSchedulerControlService:
                 int(st.get("active_scopes") or 0) == 0
                 and not bool(ex.get("running"))
             ),
+            "broker_market_hours": {
+                "KRX": {
+                    "applies_krx_session": True,
+                    "policy": "SESSION_TIMELINE",
+                },
+                "UPBIT": {
+                    "applies_krx_session": False,
+                    "policy": "24/7_SUBJECT_TO_RECOVERY_KILL_ARM",
+                    "keep_on_krx_close": should_keep_upbit_on_krx_close(),
+                },
+            },
         }
 
     def assert_start_preconditions(

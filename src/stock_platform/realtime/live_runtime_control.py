@@ -285,6 +285,34 @@ async def stop_live_market_feeds(
     return result
 
 
+def should_keep_upbit_on_krx_close(
+    settings: Any | None = None,
+) -> bool:
+    """KRX MARKET_CLOSE에서도 UPBIT 시세/런타임 유지 여부.
+
+    Shadow auto-start 또는 명시적 24/7 keep 플래그. 기본 OFF(Fail Closed).
+    """
+
+    cfg = settings if settings is not None else get_settings()
+    if bool(getattr(cfg, "realtime_upbit_shadow_auto_start_enabled", False)):
+        return True
+    return bool(
+        getattr(cfg, "realtime_upbit_24x7_keep_on_krx_close", False)
+    )
+
+
+def upbit_market_hours_policy() -> dict[str, Any]:
+    """UPBIT는 KRX 세션 Timeline에 묶지 않음."""
+
+    return {
+        "broker": "UPBIT",
+        "applies_krx_session": False,
+        "policy": "24/7_SUBJECT_TO_RECOVERY_KILL_ARM",
+        "keep_on_krx_close": should_keep_upbit_on_krx_close(),
+        "krx_policy": "SESSION_TIMELINE_UNCHANGED",
+    }
+
+
 async def restart_live_runtime() -> dict[str, Any]:
     """LIVE Runner Stop → Config 재적용 → Start (idempotent)."""
 

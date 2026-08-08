@@ -691,6 +691,16 @@ export async function getAdminLiveOpsReadiness(): Promise<JsonValue> {
   return getJson("/admin/live-ops/readiness");
 }
 
+export async function getAdminUbaAutotradingReadiness(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/readiness`);
+}
+
+export async function getAdminLiveOutboxWorkerStatus(): Promise<JsonValue> {
+  return getJson("/admin/autotrading/live-outbox-worker/status");
+}
+
 /** STEP 9-7 — LIVE ON 전 Runtime Pre-flight */
 export const PREFLIGHT_TTL_SECONDS = 60;
 

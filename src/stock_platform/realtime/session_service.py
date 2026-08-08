@@ -120,18 +120,12 @@ class RealtimeTradingSessionService:
             )
 
         # POST_MARKET 등 — Upbit 유지 옵션 반영
-        from stock_platform.common.settings import get_settings
         from stock_platform.realtime.live_runtime_control import (
+            should_keep_upbit_on_krx_close,
             stop_live_market_feeds,
         )
 
-        keep_upbit = bool(
-            getattr(
-                get_settings(),
-                "realtime_upbit_shadow_auto_start_enabled",
-                False,
-            )
-        )
+        keep_upbit = should_keep_upbit_on_krx_close()
         await stop_live_market_feeds(keep_upbit=keep_upbit)
 
         return TradingSessionResult(

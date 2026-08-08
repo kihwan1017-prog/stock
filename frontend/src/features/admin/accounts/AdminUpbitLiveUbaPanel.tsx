@@ -156,6 +156,18 @@ export function AdminUpbitLiveUbaPanel() {
     queryFn: adminApi.getAdminLiveOpsReadiness,
   });
 
+  const autotradingReadyQuery = useQuery({
+    queryKey: ["admin", "autotrading-readiness", detailUbaId],
+    queryFn: () =>
+      adminApi.getAdminUbaAutotradingReadiness(Number(detailUbaId)),
+    enabled: detailUbaId != null,
+  });
+
+  const liveOutboxWorkerQuery = useQuery({
+    queryKey: ["admin", "live-outbox-worker-status"],
+    queryFn: adminApi.getAdminLiveOutboxWorkerStatus,
+  });
+
   const tradingSchedulerQuery = useQuery({
     queryKey: ["admin", "trading-scheduler", "status"],
     queryFn: adminApi.getTradingSchedulerStatus,
@@ -625,6 +637,63 @@ export function AdminUpbitLiveUbaPanel() {
               {(readiness.blockers ?? []).length > 0 ? (
                 <Typography.Text type="danger">
                   blockers: {(readiness.blockers ?? []).join(", ")}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          }
+        />
+      ) : null}
+
+      {detailUbaId != null && autotradingReadyQuery.data ? (
+        <Alert
+          type={
+            (autotradingReadyQuery.data as { status?: string }).status ===
+            "READY_FOR_AUTO_TRADING"
+              ? "success"
+              : "warning"
+          }
+          showIcon
+          style={{ marginBottom: 12 }}
+          title={`Auto Trading: ${String(
+            (autotradingReadyQuery.data as { status?: string }).status ??
+              "BLOCKED",
+          )}`}
+          description={
+            <Space orientation="vertical" size={4}>
+              <Typography.Text>
+                UBA {detailUbaId} · Runtime{" "}
+                {String(
+                  (autotradingReadyQuery.data as { runtime_status?: string })
+                    .runtime_status ?? "-",
+                )}{" "}
+                · Worker{" "}
+                {liveOutboxWorkerQuery.data
+                  ? `${
+                      (liveOutboxWorkerQuery.data as { enabled?: boolean })
+                        .enabled
+                        ? "ENABLED"
+                        : "DISABLED"
+                    }/${
+                      (liveOutboxWorkerQuery.data as { running?: boolean })
+                        .running
+                        ? "RUN"
+                        : "STOP"
+                    }`
+                  : "-"}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                시작 버튼 비활성 (이번 STEP). 운영 ON은 별도 승인 후.
+              </Typography.Text>
+              {(
+                (autotradingReadyQuery.data as { blockers?: string[] })
+                  .blockers ?? []
+              ).length > 0 ? (
+                <Typography.Text type="danger">
+                  blockers:{" "}
+                  {(
+                    (autotradingReadyQuery.data as { blockers?: string[] })
+                      .blockers ?? []
+                  ).join(", ")}
                 </Typography.Text>
               ) : null}
             </Space>

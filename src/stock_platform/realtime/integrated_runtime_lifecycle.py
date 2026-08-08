@@ -280,23 +280,22 @@ async def on_market_open() -> dict[str, Any]:
 
 
 async def on_market_close() -> dict[str, Any]:
-    """MARKET_CLOSE — KRX Runner 정지, Upbit 24/7 유지."""
+    """MARKET_CLOSE — KRX Runner 정지, Upbit 24/7 유지(플래그 시)."""
 
     from stock_platform.realtime.paper_price_feed import paper_price_feed
     from stock_platform.realtime.live_runtime_control import (
         revert_realtime_execution_to_paper,
+        should_keep_upbit_on_krx_close,
         stop_live_market_feeds,
     )
 
     settings = get_settings()
-    # Upbit Shadow auto-start ON 일 때만 KRX 종료 후에도 유지
-    keep_upbit = bool(
-        getattr(settings, "realtime_upbit_shadow_auto_start_enabled", False)
-    )
+    keep_upbit = should_keep_upbit_on_krx_close(settings)
 
     result: dict[str, Any] = {
         "phase": "MARKET_CLOSE",
         "keep_upbit": keep_upbit,
+        "upbit_24x7_policy": "KEEP_IF_FLAG_ELSE_STOP_WITH_KRX",
     }
 
     await paper_price_feed.shutdown()
@@ -306,19 +305,37 @@ async def on_market_close() -> dict[str, Any]:
     result["feeds"] = await stop_live_market_feeds(keep_upbit=keep_upbit)
 
     if keep_upbit:
-        # Upbit Shadow 경로 유지 — Runner 재확인
-        shadow_cfg = apply_upbit_shadow_execution_config()
-        result["upbit_shadow_config"] = shadow_cfg
-        if shadow_cfg.get("applied"):
+        # LIVE UBA 자동매매 중이면 Runner/Config 보존 (Shadow로 강제 전환 금지)
+        live_uba = int(
+            getattr(settings, "realtime_live_user_broker_account_id", 0) or 0
+        )
+        mode = getattr(
+            getattr(realtime_execution_runner, "_config", None),
+            "mode",
+            None,
+        )
+        if (
+            live_uba > 0
+            and mode == RealtimeExecutionMode.LIVE
+        ):
             result["execution"] = await realtime_execution_runner.start()
             result["strategy"] = await realtime_strategy_runner.start()
-            result["upbit_quotes"] = await maybe_start_upbit_shadow_quotes()
+            result["runners"] = "kept_live_uba"
+            result["upbit_live_preserved"] = True
         else:
-            # Shadow 설정 불가 시 KRX와 함께 정지
-            await realtime_execution_runner.stop()
-            await realtime_strategy_runner.stop()
-            revert_realtime_execution_to_paper()
-            result["runners"] = "stopped_shadow_unavailable"
+            # Upbit Shadow 경로 유지 — Runner 재확인
+            shadow_cfg = apply_upbit_shadow_execution_config()
+            result["upbit_shadow_config"] = shadow_cfg
+            if shadow_cfg.get("applied"):
+                result["execution"] = await realtime_execution_runner.start()
+                result["strategy"] = await realtime_strategy_runner.start()
+                result["upbit_quotes"] = await maybe_start_upbit_shadow_quotes()
+            else:
+                # Shadow 설정 불가 시 KRX와 함께 정지
+                await realtime_execution_runner.stop()
+                await realtime_strategy_runner.stop()
+                revert_realtime_execution_to_paper()
+                result["runners"] = "stopped_shadow_unavailable"
     else:
         await realtime_execution_runner.stop()
         await realtime_strategy_runner.stop()

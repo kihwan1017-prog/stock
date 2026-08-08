@@ -22,6 +22,9 @@ from stock_platform.api.v1.admin_broker_accounts import (
 from stock_platform.api.v1.admin_live_ops_readiness import (
     router as admin_live_ops_readiness_router,
 )
+from stock_platform.api.v1.admin_autotrading_readiness import (
+    router as admin_autotrading_readiness_router,
+)
 from stock_platform.api.v1.admin_runtime_preflight import (
     router as admin_runtime_preflight_router,
 )
@@ -403,6 +406,7 @@ _ROUTER_GROUPS = (
     admin_broker_credentials_router,
     admin_broker_accounts_router,
     admin_live_ops_readiness_router,
+    admin_autotrading_readiness_router,
     admin_runtime_preflight_router,
     admin_operations_dashboard_router,
     admin_dashboard_ops_router,
