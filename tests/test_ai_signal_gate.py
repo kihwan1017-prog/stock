@@ -560,6 +560,101 @@ def test_e2e_kill_switch_still_blocks(monkeypatch):
     assert result.reason_code == "GLOBAL_KILL_SWITCH_ACTIVE"
 
 
+def test_paper_broker_upbit_exchange_applies_gate(monkeypatch):
+    """Paper scope broker_code=PAPER + exchange UPBIT → Gate 적용."""
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(broker_code="PAPER", market_type="CRYPTO"),
+        environment="PAPER",
+    )
+    assert result.decision == AiSignalGateDecision.HOLD
+    assert result.reason_code != "AI_GATE_BROKER_SKIP"
+
+
+def test_krx_paper_broker_skips_gate(monkeypatch):
+    """KRX Paper 전략에는 UPBIT Gate 미적용."""
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should skip")),
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(
+            exchange_code="KRX",
+            symbol="005930",
+            broker_code="PAPER",
+            market_type="STOCK",
+        ),
+        environment="PAPER",
+    )
+    assert result.decision == AiSignalGateDecision.ALLOW
+    assert result.reason_code == "AI_GATE_BROKER_SKIP"
+
+
+def test_live_upbit_gate_applies_when_live_enabled(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(autotrading_ai_signal_gate_live_enabled=True),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_shadow.is_live_shadow_mode",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_dry_run.is_live_dry_run_mode",
+        lambda: False,
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(broker_code="UPBIT"),
+        environment="LIVE",
+    )
+    assert result.decision == AiSignalGateDecision.HOLD
+
+
+def test_allow_duplicate_fingerprint_cache(monkeypatch):
+    """동일 fingerprint 재평가 시 캐시 — Gate 결과 안정."""
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    calls = {"n": 0}
+
+    def _load(*_a, **_k):
+        calls["n"] += 1
+        return _fresh_analysis(recommendation="ALLOW")
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        _load,
+    )
+    sig = _signal(fingerprint="fp-dup-allow", broker_code="PAPER", market_type="CRYPTO")
+    first = evaluate_ai_signal_gate(MagicMock(), sig, environment="PAPER")
+    second = evaluate_ai_signal_gate(MagicMock(), sig, environment="PAPER")
+    assert first.decision == AiSignalGateDecision.ALLOW
+    assert second.decision == AiSignalGateDecision.ALLOW
+    assert calls["n"] == 1
+
+
 def test_e2e_risk_fail_blocks(monkeypatch):
     executor, _ = _executor_with_gate(monkeypatch, gate_decision="ALLOW")
     monkeypatch.setattr(
@@ -593,3 +688,4 @@ def test_e2e_risk_fail_blocks(monkeypatch):
     )
     assert called["n"] == 0
     assert result.reason_code == "DAILY_ORDER_LIMIT"
+

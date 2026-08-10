@@ -63,6 +63,41 @@ def resolve_news_sentiment(session: Session, *, symbol: str) -> str:
     return "NO_DATA"
 
 
+def _ollama_circuit_snapshot() -> dict[str, Any]:
+    """Ollama circuit 상태 — OPEN이면 분석 create 전에 skip."""
+
+    try:
+        from stock_platform.ai.providers.manager import get_ai_manager
+
+        circuit = get_ai_manager()._circuit_for("ollama")
+        snap = circuit.snapshot()
+        return {
+            "allow": bool(circuit.allow()),
+            "state": snap.get("state"),
+            "failure_count": snap.get("failure_count"),
+            "reset_seconds": snap.get("reset_seconds"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "allow": True,
+            "state": "UNKNOWN",
+            "error": type(exc).__name__,
+        }
+
+
+def _reset_ollama_circuit_after_warmup() -> dict[str, Any]:
+    """warmup 성공 후 cold-start TIMEOUT으로 열린 circuit을 복구."""
+
+    try:
+        from stock_platform.ai.providers.manager import get_ai_manager
+
+        circuit = get_ai_manager()._circuit_for("ollama")
+        circuit.record_success()
+        return {"reset": True, **circuit.snapshot()}
+    except Exception as exc:  # noqa: BLE001
+        return {"reset": False, "error": type(exc).__name__}
+
+
 async def _warmup_ollama(settings: Any) -> dict[str, Any]:
     """모델 cold-start 완화용 초소형 ping. 실패해도 분석은 계속."""
 
@@ -77,25 +112,31 @@ async def _warmup_ollama(settings: Any) -> dict[str, Any]:
         or "qwen3.5:4b"
     )
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        # cold start는 60~120s 소요 가능 — warmup만 여유, 분석 timeout과 분리
+        async with httpx.AsyncClient(timeout=150.0) as client:
             tags = await client.get(f"{base}/api/tags")
             tags.raise_for_status()
-            # 짧은 generate로 모델 로드만 유도
+            # 짧은 generate로 모델 로드 + keep_alive 유지
             gen = await client.post(
                 f"{base}/api/generate",
                 json={
                     "model": model,
                     "prompt": "ping",
                     "stream": False,
+                    "keep_alive": "30m",
                     "options": {"num_predict": 1},
                 },
             )
-            return {
-                "ok": gen.status_code < 500,
+            ok = gen.status_code < 500
+            out = {
+                "ok": ok,
                 "tags_ok": True,
                 "generate_status": gen.status_code,
                 "note": "cold_start_warmup",
             }
+            if ok:
+                out["circuit"] = _reset_ollama_circuit_after_warmup()
+            return out
     except Exception as exc:  # noqa: BLE001
         return {
             "ok": False,
@@ -514,6 +555,17 @@ class UpbitAutotradingAiAnalysisJob:
         ) and provider == "ollama":
             out["warmup"] = await _warmup_ollama(settings)
 
+        # TIMEOUT 이후 CIRCUIT_OPEN으로 FAILED 분석만 쌓이는 것 방지
+        if provider == "ollama":
+            circuit = _ollama_circuit_snapshot()
+            out["circuit"] = circuit
+            if not circuit.get("allow", True):
+                out["ok"] = False
+                out["skipped"] = True
+                out["skip_reason"] = "OLLAMA_CIRCUIT_OPEN"
+                out["error"] = "CIRCUIT_OPEN"
+                return out
+
         try:
             created = self._svc.create(
                 actor=ACTOR,
@@ -525,15 +577,16 @@ class UpbitAutotradingAiAnalysisJob:
                 execution_mode="EXTERNAL",
                 provider_code=provider,
                 model=model,
-                max_tokens=1024,
+                # qwen3.5:4b 차트 JSON은 256~512면 충분 — 과도한 max_tokens는 latency↑
+                max_tokens=512,
                 timeout_sec=float(
                     getattr(
                         settings,
                         "autotrading_ai_analysis_timeout_seconds",
                         None,
                     )
-                    or getattr(settings, "ollama_timeout_seconds", 120.0)
-                    or 150.0
+                    or getattr(settings, "ollama_timeout_seconds", 180.0)
+                    or 180.0
                 ),
                 fallback_enabled=False,
                 idempotency_key=idem if not force else f"{idem}-f{int(now_utc.timestamp())}"[:64],

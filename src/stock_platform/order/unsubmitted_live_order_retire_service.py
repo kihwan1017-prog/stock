@@ -1,4 +1,8 @@
-"""미전송 LIVE 주문 내부 폐기 — 브로커 API 0회."""
+"""미전송 LIVE/PAPER 주문 내부 폐기 — 브로커 API 0회.
+
+PAPER: broker_code=PAPER + environment=PAPER + PENDING Outbox만.
+LIVE: UPBIT/KIWOOM + environment=LIVE (기존 게이트 유지).
+"""
 
 from __future__ import annotations
 
@@ -370,11 +374,15 @@ class UnsubmittedLiveOrderRetireService:
             if "order_already_terminal" not in blockers:
                 blockers.append("order_not_pending")
 
-        if env != "LIVE":
-            blockers.append("environment_not_live")
-
-        if broker not in {"UPBIT", "KIWOOM"}:
-            blockers.append("broker_not_live")
+        # PAPER 미전송(실 adapter 없음)도 동일 내부 폐기 허용
+        if env == "PAPER":
+            if broker != "PAPER":
+                blockers.append("paper_broker_mismatch")
+        elif env == "LIVE":
+            if broker not in {"UPBIT", "KIWOOM"}:
+                blockers.append("broker_not_live")
+        else:
+            blockers.append("environment_not_supported")
 
         if order.broker_order_id not in (None, ""):
             blockers.append("broker_order_id_present")

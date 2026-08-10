@@ -299,9 +299,12 @@ class AIProviderManagementService:
                     "INVALID_TEMPERATURE", "temperature out of range"
                 )
             row.temperature = temp
-        if "health_check_enabled" in fields:
+        if "health_check_enabled" in fields and fields["health_check_enabled"] is not None:
             row.health_check_enabled = bool(fields["health_check_enabled"])
-        if "health_check_interval_sec" in fields:
+        if (
+            "health_check_interval_sec" in fields
+            and fields["health_check_interval_sec"] is not None
+        ):
             row.health_check_interval_sec = int(
                 fields["health_check_interval_sec"]
             )

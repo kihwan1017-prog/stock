@@ -115,17 +115,39 @@ def test_block_dispatch_intent() -> None:
     assert "dispatch_intent_present" in svc.preview(1679).blockers
 
 
-def test_block_paper_environment() -> None:
+def test_block_paper_with_live_broker() -> None:
+    # PAPER env인데 UPBIT broker면 paper 경로 아님
     svc, _ = _service(
         _order(
             metadata_payload={"environment": "PAPER"},
             user_broker_account_id=None,
             account_id=1,
+            broker_code="UPBIT",
         ),
-        _outbox(payload_json={"environment": "PAPER"}),
+        _outbox(payload_json={"environment": "PAPER", "broker_code": "UPBIT"}),
     )
     blockers = svc.preview(1679).blockers
-    assert "environment_not_live" in blockers
+    assert "paper_broker_mismatch" in blockers
+
+
+def test_paper_unsubmitted_retirable_ok() -> None:
+    svc, _ = _service(
+        _order(
+            metadata_payload={"environment": "PAPER"},
+            user_broker_account_id=None,
+            account_id=5228,
+            broker_code="PAPER",
+        ),
+        _outbox(
+            payload_json={
+                "environment": "PAPER",
+                "broker_code": "PAPER",
+            }
+        ),
+    )
+    preview = svc.preview(1679)
+    assert preview.retirable is True
+    assert preview.blockers == []
 
 
 def test_block_terminal() -> None:

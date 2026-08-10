@@ -1,4 +1,4 @@
-"""Admin — 미전송 LIVE 주문 내부 폐기."""
+"""Admin — 미전송 LIVE/PAPER 주문 내부 폐기 (브로커 API 0회)."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ def retire_unsubmitted(
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
 ):
-    """브로커 미전송 LIVE PENDING + Outbox만 내부 종결.
+    """브로커 미전송 LIVE/PAPER PENDING + Outbox만 내부 종결.
 
     adapter / dispatcher / Upbit API 호출 금지.
     """

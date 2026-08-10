@@ -62,10 +62,19 @@ def evaluate_ai_signal_gate(
             summary="AI signal gate off for this environment",
         )
 
+    # Paper scope는 broker_code=PAPER 이지만 exchange=UPBIT 시세/전략을 씀.
+    # Gate는 브로커 라벨이 아니라 UPBIT/CRYPTO 시장 신호에 적용한다.
     broker = str(
-        getattr(signal, "broker_code", None) or signal.exchange_code or ""
+        getattr(signal, "broker_code", None) or ""
     ).upper()
-    if broker not in {"UPBIT", "CRYPTO"}:
+    exchange = str(signal.exchange_code or "").upper()
+    market_type = str(getattr(signal, "market_type", None) or "").upper()
+    upbit_like = (
+        broker in {"UPBIT", "CRYPTO"}
+        or exchange in {"UPBIT", "CRYPTO"}
+        or market_type in {"CRYPTO", "UPBIT"}
+    )
+    if not upbit_like:
         return AiSignalGateResult(
             decision=AiSignalGateDecision.ALLOW,
             confidence=_ONE,

@@ -198,6 +198,62 @@ async def test_run_once_missing_candle(monkeypatch):
     assert out["error"] == "MISSING_OR_STALE_CANDLE"
 
 
+@pytest.mark.asyncio
+async def test_run_once_skips_when_ollama_circuit_open(monkeypatch):
+    from stock_platform.ai.market_analysis.autotrading_periodic import (
+        UpbitAutotradingAiAnalysisJob,
+    )
+
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.get_settings",
+        lambda: SimpleNamespace(
+            autotrading_ai_analysis_symbol="KRW-XRP",
+            autotrading_ai_analysis_timeframe="1m",
+            autotrading_ai_analysis_interval_seconds=300.0,
+            autotrading_ai_analysis_ttl_seconds=900.0,
+            autotrading_ai_min_confidence=0.4,
+            autotrading_ai_analysis_provider="ollama",
+            autotrading_ai_analysis_model="qwen3.5:4b",
+            autotrading_ai_analysis_warmup_enabled=False,
+            ollama_model="qwen3.5:4b",
+            ollama_timeout_seconds=120.0,
+        ),
+    )
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.find_latest_validated",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic._ollama_circuit_snapshot",
+        lambda: {"allow": False, "state": "OPEN", "failure_count": 3},
+    )
+    session = MagicMock()
+    session.scalar.return_value = None
+
+    async def _prompt(session):
+        return {"ok": True}
+
+    async def _candle(*a, **k):
+        return {"ok": True, "count": 60}
+
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.ensure_chart_prompt_active",
+        _prompt,
+    )
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.ensure_minute_candles",
+        _candle,
+    )
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.resolve_news_sentiment",
+        lambda *a, **k: "NO_DATA",
+    )
+    out = await UpbitAutotradingAiAnalysisJob(session).run_once(force=True)
+    assert out["skipped"] is True
+    assert out["skip_reason"] == "OLLAMA_CIRCUIT_OPEN"
+    assert out["ok"] is False
+
+
 def test_gate_lookup_helper(monkeypatch):
     from stock_platform.ai.market_analysis.autotrading_periodic import (
         snapshot_latest_for_gate_lookup,
