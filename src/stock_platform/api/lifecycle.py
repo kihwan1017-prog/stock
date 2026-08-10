@@ -499,6 +499,18 @@ class ApplicationLifecycle:
         # STEP 8-5-15 — 영속 Market Session Job Dispatcher/Reconcile 역시
         # DB Claim 기반이므로 Leader Lock과 무관하게 항상 기동
         market_session_job_scheduler.start()
+        # UPBIT AI Market Analysis 주기 Job (Gate/실주문과 분리, enabled 플래그)
+        try:
+            from stock_platform.operation.upbit_ai_analysis_scheduler import (
+                upbit_autotrading_ai_analysis_scheduler,
+            )
+
+            upbit_autotrading_ai_analysis_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_ai_analysis_scheduler_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
         upbit_daily_settlement_scheduler.start()
         # STEP 8-8A — Post-Fill 재검증 (DB Claim)
@@ -625,6 +637,14 @@ class ApplicationLifecycle:
             pass
         await upbit_ambiguous_order_resolution_scheduler.shutdown()
         await market_session_job_scheduler.shutdown()
+        try:
+            from stock_platform.operation.upbit_ai_analysis_scheduler import (
+                upbit_autotrading_ai_analysis_scheduler,
+            )
+
+            await upbit_autotrading_ai_analysis_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
         await upbit_daily_settlement_scheduler.shutdown()
         await post_fill_verification_scheduler.shutdown()
         await upbit_live_tracking_scheduler.shutdown()

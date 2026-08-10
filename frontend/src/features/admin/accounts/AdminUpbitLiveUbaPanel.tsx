@@ -697,9 +697,32 @@ export function AdminUpbitLiveUbaPanel() {
                 </Typography.Text>
               ) : null}
               {(() => {
-                const ai = (
+                const ctx = (
                   autotradingReadyQuery.data as {
                     checks?: {
+                      market_context?: {
+                        ai_analysis_job?: {
+                          enabled?: boolean;
+                          running?: boolean;
+                          interval_seconds?: number;
+                          provider?: string;
+                          model?: string;
+                        };
+                        latest_analysis?: {
+                          status?: string;
+                          fresh?: boolean;
+                          age_seconds?: number | null;
+                          analysis_at?: string | null;
+                          recommendation?: string | null;
+                          confidence?: number | string | null;
+                          risk_level?: string | null;
+                          news_sentiment?: string | null;
+                          provider?: string | null;
+                          model?: string | null;
+                          reasons?: string[] | null;
+                          summary?: string | null;
+                        };
+                      };
                       ai_signal_gate?: {
                         enabled?: boolean;
                         stale?: boolean;
@@ -716,30 +739,66 @@ export function AdminUpbitLiveUbaPanel() {
                       };
                     };
                   }
-                ).checks?.ai_signal_gate;
-                if (!ai) return null;
-                const latest = ai.latest;
+                ).checks;
+                const ai = ctx?.ai_signal_gate;
+                const latest =
+                  ctx?.market_context?.latest_analysis ??
+                  (ai?.latest
+                    ? {
+                        status: ai.latest.recommendation
+                          ? "AI_ANALYSIS_FOUND"
+                          : "AI_ANALYSIS_MISSING",
+                        fresh: ai.stale === false,
+                        ...ai.latest,
+                      }
+                    : null);
+                const job = ctx?.market_context?.ai_analysis_job;
+                if (!ai && !latest && !job) return null;
+                const reasons = Array.isArray(latest?.reasons)
+                  ? latest?.reasons?.slice(0, 3).join("; ")
+                  : latest?.summary
+                    ? String(latest.summary).slice(0, 120)
+                    : "-";
                 return (
-                  <Typography.Text type="secondary">
-                    AI Gate: {ai.enabled ? "ON" : "OFF"}
-                    {" · "}
-                    {latest?.provider ?? "-"}/{latest?.model ?? "-"}
-                    {" · "}
-                    freshness:{" "}
-                    {ai.stale
-                      ? "STALE"
-                      : ai.age_seconds != null
-                        ? `OK (${Math.round(Number(ai.age_seconds))}s)`
-                        : "N/A"}
-                    {" · "}
-                    rec: {latest?.recommendation ?? "-"}
-                    {" · "}
-                    conf: {String(latest?.confidence ?? "-")}
-                    {" · "}
-                    news: {latest?.news_sentiment ?? "-"}
-                    {" · "}
-                    fail-closed: {ai.live_fail_closed ? "YES" : "NO"}
-                  </Typography.Text>
+                  <Space orientation="vertical" size={2}>
+                    <Typography.Text type="secondary">
+                      AI Analysis Job:{" "}
+                      {job?.enabled ? "ON" : "OFF"}
+                      {job?.running ? "/RUN" : ""}
+                      {" · "}
+                      interval: {job?.interval_seconds ?? "-"}s
+                      {" · "}
+                      {job?.provider ?? latest?.provider ?? "-"}/
+                      {job?.model ?? latest?.model ?? "-"}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      Last analysis: {latest?.analysis_at ?? "-"}
+                      {" · "}
+                      {latest?.status ?? "-"}
+                      {" · "}
+                      freshness:{" "}
+                      {latest?.fresh
+                        ? `OK (${Math.round(Number(latest.age_seconds ?? 0))}s)`
+                        : ai?.stale
+                          ? "STALE"
+                          : "N/A"}
+                      {" · "}
+                      rec: {latest?.recommendation ?? "-"}
+                      {" · "}
+                      conf: {String(latest?.confidence ?? "-")}
+                      {" · "}
+                      risk: {latest?.risk_level ?? "-"}
+                      {" · "}
+                      news: {latest?.news_sentiment ?? "-"}
+                    </Typography.Text>
+                    <Typography.Text type="secondary">
+                      AI Gate: {ai?.enabled ? "ON" : "OFF"}
+                      {" · "}
+                      fail-closed: {ai?.live_fail_closed ? "YES" : "NO"}
+                      {" · "}
+                      reasons: {reasons}
+                    </Typography.Text>
+                  </Space>
                 );
               })()}
             </Space>

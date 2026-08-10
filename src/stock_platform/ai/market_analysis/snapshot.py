@@ -420,6 +420,19 @@ class MarketSnapshotBuilder:
             "vision_used": False,
             "downsampled": downsampled,
         }
+        # 입력 크기 제한 — 1m 다봉은 execution MAX_INPUT(40k) 초과 가능
+        # 일봉 compact 임계(60k)보다 낮게 유지
+        raw = json.dumps(body, ensure_ascii=False, default=str)
+        minute_budget = min(MAX_SNAPSHOT_JSON_CHARS, 28_000)
+        if len(raw) > minute_budget:
+            keep = min(45, len(candles))
+            body["candles"] = candles[-keep:]
+            body["candle_count"] = keep
+            body["full_candle_count_before_compact"] = len(candles)
+            warnings.append("snapshot_compacted_for_token_budget")
+            downsampled = True
+            body["downsampled"] = True
+
         snapshot_hash = _hash_payload(body)
         quality = self._chart_quality(candles, exchange=exchange, duplicates=0, flags=[])
         return {
@@ -432,7 +445,7 @@ class MarketSnapshotBuilder:
             "snapshot_version": "1",
             "data_quality_status": quality["status"],
             "quality_warnings": quality["warnings"] + warnings,
-            "candle_count": len(candles),
+            "candle_count": body["candle_count"],
             "downsampled": downsampled,
             "instrument_id": inst.instrument_id,
         }

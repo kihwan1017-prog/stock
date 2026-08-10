@@ -191,6 +191,13 @@ class Settings(BaseSettings):
     autotrading_ai_live_fail_closed: bool = True
     autotrading_ai_min_confidence: float = 0.4
     autotrading_ai_reduce_ratio: float = 0.5
+    # UPBIT AI Market Analysis 주기 Job (Gate ON과 분리, 기본 OFF)
+    autotrading_ai_analysis_enabled: bool = False
+    autotrading_ai_analysis_interval_seconds: float = 300.0
+    autotrading_ai_analysis_symbol: str = "KRW-XRP"
+    autotrading_ai_analysis_timeframe: str = "1m"
+    autotrading_ai_analysis_provider: str = "ollama"
+    autotrading_ai_analysis_model: str = "qwen3.5:4b"
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0
