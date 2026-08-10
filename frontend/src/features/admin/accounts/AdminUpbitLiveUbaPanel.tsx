@@ -33,6 +33,9 @@ import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
+import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
+import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
+
 function newCorrelationId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -164,10 +167,7 @@ export function AdminUpbitLiveUbaPanel() {
     enabled: detailUbaId != null,
   });
 
-  const liveOutboxWorkerQuery = useQuery({
-    queryKey: ["admin", "live-outbox-worker-status"],
-    queryFn: adminApi.getAdminLiveOutboxWorkerStatus,
-  });
+  // Worker 상태는 readiness.checks.live_outbox_worker로 표시 (중복 호출 최소화)
 
   const tradingSchedulerQuery = useQuery({
     queryKey: ["admin", "trading-scheduler", "status"],
@@ -210,6 +210,9 @@ export function AdminUpbitLiveUbaPanel() {
     if (detailUbaId != null) {
       await queryClient.invalidateQueries({
         queryKey: ["admin", "broker-accounts", "ops", detailUbaId],
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin", "autotrading-readiness", detailUbaId],
       });
     }
   };
@@ -646,187 +649,35 @@ export function AdminUpbitLiveUbaPanel() {
       ) : null}
 
       {detailUbaId != null && autotradingReadyQuery.data ? (
-        <Alert
-          type={
-            (autotradingReadyQuery.data as { status?: string }).status ===
-            "READY_FOR_AUTO_TRADING"
-              ? "success"
-              : "warning"
-          }
-          showIcon
-          style={{ marginBottom: 12 }}
-          title={`Auto Trading: ${String(
-            (autotradingReadyQuery.data as { status?: string }).status ??
-              "BLOCKED",
-          )}`}
-          description={
-            <Space orientation="vertical" size={4}>
-              <Typography.Text>
-                UBA {detailUbaId} · Runtime{" "}
-                {String(
-                  (autotradingReadyQuery.data as { runtime_status?: string })
-                    .runtime_status ?? "-",
-                )}{" "}
-                · Worker{" "}
-                {liveOutboxWorkerQuery.data
-                  ? `${
-                      (liveOutboxWorkerQuery.data as { enabled?: boolean })
-                        .enabled
-                        ? "ENABLED"
-                        : "DISABLED"
-                    }/${
-                      (liveOutboxWorkerQuery.data as { running?: boolean })
-                        .running
-                        ? "RUN"
-                        : "STOP"
-                    }`
-                  : "-"}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                시작 버튼 비활성 (이번 STEP). 운영 ON은 별도 승인 후.
-              </Typography.Text>
-              {(
-                (autotradingReadyQuery.data as { blockers?: string[] })
-                  .blockers ?? []
-              ).length > 0 ? (
-                <Typography.Text type="danger">
-                  blockers:{" "}
-                  {(
-                    (autotradingReadyQuery.data as { blockers?: string[] })
-                      .blockers ?? []
-                  ).join(", ")}
-                </Typography.Text>
-              ) : null}
-              {(() => {
-                const ctx = (
-                  autotradingReadyQuery.data as {
-                    checks?: {
-                      market_context?: {
-                        ai_analysis_job?: {
-                          enabled?: boolean;
-                          running?: boolean;
-                          interval_seconds?: number;
-                          provider?: string;
-                          model?: string;
-                          last_run_at?: string | null;
-                          next_run_at?: string | null;
-                          last_success_at?: string | null;
-                          last_failure_at?: string | null;
-                          last_error?: string | null;
-                          run_count?: number;
-                          success_count?: number;
-                          failure_count?: number;
-                        };
-                        latest_analysis?: {
-                          status?: string;
-                          fresh?: boolean;
-                          age_seconds?: number | null;
-                          analysis_at?: string | null;
-                          recommendation?: string | null;
-                          confidence?: number | string | null;
-                          risk_level?: string | null;
-                          news_sentiment?: string | null;
-                          provider?: string | null;
-                          model?: string | null;
-                          reasons?: string[] | null;
-                          summary?: string | null;
-                        };
-                      };
-                      ai_signal_gate?: {
-                        enabled?: boolean;
-                        stale?: boolean;
-                        age_seconds?: number | null;
-                        latest?: {
-                          recommendation?: string | null;
-                          confidence?: number | string | null;
-                          news_sentiment?: string | null;
-                          provider?: string | null;
-                          model?: string | null;
-                          analysis_at?: string | null;
-                        } | null;
-                        live_fail_closed?: boolean;
-                      };
-                    };
-                  }
-                ).checks;
-                const ai = ctx?.ai_signal_gate;
-                const latest =
-                  ctx?.market_context?.latest_analysis ??
-                  (ai?.latest
-                    ? {
-                        status: ai.latest.recommendation
-                          ? "AI_ANALYSIS_FOUND"
-                          : "AI_ANALYSIS_MISSING",
-                        fresh: ai.stale === false,
-                        ...ai.latest,
-                      }
-                    : null);
-                const job = ctx?.market_context?.ai_analysis_job;
-                if (!ai && !latest && !job) return null;
-                const reasons = Array.isArray(latest?.reasons)
-                  ? latest?.reasons?.slice(0, 3).join("; ")
-                  : latest?.summary
-                    ? String(latest.summary).slice(0, 120)
-                    : "-";
-                return (
-                  <Space orientation="vertical" size={2}>
-                    <Typography.Text type="secondary">
-                      AI Analysis Job:{" "}
-                      {job?.enabled ? "ON" : "OFF"}
-                      {job?.running ? "/RUN" : ""}
-                      {" · "}
-                      interval: {job?.interval_seconds ?? "-"}s
-                      {" · "}
-                      {job?.provider ?? latest?.provider ?? "-"}/
-                      {job?.model ?? latest?.model ?? "-"}
-                      {" · "}
-                      last: {job?.last_run_at ?? "-"}
-                      {" · "}
-                      next: {job?.next_run_at ?? "-"}
-                      {" · "}
-                      ok: {job?.last_success_at ?? "-"}
-                      {" · "}
-                      fail: {job?.last_failure_at ?? job?.last_error ?? "-"}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      Last analysis: {latest?.analysis_at ?? "-"}
-                      {" · "}
-                      {latest?.status ?? "-"}
-                      {" · "}
-                      freshness:{" "}
-                      {latest?.fresh
-                        ? `OK (${Math.round(Number(latest.age_seconds ?? 0))}s)`
-                        : ai?.stale
-                          ? "STALE"
-                          : "N/A"}
-                      {" · "}
-                      rec: {latest?.recommendation ?? "-"}
-                      {" · "}
-                      conf: {String(latest?.confidence ?? "-")}
-                      {" · "}
-                      risk: {latest?.risk_level ?? "-"}
-                      {" · "}
-                      news: {latest?.news_sentiment ?? "-"}
-                    </Typography.Text>
-                    <Typography.Text type="secondary">
-                      AI Gate: {ai?.enabled ? "ON" : "OFF"}
-                      {" · "}
-                      LIVE Gate:{" "}
-                      {(ai as { live_enabled?: boolean } | undefined)
-                        ?.live_enabled
-                        ? "ON"
-                        : "OFF"}
-                      {" · "}
-                      fail-closed: {ai?.live_fail_closed ? "YES" : "NO"}
-                      {" · "}
-                      reasons: {reasons}
-                    </Typography.Text>
+        (() => {
+          const vm = buildUbaAutoTradingViewModel(autotradingReadyQuery.data);
+          return (
+            <Alert
+              type={
+                vm.headline === "READY" || vm.headline === "RUNNING"
+                  ? "success"
+                  : "warning"
+              }
+              showIcon
+              style={{ marginBottom: 12 }}
+              title={`AUTO TRADING ${vm.headline} · UBA ${detailUbaId}`}
+              description={
+                <Space orientation="vertical" size={2}>
+                  <Typography.Text type="secondary">
+                    상세 Drawer에서 Strategy / Feed / AI / Risk / Readiness 전체 확인
+                  </Typography.Text>
+                  <Space wrap size={4}>
+                    {vm.displayBlockers.slice(0, 6).map((item) => (
+                      <Tag key={item} color="red">
+                        {item}
+                      </Tag>
+                    ))}
                   </Space>
-                );
-              })()}
-            </Space>
-          }
-        />
+                </Space>
+              }
+            />
+          );
+        })()
       ) : null}
 
       <AdminDataTable
@@ -1238,14 +1089,27 @@ export function AdminUpbitLiveUbaPanel() {
         title={`UBA 운영 상세 #${detailUbaId ?? ""}`}
         open={detailUbaId != null}
         onClose={() => setDetailUbaId(null)}
-        size={560}
+        size={720}
       >
-        {opsQuery.isLoading ? (
+        {opsQuery.isLoading && !ops && autotradingReadyQuery.isLoading ? (
           <Typography.Text>로딩 중…</Typography.Text>
-        ) : opsQuery.error ? (
+        ) : opsQuery.error && !autotradingReadyQuery.data ? (
           <Alert type="error" title={toApiError(opsQuery.error).message} />
-        ) : ops ? (
+        ) : (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <UbaAutoTradingStatusPanel
+              ubaId={Number(detailUbaId)}
+              readiness={autotradingReadyQuery.data}
+              loading={autotradingReadyQuery.isLoading}
+              errorMessage={
+                autotradingReadyQuery.error
+                  ? toApiError(autotradingReadyQuery.error).message
+                  : null
+              }
+            />
+
+            {ops ? (
+              <>
             <Alert
               type="info"
               showIcon
@@ -1459,8 +1323,10 @@ export function AdminUpbitLiveUbaPanel() {
                 }
               />
             ) : null}
+              </>
+            ) : null}
           </Space>
-        ) : null}
+        )}
       </Drawer>
 
       <Modal

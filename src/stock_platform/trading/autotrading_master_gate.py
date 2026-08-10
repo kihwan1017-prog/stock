@@ -159,7 +159,10 @@ def evaluate_uba_autotrading_ready(
         )
 
         snap = dynamic_strategy_runtime_manager.status()
-        entries = list(snap.get("entries") or [])
+        # status()는 runtimes 키를 사용 (레거시 entries 호환)
+        entries = list(
+            snap.get("runtimes") or snap.get("entries") or []
+        )
         runtime_detail["entries"] = len(entries)
         matching = []
         for entry in entries:
@@ -227,19 +230,53 @@ def evaluate_uba_autotrading_ready(
             LiveTradingTransitionGuard,
         )
 
-        LiveTradingTransitionGuard(session).require_active(
+        # 조회만 — require_active는 상태 변경 없음(만료 처리는 get_active 내부)
+        active_transition = LiveTradingTransitionGuard(
+            session
+        ).require_active(
             broker_code="UPBIT",
             user_broker_account_id=uba_id,
         )
         activation_ok = True
+        expires_at = getattr(active_transition, "expires_at", None)
+        remaining_ttl: float | None = None
+        if expires_at is not None:
+            exp = expires_at
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            remaining_ttl = max(
+                0.0, (exp - datetime.now(timezone.utc)).total_seconds()
+            )
+        checks["activation"] = {
+            "ok": True,
+            "transition_id": int(
+                getattr(
+                    active_transition,
+                    "live_trading_transition_id",
+                    0,
+                )
+                or 0
+            )
+            or None,
+            "activation_status": getattr(
+                active_transition, "activation_status", None
+            ),
+            "enabled": bool(getattr(active_transition, "enabled", False)),
+            "expires_at": (
+                expires_at.isoformat() if expires_at is not None else None
+            ),
+            "remaining_ttl_seconds": remaining_ttl,
+            "scope": getattr(active_transition, "scope", None),
+            "broker_code": getattr(active_transition, "broker_code", None),
+        }
     except Exception as exc:  # noqa: BLE001
         checks["activation"] = {
             "ok": False,
             "error": f"{type(exc).__name__}:{exc}"[:200],
         }
         blockers.append("ACTIVATION_INACTIVE")
-    if activation_ok:
-        checks["activation"] = {"ok": True}
+    if not activation_ok and "activation" not in checks:
+        checks["activation"] = {"ok": False}
 
     live_on = bool(getattr(uba, "live_order_enabled", False))
     live_approved = getattr(uba, "live_approved_at", None) is not None
@@ -366,7 +403,7 @@ def evaluate_uba_autotrading_ready(
             user_id=int(uba.user_id),
             user_broker_account_id=uba_id,
         )
-        checks["risk"] = {
+        risk_payload: dict[str, Any] = {
             "resolved": risk is not None,
             "daily_order_limit": getattr(risk, "daily_order_limit", None),
             "max_order_amount": (
@@ -374,9 +411,54 @@ def evaluate_uba_autotrading_ready(
                 if risk is not None
                 else None
             ),
+            "daily_max_order_amount": (
+                str(getattr(risk, "daily_max_order_amount", None))
+                if risk is not None
+                else None
+            ),
         }
         if risk is None:
             blockers.append("RISK_POLICY_MISSING")
+        # 일일 건수 보강 (실패해도 Risk resolve 결과는 유지)
+        try:
+            from zoneinfo import ZoneInfo
+
+            from sqlalchemy import not_
+
+            from stock_platform.order.daily_risk_order_count import (
+                count_daily_risk_orders,
+                day_start_kst_as_utc,
+                retired_unsubmitted_exclusion_clause,
+            )
+            from stock_platform.order.entities import TradingOrderEntity
+
+            day_start = day_start_kst_as_utc()
+            daily_count = count_daily_risk_orders(session, uba_id)
+            counted_ids = list(
+                session.scalars(
+                    select(TradingOrderEntity.order_id)
+                    .where(
+                        TradingOrderEntity.user_broker_account_id == uba_id,
+                        TradingOrderEntity.created_at >= day_start,
+                        not_(retired_unsubmitted_exclusion_clause()),
+                    )
+                    .order_by(TradingOrderEntity.order_id.desc())
+                    .limit(20)
+                )
+            )
+            now_kst = datetime.now(timezone.utc).astimezone(
+                ZoneInfo("Asia/Seoul")
+            )
+            risk_payload.update(
+                {
+                    "kst_date": now_kst.date().isoformat(),
+                    "daily_order_count": daily_count,
+                    "risk_counted_order_ids": [int(x) for x in counted_ids],
+                }
+            )
+        except Exception:  # noqa: BLE001
+            warnings.append("DAILY_RISK_COUNT_UNAVAILABLE")
+        checks["risk"] = risk_payload
     except Exception:  # noqa: BLE001
         checks["risk"] = {"resolved": False}
         warnings.append("RISK_RESOLVE_UNAVAILABLE")
