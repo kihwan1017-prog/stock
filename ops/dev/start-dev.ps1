@@ -244,7 +244,7 @@ foreach (`$key in `$liveEnvKeys) {
     Remove-Item -LiteralPath ("Env:" + `$key) -ErrorAction SilentlyContinue
 }
 Write-Host '[start-dev] LIVE-related process env overrides cleared; env file is source of truth'
-cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --app-dir src >> `"$BackendLog`" 2>&1"
+cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --reload-exclude tmp_* --reload-exclude *.txt --reload-exclude .run/* --app-dir src >> `"$BackendLog`" 2>&1"
 "@
         $backendProc = Start-Process -FilePath "powershell.exe" `
             -ArgumentList @(
