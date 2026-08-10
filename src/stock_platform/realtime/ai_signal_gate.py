@@ -19,6 +19,9 @@ from stock_platform.realtime.ai_signal_gate_models import (
     AiSignalGateDecision,
     AiSignalGateResult,
 )
+from stock_platform.realtime.ai_signal_gate_policy import (
+    is_ai_signal_gate_active,
+)
 from stock_platform.realtime.strategy_models import RealtimeSignal
 
 
@@ -45,20 +48,18 @@ def evaluate_ai_signal_gate(
 ) -> AiSignalGateResult:
     """신호에 대한 AI Gate 판정.
 
-    gate disabled → ALLOW (기존 Strategy-only).
+    Paper/Shadow Gate ON, LIVE Gate 기본 OFF.
     LIVE + fail_closed + unavailable/stale → HOLD.
+    SELL도 Gate를 통과하되 수량 상한은 executor 보유량 clip.
     """
 
     settings = get_settings()
-    enabled = bool(
-        getattr(settings, "autotrading_ai_signal_gate_enabled", False)
-    )
-    if not enabled:
+    if not is_ai_signal_gate_active(environment, settings=settings):
         return AiSignalGateResult(
             decision=AiSignalGateDecision.ALLOW,
             confidence=_ONE,
             reason_code="AI_GATE_DISABLED",
-            summary="AI signal gate off — strategy-only path",
+            summary="AI signal gate off for this environment",
         )
 
     broker = str(
@@ -70,16 +71,6 @@ def evaluate_ai_signal_gate(
             confidence=_ONE,
             reason_code="AI_GATE_BROKER_SKIP",
             summary="Non-UPBIT broker skipped by AI gate",
-        )
-
-    # SELL/EXIT는 위험 축소 — AI HOLD로 막지 않음 (Fail Open for exits)
-    action = str(getattr(signal.action, "value", signal.action) or "").upper()
-    if action in {"SELL", "EXIT"}:
-        return AiSignalGateResult(
-            decision=AiSignalGateDecision.ALLOW,
-            confidence=_ONE,
-            reason_code="AI_GATE_EXIT_PASSTHROUGH",
-            summary="SELL/EXIT bypasses AI HOLD",
         )
 
     now_utc = now or datetime.now(timezone.utc)
@@ -222,6 +213,12 @@ def snapshot_ai_signal_gate_status(
     enabled = bool(
         getattr(settings, "autotrading_ai_signal_gate_enabled", False)
     )
+    live_enabled = bool(
+        getattr(settings, "autotrading_ai_signal_gate_live_enabled", False)
+    )
+    shadow_enabled = bool(
+        getattr(settings, "autotrading_ai_signal_gate_shadow_enabled", True)
+    )
     ttl = float(
         getattr(settings, "autotrading_ai_analysis_ttl_seconds", 900.0) or 900.0
     )
@@ -235,6 +232,9 @@ def snapshot_ai_signal_gate_status(
     except Exception as exc:  # noqa: BLE001
         return {
             "enabled": enabled,
+            "live_enabled": live_enabled,
+            "shadow_enabled": shadow_enabled,
+            "paper_active": enabled,
             "ok": False,
             "error": type(exc).__name__,
             "ttl_seconds": ttl,
@@ -256,6 +256,9 @@ def snapshot_ai_signal_gate_status(
 
     return {
         "enabled": enabled,
+        "live_enabled": live_enabled,
+        "shadow_enabled": shadow_enabled,
+        "paper_active": enabled,
         "ok": bool(analysis) and not stale,
         "ttl_seconds": ttl,
         "live_fail_closed": bool(
@@ -271,13 +274,18 @@ def snapshot_ai_signal_gate_status(
         "age_seconds": age,
         "stale": stale if analysis else True,
         "policy": {
+            "paper_mock": "gate when enabled",
+            "shadow": "gate when shadow_enabled",
+            "live": "gate only when live_enabled (default OFF)",
             "allow": "continue to Risk/OES",
             "hold": "no order",
             "reduce": "scale order_amount within policy",
+            "sell": "gate applies; quantity clipped to holdings",
             "llm_cannot": [
                 "create BUY/SELL alone",
                 "raise risk limits",
                 "bypass LIVE/ARM/Kill",
+                "sell above holdings",
             ],
         },
     }

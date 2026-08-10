@@ -55,6 +55,8 @@ def _signal(**kwargs) -> RealtimeSignal:
 def _settings(**overrides):
     base = dict(
         autotrading_ai_signal_gate_enabled=True,
+        autotrading_ai_signal_gate_live_enabled=False,
+        autotrading_ai_signal_gate_shadow_enabled=True,
         autotrading_ai_analysis_ttl_seconds=900.0,
         autotrading_ai_live_fail_closed=True,
         autotrading_ai_min_confidence=0.4,
@@ -108,7 +110,7 @@ def test_allow_with_fresh_analysis(monkeypatch):
         lambda *a, **k: _fresh_analysis(),
     )
     result = evaluate_ai_signal_gate(
-        MagicMock(), _signal(), environment="LIVE"
+        MagicMock(), _signal(), environment="PAPER"
     )
     assert result.decision == AiSignalGateDecision.ALLOW
     assert result.reason_code == "AI_GATE_ALLOW"
@@ -124,7 +126,7 @@ def test_hold_blocks_order(monkeypatch):
         lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
     )
     result = evaluate_ai_signal_gate(
-        MagicMock(), _signal(), environment="LIVE"
+        MagicMock(), _signal(), environment="PAPER"
     )
     assert result.decision == AiSignalGateDecision.HOLD
 
@@ -132,13 +134,24 @@ def test_hold_blocks_order(monkeypatch):
 def test_stale_analysis_hold_live(monkeypatch):
     monkeypatch.setattr(
         "stock_platform.realtime.ai_signal_gate.get_settings",
-        lambda: _settings(autotrading_ai_analysis_ttl_seconds=60.0),
+        lambda: _settings(
+            autotrading_ai_analysis_ttl_seconds=60.0,
+            autotrading_ai_signal_gate_live_enabled=True,
+        ),
     )
     monkeypatch.setattr(
         "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
         lambda *a, **k: _fresh_analysis(
             analysis_at=datetime.now(timezone.utc) - timedelta(hours=2)
         ),
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_shadow.is_live_shadow_mode",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_dry_run.is_live_dry_run_mode",
+        lambda: False,
     )
     result = evaluate_ai_signal_gate(
         MagicMock(), _signal(), environment="LIVE"
@@ -151,11 +164,19 @@ def test_stale_analysis_hold_live(monkeypatch):
 def test_missing_analysis_live_fail_closed(monkeypatch):
     monkeypatch.setattr(
         "stock_platform.realtime.ai_signal_gate.get_settings",
-        lambda: _settings(),
+        lambda: _settings(autotrading_ai_signal_gate_live_enabled=True),
     )
     monkeypatch.setattr(
         "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
         lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_shadow.is_live_shadow_mode",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_dry_run.is_live_dry_run_mode",
+        lambda: False,
     )
     result = evaluate_ai_signal_gate(
         MagicMock(), _signal(), environment="LIVE"
@@ -190,7 +211,7 @@ def test_low_confidence_hold(monkeypatch):
         lambda *a, **k: _fresh_analysis(confidence=0.2),
     )
     result = evaluate_ai_signal_gate(
-        MagicMock(), _signal(), environment="LIVE"
+        MagicMock(), _signal(), environment="PAPER"
     )
     assert result.decision == AiSignalGateDecision.HOLD
 
@@ -205,7 +226,7 @@ def test_malformed_recommendation_hold(monkeypatch):
         lambda *a, **k: _fresh_analysis(recommendation="???"),
     )
     result = evaluate_ai_signal_gate(
-        MagicMock(), _signal(), environment="LIVE"
+        MagicMock(), _signal(), environment="PAPER"
     )
     assert result.decision == AiSignalGateDecision.HOLD
 
@@ -220,7 +241,7 @@ def test_reduce_sets_multiplier(monkeypatch):
         lambda *a, **k: _fresh_analysis(recommendation="REDUCE"),
     )
     result = evaluate_ai_signal_gate(
-        MagicMock(), _signal(), environment="LIVE"
+        MagicMock(), _signal(), environment="PAPER"
     )
     assert result.decision == AiSignalGateDecision.REDUCE
     assert result.size_multiplier == Decimal("0.5")
@@ -242,28 +263,56 @@ def test_duplicate_fingerprint_reuses_cache(monkeypatch):
         _load,
     )
     sig = _signal(fingerprint="dup-1")
-    r1 = evaluate_ai_signal_gate(MagicMock(), sig, environment="LIVE")
-    r2 = evaluate_ai_signal_gate(MagicMock(), sig, environment="LIVE")
+    r1 = evaluate_ai_signal_gate(MagicMock(), sig, environment="PAPER")
+    r2 = evaluate_ai_signal_gate(MagicMock(), sig, environment="PAPER")
     assert r1.decision == r2.decision == AiSignalGateDecision.ALLOW
     assert calls["n"] == 1
 
 
-def test_sell_passthrough_without_analysis(monkeypatch):
+def test_sell_goes_through_gate_hold(monkeypatch):
+    """SELL도 Gate를 통과한다 — HOLD면 주문 없음 (보유량 초과는 executor clip)."""
+
     monkeypatch.setattr(
         "stock_platform.realtime.ai_signal_gate.get_settings",
         lambda: _settings(),
     )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
     result = evaluate_ai_signal_gate(
         MagicMock(),
-        _signal(action=RealtimeSignalAction.SELL),
-        environment="LIVE",
+        _signal(action=RealtimeSignalAction.SELL, fingerprint="sell-hold"),
+        environment="PAPER",
     )
-    assert result.decision == AiSignalGateDecision.ALLOW
-    assert result.reason_code == "AI_GATE_EXIT_PASSTHROUGH"
+    assert result.decision == AiSignalGateDecision.HOLD
+    assert result.reason_code == "AI_GATE_HOLD"
 
 
-def _executor_with_gate(monkeypatch, *, gate_decision, environment="LIVE"):
-    """Kill/Risk/Safety 통과 후 OrderExecutionService까지 mock."""
+def test_live_gate_stays_off_by_default(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(
+            autotrading_ai_signal_gate_enabled=True,
+            autotrading_ai_signal_gate_live_enabled=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_shadow.is_live_shadow_mode",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_dry_run.is_live_dry_run_mode",
+        lambda: False,
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(), _signal(), environment="LIVE"
+    )
+    assert result.reason_code == "AI_GATE_DISABLED"
+
+
+def _executor_with_gate(monkeypatch, *, gate_decision, environment="PAPER"):
+    """Kill/Risk/Safety 통과 후 OrderExecutionService까지 mock (Paper Gate)."""
 
     monkeypatch.setattr(
         "stock_platform.realtime.risk_integrated_order_executor.get_settings",
@@ -271,6 +320,7 @@ def _executor_with_gate(monkeypatch, *, gate_decision, environment="LIVE"):
             kiwoom_account_number="ACC",
             upbit_account_ref="UPBIT-REF",
             autotrading_ai_signal_gate_enabled=True,
+            autotrading_ai_signal_gate_live_enabled=False,
             autotrading_ai_live_fail_closed=True,
         ),
     )
@@ -361,23 +411,14 @@ def test_e2e_allow_reaches_mock_order(monkeypatch):
         _FakeOES,
     )
     monkeypatch.setattr(
-        "stock_platform.order.live_dry_run.is_live_dry_run_mode",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        "stock_platform.order.live_shadow.is_live_shadow_mode",
-        lambda: False,
-    )
-    monkeypatch.setattr(
         "stock_platform.realtime.autotrading_idempotency.build_autotrading_idempotency_key",
         lambda *a, **k: "idem-test",
     )
-
     result = executor.execute(
         _signal(
-            account_kind="USER_BROKER",
-            account_id=1380,
-            scope_key="u61:uba1380",
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
             user_id=61,
             fingerprint="e2e-allow",
         )
@@ -404,11 +445,80 @@ def test_e2e_hold_zero_orders(monkeypatch):
     )
     result = executor.execute(
         _signal(
-            account_kind="USER_BROKER",
-            account_id=1380,
-            scope_key="u61:uba1380",
-            user_id=61,
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
             fingerprint="e2e-hold",
+        )
+    )
+    assert called["n"] == 0
+    assert result.reason_code == "AI_GATE_HOLD"
+
+
+def test_e2e_reduce_halves_order_amount(monkeypatch):
+    executor, guard = _executor_with_gate(monkeypatch, gate_decision="REDUCE")
+    submits: list = []
+
+    class _FakeOES:
+        def __init__(self, session):
+            pass
+
+        def submit(self, command):
+            submits.append(command)
+            return SimpleNamespace(
+                allowed=True,
+                order_id=1001,
+                status_code="ACCEPTED",
+                quantity=command.quantity,
+                price=command.price,
+                reason_code=None,
+            )
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.risk_integrated_order_executor.OrderExecutionService",
+        _FakeOES,
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.autotrading_idempotency.build_autotrading_idempotency_key",
+        lambda *a, **k: "idem-reduce",
+    )
+    result = executor.execute(
+        _signal(
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
+            fingerprint="e2e-reduce",
+            signal_price=Decimal("500"),
+        )
+    )
+    assert len(submits) == 1
+    assert submits[0].quantity == Decimal("10")
+    assert guard.evaluate.call_args.kwargs["order_amount"] == Decimal("5000")
+    assert result.order_id == 1001
+
+
+def test_e2e_sell_hold_zero_orders(monkeypatch):
+    executor, _ = _executor_with_gate(monkeypatch, gate_decision="HOLD")
+    called = {"n": 0}
+
+    class _FakeOES:
+        def __init__(self, session):
+            pass
+
+        def submit(self, command):
+            called["n"] += 1
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.risk_integrated_order_executor.OrderExecutionService",
+        _FakeOES,
+    )
+    result = executor.execute(
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
+            fingerprint="e2e-sell-hold",
         )
     )
     assert called["n"] == 0
@@ -440,9 +550,9 @@ def test_e2e_kill_switch_still_blocks(monkeypatch):
     )
     result = executor.execute(
         _signal(
-            account_kind="USER_BROKER",
-            account_id=1380,
-            scope_key="u61:uba1380",
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
             fingerprint="e2e-kill",
         )
     )
@@ -475,9 +585,9 @@ def test_e2e_risk_fail_blocks(monkeypatch):
     )
     result = executor.execute(
         _signal(
-            account_kind="USER_BROKER",
-            account_id=1380,
-            scope_key="u61:uba1380",
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
             fingerprint="e2e-risk",
         )
     )

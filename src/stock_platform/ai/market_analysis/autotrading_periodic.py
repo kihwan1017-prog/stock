@@ -63,6 +63,47 @@ def resolve_news_sentiment(session: Session, *, symbol: str) -> str:
     return "NO_DATA"
 
 
+async def _warmup_ollama(settings: Any) -> dict[str, Any]:
+    """모델 cold-start 완화용 초소형 ping. 실패해도 분석은 계속."""
+
+    import httpx
+
+    base = str(
+        getattr(settings, "ollama_base_url", None) or "http://127.0.0.1:11434"
+    ).rstrip("/")
+    model = str(
+        getattr(settings, "autotrading_ai_analysis_model", None)
+        or getattr(settings, "ollama_model", None)
+        or "qwen3.5:4b"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            tags = await client.get(f"{base}/api/tags")
+            tags.raise_for_status()
+            # 짧은 generate로 모델 로드만 유도
+            gen = await client.post(
+                f"{base}/api/generate",
+                json={
+                    "model": model,
+                    "prompt": "ping",
+                    "stream": False,
+                    "options": {"num_predict": 1},
+                },
+            )
+            return {
+                "ok": gen.status_code < 500,
+                "tags_ok": True,
+                "generate_status": gen.status_code,
+                "note": "cold_start_warmup",
+            }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "error": type(exc).__name__,
+            "note": "warmup_failed_continue",
+        }
+
+
 def find_latest_validated(
     session: Session,
     *,
@@ -467,6 +508,12 @@ class UpbitAutotradingAiAnalysisJob:
         news_sentiment = resolve_news_sentiment(self._session, symbol=sym)
         out["news_sentiment"] = news_sentiment
 
+        # cold start 완화 — 작은 warmup (timeout 대폭 확대 금지)
+        if bool(
+            getattr(settings, "autotrading_ai_analysis_warmup_enabled", True)
+        ) and provider == "ollama":
+            out["warmup"] = await _warmup_ollama(settings)
+
         try:
             created = self._svc.create(
                 actor=ACTOR,
@@ -480,7 +527,13 @@ class UpbitAutotradingAiAnalysisJob:
                 model=model,
                 max_tokens=1024,
                 timeout_sec=float(
-                    getattr(settings, "ollama_timeout_seconds", 120.0) or 120.0
+                    getattr(
+                        settings,
+                        "autotrading_ai_analysis_timeout_seconds",
+                        None,
+                    )
+                    or getattr(settings, "ollama_timeout_seconds", 120.0)
+                    or 150.0
                 ),
                 fallback_enabled=False,
                 idempotency_key=idem if not force else f"{idem}-f{int(now_utc.timestamp())}"[:64],

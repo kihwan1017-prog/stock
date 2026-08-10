@@ -325,11 +325,9 @@ class TradingSchedulerControlService:
                 "strategy_runtime_active",
                 "Strategy runtime active > 0",
             )
-        if strategy_idle["active_links"] > 0:
-            raise TradingSchedulerControlError(
-                "active_strategy_links",
-                "Active account strategy links > 0",
-            )
+        # active strategy link는 자동매매 준비에 필요 — link만으로 주문 경로 없음.
+        # 주문 차단은 active_runtime / strategy·execution runner로 Fail Closed.
+        # (구 STEP 9-5: links=0 강제 → 자동매매 UBA에서 Scheduler RUN과 충돌)
 
         return {
             "uba_id": uba_id,
@@ -342,6 +340,11 @@ class TradingSchedulerControlService:
             "blocking": blocking,
             "strategy": strategy_idle,
             "health_status": health.get("status"),
+            "active_links_allowed": True,
+            "note": (
+                "active_links may be >0; orders still blocked until "
+                "strategy/execution runtime starts"
+            ),
         }
 
     def start(

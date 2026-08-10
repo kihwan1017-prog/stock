@@ -207,6 +207,10 @@ class RiskIntegratedRealtimeOrderExecutor:
                 )
         except Exception:  # noqa: BLE001
             # LIVE Fail Closed — gate 예외 시 신규 AI-gated 주문 차단
+            from stock_platform.realtime.ai_signal_gate_policy import (
+                is_ai_signal_gate_active,
+            )
+
             if (
                 environment == "LIVE"
                 and bool(
@@ -216,19 +220,18 @@ class RiskIntegratedRealtimeOrderExecutor:
                         True,
                     )
                 )
-                and bool(
-                    getattr(
-                        get_settings(),
-                        "autotrading_ai_signal_gate_enabled",
-                        False,
-                    )
-                )
+                and is_ai_signal_gate_active(environment)
             ):
                 return self._skipped(signal, "AI_GATE_EXCEPTION")
+
+        if order_amount <= 0:
+            return self._skipped(signal, "AI_GATE_REDUCE_ZERO_AMOUNT")
 
         quantity = (order_amount / signal.signal_price).quantize(
             Decimal("0.00000001")
         )
+        if quantity <= 0:
+            return self._skipped(signal, "AI_GATE_REDUCE_ZERO_QTY")
 
         # 매도: 보유 수량 초과 주문 방지 (PAPER / MOCK ledger)
         if signal.action.value.upper() == "SELL" and getattr(

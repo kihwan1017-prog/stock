@@ -109,6 +109,7 @@ function runtimeGateBlockers(
     if (tradingPaused) blockers.push("거래 일시중지 상태라 Scheduler RUN 불가");
     if (!liveOn) blockers.push("LIVE OFF라 Scheduler RUN 불가");
     if (!armOn) blockers.push("ARM OFF라 Scheduler RUN 불가");
+    // active strategy link는 허용 — Runtime RUNNING만 주문 경로
   }
   return blockers;
 }
@@ -707,6 +708,14 @@ export function AdminUpbitLiveUbaPanel() {
                           interval_seconds?: number;
                           provider?: string;
                           model?: string;
+                          last_run_at?: string | null;
+                          next_run_at?: string | null;
+                          last_success_at?: string | null;
+                          last_failure_at?: string | null;
+                          last_error?: string | null;
+                          run_count?: number;
+                          success_count?: number;
+                          failure_count?: number;
                         };
                         latest_analysis?: {
                           status?: string;
@@ -770,6 +779,14 @@ export function AdminUpbitLiveUbaPanel() {
                       {" · "}
                       {job?.provider ?? latest?.provider ?? "-"}/
                       {job?.model ?? latest?.model ?? "-"}
+                      {" · "}
+                      last: {job?.last_run_at ?? "-"}
+                      {" · "}
+                      next: {job?.next_run_at ?? "-"}
+                      {" · "}
+                      ok: {job?.last_success_at ?? "-"}
+                      {" · "}
+                      fail: {job?.last_failure_at ?? job?.last_error ?? "-"}
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       Last analysis: {latest?.analysis_at ?? "-"}
@@ -793,6 +810,12 @@ export function AdminUpbitLiveUbaPanel() {
                     </Typography.Text>
                     <Typography.Text type="secondary">
                       AI Gate: {ai?.enabled ? "ON" : "OFF"}
+                      {" · "}
+                      LIVE Gate:{" "}
+                      {(ai as { live_enabled?: boolean } | undefined)
+                        ?.live_enabled
+                        ? "ON"
+                        : "OFF"}
                       {" · "}
                       fail-closed: {ai?.live_fail_closed ? "YES" : "NO"}
                       {" · "}

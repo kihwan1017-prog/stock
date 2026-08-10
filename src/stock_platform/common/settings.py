@@ -185,8 +185,10 @@ class Settings(BaseSettings):
     live_outbox_worker_stale_seconds: float = 30.0
     # AUTO LIVE readiness — 시세 stale 임계(초). 초과 시 BLOCKER
     autotrading_market_feed_stale_seconds: float = 30.0
-    # MA Signal → AI Gate (기본 OFF). LIVE에서 AI 장애/STALE 시 HOLD
+    # MA Signal → AI Gate (기본 OFF). LIVE Gate는 별도 플래그(기본 OFF)
     autotrading_ai_signal_gate_enabled: bool = False
+    autotrading_ai_signal_gate_live_enabled: bool = False
+    autotrading_ai_signal_gate_shadow_enabled: bool = True
     autotrading_ai_analysis_ttl_seconds: float = 900.0
     autotrading_ai_live_fail_closed: bool = True
     autotrading_ai_min_confidence: float = 0.4
@@ -198,6 +200,9 @@ class Settings(BaseSettings):
     autotrading_ai_analysis_timeframe: str = "1m"
     autotrading_ai_analysis_provider: str = "ollama"
     autotrading_ai_analysis_model: str = "qwen3.5:4b"
+    # Ollama 분석 timeout — cold start 여유만 소폭 (무분별 확대 금지)
+    autotrading_ai_analysis_timeout_seconds: float = 150.0
+    autotrading_ai_analysis_warmup_enabled: bool = True
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0
