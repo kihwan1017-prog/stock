@@ -656,7 +656,15 @@ class AIMarketAnalysisService:
                     row.execution_request_id, actor=actor, reason=reason
                 )
             except AIExecutionError as exc:
-                raise AIMarketAnalysisError(exc.code, exc.message) from exc
+                # recovery abandon 등으로 execution은 이미 terminal인데
+                # analysis만 RUNNING 잔존하는 orphan 정리 허용
+                if exc.code != "ALREADY_TERMINAL":
+                    raise AIMarketAnalysisError(exc.code, exc.message) from exc
+                self._terminalize_open_execution_runs(
+                    int(row.execution_request_id),
+                    actor=actor,
+                    reason=reason or "execution_already_terminal",
+                )
         row.analysis_status = "CANCELLED"
         self._history(
             analysis_id,
@@ -668,6 +676,50 @@ class AIMarketAnalysisService:
         )
         self._session.commit()
         return {"analysis": self._public(row)}
+
+    def _terminalize_open_execution_runs(
+        self,
+        execution_request_id: int,
+        *,
+        actor: str,
+        reason: str,
+    ) -> int:
+        """이미 terminal인 request에 남은 open run을 정리."""
+
+        from stock_platform.ai.execution.constants import RunStatus
+        from stock_platform.ai.execution.entities import AIExecutionRunEntity
+
+        open_statuses = {
+            RunStatus.CREATED.value,
+            RunStatus.STARTED.value,
+            RunStatus.RETRY_SCHEDULED.value,
+            RunStatus.FALLBACK_SCHEDULED.value,
+        }
+        now = _now()
+        runs = list(
+            self._session.scalars(
+                select(AIExecutionRunEntity).where(
+                    AIExecutionRunEntity.execution_request_id
+                    == execution_request_id,
+                    AIExecutionRunEntity.status.in_(open_statuses),
+                )
+            )
+        )
+        for run in runs:
+            run.status = RunStatus.CANCELLED.value
+            run.completed_at = now
+            if run.started_at is not None:
+                run.latency_ms = int(
+                    max(
+                        0.0,
+                        (now - run.started_at.astimezone(timezone.utc)).total_seconds()
+                        * 1000.0,
+                    )
+                )
+            run.error_code = "ORPHAN_RUN_CLOSED"
+            run.sanitized_error = (reason or "orphan_run_closed")[:500]
+            run.circuit_state = run.circuit_state or "UNKNOWN"
+        return len(runs)
 
     def reanalyze(
         self,

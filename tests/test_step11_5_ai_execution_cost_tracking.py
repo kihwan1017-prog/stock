@@ -305,10 +305,11 @@ def test_recovery_abandons_running() -> None:
         lease_expires_at=datetime.now(timezone.utc) - timedelta(minutes=5),
     )
     session = MagicMock()
-    session.scalars.return_value = [row]
+    session.scalars.side_effect = [[row], []]  # requests, then open runs
     result = recover_stale_executions(session, actor="STARTUP")
     assert result["abandoned"] == 1
     assert result["auto_external_retry"] == 0
+    assert result.get("closed_runs", 0) == 0
     assert row.status == RequestStatus.ABANDONED.value
 
 

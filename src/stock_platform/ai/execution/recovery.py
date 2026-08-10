@@ -38,6 +38,7 @@ def recover_stale_executions(session: Session, *, actor: str = "STARTUP") -> dic
     )
     abandoned = 0
     cancelled = 0
+    closed_runs = 0
     for row in rows:
         lease_expired = (
             row.lease_expires_at is None or row.lease_expires_at <= now
@@ -57,6 +58,13 @@ def recover_stale_executions(session: Session, *, actor: str = "STARTUP") -> dic
                 new=row.status,
                 detail={"recovery": True},
                 correlation_id=row.correlation_id,
+            )
+            closed_runs += _close_open_runs(
+                session,
+                execution_request_id=int(row.execution_request_id),
+                now=now,
+                error_code="RECOVERY_CANCELLED",
+                sanitized_error="startup_recovery_cancelled",
             )
             cancelled += 1
             continue
@@ -90,10 +98,60 @@ def recover_stale_executions(session: Session, *, actor: str = "STARTUP") -> dic
             detail={"request_id": row.execution_request_id},
             correlation_id=row.correlation_id,
         )
+        closed_runs += _close_open_runs(
+            session,
+            execution_request_id=int(row.execution_request_id),
+            now=now,
+            error_code="RECOVERY_ABANDONED",
+            sanitized_error="startup_recovery_abandoned",
+        )
         abandoned += 1
     session.commit()
     return {
         "abandoned": abandoned,
         "cancelled": cancelled,
+        "closed_runs": closed_runs,
         "auto_external_retry": 0,
     }
+
+
+def _close_open_runs(
+    session: Session,
+    *,
+    execution_request_id: int,
+    now: datetime,
+    error_code: str,
+    sanitized_error: str,
+) -> int:
+    """ABANDON/CANCEL 시 STARTED 잔존 run을 terminal로 닫는다."""
+
+    from stock_platform.ai.execution.constants import RunStatus
+    from stock_platform.ai.execution.entities import AIExecutionRunEntity
+
+    open_statuses = {
+        RunStatus.CREATED.value,
+        RunStatus.STARTED.value,
+        RunStatus.RETRY_SCHEDULED.value,
+        RunStatus.FALLBACK_SCHEDULED.value,
+    }
+    runs = list(
+        session.scalars(
+            select(AIExecutionRunEntity).where(
+                AIExecutionRunEntity.execution_request_id == execution_request_id,
+                AIExecutionRunEntity.status.in_(open_statuses),
+            )
+        )
+    )
+    for run in runs:
+        run.status = RunStatus.CANCELLED.value
+        run.completed_at = now
+        if run.started_at is not None:
+            started = run.started_at
+            if started.tzinfo is None:
+                started = started.replace(tzinfo=timezone.utc)
+            run.latency_ms = int(
+                max(0.0, (now - started.astimezone(timezone.utc)).total_seconds() * 1000.0)
+            )
+        run.error_code = error_code
+        run.sanitized_error = sanitized_error[:500]
+    return len(runs)

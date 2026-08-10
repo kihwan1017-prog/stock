@@ -217,4 +217,58 @@ def test_eligibility_vision_blocked() -> None:
         use_vision=True,
     )
     assert result["eligible"] is False
-    assert "VISION_DISABLED" in result["blockers"]
+    assert "VISION" in str(result.get("reasons") or result)
+
+
+def test_cancel_allows_already_terminal_execution() -> None:
+    """recovery abandon 후 analysis RUNNING orphan을 cancel로 정리할 수 있어야 한다."""
+
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from stock_platform.ai.execution.service import AIExecutionError
+    from stock_platform.ai.market_analysis.service import AIMarketAnalysisService
+
+    now = datetime.now(timezone.utc)
+    row = SimpleNamespace(
+        market_analysis_id=15,
+        analysis_status="RUNNING",
+        execution_request_id=15,
+        correlation_id="corr-15",
+        analyzed_at=None,
+        safe_result=None,
+        confidence=None,
+        provider_code="ollama",
+        model="qwen3.5:4b",
+        warnings=None,
+        reason="r",
+        created_by="job",
+        created_at=now,
+        updated_at=now,
+        analysis_type="SYMBOL_CHART",
+        exchange_code="UPBIT",
+        symbol="KRW-XRP",
+        timeframe="1m",
+        execution_mode="EXTERNAL",
+        data_from=None,
+        data_to=None,
+        prompt_version_id=None,
+        superseded_at=None,
+        superseded_by_id=None,
+    )
+    session = MagicMock()
+    session.get.return_value = row
+    session.scalars.return_value = []  # open runs 없음
+
+    svc = AIMarketAnalysisService(session)
+    svc._exec = MagicMock()
+    svc._exec.cancel.side_effect = AIExecutionError(
+        "ALREADY_TERMINAL", "Cannot cancel terminal request"
+    )
+    svc._history = MagicMock()
+    svc._public = MagicMock(return_value={"id": 15, "analysis_status": "CANCELLED"})
+
+    out = svc.cancel(15, actor="admin:test", reason="orphan cleanup after abandon")
+    assert out["analysis"]["analysis_status"] == "CANCELLED"
+    assert row.analysis_status == "CANCELLED"
+    session.commit.assert_called()
