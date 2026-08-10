@@ -529,6 +529,7 @@ class DynamicStrategyRuntimeManager:
     async def pause_user_runtimes(
         self, user_id: int, *, reason: str
     ) -> list[str]:
+        paused_entries: list[ScopedRuntimeEntry] = []
         async with self._lock:
             keys = [
                 e.scope.scope_key
@@ -541,7 +542,17 @@ class DynamicStrategyRuntimeManager:
                 entry.pause_reason = reason
                 entry.last_paused_at = datetime.now(timezone.utc)
                 entry.updated_at = datetime.now(timezone.utc)
-            return keys
+                paused_entries.append(entry)
+        for entry in paused_entries:
+            try:
+                from stock_platform.realtime.runtime_bridge import (
+                    sync_realtime_consumer_for_entry,
+                )
+
+                sync_realtime_consumer_for_entry(entry)
+            except Exception:  # noqa: BLE001
+                pass
+        return [e.scope.scope_key for e in paused_entries]
 
     async def pause_all(
         self,
@@ -552,8 +563,8 @@ class DynamicStrategyRuntimeManager:
         skip = {
             str(b).upper() for b in (except_brokers or set()) if b
         }
+        paused_entries: list[ScopedRuntimeEntry] = []
         async with self._lock:
-            count = 0
             for entry in self._runtimes.values():
                 broker = str(
                     getattr(entry.scope, "broker_code", "") or ""
@@ -564,8 +575,21 @@ class DynamicStrategyRuntimeManager:
                 entry.pause_reason = reason
                 entry.last_paused_at = datetime.now(timezone.utc)
                 entry.updated_at = datetime.now(timezone.utc)
-                count += 1
-            return count
+                paused_entries.append(entry)
+        # lock 해제 후 Hub sync — Manager PAUSED와 consumer 상태 일치
+        for entry in paused_entries:
+            try:
+                from stock_platform.realtime.runtime_bridge import (
+                    sync_realtime_consumer_for_entry,
+                )
+
+                sync_realtime_consumer_for_entry(entry)
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "realtime_bridge_sync_failed_on_pause_all",
+                    scope_key=entry.scope.scope_key[:48],
+                )
+        return len(paused_entries)
 
     async def stop_account_runtimes(
         self,

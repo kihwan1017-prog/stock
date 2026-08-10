@@ -450,6 +450,54 @@ class ScopeConsumerRegistry:
                 if consumer.runtime_status == RuntimeLifecycleStatus.RUNNING
             )
 
+    def count_scopes(
+        self,
+        *,
+        user_broker_account_id: int | None = None,
+        paper_account_id: int | None = None,
+        strategy_id: int | None = None,
+        broker_code: str | None = None,
+        account_kind: AccountKind | None = None,
+        runtime_status: RuntimeLifecycleStatus | None = None,
+    ) -> int:
+        """필터된 Hub consumer 수 — LIVE START 충돌 판정용."""
+
+        broker = (broker_code or "").upper().strip() or None
+        with self._lock:
+            n = 0
+            for consumer in self._by_scope.values():
+                scope = consumer.scope
+                if (
+                    user_broker_account_id is not None
+                    and scope.user_broker_account_id
+                    != int(user_broker_account_id)
+                ):
+                    continue
+                if (
+                    paper_account_id is not None
+                    and scope.paper_account_id != int(paper_account_id)
+                ):
+                    continue
+                if (
+                    strategy_id is not None
+                    and int(scope.strategy_id) != int(strategy_id)
+                ):
+                    continue
+                if broker is not None and scope.broker_code.upper() != broker:
+                    continue
+                if (
+                    account_kind is not None
+                    and scope.account_kind != account_kind
+                ):
+                    continue
+                if (
+                    runtime_status is not None
+                    and consumer.runtime_status != runtime_status
+                ):
+                    continue
+                n += 1
+            return n
+
     def warming_up_count(self) -> int:
         with self._lock:
             n = 0

@@ -67,6 +67,26 @@ async def admin_trading_scheduler_start(
         session.commit()
     except TradingSchedulerControlError as exc:
         session.rollback()
+        try:
+            audit.record(
+                event_type="SCHEDULER_REJECTED",
+                actor=user.username,
+                request_id=getattr(http_request.state, "request_id", None),
+                detail={
+                    "result": "REJECTED",
+                    "failure_reason": exc.message,
+                    "code": exc.code,
+                    "action": "SCHEDULER_RUN",
+                    "user_broker_account_id": body.user_broker_account_id,
+                    "admin_user_id": user.username,
+                    "reason": body.reason,
+                    "correlation_id": body.correlation_id,
+                    "actor_role": "ADMIN",
+                },
+            )
+            session.commit()
+        except Exception:  # noqa: BLE001
+            session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
@@ -76,11 +96,12 @@ async def admin_trading_scheduler_start(
         return result
 
     audit.record(
-        event_type="TRADING_SCHEDULER_STARTED",
+        event_type="SCHEDULER_RUN",
         actor=user.username,
         request_id=getattr(http_request.state, "request_id", None),
         detail={
             "actor_role": "ADMIN",
+            "admin_user_id": user.username,
             "user_broker_account_id": body.user_broker_account_id,
             "broker_code": (result.get("gate") or {}).get("broker_code"),
             "user_id": (result.get("gate") or {}).get("user_id"),
@@ -88,6 +109,14 @@ async def admin_trading_scheduler_start(
             "previous_actual": result.get("previous_actual"),
             "new_desired": result.get("desired_state"),
             "new_actual": result.get("actual_state"),
+            "previous_state": {
+                "desired": result.get("previous_desired"),
+                "actual": result.get("previous_actual"),
+            },
+            "new_state": {
+                "desired": result.get("desired_state"),
+                "actual": result.get("actual_state"),
+            },
             "live": True,
             "arm": True,
             "arm_expires_at": (result.get("gate") or {}).get(
@@ -97,10 +126,66 @@ async def admin_trading_scheduler_start(
             "active_strategy_count": 0,
             "reason": body.reason,
             "correlation_id": body.correlation_id,
+            "result": "SUCCESS",
         },
     )
     session.commit()
     return result
+
+
+class SchedulerValidateStartRequest(BaseModel):
+    user_broker_account_id: int = Field(ge=1)
+    min_arm_remaining_seconds: int = Field(default=120, ge=30, le=3600)
+    strategy_id: int | None = Field(default=None, ge=1)
+
+
+@admin_router.post("/validate-start")
+def admin_trading_scheduler_validate_start(
+    body: SchedulerValidateStartRequest,
+    session: Session = Depends(get_db_session),
+):
+    """START gate dry-run — Scheduler/Runtime/주문/LIVE/ARM 미변경.
+
+    LIVE/ARM 등 선행 blocker가 있어도 matching LIVE scope 집계는 항상 반환한다.
+    """
+
+    service = TradingSchedulerControlService(session)
+    uba_id = int(body.user_broker_account_id)
+    strategy_id = (
+        int(body.strategy_id) if body.strategy_id is not None else None
+    )
+    scope_gate = service._live_matching_scope_gate(
+        user_broker_account_id=uba_id,
+        strategy_id=strategy_id,
+    )
+    blockers: list[dict[str, str]] = []
+    gate: dict | None = None
+    try:
+        gate = service.assert_start_preconditions(
+            user_broker_account_id=uba_id,
+            min_arm_remaining_seconds=int(body.min_arm_remaining_seconds),
+            strategy_id=strategy_id,
+        )
+    except TradingSchedulerControlError as exc:
+        blockers.append({"code": exc.code, "message": exc.message})
+    return {
+        "validated": len(blockers) == 0,
+        "runtime_start_allowed": bool(
+            scope_gate.get("runtime_start_allowed")
+        )
+        and len(blockers) == 0,
+        "scope_runtime_start_allowed": bool(
+            scope_gate.get("runtime_start_allowed")
+        ),
+        "matching_live_scopes": scope_gate.get("matching_live_scopes"),
+        "scope_gate": scope_gate,
+        "blockers": blockers,
+        "gate": gate,
+        "mutated": False,
+        "scheduler_started": False,
+        "runtime_started": False,
+        "orders_submitted": 0,
+    }
 
 
 @admin_router.post("/pause")
@@ -124,6 +209,26 @@ async def admin_trading_scheduler_pause(
         session.commit()
     except TradingSchedulerControlError as exc:
         session.rollback()
+        try:
+            audit.record(
+                event_type="SCHEDULER_REJECTED",
+                actor=user.username,
+                request_id=getattr(http_request.state, "request_id", None),
+                detail={
+                    "result": "REJECTED",
+                    "failure_reason": exc.message,
+                    "code": exc.code,
+                    "action": "SCHEDULER_PAUSE",
+                    "user_broker_account_id": body.user_broker_account_id,
+                    "admin_user_id": user.username,
+                    "reason": body.reason,
+                    "correlation_id": body.correlation_id,
+                    "actor_role": "ADMIN",
+                },
+            )
+            session.commit()
+        except Exception:  # noqa: BLE001
+            session.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
@@ -133,16 +238,23 @@ async def admin_trading_scheduler_pause(
         return result
 
     audit.record(
-        event_type="TRADING_SCHEDULER_PAUSED",
+        event_type="SCHEDULER_PAUSE",
         actor=user.username,
         request_id=getattr(http_request.state, "request_id", None),
         detail={
             "actor_role": "ADMIN",
+            "admin_user_id": user.username,
             "reason": body.reason,
             "correlation_id": body.correlation_id,
             "user_broker_account_id": body.user_broker_account_id,
             "new_desired": "PAUSE",
             "new_actual": result.get("actual_state"),
+            "previous_state": {"desired": result.get("previous_desired")},
+            "new_state": {
+                "desired": "PAUSE",
+                "actual": result.get("actual_state"),
+            },
+            "result": "SUCCESS",
         },
     )
     session.commit()

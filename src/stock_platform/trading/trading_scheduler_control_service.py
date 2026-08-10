@@ -168,6 +168,7 @@ class TradingSchedulerControlService:
         *,
         user_broker_account_id: int,
         min_arm_remaining_seconds: int = MIN_ARM_REMAINING_FOR_START,
+        strategy_id: int | None = None,
     ) -> dict[str, Any]:
         uba_id = int(user_broker_account_id)
         uba = self._session.get(UserBrokerAccount, uba_id)
@@ -305,24 +306,34 @@ class TradingSchedulerControlService:
                 f"health={health.get('status')}",
             )
 
-        # Runner / Strategy — PAUSED Hub consumer는 허용.
-        # 실제 신호·주문 경로는 RUNNING scope / execution runner만 Fail Closed.
-        st = realtime_strategy_runner.status()
-        ex = realtime_execution_runner.status()
-        running_scopes = int(
-            st.get("running_scopes")
-            if st.get("running_scopes") is not None
-            else 0
+        # Runner / Strategy — matching LIVE scope만 충돌 판정.
+        # Paper / 타 UBA / 타 Strategy는 LIVE START 합산에 넣지 않는다.
+        scope_gate = self._live_matching_scope_gate(
+            user_broker_account_id=uba_id,
+            strategy_id=strategy_id,
+            user_id=int(uba.user_id),
+            broker_code=str(uba.broker_code or "").upper(),
         )
-        if running_scopes > 0:
+        if int(scope_gate.get("duplicate_live_count") or 0) > 0:
+            raise TradingSchedulerControlError(
+                "duplicate_live_scope",
+                (
+                    "Duplicate LIVE scopes for UBA="
+                    f"{uba_id}: {scope_gate.get('duplicate_detail')}"
+                ),
+            )
+        running_live = int(scope_gate.get("running_live_matching") or 0)
+        if running_live > 0:
             raise TradingSchedulerControlError(
                 "strategy_scopes_active",
                 (
-                    f"Strategy running_scopes={running_scopes} "
-                    f"(active_registered={st.get('active_scopes', 0)}; "
-                    "PAUSED consumers allowed)"
+                    f"matching LIVE running_scopes={running_live} "
+                    f"(live_registered={scope_gate.get('live_registered')}; "
+                    f"paper_registered={scope_gate.get('paper_registered')}; "
+                    "Paper excluded from LIVE START collision)"
                 ),
             )
+        ex = realtime_execution_runner.status()
         if bool(ex.get("running")):
             raise TradingSchedulerControlError(
                 "execution_runner_active",
@@ -349,10 +360,14 @@ class TradingSchedulerControlService:
             "arm_remaining_seconds": remaining,
             "blocking": blocking,
             "strategy": strategy_idle,
+            "scope_gate": scope_gate,
+            "matching_live_scopes": scope_gate.get("matching_live_scopes"),
+            "runtime_start_allowed": scope_gate.get("runtime_start_allowed"),
             "health_status": health.get("status"),
             "active_links_allowed": True,
             "note": (
-                "active_links may be >0; orders still blocked until "
+                "active_links may be >0; Paper scopes excluded from "
+                "LIVE START collision; orders still blocked until "
                 "strategy/execution runtime starts"
             ),
         }
@@ -550,24 +565,23 @@ class TradingSchedulerControlService:
                     "ARM TTL must not be refreshed by scheduler start",
                 )
 
-        # Runner 미기동 확인 (실행 주문 경로) — PAUSED 등록은 허용
+        # Runner 미기동 확인 — matching LIVE만 (Paper 합산 금지)
         st_after = realtime_strategy_runner.status()
         ex_after = realtime_execution_runner.status()
-        running_after = int(
-            st_after.get("running_scopes")
-            if st_after.get("running_scopes") is not None
-            else 0
+        scope_after = self._live_matching_scope_gate(
+            user_broker_account_id=int(user_broker_account_id)
         )
-        if running_after > 0:
+        if int(scope_after.get("running_live_matching") or 0) > 0:
             _compensate_scheduler_start(
                 "strategy_scopes_started",
-                "Scheduler start must not activate RUNNING strategy scopes",
+                "Scheduler start must not activate matching LIVE RUNNING scopes",
             )
         if bool(ex_after.get("running")):
             _compensate_scheduler_start(
                 "execution_runner_started",
                 "Scheduler start must not start execution runner",
             )
+        _ = st_after  # hub snapshot retained for audit compatibility
 
         status = self.status()
         detail = {
@@ -879,6 +893,116 @@ class TradingSchedulerControlService:
             "result": "FORCED_PAUSE",
             "blocked_reason": blocked,
             "actual_state": "PAUSED",
+        }
+
+    def _live_matching_scope_gate(
+        self,
+        *,
+        user_broker_account_id: int,
+        strategy_id: int | None = None,
+        user_id: int | None = None,
+        broker_code: str | None = None,
+    ) -> dict[str, Any]:
+        """UBA(+strategy) matching LIVE scope 집계 — Paper/타 UBA/타 Strategy 제외."""
+
+        from collections import Counter
+
+        from stock_platform.realtime.market_data_hub import (
+            get_realtime_market_data_hub,
+        )
+        from stock_platform.strategy_deployment.runtime_manager import (
+            dynamic_strategy_runtime_manager,
+        )
+        from stock_platform.strategy_deployment.runtime_scope import (
+            AccountKind,
+            RuntimeLifecycleStatus,
+        )
+
+        uba_id = int(user_broker_account_id)
+        sid_filter = int(strategy_id) if strategy_id is not None else None
+        broker = (broker_code or "").upper().strip() or None
+        entries = dynamic_strategy_runtime_manager.list_entries()
+
+        def _is_uba_live(entry: Any) -> bool:
+            scope = entry.scope
+            if scope.account_kind != AccountKind.USER_BROKER:
+                return False
+            if int(scope.account_id) != uba_id:
+                return False
+            if str(scope.broker_code or "").upper() == "PAPER":
+                return False
+            if user_id is not None and int(scope.user_id) != int(user_id):
+                return False
+            if broker is not None and str(scope.broker_code or "").upper() != broker:
+                return False
+            return True
+
+        paper_entries = [
+            e
+            for e in entries
+            if e.scope.account_kind == AccountKind.PAPER
+            and (
+                sid_filter is None
+                or int(e.scope.strategy_id) == sid_filter
+            )
+        ]
+        # 동일 UBA의 전체 LIVE (중복 판정용)
+        uba_live_all = [e for e in entries if _is_uba_live(e)]
+        sid_counts = Counter(int(e.scope.strategy_id) for e in uba_live_all)
+        duplicates = {
+            str(sid): count for sid, count in sid_counts.items() if count > 1
+        }
+        # START 충돌 대상: matching LIVE만 (strategy 지정 시 해당 strategy만)
+        live_entries = [
+            e
+            for e in uba_live_all
+            if sid_filter is None or int(e.scope.strategy_id) == sid_filter
+        ]
+        running_manager = [
+            e
+            for e in live_entries
+            if e.status == RuntimeLifecycleStatus.RUNNING
+        ]
+        hub_running = 0
+        hub_live_registered = 0
+        try:
+            registry = get_realtime_market_data_hub().registry
+            hub_kwargs: dict[str, Any] = {
+                "user_broker_account_id": uba_id,
+                "account_kind": AccountKind.USER_BROKER,
+            }
+            if sid_filter is not None:
+                hub_kwargs["strategy_id"] = sid_filter
+            if broker is not None:
+                hub_kwargs["broker_code"] = broker
+            hub_running = int(
+                registry.count_scopes(
+                    **hub_kwargs,
+                    runtime_status=RuntimeLifecycleStatus.RUNNING,
+                )
+            )
+            hub_live_registered = int(registry.count_scopes(**hub_kwargs))
+        except Exception:  # noqa: BLE001
+            hub_running = 0
+            hub_live_registered = 0
+
+        running_live = max(len(running_manager), hub_running)
+        matching = len(live_entries)
+        # strategy 미지정 시에도 strategy별 중복만 금지 — 서로 다른 strategy 공존 허용
+        return {
+            "uba_id": uba_id,
+            "strategy_id": sid_filter,
+            "paper_registered": len(paper_entries),
+            "live_registered": max(matching, hub_live_registered),
+            "matching_live_scopes": matching,
+            "running_live_matching": running_live,
+            "duplicate_live_count": len(duplicates),
+            "duplicate_detail": duplicates,
+            "live_scope_keys": [e.scope.scope_key for e in live_entries],
+            "paper_scope_keys": [e.scope.scope_key for e in paper_entries],
+            "runtime_start_allowed": (
+                len(duplicates) == 0 and running_live == 0
+            ),
         }
 
     def _strategy_runtime_counts(self, uba_id: int) -> dict[str, int]:
