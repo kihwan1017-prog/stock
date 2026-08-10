@@ -206,6 +206,7 @@ class RealtimeMarketDataHub:
             ),
             "last_error": self._last_error,
             "active_scopes": self._registry.active_scope_count(),
+            "running_scopes": self._registry.running_scope_count(),
             "warming_up_scopes": self._registry.warming_up_count(),
             "subscriptions": len(self._registry.list_subscriptions()),
             "deprecated_global_runner": False,
@@ -219,6 +220,7 @@ class RealtimeMarketDataHub:
                 self._registry.list_subscriptions()
             ),
             "active_scopes": self._registry.active_scope_count(),
+            "running_scopes": self._registry.running_scope_count(),
             "warming_up_scopes": self._registry.warming_up_count(),
             "last_event_at": (
                 self._last_event_at.isoformat()

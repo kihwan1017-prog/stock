@@ -305,13 +305,23 @@ class TradingSchedulerControlService:
                 f"health={health.get('status')}",
             )
 
-        # Runner / Strategy — hub dispatch만 켜져 있고 scope=0 이면 주문 경로 없음
+        # Runner / Strategy — PAUSED Hub consumer는 허용.
+        # 실제 신호·주문 경로는 RUNNING scope / execution runner만 Fail Closed.
         st = realtime_strategy_runner.status()
         ex = realtime_execution_runner.status()
-        if int(st.get("active_scopes") or 0) > 0:
+        running_scopes = int(
+            st.get("running_scopes")
+            if st.get("running_scopes") is not None
+            else 0
+        )
+        if running_scopes > 0:
             raise TradingSchedulerControlError(
                 "strategy_scopes_active",
-                f"Strategy active_scopes={st.get('active_scopes')}",
+                (
+                    f"Strategy running_scopes={running_scopes} "
+                    f"(active_registered={st.get('active_scopes', 0)}; "
+                    "PAUSED consumers allowed)"
+                ),
             )
         if bool(ex.get("running")):
             raise TradingSchedulerControlError(
@@ -540,13 +550,18 @@ class TradingSchedulerControlService:
                     "ARM TTL must not be refreshed by scheduler start",
                 )
 
-        # Runner 미기동 확인 (실행 주문 경로)
+        # Runner 미기동 확인 (실행 주문 경로) — PAUSED 등록은 허용
         st_after = realtime_strategy_runner.status()
         ex_after = realtime_execution_runner.status()
-        if int(st_after.get("active_scopes") or 0) > 0:
+        running_after = int(
+            st_after.get("running_scopes")
+            if st_after.get("running_scopes") is not None
+            else 0
+        )
+        if running_after > 0:
             _compensate_scheduler_start(
                 "strategy_scopes_started",
-                "Scheduler start must not activate strategy scopes",
+                "Scheduler start must not activate RUNNING strategy scopes",
             )
         if bool(ex_after.get("running")):
             _compensate_scheduler_start(
@@ -873,17 +888,24 @@ class TradingSchedulerControlService:
             from stock_platform.strategy_deployment.runtime_manager import (
                 dynamic_strategy_runtime_manager,
             )
+            from stock_platform.strategy_deployment.runtime_scope import (
+                RuntimeLifecycleStatus,
+            )
 
             mgr = dynamic_strategy_runtime_manager
             if hasattr(mgr, "list_active_for_uba"):
                 active_runtime = len(
                     list(mgr.list_active_for_uba(uba_id) or [])  # type: ignore[attr-defined]
                 )
-            elif hasattr(mgr, "active_scopes"):
-                scopes = list(getattr(mgr, "active_scopes")() or [])
-                needle = f"uba:{uba_id}"
+            else:
+                # RUNNING만 카운트 — PAUSED/STOPPED 등록은 Scheduler RUN 허용
+                entries = mgr.list_entries(
+                    user_broker_account_id=int(uba_id)
+                )
                 active_runtime = sum(
-                    1 for s in scopes if needle in str(s).lower()
+                    1
+                    for entry in entries
+                    if entry.status == RuntimeLifecycleStatus.RUNNING
                 )
         except Exception:  # noqa: BLE001
             active_runtime = 0

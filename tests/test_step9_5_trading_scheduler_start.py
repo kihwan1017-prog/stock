@@ -389,6 +389,184 @@ def test_start_blocks_active_strategy_runtime(monkeypatch) -> None:
     assert ei.value.code == "strategy_runtime_active"
 
 
+def test_scheduler_start_allows_paused_hub_consumers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hub active_scopes>0 이어도 RUNNING=0 이면 Scheduler RUN 게이트 통과."""
+
+    session = MagicMock()
+    uba = SimpleNamespace(
+        is_active=True,
+        connection_status="CONNECTED",
+        live_order_enabled=True,
+        live_armed=True,
+        arm_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        user_id=61,
+        broker_code="UPBIT",
+        user_broker_account_id=1380,
+    )
+    session.get.return_value = uba
+    session.scalar.side_effect = [
+        SimpleNamespace(trading_paused=False, recovery_status="SUCCESS"),
+        0,
+        0,
+    ]
+    svc = TradingSchedulerControlService(session)
+    monkeypatch.setattr(
+        svc,
+        "_strategy_runtime_counts",
+        lambda uba_id: {"active_runtime": 0, "active_links": 1},
+    )
+    with (
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.assert_uba_connection_ready"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.assert_recovery_ready"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.assert_risk_account_not_paused"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.BrokerRecoveryConflictService"
+        ) as conflict_cls,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.BrokerCredentialVaultService"
+        ) as vault_cls,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.KillSwitchService"
+        ) as ks_cls,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.evaluate_live_order_health",
+            return_value={"live_orders_allowed": True, "status": "HEALTHY"},
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.realtime_strategy_runner"
+        ) as st,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.realtime_execution_runner"
+        ) as ex,
+        patch(
+            "stock_platform.trading.runtime_control_gates.ResolvedRiskPolicyResolver"
+        ) as risk,
+    ):
+        conflict_cls.return_value.count_blocking_orders_for_uba.return_value = {
+            "db_open": 0,
+            "submission_unknown": 0,
+            "cancel_pending": 0,
+            "replace_pending": 0,
+        }
+        vault_cls.return_value.assert_live_order_allowed = MagicMock(
+            return_value=None
+        )
+        ks = MagicMock()
+        ks.is_active_for_scopes.return_value = False
+        ks.GLOBAL_SCOPE = "GLOBAL"
+        ks_cls.return_value = ks
+        ks_cls.GLOBAL_SCOPE = "GLOBAL"
+        # 실제 운영: PAUSED LIVE+PAPER consumer 2개 등록
+        st.status.return_value = {
+            "active_scopes": 2,
+            "running_scopes": 0,
+        }
+        ex.status.return_value = {"running": False}
+        risk.return_value.resolve.return_value = SimpleNamespace(
+            account_paused=False
+        )
+        session.scalar = MagicMock(side_effect=[0, 0])
+        gate = svc.assert_start_preconditions(user_broker_account_id=1380)
+
+    assert gate["active_links_allowed"] is True
+
+
+def test_scheduler_start_blocks_running_hub_scopes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = MagicMock()
+    uba = SimpleNamespace(
+        is_active=True,
+        connection_status="CONNECTED",
+        live_order_enabled=True,
+        live_armed=True,
+        arm_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        user_id=61,
+        broker_code="UPBIT",
+        user_broker_account_id=1380,
+    )
+    session.get.return_value = uba
+    session.scalar.side_effect = [
+        SimpleNamespace(trading_paused=False, recovery_status="SUCCESS"),
+        0,
+        0,
+    ]
+    svc = TradingSchedulerControlService(session)
+    monkeypatch.setattr(
+        svc,
+        "_strategy_runtime_counts",
+        lambda uba_id: {"active_runtime": 0, "active_links": 1},
+    )
+    with (
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.assert_uba_connection_ready"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.assert_recovery_ready"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.assert_risk_account_not_paused"
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.BrokerRecoveryConflictService"
+        ) as conflict_cls,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.BrokerCredentialVaultService"
+        ) as vault_cls,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.KillSwitchService"
+        ) as ks_cls,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.evaluate_live_order_health",
+            return_value={"live_orders_allowed": True, "status": "HEALTHY"},
+        ),
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.realtime_strategy_runner"
+        ) as st,
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.realtime_execution_runner"
+        ) as ex,
+        patch(
+            "stock_platform.trading.runtime_control_gates.ResolvedRiskPolicyResolver"
+        ) as risk,
+    ):
+        conflict_cls.return_value.count_blocking_orders_for_uba.return_value = {
+            "db_open": 0,
+            "submission_unknown": 0,
+            "cancel_pending": 0,
+            "replace_pending": 0,
+        }
+        vault_cls.return_value.assert_live_order_allowed = MagicMock(
+            return_value=None
+        )
+        ks = MagicMock()
+        ks.is_active_for_scopes.return_value = False
+        ks.GLOBAL_SCOPE = "GLOBAL"
+        ks_cls.return_value = ks
+        ks_cls.GLOBAL_SCOPE = "GLOBAL"
+        st.status.return_value = {
+            "active_scopes": 2,
+            "running_scopes": 1,
+        }
+        ex.status.return_value = {"running": False}
+        risk.return_value.resolve.return_value = SimpleNamespace(
+            account_paused=False
+        )
+        session.scalar = MagicMock(side_effect=[0, 0])
+        with pytest.raises(TradingSchedulerControlError) as ei:
+            svc.assert_start_preconditions(user_broker_account_id=1380)
+    assert ei.value.code == "strategy_scopes_active"
+    assert "running_scopes=1" in ei.value.message
+
+
 def test_collect_readiness_uses_desired_control() -> None:
     from stock_platform.trading.upbit_scheduler_readiness import (
         collect_scheduler_readiness,

@@ -140,6 +140,7 @@ class RealtimeStrategyRunner:
             "last_error": hub_status.get("last_error"),
             "position_count": len(self._positions),
             "active_scopes": hub_status.get("active_scopes", 0),
+            "running_scopes": hub_status.get("running_scopes", 0),
             "hub": hub_status,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }

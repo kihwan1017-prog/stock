@@ -440,6 +440,16 @@ class ScopeConsumerRegistry:
         with self._lock:
             return len(self._by_scope)
 
+    def running_scope_count(self) -> int:
+        """신호 허용(RUNNING) Scope만 카운트 — PAUSED 등록은 제외."""
+
+        with self._lock:
+            return sum(
+                1
+                for consumer in self._by_scope.values()
+                if consumer.runtime_status == RuntimeLifecycleStatus.RUNNING
+            )
+
     def warming_up_count(self) -> int:
         with self._lock:
             n = 0
