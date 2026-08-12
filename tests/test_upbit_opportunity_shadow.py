@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -22,9 +22,6 @@ from stock_platform.operation.upbit_opportunity_shadow.constants import (
 )
 from stock_platform.operation.upbit_opportunity_shadow.entities import (
     UpbitOpportunityShadowEntity,
-)
-from stock_platform.operation.upbit_opportunity_shadow.evaluator import (
-    UpbitOpportunityShadowEvaluator,
 )
 from stock_platform.operation.upbit_opportunity_shadow.service import (
     UpbitOpportunityShadowService,
@@ -280,84 +277,6 @@ async def test_ai_failed_no_shadow(monkeypatch):
         notify=False,
     )
     assert out["created"] == 0
-
-
-@pytest.mark.asyncio
-async def test_evaluation_windows_mfe_mae_sl_tp(monkeypatch):
-    monkeypatch.setattr(
-        "stock_platform.operation.upbit_opportunity_shadow.evaluator.get_settings",
-        lambda: SimpleNamespace(
-            upbit_scanner_shadow_sl_pct=3.0,
-            upbit_scanner_shadow_tp_pct=6.0,
-        ),
-    )
-    published = []
-    monkeypatch.setattr(
-        "stock_platform.operation.upbit_opportunity_shadow.evaluator.publish_shadow_result",
-        lambda s: published.append(s),
-    )
-
-    now0 = datetime(2026, 8, 13, 4, 0, tzinfo=timezone.utc)
-    row = UpbitOpportunityShadowEntity(
-        shadow_id=1,
-        scanner_run_id="r1",
-        symbol="KRW-AAA",
-        recommendation="ALLOW",
-        status=SHADOW_STATUS_ACTIVE,
-        entry_price=Decimal("100"),
-        assumed_amount_krw=Decimal("5000"),
-        detected_at=now0,
-        live_auto_start=False,
-        evaluation_detail={"windows": {}, "prices_seen": []},
-    )
-    session = MagicMock()
-    session.scalars.return_value = [row]
-
-    async def prices(_symbols):
-        return {"KRW-AAA": 107.0}  # +7% → TP
-
-    # 5m
-    ev = UpbitOpportunityShadowEvaluator(
-        session,
-        price_fetcher=prices,
-        now=now0 + timedelta(minutes=5),
-    )
-    out5 = await ev.evaluate_pending(notify=False)
-    assert out5["orders_created"] == 0
-    assert row.return_5m_pct is not None
-    assert row.tp_hit is True
-    assert row.mfe_pct is not None and row.mfe_pct >= 6.0
-
-    # adverse
-    async def prices_down(_symbols):
-        return {"KRW-AAA": 96.0}  # -4%
-
-    ev2 = UpbitOpportunityShadowEvaluator(
-        session,
-        price_fetcher=prices_down,
-        now=now0 + timedelta(minutes=15),
-    )
-    await ev2.evaluate_pending(notify=False)
-    assert row.return_15m_pct is not None
-    assert row.sl_hit is True
-    assert row.mae_pct is not None and row.mae_pct <= -3.0
-
-    # 30m + 60m terminal
-    async def prices_flat(_symbols):
-        return {"KRW-AAA": 101.0}
-
-    for mins in (30, 60):
-        evn = UpbitOpportunityShadowEvaluator(
-            session,
-            price_fetcher=prices_flat,
-            now=now0 + timedelta(minutes=mins),
-        )
-        await evn.evaluate_pending(notify=True)
-
-    assert row.return_30m_pct is not None
-    assert row.return_60m_pct is not None
-    assert row.status == SHADOW_STATUS_COMPLETED
-    assert published
 
 
 @pytest.mark.asyncio

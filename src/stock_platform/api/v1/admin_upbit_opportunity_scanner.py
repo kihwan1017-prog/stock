@@ -80,9 +80,21 @@ def list_shadows(
 async def evaluate_shadows(
     session: Session = Depends(get_db_session),
 ) -> dict:
-    """ACTIVE Shadow 평가만 — AI/주문 없음."""
+    """ACTIVE Shadow 평가만 — AI/주문 없음. historical candle backfill."""
 
     out = await UpbitOpportunityShadowEvaluator(session).evaluate_pending(
         notify=True
     )
     return out
+
+
+@router.get("/shadows/{shadow_id}/recompute-dry")
+async def recompute_shadow_dry(
+    shadow_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """COMPLETED 포함 historical 재계산 — DB UPDATE 없음."""
+
+    return await UpbitOpportunityShadowEvaluator(session).dry_recompute(
+        shadow_id
+    )
