@@ -3,6 +3,9 @@
 from stock_platform.operation.upbit_opportunity_shadow.evaluator import (
     UpbitOpportunityShadowEvaluator,
 )
+from stock_platform.operation.upbit_opportunity_shadow.reconciliation import (
+    UpbitOpportunityShadowReconciliationService,
+)
 from stock_platform.operation.upbit_opportunity_shadow.service import (
     UpbitOpportunityShadowService,
 )
@@ -13,5 +16,6 @@ from stock_platform.operation.upbit_opportunity_shadow.stats import (
 __all__ = [
     "UpbitOpportunityShadowService",
     "UpbitOpportunityShadowEvaluator",
+    "UpbitOpportunityShadowReconciliationService",
     "compute_shadow_stats",
 ]

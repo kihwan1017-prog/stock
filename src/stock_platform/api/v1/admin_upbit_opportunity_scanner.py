@@ -13,6 +13,7 @@ from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
 )
 from stock_platform.operation.upbit_opportunity_shadow import (
     UpbitOpportunityShadowEvaluator,
+    UpbitOpportunityShadowReconciliationService,
     UpbitOpportunityShadowService,
     compute_shadow_stats,
 )
@@ -97,4 +98,40 @@ async def recompute_shadow_dry(
 
     return await UpbitOpportunityShadowEvaluator(session).dry_recompute(
         shadow_id
+    )
+
+
+class ShadowReconcileApplyRequest(BaseModel):
+    expected_fingerprint: str
+    actor: str = "admin"
+    reason: str = "historical_candle_reconciliation"
+    approval_phrase: str
+
+
+@router.post("/shadows/{shadow_id}/reconcile/preview")
+async def reconcile_shadow_preview(
+    shadow_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """COMPLETED Shadow historical reconciliation preview — mutation 0."""
+
+    return await UpbitOpportunityShadowReconciliationService(
+        session
+    ).preview(shadow_id)
+
+
+@router.post("/shadows/{shadow_id}/reconcile/apply")
+async def reconcile_shadow_apply(
+    shadow_id: int,
+    body: ShadowReconcileApplyRequest,
+    session: Session = Depends(get_db_session),
+) -> dict:
+    """명시 승인 phrase + fingerprint 일치 시에만 WRITE."""
+
+    return await UpbitOpportunityShadowReconciliationService(session).apply(
+        shadow_id,
+        expected_fingerprint=body.expected_fingerprint,
+        actor=body.actor,
+        reason=body.reason,
+        approval_phrase=body.approval_phrase,
     )
