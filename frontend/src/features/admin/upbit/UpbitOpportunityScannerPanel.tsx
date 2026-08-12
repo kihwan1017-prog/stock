@@ -9,7 +9,7 @@ import { asRecord, cell } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
-/** Alert-only Opportunity Scanner — LIVE/주문과 무관 */
+/** Alert-only Opportunity Scanner + Paper Shadow — LIVE/주문과 무관 */
 export function UpbitOpportunityScannerPanel() {
   const { message } = App.useApp();
   const qc = useQueryClient();
@@ -24,7 +24,18 @@ export function UpbitOpportunityScannerPanel() {
     mutationFn: () =>
       adminApi.runUpbitOpportunityScanner({ notify: true, force_ai: false }),
     onSuccess: () => {
-      message.success("Scanner Dry Run 완료 (Alert-only)");
+      message.success("Scanner Dry Run 완료 (Alert-only / Paper Shadow)");
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.upbitOpportunityScanner(),
+      });
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const evaluateShadows = useMutation({
+    mutationFn: () => adminApi.evaluateUpbitOpportunityShadows(),
+    onSuccess: () => {
+      message.success("Shadow 평가 완료 (주문 없음)");
       void qc.invalidateQueries({
         queryKey: queryKeys.admin.upbitOpportunityScanner(),
       });
@@ -37,6 +48,28 @@ export function UpbitOpportunityScannerPanel() {
   const candidates = Array.isArray(summary.candidates)
     ? (summary.candidates as Record<string, unknown>[])
     : [];
+  const shadows = asRecord(st.shadows) ?? {};
+  const activeShadows = Array.isArray(shadows.active)
+    ? (shadows.active as Record<string, unknown>[])
+    : [];
+  const completedShadows = Array.isArray(shadows.completed)
+    ? (shadows.completed as Record<string, unknown>[])
+    : [];
+  const shadowStats = asRecord(shadows.stats) ?? {};
+
+  const shadowColumns = [
+    { title: "Symbol", dataIndex: "symbol" },
+    { title: "AI", dataIndex: "recommendation", width: 80 },
+    { title: "Entry", dataIndex: "entry_price" },
+    { title: "Started", dataIndex: "detected_at" },
+    { title: "5m", dataIndex: "return_5m_pct", width: 70 },
+    { title: "15m", dataIndex: "return_15m_pct", width: 70 },
+    { title: "30m", dataIndex: "return_30m_pct", width: 70 },
+    { title: "60m", dataIndex: "return_60m_pct", width: 70 },
+    { title: "MFE", dataIndex: "mfe_pct", width: 70 },
+    { title: "MAE", dataIndex: "mae_pct", width: 70 },
+    { title: "Status", dataIndex: "status", width: 100 },
+  ];
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
@@ -44,8 +77,8 @@ export function UpbitOpportunityScannerPanel() {
         Opportunity Scanner (Alert-only)
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        KRW universe → liquidity/technical Top N → AI → Telegram. Strategy /
-        LIVE / ARM / 주문과 연결되지 않습니다. 기본 enabled=false.
+        KRW universe → liquidity/technical Top N → AI → Telegram / Paper Shadow.
+        Strategy / LIVE / ARM / 실주문과 연결되지 않습니다. 기본 enabled=false.
       </Typography.Paragraph>
       <Space wrap>
         <Tag color={st.enabled ? "green" : "default"}>
@@ -62,6 +95,13 @@ export function UpbitOpportunityScannerPanel() {
           onClick={() => runOnce.mutate()}
         >
           Dry Run 1회
+        </Button>
+        <Button
+          size="small"
+          loading={evaluateShadows.isPending}
+          onClick={() => evaluateShadows.mutate()}
+        >
+          Shadow 평가
         </Button>
         <Button
           size="small"
@@ -86,6 +126,8 @@ export function UpbitOpportunityScannerPanel() {
           liquidity_pass_count: summary.liquidity_pass_count,
           technical_candidate_count: summary.technical_candidate_count,
           ai_calls: summary.ai_calls,
+          ai_failed_skipped: summary.ai_failed_skipped,
+          shadow: summary.shadow,
           elapsed_ms: summary.elapsed_ms,
           notifications: summary.notifications,
           alert_only: true,
@@ -105,6 +147,33 @@ export function UpbitOpportunityScannerPanel() {
           { title: "risk", dataIndex: "risk_level" },
         ]}
         dataSource={candidates}
+      />
+
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Paper Shadow (가상 성과)
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        ALLOW/REDUCE만 추적. Live Order: NO. TradingOrder/Outbox 생성 없음.
+      </Typography.Paragraph>
+      <AdminJsonCard
+        title="Shadow Stats"
+        loading={status.isLoading}
+        error={null}
+        data={shadowStats}
+      />
+      <AdminDataTable
+        title="Active Shadows"
+        loading={status.isLoading}
+        rowKey={(r) => cell(r.shadow_id ?? r.symbol)}
+        columns={shadowColumns}
+        dataSource={activeShadows}
+      />
+      <AdminDataTable
+        title="Completed Shadows"
+        loading={status.isLoading}
+        rowKey={(r) => cell(r.shadow_id ?? r.symbol)}
+        columns={shadowColumns}
+        dataSource={completedShadows}
       />
     </Space>
   );

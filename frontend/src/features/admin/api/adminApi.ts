@@ -4326,6 +4326,17 @@ export async function runUpbitOpportunityScanner(body?: {
   });
 }
 
+export async function listUpbitOpportunityShadows(params?: {
+  status?: string;
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/upbit/opportunity-scanner/shadows", params);
+}
+
+export async function evaluateUpbitOpportunityShadows(): Promise<JsonValue> {
+  return postJson("/admin/upbit/opportunity-scanner/shadows/evaluate", {});
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;

@@ -6,6 +6,7 @@ Strategy/Deployment/Runtime/LIVE/ARM/Order 변경 금지.
 from __future__ import annotations
 
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Awaitable
 
@@ -81,6 +82,7 @@ class UpbitOpportunityScannerService:
             "runtime_mutated": False,
             "strategy_mutated": False,
             "deployment_mutated": False,
+            "scanner_run_id": uuid.uuid4().hex[:32],
             "policy": {
                 "min_24h_trade_value_krw": policy.min_24h_trade_value_krw,
                 "top_n": policy.top_n,
@@ -88,18 +90,28 @@ class UpbitOpportunityScannerService:
                 "technical_candidate_limit": policy.technical_candidate_limit,
                 "ai_enabled": policy.ai_enabled,
                 "cooldown_seconds": policy.cooldown_seconds,
+                "exclude_stablecoins": policy.exclude_stablecoins,
+                "exclude_caution_markets": policy.exclude_caution_markets,
+                "ai_backfill_enabled": policy.ai_backfill_enabled,
             },
             "universe_count": 0,
             "liquidity_pass_count": 0,
             "technical_candidate_count": 0,
             "ai_calls": 0,
+            "ai_failed_skipped": 0,
             "candidates": [],
             "notifications": None,
+            "shadow": None,
             "errors": [],
         }
 
         try:
-            universe = load_krw_universe(self._session)
+            universe = load_krw_universe(
+                self._session,
+                exclude_caution=policy.exclude_caution_markets,
+                exclude_stablecoins=policy.exclude_stablecoins,
+                stable_bases=policy.stablecoin_base_assets,
+            )
             result["universe_count"] = len(universe)
             if not universe:
                 result["ok"] = True
@@ -129,7 +141,11 @@ class UpbitOpportunityScannerService:
                     )
                 except Exception as exc:  # noqa: BLE001
                     result["errors"].append(
-                        {"symbol": symbol, "stage": "candle", "error": type(exc).__name__}
+                        {
+                            "symbol": symbol,
+                            "stage": "candle",
+                            "error": type(exc).__name__,
+                        }
                     )
                     continue
 
@@ -195,20 +211,23 @@ class UpbitOpportunityScannerService:
 
             ranked.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
             result["technical_candidate_count"] = len(ranked)
-            top = ranked[: policy.top_n]
-            for index, row in enumerate(top, start=1):
-                row["rank"] = index
 
             if policy.ai_enabled:
-                await self._analyze_top(
-                    top,
+                top = await self._analyze_ranked(
+                    ranked,
                     result,
+                    top_n=policy.top_n,
+                    backfill=policy.ai_backfill_enabled,
                     force=force_ai,
                 )
             else:
+                top = ranked[: policy.top_n]
                 for row in top:
                     row["recommendation"] = "HOLD"
                     row["ai_skipped"] = True
+
+            for index, row in enumerate(top, start=1):
+                row["rank"] = index
 
             now_ts = self._now.timestamp()
             for row in top:
@@ -228,7 +247,6 @@ class UpbitOpportunityScannerService:
                     notify_hold=policy.notify_hold,
                     run_meta=result,
                 )
-                # cooldown 갱신 — 개별 emit 또는 HOLD Top-N 요약
                 summary_emitted = bool(
                     (result.get("notifications") or {}).get("summary_emitted")
                 )
@@ -240,9 +258,47 @@ class UpbitOpportunityScannerService:
                         self._cooldown[str(row["symbol"])] = now_ts
                         self._last_alert_rec[str(row["symbol"])] = rec
                     elif summary_emitted and rec == "HOLD":
-                        # HOLD 요약 반복 방지
                         self._cooldown[str(row["symbol"])] = now_ts
                         self._last_alert_rec[str(row["symbol"])] = rec
+
+            # Paper Shadow — ALLOW/REDUCE만, 실주문 0
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow import (
+                    UpbitOpportunityShadowEvaluator,
+                    UpbitOpportunityShadowService,
+                )
+
+                shadow_svc = UpbitOpportunityShadowService(
+                    self._session, now=self._now
+                )
+                result["shadow"] = shadow_svc.create_from_candidates(
+                    candidates=top,
+                    scanner_run_id=str(result["scanner_run_id"]),
+                    notify=notify,
+                )
+                # lightweight evaluate (이미 지난 window가 있으면 채움)
+                eval_out = await UpbitOpportunityShadowEvaluator(
+                    self._session,
+                    quotation_client=client,
+                    now=self._now,
+                ).evaluate_pending(notify=notify)
+                if isinstance(result["shadow"], dict):
+                    result["shadow"]["evaluation"] = {
+                        "evaluated": eval_out.get("evaluated"),
+                        "completed": eval_out.get("completed"),
+                    }
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "upbit_scanner_shadow_failed",
+                    error=type(exc).__name__,
+                )
+                result["errors"].append(
+                    {
+                        "stage": "shadow",
+                        "error": type(exc).__name__,
+                        "message": str(exc)[:200],
+                    }
+                )
 
             result["ok"] = True
             return result
@@ -271,7 +327,6 @@ class UpbitOpportunityScannerService:
         if (now_ts - last) >= float(cooldown_seconds):
             return False
         prev = self._last_alert_rec.get(symbol)
-        # HOLD→ALLOW/REDUCE 는 재알림 허용
         if prev == "HOLD" and recommendation in {"ALLOW", "REDUCE"}:
             return False
         if prev != recommendation and recommendation in {"ALLOW", "REDUCE"}:
@@ -328,20 +383,23 @@ class UpbitOpportunityScannerService:
                 continue
             if row.get("trade_price") is None:
                 continue
-            # 24h signed change가 과도하면 1차 제외
             chg = abs(float(row.get("change_rate") or 0))
             if chg >= max_spike:
                 continue
             passed.append(row)
         return passed
 
-    async def _analyze_top(
+    async def _analyze_ranked(
         self,
-        top: list[dict[str, Any]],
+        ranked: list[dict[str, Any]],
         result: dict[str, Any],
         *,
+        top_n: int,
+        backfill: bool,
         force: bool,
-    ) -> None:
+    ) -> list[dict[str, Any]]:
+        """Top-N 슬롯을 검증된 AI로 채움. FAILED는 백필로 교체 가능."""
+
         runner = self._ai_runner
         if runner is None:
 
@@ -355,41 +413,21 @@ class UpbitOpportunityScannerService:
 
             runner = _default
 
-        for row in top:
+        selected: list[dict[str, Any]] = []
+        failed_budget = 0
+
+        for row in ranked:
+            if len(selected) >= top_n:
+                break
+            # backfill OFF면 단순 Top-N만 AI
+            if not backfill and failed_budget + len(selected) >= top_n:
+                break
+
             symbol = str(row["symbol"])
             try:
                 ai_out = await runner(symbol)
                 result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
-                if ai_out.get("skipped") and ai_out.get("recommendation"):
-                    row["recommendation"] = str(
-                        ai_out.get("recommendation")
-                    ).upper()
-                else:
-                    row["recommendation"] = str(
-                        ai_out.get("recommendation") or "HOLD"
-                    ).upper()
-                row["confidence"] = ai_out.get("confidence")
-                row["risk_level"] = ai_out.get("risk_level")
-                row["analysis_id"] = ai_out.get("market_analysis_id")
-                row["analyzed_at"] = ai_out.get("analysis_at")
-                row["analysis_status"] = ai_out.get("analysis_status")
-                row["trend"] = ai_out.get("trend")
-                row["momentum"] = ai_out.get("momentum")
-                row["volatility"] = ai_out.get("volatility")
-                # Fail Closed — 검증 실패/차단 시 HOLD + 원인 보존
-                if not ai_out.get("ok"):
-                    if not ai_out.get("recommendation"):
-                        row["recommendation"] = "HOLD"
-                    row["ai_error"] = (
-                        ai_out.get("error")
-                        or ai_out.get("skip_reason")
-                        or (
-                            f"ANALYSIS_NOT_VALIDATED:{ai_out.get('analysis_status')}"
-                            if ai_out.get("analysis_status")
-                            else "AI_NOT_OK"
-                        )
-                    )
-                    row["fail_closed"] = True
+                self._apply_ai_result(row, ai_out)
             except Exception as exc:  # noqa: BLE001
                 result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
                 row["recommendation"] = "HOLD"
@@ -407,3 +445,58 @@ class UpbitOpportunityScannerService:
                     symbol=symbol,
                     error=type(exc).__name__,
                 )
+
+            if row.get("fail_closed"):
+                result["ai_failed_skipped"] = (
+                    int(result.get("ai_failed_skipped") or 0) + 1
+                )
+                if backfill:
+                    # Top-N 슬롯을 FAILED로 소비하지 않음
+                    failed_budget += 1
+                    continue
+            selected.append(row)
+
+        # backfill OFF / AI 부족 시 남은 슬롯을 기술순위 HOLD로 채움
+        if len(selected) < top_n:
+            selected_syms = {str(r["symbol"]) for r in selected}
+            for row in ranked:
+                if len(selected) >= top_n:
+                    break
+                if str(row["symbol"]) in selected_syms:
+                    continue
+                if row.get("recommendation") is None:
+                    row["recommendation"] = "HOLD"
+                    row["ai_skipped"] = True
+                selected.append(row)
+
+        return selected
+
+    def _apply_ai_result(self, row: dict[str, Any], ai_out: dict[str, Any]) -> None:
+        if ai_out.get("skipped") and ai_out.get("recommendation"):
+            row["recommendation"] = str(ai_out.get("recommendation")).upper()
+        else:
+            row["recommendation"] = str(
+                ai_out.get("recommendation") or "HOLD"
+            ).upper()
+        row["confidence"] = ai_out.get("confidence")
+        row["risk_level"] = ai_out.get("risk_level")
+        row["analysis_id"] = ai_out.get("market_analysis_id")
+        row["analyzed_at"] = ai_out.get("analysis_at")
+        row["analysis_status"] = ai_out.get("analysis_status")
+        row["trend"] = ai_out.get("trend")
+        row["momentum"] = ai_out.get("momentum")
+        row["volatility"] = ai_out.get("volatility")
+        if not ai_out.get("ok"):
+            if not ai_out.get("recommendation"):
+                row["recommendation"] = "HOLD"
+            row["ai_error"] = (
+                ai_out.get("error")
+                or ai_out.get("skip_reason")
+                or (
+                    f"ANALYSIS_NOT_VALIDATED:{ai_out.get('analysis_status')}"
+                    if ai_out.get("analysis_status")
+                    else "AI_NOT_OK"
+                )
+            )
+            row["fail_closed"] = True
+

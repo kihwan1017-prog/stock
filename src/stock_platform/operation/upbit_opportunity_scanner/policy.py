@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from stock_platform.common.settings import get_settings
+from stock_platform.operation.upbit_opportunity_shadow.constants import (
+    DEFAULT_STABLECOIN_BASE_ASSETS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,6 +26,10 @@ class ScannerPolicy:
     candle_unit: int
     ai_enabled: bool
     notify_hold: bool
+    exclude_stablecoins: bool = True
+    exclude_caution_markets: bool = True
+    ai_backfill_enabled: bool = True
+    stablecoin_base_assets: frozenset[str] = DEFAULT_STABLECOIN_BASE_ASSETS
     # ranking weights (합=1.0 권장, 강제하지 않음)
     weight_liquidity: float = 0.20
     weight_volume_surge: float = 0.20
@@ -48,6 +55,15 @@ def load_scanner_policy(settings: Any | None = None) -> ScannerPolicy:
     unit = int(getattr(settings, "upbit_scanner_candle_unit", 1) or 1)
     if unit not in (1, 3, 5, 15):
         unit = 1
+    raw_bases = getattr(settings, "upbit_scanner_stablecoin_base_assets", None)
+    if isinstance(raw_bases, str) and raw_bases.strip():
+        bases = frozenset(
+            x.strip().upper() for x in raw_bases.split(",") if x.strip()
+        )
+    elif isinstance(raw_bases, (list, tuple, set, frozenset)):
+        bases = frozenset(str(x).upper() for x in raw_bases)
+    else:
+        bases = DEFAULT_STABLECOIN_BASE_ASSETS
     return ScannerPolicy(
         enabled=bool(
             getattr(settings, "upbit_opportunity_scanner_enabled", False)
@@ -85,6 +101,16 @@ def load_scanner_policy(settings: Any | None = None) -> ScannerPolicy:
         notify_hold=bool(
             getattr(settings, "upbit_scanner_notify_hold", False)
         ),
+        exclude_stablecoins=bool(
+            getattr(settings, "upbit_scanner_exclude_stablecoins", True)
+        ),
+        exclude_caution_markets=bool(
+            getattr(settings, "upbit_scanner_exclude_caution_markets", True)
+        ),
+        ai_backfill_enabled=bool(
+            getattr(settings, "upbit_scanner_ai_backfill_enabled", True)
+        ),
+        stablecoin_base_assets=bases,
     )
 
 

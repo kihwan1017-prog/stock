@@ -106,8 +106,13 @@ class UpbitOpportunityScannerScheduler:
                     "technical_candidate_count"
                 ),
                 "ai_calls": self._last_result.get("ai_calls"),
+                "ai_failed_skipped": self._last_result.get(
+                    "ai_failed_skipped"
+                ),
                 "top_n": len(self._last_result.get("candidates") or []),
                 "notifications": self._last_result.get("notifications"),
+                "shadow": self._last_result.get("shadow"),
+                "scanner_run_id": self._last_result.get("scanner_run_id"),
                 "elapsed_ms": self._last_result.get("elapsed_ms"),
                 "candidates": [
                     {
@@ -117,6 +122,7 @@ class UpbitOpportunityScannerScheduler:
                         "recommendation": c.get("recommendation"),
                         "confidence": c.get("confidence"),
                         "risk_level": c.get("risk_level"),
+                        "fail_closed": c.get("fail_closed"),
                     }
                     for c in (self._last_result.get("candidates") or [])
                 ],

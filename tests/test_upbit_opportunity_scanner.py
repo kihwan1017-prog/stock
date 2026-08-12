@@ -1,4 +1,4 @@
-"""UPBIT Opportunity Scanner v0 — focused tests (실주문 없음)."""
+﻿"""UPBIT Opportunity Scanner v0 ??focused tests (?ㅼ＜臾??놁쓬)."""
 
 from __future__ import annotations
 
@@ -38,6 +38,9 @@ def _policy(**overrides) -> ScannerPolicy:
         candle_unit=1,
         ai_enabled=True,
         notify_hold=False,
+        exclude_stablecoins=True,
+        exclude_caution_markets=True,
+        ai_backfill_enabled=True,
     )
     base.update(overrides)
     return ScannerPolicy(**base)
@@ -107,8 +110,15 @@ def test_universe_krw_only_and_inactive_excluded(monkeypatch):
     rows = load_krw_universe(session)
     symbols = {r["symbol"] for r in rows}
     assert "KRW-BTC" in symbols
-    assert "KRW-OK" in symbols  # caution alone does not block
+    assert "KRW-OK" not in symbols  # active caution flag → 제외
     assert "KRW-BAD" not in symbols
+
+    # caution 전부 false면 통과
+    rows2 = load_krw_universe(
+        session,
+        exclude_caution=False,
+    )
+    assert "KRW-OK" in {r["symbol"] for r in rows2}
 
 
 def test_abnormal_spike_exclusion():
@@ -269,7 +279,7 @@ async def test_scanner_top_n_ai_only_and_no_orders(monkeypatch):
 
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
-        lambda session: [
+        lambda session, **_kwargs: [
             {"symbol": "KRW-AAA", "name": "A"},
             {"symbol": "KRW-BBB", "name": "B"},
             {"symbol": "KRW-CCC", "name": "C"},
@@ -367,7 +377,7 @@ async def test_cooldown_suppresses_repeat_allow(monkeypatch):
 
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
-        lambda session: [{"symbol": "KRW-AAA", "name": "A"}],
+        lambda session, **_kwargs: [{"symbol": "KRW-AAA", "name": "A"}],
     )
     published: list = []
     monkeypatch.setattr(
@@ -432,7 +442,7 @@ async def test_ai_failure_fail_closed_hold(monkeypatch):
 
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
-        lambda session: [{"symbol": "KRW-AAA", "name": "A"}],
+        lambda session, **_kwargs: [{"symbol": "KRW-AAA", "name": "A"}],
     )
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_scanner.notify.notification_publisher.publish",
@@ -452,7 +462,7 @@ async def test_ai_failure_fail_closed_hold(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_hold_only_emits_summary_not_spam(monkeypatch):
-    """ALLOW/REDUCE 없으면 Top-N 요약 1건만, HOLD 개별 스팸 없음."""
+    """ALLOW/REDUCE ?놁쑝硫?Top-N ?붿빟 1嫄대쭔, HOLD 媛쒕퀎 ?ㅽ뙵 ?놁쓬."""
 
     policy = _policy(
         min_24h_trade_value_krw=1_000_000_000,
@@ -508,7 +518,7 @@ async def test_hold_only_emits_summary_not_spam(monkeypatch):
 
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
-        lambda session: [
+        lambda session, **_kwargs: [
             {"symbol": "KRW-AAA", "name": "A"},
             {"symbol": "KRW-BBB", "name": "B"},
         ],
@@ -548,7 +558,7 @@ async def test_ticker_failure_does_not_crash(monkeypatch):
     client.aclose = AsyncMock()
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
-        lambda session: [{"symbol": "KRW-AAA", "name": "A"}],
+        lambda session, **_kwargs: [{"symbol": "KRW-AAA", "name": "A"}],
     )
     svc = UpbitOpportunityScannerService(
         MagicMock(),
@@ -560,3 +570,4 @@ async def test_ticker_failure_does_not_crash(monkeypatch):
     assert out["liquidity_pass_count"] == 0
     assert out["candidates"] == []
     assert out["orders_created"] == 0
+
