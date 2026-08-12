@@ -249,7 +249,7 @@ class UpbitOpportunityShadowService:
     @staticmethod
     def to_public(row: UpbitOpportunityShadowEntity) -> dict[str, Any]:
         return {
-            "shadow_id": int(row.shadow_id),
+            "shadow_id": int(row.shadow_id) if row.shadow_id is not None else None,
             "scanner_run_id": row.scanner_run_id,
             "symbol": row.symbol,
             "recommendation": row.recommendation,

@@ -72,14 +72,16 @@ def publish_scanner_alerts(
             f"AI: {rec}\n"
             f"Confidence: {item.get('confidence')}\n"
             f"Risk: {item.get('risk_level')}\n"
-            f"Alert only\n"
-            f"LIVE auto start: false"
+            f"SHADOW ONLY\n"
+            f"LIVE ORDER: NO"
         )
         detail = {
             "source": "upbit_opportunity_scanner_v0",
             "live_auto_start": False,
+            "live_order": False,
             "orders_created": 0,
             "runtime_mutated": False,
+            "shadow_only": True,
             "candidate": item,
             "run_meta": {
                 k: run_meta.get(k)
@@ -111,7 +113,11 @@ def publish_scanner_alerts(
     # cooldown 억제된 후보만 남은 경우에는 반복 요약 금지
     alertable = [c for c in candidates if not c.get("cooldown_suppressed")]
     if emitted == 0 and alertable:
-        lines = ["[UPBIT Opportunity Scanner Top-N]", "Alert only / LIVE auto start: false"]
+        lines = [
+            "[UPBIT Opportunity Scanner Top-N]",
+            "SHADOW ONLY",
+            "LIVE ORDER: NO",
+        ]
         for item in alertable[:5]:
             lines.append(
                 f"#{item.get('rank')} {item.get('symbol')} "
@@ -126,7 +132,9 @@ def publish_scanner_alerts(
                 detail={
                     "source": "upbit_opportunity_scanner_v0_summary",
                     "live_auto_start": False,
+                    "live_order": False,
                     "orders_created": 0,
+                    "shadow_only": True,
                     "candidates": alertable,
                     "run_meta": {
                         k: run_meta.get(k)
@@ -155,3 +163,44 @@ def publish_scanner_alerts(
         "skipped_cooldown": skipped_cooldown,
         "errors": errors,
     }
+
+
+def publish_scanner_failure(
+    *,
+    error: str,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """Scanner 자체 failure — SHADOW ONLY 명시."""
+
+    message = (
+        f"[UPBIT Scanner Failure]\n"
+        f"Error: {error}\n"
+        f"SHADOW ONLY\n"
+        f"LIVE ORDER: NO"
+    )
+    try:
+        event = str(
+            getattr(
+                NotificationEventType,
+                "UPBIT_SCANNER_FAILURE",
+                "UPBIT_SCANNER_FAILURE",
+            )
+        )
+        notification_publisher.publish(
+            event_type=event,
+            title="UPBIT Scanner Failure",
+            message=message,
+            detail={
+                "source": "upbit_opportunity_scanner_failure",
+                "error": error,
+                "live_order": False,
+                "orders_created": 0,
+                "shadow_only": True,
+                **(detail or {}),
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "upbit_scanner_failure_notify_failed",
+            error=type(exc).__name__,
+        )

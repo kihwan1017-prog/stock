@@ -1,7 +1,8 @@
-"""UPBIT Opportunity Scanner Scheduler — enabled=false면 기동하지 않음."""
+"""UPBIT Opportunity Scanner Scheduler — SHADOW_ONLY Fail Closed."""
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,7 +12,11 @@ from apscheduler.triggers.interval import IntervalTrigger
 from stock_platform.common.logger import logger
 from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_session_factory
+from stock_platform.operation.upbit_opportunity_scanner.notify import (
+    publish_scanner_failure,
+)
 from stock_platform.operation.upbit_opportunity_scanner.policy import (
+    SCANNER_MODE_SHADOW_ONLY,
     load_scanner_policy,
 )
 
@@ -26,31 +31,51 @@ class UpbitOpportunityScannerScheduler:
         )
         self._configured = False
         self._started = False
+        self._tick_in_progress = False
         self._last_run_at: datetime | None = None
         self._last_success_at: datetime | None = None
         self._last_failure_at: datetime | None = None
         self._last_result: dict[str, Any] | None = None
         self._last_error: str | None = None
+        self._last_duration_ms: int | None = None
+        self._last_skip_reason: str | None = None
+        self._overlap_skip_count = 0
         self._run_count = 0
         self._success_count = 0
         self._failure_count = 0
         # service 인스턴스 재사용 — cooldown 유지
         self._service_holder: Any | None = None
 
+    @staticmethod
+    def automation_allowed(policy: Any | None = None) -> tuple[bool, str | None]:
+        """enabled + SHADOW_ONLY만 스케줄러 기동 허용."""
+
+        policy = policy if policy is not None else load_scanner_policy()
+        if not policy.enabled:
+            return False, "UPBIT_OPPORTUNITY_SCANNER_ENABLED=false"
+        if str(policy.mode).upper() != SCANNER_MODE_SHADOW_ONLY:
+            return False, f"MODE_NOT_SHADOW_ONLY:{policy.mode}"
+        return True, None
+
     def configure(self, *, force: bool = False) -> None:
         if self._configured and not force:
             return
-        settings = get_settings()
-        policy = load_scanner_policy(settings)
-        if not policy.enabled:
+        allowed, reason = self.automation_allowed()
+        if not allowed:
             self._configured = True
+            self._last_skip_reason = reason
             return
 
+        policy = load_scanner_policy()
         interval = max(60, int(policy.interval_seconds or 900))
 
         async def _tick() -> None:
             await self._run_tick()
 
+        try:
+            self._scheduler.remove_job(self.JOB_ID)
+        except Exception:  # noqa: BLE001
+            pass
         self._scheduler.add_job(
             _tick,
             IntervalTrigger(seconds=interval),
@@ -61,21 +86,25 @@ class UpbitOpportunityScannerScheduler:
             misfire_grace_time=max(interval, 60),
         )
         self._configured = True
+        self._last_skip_reason = None
 
     def start(self) -> None:
-        policy = load_scanner_policy()
-        if not policy.enabled:
+        allowed, reason = self.automation_allowed()
+        if not allowed:
             logger.info(
                 "upbit_opportunity_scanner_skipped",
-                reason="UPBIT_OPPORTUNITY_SCANNER_ENABLED=false",
+                reason=reason,
             )
+            self._last_skip_reason = reason
             return
         self.configure(force=True)
         if not self._scheduler.running:
             self._scheduler.start()
             self._started = True
+            policy = load_scanner_policy()
             logger.info(
                 "upbit_opportunity_scanner_started",
+                mode=SCANNER_MODE_SHADOW_ONLY,
                 interval_seconds=policy.interval_seconds,
                 top_n=policy.top_n,
             )
@@ -87,11 +116,14 @@ class UpbitOpportunityScannerScheduler:
 
     def status(self) -> dict[str, Any]:
         policy = load_scanner_policy()
+        allowed, block_reason = self.automation_allowed(policy)
         next_run = None
+        job_ids: list[str] = []
         try:
             job = self._scheduler.get_job(self.JOB_ID)
             if job is not None and job.next_run_time is not None:
                 next_run = job.next_run_time.isoformat()
+            job_ids = [j.id for j in self._scheduler.get_jobs()]
         except Exception:  # noqa: BLE001
             next_run = None
         summary = None
@@ -129,15 +161,22 @@ class UpbitOpportunityScannerScheduler:
             }
         return {
             "enabled": policy.enabled,
+            "mode": policy.mode,
+            "automation_allowed": allowed,
+            "block_reason": block_reason,
             "running": bool(self._scheduler.running),
             "started": self._started,
+            "tick_in_progress": self._tick_in_progress,
             "interval_seconds": policy.interval_seconds,
             "top_n": policy.top_n,
             "min_24h_trade_value_krw": policy.min_24h_trade_value_krw,
+            "job_id": self.JOB_ID,
+            "job_ids": job_ids,
             "last_run_at": (
                 self._last_run_at.isoformat() if self._last_run_at else None
             ),
             "next_run_at": next_run,
+            "last_duration_ms": self._last_duration_ms,
             "last_success_at": (
                 self._last_success_at.isoformat()
                 if self._last_success_at
@@ -149,12 +188,17 @@ class UpbitOpportunityScannerScheduler:
                 else None
             ),
             "last_error": self._last_error,
+            "last_skip_reason": self._last_skip_reason,
+            "overlap_skip_count": self._overlap_skip_count,
             "run_count": self._run_count,
             "success_count": self._success_count,
             "failure_count": self._failure_count,
             "last_result_summary": summary,
+            "shadow_only": True,
             "alert_only": True,
             "live_auto_start": False,
+            "live_order": False,
+            "orders_created": 0,
         }
 
     async def run_once_now(
@@ -163,7 +207,7 @@ class UpbitOpportunityScannerScheduler:
         notify: bool = True,
         force_ai: bool = False,
     ) -> dict[str, Any]:
-        """운영 Dry Run / 수동 1회 (실주문 없음)."""
+        """운영 Dry Run / 수동 1회 (실주문 없음). enabled와 무관."""
 
         return await self._run_tick(notify=notify, force_ai=force_ai)
 
@@ -177,51 +221,98 @@ class UpbitOpportunityScannerScheduler:
             UpbitOpportunityScannerService,
         )
 
+        if self._tick_in_progress:
+            self._overlap_skip_count += 1
+            self._last_skip_reason = "OVERLAP_SKIP"
+            logger.info("upbit_opportunity_scanner_overlap_skip")
+            return {
+                "ok": False,
+                "skipped": True,
+                "code": "OVERLAP_SKIP",
+                "orders_created": 0,
+                "shadow_only": True,
+                "live_order": False,
+            }
+
+        self._tick_in_progress = True
         now = datetime.now(timezone.utc)
         self._last_run_at = now
         self._run_count += 1
+        started = time.perf_counter()
         Session = get_session_factory()
-        with Session() as session:
-            try:
-                if self._service_holder is None:
-                    self._service_holder = UpbitOpportunityScannerService(
-                        session
+        try:
+            with Session() as session:
+                try:
+                    if self._service_holder is None:
+                        self._service_holder = UpbitOpportunityScannerService(
+                            session
+                        )
+                    else:
+                        # session 교체
+                        self._service_holder._session = session  # noqa: SLF001
+                    result = await self._service_holder.run(
+                        notify=notify,
+                        force_ai=force_ai,
                     )
-                else:
-                    # session 교체
-                    self._service_holder._session = session  # noqa: SLF001
-                result = await self._service_holder.run(
-                    notify=notify,
-                    force_ai=force_ai,
-                )
-                self._last_result = result
-                if result.get("ok"):
-                    self._last_success_at = datetime.now(timezone.utc)
-                    self._success_count += 1
-                    self._last_error = None
-                else:
+                    result["shadow_only"] = True
+                    result["live_order"] = False
+                    result.setdefault("orders_created", 0)
+                    self._last_result = result
+                    self._last_duration_ms = int(
+                        (time.perf_counter() - started) * 1000
+                    )
+                    result["duration_ms"] = self._last_duration_ms
+                    if result.get("ok"):
+                        self._last_success_at = datetime.now(timezone.utc)
+                        self._success_count += 1
+                        self._last_error = None
+                    else:
+                        self._last_failure_at = datetime.now(timezone.utc)
+                        self._failure_count += 1
+                        errs = result.get("errors") or []
+                        self._last_error = (
+                            str(errs[0]) if errs else "SCANNER_FAILED"
+                        )
+                        if notify:
+                            publish_scanner_failure(
+                                error=self._last_error,
+                                detail={
+                                    "duration_ms": self._last_duration_ms,
+                                    "errors": errs,
+                                },
+                            )
+                    return result
+                except Exception as exc:  # noqa: BLE001
+                    session.rollback()
                     self._last_failure_at = datetime.now(timezone.utc)
                     self._failure_count += 1
-                    errs = result.get("errors") or []
-                    self._last_error = (
-                        str(errs[0]) if errs else "SCANNER_FAILED"
+                    self._last_error = type(exc).__name__
+                    self._last_duration_ms = int(
+                        (time.perf_counter() - started) * 1000
                     )
-                return result
-            except Exception as exc:  # noqa: BLE001
-                session.rollback()
-                self._last_failure_at = datetime.now(timezone.utc)
-                self._failure_count += 1
-                self._last_error = type(exc).__name__
-                logger.warning(
-                    "upbit_opportunity_scanner_tick_failed",
-                    error=type(exc).__name__,
-                )
-                return {
-                    "ok": False,
-                    "error": type(exc).__name__,
-                    "orders_created": 0,
-                    "alert_only": True,
-                }
+                    logger.warning(
+                        "upbit_opportunity_scanner_tick_failed",
+                        error=type(exc).__name__,
+                    )
+                    if notify:
+                        publish_scanner_failure(
+                            error=type(exc).__name__,
+                            detail={
+                                "duration_ms": self._last_duration_ms,
+                                "message": str(exc)[:200],
+                            },
+                        )
+                    return {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "orders_created": 0,
+                        "shadow_only": True,
+                        "live_order": False,
+                        "alert_only": True,
+                        "duration_ms": self._last_duration_ms,
+                    }
+        finally:
+            self._tick_in_progress = False
 
 
 upbit_opportunity_scanner_scheduler = UpbitOpportunityScannerScheduler()

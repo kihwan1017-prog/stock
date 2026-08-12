@@ -17,6 +17,9 @@ from stock_platform.operation.upbit_opportunity_shadow import (
     UpbitOpportunityShadowService,
     compute_shadow_stats,
 )
+from stock_platform.operation.upbit_opportunity_shadow.evaluator_scheduler import (
+    upbit_opportunity_shadow_evaluator_scheduler,
+)
 
 
 router = APIRouter(
@@ -34,6 +37,7 @@ class ScannerRunRequest(BaseModel):
 @router.get("/status")
 def scanner_status(session: Session = Depends(get_db_session)) -> dict:
     status = upbit_opportunity_scanner_scheduler.status()
+    status["evaluator"] = upbit_opportunity_shadow_evaluator_scheduler.status()
     try:
         svc = UpbitOpportunityShadowService(session)
         status["shadows"] = {
@@ -43,6 +47,8 @@ def scanner_status(session: Session = Depends(get_db_session)) -> dict:
         }
     except Exception as exc:  # noqa: BLE001
         status["shadows"] = {"error": type(exc).__name__}
+    status["shadow_only"] = True
+    status["live_order"] = False
     return status
 
 
@@ -87,6 +93,15 @@ async def evaluate_shadows(
         notify=True
     )
     return out
+
+
+@router.post("/shadows/evaluate-now")
+async def evaluate_shadows_via_scheduler() -> dict:
+    """Evaluator scheduler 경로 1회 (mismatch watch 포함)."""
+
+    return await upbit_opportunity_shadow_evaluator_scheduler.run_once_now(
+        notify=True
+    )
 
 
 @router.get("/shadows/{shadow_id}/recompute-dry")

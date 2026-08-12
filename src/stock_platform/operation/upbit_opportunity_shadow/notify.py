@@ -31,7 +31,8 @@ def publish_shadow_opened(shadow: dict[str, Any]) -> None:
         f"Confidence: {shadow.get('confidence')}\n"
         f"Entry: {shadow.get('entry_price')}\n"
         f"Shadow Amount: {shadow.get('assumed_amount_krw')} KRW\n"
-        f"Live Order: NO"
+        f"SHADOW ONLY\n"
+        f"LIVE ORDER: NO"
     )
     notification_publisher.publish(
         event_type=_ensure_event("UPBIT_SCANNER_SHADOW_OPENED"),
@@ -40,8 +41,10 @@ def publish_shadow_opened(shadow: dict[str, Any]) -> None:
         detail={
             "source": "upbit_opportunity_shadow_v1",
             "live_auto_start": False,
+            "live_order": False,
             "orders_created": 0,
             "paper_shadow": True,
+            "shadow_only": True,
             "shadow": shadow,
         },
     )
@@ -72,7 +75,9 @@ def publish_shadow_result(shadow: dict[str, Any]) -> None:
         f"MFE: {shadow.get('mfe_pct')}\n"
         f"MAE: {shadow.get('mae_pct')}\n"
         f"SL/TP: {sl_tp}\n"
-        f"Result: {result}"
+        f"Result: {result}\n"
+        f"SHADOW ONLY\n"
+        f"LIVE ORDER: NO"
     )
     notification_publisher.publish(
         event_type=_ensure_event("UPBIT_SCANNER_SHADOW_RESULT"),
@@ -81,8 +86,42 @@ def publish_shadow_result(shadow: dict[str, Any]) -> None:
         detail={
             "source": "upbit_opportunity_shadow_v1_result",
             "live_auto_start": False,
+            "live_order": False,
             "orders_created": 0,
             "paper_shadow": True,
+            "shadow_only": True,
             "shadow": shadow,
+        },
+    )
+
+
+def publish_shadow_mismatch(
+    shadow: dict[str, Any],
+    *,
+    diff: dict[str, Any],
+) -> None:
+    symbol = shadow.get("symbol")
+    title = f"UPBIT Shadow Evaluation Mismatch {symbol}"
+    message = (
+        f"[UPBIT Shadow Evaluation Mismatch]\n"
+        f"Symbol: {symbol}\n"
+        f"Shadow ID: {shadow.get('shadow_id')}\n"
+        f"Code: SHADOW_EVALUATION_MISMATCH\n"
+        f"Auto reconcile: NO\n"
+        f"SHADOW ONLY\n"
+        f"LIVE ORDER: NO"
+    )
+    notification_publisher.publish(
+        event_type=_ensure_event("UPBIT_SHADOW_EVALUATION_MISMATCH"),
+        title=title,
+        message=message,
+        detail={
+            "source": "upbit_shadow_mismatch_watch",
+            "live_order": False,
+            "orders_created": 0,
+            "shadow_only": True,
+            "auto_reconcile": False,
+            "shadow": shadow,
+            "diff": diff,
         },
     )

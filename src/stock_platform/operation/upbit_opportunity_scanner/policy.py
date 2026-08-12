@@ -11,11 +11,16 @@ from stock_platform.operation.upbit_opportunity_shadow.constants import (
 )
 
 
+# 자동화 허용 모드 — LIVE/Runtime 연결 금지
+SCANNER_MODE_SHADOW_ONLY = "SHADOW_ONLY"
+
+
 @dataclass(frozen=True, slots=True)
 class ScannerPolicy:
-    """Alert-only Opportunity Scanner 정책 스냅샷."""
+    """SHADOW_ONLY Opportunity Scanner 정책 스냅샷."""
 
     enabled: bool
+    mode: str
     interval_seconds: float
     min_24h_trade_value_krw: float
     top_n: int
@@ -64,10 +69,15 @@ def load_scanner_policy(settings: Any | None = None) -> ScannerPolicy:
         bases = frozenset(str(x).upper() for x in raw_bases)
     else:
         bases = DEFAULT_STABLECOIN_BASE_ASSETS
+    raw_mode = str(
+        getattr(settings, "upbit_opportunity_scanner_mode", SCANNER_MODE_SHADOW_ONLY)
+        or SCANNER_MODE_SHADOW_ONLY
+    ).strip().upper()
     return ScannerPolicy(
         enabled=bool(
             getattr(settings, "upbit_opportunity_scanner_enabled", False)
         ),
+        mode=raw_mode or SCANNER_MODE_SHADOW_ONLY,
         interval_seconds=float(
             getattr(
                 settings,

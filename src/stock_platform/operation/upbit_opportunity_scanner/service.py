@@ -279,7 +279,6 @@ class UpbitOpportunityScannerService:
                 # lightweight evaluate (이미 지난 window가 있으면 채움)
                 eval_out = await UpbitOpportunityShadowEvaluator(
                     self._session,
-                    quotation_client=client,
                     now=self._now,
                 ).evaluate_pending(notify=notify)
                 if isinstance(result["shadow"], dict):

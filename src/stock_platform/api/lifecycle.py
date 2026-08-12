@@ -528,7 +528,7 @@ class ApplicationLifecycle:
                 "upbit_ai_analysis_scheduler_start_failed",
                 error=str(exc)[:300],
             )
-        # UPBIT Opportunity Scanner v0 (Alert-only, enabled 플래그 기본 OFF)
+        # UPBIT Opportunity Scanner SHADOW_ONLY (enabled 플래그 기본 OFF)
         try:
             from stock_platform.operation.upbit_opportunity_scanner import (
                 upbit_opportunity_scanner_scheduler,
@@ -538,6 +538,18 @@ class ApplicationLifecycle:
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "upbit_opportunity_scanner_start_failed",
+                error=str(exc)[:300],
+            )
+        # UPBIT Shadow evaluator — ACTIVE window 자동 누적 (실주문 0)
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.evaluator_scheduler import (
+                upbit_opportunity_shadow_evaluator_scheduler,
+            )
+
+            upbit_opportunity_shadow_evaluator_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_shadow_evaluator_start_failed",
                 error=str(exc)[:300],
             )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
@@ -680,6 +692,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_opportunity_scanner_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.evaluator_scheduler import (
+                upbit_opportunity_shadow_evaluator_scheduler,
+            )
+
+            await upbit_opportunity_shadow_evaluator_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await upbit_daily_settlement_scheduler.shutdown()

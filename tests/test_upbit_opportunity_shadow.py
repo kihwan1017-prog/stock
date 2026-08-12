@@ -31,6 +31,7 @@ from stock_platform.operation.upbit_opportunity_shadow.service import (
 def _policy(**overrides) -> ScannerPolicy:
     base = dict(
         enabled=False,
+        mode="SHADOW_ONLY",
         interval_seconds=900.0,
         min_24h_trade_value_krw=5_000_000_000.0,
         top_n=5,
@@ -62,6 +63,7 @@ def test_stablecoin_excluded_by_base_and_name():
 def test_policy_shadow_related_defaults():
     settings = SimpleNamespace(
         upbit_opportunity_scanner_enabled=False,
+        upbit_opportunity_scanner_mode="SHADOW_ONLY",
         upbit_opportunity_scanner_interval_seconds=900,
         upbit_scanner_min_24h_trade_value_krw=5_000_000_000,
         upbit_scanner_top_n=5,
