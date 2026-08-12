@@ -440,6 +440,22 @@ class ApplicationLifecycle:
                 error=str(exc),
             )
 
+        # Hub에 등록된 UPBIT subscription만 공개 시세 복구 (LIVE/Runtime RUN 없음)
+        try:
+            from stock_platform.realtime.upbit_quote_feed_restore import (
+                ensure_upbit_quote_feed_from_hub,
+            )
+
+            feed_restore = await ensure_upbit_quote_feed_from_hub(
+                source="LIFECYCLE_STARTUP",
+            )
+            logger.info("upbit_quote_feed_startup_restore", **feed_restore)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_quote_feed_startup_restore_error",
+                error=str(exc),
+            )
+
         # Feature Flag 기본 OFF — Paper Runner만 조건부 기동
         try:
             from stock_platform.realtime.execution_auto_start import (

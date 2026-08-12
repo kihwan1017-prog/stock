@@ -290,15 +290,23 @@ def should_keep_upbit_on_krx_close(
 ) -> bool:
     """KRX MARKET_CLOSE에서도 UPBIT 시세/런타임 유지 여부.
 
-    Shadow auto-start 또는 명시적 24/7 keep 플래그. 기본 OFF(Fail Closed).
+    Shadow auto-start / 명시적 24/7 keep 플래그, 또는 Hub에
+    UPBIT market-data subscription이 있으면 유지 (전 UBA 무차별 start 아님).
     """
 
     cfg = settings if settings is not None else get_settings()
     if bool(getattr(cfg, "realtime_upbit_shadow_auto_start_enabled", False)):
         return True
-    return bool(
-        getattr(cfg, "realtime_upbit_24x7_keep_on_krx_close", False)
-    )
+    if bool(getattr(cfg, "realtime_upbit_24x7_keep_on_krx_close", False)):
+        return True
+    try:
+        from stock_platform.realtime.upbit_quote_feed_restore import (
+            hub_has_upbit_subscriptions,
+        )
+
+        return hub_has_upbit_subscriptions()
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def upbit_market_hours_policy() -> dict[str, Any]:

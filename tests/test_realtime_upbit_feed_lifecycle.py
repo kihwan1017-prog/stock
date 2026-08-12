@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from stock_platform.realtime.manager import RealtimeMarketDataManager
 from stock_platform.realtime.upbit_client import UpbitRealtimeClient
+from stock_platform.realtime.upbit_quote_feed_restore import (
+    collect_upbit_symbols_from_hub,
+    ensure_upbit_quote_feed_from_hub,
+)
 
 
 @pytest.mark.asyncio
@@ -146,3 +151,85 @@ def test_upbit_subscribe_payload_shape() -> None:
     assert "ticker" in status["channels"]
     assert "last_connect_attempt" in status
     assert "connecting" in status
+
+
+def test_collect_upbit_symbols_from_hub_filters_non_upbit() -> None:
+    hub = SimpleNamespace(
+        registry=SimpleNamespace(
+            list_subscriptions=lambda: [
+                {"broker_code": "UPBIT", "symbol": "KRW-XRP"},
+                {"broker_code": "UPBIT", "symbol": "krw-xrp"},
+                {"broker_code": "KIWOOM", "symbol": "005930"},
+                {"broker_code": "UPBIT", "symbol": ""},
+            ]
+        )
+    )
+    with patch(
+        "stock_platform.realtime.market_data_hub.get_realtime_market_data_hub",
+        return_value=hub,
+    ):
+        assert collect_upbit_symbols_from_hub() == ["KRW-XRP"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_upbit_quote_feed_noop_without_subscriptions() -> None:
+    with patch(
+        "stock_platform.realtime.upbit_quote_feed_restore.collect_upbit_symbols_from_hub",
+        return_value=[],
+    ):
+        out = await ensure_upbit_quote_feed_from_hub(source="TEST")
+    assert out["started"] is False
+    assert out["reason"] == "NO_UPBIT_HUB_SUBSCRIPTIONS"
+
+
+@pytest.mark.asyncio
+async def test_ensure_upbit_quote_feed_starts_from_hub_symbols() -> None:
+    manager = MagicMock()
+    manager.start_upbit = AsyncMock(
+        return_value={
+            "connected": True,
+            "running": True,
+            "task_running": True,
+            "already_running": False,
+            "symbols": ["KRW-XRP"],
+            "received_count": 1,
+            "last_error": None,
+        }
+    )
+    with (
+        patch(
+            "stock_platform.realtime.upbit_quote_feed_restore.collect_upbit_symbols_from_hub",
+            return_value=["KRW-XRP"],
+        ),
+        patch(
+            "stock_platform.realtime.manager.realtime_manager",
+            manager,
+        ),
+    ):
+        out = await ensure_upbit_quote_feed_from_hub(source="TEST")
+    assert out["started"] is True
+    assert out["symbols"] == ["KRW-XRP"]
+    manager.start_upbit.assert_awaited_once()
+    kwargs = manager.start_upbit.await_args.kwargs
+    assert kwargs["symbols"] == ["KRW-XRP"]
+
+
+def test_should_keep_upbit_when_hub_has_subscription() -> None:
+    from stock_platform.realtime.live_runtime_control import (
+        should_keep_upbit_on_krx_close,
+    )
+
+    settings = SimpleNamespace(
+        realtime_upbit_shadow_auto_start_enabled=False,
+        realtime_upbit_24x7_keep_on_krx_close=False,
+    )
+    with patch(
+        "stock_platform.realtime.upbit_quote_feed_restore.hub_has_upbit_subscriptions",
+        return_value=True,
+    ):
+        assert should_keep_upbit_on_krx_close(settings) is True
+    with patch(
+        "stock_platform.realtime.upbit_quote_feed_restore.hub_has_upbit_subscriptions",
+        return_value=False,
+    ):
+        assert should_keep_upbit_on_krx_close(settings) is False
