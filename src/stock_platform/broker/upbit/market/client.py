@@ -165,6 +165,25 @@ class UpbitQuotationClient:
 
         return result
 
+    async def list_tickers(
+        self,
+        *,
+        markets: list[str],
+    ) -> list[dict[str, Any]]:
+        """Public /v1/ticker — markets는 최대 100개씩 호출 권장."""
+
+        if not markets:
+            return []
+        params = {
+            "markets": ",".join(str(m).upper() for m in markets),
+        }
+        result = await self.get_json("/v1/ticker", params=params)
+        if not isinstance(result, list):
+            raise UpbitRequestError(
+                "Upbit ticker response was not a list"
+            )
+        return [row for row in result if isinstance(row, dict)]
+
     async def _get_json_once(
         self,
         *,

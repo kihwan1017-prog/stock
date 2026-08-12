@@ -9,6 +9,7 @@ import { AdminUpbitLiveUbaPanel } from "@/features/admin/accounts/AdminUpbitLive
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { UpbitAmbiguousOrdersPanel } from "@/features/admin/upbit/UpbitAmbiguousOrdersPanel";
+import { UpbitOpportunityScannerPanel } from "@/features/admin/upbit/UpbitOpportunityScannerPanel";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -138,6 +139,8 @@ export default function AdminUpbitPage() {
         </Typography.Paragraph>
 
         <AdminUpbitLiveUbaPanel />
+
+        <UpbitOpportunityScannerPanel />
 
         <AdminJsonCard
           title="GET /broker/upbit/account/status"

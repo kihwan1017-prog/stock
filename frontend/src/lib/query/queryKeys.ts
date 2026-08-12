@@ -188,6 +188,8 @@ export const queryKeys = {
     upbitAccountStatus: () => ["admin", "upbit-account-status"] as const,
     upbitAccountSnapshot: () => ["admin", "upbit-account-snapshot"] as const,
     upbitRateLimits: () => ["admin", "upbit-rate-limits"] as const,
+    upbitOpportunityScanner: () =>
+      ["admin", "upbit-opportunity-scanner"] as const,
     marketQuality: () => ["admin", "market-quality"] as const,
     orderOutbox: () => ["admin", "order-outbox"] as const,
     liveTransitionHistory: () => ["admin", "live-transition-history"] as const,

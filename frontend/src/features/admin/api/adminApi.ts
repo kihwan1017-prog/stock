@@ -4311,6 +4311,21 @@ export async function recheckUpbitRateLimits(
   return postJson(`/admin/upbit/rate-limits/${ubaId}/recheck`);
 }
 
+/** UPBIT Opportunity Scanner v0 — Alert-only */
+export async function getUpbitOpportunityScannerStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/opportunity-scanner/status");
+}
+
+export async function runUpbitOpportunityScanner(body?: {
+  notify?: boolean;
+  force_ai?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/opportunity-scanner/run", {
+    notify: body?.notify ?? true,
+    force_ai: body?.force_ai ?? false,
+  });
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;

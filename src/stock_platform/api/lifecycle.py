@@ -528,6 +528,18 @@ class ApplicationLifecycle:
                 "upbit_ai_analysis_scheduler_start_failed",
                 error=str(exc)[:300],
             )
+        # UPBIT Opportunity Scanner v0 (Alert-only, enabled 플래그 기본 OFF)
+        try:
+            from stock_platform.operation.upbit_opportunity_scanner import (
+                upbit_opportunity_scanner_scheduler,
+            )
+
+            upbit_opportunity_scanner_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_opportunity_scanner_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
         upbit_daily_settlement_scheduler.start()
         # STEP 8-8A — Post-Fill 재검증 (DB Claim)
@@ -660,6 +672,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_autotrading_ai_analysis_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.operation.upbit_opportunity_scanner import (
+                upbit_opportunity_scanner_scheduler,
+            )
+
+            await upbit_opportunity_scanner_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await upbit_daily_settlement_scheduler.shutdown()

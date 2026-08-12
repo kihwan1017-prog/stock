@@ -21,6 +21,7 @@ class NotificationEventType(StrEnum):
     DAILY_LOSS = "DAILY_LOSS"
     AI_ANALYSIS_COMPLETE = "AI_ANALYSIS_COMPLETE"
     AI_GATE_RECOMMENDATION_CHANGED = "AI_GATE_RECOMMENDATION_CHANGED"
+    UPBIT_SCANNER_CANDIDATE = "UPBIT_SCANNER_CANDIDATE"
     BACKTEST_COMPLETE = "BACKTEST_COMPLETE"
     BROKER_DISCONNECTED = "BROKER_DISCONNECTED"
     BROKER_RECONNECTED = "BROKER_RECONNECTED"
@@ -68,6 +69,7 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.DAILY_LOSS: NotificationLevel.CRITICAL,
     NotificationEventType.AI_ANALYSIS_COMPLETE: NotificationLevel.INFO,
     NotificationEventType.AI_GATE_RECOMMENDATION_CHANGED: NotificationLevel.WARN,
+    NotificationEventType.UPBIT_SCANNER_CANDIDATE: NotificationLevel.WARN,
     NotificationEventType.BACKTEST_COMPLETE: NotificationLevel.INFO,
     NotificationEventType.BROKER_DISCONNECTED: NotificationLevel.CRITICAL,
     NotificationEventType.BROKER_RECONNECTED: NotificationLevel.INFO,

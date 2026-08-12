@@ -209,6 +209,20 @@ class Settings(BaseSettings):
     autotrading_ai_analysis_timeout_seconds: float = 150.0
     autotrading_ai_analysis_max_tokens: int = Field(default=1024, ge=256, le=4096)
     autotrading_ai_analysis_warmup_enabled: bool = True
+    # UPBIT Opportunity Scanner v0 — Alert-only (기본 OFF, 주문/Runtime 무관)
+    upbit_opportunity_scanner_enabled: bool = False
+    upbit_opportunity_scanner_interval_seconds: float = 900.0
+    upbit_scanner_min_24h_trade_value_krw: float = 5_000_000_000.0
+    upbit_scanner_top_n: int = Field(default=5, ge=1, le=10)
+    upbit_scanner_symbol_cooldown_seconds: float = 1800.0
+    upbit_scanner_max_spike_pct: float = 15.0
+    upbit_scanner_technical_candidate_limit: int = Field(
+        default=30, ge=5, le=100
+    )
+    upbit_scanner_min_candles: int = Field(default=30, ge=20, le=200)
+    upbit_scanner_candle_unit: int = Field(default=1, ge=1, le=15)
+    upbit_scanner_ai_enabled: bool = True
+    upbit_scanner_notify_hold: bool = False
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0
