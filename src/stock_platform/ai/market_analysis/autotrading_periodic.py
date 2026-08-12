@@ -562,6 +562,12 @@ class UpbitAutotradingAiAnalysisJob:
         latest = find_latest_validated(
             self._session, exchange_code=exchange, symbol=sym
         )
+        # 변화 감시용 — 신규 분석 생성 전 직전 recommendation
+        previous_recommendation = None
+        if latest is not None:
+            prev_safe = getattr(latest, "safe_result", None)
+            if isinstance(prev_safe, dict):
+                previous_recommendation = prev_safe.get("recommendation")
         if not force and is_analysis_fresh(
             latest, ttl_seconds=reuse_seconds, now=now_utc
         ):
@@ -575,6 +581,11 @@ class UpbitAutotradingAiAnalysisJob:
                     "analysis_at": latest.analyzed_at.isoformat()
                     if latest and latest.analyzed_at
                     else None,
+                    "recommendation": previous_recommendation,
+                    "watch": {
+                        "emitted": False,
+                        "reason": "FRESH_HOLD_OR_UNCHANGED",
+                    },
                 }
             )
             return out
@@ -769,6 +780,8 @@ class UpbitAutotradingAiAnalysisJob:
         self._session.refresh(row)
 
         exec_info = executed.get("execution") or {}
+        safe = row.safe_result if isinstance(row.safe_result, dict) else {}
+        new_rec = safe.get("recommendation")
         out.update(
             {
                 "ok": row.analysis_status
@@ -780,9 +793,11 @@ class UpbitAutotradingAiAnalysisJob:
                 "analysis_status": row.analysis_status,
                 "analysis_at": row.analyzed_at.isoformat() if row.analyzed_at else None,
                 "confidence": row.confidence,
-                "recommendation": (row.safe_result or {}).get("recommendation"),
-                "risk_level": (row.safe_result or {}).get("risk_level"),
-                "trend": row.trend_classification,
+                "recommendation": new_rec,
+                "risk_level": safe.get("risk_level"),
+                "trend": row.trend_classification or safe.get("trend"),
+                "momentum": safe.get("momentum"),
+                "volatility": safe.get("volatility"),
                 "external_ai_called": bool(executed.get("external_ai_called")),
                 "mock_called": bool(executed.get("mock_called")),
                 "provider_used": row.provider_code,
@@ -793,15 +808,123 @@ class UpbitAutotradingAiAnalysisJob:
                 "enrichment_ok": enrichment_ok,
             }
         )
+        # HOLD→ALLOW/REDUCE 감시 — LIVE 자동 시작 없음
+        out["watch"] = self._emit_recommendation_watch(
+            symbol=sym,
+            previous_recommendation=previous_recommendation,
+            current_recommendation=new_rec,
+            analysis_id=int(row.market_analysis_id),
+            analysis_at=out.get("analysis_at"),
+            trend=out.get("trend"),
+            momentum=out.get("momentum"),
+            volatility=out.get("volatility"),
+            confidence=out.get("confidence"),
+            analysis_status=row.analysis_status,
+        )
         logger.info(
             "autotrading_ai_analysis_completed",
             symbol=sym,
             analysis_id=row.market_analysis_id,
             status=row.analysis_status,
-            recommendation=(row.safe_result or {}).get("recommendation"),
+            recommendation=new_rec,
             external_ai_called=out["external_ai_called"],
+            watch_emitted=(out.get("watch") or {}).get("emitted"),
         )
         return out
+
+    def _emit_recommendation_watch(
+        self,
+        *,
+        symbol: str,
+        previous_recommendation: Any,
+        current_recommendation: Any,
+        analysis_id: int,
+        analysis_at: str | None,
+        trend: Any,
+        momentum: Any,
+        volatility: Any,
+        confidence: Any,
+        analysis_status: str,
+    ) -> dict[str, Any]:
+        """recommendation 변화 시 Audit/Telegram. 주문/LIVE 변경 없음."""
+
+        try:
+            from stock_platform.realtime.ai_gate_recommendation_watch import (
+                evaluate_ai_ready_for_live_preflight,
+                emit_recommendation_changed,
+                resolve_watch_scope,
+                should_notify_recommendation_change,
+            )
+            from stock_platform.realtime.manager import realtime_manager
+
+            if not should_notify_recommendation_change(
+                previous_recommendation, current_recommendation
+            ):
+                return {
+                    "emitted": False,
+                    "reason": "NO_CHANGE_OR_HOLD_REPEAT",
+                    "previous": previous_recommendation,
+                    "current": current_recommendation,
+                }
+
+            scope = resolve_watch_scope(self._session, symbol=symbol)
+            # Feed/Activation은 알림 시점 판정용 — LIVE ON 하지 않음
+            feed_ok = False
+            try:
+                clients = getattr(realtime_manager, "_clients", {}) or {}
+                upbit = clients.get("UPBIT")
+                if upbit is not None:
+                    st = upbit.status()
+                    feed_ok = bool(st.get("connected")) and bool(
+                        st.get("running")
+                    )
+            except Exception:  # noqa: BLE001
+                feed_ok = False
+
+            activation_ok = False
+            uba_id = scope.get("user_broker_account_id")
+            if uba_id:
+                try:
+                    from stock_platform.broker.live_transition_guard import (
+                        LiveTradingTransitionGuard,
+                    )
+
+                    LiveTradingTransitionGuard(self._session).require_active(
+                        broker_code="UPBIT",
+                        user_broker_account_id=int(uba_id),
+                    )
+                    activation_ok = True
+                except Exception:  # noqa: BLE001
+                    activation_ok = False
+
+            preflight = evaluate_ai_ready_for_live_preflight(
+                recommendation=current_recommendation,
+                fresh=True,
+                analysis_status=analysis_status,
+                market_feed_ok=feed_ok,
+                activation_ok=activation_ok,
+            )
+            return emit_recommendation_changed(
+                self._session,
+                previous=previous_recommendation,
+                current=str(current_recommendation or ""),
+                user_broker_account_id=uba_id,
+                strategy_id=scope.get("strategy_id"),
+                symbol=symbol,
+                analysis_id=analysis_id,
+                trend=str(trend) if trend is not None else None,
+                momentum=str(momentum) if momentum is not None else None,
+                volatility=str(volatility) if volatility is not None else None,
+                confidence=confidence,
+                analysis_at=analysis_at,
+                preflight_status=str(preflight.get("status")),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ai_gate_recommendation_watch_failed",
+                error=type(exc).__name__,
+            )
+            return {"emitted": False, "error": type(exc).__name__}
 
     def _apply_enrichment(
         self,

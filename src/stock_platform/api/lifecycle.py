@@ -441,6 +441,7 @@ class ApplicationLifecycle:
             )
 
         # Hub에 등록된 UPBIT subscription만 공개 시세 복구 (LIVE/Runtime RUN 없음)
+        # AI Gate watch와도 분리 — Feed만 복구
         try:
             from stock_platform.realtime.upbit_quote_feed_restore import (
                 ensure_upbit_quote_feed_from_hub,

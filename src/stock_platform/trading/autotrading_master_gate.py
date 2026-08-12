@@ -541,6 +541,29 @@ def evaluate_uba_autotrading_ready(
         checks["ai_signal_gate"] = ai_snap
         if bool(ai_snap.get("enabled")) and bool(ai_snap.get("stale", True)):
             warnings.append("AI_ANALYSIS_STALE_OR_MISSING")
+        # AI LIVE Preflight 대기 상태 (조회 전용 — LIVE/ARM 변경 없음)
+        # ALLOW/REDUCE 시에만 Feed/Activation으로 READY 판정
+        try:
+            from stock_platform.realtime.ai_gate_recommendation_watch import (
+                snapshot_ai_live_preflight_for_uba,
+            )
+
+            feed_ok = bool((checks.get("market_feed") or {}).get("ok"))
+            checks["ai_live_preflight"] = snapshot_ai_live_preflight_for_uba(
+                session,
+                user_broker_account_id=uba_id,
+                symbol=primary_symbol,
+                ai_snap=ai_snap,
+                market_feed_ok=feed_ok,
+                activation_ok=activation_ok,
+            )
+            pf = checks["ai_live_preflight"]
+            if pf.get("status") == "AI_READY_FOR_LIVE_PREFLIGHT":
+                warnings.append("AI_READY_FOR_LIVE_PREFLIGHT")
+            elif pf.get("status") == "AI_HOLD_CURRENTLY":
+                warnings.append("AI_HOLD_CURRENTLY")
+        except Exception as exc:  # noqa: BLE001
+            checks["ai_live_preflight"] = {"error": type(exc).__name__}
     except Exception as exc:  # noqa: BLE001
         checks["ai_signal_gate"] = {"error": type(exc).__name__}
         warnings.append("AI_SIGNAL_GATE_STATUS_UNAVAILABLE")
