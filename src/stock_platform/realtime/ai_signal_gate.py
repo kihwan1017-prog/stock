@@ -38,6 +38,14 @@ def clear_ai_signal_gate_cache_for_tests() -> None:
     _GATE_CACHE.clear()
 
 
+def _exit_bypass_policy_snapshot() -> dict[str, Any]:
+    from stock_platform.realtime.ai_signal_gate_exit_policy import (
+        describe_exit_ai_gate_policy,
+    )
+
+    return describe_exit_ai_gate_policy()
+
+
 def evaluate_ai_signal_gate(
     session: Session,
     signal: RealtimeSignal,
@@ -80,6 +88,57 @@ def evaluate_ai_signal_gate(
             reason_code="AI_GATE_BROKER_SKIP",
             summary="Non-UPBIT broker skipped by AI gate",
         )
+
+    # Risk-reducing SELL/EXIT — AI HOLD/STALE보다 우선 (Gate만 bypass)
+    from stock_platform.realtime.ai_signal_gate_exit_policy import (
+        should_bypass_ai_gate,
+    )
+
+    bypass, bypass_reason = should_bypass_ai_gate(signal)
+    if bypass and bypass_reason:
+        logger.info(
+            "ai_signal_gate_bypass_risk_exit",
+            bypass_reason=bypass_reason,
+            signal_action=str(
+                getattr(getattr(signal, "action", None), "value", None)
+                or getattr(signal, "action", None)
+            ),
+            signal_reason=getattr(signal, "reason_code", None),
+            strategy_id=getattr(signal, "strategy_id", None),
+            account_id=getattr(signal, "account_id", None),
+            account_kind=getattr(signal, "account_kind", None),
+            scope_key=getattr(signal, "scope_key", None),
+            symbol=getattr(signal, "symbol", None),
+            environment=str(environment).upper(),
+        )
+        result = AiSignalGateResult(
+            decision=AiSignalGateDecision.ALLOW,
+            confidence=_ONE,
+            reason_code=bypass_reason,
+            summary=(
+                "AI Gate bypass for risk-reducing exit; "
+                "Risk/OES/holdings safety still apply"
+            ),
+            size_multiplier=_ONE,
+            detail={
+                "ai_gate_bypassed": True,
+                "bypass_reason": bypass_reason,
+                "signal_action": str(
+                    getattr(getattr(signal, "action", None), "value", None)
+                    or getattr(signal, "action", None)
+                ),
+                "signal_reason_code": getattr(signal, "reason_code", None),
+                "strategy_id": getattr(signal, "strategy_id", None),
+                "account_id": getattr(signal, "account_id", None),
+                "scope_key": getattr(signal, "scope_key", None),
+            },
+        )
+        now_utc = now or datetime.now(timezone.utc)
+        if now_utc.tzinfo is None:
+            now_utc = now_utc.replace(tzinfo=timezone.utc)
+        fp = str(getattr(signal, "fingerprint", "") or "").strip()
+        _store_cache(fp, now_utc, result)
+        return result
 
     now_utc = now or datetime.now(timezone.utc)
     if now_utc.tzinfo is None:
@@ -286,9 +345,13 @@ def snapshot_ai_signal_gate_status(
             "shadow": "gate when shadow_enabled",
             "live": "gate only when live_enabled (default OFF)",
             "allow": "continue to Risk/OES",
-            "hold": "no order",
+            "hold": "no order (BUY / non-bypass SELL)",
             "reduce": "scale order_amount within policy",
-            "sell": "gate applies; quantity clipped to holdings",
+            "sell": (
+                "risk-reducing exits bypass AI Gate; "
+                "quantity clipped to holdings"
+            ),
+            "exit_bypass": _exit_bypass_policy_snapshot(),
             "llm_cannot": [
                 "create BUY/SELL alone",
                 "raise risk limits",

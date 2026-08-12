@@ -207,11 +207,16 @@ class RiskIntegratedRealtimeOrderExecutor:
                 )
         except Exception:  # noqa: BLE001
             # LIVE Fail Closed — gate 예외 시 신규 AI-gated 주문 차단
+            # risk-reducing EXIT는 Gate 예외로도 막지 않음
+            from stock_platform.realtime.ai_signal_gate_exit_policy import (
+                should_bypass_ai_gate,
+            )
             from stock_platform.realtime.ai_signal_gate_policy import (
                 is_ai_signal_gate_active,
             )
 
-            if (
+            bypass, _bypass_code = should_bypass_ai_gate(signal)
+            if not bypass and (
                 environment == "LIVE"
                 and bool(
                     getattr(

@@ -270,7 +270,7 @@ def test_duplicate_fingerprint_reuses_cache(monkeypatch):
 
 
 def test_sell_goes_through_gate_hold(monkeypatch):
-    """SELL도 Gate를 통과한다 — HOLD면 주문 없음 (보유량 초과는 executor clip)."""
+    """일반 SELL(비 exit reason)은 Gate HOLD 적용."""
 
     monkeypatch.setattr(
         "stock_platform.realtime.ai_signal_gate.get_settings",
@@ -282,11 +282,146 @@ def test_sell_goes_through_gate_hold(monkeypatch):
     )
     result = evaluate_ai_signal_gate(
         MagicMock(),
-        _signal(action=RealtimeSignalAction.SELL, fingerprint="sell-hold"),
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="STRATEGY_SELL",
+            fingerprint="sell-hold",
+        ),
         environment="PAPER",
     )
     assert result.decision == AiSignalGateDecision.HOLD
     assert result.reason_code == "AI_GATE_HOLD"
+
+
+def test_stop_loss_bypasses_ai_hold(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="STOP_LOSS",
+            fingerprint="sl-bypass",
+            strategy_id=17483,
+            account_id=1380,
+        ),
+        environment="PAPER",
+    )
+    assert result.decision == AiSignalGateDecision.ALLOW
+    assert result.reason_code == "AI_GATE_BYPASS_STOP_LOSS"
+    assert result.detail.get("ai_gate_bypassed") is True
+
+
+def test_take_profit_bypasses_ai_hold(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="TAKE_PROFIT",
+            fingerprint="tp-bypass",
+        ),
+        environment="PAPER",
+    )
+    assert result.decision == AiSignalGateDecision.ALLOW
+    assert result.reason_code == "AI_GATE_BYPASS_TAKE_PROFIT"
+
+
+def test_ma_dead_cross_bypasses_ai_hold(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="MA_DEAD_CROSS",
+            fingerprint="dead-bypass",
+        ),
+        environment="PAPER",
+    )
+    assert result.decision == AiSignalGateDecision.ALLOW
+    assert (
+        result.reason_code
+        == "AI_GATE_BYPASS_STRATEGY_POSITION_REDUCING_SELL"
+    )
+
+
+def test_kill_switch_reason_bypasses_ai_hold(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(recommendation="HOLD"),
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="KILL_SWITCH",
+            fingerprint="kill-bypass",
+        ),
+        environment="PAPER",
+    )
+    assert result.decision == AiSignalGateDecision.ALLOW
+    assert result.reason_code == "AI_GATE_BYPASS_RISK_EXIT"
+
+
+def test_stop_loss_bypasses_even_when_analysis_stale(monkeypatch):
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate.get_settings",
+        lambda: _settings(
+            autotrading_ai_analysis_ttl_seconds=60.0,
+            autotrading_ai_signal_gate_live_enabled=True,
+        ),
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.ai_signal_gate._load_latest_analysis",
+        lambda *a, **k: _fresh_analysis(
+            recommendation="HOLD",
+            analysis_at=datetime.now(timezone.utc) - timedelta(hours=2),
+        ),
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_shadow.is_live_shadow_mode",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "stock_platform.order.live_dry_run.is_live_dry_run_mode",
+        lambda: False,
+    )
+    result = evaluate_ai_signal_gate(
+        MagicMock(),
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="STOP_LOSS",
+            fingerprint="sl-stale-bypass",
+        ),
+        environment="LIVE",
+    )
+    assert result.decision == AiSignalGateDecision.ALLOW
+    assert result.reason_code == "AI_GATE_BYPASS_STOP_LOSS"
+
 
 
 def test_live_gate_stays_off_by_default(monkeypatch):
@@ -515,6 +650,7 @@ def test_e2e_sell_hold_zero_orders(monkeypatch):
     result = executor.execute(
         _signal(
             action=RealtimeSignalAction.SELL,
+            reason_code="STRATEGY_SELL",
             account_kind="PAPER",
             account_id=1,
             scope_key="paper:1",
@@ -523,6 +659,107 @@ def test_e2e_sell_hold_zero_orders(monkeypatch):
     )
     assert called["n"] == 0
     assert result.reason_code == "AI_GATE_HOLD"
+
+
+def test_e2e_hold_stop_loss_reaches_order(monkeypatch):
+    executor, _ = _executor_with_gate(monkeypatch, gate_decision="HOLD")
+    submits: list = []
+
+    class _FakeOES:
+        def __init__(self, session):
+            pass
+
+        def submit(self, command):
+            submits.append(command)
+            return SimpleNamespace(
+                allowed=True,
+                order_id=2001,
+                status_code="ACCEPTED",
+                quantity=command.quantity,
+                price=command.price,
+                reason_code=None,
+            )
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.risk_integrated_order_executor.OrderExecutionService",
+        _FakeOES,
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.autotrading_idempotency.build_autotrading_idempotency_key",
+        lambda *a, **k: "idem-sl",
+    )
+    # holdings clip: held 5, order_amount 10000 @500 → qty 20 → clip to 5
+    executor._session.scalar.return_value = Decimal("5")
+    result = executor.execute(
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="STOP_LOSS",
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
+            fingerprint="e2e-sl-hold",
+            signal_price=Decimal("500"),
+            strategy_id=17483,
+        )
+    )
+    assert len(submits) == 1
+    assert submits[0].quantity == Decimal("5")
+    assert result.order_id == 2001
+
+
+def test_e2e_hold_take_profit_reaches_order(monkeypatch):
+    executor, _ = _executor_with_gate(monkeypatch, gate_decision="HOLD")
+    submits: list = []
+
+    class _FakeOES:
+        def __init__(self, session):
+            pass
+
+        def submit(self, command):
+            submits.append(command)
+            return SimpleNamespace(
+                allowed=True,
+                order_id=2002,
+                status_code="ACCEPTED",
+                quantity=command.quantity,
+                price=command.price,
+                reason_code=None,
+            )
+
+    monkeypatch.setattr(
+        "stock_platform.realtime.risk_integrated_order_executor.OrderExecutionService",
+        _FakeOES,
+    )
+    monkeypatch.setattr(
+        "stock_platform.realtime.autotrading_idempotency.build_autotrading_idempotency_key",
+        lambda *a, **k: "idem-tp",
+    )
+    executor._session.scalar.return_value = Decimal("100")
+    result = executor.execute(
+        _signal(
+            action=RealtimeSignalAction.SELL,
+            reason_code="TAKE_PROFIT",
+            account_kind="PAPER",
+            account_id=1,
+            scope_key="paper:1",
+            fingerprint="e2e-tp-hold",
+            signal_price=Decimal("500"),
+        )
+    )
+    assert len(submits) == 1
+    assert result.order_id == 2002
+
+
+def test_exit_policy_unit():
+    from stock_platform.realtime.ai_signal_gate_exit_policy import (
+        should_bypass_ai_gate,
+    )
+
+    buy = _signal(action=RealtimeSignalAction.BUY, reason_code="STOP_LOSS")
+    assert should_bypass_ai_gate(buy) == (False, None)
+    sl = _signal(action=RealtimeSignalAction.SELL, reason_code="STOP_LOSS")
+    assert should_bypass_ai_gate(sl)[1] == "AI_GATE_BYPASS_STOP_LOSS"
+
 
 
 def test_e2e_kill_switch_still_blocks(monkeypatch):
