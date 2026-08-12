@@ -103,6 +103,25 @@ def enrich_safe_result_for_gate(
     """safe_result에 Gate 필드를 추가한다 (원본 chart result 유지)."""
 
     payload = dict(safe_result or {})
+    warns = list(payload.get("warnings") or [])
+    # 과거 normalized fallback은 시장 HOLD와 구분
+    if "normalized_for_validation" in warns:
+        payload["recommendation"] = "HOLD"
+        payload["risk_level"] = "HIGH"
+        payload["news_sentiment"] = str(news_sentiment or "NO_DATA").upper()
+        payload["reasons"] = [
+            "parse_normalized_fallback",
+            "not_a_market_hold",
+        ]
+        payload["summary"] = "AI 응답 정규화/파싱 경고 — 시장 판단 아님"
+        payload["gate_enrichment"] = {
+            "reason_code": "PARSE_NORMALIZED_FALLBACK",
+            "validated_mapping": False,
+            "source": "chart_field_mapping_v1",
+            "usable_for_live_gate": False,
+        }
+        return payload
+
     result_body = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     conf = payload.get("confidence")
     if conf is None and isinstance(result_body, dict):
@@ -141,6 +160,7 @@ def enrich_safe_result_for_gate(
         "reason_code": mapped["reason_code"],
         "validated_mapping": bool(mapped["validated_mapping"]),
         "source": "chart_field_mapping_v1",
+        "usable_for_live_gate": bool(mapped["validated_mapping"]),
     }
     return payload
 

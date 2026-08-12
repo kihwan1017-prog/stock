@@ -249,6 +249,7 @@ CHART_ANALYSIS_RESULT_V1 = envelope(
             "items": {"type": "string", "maxLength": 40},
         },
     },
+    result_required=["trend", "momentum", "volatility", "summary"],
 )
 
 MARKET_ANALYSIS_RESULT_V1 = envelope(
@@ -953,16 +954,26 @@ SEED_PROMPTS: list[dict[str, Any]] = [
         "schema_code": "CHART_ANALYSIS_RESULT_V1",
         "policy_code": "CORE_FINANCIAL_GUARDRAIL",
         "system": (
-            "Provide chart analysis as JSON reference only. "
-            "Do not invent prices or indicators not present in the snapshot. "
-            "No buy/sell/orders, LIVE/ARM, stop-loss, or guaranteed returns."
+            # CHART_JSON_ENVELOPE_V3 — ensure_chart_prompt_active 마커
+            "CHART_JSON_ENVELOPE_V3. Provide chart analysis as one JSON object "
+            "only (no markdown fences, no prose outside JSON). "
+            "Envelope must include schema_version=\"1.0\", "
+            "task_type=CHART_ANALYSIS, "
+            "confidence (0..1), reasoning_summary, and result. "
+            "result must include trend, momentum, volatility, summary. "
+            "Use snapshot indicators (ma5/ma20/rsi/macd/atr/returns) when present; "
+            "do not invent prices or indicators absent from the snapshot. "
+            "No buy/sell/orders, LIVE/ARM, stop-loss, or guaranteed returns. "
+            "Gate maps trend+momentum+volatility to ALLOW/HOLD/REDUCE — "
+            "do not emit order actions."
         ),
         "user": (
             "Analyze chart for {{symbol}} exchange={{exchange_code}} "
             "timeframe={{timeframe}}.\n"
             "indicators={{indicators}}\n"
             "current_price={{current_price}}\n"
-            "snapshot={{snapshot_json}}"
+            "snapshot={{snapshot_json}}\n"
+            "Return exactly one JSON object with task_type=CHART_ANALYSIS."
         ),
         "context": "market_type={{market_type}} data_quality={{data_quality}}",
         "variable_schema": {

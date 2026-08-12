@@ -25,6 +25,9 @@ from stock_platform.ai.market_analysis.constants import (
     STALE_DAYS_KRX,
     STALE_DAYS_UPBIT,
 )
+from stock_platform.ai.market_analysis.minute_indicators import (
+    compute_minute_chart_indicators,
+)
 from stock_platform.markets.models import (
     CandleMinute,
     IndicatorDaily,
@@ -361,11 +364,11 @@ class MarketSnapshotBuilder:
             rows = rows[-max_candles:]
             warnings.append(f"downsampled_drop_oldest:{dropped}")
             downsampled = True
-        if len(rows) < 30:
+        if len(rows) < 20:
             return {
                 "ok": False,
                 "code": "DATA_INSUFFICIENT",
-                "message": "need >= 30 minute candles",
+                "message": "need >= 20 minute candles",
                 "candle_count": len(rows),
             }
 
@@ -400,6 +403,34 @@ class MarketSnapshotBuilder:
                 return {"ok": False, "code": "INVALID_CANDLE", "message": str(exc)}
             candles.append(candle)
 
+        if len(candles) < 20:
+            return {
+                "ok": False,
+                "code": "DATA_INSUFFICIENT",
+                "message": "need >= 20 complete minute candles",
+                "candle_count": len(candles),
+            }
+
+        # 분봉 freshness — ticker HEALTHY와 별도로 stale면 분석 거부
+        try:
+            last_raw = str(candles[-1]["close_time"])
+            last_at = datetime.fromisoformat(last_raw.replace("Z", "+00:00"))
+            if last_at.tzinfo is None:
+                last_at = last_at.replace(tzinfo=timezone.utc)
+            candle_age = (
+                _now() - last_at.astimezone(timezone.utc)
+            ).total_seconds()
+            if candle_age > 600.0:
+                return {
+                    "ok": False,
+                    "code": "STALE_CANDLE",
+                    "message": "latest minute candle older than 600s",
+                    "age_seconds": candle_age,
+                    "candle_count": len(candles),
+                }
+        except (TypeError, ValueError):
+            warnings.append("candle_timestamp_parse_failed")
+
         body = {
             "analysis_type": "SYMBOL_CHART",
             "market_type": "CRYPTO",
@@ -412,7 +443,7 @@ class MarketSnapshotBuilder:
             "candle_to": candles[-1]["close_time"] if candles else None,
             "candle_count": len(candles),
             "candles": candles,
-            "indicators": {},
+            "indicators": compute_minute_chart_indicators(candles),
             "latest_price": candles[-1]["close"] if candles else None,
             "completed_candle_only": not include_incomplete,
             "include_incomplete_candle": include_incomplete,

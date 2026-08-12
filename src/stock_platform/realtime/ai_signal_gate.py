@@ -11,7 +11,6 @@ from decimal import Decimal
 from typing import Any
 
 import structlog
-from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from stock_platform.common.settings import get_settings
@@ -329,28 +328,13 @@ def _load_latest_analysis(
     exchange_code: str,
     symbol: str,
 ) -> dict[str, Any] | None:
-    from stock_platform.ai.market_analysis.entities import (
-        AIMarketAnalysisEntity,
+    from stock_platform.ai.market_analysis.autotrading_periodic import (
+        find_latest_validated,
     )
 
-    row = session.scalars(
-        select(AIMarketAnalysisEntity)
-        .where(
-            AIMarketAnalysisEntity.exchange_code == exchange_code,
-            AIMarketAnalysisEntity.symbol == symbol,
-            AIMarketAnalysisEntity.analysis_status.in_(
-                (
-                    "VALIDATED_ANALYSIS",
-                    "VALIDATED_WITH_WARNINGS",
-                )
-            ),
-        )
-        .order_by(
-            desc(AIMarketAnalysisEntity.analyzed_at),
-            desc(AIMarketAnalysisEntity.market_analysis_id),
-        )
-        .limit(1)
-    ).first()
+    row = find_latest_validated(
+        session, exchange_code=exchange_code, symbol=symbol
+    )
     if row is None:
         return None
 
@@ -372,10 +356,14 @@ def _load_latest_analysis(
         or getattr(row, "updated_at", None)
         or getattr(row, "created_at", None)
     )
+    result_body = (
+        payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    )
     return {
         "market_analysis_id": int(row.market_analysis_id),
         "symbol": row.symbol,
         "analysis_at": analysis_at,
+        "analysis_status": row.analysis_status,
         "recommendation": (
             str(recommendation).upper() if recommendation else None
         ),
@@ -394,18 +382,22 @@ def _load_latest_analysis(
         or payload.get("sentiment"),
         "trend": (
             payload.get("trend")
+            or result_body.get("trend")
             or payload.get("market_trend")
             or getattr(row, "trend_classification", None)
         ),
-        "momentum": payload.get("momentum"),
+        "momentum": result_body.get("momentum") or payload.get("momentum"),
         "volatility": (
-            payload.get("volatility")
+            result_body.get("volatility")
+            or payload.get("volatility")
             or getattr(row, "volatility_level", None)
         ),
+        "warnings": list(row.warnings or [])
+        + list(payload.get("warnings") or []),
+        "parse_normalized_fallback": False,
         "provider": getattr(row, "provider_code", None)
         or payload.get("provider"),
         "model": getattr(row, "model", None) or payload.get("model"),
-        "analysis_status": row.analysis_status,
         "timeframe": row.timeframe,
     }
 

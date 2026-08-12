@@ -205,6 +205,7 @@ class Settings(BaseSettings):
     autotrading_ai_analysis_model: str = "qwen3.5:4b"
     # Ollama 분석 timeout — cold start 여유만 소폭 (무분별 확대 금지)
     autotrading_ai_analysis_timeout_seconds: float = 150.0
+    autotrading_ai_analysis_max_tokens: int = Field(default=1024, ge=256, le=4096)
     autotrading_ai_analysis_warmup_enabled: bool = True
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False

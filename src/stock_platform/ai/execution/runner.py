@@ -267,6 +267,8 @@ class AIExecutionRunner:
                     max_tokens=row.max_tokens,
                     temperature=row.temperature,
                     timeout_sec=row.timeout_sec,
+                    task_type=row.task_type,
+                    output_schema_id=row.output_schema_id,
                 )
 
                 # 결과 기록
@@ -629,6 +631,8 @@ class AIExecutionRunner:
         max_tokens: int,
         temperature: float,
         timeout_sec: float,
+        task_type: str | None = None,
+        output_schema_id: int | None = None,
     ) -> dict[str, Any]:
         manager = get_ai_manager()
         provider = manager.get_provider(provider_code)
@@ -640,6 +644,43 @@ class AIExecutionRunner:
                 "retryable": False,
             }
 
+        # 구조화 JSON용 schema — Ollama format grammar에 전달
+        json_schema = None
+        if output_schema_id is not None:
+            schema_row = self._session.get(
+                AIOutputSchemaEntity, int(output_schema_id)
+            )
+            if schema_row is not None and isinstance(
+                schema_row.json_schema, dict
+            ):
+                json_schema = schema_row.json_schema
+
+        # qwen3.5 등 thinking 모델: 구조화 태스크에서 think OFF
+        # (thinking이 num_predict를 소진해 content 빈 문자열 되는 사례 방지)
+        structured_tasks = {
+            "CHART_ANALYSIS",
+            "MARKET_ANALYSIS",
+            "NEWS_ANALYSIS",
+            "DISCLOSURE_ANALYSIS",
+            "STRATEGY_DRAFT",
+        }
+        metadata: dict[str, Any] = {}
+        if str(task_type or "") in structured_tasks:
+            metadata["think"] = False
+        # Ollama CHART: 전체 RESULT_V1 schema는 format BAD_REQUEST → 축소 schema
+        format_schema = json_schema
+        if (
+            str(provider_code).lower() == "ollama"
+            and str(task_type or "") == "CHART_ANALYSIS"
+        ):
+            from stock_platform.ai.market_analysis.ollama_chart_format import (
+                OLLAMA_CHART_FORMAT_SCHEMA,
+            )
+
+            format_schema = OLLAMA_CHART_FORMAT_SCHEMA
+        if format_schema is not None:
+            metadata["json_schema"] = format_schema
+
         # attempt당 1회 — Manager 내부 retry 우회
         req = AIChatRequest(
             messages=[
@@ -649,6 +690,7 @@ class AIExecutionRunner:
             max_tokens=max_tokens,
             temperature=temperature,
             json_mode=True,
+            metadata=metadata,
         )
         started = time.perf_counter()
         try:
@@ -679,9 +721,19 @@ class AIExecutionRunner:
                 manager.external_call_counter += (
                     0 if provider_code == "mock" else 1
                 )
+                content = response.content or ""
+                # 디버그용 메타만 — raw 본문은 영구 저장하지 않음
+                content_meta = {
+                    "content_len": len(content),
+                    "content_starts_json": content.lstrip().startswith("{"),
+                    "has_task_type": '"task_type"' in content,
+                    "output_tokens": response.usage.completion_tokens,
+                    "max_tokens": max_tokens,
+                    "think_disabled": metadata.get("think") is False,
+                }
                 return {
                     "ok": True,
-                    "content": response.content,
+                    "content": content,
                     "model": response.model,
                     "latency_ms": round(latency, 3),
                     "input_tokens": response.usage.prompt_tokens,
@@ -693,6 +745,7 @@ class AIExecutionRunner:
                         else None
                     ),
                     "circuit_state": circuit.state.value,
+                    "content_meta": content_meta,
                 }
             circuit.record_failure()
             code = response.error.code if response.error else "ERROR"
@@ -753,10 +806,88 @@ class AIExecutionRunner:
                 enforcement = pol.enforcement_mode
 
         # Mock/비구조화 응답 → Safe Envelope로 정규화
+        # CHART/MARKET 등 구조화 태스크는 Fail Closed:
+        # 기본값 UNCERTAIN/UNKNOWN wrap을 "정상 분석"으로 저장하지 않는다.
         text = (content or "").strip()
+        structured_fail_closed = {
+            "CHART_ANALYSIS",
+            "MARKET_ANALYSIS",
+        }
         needs_wrap = True
         if text.startswith("{") and '"task_type"' in text:
             needs_wrap = False
+        # fence JSON 등 — parser로 복구 가능하면 wrap 생략
+        if needs_wrap and text:
+            try:
+                from stock_platform.ai.prompt.response_parser import (
+                    parse_ai_response,
+                )
+
+                parsed_try = parse_ai_response(text)
+                if (
+                    isinstance(parsed_try, dict)
+                    and parsed_try.get("task_type")
+                ):
+                    text = json.dumps(parsed_try, ensure_ascii=False)
+                    needs_wrap = False
+            except Exception:  # noqa: BLE001
+                pass
+
+        # schema_version 별칭 정규화 (v1 → 1.0) — 내용 변조 아님
+        if not needs_wrap and text and expected_task in structured_fail_closed:
+            try:
+                from stock_platform.ai.prompt.response_parser import (
+                    parse_ai_response,
+                )
+                from stock_platform.ai.market_analysis.chart_enum_normalize import (
+                    normalize_chart_result_enums,
+                )
+
+                parsed_env = parse_ai_response(text)
+                if isinstance(parsed_env, dict):
+                    ver = str(parsed_env.get("schema_version") or "").strip()
+                    aliases = {"v1", "V1", "1", "1.0.0"}
+                    if ver in aliases and schema_version:
+                        parsed_env["schema_version"] = str(schema_version)
+                    elif ver in aliases and not schema_version:
+                        parsed_env["schema_version"] = "1.0"
+                    if expected_task == "CHART_ANALYSIS":
+                        parsed_env = normalize_chart_result_enums(parsed_env)
+                    text = json.dumps(parsed_env, ensure_ascii=False)
+            except Exception:  # noqa: BLE001
+                pass
+
+        if needs_wrap and expected_task in structured_fail_closed:
+            truncated = bool(
+                text
+                and text.lstrip().startswith("{")
+                and not text.rstrip().endswith("}")
+            )
+            empty = not bool(text)
+            code = (
+                "AI_RESPONSE_EMPTY"
+                if empty
+                else (
+                    "AI_RESPONSE_TRUNCATED"
+                    if truncated
+                    else "AI_RESPONSE_MISSING_TASK_TYPE"
+                )
+            )
+            return {
+                "status": "INVALID",
+                "code": code,
+                "message": (
+                    "structured chart/market response missing valid "
+                    f"envelope (task_type={expected_task})"
+                ),
+                "warnings": [
+                    "parse_failed_fail_closed",
+                    code.lower(),
+                ],
+                "data": None,
+                "hits": [],
+            }
+
         if needs_wrap:
             if expected_task == "SUMMARIZE":
                 result_body: dict[str, Any] = {
@@ -786,24 +917,8 @@ class AIExecutionRunner:
                     "risks": [],
                     "related_symbols": [],
                 }
-            elif expected_task == "CHART_ANALYSIS":
-                result_body = {
-                    "trend": "UNCERTAIN",
-                    "trend_strength": "UNKNOWN",
-                    "momentum": "UNKNOWN",
-                    "volatility": "UNKNOWN",
-                    "volume_condition": "UNKNOWN",
-                    "summary": text[:4000],
-                    "support_levels": [],
-                    "resistance_levels": [],
-                    "notable_patterns": [],
-                    "indicator_interpretations": [],
-                    "bullish_factors": [],
-                    "bearish_factors": [],
-                    "uncertainty_factors": [],
-                    "indicators_used": [],
-                }
             elif expected_task == "MARKET_ANALYSIS":
+                # unreachable — fail-closed above; keep for safety
                 result_body = {
                     "market_regime": "UNKNOWN",
                     "breadth": "UNKNOWN",

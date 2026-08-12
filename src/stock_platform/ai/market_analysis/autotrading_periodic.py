@@ -151,21 +151,35 @@ def find_latest_validated(
     exchange_code: str,
     symbol: str,
 ) -> AIMarketAnalysisEntity | None:
-    return session.scalars(
-        select(AIMarketAnalysisEntity)
-        .where(
-            AIMarketAnalysisEntity.exchange_code == exchange_code.upper(),
-            AIMarketAnalysisEntity.symbol == symbol.upper(),
-            AIMarketAnalysisEntity.analysis_status.in_(
-                ("VALIDATED_ANALYSIS", "VALIDATED_WITH_WARNINGS")
-            ),
+    """최신 validated 분석 — normalized fallback은 정상 분석으로 취급하지 않음."""
+
+    rows = list(
+        session.scalars(
+            select(AIMarketAnalysisEntity)
+            .where(
+                AIMarketAnalysisEntity.exchange_code == exchange_code.upper(),
+                AIMarketAnalysisEntity.symbol == symbol.upper(),
+                AIMarketAnalysisEntity.analysis_status.in_(
+                    ("VALIDATED_ANALYSIS", "VALIDATED_WITH_WARNINGS")
+                ),
+            )
+            .order_by(
+                desc(AIMarketAnalysisEntity.analyzed_at),
+                desc(AIMarketAnalysisEntity.market_analysis_id),
+            )
+            .limit(20)
         )
-        .order_by(
-            desc(AIMarketAnalysisEntity.analyzed_at),
-            desc(AIMarketAnalysisEntity.market_analysis_id),
-        )
-        .limit(1)
-    ).first()
+    )
+    for row in rows:
+        warns = list(row.warnings or [])
+        if "normalized_for_validation" in warns:
+            continue
+        safe = row.safe_result if isinstance(row.safe_result, dict) else {}
+        safe_warns = list(safe.get("warnings") or [])
+        if "normalized_for_validation" in safe_warns:
+            continue
+        return row
+    return None
 
 
 def is_analysis_fresh(
@@ -269,16 +283,22 @@ async def ensure_chart_prompt_active(session: Session) -> dict[str, Any]:
         )
 
     schema_ok = False
+    prompt_text_ok = False
     if active_ver is not None and active_ver.status == "ACTIVE":
         props = (active_ver.variable_schema or {}).get("properties") or {}
         schema_ok = required_vars.issubset(set(props.keys()))
+        # seed 시스템 프롬프트 마커 — V2 envelope 지시가 없으면 재시드
+        prompt_text_ok = "CHART_JSON_ENVELOPE_V3" in str(
+            active_ver.system_template or ""
+        )
 
-    if tmpl.status == "ACTIVE" and schema_ok:
+    if tmpl.status == "ACTIVE" and schema_ok and prompt_text_ok:
         return {
             "ok": True,
             "already_active": True,
             "version_id": int(tmpl.active_version_id),
             "schema_ok": True,
+            "prompt_text_ok": True,
         }
 
     # schema 불완전하면 seed 기준으로 새 version 생성 후 activate
@@ -630,8 +650,15 @@ class UpbitAutotradingAiAnalysisJob:
                 execution_mode="EXTERNAL",
                 provider_code=provider,
                 model=model,
-                # qwen3.5:4b 차트 JSON은 256~512면 충분 — 과도한 max_tokens는 latency↑
-                max_tokens=512,
+                # qwen3.5:4b 차트 JSON — think OFF + 1024 tokens (512는 thinking/본문 절단)
+                max_tokens=int(
+                    getattr(
+                        settings,
+                        "autotrading_ai_analysis_max_tokens",
+                        1024,
+                    )
+                    or 1024
+                ),
                 timeout_sec=float(
                     getattr(
                         settings,
@@ -705,6 +732,27 @@ class UpbitAutotradingAiAnalysisJob:
         if row is None:
             out["ok"] = False
             out["error"] = "ROW_MISSING_AFTER_EXECUTE"
+            return out
+
+        # FAILED/INVALID는 시장 HOLD로 enrichment하지 않음 (파싱 실패 구분)
+        if row.analysis_status not in {
+            "VALIDATED_ANALYSIS",
+            "VALIDATED_WITH_WARNINGS",
+        }:
+            out.update(
+                {
+                    "ok": False,
+                    "executed": True,
+                    "validated": False,
+                    "market_analysis_id": int(row.market_analysis_id),
+                    "analysis_status": row.analysis_status,
+                    "external_ai_called": bool(
+                        executed.get("external_ai_called")
+                    ),
+                    "mock_called": bool(executed.get("mock_called")),
+                    "error": f"ANALYSIS_NOT_VALIDATED:{row.analysis_status}",
+                }
+            )
             return out
 
         enrichment_ok = self._apply_enrichment(

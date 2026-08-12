@@ -51,6 +51,12 @@ export interface UbaAutoTradingViewModel {
     provider: string;
     model: string;
     reasons: string[];
+    analysisStatus: string;
+    trend: string;
+    momentum: string;
+    volatility: string;
+    parseWarning: string;
+    parseNormalizedFallback: boolean | null;
   };
   aiScheduler: {
     enabled: boolean | null;
@@ -378,6 +384,19 @@ export function buildUbaAutoTradingViewModel(
       provider: str(latestAnalysis.provider ?? latestFromGate.provider),
       model: str(latestAnalysis.model ?? latestFromGate.model),
       reasons,
+      analysisStatus: str(
+        latestAnalysis.analysis_status ?? latestFromGate.analysis_status,
+      ),
+      trend: str(latestAnalysis.trend ?? latestFromGate.trend),
+      momentum: str(latestAnalysis.momentum ?? latestFromGate.momentum),
+      volatility: str(
+        latestAnalysis.volatility ?? latestFromGate.volatility,
+      ),
+      parseWarning: str(latestAnalysis.parse_warning),
+      parseNormalizedFallback:
+        typeof latestAnalysis.parse_normalized_fallback === "boolean"
+          ? latestAnalysis.parse_normalized_fallback
+          : null,
     },
     aiScheduler: {
       enabled: boolOrNull(job.enabled),

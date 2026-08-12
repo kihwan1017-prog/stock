@@ -217,14 +217,19 @@ export function UbaAutoTradingStatusPanel({
                 ? "FRESH"
                 : "STALE"}
           </Tag>
+          {vm.aiAnalysis.parseNormalizedFallback ? (
+            <Tag color="red">AI 응답 정규화/파싱 경고</Tag>
+          ) : null}
           <Typography.Text type="secondary">
-            {vm.aiAnalysis.recommendation === "ALLOW"
-              ? "주문 허용"
-              : vm.aiAnalysis.recommendation === "HOLD"
-                ? "주문 보류"
-                : vm.aiAnalysis.recommendation === "REDUCE"
-                  ? "주문금액 축소"
-                  : ""}
+            {vm.aiAnalysis.parseNormalizedFallback
+              ? "파싱 실패 fallback — 시장 HOLD 아님"
+              : vm.aiAnalysis.recommendation === "ALLOW"
+                ? "주문 허용"
+                : vm.aiAnalysis.recommendation === "HOLD"
+                  ? "주문 보류"
+                  : vm.aiAnalysis.recommendation === "REDUCE"
+                    ? "주문금액 축소"
+                    : ""}
           </Typography.Text>
         </Space>
         <Descriptions column={1} size="small" bordered>
@@ -234,6 +239,13 @@ export function UbaAutoTradingStatusPanel({
           <Descriptions.Item label="analysis_at">
             {vm.aiAnalysis.analysisAt}
           </Descriptions.Item>
+          <Descriptions.Item label="analysis_status">
+            {vm.aiAnalysis.analysisStatus}
+          </Descriptions.Item>
+          <Descriptions.Item label="trend / momentum / volatility">
+            {vm.aiAnalysis.trend} / {vm.aiAnalysis.momentum} /{" "}
+            {vm.aiAnalysis.volatility}
+          </Descriptions.Item>
           <Descriptions.Item label="confidence">
             {vm.aiAnalysis.confidence}
           </Descriptions.Item>
@@ -242,6 +254,9 @@ export function UbaAutoTradingStatusPanel({
           </Descriptions.Item>
           <Descriptions.Item label="provider/model">
             {vm.aiAnalysis.provider} / {vm.aiAnalysis.model}
+          </Descriptions.Item>
+          <Descriptions.Item label="parse warning">
+            {vm.aiAnalysis.parseWarning || "-"}
           </Descriptions.Item>
           <Descriptions.Item label="reasons">
             {vm.aiAnalysis.reasons.join("; ") || "-"}
