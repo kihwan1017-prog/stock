@@ -10,6 +10,7 @@ import pytest
 
 from stock_platform.ai.market_analysis.autotrading_periodic import (
     is_analysis_fresh,
+    resolve_analysis_reuse_seconds,
     time_bucket,
 )
 from stock_platform.ai.market_analysis.gate_enrichment import (
@@ -117,6 +118,34 @@ def test_is_analysis_fresh():
     assert is_analysis_fresh(None, ttl_seconds=900, now=now) is False
 
 
+def test_resolve_reuse_defaults_to_interval_not_ttl():
+    settings = SimpleNamespace(
+        autotrading_ai_analysis_interval_seconds=300.0,
+        autotrading_ai_analysis_ttl_seconds=900.0,
+        autotrading_ai_analysis_reuse_seconds=None,
+    )
+    assert resolve_analysis_reuse_seconds(settings) == 300.0
+
+
+def test_resolve_reuse_explicit_and_clamped_to_ttl():
+    settings = SimpleNamespace(
+        autotrading_ai_analysis_interval_seconds=300.0,
+        autotrading_ai_analysis_ttl_seconds=900.0,
+        autotrading_ai_analysis_reuse_seconds=1200.0,
+    )
+    assert resolve_analysis_reuse_seconds(settings) == 900.0
+    settings.autotrading_ai_analysis_reuse_seconds = 180.0
+    assert resolve_analysis_reuse_seconds(settings) == 180.0
+
+
+def test_is_analysis_fresh_timezone_naive_analyzed_at():
+    now = datetime(2026, 8, 12, 12, 0, 0, tzinfo=timezone.utc)
+    naive = SimpleNamespace(
+        analyzed_at=datetime(2026, 8, 12, 11, 55, 0)  # naive UTC 가정
+    )
+    assert is_analysis_fresh(naive, ttl_seconds=900, now=now) is True
+
+
 @pytest.mark.asyncio
 async def test_run_once_skips_fresh(monkeypatch):
     from stock_platform.ai.market_analysis.autotrading_periodic import (
@@ -130,6 +159,7 @@ async def test_run_once_skips_fresh(monkeypatch):
             autotrading_ai_analysis_timeframe="1m",
             autotrading_ai_analysis_interval_seconds=300.0,
             autotrading_ai_analysis_ttl_seconds=900.0,
+            autotrading_ai_analysis_reuse_seconds=None,
             autotrading_ai_min_confidence=0.4,
             autotrading_ai_analysis_provider="ollama",
             autotrading_ai_analysis_model="qwen3.5:4b",
@@ -149,7 +179,74 @@ async def test_run_once_skips_fresh(monkeypatch):
     out = await job.run_once()
     assert out["skipped"] is True
     assert out["skip_reason"] == "FRESH_RESULT_EXISTS"
+    assert out["reuse_seconds"] == 300.0
     assert out["orders_created"] == 0
+
+
+@pytest.mark.asyncio
+async def test_run_once_refreshes_when_older_than_reuse_but_within_ttl(
+    monkeypatch,
+):
+    """age=600 (reuse=300, ttl=900) → skip하지 않고 재분석 경로 진입."""
+
+    from stock_platform.ai.market_analysis.autotrading_periodic import (
+        UpbitAutotradingAiAnalysisJob,
+    )
+
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.get_settings",
+        lambda: SimpleNamespace(
+            autotrading_ai_analysis_symbol="KRW-XRP",
+            autotrading_ai_analysis_timeframe="1m",
+            autotrading_ai_analysis_interval_seconds=300.0,
+            autotrading_ai_analysis_ttl_seconds=900.0,
+            autotrading_ai_analysis_reuse_seconds=None,
+            autotrading_ai_min_confidence=0.4,
+            autotrading_ai_analysis_provider="ollama",
+            autotrading_ai_analysis_model="qwen3.5:4b",
+            ollama_model="qwen3.5:4b",
+            ollama_timeout_seconds=120.0,
+            autotrading_ai_analysis_timeout_seconds=120.0,
+            autotrading_ai_analysis_warmup_enabled=False,
+        ),
+    )
+    now = datetime.now(timezone.utc)
+    mid_age = SimpleNamespace(
+        market_analysis_id=157,
+        analyzed_at=now - timedelta(seconds=600),
+        analysis_status="VALIDATED_WITH_WARNINGS",
+    )
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.find_latest_validated",
+        lambda *a, **k: mid_age,
+    )
+    # TTL 기준으론 아직 fresh
+    assert is_analysis_fresh(mid_age, ttl_seconds=900, now=now) is True
+    assert is_analysis_fresh(mid_age, ttl_seconds=300, now=now) is False
+
+    session = MagicMock()
+    session.scalar.return_value = None  # no duplicate bucket
+    job = UpbitAutotradingAiAnalysisJob(session)
+
+    async def _ensure_prompt(*a, **k):
+        return {"ok": True, "already_active": True, "version_id": 1, "schema_ok": True}
+
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.ensure_chart_prompt_active",
+        _ensure_prompt,
+    )
+    async def _candles_fail(*a, **k):
+        return {"ok": False, "count": 0, "min_required": 30}
+
+    monkeypatch.setattr(
+        "stock_platform.ai.market_analysis.autotrading_periodic.ensure_minute_candles",
+        _candles_fail,
+    )
+    out = await job.run_once(now=now)
+    # candle 부족으로 실패해도 skip이 아니어야 함 (재분석 시도)
+    assert out.get("skipped") is not True
+    assert out.get("skip_reason") != "FRESH_RESULT_EXISTS"
+    assert out["reuse_seconds"] == 300.0
 
 
 @pytest.mark.asyncio

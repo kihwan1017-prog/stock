@@ -190,6 +190,9 @@ class Settings(BaseSettings):
     autotrading_ai_signal_gate_live_enabled: bool = False
     autotrading_ai_signal_gate_shadow_enabled: bool = True
     autotrading_ai_analysis_ttl_seconds: float = 900.0
+    # Scheduler skip/reuse window — Gate TTL(900)과 분리. 기본=interval.
+    # age <= reuse 이면 FRESH_RESULT_EXISTS skip; Gate freshness는 TTL 유지.
+    autotrading_ai_analysis_reuse_seconds: float | None = None
     autotrading_ai_live_fail_closed: bool = True
     autotrading_ai_min_confidence: float = 0.4
     autotrading_ai_reduce_ratio: float = 0.5

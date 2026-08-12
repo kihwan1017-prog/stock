@@ -184,6 +184,48 @@ def is_analysis_fresh(
     return age <= float(ttl_seconds)
 
 
+def resolve_analysis_reuse_seconds(
+    settings: Any | None = None,
+    *,
+    interval_seconds: float | None = None,
+    ttl_seconds: float | None = None,
+) -> float:
+    """Scheduler skip window — Gate TTL과 분리.
+
+    우선순위:
+    1) autotrading_ai_analysis_reuse_seconds (명시)
+    2) interval_seconds
+    3) ttl_seconds (하위호환 fallback)
+    """
+
+    settings = settings if settings is not None else get_settings()
+    interval = float(
+        interval_seconds
+        if interval_seconds is not None
+        else (
+            getattr(settings, "autotrading_ai_analysis_interval_seconds", 300.0)
+            or 300.0
+        )
+    )
+    ttl = float(
+        ttl_seconds
+        if ttl_seconds is not None
+        else (
+            getattr(settings, "autotrading_ai_analysis_ttl_seconds", 900.0)
+            or 900.0
+        )
+    )
+    raw = getattr(settings, "autotrading_ai_analysis_reuse_seconds", None)
+    if raw is None or str(raw).strip() == "":
+        reuse = interval
+    else:
+        reuse = float(raw)
+    if reuse <= 0:
+        reuse = interval
+    # reuse가 TTL보다 크면 Gate STALE 전에 refresh가 안 됨 → TTL로 clamp
+    return min(reuse, ttl)
+
+
 async def ensure_chart_prompt_active(session: Session) -> dict[str, Any]:
     """CHART_ANALYSIS_BASE ACTIVE + variable_schema 정합 보장."""
 
@@ -459,6 +501,12 @@ class UpbitAutotradingAiAnalysisJob:
         ttl = float(
             getattr(settings, "autotrading_ai_analysis_ttl_seconds", 900.0) or 900.0
         )
+        # Gate TTL(900)과 Scheduler reuse/skip window 분리 — STALE gap 방지
+        reuse_seconds = resolve_analysis_reuse_seconds(
+            settings,
+            interval_seconds=interval,
+            ttl_seconds=ttl,
+        )
         min_conf = float(
             getattr(settings, "autotrading_ai_min_confidence", 0.4) or 0.4
         )
@@ -483,6 +531,9 @@ class UpbitAutotradingAiAnalysisJob:
             "bucket": bucket,
             "provider": provider,
             "model": model,
+            "ttl_seconds": ttl,
+            "reuse_seconds": reuse_seconds,
+            "interval_seconds": interval,
             "skipped": False,
             "orders_created": 0,
             "gate_enabled_changed": False,
@@ -491,7 +542,9 @@ class UpbitAutotradingAiAnalysisJob:
         latest = find_latest_validated(
             self._session, exchange_code=exchange, symbol=sym
         )
-        if not force and is_analysis_fresh(latest, ttl_seconds=ttl, now=now_utc):
+        if not force and is_analysis_fresh(
+            latest, ttl_seconds=reuse_seconds, now=now_utc
+        ):
             out.update(
                 {
                     "skipped": True,
