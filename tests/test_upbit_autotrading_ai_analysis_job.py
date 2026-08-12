@@ -118,13 +118,19 @@ def test_is_analysis_fresh():
     assert is_analysis_fresh(None, ttl_seconds=900, now=now) is False
 
 
-def test_resolve_reuse_defaults_to_interval_not_ttl():
+def test_resolve_reuse_defaults_below_interval_not_ttl():
+    """reuse==interval이면 분석 지연으로 격 tick skip → 기본은 interval-grace."""
+
     settings = SimpleNamespace(
         autotrading_ai_analysis_interval_seconds=300.0,
         autotrading_ai_analysis_ttl_seconds=900.0,
         autotrading_ai_analysis_reuse_seconds=None,
     )
-    assert resolve_analysis_reuse_seconds(settings) == 300.0
+    # grace=min(120, max(30, 300*0.4))=120 → reuse=180
+    assert resolve_analysis_reuse_seconds(settings) == 180.0
+    # Gate TTL(900)보다 작고, 다음 300s tick(age≈250)에서 재실행 가능
+    assert resolve_analysis_reuse_seconds(settings) < 300.0
+    assert resolve_analysis_reuse_seconds(settings) < 900.0
 
 
 def test_resolve_reuse_explicit_and_clamped_to_ttl():
@@ -136,6 +142,34 @@ def test_resolve_reuse_explicit_and_clamped_to_ttl():
     assert resolve_analysis_reuse_seconds(settings) == 900.0
     settings.autotrading_ai_analysis_reuse_seconds = 180.0
     assert resolve_analysis_reuse_seconds(settings) == 180.0
+
+
+def test_next_interval_tick_not_skipped_after_analysis_latency():
+    """tick+300에서 age≈255(분석 45초 지연) → FRESH skip 없이 재분석 가능."""
+
+    now = datetime(2026, 8, 13, 3, 0, 0, tzinfo=timezone.utc)
+    analyzed = now - timedelta(seconds=255)
+    row = SimpleNamespace(analyzed_at=analyzed)
+    reuse = resolve_analysis_reuse_seconds(
+        SimpleNamespace(
+            autotrading_ai_analysis_interval_seconds=300.0,
+            autotrading_ai_analysis_ttl_seconds=900.0,
+            autotrading_ai_analysis_reuse_seconds=None,
+        )
+    )
+    assert reuse == 180.0
+    assert is_analysis_fresh(row, ttl_seconds=reuse, now=now) is False
+    # 동일 tick 직후(age=10)는 여전히 skip
+    assert (
+        is_analysis_fresh(
+            SimpleNamespace(analyzed_at=now - timedelta(seconds=10)),
+            ttl_seconds=reuse,
+            now=now,
+        )
+        is True
+    )
+    # Gate TTL freshness는 유지 (900)
+    assert is_analysis_fresh(row, ttl_seconds=900.0, now=now) is True
 
 
 def test_is_analysis_fresh_timezone_naive_analyzed_at():
@@ -179,7 +213,7 @@ async def test_run_once_skips_fresh(monkeypatch):
     out = await job.run_once()
     assert out["skipped"] is True
     assert out["skip_reason"] == "FRESH_RESULT_EXISTS"
-    assert out["reuse_seconds"] == 300.0
+    assert out["reuse_seconds"] == 180.0
     assert out["orders_created"] == 0
 
 
@@ -246,7 +280,7 @@ async def test_run_once_refreshes_when_older_than_reuse_but_within_ttl(
     # candle 부족으로 실패해도 skip이 아니어야 함 (재분석 시도)
     assert out.get("skipped") is not True
     assert out.get("skip_reason") != "FRESH_RESULT_EXISTS"
-    assert out["reuse_seconds"] == 300.0
+    assert out["reuse_seconds"] == 180.0
 
 
 @pytest.mark.asyncio

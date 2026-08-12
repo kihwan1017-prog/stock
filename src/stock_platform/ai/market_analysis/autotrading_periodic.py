@@ -198,6 +198,12 @@ def is_analysis_fresh(
     return age <= float(ttl_seconds)
 
 
+# reuse == interval 이면 분석 지연(~수십초) + tick 정렬로 다음 tick이
+# 항상 age < reuse → 격 tick skip(사실상 2*interval). 동일 tick 중복은
+# time_bucket/idempotency가 담당하므로 기본 reuse는 interval보다 작게.
+_DEFAULT_REUSE_TICK_GRACE_SECONDS = 120.0
+
+
 def resolve_analysis_reuse_seconds(
     settings: Any | None = None,
     *,
@@ -208,8 +214,8 @@ def resolve_analysis_reuse_seconds(
 
     우선순위:
     1) autotrading_ai_analysis_reuse_seconds (명시)
-    2) interval_seconds
-    3) ttl_seconds (하위호환 fallback)
+    2) interval - grace (다음 tick 재실행 허용, 기본)
+    3) ttl_seconds clamp (STALE gap 방지)
     """
 
     settings = settings if settings is not None else get_settings()
@@ -231,11 +237,14 @@ def resolve_analysis_reuse_seconds(
     )
     raw = getattr(settings, "autotrading_ai_analysis_reuse_seconds", None)
     if raw is None or str(raw).strip() == "":
-        reuse = interval
+        # 다음 scheduler tick(~interval)에서 신규 분석 가능하도록 여유
+        grace = min(_DEFAULT_REUSE_TICK_GRACE_SECONDS, max(30.0, interval * 0.4))
+        reuse = max(60.0, float(interval) - grace)
     else:
         reuse = float(raw)
     if reuse <= 0:
-        reuse = interval
+        grace = min(_DEFAULT_REUSE_TICK_GRACE_SECONDS, max(30.0, interval * 0.4))
+        reuse = max(60.0, float(interval) - grace)
     # reuse가 TTL보다 크면 Gate STALE 전에 refresh가 안 됨 → TTL로 clamp
     return min(reuse, ttl)
 
