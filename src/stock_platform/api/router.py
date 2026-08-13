@@ -332,6 +332,9 @@ from stock_platform.api.v1.admin_orders_retire import (
 from stock_platform.api.v1.admin_ambiguous_not_submitted import (
     admin_router as admin_ambiguous_not_submitted_router,
 )
+from stock_platform.api.v1.admin_historical_test_outbox import (
+    admin_router as admin_historical_test_outbox_router,
+)
 from stock_platform.api.v1.admin_upbit_ambiguous_resolver import (
     admin_router as admin_upbit_ambiguous_resolver_router,
 )
@@ -554,6 +557,7 @@ _ROUTER_GROUPS = (
     admin_upbit_ambiguous_orders_router,
     admin_orders_retire_router,
     admin_ambiguous_not_submitted_router,
+    admin_historical_test_outbox_router,
     admin_upbit_ambiguous_resolver_router,
     admin_upbit_opportunity_scanner_router,
     admin_market_session_jobs_router,
