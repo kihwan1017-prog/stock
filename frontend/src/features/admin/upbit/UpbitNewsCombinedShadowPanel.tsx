@@ -69,6 +69,11 @@ export function UpbitNewsCombinedShadowPanel() {
   const st = asRecord(status.data) ?? {};
   const byDecision = asRecord(st.by_decision) ?? {};
   const byNews = asRecord(st.by_news_context) ?? {};
+  const milestone = asRecord(st.sample_milestone) ?? {};
+  const diagnostics = asRecord(st.diagnostics) ?? {};
+  const matchedExamples = Array.isArray(st.matched_examples)
+    ? (st.matched_examples as Record<string, unknown>[])
+    : [];
   const items = Array.isArray(asRecord(recent.data)?.items)
     ? (asRecord(recent.data)?.items as Record<string, unknown>[])
     : [];
@@ -85,13 +90,29 @@ export function UpbitNewsCombinedShadowPanel() {
       <Space wrap>
         <Tag>enabled={String(st.enabled ?? false)}</Tag>
         <Tag>rows={cell(st.total_rows)}</Tag>
+        <Tag color="purple">sample={cell(milestone.status)}</Tag>
+        <Tag>
+          review_target=20/20 matched={cell(milestone.matched_completed)}/
+          {cell(milestone.matched_target)} no_news=
+          {cell(milestone.no_news_completed)}/{cell(milestone.no_news_target)}
+        </Tag>
+        <Tag>
+          overlap={cell(diagnostics.intersection_count_all)} rate=
+          {cell(diagnostics.overlap_rate_all)}
+        </Tag>
+        <Tag>root={cell(diagnostics.root_cause)}</Tag>
         <Tag>NEWS_MATCHED={cell(byNews.NEWS_MATCHED)}</Tag>
         <Tag>NO_NEWS={cell(byNews.NO_NEWS)}</Tag>
+        <Tag>EXCLUDED={cell(byNews.EXCLUDED_ONLY)}</Tag>
         <Tag>BOOST={cell(byDecision.BOOST)}</Tag>
         <Tag>UNCHANGED={cell(byDecision.UNCHANGED)}</Tag>
         <Tag>DEPRIORITIZE={cell(byDecision.DEPRIORITIZE)}</Tag>
         <Tag color="blue">completed={cell(st.completed_n)}</Tag>
       </Space>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        Top N DB history 재사용 불가 (SOURCE_COVERAGE_LIMITED). Apply 버튼 없음.
+        experimental_rank만으로 우수 종목 결론 금지. N4/N5 scheduler 자동 ON 금지.
+      </Typography.Paragraph>
       <Space wrap>
         <Button type="primary" loading={runOnce.isPending} onClick={() => runOnce.mutate()}>
           Experiment Run (recent 5 runs)
@@ -109,6 +130,28 @@ export function UpbitNewsCombinedShadowPanel() {
           새로고침
         </Button>
       </Space>
+      <AdminDataTable
+        title="Latest NEWS_MATCHED examples"
+        loading={status.isLoading}
+        columns={[
+          { title: "symbol", dataIndex: "symbol", width: 100 },
+          { title: "run", dataIndex: "scanner_run_id", width: 120 },
+          { title: "rank", dataIndex: "actual_rank", width: 60 },
+          { title: "dir", dataIndex: "direction", width: 70 },
+          { title: "contrib", dataIndex: "contribution", width: 80 },
+          { title: "news_comp", dataIndex: "news_component", width: 90 },
+          { title: "exp_score", dataIndex: "experimental_score", width: 90 },
+          { title: "cf_rank", dataIndex: "experimental_rank", width: 70 },
+          { title: "Δrank", dataIndex: "rank_delta", width: 60 },
+          { title: "r60", dataIndex: "return_60m_pct", width: 70 },
+          { title: "MFE", dataIndex: "mfe_pct", width: 70 },
+          { title: "MAE", dataIndex: "mae_pct", width: 70 },
+        ]}
+        dataSource={matchedExamples.map((row, idx) => ({
+          key: String(row.experiment_id ?? idx),
+          ...row,
+        }))}
+      />
       <AdminDataTable
         title="Recent Experiment Rows"
         loading={recent.isLoading}

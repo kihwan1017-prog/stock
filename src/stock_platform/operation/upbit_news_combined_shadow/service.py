@@ -50,11 +50,15 @@ class CombinedShadowRunStats:
     experiment_rows_reused: int = 0
     no_news: int = 0
     news_matched: int = 0
+    excluded_only: int = 0
     boost: int = 0
     unchanged: int = 0
     deprioritize: int = 0
     llm_calls: int = 0
     control_mutated: bool = False
+    source_shadow: int = 0
+    source_memory_top_n: int = 0
+    top_n_history_reusable: bool = False
     samples: list[dict[str, Any]] = field(default_factory=list)
     errors: list[dict[str, Any]] = field(default_factory=list)
 
@@ -91,9 +95,23 @@ class UpbitNewsCombinedShadowService:
         limit_runs: int = 5,
         scanner_run_ids: list[str] | None = None,
         force: bool = False,
+        include_memory_top_n: bool = True,
     ) -> CombinedShadowRunStats:
-        stats = CombinedShadowRunStats()
+        """CONTROL Shadow + optional in-memory Scanner last_result Top N (READ).
+
+        Historical full Top N DB reconstruction is NOT available
+        (SOURCE_COVERAGE_LIMITED). Memory last_result may include HOLD.
+        """
+
+        stats = CombinedShadowRunStats(top_n_history_reusable=False)
         run_ids = scanner_run_ids or self._recent_run_ids(limit=limit_runs)
+        # memory last_result run_id를 함께 처리
+        memory_payloads_by_run: dict[str, list[dict[str, Any]]] = {}
+        if include_memory_top_n:
+            memory_payloads_by_run = self._memory_top_n_payloads()
+            for rid in memory_payloads_by_run:
+                if rid not in run_ids:
+                    run_ids = [rid, *run_ids]
         stats.scanner_runs_processed = len(run_ids)
 
         for run_id in run_ids:
@@ -110,12 +128,13 @@ class UpbitNewsCombinedShadowService:
                     )
                 )
             )
-            batch_payloads: list[dict[str, Any]] = []
+            by_symbol: dict[str, dict[str, Any]] = {}
             for shadow in shadows:
                 stats.technical_candidates += 1
+                stats.source_shadow += 1
                 try:
                     payload = self._build_observation(shadow)
-                    batch_payloads.append(payload)
+                    by_symbol[str(payload["symbol"]).upper()] = payload
                 except Exception as exc:  # noqa: BLE001
                     stats.errors.append(
                         {
@@ -130,7 +149,16 @@ class UpbitNewsCombinedShadowService:
                         error=str(exc)[:200],
                     )
 
-            # counterfactual rank within run
+            # memory Top N: shadow에 없는 HOLD 등만 추가 (dedup by symbol)
+            for payload in memory_payloads_by_run.get(run_id, []):
+                sym = str(payload["symbol"]).upper()
+                if sym in by_symbol:
+                    continue
+                stats.technical_candidates += 1
+                stats.source_memory_top_n += 1
+                by_symbol[sym] = payload
+
+            batch_payloads = list(by_symbol.values())
             assign_counterfactual_ranks(batch_payloads)
 
             for payload in batch_payloads:
@@ -143,6 +171,8 @@ class UpbitNewsCombinedShadowService:
                     stats.news_matched += 1
                 elif payload["news_context_status"] == NEWS_STATUS_NO_NEWS:
                     stats.no_news += 1
+                elif payload["news_context_status"] == NEWS_STATUS_EXCLUDED_ONLY:
+                    stats.excluded_only += 1
                 dec = payload["experimental_decision"]
                 if dec == "BOOST":
                     stats.boost += 1
@@ -157,6 +187,149 @@ class UpbitNewsCombinedShadowService:
         stats.control_mutated = False
         self._session.commit()
         return stats
+
+    def _memory_top_n_payloads(self) -> dict[str, list[dict[str, Any]]]:
+        """Scanner scheduler last_result READ — Scanner 수정/재실행 없음."""
+
+        try:
+            from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+                upbit_opportunity_scanner_scheduler,
+            )
+
+            status = upbit_opportunity_scanner_scheduler.status()
+        except Exception:  # noqa: BLE001
+            return {}
+        last = status.get("last_result") if isinstance(status, dict) else None
+        if not isinstance(last, dict):
+            return {}
+        run_id = str(last.get("scanner_run_id") or "")
+        candidates = last.get("candidates")
+        if not run_id or not isinstance(candidates, list):
+            return {}
+        # shadow map for control_shadow_id join
+        shadows = {
+            str(s.symbol).upper(): s
+            for s in self._session.scalars(
+                select(UpbitOpportunityShadowEntity).where(
+                    UpbitOpportunityShadowEntity.scanner_run_id == run_id,
+                    UpbitOpportunityShadowEntity.deleted_at.is_(None),
+                )
+            )
+        }
+        out: list[dict[str, Any]] = []
+        detected_at = datetime.now(timezone.utc)
+        for cand in candidates:
+            if not isinstance(cand, dict):
+                continue
+            symbol = str(cand.get("symbol") or "").upper()
+            if not symbol.startswith("KRW-"):
+                continue
+            shadow = shadows.get(symbol)
+            if shadow is not None:
+                # shadow path가 우선 — memory skip (dedup later)
+                continue
+            try:
+                out.append(
+                    self._build_observation_from_candidate(
+                        scanner_run_id=run_id,
+                        candidate=cand,
+                        detected_at=detected_at,
+                        control_shadow_id=None,
+                    )
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "news_combined_memory_candidate_failed",
+                    symbol=symbol,
+                    error=str(exc)[:200],
+                )
+        return {run_id: out} if out else {}
+
+    def _build_observation_from_candidate(
+        self,
+        *,
+        scanner_run_id: str,
+        candidate: dict[str, Any],
+        detected_at: datetime,
+        control_shadow_id: int | None,
+    ) -> dict[str, Any]:
+        symbol = str(candidate.get("symbol") or "").upper()
+        t0 = detected_at
+        signals = load_symbol_signals(self._session, symbol=symbol, t0=t0)
+        influence = [s for s in signals if s.get("influence_allowed")]
+        excluded = [s for s in signals if not s.get("influence_allowed")]
+        if influence:
+            news_status = NEWS_STATUS_MATCHED
+        elif excluded:
+            news_status = NEWS_STATUS_EXCLUDED_ONLY
+        else:
+            news_status = NEWS_STATUS_NO_NEWS
+        contribs = [float(s["contribution"]) for s in influence]
+        agg = aggregate_news_component(contribs)
+        scanner_score = float(candidate.get("score") or 0.0)
+        combined = experimental_combined_score(
+            scanner_score=scanner_score,
+            news_component_normalized=agg["news_component_normalized"],
+        )
+        decision = experimental_decision(agg["news_component_normalized"])
+        price = candidate.get("price") or candidate.get("entry_price") or 0
+        if float(price or 0) <= 0:
+            raise ValueError("candidate missing price")
+        return {
+            "experiment_version": EXPERIMENT_VERSION,
+            "combined_policy_version": COMBINED_POLICY_VERSION,
+            "scanner_run_id": scanner_run_id,
+            "symbol": symbol,
+            "candidate_detected_at": t0,
+            "control_scanner_rank": candidate.get("rank"),
+            "control_scanner_score": scanner_score,
+            "control_market_ai_recommendation": candidate.get(
+                "recommendation"
+            ),
+            "control_market_ai_confidence": candidate.get("confidence"),
+            "control_market_ai_risk": candidate.get("risk_level"),
+            "control_analysis_id": candidate.get("analysis_id"),
+            "control_shadow_id": control_shadow_id,
+            "technical_snapshot": {
+                "source": "scanner_scheduler_last_result",
+                "candidate": candidate,
+            },
+            "news_context_status": news_status,
+            "eligible_news_count": len(influence),
+            "news_signal_ids": [s["signal_id"] for s in influence],
+            "news_snapshot": {
+                "influence_signals": influence,
+                "excluded_signals": excluded[:20],
+                "excluded_count": len(excluded),
+            },
+            "experimental_news_component": agg["experimental_news_component"],
+            "news_component_normalized": agg["news_component_normalized"],
+            "experimental_combined_score": combined,
+            "experimental_decision": decision,
+            "counterfactual_rank": None,
+            "rank_delta": None,
+            "entry_price": Decimal(str(price or 0)),
+            "evaluation_status": EVAL_PENDING,
+            "completed_at": None,
+            "evaluation_detail": {
+                "source": "SCANNER_MEMORY_TOP_N",
+                "note": "ephemeral Top N READ; historical HOLD not in DB",
+            },
+            "provenance": {
+                "experiment_version": EXPERIMENT_VERSION,
+                "source": "SCANNER_MEMORY_TOP_N",
+                "scanner_run_id": scanner_run_id,
+                "control_shadow_id": control_shadow_id,
+                "llm_calls": 0,
+                "control_write": False,
+            },
+            "return_5m_pct": None,
+            "return_15m_pct": None,
+            "return_30m_pct": None,
+            "return_60m_pct": None,
+            "mfe_pct": None,
+            "mae_pct": None,
+        }
 
     def _recent_run_ids(self, *, limit: int) -> list[str]:
         rows = self._session.execute(
@@ -526,4 +699,60 @@ def experiment_stats_snapshot(session: Session) -> dict[str, Any]:
             "experimental_decision_neq_ai_gate": True,
             "news_signal_neq_buy_sell": True,
         },
+        "sample_milestone": _safe_milestone(session),
+        "observation": _safe_observation(session),
+        "diagnostics": _safe_diagnostics(session),
+        "matched_examples": _safe_matched(session),
+        "source_policy": {
+            "control_shadow": True,
+            "scanner_memory_top_n": True,
+            "historical_top_n_db": False,
+            "top_n_history_reusable": False,
+        },
+        "n4_n5_auto_enable": False,
+        "apply_to_scanner": False,
     }
+
+
+def _safe_milestone(session: Session) -> dict[str, Any]:
+    from stock_platform.operation.upbit_news_combined_shadow.diagnostics import (
+        compute_sample_milestone,
+    )
+
+    try:
+        return compute_sample_milestone(session)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200]}
+
+
+def _safe_observation(session: Session) -> dict[str, Any]:
+    from stock_platform.operation.upbit_news_combined_shadow.diagnostics import (
+        compute_observation_stats,
+    )
+
+    try:
+        return compute_observation_stats(session)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200]}
+
+
+def _safe_diagnostics(session: Session) -> dict[str, Any]:
+    from stock_platform.operation.upbit_news_combined_shadow.diagnostics import (
+        diagnose_news_availability,
+    )
+
+    try:
+        return diagnose_news_availability(session)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200]}
+
+
+def _safe_matched(session: Session) -> list[dict[str, Any]]:
+    from stock_platform.operation.upbit_news_combined_shadow.diagnostics import (
+        list_matched_details,
+    )
+
+    try:
+        return list_matched_details(session, limit=10)
+    except Exception as exc:  # noqa: BLE001
+        return [{"error": str(exc)[:200]}]

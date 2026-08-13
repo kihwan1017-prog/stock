@@ -1,4 +1,4 @@
-"""STEP N6 — Combined Shadow Experiment Scheduler (DEFAULT OFF)."""
+"""STEP N6/N7 — Combined Shadow Experiment Scheduler (DEFAULT OFF)."""
 
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ class UpbitNewsCombinedShadowScheduler:
         self._last_error: str | None = None
         self._last_result: dict[str, Any] | None = None
         self._run_count = 0
+        self._overlap_skips = 0
 
     def enabled(self) -> bool:
         return bool(
@@ -45,6 +46,8 @@ class UpbitNewsCombinedShadowScheduler:
         )
 
     def configure(self, *, force: bool = False) -> None:
+        """restart registration: force=True로 job 재등록."""
+
         if self._configured and not force:
             return
         try:
@@ -79,6 +82,11 @@ class UpbitNewsCombinedShadowScheduler:
             misfire_grace_time=max(interval, 60),
         )
         self._configured = True
+        logger.info(
+            "upbit_news_combined_shadow_job_registered",
+            interval_seconds=interval,
+            max_instances=1,
+        )
 
     def start(self) -> None:
         if not self.enabled():
@@ -104,6 +112,8 @@ class UpbitNewsCombinedShadowScheduler:
             "job_id": self.JOB_ID,
             "enabled": self.enabled(),
             "started": self._started,
+            "default_off": True,
+            "manual_vs_auto": "auto_only_when_enabled_env_true",
             "interval_seconds": float(
                 getattr(
                     settings,
@@ -111,6 +121,8 @@ class UpbitNewsCombinedShadowScheduler:
                     900,
                 )
             ),
+            "max_instances": 1,
+            "overlap_skips": self._overlap_skips,
             "last_run_at": (
                 self._last_run_at.isoformat() if self._last_run_at else None
             ),
@@ -120,10 +132,18 @@ class UpbitNewsCombinedShadowScheduler:
             "llm_calls": 0,
             "experiment_only": True,
             "scanner_hook": False,
+            "failure_isolation": True,
         }
 
     async def _run_tick(self) -> None:
         if self._tick_in_progress:
+            self._overlap_skips += 1
+            logger.info(
+                "upbit_news_combined_shadow_overlap_skipped",
+                reason="tick_in_progress",
+            )
+            return
+        if not self.enabled():
             return
         self._tick_in_progress = True
         self._run_count += 1
@@ -133,13 +153,17 @@ class UpbitNewsCombinedShadowScheduler:
             session = get_session_factory()()
             try:
                 svc = UpbitNewsCombinedShadowService(session)
-                stats = svc.run_from_control_shadows(limit_runs=3, force=False)
+                stats = svc.run_from_control_shadows(
+                    limit_runs=5, force=False, include_memory_top_n=True
+                )
                 ev = UpbitNewsCombinedShadowEvaluator(session)
                 eval_stats = ev.evaluate_pending(limit=50)
                 self._last_result = {
                     "run": asdict(stats),
                     "evaluate": eval_stats,
                     "elapsed_ms": int((time.perf_counter() - started) * 1000),
+                    "scanner_hook": False,
+                    "failure_isolation": True,
                 }
                 self._last_error = None
             finally:
@@ -149,6 +173,7 @@ class UpbitNewsCombinedShadowScheduler:
             logger.warning(
                 "upbit_news_combined_shadow_tick_failed",
                 error=str(exc)[:200],
+                note="scanner_unaffected",
             )
         finally:
             self._tick_in_progress = False

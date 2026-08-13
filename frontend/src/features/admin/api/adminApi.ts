@@ -4441,6 +4441,10 @@ export async function getUpbitCombinedShadowStats(): Promise<JsonValue> {
   return getJson("/admin/upbit/combined-shadow/stats");
 }
 
+export async function getUpbitCombinedShadowDiagnostics(): Promise<JsonValue> {
+  return getJson("/admin/upbit/combined-shadow/diagnostics");
+}
+
 export async function runUpbitCombinedShadow(body?: {
   limit_runs?: number;
   scanner_run_ids?: string[] | null;

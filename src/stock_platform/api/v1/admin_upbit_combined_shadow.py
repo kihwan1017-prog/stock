@@ -69,12 +69,35 @@ def combined_shadow_stats(session: Session = Depends(get_db_session)) -> dict:
     return experiment_stats_snapshot(session)
 
 
+@router.get("/diagnostics")
+def combined_shadow_diagnostics(
+    session: Session = Depends(get_db_session),
+) -> dict:
+    from stock_platform.operation.upbit_news_combined_shadow.diagnostics import (
+        compute_observation_stats,
+        compute_sample_milestone,
+        diagnose_news_availability,
+        list_matched_details,
+    )
+
+    return {
+        "diagnostics": diagnose_news_availability(session),
+        "sample_milestone": compute_sample_milestone(session),
+        "observation": compute_observation_stats(session),
+        "matched_examples": list_matched_details(session, limit=20),
+        "llm_calls": 0,
+        "control_mutation": False,
+        "apply_to_scanner": False,
+        "n4_n5_auto_enable": False,
+    }
+
+
 @router.post("/run")
 def combined_shadow_run(
     body: CombinedShadowRunRequest | None = None,
     session: Session = Depends(get_db_session),
 ) -> dict:
-    """CONTROL Shadow READ → EXPERIMENT rows. CONTROL mutation 없음."""
+    """CONTROL Shadow (+ memory Top N READ) → EXPERIMENT. CONTROL mutation 없음."""
 
     req = body or CombinedShadowRunRequest()
     service = UpbitNewsCombinedShadowService(session)
@@ -82,6 +105,7 @@ def combined_shadow_run(
         limit_runs=req.limit_runs,
         scanner_run_ids=req.scanner_run_ids,
         force=bool(req.force),
+        include_memory_top_n=True,
     )
     return {
         "result": asdict(stats),
