@@ -341,6 +341,9 @@ from stock_platform.api.v1.admin_upbit_ambiguous_resolver import (
 from stock_platform.api.v1.admin_upbit_opportunity_scanner import (
     router as admin_upbit_opportunity_scanner_router,
 )
+from stock_platform.api.v1.admin_upbit_news_collector import (
+    router as admin_upbit_news_collector_router,
+)
 from stock_platform.api.v1.admin_market_session_jobs import (
     admin_router as admin_market_session_jobs_router,
 )
@@ -563,6 +566,7 @@ _ROUTER_GROUPS = (
     admin_historical_test_outbox_router,
     admin_upbit_ambiguous_resolver_router,
     admin_upbit_opportunity_scanner_router,
+    admin_upbit_news_collector_router,
     admin_market_session_jobs_router,
     admin_settlements_router,
     admin_broker_snapshots_router,

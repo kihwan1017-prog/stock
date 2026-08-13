@@ -6,7 +6,8 @@
 **Branch / Commit baseline:** `release/v1.1.0` @ `949c0e9` + ops WIP commits  
 **워킹트리:** Autotrading P0 package 일부 미커밋 가능 · Ops stale snapshot RETIRE 경로 추가
 
-**Ops (2026-08-13):** Shadow cohort milestone watch (`SAMPLE_ACCUMULATING` → READY@VALID≥30/new-policy MATCH≥10/mismatch=0). 정책 변경 없음. SHADOW_ONLY · UBA1380 보호.
+**Ops (2026-08-13):** Shadow cohort milestone watch (`SAMPLE_ACCUMULATING` → READY@VALID≥30/new-policy MATCH≥10/mismatch=0). 정책 변경 없음. SHADOW_ONLY · UBA1380 보호.  
+**News (2026-08-13):** STEP N2 UPBIT News/Notice Collector — `news.news_article` 재사용, scheduler default OFF, Scanner/Shadow 격리.
 
 ---
 

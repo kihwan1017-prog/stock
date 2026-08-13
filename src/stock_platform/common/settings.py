@@ -455,6 +455,24 @@ class Settings(BaseSettings):
     )
     naver_news_timeout_seconds: float = 15.0
 
+    # STEP N2 — UPBIT News/Notice Collector (기본 OFF, Scanner/Shadow 무관)
+    upbit_notice_collection_enabled: bool = False
+    upbit_notice_collection_interval_seconds: float = 300.0
+    upbit_notice_collection_overlap_hours: float = 48.0
+    upbit_notice_api_base_url: str = (
+        "https://api-manager.upbit.com/api/v1"
+    )
+    upbit_notice_page_size: int = Field(default=20, ge=1, le=50)
+    upbit_notice_max_pages: int = Field(default=3, ge=1, le=10)
+    upbit_notice_fetch_body: bool = True
+    upbit_notice_timeout_seconds: float = 15.0
+    upbit_notice_max_retries: int = Field(default=3, ge=0, le=8)
+    upbit_notice_max_body_chars: int = Field(default=20_000, ge=500, le=100_000)
+    crypto_news_collection_enabled: bool = False
+    crypto_news_collection_interval_seconds: float = 900.0
+    crypto_news_collection_query: str = "업비트 암호화폐"
+    crypto_news_collection_display: int = Field(default=20, ge=1, le=50)
+
     scheduler_enabled: bool = True
     # API lifecycle 내 cron(일손실·전략 등). False면 outbox 제외 cron 미기동
     lifecycle_scheduler_enabled: bool = True

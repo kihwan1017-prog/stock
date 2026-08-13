@@ -373,3 +373,136 @@ class NewsRepository:
             )
         )
         return {int(row.article_id): row for row in rows}
+
+    # --- STEP N2 collector (symbol 링크 생성 금지) ---
+
+    def find_by_content_hash(self, content_hash: str) -> NewsArticle | None:
+        return self._session.scalar(
+            select(NewsArticle).where(
+                NewsArticle.content_hash == content_hash
+            )
+        )
+
+    def find_by_original_link(self, url: str) -> NewsArticle | None:
+        if not url:
+            return None
+        return self._session.scalar(
+            select(NewsArticle)
+            .where(NewsArticle.original_link == url)
+            .order_by(NewsArticle.article_id.desc())
+            .limit(1)
+        )
+
+    def find_by_source_external_id(
+        self,
+        *,
+        source_code: str,
+        external_id: str,
+    ) -> NewsArticle | None:
+        """raw_data.external_id 로 조회 (N2 — migration 없이 재사용)."""
+
+        return self._session.scalar(
+            select(NewsArticle)
+            .where(
+                NewsArticle.source_code == source_code,
+                NewsArticle.raw_data["external_id"].astext == str(external_id),
+            )
+            .order_by(NewsArticle.article_id.desc())
+            .limit(1)
+        )
+
+    def upsert_collector_article(self, row: dict) -> str:
+        """COLLECT store — news_article_symbol 링크 없음.
+
+        Returns: inserted | updated | duplicate
+        """
+
+        content_hash = str(row["content_hash"])
+        existing = self.find_by_content_hash(content_hash)
+        if existing is None and row.get("original_link"):
+            existing = self.find_by_original_link(str(row["original_link"]))
+
+        if existing is None:
+            ext = None
+            raw = row.get("raw_data") or {}
+            if isinstance(raw, dict):
+                ext = raw.get("external_id")
+            if ext is not None:
+                existing = self.find_by_source_external_id(
+                    source_code=str(row["source_code"]),
+                    external_id=str(ext),
+                )
+
+        if existing is None:
+            entity = NewsArticle(**row)
+            self._session.add(entity)
+            self._session.flush()
+            return "inserted"
+
+        # 내용 변경 여부 — body_fingerprint / title / published_at
+        incoming_raw = row.get("raw_data") or {}
+        prev_raw = existing.raw_data or {}
+        changed = False
+        if existing.title != row.get("title"):
+            existing.title = row["title"]
+            changed = True
+        if (existing.description or None) != (row.get("description") or None):
+            existing.description = row.get("description")
+            changed = True
+        if (existing.original_link or None) != (
+            row.get("original_link") or None
+        ):
+            existing.original_link = row.get("original_link")
+            changed = True
+        if row.get("published_at") is not None and (
+            existing.published_at != row.get("published_at")
+        ):
+            existing.published_at = row.get("published_at")
+            changed = True
+        # identity hash 유지 — content_hash 는 바꾸지 않음
+        if isinstance(incoming_raw, dict):
+            merged = dict(prev_raw) if isinstance(prev_raw, dict) else {}
+            merged.update(incoming_raw)
+            prev_fp = (
+                prev_raw.get("body_fingerprint")
+                if isinstance(prev_raw, dict)
+                else None
+            )
+            new_fp = incoming_raw.get("body_fingerprint")
+            if new_fp and new_fp != prev_fp:
+                changed = True
+            existing.raw_data = merged
+
+        if changed:
+            self._session.flush()
+            return "updated"
+        return "duplicate"
+
+    def list_by_source_codes(
+        self,
+        *,
+        source_codes: list[str],
+        limit: int = 20,
+    ) -> list[NewsArticle]:
+        if not source_codes:
+            return []
+        codes = [c.upper() for c in source_codes]
+        stmt = (
+            select(NewsArticle)
+            .where(NewsArticle.source_code.in_(codes))
+            .order_by(
+                NewsArticle.published_at.desc().nullslast(),
+                NewsArticle.article_id.desc(),
+            )
+            .limit(limit)
+        )
+        return list(self._session.scalars(stmt))
+
+    def latest_published_at(self, *, source_code: str) -> object | None:
+        from sqlalchemy import func
+
+        return self._session.scalar(
+            select(func.max(NewsArticle.published_at)).where(
+                NewsArticle.source_code == source_code
+            )
+        )

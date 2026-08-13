@@ -5,7 +5,8 @@
 **최종 갱신:** 2026-08-13  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
-**Ops note:** Shadow cohort milestone watch — accumulating until READY gate. SHADOW_ONLY · UBA1380 보호.
+**Ops note:** Shadow cohort milestone watch — accumulating until READY gate. SHADOW_ONLY · UBA1380 보호.  
+**News note:** STEP N2 UPBIT News/Notice Collector v0 — COLLECT only, scheduler default OFF, parallel to Scanner.
 
 ---
 
@@ -16,6 +17,7 @@
 | MAIN-STEP | `HIST-*` / archive STEP16–75 | 제품 연대기 | `docs/archive/steps/` |
 | AUDIT-STEP | `AUDIT21-*` | 21단계 코드 감사 | `docs/audit/STEP01–21` |
 | STRATEGY-STEP | `STRAT-12.*` | Strategy Lifecycle (현재) | 코드/tests + [architecture/STRATEGY_LIFECYCLE_STEP12.md](architecture/STRATEGY_LIFECYCLE_STEP12.md) |
+| NEWS-STEP | `NEWS-N*` | UPBIT News/Notice 병렬 트랙 | `src/stock_platform/news/` |
 | LEGACY-STEP / SUBSTEP | `DEV-8.*`, `AI-11.*`, `OPS-10.*` | 활성 서브시리즈 | development/ai/operations |
 | REL | `REL-*` | 루트 릴리스 서술 | 루트 README_STEP* |
 
@@ -41,6 +43,7 @@
 | DEV-8.* | STEP8-5-* | 계좌·LIVE 안전 | COMPLETE_WITH_LIMITATIONS | YES | 포함 | 다수 | P0 보강 | `docs/development/` |
 | AUDIT21-* | STEP01–21 | 코드 감사 | HISTORICAL | N/A | N/A | baseline | 수정 최소화 | `docs/audit/` |
 | HIST-74/75 | STEP74/75 | v1.1 감사·패키징 | HISTORICAL | YES | N/A | — | CONDITIONAL | archive/steps |
+| NEWS-N2 | STEP N2 | UPBIT News/Notice Collector | COMPLETE_WITH_LIMITATIONS | YES | none (reuse news.news_article) | test_step_n2_* | N3 Symbol Mapping | `src/stock_platform/news/` |
 
 ---
 

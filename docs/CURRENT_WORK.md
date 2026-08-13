@@ -7,16 +7,17 @@
 
 ## Current Phase
 
-**Ops continuity — Shadow cohort milestone watch**
+**STEP N2 완료 — UPBIT News/Notice Collector v0** (`UPBIT_NEWS_NOTICE_COLLECTOR_READY`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last ops STEP | Shadow Cohort Review Milestone Watch |
-| Status | `SAMPLE_ACCUMULATING` (자동 관찰) |
-| Gate | VALID≥30 ∧ new-policy MATCH≥10 ∧ mismatch=0 → `SHADOW_COHORT_30_REVIEW_READY` (1회 Audit/Telegram) |
-| Policy | **변경 없음** (threshold/ranking/AI/SL/TP 유지) |
-| Scanner | **SHADOW_ONLY** · 900s · Evaluator 180s |
+| Last STEP | N2 COLLECT→NORMALIZE→DEDUP→STORE |
+| News track | **병렬** (Scanner/Shadow/Gate 미연동) |
+| Scheduler | 기본 **OFF** (`UPBIT_NOTICE_COLLECTION_ENABLED=false`) |
+| Sources | UPBIT official notice + CRYPTO_NEWS(Naver, 기본 OFF) |
+| Cohort | `SAMPLE_ACCUMULATING` 유지 (수집과 격리) |
+| Scanner | **SHADOW_ONLY** · threshold/TopN 동결 |
 | LIVE | all live flags **false** |
 
 ---
@@ -27,8 +28,8 @@
 
 ## Next Gate
 
-1. Cohort 자동 축적 → milestone READY 알림 대기  
-2. P0 잔여 워킹트리 정리·커밋 패키지  
+1. **STEP N3** — Symbol Mapping (뉴스→종목, AI/Gate 아직 금지)  
+2. Cohort 자동 축적 → milestone READY 알림 대기  
 3. LIVE는 별도 승인·ARM·실계좌 Gate  
 
 → [ROADMAP.md](ROADMAP.md)

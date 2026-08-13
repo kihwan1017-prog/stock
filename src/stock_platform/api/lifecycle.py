@@ -552,6 +552,18 @@ class ApplicationLifecycle:
                 "upbit_shadow_evaluator_start_failed",
                 error=str(exc)[:300],
             )
+        # STEP N2 — UPBIT News/Notice Collector (기본 OFF, Scanner/Shadow 격리)
+        try:
+            from stock_platform.news.collector_scheduler import (
+                upbit_news_notice_collector_scheduler,
+            )
+
+            upbit_news_notice_collector_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_news_notice_collector_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
         upbit_daily_settlement_scheduler.start()
         # STEP 8-8A — Post-Fill 재검증 (DB Claim)
@@ -700,6 +712,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_opportunity_shadow_evaluator_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.news.collector_scheduler import (
+                upbit_news_notice_collector_scheduler,
+            )
+
+            await upbit_news_notice_collector_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await upbit_daily_settlement_scheduler.shutdown()

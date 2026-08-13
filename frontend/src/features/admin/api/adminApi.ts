@@ -4337,6 +4337,28 @@ export async function evaluateUpbitOpportunityShadows(): Promise<JsonValue> {
   return postJson("/admin/upbit/opportunity-scanner/shadows/evaluate", {});
 }
 
+/** STEP N2 — UPBIT News/Notice Collector (COLLECT only) */
+export async function getUpbitNewsCollectorStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-collector/status");
+}
+
+export async function getUpbitNewsCollectorRecent(params?: {
+  limit?: number;
+  source?: string;
+}): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-collector/recent", params);
+}
+
+export async function runUpbitNewsCollector(body?: {
+  include_notice?: boolean;
+  include_crypto?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/news-collector/run", {
+    include_notice: body?.include_notice ?? true,
+    include_crypto: body?.include_crypto ?? true,
+  });
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;
