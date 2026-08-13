@@ -1,12 +1,14 @@
 # ROADMAP
 
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
-**최종 갱신:** 2026-07-31  
+**최종 갱신:** 2026-08-13  
+
+**Ops note (2026-08-13):** Stale ACTIVE snapshot 57/151/157 승인형 RETIRE 완료 → health `snapshot_binding` UP (stale_active 0). UBA1380/snapshot176 보호. SHADOW_ONLY 유지.  
 **P0 ID는 PHASE 2 Canonical 고정** (PHASE 1 remaining-work 파일의 P0 번호와 다를 수 있음 → **본 문서 우선**).
 
 상태 값: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `DONE` · `DEFERRED`
 
-**종합 (추정):** 개발 ~76% · Paper ~72% · LIVE ~48% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **NOT READY**  
+**종합 (추정):** 개발 ~78% · Paper ~78% · LIVE ~52% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **PARTIAL**  
 → [PROJECT_IMPLEMENTATION_STATUS.md](PROJECT_IMPLEMENTATION_STATUS.md)
 
 ---
@@ -20,12 +22,8 @@
 | 우선순위 | P0 |
 | 시장 | Upbit / Kiwoom |
 | 문제 | Realtime 주문 경로가 broker를 KIWOOM으로 고정 → 잘못된 Outbox enqueue |
-| 선행 | — |
-| 변경 예정 | realtime order executor / submit 경로 |
 | 완료 조건 | Scope·UBA의 `broker_code`로 enqueue |
-| 필수 테스트 | unit + scope integration |
-| 안전 | LIVE OFF 유지; 실주문 없이 Mock |
-| 상태 | OPEN |
+| 상태 | **IN_PROGRESS** (코드: `risk_integrated_order_executor` scope/exchange resolve, 미커밋) |
 
 ### P0-2 — Kiwoom Fill → TradingOrder → Position/Balance/P&L 단절
 
@@ -34,12 +32,8 @@
 | 우선순위 | P0 |
 | 시장 | Kiwoom LIVE |
 | 문제 | Fill이 pending 수준에 머물고 TradingOrder/Position 장부와 미연결 |
-| 선행 | 설계 문서; P0-1 권장 |
-| 변경 예정 | Kiwoom fill sync / reconcile |
 | 완료 조건 | WS/폴링 event → order state → position/balance 경로 |
-| 필수 테스트 | mock WS + DB |
-| 안전 | 실계좌 없이 Mock; LIVE smoke는 별도 승인 |
-| 상태 | OPEN |
+| 상태 | **IN_PROGRESS** (WS→ExecutionSync bridge 추가; LIVE Position 원장 WRITE는 OPEN) |
 
 ### P0-3 — STEP12 Lifecycle/Registration/Deployment ↔ Scoped Runtime 불일치
 
@@ -47,27 +41,15 @@
 |------|------|
 | 우선순위 | P0 |
 | 시장 | ALL |
-| 문제 | Registry `running=false`, inactive links, READY_TO_START ≠ loader ACTIVE; 자동 연결 부재 |
-| 선행 | P0-4 (커밋/head) 권장 |
-| 변경 예정 | promotion→activation→registration→runtime bootstrap 정책 |
+| 문제 | Registry `running=false`, inactive links, READY_TO_START ≠ loader ACTIVE |
 | 완료 조건 | 상태 모델 문서화 + 명시적 Promote-to-ACTIVE(기본 OFF) |
-| 필수 테스트 | step12-18/19 + runtime bootstrap |
-| 안전 | 자동 start 기본 OFF |
-| 상태 | OPEN |
+| 상태 | **IN_PROGRESS** (`runtime_start_service` + admin `/runtime-start`, Runner auto-start OFF) |
 
 ### P0-4 — Git 커밋 Alembic Head ↔ 워킹트리 Head 불일치
 
 | 필드 | 내용 |
 |------|------|
-| 우선순위 | P0 |
-| 시장 | — |
-| 문제 | baseline `3554ef8` head와 WT head(`a7f3e91c4d28` 등) 불일치 |
-| 선행 | STEP12/FE/UBA 커밋 경계 계획 |
-| 변경 예정 | migrations 커밋 단위; DB sync 절차 |
-| 완료 조건 | 단일 head 문서화 + 배포 절차와 일치 |
-| 필수 테스트 | migration helpers / upgrade dry |
-| 안전 | 운영 DB 무단 upgrade 금지 |
-| 상태 | OPEN |
+| 상태 | **DONE** (Git head `a7f3e91c4d28`, 운영 DB upgrade는 별도 Gate) |
 
 ### P0-5 — Paper Outbox ACCEPTED → PaperExecutionService 자동 Fill 부재
 
@@ -76,12 +58,8 @@
 | 우선순위 | P0 |
 | 시장 | Stock/Crypto Paper |
 | 문제 | Outbox ACCEPT ≠ 자동 fill/position |
-| 선행 | — |
-| 변경 예정 | Paper execution 연결 또는 명시 플래그 정책 |
-| 완료 조건 | 플래그 ON 시 fill→position; 기본 안전 동작 문서화 |
-| 필수 테스트 | Paper E2E |
-| 안전 | 자동 fill은 Paper만; LIVE 경로 혼입 금지 |
-| 상태 | OPEN |
+| 완료 조건 | 플래그 ON 시 fill→position; LIVE 혼입 금지 |
+| 상태 | **IN_PROGRESS** (`PaperOutboxFillService` + outbox_worker hook, `paper_outbox_auto_fill`) |
 
 ---
 

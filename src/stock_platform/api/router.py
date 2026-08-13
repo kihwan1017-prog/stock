@@ -351,6 +351,9 @@ from stock_platform.api.v1.admin_broker_snapshots import (
     admin_router as admin_broker_snapshots_router,
     uba_router as admin_uba_snapshots_router,
 )
+from stock_platform.api.v1.admin_stale_snapshot_bindings import (
+    admin_router as admin_stale_snapshot_bindings_router,
+)
 from stock_platform.api.v1.user_settlements import (
     user_router as user_settlements_router,
 )
@@ -563,6 +566,7 @@ _ROUTER_GROUPS = (
     admin_market_session_jobs_router,
     admin_settlements_router,
     admin_broker_snapshots_router,
+    admin_stale_snapshot_bindings_router,
     admin_uba_snapshots_router,
     user_settlements_router,
     user_broker_snapshots_router,

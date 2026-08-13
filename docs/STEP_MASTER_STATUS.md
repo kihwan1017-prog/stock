@@ -2,8 +2,10 @@
 
 **역할:** STEP 관리의 **유일한** Source of Truth.  
 **규칙:** 같은 숫자라도 네임스페이스가 다르면 **합치지 않는다.** 과거 번호를 삭제·재부여하지 않고 Mapping만 제공한다.  
-**최종 갱신:** 2026-07-31  
+**최종 갱신:** 2026-08-13  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
+
+**Ops note:** `OPS` stale ACTIVE snapshot binding 승인형 RETIRE (57/151/157) — health UP. Canonical DEV-8 snapshot lifecycle 확장.
 
 ---
 

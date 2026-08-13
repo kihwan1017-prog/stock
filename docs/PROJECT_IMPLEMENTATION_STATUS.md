@@ -2,11 +2,11 @@
 
 **역할:** 구현 현황의 **유일한** Source of Truth.  
 **근거:** PHASE 1 감사(2026-07-31) + 실행 경로 소스. 수치는 **추정치**이며 완료 판정이 아니다.  
-**최종 갱신:** 2026-07-31  
-**Branch / Commit baseline:** `release/v1.1.0` @ `3554ef8`  
-**워킹트리:** STEP12·FE·Migration 미커밋 WIP 포함 가능
+**최종 갱신:** 2026-08-13  
+**Branch / Commit baseline:** `release/v1.1.0` @ `949c0e9` + ops WIP commits  
+**워킹트리:** Autotrading P0 package 일부 미커밋 가능 · Ops stale snapshot RETIRE 경로 추가
 
-초안 원본: [audit/PROJECT_IMPLEMENTATION_STATUS_DRAFT_20260731.md](audit/PROJECT_IMPLEMENTATION_STATUS_DRAFT_20260731.md)
+**Ops (2026-08-13):** `snapshot_binding` stale_active 3→0, overall health UP (SHADOW_ONLY). UBA1380/snapshot176 보호.
 
 ---
 
@@ -14,12 +14,12 @@
 
 | 지표 | 값 |
 |------|-----|
-| 개발 구현률 | **~76%** (추정) |
-| Paper 자동매매 준비도 | **~72%** (추정) |
-| LIVE 자동매매 준비도 | **~48%** (추정) |
+| 개발 구현률 | **~78%** (추정) |
+| Paper 자동매매 준비도 | **~78%** (추정) |
+| LIVE 자동매매 준비도 | **~52%** (추정) |
 | 자동매매 운영 가능 | **NOT READY** |
 | LIVE 거래 | **NOT APPROVED** |
-| Paper 무인 자동매매 | **NOT READY** |
+| Paper 무인 자동매매 | **PARTIAL** (Outbox auto-fill 코드 경로 추가, E2E 미완) |
 
 ### 완료 상태 값 (영역 표용)
 
@@ -33,13 +33,13 @@
 
 ## 2. P0 Blocking (고정)
 
-| ID | 내용 | 영향 |
-|----|------|------|
-| **P0-1** | Realtime `broker_code="KIWOOM"` 하드코딩 | Upbit 등 잘못된 브로커 enqueue 위험 |
-| **P0-2** | Kiwoom Fill → TradingOrder → Position/Balance/P&L 단절 | LIVE KRX 장부 불일치 |
-| **P0-3** | STEP12 Registry/Deployment ↔ Scoped Runtime 불일치·자동 연결 부재 | 승인≠실행 |
-| **P0-4** | 커밋 Alembic Head ↔ 워킹트리 Head 불일치 | 배포 스키마 불일치 |
-| **P0-5** | Paper Outbox ACCEPTED → PaperExecutionService 자동 Fill 부재 | Paper E2E 단절 |
+| ID | 내용 | 영향 | 상태 (2026-08-01) |
+|----|------|------|-------------------|
+| **P0-1** | Realtime broker hardcode | 잘못된 Outbox enqueue | **코드 수정(미커밋)** |
+| **P0-2** | Kiwoom Fill → TradingOrder | LIVE 장부 불일치 | **WS bridge(미커밋)**; Position WRITE OPEN |
+| **P0-3** | READY_* ↔ Runtime ACTIVE | 승인≠실행 | **명시 Promote(미커밋)**; Runner OFF |
+| **P0-4** | Alembic Git/Head | 배포 스키마 | **DONE** `a7f3e91c4d28` |
+| **P0-5** | Paper Outbox auto-fill | Paper E2E 단절 | **코드 수정(미커밋)** |
 
 → [ROADMAP.md](ROADMAP.md)
 
