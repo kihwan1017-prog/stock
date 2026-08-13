@@ -28,3 +28,4 @@
 | [FINAL_AUDIT_REPORT.md](FINAL_AUDIT_REPORT.md) | **최종 운영 준비도 보고서** |
 | [PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md](PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md) | PHASE 2 Canonical 문서 표준화 완료보고 |
 | [PROJECT_FOUNDATION_AUDIT_20260731.md](PROJECT_FOUNDATION_AUDIT_20260731.md) | PHASE 1 기반 감사 |
+| [quarantined_migrations/README.md](quarantined_migrations/README.md) | Active Alembic graph에서 격리한 WIP migration 증거 (예: h1a2b3c4d5e6) |
