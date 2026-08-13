@@ -44,7 +44,8 @@
 | AUDIT21-* | STEP01–21 | 코드 감사 | HISTORICAL | N/A | N/A | baseline | 수정 최소화 | `docs/audit/` |
 | HIST-74/75 | STEP74/75 | v1.1 감사·패키징 | HISTORICAL | YES | N/A | — | CONDITIONAL | archive/steps |
 | NEWS-N2 | STEP N2 | UPBIT News/Notice Collector | COMPLETE_WITH_LIMITATIONS | YES | none (reuse news.news_article) | test_step_n2_* | N3 Symbol Mapping | `src/stock_platform/news/` |
-| NEWS-N3 | STEP N3 | News Symbol Mapping | READY_WITH_LIMITATIONS | YES | none (reuse news_article_symbol) | test_step_n3_* | N4 AI News (승인 후) | `symbol_resolver/mapper` |
+| NEWS-N3 | STEP N3 | News Symbol Mapping | READY_WITH_LIMITATIONS | YES | none (reuse news_article_symbol) | test_step_n3_* | N3.1 Quality | `symbol_resolver/mapper` |
+| NEWS-N3.1 | STEP N3.1 | Mapping Quality Guard | NEWS_SYMBOL_MAPPING_QUALITY_READY | YES | none | test_step_n3_1_* | N4 AI News (승인 후) | `symbol_mapping_quality*` |
 
 ---
 

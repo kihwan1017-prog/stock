@@ -90,6 +90,13 @@ def list_recent_notices(
                 item["matched_alias"] = ev.get("matched_alias")
                 item["matched_field"] = ev.get("matched_field")
                 item["resolver_version"] = ev.get("resolver_version")
+                item["quality_status"] = ev.get("quality_status")
+                item["quality_reason"] = ev.get("quality_reason")
+                item["review_required"] = ev.get("review_required")
+                item["review_reason"] = ev.get("review_reason")
+                item["quality_policy_version"] = ev.get(
+                    "quality_policy_version"
+                )
 
         items.append(
             {

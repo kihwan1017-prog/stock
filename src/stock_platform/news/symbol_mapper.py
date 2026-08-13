@@ -31,7 +31,25 @@ from stock_platform.news.symbol_mapping_constants import (
     STATUS_PARTIAL,
     STATUS_UNMAPPED,
 )
-from stock_platform.news.symbol_resolver import AliasEntry, resolve_symbols
+from stock_platform.news.symbol_mapping_quality import (
+    apply_quality_to_evidence,
+    build_general_word_collision_set,
+    classify_mapping_quality,
+)
+from stock_platform.news.symbol_mapping_quality_constants import (
+    QUALITY_AMBIGUOUS,
+    QUALITY_POLICY_VERSION,
+    QUALITY_REJECTED,
+    QUALITY_REVIEW_REQUIRED,
+    QUALITY_TRUSTED,
+    N4_CONSUMABLE_QUALITY,
+)
+from stock_platform.news.symbol_resolver import (
+    AliasEntry,
+    InstrumentAlias,
+    SymbolMatch,
+    resolve_symbols,
+)
 from stock_platform.news.symbol_universe import load_alias_index
 
 
@@ -71,12 +89,24 @@ class MappingRunStats:
     universe_count: int = 0
     alias_count: int = 0
     resolver_version: str = RESOLVER_VERSION
+    quality_policy_version: str = QUALITY_POLICY_VERSION
+    quality_trusted: int = 0
+    quality_review_required: int = 0
+    quality_ambiguous: int = 0
+    quality_rejected: int = 0
+    body_only_total: int = 0
+    body_only_trusted: int = 0
+    body_only_review: int = 0
+    body_only_rejected: int = 0
+    body_only_ambiguous: int = 0
     by_source: dict[str, dict[str, int]] = field(default_factory=dict)
     by_match_type: dict[str, int] = field(default_factory=dict)
     by_confidence_bucket: dict[str, int] = field(default_factory=dict)
+    by_quality_status: dict[str, int] = field(default_factory=dict)
     top_symbols: list[dict[str, Any]] = field(default_factory=list)
     samples: list[dict[str, Any]] = field(default_factory=list)
     false_positive_review: list[dict[str, Any]] = field(default_factory=list)
+    n4_consumable_contract: str = "quality_status==TRUSTED"
 
 
 class NewsSymbolMapper:
@@ -88,17 +118,27 @@ class NewsSymbolMapper:
         *,
         repository: NewsRepository | None = None,
         aliases: list[AliasEntry] | None = None,
+        instruments: list[InstrumentAlias] | None = None,
         universe_count: int | None = None,
     ) -> None:
         self._session = session
         self._repository = repository or NewsRepository(session)
         if aliases is None:
-            instruments, aliases = load_alias_index(session, active_only=True)
+            loaded_instruments, aliases = load_alias_index(
+                session, active_only=True
+            )
+            self._instruments = loaded_instruments
             self._aliases = aliases
-            self._universe_count = len(instruments)
+            self._universe_count = len(loaded_instruments)
         else:
             self._aliases = aliases
-            self._universe_count = int(universe_count or 0)
+            self._instruments = list(instruments or [])
+            self._universe_count = int(
+                universe_count or len(self._instruments)
+            )
+        self._collision_aliases = build_general_word_collision_set(
+            self._instruments
+        )
 
     def map_article(
         self,
@@ -140,6 +180,15 @@ class NewsSymbolMapper:
                 "resolver_version": RESOLVER_VERSION,
                 "created_at": now,
             }
+            decision = classify_mapping_quality(
+                match=match,
+                title=title,
+                body=body,
+                source_code=str(article.source_code or ""),
+                collision_aliases=self._collision_aliases,
+                article_ambiguous=bool(result.ambiguous),
+            )
+            evidence = apply_quality_to_evidence(evidence, decision)
             evidence_rows.append(evidence)
             action = self._repository.upsert_symbol_mapping_link(
                 article_id=int(article.article_id),
@@ -173,17 +222,52 @@ class NewsSymbolMapper:
         else:
             status = STATUS_UNMAPPED
 
+        quality_counts = {
+            QUALITY_TRUSTED: 0,
+            QUALITY_REVIEW_REQUIRED: 0,
+            QUALITY_AMBIGUOUS: 0,
+            QUALITY_REJECTED: 0,
+        }
+        for ev in evidence_rows:
+            qs = str(ev.get("quality_status") or "")
+            if qs in quality_counts:
+                quality_counts[qs] += 1
+
         raw = dict(article.raw_data) if isinstance(article.raw_data, dict) else {}
+        # 이전 evidence history 보존
+        prev_sm = raw.get("symbol_mapping") if isinstance(raw.get("symbol_mapping"), dict) else {}
+        history = []
+        if isinstance(prev_sm, dict) and prev_sm.get("mappings"):
+            history = list(prev_sm.get("quality_history") or [])
+            history.append(
+                {
+                    "mapped_at": prev_sm.get("mapped_at"),
+                    "quality_policy_version": prev_sm.get(
+                        "quality_policy_version"
+                    ),
+                    "mapping_count": len(prev_sm.get("mappings") or []),
+                }
+            )
+            history = history[-5:]
+
         raw["symbol_mapping"] = {
             "status": status,
             "resolver_version": RESOLVER_VERSION,
+            "quality_policy_version": QUALITY_POLICY_VERSION,
             "mapped_at": now,
             "mappings": evidence_rows,
             "ambiguous": result.ambiguous,
+            "quality_counts": quality_counts,
+            "n4_consumable_symbols": [
+                ev["symbol"]
+                for ev in evidence_rows
+                if ev.get("quality_status") in N4_CONSUMABLE_QUALITY
+            ],
             "inserted": inserted,
             "updated": updated,
             "duplicates_skipped": skipped,
             "reconciled_removed": reconciled,
+            "quality_history": history,
         }
         article.raw_data = raw
         self._session.flush()
@@ -199,6 +283,7 @@ class NewsSymbolMapper:
             "updated": updated,
             "duplicates_skipped": skipped,
             "reconciled_removed": reconciled,
+            "quality_counts": quality_counts,
         }
 
     def run_backfill(
@@ -284,6 +369,31 @@ class NewsSymbolMapper:
                 stats.by_confidence_bucket[bucket] = (
                     stats.by_confidence_bucket.get(bucket, 0) + 1
                 )
+                qs = str(m.get("quality_status") or "")
+                stats.by_quality_status[qs] = (
+                    stats.by_quality_status.get(qs, 0) + 1
+                )
+                if qs == QUALITY_TRUSTED:
+                    stats.quality_trusted += 1
+                elif qs == QUALITY_REVIEW_REQUIRED:
+                    stats.quality_review_required += 1
+                elif qs == QUALITY_AMBIGUOUS:
+                    stats.quality_ambiguous += 1
+                elif qs == QUALITY_REJECTED:
+                    stats.quality_rejected += 1
+
+                if mt == MATCH_BODY_ONLY_ALIAS or str(
+                    m.get("matched_field")
+                ).upper() == "BODY":
+                    stats.body_only_total += 1
+                    if qs == QUALITY_TRUSTED:
+                        stats.body_only_trusted += 1
+                    elif qs == QUALITY_REVIEW_REQUIRED:
+                        stats.body_only_review += 1
+                    elif qs == QUALITY_REJECTED:
+                        stats.body_only_rejected += 1
+                    elif qs == QUALITY_AMBIGUOUS:
+                        stats.body_only_ambiguous += 1
 
             if len(stats.samples) < 10 and mappings:
                 stats.samples.append(
@@ -297,23 +407,42 @@ class NewsSymbolMapper:
                     }
                 )
 
-            # false-positive 검토 후보: body-only / 짧은 alias / partial
-            if out.get("ambiguous") or any(
-                str(m.get("match_type")) == MATCH_BODY_ONLY_ALIAS
-                or len(str(m.get("matched_alias") or "")) <= 3
-                for m in mappings
-            ):
-                if len(stats.false_positive_review) < 10:
-                    stats.false_positive_review.append(
-                        {
-                            "article_id": out["article_id"],
-                            "title": out["title"],
-                            "status": status,
-                            "mappings": mappings,
-                            "ambiguous": out.get("ambiguous") or [],
-                            "review_reason": "short_alias_or_ambiguous_or_body_only",
-                        }
-                    )
+            # FP 검토: REJECTED/REVIEW + collision / 관심 심볼
+            risk_syms = {
+                "KRW-AUCTION",
+                "KRW-GAS",
+                "KRW-ONE",
+                "KRW-ME",
+                "KRW-ID",
+            }
+            for m in mappings:
+                qs = str(m.get("quality_status") or "")
+                sym = str(m.get("symbol") or "").upper()
+                if (
+                    sym in risk_syms
+                    or qs in {QUALITY_REJECTED, QUALITY_REVIEW_REQUIRED}
+                    or m.get("general_word_collision")
+                ):
+                    if len(stats.false_positive_review) < 20:
+                        body = self._extract_body(article)
+                        alias = str(m.get("matched_alias") or "")
+                        excerpt = _context_excerpt(
+                            f"{article.title or ''}\n{body}", alias
+                        )
+                        stats.false_positive_review.append(
+                            {
+                                "article_id": out["article_id"],
+                                "title": out["title"],
+                                "symbol": sym,
+                                "matched_alias": alias,
+                                "context_excerpt": excerpt,
+                                "match_type": m.get("match_type"),
+                                "matched_field": m.get("matched_field"),
+                                "old_confidence": m.get("mapping_confidence"),
+                                "new_quality_status": qs,
+                                "reason": m.get("quality_reason"),
+                            }
+                        )
 
         stats.symbols_count = len(symbol_freq)
         stats.top_symbols = [
@@ -349,10 +478,25 @@ def _confidence_bucket(conf: float) -> str:
     return "below-0.80"
 
 
+def _context_excerpt(text: str, alias: str, *, radius: int = 60) -> str:
+    if not text:
+        return ""
+    if not alias:
+        return text[:120]
+    lower = text.lower()
+    idx = lower.find(alias.lower())
+    if idx < 0:
+        return text[:120]
+    start = max(0, idx - radius)
+    end = min(len(text), idx + len(alias) + radius)
+    return text[start:end].replace("\n", " ").strip()
+
+
 def mapping_status_snapshot(session: Session) -> dict[str, Any]:
     """Admin status — Scanner/Shadow 읽지 않음."""
 
     instruments, aliases = load_alias_index(session, active_only=True)
+    collisions = build_general_word_collision_set(instruments)
     repo = NewsRepository(session)
     articles = repo.list_by_source_codes(
         source_codes=[SOURCE_CODE_UPBIT_NOTICE, SOURCE_CODE_CRYPTO_NEWS],
@@ -360,12 +504,25 @@ def mapping_status_snapshot(session: Session) -> dict[str, Any]:
     )
     mapped = unmapped = ambiguous = partial = 0
     link_count = 0
+    q_trusted = q_review = q_amb = q_rej = 0
     for article in articles:
         raw = article.raw_data if isinstance(article.raw_data, dict) else {}
         sm = raw.get("symbol_mapping") if isinstance(raw, dict) else None
         status = None
         if isinstance(sm, dict):
             status = sm.get("status")
+            for ev in sm.get("mappings") or []:
+                if not isinstance(ev, dict):
+                    continue
+                qs = str(ev.get("quality_status") or "")
+                if qs == QUALITY_TRUSTED:
+                    q_trusted += 1
+                elif qs == QUALITY_REVIEW_REQUIRED:
+                    q_review += 1
+                elif qs == QUALITY_AMBIGUOUS:
+                    q_amb += 1
+                elif qs == QUALITY_REJECTED:
+                    q_rej += 1
         if status == STATUS_MAPPED:
             mapped += 1
         elif status == STATUS_PARTIAL:
@@ -376,7 +533,6 @@ def mapping_status_snapshot(session: Session) -> dict[str, Any]:
         elif status == STATUS_UNMAPPED:
             unmapped += 1
         links = repo.list_symbol_links([int(article.article_id)])
-        # placeholder 제외
         link_count += sum(
             1
             for ln in links
@@ -386,14 +542,21 @@ def mapping_status_snapshot(session: Session) -> dict[str, Any]:
 
     return {
         "resolver_version": RESOLVER_VERSION,
+        "quality_policy_version": QUALITY_POLICY_VERSION,
         "universe_count": len(instruments),
         "alias_count": len(aliases),
+        "general_word_collision_count": len(collisions),
         "articles_total": len(articles),
         "mapped_articles": mapped,
         "unmapped_articles": unmapped,
         "ambiguous_articles": ambiguous,
         "partial_articles": partial,
         "mapping_link_count": link_count,
+        "quality_trusted": q_trusted,
+        "quality_review_required": q_review,
+        "quality_ambiguous": q_amb,
+        "quality_rejected": q_rej,
+        "n4_consumable_contract": "quality_status==TRUSTED",
         "ai_analysis": False,
         "scanner_coupled": False,
         "shadow_coupled": False,

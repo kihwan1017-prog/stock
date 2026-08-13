@@ -72,6 +72,15 @@ export function UpbitNewsNoticeCollectorPanel() {
     ? (recentPayload.items as Record<string, unknown>[])
     : [];
 
+  const qualityColor = (status: unknown) => {
+    const s = String(status || "").toUpperCase();
+    if (s === "TRUSTED") return "green";
+    if (s === "REVIEW_REQUIRED") return "orange";
+    if (s === "AMBIGUOUS") return "gold";
+    if (s === "REJECTED") return "red";
+    return "default";
+  };
+
   const columns = [
     { title: "source", dataIndex: "source", width: 110 },
     { title: "category", dataIndex: "category", width: 120 },
@@ -79,18 +88,23 @@ export function UpbitNewsNoticeCollectorPanel() {
     {
       title: "Mapped Symbols",
       dataIndex: "mapped_symbols",
-      width: 220,
+      width: 280,
       render: (value: unknown) => {
         if (!Array.isArray(value) || value.length === 0) {
           return <Typography.Text type="secondary">—</Typography.Text>;
         }
         return (
-          <Space wrap size={[4, 4]}>
+          <Space wrap size={[4, 4]} orientation="vertical">
             {value.map((row) => {
               const rec = asRecord(row) ?? {};
-              const label = `${cell(rec.symbol)} (${cell(rec.match_type)}/${cell(rec.mapping_confidence)})`;
+              const q = cell(rec.quality_status ?? "—");
+              const label = `${cell(rec.symbol)} · ${q} · ${cell(rec.match_type)}/${cell(rec.mapping_confidence)}`;
               return (
-                <Tag key={String(rec.symbol)} color="blue">
+                <Tag
+                  key={`${String(rec.symbol)}-${q}`}
+                  color={qualityColor(rec.quality_status)}
+                  title={String(rec.quality_reason ?? rec.review_reason ?? "")}
+                >
                   {label}
                 </Tag>
               );
@@ -109,8 +123,8 @@ export function UpbitNewsNoticeCollectorPanel() {
         UPBIT News / Notice Collector
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        N2 COLLECT → N3 Symbol Mapping. AI News / Sentiment / Scanner / Shadow /
-        Gate 연동 없음.
+        N2 COLLECT → N3 Mapping → N3.1 Quality Guard. N4는 TRUSTED만
+        소비 예정. AI News / Scanner / Shadow / Gate 연동 없음.
       </Typography.Paragraph>
       <Space wrap>
         <Tag color={st.enabled ? "green" : "default"}>
@@ -128,9 +142,11 @@ export function UpbitNewsNoticeCollectorPanel() {
           {cell(crypto.interval_seconds)}s
         </Tag>
         <Tag>universe={cell(mapping.universe_count)}</Tag>
+        <Tag color="green">trusted={cell(mapping.quality_trusted)}</Tag>
+        <Tag color="orange">review={cell(mapping.quality_review_required)}</Tag>
+        <Tag color="gold">ambiguous_q={cell(mapping.quality_ambiguous)}</Tag>
+        <Tag color="red">rejected={cell(mapping.quality_rejected)}</Tag>
         <Tag>mapped={cell(mapping.mapped_articles)}</Tag>
-        <Tag>unmapped={cell(mapping.unmapped_articles)}</Tag>
-        <Tag>ambiguous={cell(mapping.ambiguous_articles)}</Tag>
         <Tag>links={cell(mapping.mapping_link_count)}</Tag>
       </Space>
       <Typography.Text type="secondary">
