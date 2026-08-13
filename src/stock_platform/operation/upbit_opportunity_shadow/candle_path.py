@@ -47,10 +47,33 @@ class WindowObservation:
     observed_candle_at: datetime | None
     price: Decimal | None
     return_pct: Decimal | None
-    status: str  # OK | NOT_MATURED | MISSING_CANDLE | FUTURE_BLOCKED
+    status: str  # OK | NOT_MATURED | MISSING_CANDLE | SOURCE_UNAVAILABLE | FUTURE_BLOCKED
     target_candle_start: datetime | None = None
     target_candle_end: datetime | None = None
     final: bool = False
+    selection_type: str | None = None
+    lag_seconds: float | None = None
+    fallback_reason: str | None = None
+    source: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FinalWindowSelection:
+    """FINAL window 선택 결과 — synthetic candle 없음."""
+
+    bar: MinuteBar | None
+    status: str
+    selection_type: str | None = None
+    lag_seconds: float | None = None
+    fallback_reason: str | None = None
+    source: str | None = None
+
+
+# LAST_KNOWN_PRICE_AT_TARGET 정책 상수
+SELECTION_EXACT = "EXACT_TARGET_CANDLE"
+SELECTION_LAST_KNOWN = "LAST_KNOWN_BEFORE_TARGET"
+FALLBACK_ABSENT_CONFIRMED = "TARGET_CANDLE_ABSENT_CONFIRMED"
+DEFAULT_MAX_PRIOR_LAG_SECONDS = 180
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,18 +98,64 @@ def target_candle_bounds(
     return start, end
 
 
+def _find_exact_bar(
+    bars: Sequence[MinuteBar],
+    *,
+    candle_start: datetime,
+) -> MinuteBar | None:
+    start = as_utc(candle_start)
+    for bar in bars:
+        if as_utc(bar.candle_at) == start:
+            return bar
+    return None
+
+
+def _find_last_known_before(
+    bars: Sequence[MinuteBar],
+    *,
+    candle_start: datetime,
+    now: datetime,
+    timeframe_minutes: int,
+    max_prior_lag_seconds: int,
+) -> tuple[MinuteBar | None, float | None]:
+    """target candle start 이전 최신 completed candle (lag 상한)."""
+
+    start = as_utc(candle_start)
+    now_utc = as_utc(now)
+    eligible: list[MinuteBar] = []
+    for bar in bars:
+        at = as_utc(bar.candle_at)
+        if at >= start:
+            continue
+        if not bar.is_completed(
+            now=now_utc, timeframe_minutes=timeframe_minutes
+        ):
+            continue
+        lag = (start - at).total_seconds()
+        if lag > float(max_prior_lag_seconds):
+            continue
+        eligible.append(bar)
+    if not eligible:
+        return None, None
+    chosen = max(eligible, key=lambda b: as_utc(b.candle_at))
+    lag_seconds = (start - as_utc(chosen.candle_at)).total_seconds()
+    return chosen, float(lag_seconds)
+
+
 def select_final_window_close(
     bars: Sequence[MinuteBar],
     *,
     target_at: datetime,
     now: datetime,
     timeframe_minutes: int = 1,
-) -> tuple[MinuteBar | None, str]:
-    """FINAL window — target minute candle 완료 후에만 확정.
+    max_prior_lag_seconds: int = DEFAULT_MAX_PRIOR_LAG_SECONDS,
+    target_absent_confirmed: bool = False,
+    source_unavailable: bool = False,
+    candle_source: str = "market.candle_minute",
+) -> FinalWindowSelection:
+    """FINAL window — candle close 이후 exact, 없으면 확인된 no-trade gap fallback.
 
-    - target_candle_start = floor(target_at)
-    - now < target_candle_end → NOT_MATURED (prior candle final 금지)
-    - 완료 후 exact target candle close만 사용 (prior fallback 없음)
+    race fix 유지: now < target_candle_end 이면 prior 있어도 FINAL 금지.
     """
 
     target = as_utc(target_at)
@@ -96,21 +165,78 @@ def select_final_window_close(
     )
 
     if now_utc < candle_end:
-        return None, "NOT_MATURED"
+        return FinalWindowSelection(
+            bar=None,
+            status="NOT_MATURED",
+            selection_type=None,
+            lag_seconds=None,
+            fallback_reason=None,
+            source=None,
+        )
 
-    for bar in bars:
-        at = as_utc(bar.candle_at)
-        if at != candle_start:
-            continue
-        if not bar.is_completed(
+    exact = _find_exact_bar(bars, candle_start=candle_start)
+    if exact is not None:
+        if not exact.is_completed(
             now=now_utc, timeframe_minutes=timeframe_minutes
         ):
-            return None, "NOT_MATURED"
-        if at > now_utc:
-            return None, "FUTURE_BLOCKED"
-        return bar, "OK"
+            return FinalWindowSelection(None, "NOT_MATURED")
+        if as_utc(exact.candle_at) > now_utc:
+            return FinalWindowSelection(None, "FUTURE_BLOCKED")
+        return FinalWindowSelection(
+            bar=exact,
+            status="OK",
+            selection_type=SELECTION_EXACT,
+            lag_seconds=(target - as_utc(exact.candle_at)).total_seconds(),
+            fallback_reason=None,
+            source=candle_source,
+        )
 
-    return None, "MISSING_CANDLE"
+    # exact 없음
+    if source_unavailable:
+        return FinalWindowSelection(
+            bar=None,
+            status="SOURCE_UNAVAILABLE",
+            selection_type=None,
+            lag_seconds=None,
+            fallback_reason="SOURCE_UNAVAILABLE",
+            source=None,
+        )
+
+    if not target_absent_confirmed:
+        # sync/API 재확인 전 — fallback FINAL 금지
+        return FinalWindowSelection(
+            bar=None,
+            status="MISSING_CANDLE",
+            selection_type=None,
+            lag_seconds=None,
+            fallback_reason=None,
+            source=None,
+        )
+
+    prior, lag = _find_last_known_before(
+        bars,
+        candle_start=candle_start,
+        now=now_utc,
+        timeframe_minutes=timeframe_minutes,
+        max_prior_lag_seconds=int(max_prior_lag_seconds),
+    )
+    if prior is None:
+        return FinalWindowSelection(
+            bar=None,
+            status="MISSING_CANDLE",
+            selection_type=None,
+            lag_seconds=lag,
+            fallback_reason=FALLBACK_ABSENT_CONFIRMED,
+            source=None,
+        )
+    return FinalWindowSelection(
+        bar=prior,
+        status="OK",
+        selection_type=SELECTION_LAST_KNOWN,
+        lag_seconds=lag,
+        fallback_reason=FALLBACK_ABSENT_CONFIRMED,
+        source=candle_source,
+    )
 
 
 def select_close_at_or_before(
@@ -124,7 +250,6 @@ def select_close_at_or_before(
     """PREVIEW/provisional — target 이하 최신 completed candle.
 
     final column stamp 에는 사용하지 않는다.
-    ``select_final_window_close`` 를 FINAL 경로로 쓴다.
     """
 
     target = as_utc(target_at)
@@ -162,13 +287,16 @@ def observe_windows(
     windows_minutes: Sequence[int],
     timeframe_minutes: int = 1,
     max_lag_minutes: int = 3,
+    max_prior_lag_seconds: int = DEFAULT_MAX_PRIOR_LAG_SECONDS,
+    absent_by_target: dict[str, bool] | None = None,
+    source_unavailable_by_target: dict[str, bool] | None = None,
+    candle_source: str = "market.candle_minute",
 ) -> list[WindowObservation]:
-    """FINAL window observations — target candle close 이후에만 OK.
+    """FINAL window observations — LAST_KNOWN_PRICE_AT_TARGET 정책."""
 
-    ``max_lag_minutes`` 는 호환용으로 유지하되 FINAL 경로에서는 무시한다.
-    """
-
-    del max_lag_minutes  # FINAL 정책: prior/lag fallback 없음
+    del max_lag_minutes  # provisional helper 호환 파라미터
+    absent_by_target = absent_by_target or {}
+    source_unavailable_by_target = source_unavailable_by_target or {}
     out: list[WindowObservation] = []
     t0 = as_utc(detected_at)
     for minutes in windows_minutes:
@@ -176,13 +304,20 @@ def observe_windows(
         candle_start, candle_end = target_candle_bounds(
             target, timeframe_minutes=timeframe_minutes
         )
-        bar, status = select_final_window_close(
+        key = candle_start.isoformat()
+        selection = select_final_window_close(
             bars,
             target_at=target,
             now=now,
             timeframe_minutes=timeframe_minutes,
+            max_prior_lag_seconds=max_prior_lag_seconds,
+            target_absent_confirmed=bool(absent_by_target.get(key, False)),
+            source_unavailable=bool(
+                source_unavailable_by_target.get(key, False)
+            ),
+            candle_source=candle_source,
         )
-        if bar is None:
+        if selection.bar is None:
             out.append(
                 WindowObservation(
                     minutes=int(minutes),
@@ -190,25 +325,33 @@ def observe_windows(
                     observed_candle_at=None,
                     price=None,
                     return_pct=None,
-                    status=status,
+                    status=selection.status,
                     target_candle_start=candle_start,
                     target_candle_end=candle_end,
                     final=False,
+                    selection_type=selection.selection_type,
+                    lag_seconds=selection.lag_seconds,
+                    fallback_reason=selection.fallback_reason,
+                    source=selection.source,
                 )
             )
             continue
-        price = bar.close
+        price = selection.bar.close
         out.append(
             WindowObservation(
                 minutes=int(minutes),
                 target_at=target,
-                observed_candle_at=as_utc(bar.candle_at),
+                observed_candle_at=as_utc(selection.bar.candle_at),
                 price=price,
                 return_pct=return_pct(entry, price),
                 status="OK",
                 target_candle_start=candle_start,
                 target_candle_end=candle_end,
                 final=True,
+                selection_type=selection.selection_type,
+                lag_seconds=selection.lag_seconds,
+                fallback_reason=selection.fallback_reason,
+                source=selection.source,
             )
         )
     return out

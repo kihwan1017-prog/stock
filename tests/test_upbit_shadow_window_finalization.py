@@ -79,9 +79,9 @@ def test_final_not_at_exact_target_time():
     target = detected + timedelta(minutes=30)
     now = target
     bars = _doge_like_series(detected)
-    bar, status = select_final_window_close(bars, target_at=target, now=now)
-    assert status == "NOT_MATURED"
-    assert bar is None
+    sel = select_final_window_close(bars, target_at=target, now=now)
+    assert sel.status == "NOT_MATURED"
+    assert sel.bar is None
 
 
 def test_final_not_at_224059():
@@ -91,9 +91,9 @@ def test_final_not_at_224059():
     target = detected + timedelta(minutes=30)
     now = datetime(2026, 8, 12, 22, 40, 59, tzinfo=timezone.utc)
     bars = _doge_like_series(detected)
-    bar, status = select_final_window_close(bars, target_at=target, now=now)
-    assert status == "NOT_MATURED"
-    assert bar is None
+    sel = select_final_window_close(bars, target_at=target, now=now)
+    assert sel.status == "NOT_MATURED"
+    assert sel.bar is None
 
 
 def test_final_at_224100_uses_2240_candle():
@@ -103,11 +103,12 @@ def test_final_at_224100_uses_2240_candle():
     target = detected + timedelta(minutes=30)
     now = datetime(2026, 8, 12, 22, 41, 0, tzinfo=timezone.utc)
     bars = _doge_like_series(detected)
-    bar, status = select_final_window_close(bars, target_at=target, now=now)
-    assert status == "OK"
-    assert bar is not None
-    assert bar.candle_at == datetime(2026, 8, 12, 22, 40, tzinfo=timezone.utc)
-    assert bar.close == Decimal("98.2")
+    sel = select_final_window_close(bars, target_at=target, now=now)
+    assert sel.status == "OK"
+    assert sel.bar is not None
+    assert sel.bar.candle_at == datetime(2026, 8, 12, 22, 40, tzinfo=timezone.utc)
+    assert sel.bar.close == Decimal("98.2")
+    assert sel.selection_type == "EXACT_TARGET_CANDLE"
 
 
 def test_observe_not_matured_before_candle_close():
@@ -151,9 +152,22 @@ async def test_late_evaluate_backfill_all_windows(monkeypatch):
     async def fake_load(session, **kwargs):
         return {"bars": bars, "sync": None, "count": len(bars)}
 
+    async def fake_resolve(session, **kwargs):
+        return {
+            "bars": kwargs.get("bars") or bars,
+            "absent_by_target": {},
+            "source_unavailable_by_target": {},
+            "resolve_detail": {},
+            "orders_created": 0,
+        }
+
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_shadow.evaluator.ensure_shadow_minute_bars",
         fake_load,
+    )
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_opportunity_shadow.evaluator.resolve_missing_target_minutes",
+        fake_resolve,
     )
 
     row = UpbitOpportunityShadowEntity(
@@ -211,9 +225,22 @@ async def test_no_stamp_before_candle_close_then_idempotent(monkeypatch):
     async def fake_load(session, **kwargs):
         return {"bars": bars, "sync": None, "count": len(bars)}
 
+    async def fake_resolve(session, **kwargs):
+        return {
+            "bars": kwargs.get("bars") or bars,
+            "absent_by_target": {},
+            "source_unavailable_by_target": {},
+            "resolve_detail": {},
+            "orders_created": 0,
+        }
+
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_shadow.evaluator.ensure_shadow_minute_bars",
         fake_load,
+    )
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_opportunity_shadow.evaluator.resolve_missing_target_minutes",
+        fake_resolve,
     )
 
     row = UpbitOpportunityShadowEntity(
@@ -361,16 +388,36 @@ def test_completed_true_mismatch_detected():
     }
     recomputed = {
         "windows": {
-            "5": {"return_pct": -0.101937},
-            "15": {"return_pct": 0.0},
-            "30": {"return_pct": 0.101937},
-            "60": {"return_pct": 0.101937},
+            "5": {
+                "return_pct": -0.101937,
+                "status": "OK",
+                "final": True,
+                "selection_type": "EXACT_TARGET_CANDLE",
+            },
+            "15": {
+                "return_pct": 0.0,
+                "status": "OK",
+                "final": True,
+                "selection_type": "EXACT_TARGET_CANDLE",
+            },
+            "30": {
+                "return_pct": 0.101937,
+                "status": "OK",
+                "final": True,
+                "selection_type": "EXACT_TARGET_CANDLE",
+            },
+            "60": {
+                "return_pct": 0.101937,
+                "status": "OK",
+                "final": True,
+                "selection_type": "EXACT_TARGET_CANDLE",
+            },
         },
         "mfe_pct": 0.203874,
         "mae_pct": -0.203874,
         "tp_sl": {"tp_hit": False, "sl_hit": False},
     }
-    ok, diffs = _compare(stored, recomputed, tol=5e-4)
+    ok, diffs, _prov = _compare(stored, recomputed, tol=5e-4)
     assert ok is False
     assert diffs["return_30m_pct"]["match"] is False
 
@@ -397,9 +444,22 @@ async def test_shadow3_fixture_regression_then_fixed_path(monkeypatch):
     async def fake_load(session, **kwargs):
         return {"bars": bars, "sync": None, "count": len(bars)}
 
+    async def fake_resolve(session, **kwargs):
+        return {
+            "bars": kwargs.get("bars") or bars,
+            "absent_by_target": {},
+            "source_unavailable_by_target": {},
+            "resolve_detail": {},
+            "orders_created": 0,
+        }
+
     monkeypatch.setattr(
         "stock_platform.operation.upbit_opportunity_shadow.evaluator.ensure_shadow_minute_bars",
         fake_load,
+    )
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_opportunity_shadow.evaluator.resolve_missing_target_minutes",
+        fake_resolve,
     )
 
     row = UpbitOpportunityShadowEntity(
@@ -453,7 +513,7 @@ async def test_shadow3_fixture_regression_then_fixed_path(monkeypatch):
         "tp_hit": row.tp_hit,
         "sl_hit": row.sl_hit,
     }
-    ok, _ = _compare(stored, dry["recomputed"], tol=5e-4)
+    ok, _, _ = _compare(stored, dry["recomputed"], tol=5e-4)
     assert ok is True
 
 

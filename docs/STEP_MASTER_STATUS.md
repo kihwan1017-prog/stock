@@ -5,7 +5,7 @@
 **최종 갱신:** 2026-08-13  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
-**Ops note:** `OPS` stale ACTIVE snapshot binding 승인형 RETIRE (57/151/157) — health UP. Canonical DEV-8 snapshot lifecycle 확장.
+**Ops note:** Shadow `LAST_KNOWN_PRICE_AT_TARGET` missing-minute FINAL policy. #19/#20 legacy provenance는 승인형 reconcile 대기(자동 WRITE 금지). SHADOW_ONLY · UBA1380 보호.
 
 ---
 

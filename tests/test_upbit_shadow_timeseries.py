@@ -83,7 +83,7 @@ def test_select_close_prior_completed_not_future():
 
 
 def test_missing_exact_final_no_prior_fallback():
-    """FINAL: exact target candle 없으면 prior 로 확정하지 않음."""
+    """FINAL: absent 미확정이면 prior 로 확정하지 않음."""
 
     from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
         select_final_window_close,
@@ -93,9 +93,9 @@ def test_missing_exact_final_no_prior_fallback():
     bars = [_series(t0, minutes=4)[i] for i in range(5)]
     now = t0 + timedelta(minutes=10)
     target = t0 + timedelta(minutes=5)
-    bar, status = select_final_window_close(bars, target_at=target, now=now)
-    assert status == "MISSING_CANDLE"
-    assert bar is None
+    sel = select_final_window_close(bars, target_at=target, now=now)
+    assert sel.status == "MISSING_CANDLE"
+    assert sel.bar is None
 
 
 def test_observe_windows_distinct_prices_at_plus_65():

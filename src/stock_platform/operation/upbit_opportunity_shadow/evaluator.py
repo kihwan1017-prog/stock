@@ -13,12 +13,15 @@ from sqlalchemy.orm import Session
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.upbit_opportunity_shadow.candle_loader import (
     ensure_shadow_minute_bars,
+    resolve_missing_target_minutes,
 )
 from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
+    DEFAULT_MAX_PRIOR_LAG_SECONDS,
     as_utc,
     compute_mfe_mae,
     compute_tp_sl,
     observe_windows,
+    target_candle_bounds,
 )
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     EVALUATION_WINDOWS_MINUTES,
@@ -46,6 +49,37 @@ def _round6(value: Decimal | None) -> float | None:
     if value is None:
         return None
     return round(float(value), 6)
+
+
+def _window_dict(obs: Any) -> dict[str, Any]:
+    """WindowObservation → evaluation_detail.windows[N] 공통 스키마."""
+
+    return {
+        "target_at": obs.target_at.isoformat(),
+        "target_candle_start": (
+            obs.target_candle_start.isoformat()
+            if obs.target_candle_start
+            else None
+        ),
+        "target_candle_end": (
+            obs.target_candle_end.isoformat()
+            if obs.target_candle_end
+            else None
+        ),
+        "observed_candle_at": (
+            obs.observed_candle_at.isoformat()
+            if obs.observed_candle_at
+            else None
+        ),
+        "price": float(obs.price) if obs.price is not None else None,
+        "return_pct": _round6(obs.return_pct),
+        "status": obs.status,
+        "final": bool(obs.final),
+        "selection_type": obs.selection_type,
+        "lag_seconds": obs.lag_seconds,
+        "fallback_reason": obs.fallback_reason,
+        "source": obs.source,
+    }
 
 
 class UpbitOpportunityShadowEvaluator:
@@ -177,19 +211,16 @@ class UpbitOpportunityShadowEvaluator:
                 if obs.get("status") != "OK":
                     # provisional / 미완료 — final column·evaluated_*_at 금지
                     prev_windows[key] = {
-                        "target_at": obs.get("target_at"),
-                        "target_candle_start": obs.get("target_candle_start"),
-                        "target_candle_end": obs.get("target_candle_end"),
+                        **obs,
                         "observed_candle_at": None,
                         "price": None,
                         "return_pct": None,
-                        "status": obs.get("status") or "NOT_MATURED",
                         "final": False,
                     }
                     windows[key] = dict(prev_windows[key])
                     continue
 
-                # FINAL — column + detail 한 트랜잭션에서 동일 값
+                # FINAL — column + detail 한 트랜잭션에서 동일 observation
                 price = obs.get("price")
                 ret = obs.get("return_pct")
                 if price is None or ret is None:
@@ -239,7 +270,9 @@ class UpbitOpportunityShadowEvaluator:
             detail["source"] = "minute_candle_historical_v1"
             detail["sl_pct"] = computed.get("sl_pct")
             detail["tp_pct"] = computed.get("tp_pct")
-            detail["window_finalization"] = "target_candle_close_v2"
+            detail["window_finalization"] = "last_known_price_at_target_v1"
+            detail["max_prior_lag_seconds"] = DEFAULT_MAX_PRIOR_LAG_SECONDS
+            detail["target_resolve"] = computed.get("target_resolve")
             row.evaluation_detail = detail
             row.updated_at = self._now
 
@@ -273,6 +306,7 @@ class UpbitOpportunityShadowEvaluator:
         entry = _dec(row.entry_price)
         terminal = detected + timedelta(minutes=60)
         eval_end = min(as_utc(self._now), terminal)
+        now_utc = as_utc(self._now)
 
         loaded = await ensure_shadow_minute_bars(
             self._session,
@@ -282,7 +316,32 @@ class UpbitOpportunityShadowEvaluator:
             timeframe=1,
             allow_sync=self._allow_sync,
         )
-        bars = loaded.get("bars") or []
+        bars = list(loaded.get("bars") or [])
+
+        # 완료 gate 지난 window의 exact 부재분만 원천 재확인
+        matured_missing_starts: list[datetime] = []
+        bar_ats = {as_utc(b.candle_at) for b in bars}
+        for minutes in EVALUATION_WINDOWS_MINUTES:
+            target = detected + timedelta(minutes=int(minutes))
+            candle_start, candle_end = target_candle_bounds(target)
+            if now_utc < candle_end:
+                continue
+            if candle_start not in bar_ats:
+                matured_missing_starts.append(candle_start)
+
+        resolved = await resolve_missing_target_minutes(
+            self._session,
+            symbol=str(row.symbol),
+            bars=bars,
+            candle_starts=matured_missing_starts,
+            timeframe=1,
+            allow_sync=self._allow_sync,
+        )
+        bars = list(resolved.get("bars") or bars)
+        absent_by_target = dict(resolved.get("absent_by_target") or {})
+        source_unavailable_by_target = dict(
+            resolved.get("source_unavailable_by_target") or {}
+        )
 
         observations = observe_windows(
             bars,
@@ -290,31 +349,14 @@ class UpbitOpportunityShadowEvaluator:
             entry=entry,
             now=self._now,
             windows_minutes=EVALUATION_WINDOWS_MINUTES,
+            max_prior_lag_seconds=DEFAULT_MAX_PRIOR_LAG_SECONDS,
+            absent_by_target=absent_by_target,
+            source_unavailable_by_target=source_unavailable_by_target,
+            candle_source="market.candle_minute",
         )
-        windows: dict[str, Any] = {}
-        for obs in observations:
-            windows[str(obs.minutes)] = {
-                "target_at": obs.target_at.isoformat(),
-                "target_candle_start": (
-                    obs.target_candle_start.isoformat()
-                    if obs.target_candle_start
-                    else None
-                ),
-                "target_candle_end": (
-                    obs.target_candle_end.isoformat()
-                    if obs.target_candle_end
-                    else None
-                ),
-                "observed_candle_at": (
-                    obs.observed_candle_at.isoformat()
-                    if obs.observed_candle_at
-                    else None
-                ),
-                "price": float(obs.price) if obs.price is not None else None,
-                "return_pct": _round6(obs.return_pct),
-                "status": obs.status,
-                "final": bool(obs.final),
-            }
+        windows: dict[str, Any] = {
+            str(obs.minutes): _window_dict(obs) for obs in observations
+        }
 
         mfe, mae, mfe_detail = compute_mfe_mae(
             bars,
@@ -346,9 +388,10 @@ class UpbitOpportunityShadowEvaluator:
             "symbol": row.symbol,
             "entry_price": float(entry),
             "detected_at": detected.isoformat(),
-            "evaluated_at": as_utc(self._now).isoformat(),
+            "evaluated_at": now_utc.isoformat(),
             "candle_count": len(bars),
             "sync": loaded.get("sync"),
+            "target_resolve": resolved.get("resolve_detail"),
             "windows": windows,
             "mfe_pct": _round6(mfe),
             "mae_pct": _round6(mae),
@@ -368,6 +411,7 @@ class UpbitOpportunityShadowEvaluator:
             "tp_pct": tp_pct,
             "sl_pct": sl_pct,
             "distinct_window_prices": distinct_prices,
+            "max_prior_lag_seconds": DEFAULT_MAX_PRIOR_LAG_SECONDS,
             "orders_created": 0,
         }
 
@@ -380,9 +424,16 @@ class UpbitOpportunityShadowEvaluator:
         out: dict[str, Any] = {}
         for minutes in EVALUATION_WINDOWS_MINUTES:
             sk = f"return_{minutes}m_pct"
-            new = (windows.get(str(minutes)) or {}).get("return_pct")
+            w = windows.get(str(minutes)) or {}
+            new = w.get("return_pct")
             old = stored.get(sk)
-            out[sk] = {"stored": old, "recomputed": new}
+            out[sk] = {
+                "stored": old,
+                "recomputed": new,
+                "selection_type": w.get("selection_type"),
+                "fallback_reason": w.get("fallback_reason"),
+                "lag_seconds": w.get("lag_seconds"),
+            }
         out["mfe_pct"] = {
             "stored": stored.get("mfe_pct"),
             "recomputed": recomputed.get("mfe_pct"),

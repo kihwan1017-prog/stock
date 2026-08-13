@@ -9,8 +9,14 @@ import structlog
 from sqlalchemy.orm import Session
 
 from stock_platform.common.settings import get_settings
+from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
+    DEFAULT_MAX_PRIOR_LAG_SECONDS,
+    SELECTION_EXACT,
+    SELECTION_LAST_KNOWN,
+)
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     EVALUATION_WINDOWS_MINUTES,
+    SHADOW_STATUS_ACTIVE,
     SHADOW_STATUS_COMPLETED,
 )
 from stock_platform.operation.upbit_opportunity_shadow.entities import (
@@ -29,6 +35,8 @@ from stock_platform.operation.upbit_opportunity_shadow.service import (
 logger = structlog.get_logger(__name__)
 
 MISMATCH_CODE = "SHADOW_EVALUATION_MISMATCH"
+LEGACY_PROVENANCE_MISMATCH = "LEGACY_PROVENANCE_MISMATCH"
+ALLOWED_FINAL_SELECTION = frozenset({SELECTION_EXACT, SELECTION_LAST_KNOWN})
 
 
 def _utcnow() -> datetime:
@@ -46,12 +54,94 @@ def _within_tol(a: Any, b: Any, *, tol: float) -> bool:
         return False
 
 
+def _recomputed_provenance_ok(
+    window: dict[str, Any],
+    *,
+    max_prior_lag_seconds: float = DEFAULT_MAX_PRIOR_LAG_SECONDS,
+) -> tuple[bool, str | None]:
+    """신규 FINAL provenance 허용 여부."""
+
+    status = window.get("status")
+    if status in ("NOT_MATURED", "MISSING_CANDLE"):
+        # final stamp 전이면 watcher numeric 과 별개
+        return True, None
+    if status == "SOURCE_UNAVAILABLE":
+        return False, "SOURCE_UNAVAILABLE"
+    if status != "OK" and not window.get("final"):
+        return True, None
+
+    selection = window.get("selection_type")
+    if selection == SELECTION_EXACT:
+        return True, None
+    if selection == SELECTION_LAST_KNOWN:
+        lag = window.get("lag_seconds")
+        try:
+            lag_f = float(lag) if lag is not None else None
+        except (TypeError, ValueError):
+            lag_f = None
+        if lag_f is None or lag_f > float(max_prior_lag_seconds):
+            return False, "LAG_EXCEEDED"
+        if window.get("fallback_reason") == "SOURCE_UNAVAILABLE":
+            return False, "SOURCE_UNAVAILABLE"
+        return True, None
+    if selection is None and (window.get("final") or status == "OK"):
+        return False, "UNKNOWN_PROVENANCE"
+    if selection not in ALLOWED_FINAL_SELECTION:
+        return False, "DISALLOWED_SELECTION"
+    return True, None
+
+
+def _stored_provenance_note(
+    stored_windows: dict[str, Any],
+    recomputed_windows: dict[str, Any],
+    *,
+    max_prior_lag_seconds: float = DEFAULT_MAX_PRIOR_LAG_SECONDS,
+) -> dict[str, Any]:
+    """legacy COMPLETED row provenance 별도 표기."""
+
+    notes: dict[str, Any] = {}
+    legacy = False
+    for minutes in EVALUATION_WINDOWS_MINUTES:
+        key = str(minutes)
+        stored_w = dict(stored_windows.get(key) or {})
+        recomputed_w = dict(recomputed_windows.get(key) or {})
+        if recomputed_w.get("status") != "OK":
+            continue
+        ok_new, reason_new = _recomputed_provenance_ok(
+            recomputed_w, max_prior_lag_seconds=max_prior_lag_seconds
+        )
+        stored_sel = stored_w.get("selection_type")
+        if stored_sel in ALLOWED_FINAL_SELECTION:
+            notes[key] = {
+                "stored_selection_type": stored_sel,
+                "recomputed_selection_type": recomputed_w.get(
+                    "selection_type"
+                ),
+                "legacy": False,
+                "recomputed_ok": ok_new,
+                "reason": reason_new,
+            }
+            continue
+        # 숫자 일치해도 구형 provenance 없음 → LEGACY 표기 후보
+        legacy = True
+        notes[key] = {
+            "stored_selection_type": stored_sel,
+            "recomputed_selection_type": recomputed_w.get("selection_type"),
+            "legacy": True,
+            "recomputed_ok": ok_new,
+            "reason": "UNKNOWN_LEGACY_PROVENANCE",
+        }
+    return {"legacy": legacy, "windows": notes}
+
+
 def _compare(
     stored: dict[str, Any],
     recomputed: dict[str, Any],
     *,
     tol: float,
-) -> tuple[bool, dict[str, Any]]:
+    stored_detail: dict[str, Any] | None = None,
+    max_prior_lag_seconds: float = DEFAULT_MAX_PRIOR_LAG_SECONDS,
+) -> tuple[bool, dict[str, Any], dict[str, Any]]:
     windows = recomputed.get("windows") or {}
     tp_sl = recomputed.get("tp_sl") or {}
     diffs: dict[str, Any] = {}
@@ -61,8 +151,24 @@ def _compare(
         got = (windows.get(str(minutes)) or {}).get("return_pct")
         old = stored.get(key)
         match = _within_tol(old, got, tol=tol)
-        diffs[key] = {"stored": old, "recomputed": got, "match": match}
+        w = windows.get(str(minutes)) or {}
+        prov_ok, prov_reason = _recomputed_provenance_ok(
+            w, max_prior_lag_seconds=max_prior_lag_seconds
+        )
+        diffs[key] = {
+            "stored": old,
+            "recomputed": got,
+            "match": match,
+            "selection_type": w.get("selection_type"),
+            "lag_seconds": w.get("lag_seconds"),
+            "fallback_reason": w.get("fallback_reason"),
+            "provenance_ok": prov_ok,
+            "provenance_reason": prov_reason,
+        }
         if not match:
+            ok = False
+        # FINAL 확정 재계산인데 provenance 불허면 mismatch
+        if w.get("status") == "OK" and not prov_ok:
             ok = False
     for key in ("mfe_pct", "mae_pct"):
         got = recomputed.get(key)
@@ -78,7 +184,13 @@ def _compare(
         diffs[key] = {"stored": old, "recomputed": got, "match": match}
         if not match:
             ok = False
-    return ok, diffs
+
+    provenance = _stored_provenance_note(
+        dict((stored_detail or {}).get("windows") or {}),
+        windows,
+        max_prior_lag_seconds=max_prior_lag_seconds,
+    )
+    return ok, diffs, provenance
 
 
 class ShadowEvaluationMismatchWatch:
@@ -112,6 +224,14 @@ class ShadowEvaluationMismatchWatch:
                 "code": "WATCH_DISABLED",
                 "orders_created": 0,
             }
+        # ACTIVE 는 mismatch 감시 대상 제외
+        if row.status == SHADOW_STATUS_ACTIVE:
+            return {
+                "ok": True,
+                "skipped": True,
+                "code": "ACTIVE_EXCLUDED",
+                "orders_created": 0,
+            }
         if row.status != SHADOW_STATUS_COMPLETED:
             return {
                 "ok": False,
@@ -125,7 +245,7 @@ class ShadowEvaluationMismatchWatch:
         if (
             not force
             and prev.get("ok") is True
-            and prev.get("code") == "MATCH"
+            and prev.get("code") in ("MATCH", LEGACY_PROVENANCE_MISMATCH)
         ):
             return {
                 "ok": True,
@@ -155,13 +275,30 @@ class ShadowEvaluationMismatchWatch:
             row
         )
         recomputed = dry.get("recomputed") or {}
-        match_ok, diffs = _compare(stored, recomputed, tol=tol)
+        match_ok, diffs, provenance = _compare(
+            stored,
+            recomputed,
+            tol=tol,
+            stored_detail=detail,
+            max_prior_lag_seconds=float(
+                recomputed.get("max_prior_lag_seconds")
+                or DEFAULT_MAX_PRIOR_LAG_SECONDS
+            ),
+        )
+        if match_ok and provenance.get("legacy"):
+            code = LEGACY_PROVENANCE_MISMATCH
+        elif match_ok:
+            code = "MATCH"
+        else:
+            code = MISMATCH_CODE
+
         watch_payload = {
             "at": self._now.isoformat(),
             "ok": match_ok,
-            "code": "MATCH" if match_ok else MISMATCH_CODE,
+            "code": code,
             "tolerance": tol,
             "diff": diffs,
+            "provenance": provenance,
             "source": "minute_candle_historical_v1",
             # reconciliation allowlist 경로와 분리
             "auto_reconcile": False,
@@ -171,7 +308,7 @@ class ShadowEvaluationMismatchWatch:
         row.updated_at = self._now
         self._session.commit()
 
-        if not match_ok:
+        if code == MISMATCH_CODE:
             self._audit(row, diffs)
             if notify:
                 try:
@@ -192,6 +329,7 @@ class ShadowEvaluationMismatchWatch:
             "shadow_id": int(row.shadow_id),
             "symbol": row.symbol,
             "diff": diffs,
+            "provenance": provenance,
             "orders_created": 0,
             "mutated_evaluation_fields": False,
             "watch_meta_only": True,
