@@ -228,7 +228,12 @@ async def test_apply_fingerprint_mismatch_no_mutation(monkeypatch):
 
 def test_apply_requires_approval_phrase_constant():
     assert APPROVAL_PHRASE == "RECONCILE UPBIT SHADOW HISTORY"
-    assert ALLOWED_RECONCILE_SHADOW_IDS == frozenset({1, 2})
+    assert ALLOWED_RECONCILE_SHADOW_IDS == frozenset({1, 2, 3})
+    from stock_platform.operation.upbit_opportunity_shadow.reconciliation import (
+        APPROVAL_PHRASE_BY_SHADOW,
+    )
+
+    assert APPROVAL_PHRASE_BY_SHADOW[3] == "RECONCILE SHADOW 3 EVALUATION"
 
 
 @pytest.mark.asyncio
@@ -465,3 +470,76 @@ async def test_checkpoint_mismatch_blocks(monkeypatch):
     assert out["ok"] is False
     assert out["code"] == "RECONCILIATION_MISMATCH"
     assert out["mutated"] is False
+
+
+@pytest.mark.asyncio
+async def test_shadow3_phrase_and_return_30_reconcile(monkeypatch):
+    """#3 전용 phrase + return_30m 교정 + 재apply idempotent."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.reconciliation import (
+        APPROVAL_PHRASE_BY_SHADOW,
+    )
+
+    t0 = datetime(2026, 8, 12, 22, 10, 52, tzinfo=timezone.utc)
+    row = _completed_row(3, symbol="KRW-DOGE", entry="98.1", t0=t0)
+    row.return_5m_pct = -0.101937
+    row.return_15m_pct = 0.0
+    row.return_30m_pct = 0.0
+    row.return_60m_pct = 0.101937
+    row.price_30m = Decimal("98.1")
+    row.mfe_pct = 0.203874
+    row.mae_pct = -0.203874
+    session = _session_for(row)
+    recomputed = _recomputed_from_checkpoint(3, t0=t0, entry=98.1)
+    _patch_dry(monkeypatch, recomputed)
+
+    wrong = await UpbitOpportunityShadowReconciliationService(
+        session, allow_sync=False
+    ).apply(
+        3,
+        expected_fingerprint="x" * 64,
+        actor="admin",
+        reason="test",
+        approval_phrase=APPROVAL_PHRASE,
+    )
+    assert wrong["code"] == "INVALID_APPROVAL_PHRASE"
+    assert wrong["mutated"] is False
+
+    with patch(
+        "stock_platform.api.deps_admin.AuditLogService.record",
+        return_value=MagicMock(),
+    ):
+        svc = UpbitOpportunityShadowReconciliationService(
+            session, allow_sync=False
+        )
+        preview = await svc.preview(3)
+        assert preview["code"] == "PREVIEW_OK"
+        assert preview["approval_phrase_required"] == (
+            "RECONCILE SHADOW 3 EVALUATION"
+        )
+        assert any(
+            c["field"] == "return_30m_pct" for c in preview["changed_fields"]
+        )
+        out = await svc.apply(
+            3,
+            expected_fingerprint=preview["fingerprint"],
+            actor="admin",
+            reason="fix_return_30m",
+            approval_phrase=APPROVAL_PHRASE_BY_SHADOW[3],
+        )
+        assert out["code"] == "RECONCILED"
+        assert out["mutated"] is True
+        assert row.return_30m_pct == pytest.approx(0.101937)
+        assert float(row.price_30m) == pytest.approx(98.2)
+
+        preview2 = await svc.preview(3)
+        out2 = await svc.apply(
+            3,
+            expected_fingerprint=preview2["fingerprint"],
+            actor="admin",
+            reason="idem",
+            approval_phrase=APPROVAL_PHRASE_BY_SHADOW[3],
+        )
+        assert out2["code"] == "ALREADY_RECONCILED"
+        assert out2["mutated"] is False
+        assert out2["orders_created"] == 0

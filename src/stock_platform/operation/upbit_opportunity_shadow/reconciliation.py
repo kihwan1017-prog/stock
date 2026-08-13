@@ -27,9 +27,16 @@ from stock_platform.operation.upbit_opportunity_shadow.service import (
 
 logger = structlog.get_logger(__name__)
 
-# 이번 STEP 고정 대상 — 다른 shadow 자동 수정 금지
-ALLOWED_RECONCILE_SHADOW_IDS: frozenset[int] = frozenset({1, 2})
+# 승인형 allowlist — 다른 shadow 자동 수정 금지
+ALLOWED_RECONCILE_SHADOW_IDS: frozenset[int] = frozenset({1, 2, 3})
 
+# Shadow별 승인 phrase (오적용 방지)
+APPROVAL_PHRASE_BY_SHADOW: dict[int, str] = {
+    1: "RECONCILE UPBIT SHADOW HISTORY",
+    2: "RECONCILE UPBIT SHADOW HISTORY",
+    3: "RECONCILE SHADOW 3 EVALUATION",
+}
+# 하위 호환 (tests / 기존 #1/#2)
 APPROVAL_PHRASE = "RECONCILE UPBIT SHADOW HISTORY"
 
 # 이전 STEP dry 검증 체크포인트 (WRITE 값 아님 — mismatch gate 전용)
@@ -52,6 +59,17 @@ _REFERENCE_CHECKPOINT: dict[int, dict[str, float | bool]] = {
         "return_60m_pct": 0.186741,
         "mfe_pct": 0.280112,
         "mae_pct": -0.186741,
+        "tp_hit": False,
+        "sl_hit": False,
+    },
+    # #3 — evaluator race 로 return_30m 만 잘못 stamp 된 COMPLETED
+    3: {
+        "return_5m_pct": -0.101937,
+        "return_15m_pct": 0.0,
+        "return_30m_pct": 0.101937,
+        "return_60m_pct": 0.101937,
+        "mfe_pct": 0.203874,
+        "mae_pct": -0.203874,
         "tp_hit": False,
         "sl_hit": False,
     },
@@ -147,7 +165,7 @@ def _fingerprint_payload(
         for k in ("5", "15", "30", "60")
     }
     tp_sl = recomputed.get("tp_sl") or {}
-    return {
+    payload: dict[str, Any] = {
         "shadow_id": int(row.shadow_id),
         "symbol": row.symbol,
         "entry_price": str(row.entry_price),
@@ -159,6 +177,29 @@ def _fingerprint_payload(
         "sl_hit": bool(tp_sl.get("sl_hit")),
         "source": "minute_candle_historical_v1",
     }
+    # #3: preview↔apply 사이에 stored 컬럼이 바뀌면 fingerprint 불일치로 차단
+    if int(row.shadow_id) == 3:
+        payload["stored"] = {
+            "return_5m_pct": row.return_5m_pct,
+            "return_15m_pct": row.return_15m_pct,
+            "return_30m_pct": row.return_30m_pct,
+            "return_60m_pct": row.return_60m_pct,
+            "price_30m": (
+                float(row.price_30m) if row.price_30m is not None else None
+            ),
+            "mfe_pct": row.mfe_pct,
+            "mae_pct": row.mae_pct,
+            "tp_hit": row.tp_hit,
+            "sl_hit": row.sl_hit,
+            "status": row.status,
+        }
+    return payload
+
+
+def _approval_phrase_for(shadow_id: int) -> str:
+    return APPROVAL_PHRASE_BY_SHADOW.get(
+        int(shadow_id), APPROVAL_PHRASE
+    )
 
 
 def _windows_complete(recomputed: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
@@ -217,7 +258,7 @@ def _checkpoint_ok(
 
 
 class UpbitOpportunityShadowReconciliationService:
-    """PREVIEW → fingerprint → APPLY. COMPLETED #1/#2만."""
+    """PREVIEW → fingerprint → APPLY. COMPLETED allowlist만."""
 
     def __init__(
         self,
@@ -277,7 +318,9 @@ class UpbitOpportunityShadowReconciliationService:
 
         fp_payload = _fingerprint_payload(row, recomputed)
         fp = _fingerprint(fp_payload)
-        already = self._already_reconciled(row, fp)
+        changed_fields = self._changed_fields(original, recomputed)
+        already = self._already_reconciled(row, fp) or (not changed_fields)
+        phrase = _approval_phrase_for(int(shadow_id))
 
         return {
             "ok": True,
@@ -290,8 +333,10 @@ class UpbitOpportunityShadowReconciliationService:
             "original": original,
             "recomputed": recomputed,
             "diff": dry.get("diff"),
+            "changed_fields": changed_fields,
             "checkpoint_diff": checkpoint_diff,
-            "approval_phrase_required": APPROVAL_PHRASE,
+            "approval_phrase_required": phrase,
+            "allowlist": sorted(ALLOWED_RECONCILE_SHADOW_IDS),
             "orders_created": 0,
             "mutated": False,
             "persist": False,
@@ -306,10 +351,12 @@ class UpbitOpportunityShadowReconciliationService:
         reason: str,
         approval_phrase: str,
     ) -> dict[str, Any]:
-        if (approval_phrase or "").strip() != APPROVAL_PHRASE:
+        required_phrase = _approval_phrase_for(int(shadow_id))
+        if (approval_phrase or "").strip() != required_phrase:
             return {
                 "ok": False,
                 "code": "INVALID_APPROVAL_PHRASE",
+                "required_phrase": required_phrase,
                 "orders_created": 0,
                 "mutated": False,
             }
@@ -364,6 +411,21 @@ class UpbitOpportunityShadowReconciliationService:
                 "mutated": False,
             }
 
+        original = _evaluation_snapshot(row)
+        changed_fields = self._changed_fields(original, recomputed)
+        # stored 가 fingerprint 에 포함되는 #3 등: 1차 적용 후 fp 가 바뀌어도
+        # 컬럼이 이미 recomputed 와 일치하면 재 WRITE / audit 금지
+        if not changed_fields:
+            return {
+                "ok": True,
+                "code": "ALREADY_RECONCILED",
+                "shadow_id": int(shadow_id),
+                "fingerprint": fp,
+                "changed_fields": [],
+                "orders_created": 0,
+                "mutated": False,
+            }
+
         if self._already_reconciled(row, fp):
             return {
                 "ok": True,
@@ -374,7 +436,6 @@ class UpbitOpportunityShadowReconciliationService:
                 "mutated": False,
             }
 
-        original = _evaluation_snapshot(row)
         # identity / AI / entry 보존 검증
         preserved = {
             "entry_price": row.entry_price,
@@ -419,6 +480,7 @@ class UpbitOpportunityShadowReconciliationService:
         detail["windows"] = recomputed.get("windows") or {}
         detail["mfe_mae"] = recomputed.get("mfe_mae_detail")
         detail["tp_sl"] = recomputed.get("tp_sl")
+        # mismatch_watch 는 apply 직후 force re-verify 에서 MATCH 로 갱신
         row.evaluation_detail = detail
         row.updated_at = self._now
         # COMPLETED / identity 필드 불변
@@ -450,10 +512,54 @@ class UpbitOpportunityShadowReconciliationService:
             "fingerprint": fp,
             "status": row.status,
             "after": UpbitOpportunityShadowService.to_public(row),
+            "changed_fields": self._changed_fields(original, recomputed),
             "orders_created": 0,
             "mutated": True,
             "history_path": "evaluation_detail.reconciliation_history",
         }
+
+    @staticmethod
+    def _changed_fields(
+        original: dict[str, Any],
+        recomputed: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        windows = recomputed.get("windows") or {}
+        tp_sl = recomputed.get("tp_sl") or {}
+        changed: list[dict[str, Any]] = []
+        for minutes in EVALUATION_WINDOWS_MINUTES:
+            key = f"return_{minutes}m_pct"
+            old = original.get(key)
+            new = (windows.get(str(minutes)) or {}).get("return_pct")
+            if not _within_tol(old, new):
+                changed.append(
+                    {
+                        "field": key,
+                        "stored": old,
+                        "recomputed": new,
+                    }
+                )
+            pkey = f"price_{minutes}m"
+            old_p = original.get(pkey)
+            new_p = (windows.get(str(minutes)) or {}).get("price")
+            if not _within_tol(old_p, new_p):
+                changed.append(
+                    {
+                        "field": pkey,
+                        "stored": old_p,
+                        "recomputed": new_p,
+                    }
+                )
+        for key in ("mfe_pct", "mae_pct"):
+            old = original.get(key)
+            new = recomputed.get(key)
+            if not _within_tol(old, new):
+                changed.append({"field": key, "stored": old, "recomputed": new})
+        for key in ("tp_hit", "sl_hit"):
+            old = original.get(key)
+            new = tp_sl.get(key)
+            if not _within_tol(old, new):
+                changed.append({"field": key, "stored": old, "recomputed": new})
+        return changed
 
     def _require_eligible(
         self, shadow_id: int
