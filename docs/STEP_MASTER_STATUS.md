@@ -50,7 +50,7 @@
 | NEWS-N5 | STEP N5 | News Signal Standardization | UPBIT_NEWS_SIGNAL_READY | YES (`f4d9549`) | n5o6p7q8r9s0 | test_step_n5_* | N6 Combined | `news_signal*` |
 | NEWS-N6 | STEP N6 | News Combined Shadow A/B | READY_WITH_LIMITATIONS | YES (`eac2b66`) | o6p7q8r9s0t1 | test_step_n6_* | N7 누적 | `upbit_news_combined_shadow*` |
 | NEWS-N7 | STEP N7 | News A/B Sample Accumulation | NEWS_AB_SAMPLE_ACCUMULATING | YES (`60a9969`) | none (reuse N6 table) | test_step_n7_* | N8 observation | diagnostics/scheduler/UI |
-| NEWS-N8 | STEP N8 | News Pipeline Continuous Observation | NEWS_PIPELINE_OBSERVATION_RUNNING | YES (N8 commit) | none | test_step_n8_* | N9 (승인 후) | pipeline_observation* |
+| NEWS-N8 | STEP N8 | News Pipeline Continuous Observation | NEWS_PIPELINE_OBSERVATION_RUNNING | YES (`74102ad`) | none | test_step_n8_* | N9 (승인 후) | pipeline_observation* |
 
 ---
 

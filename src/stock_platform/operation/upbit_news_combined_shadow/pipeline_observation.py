@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from statistics import median
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from stock_platform.common.settings import get_settings
