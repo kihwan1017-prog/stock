@@ -48,6 +48,9 @@ class WindowObservation:
     price: Decimal | None
     return_pct: Decimal | None
     status: str  # OK | NOT_MATURED | MISSING_CANDLE | FUTURE_BLOCKED
+    target_candle_start: datetime | None = None
+    target_candle_end: datetime | None = None
+    final: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +63,56 @@ class TpSlResult:
     detail: dict[str, Any]
 
 
+def target_candle_bounds(
+    target_at: datetime,
+    *,
+    timeframe_minutes: int = 1,
+) -> tuple[datetime, datetime]:
+    """target 이 속한 1m candle [start, end)."""
+
+    start = floor_minute(target_at)
+    end = start + timedelta(minutes=int(timeframe_minutes))
+    return start, end
+
+
+def select_final_window_close(
+    bars: Sequence[MinuteBar],
+    *,
+    target_at: datetime,
+    now: datetime,
+    timeframe_minutes: int = 1,
+) -> tuple[MinuteBar | None, str]:
+    """FINAL window — target minute candle 완료 후에만 확정.
+
+    - target_candle_start = floor(target_at)
+    - now < target_candle_end → NOT_MATURED (prior candle final 금지)
+    - 완료 후 exact target candle close만 사용 (prior fallback 없음)
+    """
+
+    target = as_utc(target_at)
+    now_utc = as_utc(now)
+    candle_start, candle_end = target_candle_bounds(
+        target, timeframe_minutes=timeframe_minutes
+    )
+
+    if now_utc < candle_end:
+        return None, "NOT_MATURED"
+
+    for bar in bars:
+        at = as_utc(bar.candle_at)
+        if at != candle_start:
+            continue
+        if not bar.is_completed(
+            now=now_utc, timeframe_minutes=timeframe_minutes
+        ):
+            return None, "NOT_MATURED"
+        if at > now_utc:
+            return None, "FUTURE_BLOCKED"
+        return bar, "OK"
+
+    return None, "MISSING_CANDLE"
+
+
 def select_close_at_or_before(
     bars: Sequence[MinuteBar],
     *,
@@ -68,9 +121,10 @@ def select_close_at_or_before(
     timeframe_minutes: int = 1,
     max_lag_minutes: int = 3,
 ) -> tuple[MinuteBar | None, str]:
-    """target 이하 최신 completed 1m candle.
+    """PREVIEW/provisional — target 이하 최신 completed candle.
 
-    미래 candle 금지. exact 없으면 이전 completed 사용(max_lag 내).
+    final column stamp 에는 사용하지 않는다.
+    ``select_final_window_close`` 를 FINAL 경로로 쓴다.
     """
 
     target = as_utc(target_at)
@@ -85,7 +139,6 @@ def select_close_at_or_before(
             continue
         if not bar.is_completed(now=now_utc, timeframe_minutes=timeframe_minutes):
             continue
-        # 미래 봉 명시 차단
         if at > now_utc:
             continue
         eligible.append(bar)
@@ -110,16 +163,24 @@ def observe_windows(
     timeframe_minutes: int = 1,
     max_lag_minutes: int = 3,
 ) -> list[WindowObservation]:
+    """FINAL window observations — target candle close 이후에만 OK.
+
+    ``max_lag_minutes`` 는 호환용으로 유지하되 FINAL 경로에서는 무시한다.
+    """
+
+    del max_lag_minutes  # FINAL 정책: prior/lag fallback 없음
     out: list[WindowObservation] = []
     t0 = as_utc(detected_at)
     for minutes in windows_minutes:
         target = t0 + timedelta(minutes=int(minutes))
-        bar, status = select_close_at_or_before(
+        candle_start, candle_end = target_candle_bounds(
+            target, timeframe_minutes=timeframe_minutes
+        )
+        bar, status = select_final_window_close(
             bars,
             target_at=target,
             now=now,
             timeframe_minutes=timeframe_minutes,
-            max_lag_minutes=max_lag_minutes,
         )
         if bar is None:
             out.append(
@@ -130,6 +191,9 @@ def observe_windows(
                     price=None,
                     return_pct=None,
                     status=status,
+                    target_candle_start=candle_start,
+                    target_candle_end=candle_end,
+                    final=False,
                 )
             )
             continue
@@ -142,6 +206,9 @@ def observe_windows(
                 price=price,
                 return_pct=return_pct(entry, price),
                 status="OK",
+                target_candle_start=candle_start,
+                target_candle_end=candle_end,
+                final=True,
             )
         )
     return out

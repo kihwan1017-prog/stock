@@ -63,6 +63,8 @@ def test_return_pct_decimal():
 
 
 def test_select_close_prior_completed_not_future():
+    """provisional helper: target 이하 completed candle (FINAL 아님)."""
+
     t0 = datetime(2026, 8, 13, 4, 0, tzinfo=timezone.utc)
     bars = _series(t0, minutes=10)
     now = t0 + timedelta(minutes=10)
@@ -80,18 +82,20 @@ def test_select_close_prior_completed_not_future():
     assert bar2 is None
 
 
-def test_missing_exact_uses_nearest_prior():
+def test_missing_exact_final_no_prior_fallback():
+    """FINAL: exact target candle 없으면 prior 로 확정하지 않음."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
+        select_final_window_close,
+    )
+
     t0 = datetime(2026, 8, 13, 4, 0, tzinfo=timezone.utc)
-    # 5분봉 누락 — 4분만 존재
     bars = [_series(t0, minutes=4)[i] for i in range(5)]
     now = t0 + timedelta(minutes=10)
     target = t0 + timedelta(minutes=5)
-    bar, status = select_close_at_or_before(
-        bars, target_at=target, now=now, max_lag_minutes=3
-    )
-    assert status == "OK"
-    assert bar is not None
-    assert bar.candle_at == t0 + timedelta(minutes=4)
+    bar, status = select_final_window_close(bars, target_at=target, now=now)
+    assert status == "MISSING_CANDLE"
+    assert bar is None
 
 
 def test_observe_windows_distinct_prices_at_plus_65():
@@ -111,7 +115,7 @@ def test_observe_windows_distinct_prices_at_plus_65():
     assert obs[0].minutes == 5
     assert obs[0].price == Decimal("100.5")  # +5 * 0.1
     assert obs[3].price == Decimal("106.0")  # +60 * 0.1
-
+    assert all(o.final for o in obs)
 
 def test_mfe_mae_from_high_low():
     t0 = datetime(2026, 8, 13, 4, 0, tzinfo=timezone.utc)
@@ -212,15 +216,20 @@ async def test_evaluate_at_5m_and_late_65m_backfill(monkeypatch):
     session.scalars.return_value = [row]
     session.commit = MagicMock()
 
-    # exactly +5m — candle@T+5는 아직 미완료 → T+4 completed close 사용
+    # target candle close 이후(+6m)에 5m finalization
+    # detected=T+0 → 5m target=T+5 → candle_end=T+6
     ev5 = UpbitOpportunityShadowEvaluator(
-        session, now=t0 + timedelta(minutes=5), allow_sync=False
+        session, now=t0 + timedelta(minutes=6), allow_sync=False
     )
     out5 = await ev5.evaluate_pending(notify=False)
     assert out5["orders_created"] == 0
-    assert row.return_5m_pct == pytest.approx(0.4, rel=1e-4)
+    assert row.return_5m_pct == pytest.approx(0.5, rel=1e-4)  # candle T+5 close
     assert row.return_15m_pct is None
     assert row.status == SHADOW_STATUS_ACTIVE
+    assert row.evaluated_5m_at is not None
+    assert (row.evaluation_detail or {}).get("windows", {}).get("5", {}).get(
+        "final"
+    ) is True
 
     # late +65m → remaining windows distinct (5m은 idempotent 유지)
     ev65 = UpbitOpportunityShadowEvaluator(
@@ -229,12 +238,11 @@ async def test_evaluate_at_5m_and_late_65m_backfill(monkeypatch):
     out65 = await ev65.evaluate_pending(notify=False)
     assert out65["completed"] == 1
     assert row.status == SHADOW_STATUS_COMPLETED
-    assert row.return_5m_pct == pytest.approx(0.4, rel=1e-4)  # 덮어쓰지 않음
+    assert row.return_5m_pct == pytest.approx(0.5, rel=1e-4)  # 덮어쓰지 않음
     assert row.return_15m_pct == pytest.approx(1.5, rel=1e-4)
     assert row.return_30m_pct == pytest.approx(3.0, rel=1e-4)
     assert row.return_60m_pct == pytest.approx(6.0, rel=1e-4)
     assert float(row.price_15m) != float(row.price_30m) != float(row.price_60m)
-
 
 @pytest.mark.asyncio
 async def test_idempotent_and_completed_dry_safe(monkeypatch):

@@ -156,18 +156,50 @@ class UpbitOpportunityShadowEvaluator:
         windows = computed.get("windows") or {}
 
         if persist:
-            # idempotent — 이미 stamp된 window는 덮어쓰지 않음
+            detail = dict(row.evaluation_detail or {})
+            # detail.windows 와 return_* 컬럼을 동일 final 결과로만 갱신
+            prev_windows = dict(detail.get("windows") or {})
+
             for minutes in EVALUATION_WINDOWS_MINUTES:
                 key = str(minutes)
-                obs = windows.get(key) or {}
-                if obs.get("status") != "OK":
-                    continue
+                obs = dict(windows.get(key) or {})
                 attr_at = f"evaluated_{minutes}m_at"
-                if getattr(row, attr_at) is not None:
+                already_final = getattr(row, attr_at) is not None
+
+                if already_final:
+                    # idempotent — 이미 final stamp 된 window 는 덮어쓰지 않음
+                    if obs.get("status") == "OK":
+                        synced = {**obs, "final": True}
+                        prev_windows[key] = synced
+                        windows[key] = synced
                     continue
-                setattr(row, f"price_{minutes}m", _dec(obs["price"]))
-                setattr(row, f"return_{minutes}m_pct", float(obs["return_pct"]))
+
+                if obs.get("status") != "OK":
+                    # provisional / 미완료 — final column·evaluated_*_at 금지
+                    prev_windows[key] = {
+                        "target_at": obs.get("target_at"),
+                        "target_candle_start": obs.get("target_candle_start"),
+                        "target_candle_end": obs.get("target_candle_end"),
+                        "observed_candle_at": None,
+                        "price": None,
+                        "return_pct": None,
+                        "status": obs.get("status") or "NOT_MATURED",
+                        "final": False,
+                    }
+                    windows[key] = dict(prev_windows[key])
+                    continue
+
+                # FINAL — column + detail 한 트랜잭션에서 동일 값
+                price = obs.get("price")
+                ret = obs.get("return_pct")
+                if price is None or ret is None:
+                    continue
+                setattr(row, f"price_{minutes}m", _dec(price))
+                setattr(row, f"return_{minutes}m_pct", float(ret))
                 setattr(row, attr_at, self._now)
+                final_obs = {**obs, "final": True}
+                prev_windows[key] = final_obs
+                windows[key] = final_obs
                 changed = True
 
             if computed.get("mfe_pct") is not None:
@@ -201,13 +233,13 @@ class UpbitOpportunityShadowEvaluator:
             elif row.sl_hit is None:
                 row.sl_hit = bool(tp_sl.get("sl_hit"))
 
-            detail = dict(row.evaluation_detail or {})
-            detail["windows"] = windows
+            detail["windows"] = prev_windows
             detail["mfe_mae"] = computed.get("mfe_mae_detail")
             detail["tp_sl"] = tp_sl
             detail["source"] = "minute_candle_historical_v1"
             detail["sl_pct"] = computed.get("sl_pct")
             detail["tp_pct"] = computed.get("tp_pct")
+            detail["window_finalization"] = "target_candle_close_v2"
             row.evaluation_detail = detail
             row.updated_at = self._now
 
@@ -263,6 +295,16 @@ class UpbitOpportunityShadowEvaluator:
         for obs in observations:
             windows[str(obs.minutes)] = {
                 "target_at": obs.target_at.isoformat(),
+                "target_candle_start": (
+                    obs.target_candle_start.isoformat()
+                    if obs.target_candle_start
+                    else None
+                ),
+                "target_candle_end": (
+                    obs.target_candle_end.isoformat()
+                    if obs.target_candle_end
+                    else None
+                ),
                 "observed_candle_at": (
                     obs.observed_candle_at.isoformat()
                     if obs.observed_candle_at
@@ -271,6 +313,7 @@ class UpbitOpportunityShadowEvaluator:
                 "price": float(obs.price) if obs.price is not None else None,
                 "return_pct": _round6(obs.return_pct),
                 "status": obs.status,
+                "final": bool(obs.final),
             }
 
         mfe, mae, mfe_detail = compute_mfe_mae(
