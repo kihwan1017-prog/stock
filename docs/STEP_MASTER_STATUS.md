@@ -48,7 +48,7 @@
 | NEWS-N3.1 | STEP N3.1 | Mapping Quality Guard | NEWS_SYMBOL_MAPPING_QUALITY_READY | YES | none | test_step_n3_1_* | N4 AI News | `symbol_mapping_quality*` |
 | NEWS-N4 | STEP N4 | AI News Analysis | READY_WITH_LIMITATIONS | YES (`e76ab57`) | m4n5o6p7q8r9 | test_step_n4_* | N5 Signal | `news_ai_analysis*` |
 | NEWS-N5 | STEP N5 | News Signal Standardization | UPBIT_NEWS_SIGNAL_READY | YES (`f4d9549`) | n5o6p7q8r9s0 | test_step_n5_* | N6 Combined | `news_signal*` |
-| NEWS-N6 | STEP N6 | News Combined Shadow A/B | READY_WITH_LIMITATIONS | YES (pending commit) | o6p7q8r9s0t1 | test_step_n6_* | N7 (승인·누적 후) | `upbit_news_combined_shadow*` |
+| NEWS-N6 | STEP N6 | News Combined Shadow A/B | READY_WITH_LIMITATIONS | YES (`eac2b66`) | o6p7q8r9s0t1 | test_step_n6_* | N7 (승인·누적 후) | `upbit_news_combined_shadow*` |
 
 ---
 
