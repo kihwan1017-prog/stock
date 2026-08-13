@@ -48,6 +48,11 @@ Active `database/alembic/versions/` 그래프에서 격리한 migration 증거 �
 ### 금지 / 후속
 
 1. **금지:** 이 파일을 `database/alembic/versions/`로 복원 후 `alembic upgrade` 실행
-2. **금지:** `alembic stamp h1a2b3c4d5e6`를 임의 실행 (별도 승인·절차 필요)
-3. **필요:** `k2l3m4n5o6p7` 이후 **정식 reconciliation migration** (idempotent / IF NOT EXISTS 또는 stamp+merge 정책)으로 external history를 graph에 편입
-4. 격리 후 active head는 **`k2l3m4n5o6p7` 단일**이어야 함
+2. **금지:** `alembic stamp h1a2b3c4d5e6`를 임의 실행
+3. **Superseded by:** formal revision **`l3m4n5o6p7q8`**
+   (`database/alembic/versions/l3m4n5o6p7q8_broker_external_history_reconcile.py`)
+   - `down_revision = k2l3m4n5o6p7`
+   - idempotent create/index ensure (기존 운영 테이블/데이터 보존)
+   - h1a를 parent로 사용하지 않음
+4. h1a는 **audit/archive reference only** — active migration으로 복원하지 말 것
+5. 격리 시점 active head는 `k2l3m4n5o6p7`였고, 현재 운영 head는 `l3m4n5o6p7q8`
