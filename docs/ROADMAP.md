@@ -3,7 +3,7 @@
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
 **최종 갱신:** 2026-08-14  
 
-**Ops note (2026-08-13):** Shadow cohort milestone watch — `SAMPLE_ACCUMULATING` until VALID≥30 ∧ new-policy MATCH≥10 ∧ mismatch=0 → 1회 `SHADOW_COHORT_30_REVIEW_READY`. 정책/threshold 변경 없음. SHADOW_ONLY 유지.  
+**Ops note (2026-08-14):** Technical Shadow Cohort REVIEW_READY v2 완료 — `TECHNICAL_COHORT_REVIEW_COMPLETE_CHANGE_CANDIDATES` (TP only; **미적용**). Next sample gate **n≈50**. 정책/threshold 변경 없음. SHADOW_ONLY 유지.  
 **News note (2026-08-14):** STEP N10 `NEWS_AB_SAMPLE_ACCUMULATING` — 자연 MATCHED 1/20 · NO_NEWS 13/20; Top-N Snapshot **OBSERVE_MORE** (구현 금지). Next: 자연 누적 지속 → REVIEW_READY; production Scanner/Gate 적용 금지.  
 **P0 ID는 PHASE 2 Canonical 고정** (PHASE 1 remaining-work 파일의 P0 번호와 다를 수 있음 → **본 문서 우선**).
 

@@ -7,17 +7,16 @@
 
 ## Current Phase
 
-**STEP N10 — UPBIT News A/B Natural Sample Accumulation & Coverage Decision** (`NEWS_AB_SAMPLE_ACCUMULATING`)
+**Technical Shadow Cohort REVIEW_READY Performance Review v2** — 완료 (`TECHNICAL_COHORT_REVIEW_COMPLETE_CHANGE_CANDIDATES`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Mode | 관찰/coverage 판정 (정책·threshold·look-ahead **미변경**) |
-| MATCHED | **1/20** completed (자연, experiment_id=16 KRW-BTC) |
-| NO_NEWS | **13/20** completed |
-| Top-N Snapshot | **OBSERVE_MORE** (A∧B 충족, C source-gap **미증명** → 구현 금지) |
-| CONTROL | Scanner/Shadow/Cohort/Trading **불변** |
-| Apply | **금지** |
+| Milestone | `SHADOW_COHORT_30_REVIEW_READY` (VALID=32, NEW_POLICY MATCH=16, mismatch=0) |
+| 판정 | CHANGE_CANDIDATE=TP만 (적용 **금지**) · next gate **n≈50** |
+| Evidence | `docs/audit/TECHNICAL_SHADOW_COHORT_REVIEW_READY_V2_20260814.*` |
+| News A/B | 별도 자연 누적 (`NEWS_AB_SAMPLE_ACCUMULATING`) — Technical과 미혼합 |
+| CONTROL / Apply | **불변 / 금지** |
 
 ---
 
@@ -27,8 +26,8 @@
 
 ## Next Gate
 
-1. **자연 누적 지속** — MATCHED_COMPLETED≥20 ∧ NO_NEWS_COMPLETED≥20 ∧ mismatch=0 → `NEWS_AB_REVIEW_READY`  
-2. Top-N Snapshot은 A+B+C 증명 시에만 별도 STEP 설계·구현  
-3. Scanner/Gate production 적용 금지 · LIVE 별도 승인  
+1. Technical VALID cohort **≈50** 재리뷰 (TP candidate 재평가; 자동 변경 금지)  
+2. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
+3. Scanner/Gate/TP/SL production 적용 · LIVE — 별도 승인  
 
 → [ROADMAP.md](ROADMAP.md)
