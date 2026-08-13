@@ -12,10 +12,7 @@ if exist "%PID_FILE%" (
   del /f /q "%PID_FILE%" >nul 2>&1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$c=Get-NetTCPConnection -LocalPort %API_PORT% -State Listen -EA SilentlyContinue | Select-Object -First 1; ^
-   if ($c) { Stop-Process -Id $c.OwningProcess -Force -EA SilentlyContinue; Write-Host ('[stop] killed port %API_PORT% PID=' + $c.OwningProcess); exit 0 } ^
-   else { Write-Host '[stop] no listener on port %API_PORT%'; exit 0 }"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_stop_port_listener.ps1" -Port %API_PORT% -ProjectRoot "%PROJECT_ROOT%"
 
 echo [OK] stop requested
 endlocal
