@@ -6,7 +6,7 @@
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
 **Ops note:** Shadow cohort milestone watch — accumulating until READY gate. SHADOW_ONLY · UBA1380 보호.  
-**News note:** STEP N9 latency alignment — N4→N5 event-driven; `NEWS_AB_SAMPLE_ACCUMULATING`.
+**News note:** STEP N10 coverage decision — Top-N Snapshot OBSERVE_MORE; `NEWS_AB_SAMPLE_ACCUMULATING` (MATCHED 1/20, NO_NEWS 13/20).
 
 ---
 
@@ -51,7 +51,8 @@
 | NEWS-N6 | STEP N6 | News Combined Shadow A/B | READY_WITH_LIMITATIONS | YES (`eac2b66`) | o6p7q8r9s0t1 | test_step_n6_* | N7 누적 | `upbit_news_combined_shadow*` |
 | NEWS-N7 | STEP N7 | News A/B Sample Accumulation | NEWS_AB_SAMPLE_ACCUMULATING | YES (`60a9969`) | none (reuse N6 table) | test_step_n7_* | N8 observation | diagnostics/scheduler/UI |
 | NEWS-N8 | STEP N8 | News Pipeline Continuous Observation | NEWS_PIPELINE_OBSERVATION_RUNNING | YES (`74102ad`) | none | test_step_n8_* | N9 latency | pipeline_observation* |
-| NEWS-N9 | STEP N9 | News Pipeline Latency Alignment | NEWS_PIPELINE_LATENCY_ALIGNED | YES (`622eb8d`) | none | test_step_n9_* | N10 (승인 후) | N4→N5 event trigger |
+| NEWS-N9 | STEP N9 | News Pipeline Latency Alignment | NEWS_PIPELINE_LATENCY_ALIGNED | YES (`622eb8d`) | none | test_step_n9_* | N10 | N4→N5 event trigger |
+| NEWS-N10 | STEP N10 | News A/B Coverage Decision | NEWS_AB_SAMPLE_ACCUMULATING | YES | none | test_step_n10_* | 자연 누적 / REVIEW_READY | coverage_funnel + TopN rec |
 
 ---
 

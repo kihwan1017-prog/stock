@@ -572,8 +572,135 @@ def diagnose_latency_alignment(
     }
 
 
+def decide_topn_snapshot_recommendation(
+    *,
+    overlap_exists: bool,
+    pret0_eligible_exists: bool,
+    eligible_never_in_experiment: int,
+    matched_symbols: int,
+) -> dict[str, Any]:
+    """A+B+C 모두 증명될 때만 RECOMMENDED. 구현은 별도 STEP."""
+
+    a = bool(overlap_exists)
+    b = bool(pret0_eligible_exists)
+    c = int(eligible_never_in_experiment) > 0
+    if a and b and c:
+        status = "RECOMMENDED"
+        reason = (
+            "VALID∩Scanner overlap + pre-T0 eligible exist, but eligible "
+            "symbols never enter experiment rows (source coverage gap)"
+        )
+    elif a and b and matched_symbols > 0:
+        status = "OBSERVE_MORE"
+        reason = (
+            "Natural MATCHED occurring; accumulate more before Top-N Snapshot"
+        )
+    else:
+        status = "NOT_REQUIRED"
+        reason = "Insufficient evidence of source-coverage-only drops"
+    return {
+        "status": status,
+        "reason": reason,
+        "conditions": {
+            "A_overlap": a,
+            "B_pret0_eligible": b,
+            "C_source_gap": c,
+        },
+        "implement_now": False,
+        "design_only_if_recommended": True,
+    }
+
+
+def coverage_funnel_snapshot(session: Session) -> dict[str, Any]:
+    """Scanner → News → N5 → MATCHED funnel (READ ONLY)."""
+
+    row = session.execute(
+        text(
+            """
+            WITH scan AS (
+              SELECT DISTINCT UPPER(symbol) s
+              FROM trading.upbit_opportunity_shadow
+              WHERE deleted_at IS NULL
+            ),
+            n5v AS (
+              SELECT DISTINCT UPPER(symbol) s
+              FROM news.news_signal WHERE signal_status='VALID'
+            ),
+            overlap AS (
+              SELECT s.s FROM scan s JOIN n5v v ON s.s = v.s
+            ),
+            matched AS (
+              SELECT DISTINCT UPPER(symbol) s
+              FROM operation.upbit_news_combined_shadow
+              WHERE news_context_status='NEWS_MATCHED'
+            ),
+            recent_t0 AS (
+              SELECT UPPER(symbol) symbol, MAX(detected_at) AS t0
+              FROM trading.upbit_opportunity_shadow
+              WHERE deleted_at IS NULL
+              GROUP BY UPPER(symbol)
+            ),
+            pret0 AS (
+              SELECT DISTINCT r.symbol
+              FROM recent_t0 r
+              JOIN news.news_signal ns ON UPPER(ns.symbol)=r.symbol
+              WHERE ns.signal_status='VALID'
+                AND ns.signal_at <= r.t0
+                AND ns.published_at <= r.t0
+                AND (ns.expires_at IS NULL OR ns.expires_at > r.t0)
+            ),
+            pret0_no_exp AS (
+              SELECT p.symbol FROM pret0 p
+              LEFT JOIN (
+                SELECT DISTINCT UPPER(symbol) symbol
+                FROM operation.upbit_news_combined_shadow
+              ) e ON p.symbol = e.symbol
+              WHERE e.symbol IS NULL
+            )
+            SELECT
+              (SELECT COUNT(*) FROM scan) AS scanner_symbols,
+              (SELECT COUNT(*) FROM n5v) AS n5_valid_symbols,
+              (SELECT COUNT(*) FROM overlap) AS overlap_symbols,
+              (SELECT COUNT(*) FROM pret0) AS pret0_eligible_symbols,
+              (SELECT COUNT(*) FROM matched) AS matched_symbols,
+              (SELECT COUNT(*) FROM pret0_no_exp) AS eligible_never_in_experiment,
+              (SELECT COUNT(*) FROM news.news_signal
+                 WHERE signal_status='VALID') AS n5_valid_rows
+            """
+        )
+    ).mappings().one()
+
+    rec = decide_topn_snapshot_recommendation(
+        overlap_exists=int(row["overlap_symbols"] or 0) > 0,
+        pret0_eligible_exists=int(row["pret0_eligible_symbols"] or 0) > 0,
+        eligible_never_in_experiment=int(
+            row["eligible_never_in_experiment"] or 0
+        ),
+        matched_symbols=int(row["matched_symbols"] or 0),
+    )
+    return {
+        "scanner_symbols": int(row["scanner_symbols"] or 0),
+        "n5_valid_symbols": int(row["n5_valid_symbols"] or 0),
+        "overlap_symbols": int(row["overlap_symbols"] or 0),
+        "pret0_eligible_symbols": int(row["pret0_eligible_symbols"] or 0),
+        "matched_symbols": int(row["matched_symbols"] or 0),
+        "eligible_never_in_experiment": int(
+            row["eligible_never_in_experiment"] or 0
+        ),
+        "n5_valid_rows": int(row["n5_valid_rows"] or 0),
+        "topn_snapshot": rec,
+        "drop_primary": (
+            "NO_SYMBOL_OVERLAP"
+            if int(row["scanner_symbols"] or 0)
+            > int(row["overlap_symbols"] or 0)
+            else "NONE"
+        ),
+    }
+
+
 def observation_bundle(session: Session) -> dict[str, Any]:
     alignment = diagnose_latency_alignment(session)
+    coverage = coverage_funnel_snapshot(session)
     return {
         "env": pipeline_env_snapshot(),
         "schedulers": pipeline_scheduler_snapshot(),
@@ -581,13 +708,15 @@ def observation_bundle(session: Session) -> dict[str, Any]:
         "milestone": compute_sample_milestone(session),
         "lags": measure_pipeline_lags(session),
         "latency_alignment": alignment,
+        "coverage": coverage,
         "future_signal_at": future_signal_at_stats(session),
         "n4_latency": n4_latency_snapshot(session),
         "matched_provenance": matched_provenance(session, limit=10),
         "top_n_history_reusable": False,
+        "top_n_snapshot_recommendation": coverage.get("topn_snapshot"),
         "top_n_history_followup_candidate": (
-            "Scanner Top-N Observation Snapshot (append-only) "
-            "if NEWS accumulates but experiment coverage stays low"
+            "APPEND-ONLY Scanner Top-N Observation Snapshot "
+            "(design-only until RECOMMENDED); never feeds Scanner decisions"
         ),
         "telegram": {
             "per_article": False,

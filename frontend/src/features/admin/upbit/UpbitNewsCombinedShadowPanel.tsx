@@ -145,6 +145,21 @@ export function UpbitNewsCombinedShadowPanel() {
           latency_root=
           {cell(asRecord(pipeline.latency_alignment)?.root_cause)}
         </Tag>
+        <Tag>
+          pret0=
+          {cell(asRecord(pipeline.coverage)?.pret0_eligible_symbols)}
+        </Tag>
+        <Tag>
+          funnel_overlap=
+          {cell(asRecord(pipeline.coverage)?.overlap_symbols)}
+        </Tag>
+        <Tag color="blue">
+          TopN_snap=
+          {cell(
+            asRecord(asRecord(pipeline.coverage)?.topn_snapshot)?.status ??
+              asRecord(pipeline.top_n_snapshot_recommendation)?.status,
+          )}
+        </Tag>
       </Space>
       <Space wrap>
         <Tag>enabled={String(st.enabled ?? false)}</Tag>
