@@ -79,12 +79,16 @@ def combined_shadow_diagnostics(
         diagnose_news_availability,
         list_matched_details,
     )
+    from stock_platform.operation.upbit_news_combined_shadow.pipeline_observation import (
+        observation_bundle,
+    )
 
     return {
         "diagnostics": diagnose_news_availability(session),
         "sample_milestone": compute_sample_milestone(session),
         "observation": compute_observation_stats(session),
         "matched_examples": list_matched_details(session, limit=20),
+        "pipeline": observation_bundle(session),
         "llm_calls": 0,
         "control_mutation": False,
         "apply_to_scanner": False,

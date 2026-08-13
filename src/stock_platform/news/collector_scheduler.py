@@ -311,6 +311,28 @@ class UpbitNewsNoticeCollectorScheduler:
                 finally:
                     session.close()
 
+            # N8: collect 후 N3/N3.1 mapping — 별도 architecture 없이
+            # 기존 collector tick에 fail-isolated glue (Scanner 무영향)
+            if int(aggregate.get("inserted_count") or 0) > 0 or force:
+                map_session = session_factory()
+                try:
+                    aggregate["symbol_mapping"] = self._run_post_collect_mapping(
+                        map_session,
+                        sources=sources,
+                    )
+                except Exception as map_exc:  # noqa: BLE001
+                    # mapping 실패가 collect 성공을 뒤집지 않음
+                    aggregate["symbol_mapping"] = {
+                        "ok": False,
+                        "error": f"{type(map_exc).__name__}: {map_exc}"[:300],
+                    }
+                    logger.warning(
+                        "upbit_news_post_collect_mapping_failed",
+                        error=aggregate["symbol_mapping"]["error"],
+                    )
+                finally:
+                    map_session.close()
+
             if aggregate["failure_count"] > 0:
                 self._failure_count += 1
                 self._last_failure_at = datetime.now(timezone.utc)
@@ -359,6 +381,36 @@ class UpbitNewsNoticeCollectorScheduler:
             aggregate[key] = int(aggregate.get(key) or 0) + int(
                 payload.get(key) or 0
             )
+
+    @staticmethod
+    def _run_post_collect_mapping(
+        session: Any,
+        *,
+        sources: tuple[str, ...],
+    ) -> dict[str, Any]:
+        """최근 article에 대해 N3/N3.1 mapping (TRUSTED quality 포함)."""
+
+        from dataclasses import asdict
+
+        from stock_platform.news.collector_constants import (
+            SOURCE_CODE_CRYPTO_NEWS,
+            SOURCE_CODE_UPBIT_NOTICE,
+        )
+        from stock_platform.news.symbol_mapper import NewsSymbolMapper
+
+        codes: list[str] = []
+        if "notice" in sources:
+            codes.append(SOURCE_CODE_UPBIT_NOTICE)
+        if "crypto" in sources:
+            codes.append(SOURCE_CODE_CRYPTO_NEWS)
+        if not codes:
+            return {"ok": True, "skipped": True, "reason": "NO_SOURCE"}
+
+        mapper = NewsSymbolMapper(session)
+        # 신규 위주 — 전체 재분석 금지, 최근 50건만
+        stats = mapper.run_backfill(source_codes=codes, limit=50)
+        session.commit()
+        return {"ok": True, "stats": asdict(stats)}
 
 
 upbit_news_notice_collector_scheduler = UpbitNewsNoticeCollectorScheduler()

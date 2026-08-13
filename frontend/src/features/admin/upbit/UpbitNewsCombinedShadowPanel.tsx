@@ -71,6 +71,9 @@ export function UpbitNewsCombinedShadowPanel() {
   const byNews = asRecord(st.by_news_context) ?? {};
   const milestone = asRecord(st.sample_milestone) ?? {};
   const diagnostics = asRecord(st.diagnostics) ?? {};
+  const pipeline = asRecord(st.pipeline) ?? {};
+  const pipelineEnv = asRecord(pipeline.env) ?? {};
+  const futureAt = asRecord(pipeline.future_signal_at) ?? {};
   const matchedExamples = Array.isArray(st.matched_examples)
     ? (st.matched_examples as Record<string, unknown>[])
     : [];
@@ -88,6 +91,14 @@ export function UpbitNewsCombinedShadowPanel() {
         BOOST/UNCHANGED/DEPRIORITIZE는 실험 라벨이며 BUY/SELL/ALLOW 아님.
       </Typography.Paragraph>
       <Space wrap>
+        <Tag>Collector={String(pipelineEnv.UPBIT_NOTICE_COLLECTION_ENABLED ?? "?")}</Tag>
+        <Tag>Crypto={String(pipelineEnv.CRYPTO_NEWS_COLLECTION_ENABLED ?? "?")}</Tag>
+        <Tag>N4={String(pipelineEnv.UPBIT_NEWS_AI_ANALYSIS_ENABLED ?? "?")}</Tag>
+        <Tag>N5={String(pipelineEnv.UPBIT_NEWS_SIGNAL_ENABLED ?? "?")}</Tag>
+        <Tag>N6Exp={String(pipelineEnv.UPBIT_NEWS_COMBINED_SHADOW_ENABLED ?? "?")}</Tag>
+        <Tag>MappingGlue={String(asRecord(pipeline.n3_automation)?.post_collect_glue ?? false)}</Tag>
+      </Space>
+      <Space wrap>
         <Tag>enabled={String(st.enabled ?? false)}</Tag>
         <Tag>rows={cell(st.total_rows)}</Tag>
         <Tag color="purple">sample={cell(milestone.status)}</Tag>
@@ -101,6 +112,14 @@ export function UpbitNewsCombinedShadowPanel() {
           {cell(diagnostics.overlap_rate_all)}
         </Tag>
         <Tag>root={cell(diagnostics.root_cause)}</Tag>
+        <Tag>
+          FUTURE_SIGNAL_AT=
+          {cell(futureAt.future_signal_at_excluded)}
+        </Tag>
+        <Tag>24h_articles={cell(diagnostics.collected_articles_total)}</Tag>
+        <Tag>TRUSTED={cell(diagnostics.trusted_mapped_articles)}</Tag>
+        <Tag>N4_ok={cell(diagnostics.completed_n4_analyses_24h)}</Tag>
+        <Tag>N5_valid={cell(diagnostics.valid_n5_signals)}</Tag>
         <Tag>NEWS_MATCHED={cell(byNews.NEWS_MATCHED)}</Tag>
         <Tag>NO_NEWS={cell(byNews.NO_NEWS)}</Tag>
         <Tag>EXCLUDED={cell(byNews.EXCLUDED_ONLY)}</Tag>
@@ -110,8 +129,8 @@ export function UpbitNewsCombinedShadowPanel() {
         <Tag color="blue">completed={cell(st.completed_n)}</Tag>
       </Space>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        Top N DB history 재사용 불가 (SOURCE_COVERAGE_LIMITED). Apply 버튼 없음.
-        experimental_rank만으로 우수 종목 결론 금지. N4/N5 scheduler 자동 ON 금지.
+        Top N DB history 재사용 불가 (SOURCE_COVERAGE_LIMITED). Apply/Enable Trading 버튼 없음.
+        experimental_rank만으로 우수 종목 결론 금지. look-ahead 완화 금지.
       </Typography.Paragraph>
       <Space wrap>
         <Button type="primary" loading={runOnce.isPending} onClick={() => runOnce.mutate()}>

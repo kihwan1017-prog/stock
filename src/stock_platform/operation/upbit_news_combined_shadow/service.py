@@ -711,7 +711,19 @@ def experiment_stats_snapshot(session: Session) -> dict[str, Any]:
         },
         "n4_n5_auto_enable": False,
         "apply_to_scanner": False,
+        "pipeline": _safe_pipeline(session),
     }
+
+
+def _safe_pipeline(session: Session) -> dict[str, Any]:
+    from stock_platform.operation.upbit_news_combined_shadow.pipeline_observation import (
+        observation_bundle,
+    )
+
+    try:
+        return observation_bundle(session)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc)[:200]}
 
 
 def _safe_milestone(session: Session) -> dict[str, Any]:

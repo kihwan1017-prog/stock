@@ -4,7 +4,7 @@
 **최종 갱신:** 2026-08-14  
 
 **Ops note (2026-08-13):** Shadow cohort milestone watch — `SAMPLE_ACCUMULATING` until VALID≥30 ∧ new-policy MATCH≥10 ∧ mismatch=0 → 1회 `SHADOW_COHORT_30_REVIEW_READY`. 정책/threshold 변경 없음. SHADOW_ONLY 유지.  
-**News note (2026-08-14):** STEP N7 `NEWS_AB_SAMPLE_ACCUMULATING` — MATCHED 0/20 · NO_NEWS 12/20 · root MIXED. Next: **N8** (사용자 승인 후; production Scanner/Gate 적용 금지). N4/N5 scheduler 자동 ON 금지.  
+**News note (2026-08-14):** STEP N8 `NEWS_PIPELINE_OBSERVATION_RUNNING` + `NEWS_AB_SAMPLE_ACCUMULATING`. Next: **N9** (사용자 승인 후; production Scanner/Gate 적용 금지).  
 **P0 ID는 PHASE 2 Canonical 고정** (PHASE 1 remaining-work 파일의 P0 번호와 다를 수 있음 → **본 문서 우선**).
 
 상태 값: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `DONE` · `DEFERRED`

@@ -6,7 +6,7 @@
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
 **Ops note:** Shadow cohort milestone watch — accumulating until READY gate. SHADOW_ONLY · UBA1380 보호.  
-**News note:** STEP N7 sample accumulation — `NEWS_AB_SAMPLE_ACCUMULATING`; Top N history SOURCE_COVERAGE_LIMITED; scheduler OFF.
+**News note:** STEP N8 pipeline observation — Collector/N4/N5/N6 ON; N3 post-collect glue; `NEWS_AB_SAMPLE_ACCUMULATING`.
 
 ---
 
@@ -49,7 +49,8 @@
 | NEWS-N4 | STEP N4 | AI News Analysis | READY_WITH_LIMITATIONS | YES (`e76ab57`) | m4n5o6p7q8r9 | test_step_n4_* | N5 Signal | `news_ai_analysis*` |
 | NEWS-N5 | STEP N5 | News Signal Standardization | UPBIT_NEWS_SIGNAL_READY | YES (`f4d9549`) | n5o6p7q8r9s0 | test_step_n5_* | N6 Combined | `news_signal*` |
 | NEWS-N6 | STEP N6 | News Combined Shadow A/B | READY_WITH_LIMITATIONS | YES (`eac2b66`) | o6p7q8r9s0t1 | test_step_n6_* | N7 누적 | `upbit_news_combined_shadow*` |
-| NEWS-N7 | STEP N7 | News A/B Sample Accumulation | NEWS_AB_SAMPLE_ACCUMULATING | YES (`60a9969`) | none (reuse N6 table) | test_step_n7_* | N8 (승인 후) | diagnostics/scheduler/UI |
+| NEWS-N7 | STEP N7 | News A/B Sample Accumulation | NEWS_AB_SAMPLE_ACCUMULATING | YES (`60a9969`) | none (reuse N6 table) | test_step_n7_* | N8 observation | diagnostics/scheduler/UI |
+| NEWS-N8 | STEP N8 | News Pipeline Continuous Observation | NEWS_PIPELINE_OBSERVATION_RUNNING | YES (N8 commit) | none | test_step_n8_* | N9 (승인 후) | pipeline_observation* |
 
 ---
 
