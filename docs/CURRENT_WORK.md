@@ -7,30 +7,30 @@
 
 ## Current Phase
 
-**STEP N5 완료 — UPBIT News Signal Standardization v0** (`UPBIT_NEWS_SIGNAL_READY`)
+**STEP N6 완료 — UPBIT Technical + News Combined Shadow A/B v0** (`READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last STEP | N5 News Signal (`upbit_news_signal_v1`) |
-| 결과 성격 | **INFORMATIONAL / OBSERVATION ONLY** |
-| 입력 | N4 COMPLETED + TRUSTED mapping만 |
-| LLM | **0 calls** (deterministic) |
-| Scheduler | `UPBIT_NEWS_SIGNAL_ENABLED=false` |
-| Cohort | `SAMPLE_ACCUMULATING` (VALID 25 / MATCH 9 / mismatch 0) |
-| Scanner | **SHADOW_ONLY** · News Signal 미연동 |
+| Last STEP | N6 Combined Shadow Experiment (`upbit_news_combined_shadow_v1`) |
+| CONTROL | Scanner/Shadow/Cohort **불변** |
+| EXPERIMENT | `operation.upbit_news_combined_shadow` only |
+| LLM | **0** |
+| Scheduler | `UPBIT_NEWS_COMBINED_SHADOW_ENABLED=false` |
+| Dry run | 5 runs / 8 rows · NEWS_MATCHED 0 · EXCLUDED_ONLY 2 · NO_NEWS 6 |
+| Cohort | VALID 25 / MATCH 9 / mismatch 0 (unchanged) |
 | LIVE | all live flags **false** |
 
 ---
 
 ## 현황 요약 (추정)
 
-개발 ~84% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **조건부**
+개발 ~85% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED**
 
 ## Next Gate
 
-1. **STEP N6** — Combined Shadow 등 (사용자 승인 후만; Scanner/Gate 연결 금지까지 N5 STOP)  
-2. Cohort 자동 축적 → milestone READY  
-3. LIVE는 별도 승인  
+1. **STEP N7** — 사용자 승인 후에만 (N6 누적·검토 후; Scanner/Gate production 적용 금지)  
+2. Cohort milestone READY  
+3. LIVE 별도 승인  
 
 → [ROADMAP.md](ROADMAP.md)

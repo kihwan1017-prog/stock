@@ -482,6 +482,9 @@ class Settings(BaseSettings):
     # STEP N5 — News Signal Standardization (DEFAULT OFF, LLM 금지)
     upbit_news_signal_enabled: bool = False
     upbit_news_signal_interval_seconds: float = 300.0
+    # STEP N6 — News Combined Shadow Experiment (DEFAULT OFF, CONTROL 비수정)
+    upbit_news_combined_shadow_enabled: bool = False
+    upbit_news_combined_shadow_interval_seconds: float = 900.0
 
     scheduler_enabled: bool = True
     # API lifecycle 내 cron(일손실·전략 등). False면 outbox 제외 cron 미기동

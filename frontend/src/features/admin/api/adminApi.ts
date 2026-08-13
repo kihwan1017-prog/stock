@@ -4426,6 +4426,41 @@ export async function runUpbitNewsSignals(body?: {
   });
 }
 
+/** STEP N6 — News Combined Shadow Experiment (CONTROL 비수정) */
+export async function getUpbitCombinedShadowStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/combined-shadow/status");
+}
+
+export async function getUpbitCombinedShadowRecent(params?: {
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/upbit/combined-shadow/recent", params);
+}
+
+export async function getUpbitCombinedShadowStats(): Promise<JsonValue> {
+  return getJson("/admin/upbit/combined-shadow/stats");
+}
+
+export async function runUpbitCombinedShadow(body?: {
+  limit_runs?: number;
+  scanner_run_ids?: string[] | null;
+  force?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/combined-shadow/run", {
+    limit_runs: body?.limit_runs ?? 5,
+    scanner_run_ids: body?.scanner_run_ids ?? null,
+    force: body?.force ?? false,
+  });
+}
+
+export async function evaluateUpbitCombinedShadow(body?: {
+  limit?: number;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/combined-shadow/evaluate", {
+    limit: body?.limit ?? 50,
+  });
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;

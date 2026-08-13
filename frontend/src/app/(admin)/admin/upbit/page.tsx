@@ -9,6 +9,7 @@ import { AdminUpbitLiveUbaPanel } from "@/features/admin/accounts/AdminUpbitLive
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { UpbitAmbiguousOrdersPanel } from "@/features/admin/upbit/UpbitAmbiguousOrdersPanel";
+import { UpbitNewsCombinedShadowPanel } from "@/features/admin/upbit/UpbitNewsCombinedShadowPanel";
 import { UpbitNewsNoticeCollectorPanel } from "@/features/admin/upbit/UpbitNewsNoticeCollectorPanel";
 import { UpbitOpportunityScannerPanel } from "@/features/admin/upbit/UpbitOpportunityScannerPanel";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
@@ -142,6 +143,8 @@ export default function AdminUpbitPage() {
         <AdminUpbitLiveUbaPanel />
 
         <UpbitOpportunityScannerPanel />
+
+        <UpbitNewsCombinedShadowPanel />
 
         <UpbitNewsNoticeCollectorPanel />
 

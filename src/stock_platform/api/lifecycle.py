@@ -588,6 +588,18 @@ class ApplicationLifecycle:
                 "upbit_news_signal_start_failed",
                 error=str(exc)[:300],
             )
+        # STEP N6 — News Combined Shadow Experiment (기본 OFF, CONTROL 비수정)
+        try:
+            from stock_platform.operation.upbit_news_combined_shadow.scheduler import (
+                upbit_news_combined_shadow_scheduler,
+            )
+
+            upbit_news_combined_shadow_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_news_combined_shadow_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
         upbit_daily_settlement_scheduler.start()
         # STEP 8-8A — Post-Fill 재검증 (DB Claim)
@@ -760,6 +772,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_news_signal_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.operation.upbit_news_combined_shadow.scheduler import (
+                upbit_news_combined_shadow_scheduler,
+            )
+
+            await upbit_news_combined_shadow_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await upbit_daily_settlement_scheduler.shutdown()

@@ -350,6 +350,9 @@ from stock_platform.api.v1.admin_upbit_news_analysis import (
 from stock_platform.api.v1.admin_upbit_news_signals import (
     router as admin_upbit_news_signals_router,
 )
+from stock_platform.api.v1.admin_upbit_combined_shadow import (
+    router as admin_upbit_combined_shadow_router,
+)
 from stock_platform.api.v1.admin_market_session_jobs import (
     admin_router as admin_market_session_jobs_router,
 )
@@ -575,6 +578,7 @@ _ROUTER_GROUPS = (
     admin_upbit_news_collector_router,
     admin_upbit_news_analysis_router,
     admin_upbit_news_signals_router,
+    admin_upbit_combined_shadow_router,
     admin_market_session_jobs_router,
     admin_settlements_router,
     admin_broker_snapshots_router,

@@ -7,7 +7,7 @@
 **워킹트리:** Autotrading P0 package 일부 미커밋 가능 · Ops stale snapshot RETIRE 경로 추가
 
 **Ops (2026-08-13):** Shadow cohort milestone watch (`SAMPLE_ACCUMULATING` → READY@VALID≥30/new-policy MATCH≥10/mismatch=0). 정책 변경 없음. SHADOW_ONLY · UBA1380 보호.  
-**News (2026-08-14):** STEP N5 News Signal Standardization — `news.news_signal`, deterministic, LLM=0, scheduler OFF. INFORMATIONAL ONLY. Scanner/Combined Score/Gate/Shadow 비연동.
+**News (2026-08-14):** STEP N6 Combined Shadow A/B Experiment — `operation.upbit_news_combined_shadow`, CONTROL isolation, LLM=0, scheduler OFF. NEWS_MATCHED sparse (look-ahead/lookback).
 
 ---
 
