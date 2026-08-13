@@ -7,17 +7,18 @@
 
 ## Current Phase
 
-**Ops continuity — SHADOW_ONLY + missing-candle FINAL policy**
+**Ops continuity — SHADOW_ONLY · mismatch cleared**
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last ops STEP | Shadow missing minute candle finalization (`LAST_KNOWN_PRICE_AT_TARGET`) |
-| Verdict | `MISSING_CANDLE_POLICY_FIXED` |
-| Residual | Shadow #19/#20 legacy provenance → 승인형 reconciliation preview만 (이번 STEP WRITE 금지) |
-| Protected | UBA **1380** / snapshot **176** unchanged |
-| Scanner | enabled · **SHADOW_ONLY** · interval 900s |
-| LIVE | all live order flags **false** · ARM OFF · Runtime execution false |
+| Last ops STEP | Shadow #19 provenance APPLY (`SHADOW_19_PROVENANCE_RECONCILED`) |
+| Fingerprint | `c84e97c835f60603a462a35daa77a23804214364efcc168a08322c66ce054893` |
+| Phrase used | `RECONCILE SHADOW 19 PROVENANCE` |
+| Residual | mismatch_count **0** · cohort 운영 지속 |
+| Protected | UBA **1380** / #20 allowlist 외 |
+| Scanner | **SHADOW_ONLY** |
+| LIVE | all live flags **false** |
 
 ---
 
@@ -27,8 +28,8 @@
 
 ## Next Gate
 
-1. Shadow #19 (및 필요 시 #20) 승인형 reconciliation preview — **WRITE는 별도 승인 후**  
-2. SHADOW cohort n≥20 도달 후 SAMPLE 충분성 재평가  
-3. P0 잔여(Realtime hardcode / Kiwoom fill ledger / Runtime promote) 워킹트리 정리·커밋 패키지  
+1. SHADOW cohort 운영 지속 · SAMPLE/정책 리뷰  
+2. P0 잔여(Realtime hardcode / Kiwoom fill ledger / Runtime promote) 워킹트리 정리·커밋 패키지  
+3. LIVE는 별도 승인·ARM·실계좌 Gate  
 
 → [ROADMAP.md](ROADMAP.md)

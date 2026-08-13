@@ -5,7 +5,7 @@
 **최종 갱신:** 2026-08-13  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
-**Ops note:** Shadow `LAST_KNOWN_PRICE_AT_TARGET` missing-minute FINAL policy. #19/#20 legacy provenance는 승인형 reconcile 대기(자동 WRITE 금지). SHADOW_ONLY · UBA1380 보호.
+**Ops note:** Shadow #19 provenance APPLY (`RECONCILE SHADOW 19 PROVENANCE`) → mismatch_count 0. SHADOW_ONLY · UBA1380 보호.
 
 ---
 

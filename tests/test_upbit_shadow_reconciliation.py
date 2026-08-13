@@ -228,12 +228,17 @@ async def test_apply_fingerprint_mismatch_no_mutation(monkeypatch):
 
 def test_apply_requires_approval_phrase_constant():
     assert APPROVAL_PHRASE == "RECONCILE UPBIT SHADOW HISTORY"
-    assert ALLOWED_RECONCILE_SHADOW_IDS == frozenset({1, 2, 3})
+    assert ALLOWED_RECONCILE_SHADOW_IDS == frozenset({1, 2, 3, 19})
     from stock_platform.operation.upbit_opportunity_shadow.reconciliation import (
         APPROVAL_PHRASE_BY_SHADOW,
+        PROVENANCE_ONLY_SHADOW_IDS,
     )
 
     assert APPROVAL_PHRASE_BY_SHADOW[3] == "RECONCILE SHADOW 3 EVALUATION"
+    assert APPROVAL_PHRASE_BY_SHADOW[19] == "RECONCILE SHADOW 19 PROVENANCE"
+    assert PROVENANCE_ONLY_SHADOW_IDS == frozenset({19})
+    assert 20 not in ALLOWED_RECONCILE_SHADOW_IDS
+    assert 21 not in ALLOWED_RECONCILE_SHADOW_IDS
 
 
 @pytest.mark.asyncio
@@ -543,3 +548,168 @@ async def test_shadow3_phrase_and_return_30_reconcile(monkeypatch):
         assert out2["code"] == "ALREADY_RECONCILED"
         assert out2["mutated"] is False
         assert out2["orders_created"] == 0
+
+
+@pytest.mark.asyncio
+async def test_shadow19_provenance_preview_no_write(monkeypatch):
+    """#19: numeric MATCH · provenance-only PREVIEW · WRITE 0."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.reconciliation import (
+        APPROVAL_PHRASE_BY_SHADOW,
+    )
+
+    t0 = datetime(2026, 8, 13, 12, 23, 4, 100869, tzinfo=timezone.utc)
+    row = _completed_row(19, symbol="KRW-RE", entry="643", t0=t0)
+    row.return_5m_pct = -0.311042
+    row.return_15m_pct = -0.466563
+    row.return_30m_pct = -1.088647
+    row.return_60m_pct = 0.311042
+    row.price_5m = Decimal("641")
+    row.price_15m = Decimal("640")
+    row.price_30m = Decimal("636")
+    row.price_60m = Decimal("645")
+    row.mfe_pct = 0.622084
+    row.mae_pct = -1.399689
+    row.evaluation_detail = {
+        "source": "minute_candle_historical_v1",
+        "window_finalization": "target_candle_close_v2",
+        "windows": {
+            "5": {
+                "final": True,
+                "price": 641,
+                "status": "OK",
+                "return_pct": -0.311042,
+                "observed_candle_at": "2026-08-13T12:28:00+00:00",
+                "target_candle_start": "2026-08-13T12:28:00+00:00",
+                "target_candle_end": "2026-08-13T12:29:00+00:00",
+                "target_at": (t0 + timedelta(minutes=5)).isoformat(),
+            },
+            "15": {
+                "final": True,
+                "price": 640,
+                "status": "OK",
+                "return_pct": -0.466563,
+                "observed_candle_at": "2026-08-13T12:38:00+00:00",
+                "target_candle_start": "2026-08-13T12:38:00+00:00",
+                "target_candle_end": "2026-08-13T12:39:00+00:00",
+                "target_at": (t0 + timedelta(minutes=15)).isoformat(),
+            },
+            "30": {
+                "price": 636,
+                "status": "OK",
+                "return_pct": -1.088647,
+                "observed_candle_at": "2026-08-13T12:52:00+00:00",
+                "target_at": (t0 + timedelta(minutes=30)).isoformat(),
+            },
+            "60": {
+                "final": True,
+                "price": 645,
+                "status": "OK",
+                "return_pct": 0.311042,
+                "observed_candle_at": "2026-08-13T13:23:00+00:00",
+                "target_candle_start": "2026-08-13T13:23:00+00:00",
+                "target_candle_end": "2026-08-13T13:24:00+00:00",
+                "target_at": (t0 + timedelta(minutes=60)).isoformat(),
+            },
+        },
+        "mismatch_watch": {
+            "ok": False,
+            "code": "SHADOW_EVALUATION_MISMATCH",
+        },
+    }
+
+    recomputed = _recomputed_from_checkpoint(19, t0=t0, entry=643.0)
+    # 30m LAST_KNOWN provenance
+    w30 = recomputed["windows"]["30"]
+    w30.update(
+        {
+            "price": 636.0,
+            "return_pct": -1.088647,
+            "observed_candle_at": "2026-08-13T12:52:00+00:00",
+            "target_candle_start": "2026-08-13T12:53:00+00:00",
+            "target_candle_end": "2026-08-13T12:54:00+00:00",
+            "final": True,
+            "selection_type": "LAST_KNOWN_BEFORE_TARGET",
+            "lag_seconds": 60.0,
+            "fallback_reason": "TARGET_CANDLE_ABSENT_CONFIRMED",
+            "source": "market.candle_minute",
+        }
+    )
+    for m in ("5", "15", "60"):
+        recomputed["windows"][m].update(
+            {
+                "final": True,
+                "selection_type": "EXACT_TARGET_CANDLE",
+                "lag_seconds": 4.100869,
+                "fallback_reason": None,
+                "source": "market.candle_minute",
+                "target_candle_start": recomputed["windows"][m][
+                    "observed_candle_at"
+                ],
+                "target_candle_end": (
+                    datetime.fromisoformat(
+                        recomputed["windows"][m]["observed_candle_at"]
+                    )
+                    + timedelta(minutes=1)
+                ).isoformat(),
+            }
+        )
+    recomputed["windows"]["5"]["price"] = 641.0
+    recomputed["windows"]["5"]["return_pct"] = -0.311042
+    recomputed["windows"]["15"]["price"] = 640.0
+    recomputed["windows"]["15"]["return_pct"] = -0.466563
+    recomputed["windows"]["60"]["price"] = 645.0
+    recomputed["windows"]["60"]["return_pct"] = 0.311042
+    recomputed["max_prior_lag_seconds"] = 180
+    recomputed["target_resolve"] = {
+        "2026-08-13T12:53:00+00:00": {
+            "status": "TARGET_CANDLE_ABSENT_CONFIRMED",
+            "api_rows": 5,
+        }
+    }
+
+    session = _session_for(row)
+    _patch_dry(monkeypatch, recomputed)
+    before_ret = row.return_30m_pct
+    before_detail = dict(row.evaluation_detail)
+
+    svc = UpbitOpportunityShadowReconciliationService(session, allow_sync=False)
+    out = await svc.preview(19)
+    assert out["ok"] is True
+    assert out["code"] == "PREVIEW_OK"
+    assert out["mode"] == "provenance_only"
+    assert out["mutated"] is False
+    assert out["persist"] is False
+    assert out["orders_created"] == 0
+    assert out["numeric_changed_fields"] == []
+    assert out["provenance_changed_fields"]
+    assert any(
+        c["field"].endswith("selection_type")
+        for c in out["provenance_changed_fields"]
+    )
+    assert (
+        out["approval_phrase_required"]
+        == APPROVAL_PHRASE_BY_SHADOW[19]
+        == "RECONCILE SHADOW 19 PROVENANCE"
+    )
+    assert out["expected_mismatch_after_apply"]["code"] == "MATCH"
+    assert out["expected_mismatch_after_apply"]["mismatch_count_delta"] == -1
+    # WRITE 금지 — preview 후 DB 상태 동일
+    assert row.return_30m_pct == before_ret
+    assert row.evaluation_detail == before_detail
+    session.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_shadow20_not_in_allowlist():
+    """#20 reconciliation 금지."""
+
+    t0 = datetime(2026, 8, 13, 12, 23, 4, tzinfo=timezone.utc)
+    row = _completed_row(20, symbol="KRW-VIRTUAL", entry="822", t0=t0)
+    session = _session_for(row)
+    svc = UpbitOpportunityShadowReconciliationService(session, allow_sync=False)
+    out = await svc.preview(20)
+    assert out["ok"] is False
+    assert out["code"] == "SHADOW_NOT_IN_ALLOWLIST"
+    assert out["mutated"] is False
+    session.commit.assert_not_called()

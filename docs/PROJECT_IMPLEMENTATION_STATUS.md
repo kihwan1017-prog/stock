@@ -6,7 +6,7 @@
 **Branch / Commit baseline:** `release/v1.1.0` @ `949c0e9` + ops WIP commits  
 **워킹트리:** Autotrading P0 package 일부 미커밋 가능 · Ops stale snapshot RETIRE 경로 추가
 
-**Ops (2026-08-13):** `snapshot_binding` stale_active 3→0, overall health UP (SHADOW_ONLY). Shadow missing-candle FINAL=`LAST_KNOWN_PRICE_AT_TARGET` (exact → confirmed absent prior≤180s). UBA1380/snapshot176 보호.
+**Ops (2026-08-13):** Shadow missing-candle FINAL=`LAST_KNOWN_PRICE_AT_TARGET`. #19 provenance APPLY → mismatch_count 0. SHADOW_ONLY · UBA1380/snapshot176 보호.
 
 ---
 

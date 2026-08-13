@@ -3,7 +3,7 @@
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
 **최종 갱신:** 2026-08-13  
 
-**Ops note (2026-08-13):** Stale ACTIVE snapshot 57/151/157 승인형 RETIRE 완료 → health `snapshot_binding` UP. Shadow FINAL 정책 `LAST_KNOWN_PRICE_AT_TARGET` (missing minute candle, max prior lag 180s) 적용. #19/#20 WRITE reconcile 금지(승인형 preview만). SHADOW_ONLY 유지.  
+**Ops note (2026-08-13):** Stale ACTIVE snapshot 57/151/157 승인형 RETIRE 완료. Shadow FINAL=`LAST_KNOWN_PRICE_AT_TARGET`. Shadow #19 provenance APPLY 완료 → mismatch_count **0**. SHADOW_ONLY 유지.  
 **P0 ID는 PHASE 2 Canonical 고정** (PHASE 1 remaining-work 파일의 P0 번호와 다를 수 있음 → **본 문서 우선**).
 
 상태 값: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `DONE` · `DEFERRED`
