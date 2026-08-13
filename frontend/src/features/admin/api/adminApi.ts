@@ -4376,6 +4376,29 @@ export async function runUpbitNewsSymbolMapping(body?: {
   });
 }
 
+/** STEP N4 — AI News Analysis (INFORMATIONAL ONLY) */
+export async function getUpbitNewsAnalysisStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-analysis/status");
+}
+
+export async function getUpbitNewsAnalysisRecent(params?: {
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-analysis/recent", params);
+}
+
+export async function runUpbitNewsAnalysis(body?: {
+  limit?: number;
+  article_ids?: number[] | null;
+  force?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/news-analysis/run", {
+    limit: body?.limit ?? 5,
+    article_ids: body?.article_ids ?? null,
+    force: body?.force ?? false,
+  });
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;

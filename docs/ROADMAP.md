@@ -1,10 +1,10 @@
 # ROADMAP
 
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
-**최종 갱신:** 2026-08-13  
+**최종 갱신:** 2026-08-14  
 
 **Ops note (2026-08-13):** Shadow cohort milestone watch — `SAMPLE_ACCUMULATING` until VALID≥30 ∧ new-policy MATCH≥10 ∧ mismatch=0 → 1회 `SHADOW_COHORT_30_REVIEW_READY`. 정책/threshold 변경 없음. SHADOW_ONLY 유지.  
-**News note (2026-08-14):** STEP N3.1 Quality Guard READY — N4는 `quality_status==TRUSTED`만 소비. Next: **N4 AI News Analysis** (승인 후).  
+**News note (2026-08-14):** STEP N4 AI News Analysis READY_WITH_LIMITATIONS — INFORMATIONAL ONLY. Next: **N5** (사용자 승인 후; Signal/Scanner 연동은 N5 범위).  
 **P0 ID는 PHASE 2 Canonical 고정** (PHASE 1 remaining-work 파일의 P0 번호와 다를 수 있음 → **본 문서 우선**).
 
 상태 값: `OPEN` · `IN_PROGRESS` · `BLOCKED` · `DONE` · `DEFERRED`

@@ -62,6 +62,35 @@ export function UpbitNewsNoticeCollectorPanel() {
     onError: (e) => message.error(toApiError(e).message),
   });
 
+  const aiStatus = useQuery({
+    queryKey: queryKeys.admin.upbitNewsAnalysis(),
+    queryFn: adminApi.getUpbitNewsAnalysisStatus,
+    refetchInterval: 30_000,
+  });
+
+  const aiRecent = useQuery({
+    queryKey: queryKeys.admin.upbitNewsAnalysisRecent(),
+    queryFn: () => adminApi.getUpbitNewsAnalysisRecent({ limit: 20 }),
+    refetchInterval: 60_000,
+  });
+
+  const runAi = useMutation({
+    mutationFn: () =>
+      adminApi.runUpbitNewsAnalysis({ limit: 5, force: false }),
+    onSuccess: () => {
+      message.success(
+        "AI News Analysis 완료 (INFORMATIONAL ONLY / 주문·Gate 없음)",
+      );
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.upbitNewsAnalysis(),
+      });
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.upbitNewsAnalysisRecent(),
+      });
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
   const st = asRecord(status.data) ?? {};
   const sources = asRecord(st.sources) ?? {};
   const notice = asRecord(sources.UPBIT_NOTICE) ?? {};
@@ -123,8 +152,8 @@ export function UpbitNewsNoticeCollectorPanel() {
         UPBIT News / Notice Collector
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        N2 COLLECT → N3 Mapping → N3.1 Quality Guard. N4는 TRUSTED만
-        소비 예정. AI News / Scanner / Shadow / Gate 연동 없음.
+        N2 COLLECT → N3 Mapping → N3.1 Quality → N4 AI Analysis.
+        AI 결과는 INFORMATIONAL ONLY. BUY/SELL/ALLOW/Scanner Apply 없음.
       </Typography.Paragraph>
       <Space wrap>
         <Tag color={st.enabled ? "green" : "default"}>
@@ -167,10 +196,15 @@ export function UpbitNewsNoticeCollectorPanel() {
         >
           Symbol Mapping 실행
         </Button>
+        <Button loading={runAi.isPending} onClick={() => runAi.mutate()}>
+          AI News Analysis (max 5)
+        </Button>
         <Button
           onClick={() => {
             void status.refetch();
             void recent.refetch();
+            void aiStatus.refetch();
+            void aiRecent.refetch();
           }}
         >
           새로고침
@@ -185,11 +219,63 @@ export function UpbitNewsNoticeCollectorPanel() {
           ...row,
         }))}
       />
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        AI News Analysis (INFORMATIONAL ONLY)
+      </Typography.Title>
+      <Space wrap>
+        <Tag>
+          enabled=
+          {String(asRecord(aiStatus.data)?.enabled ?? false)}
+        </Tag>
+        <Tag>model={cell(asRecord(aiStatus.data)?.model)}</Tag>
+        <Tag>
+          completed=
+          {cell(
+            asRecord(asRecord(aiStatus.data)?.status_counts)?.COMPLETED,
+          )}
+        </Tag>
+        <Tag>
+          failed=
+          {cell(asRecord(asRecord(aiStatus.data)?.status_counts)?.FAILED)}
+        </Tag>
+        <Tag>
+          skipped=
+          {cell(asRecord(asRecord(aiStatus.data)?.status_counts)?.SKIPPED)}
+        </Tag>
+      </Space>
+      <AdminDataTable
+        title="최근 AI 분석 (sentiment ≠ trade signal)"
+        loading={aiRecent.isLoading}
+        columns={[
+          { title: "source", dataIndex: "source_type", width: 110 },
+          { title: "title", dataIndex: "title" },
+          { title: "event", dataIndex: "event_type", width: 120 },
+          { title: "sentiment", dataIndex: "sentiment", width: 100 },
+          { title: "impact", dataIndex: "news_impact_level", width: 90 },
+          { title: "conf", dataIndex: "news_ai_confidence", width: 70 },
+          { title: "status", dataIndex: "status", width: 100 },
+        ]}
+        dataSource={(
+          Array.isArray(asRecord(aiRecent.data)?.items)
+            ? (asRecord(aiRecent.data)?.items as Record<string, unknown>[])
+            : []
+        ).map((row, idx) => ({
+          key: String(row.analysis_id ?? idx),
+          ...row,
+          title: cell(row.title),
+        }))}
+      />
       <AdminJsonCard
         title="Collector + Mapping status"
         loading={status.isLoading}
         error={status.error ? toApiError(status.error) : null}
         data={status.data}
+      />
+      <AdminJsonCard
+        title="AI News Analysis status"
+        loading={aiStatus.isLoading}
+        error={aiStatus.error ? toApiError(aiStatus.error) : null}
+        data={aiStatus.data}
       />
     </Space>
   );

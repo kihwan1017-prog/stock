@@ -287,3 +287,9 @@ class NewsCollectionFailure(Base):
         nullable=False,
         server_default=text("'{}'::jsonb"),
     )
+
+
+# STEP N4 — metadata registration for Alembic / ORM
+from stock_platform.news.news_ai_analysis_models import (  # noqa: E402,F401
+    NewsAIAnalysis,
+)

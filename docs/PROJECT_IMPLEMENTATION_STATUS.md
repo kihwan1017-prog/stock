@@ -2,12 +2,12 @@
 
 **역할:** 구현 현황의 **유일한** Source of Truth.  
 **근거:** PHASE 1 감사(2026-07-31) + 실행 경로 소스. 수치는 **추정치**이며 완료 판정이 아니다.  
-**최종 갱신:** 2026-08-13  
-**Branch / Commit baseline:** `release/v1.1.0` @ `949c0e9` + ops WIP commits  
+**최종 갱신:** 2026-08-14  
+**Branch / Commit baseline:** `release/v1.1.0` @ `949c0e9` + ops/news WIP commits  
 **워킹트리:** Autotrading P0 package 일부 미커밋 가능 · Ops stale snapshot RETIRE 경로 추가
 
 **Ops (2026-08-13):** Shadow cohort milestone watch (`SAMPLE_ACCUMULATING` → READY@VALID≥30/new-policy MATCH≥10/mismatch=0). 정책 변경 없음. SHADOW_ONLY · UBA1380 보호.  
-**News (2026-08-14):** STEP N3.1 Quality Guard — TRUSTED/REVIEW/AMBIGUOUS/REJECTED. AUCTION NFT 오탐 REJECTED. N4 trusted-consumption contract 준비.
+**News (2026-08-14):** STEP N4 AI News Analysis — `news.news_ai_analysis`, Ollama `qwen3.5:4b`, TRUSTED-only, scheduler OFF, INFORMATIONAL ONLY. Scanner/Shadow/Gate 비연동.
 
 ---
 

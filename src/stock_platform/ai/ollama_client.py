@@ -178,13 +178,21 @@ class OllamaClient:
             },
         ]
 
+        # qwen3.5 등 thinking 모델: think ON이면 content가 비고 thinking만
+        # 채워져 타임아웃/EMPTY가 난다. 구조화 JSON은 think OFF (Scanner AI와 동일).
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "format": "json",
+            "format": response_schema
+            if isinstance(response_schema, dict)
+            else "json",
+            "think": False,
             "keep_alive": self._keep_alive,
-            "options": {"temperature": self._temperature},
+            "options": {
+                "temperature": self._temperature,
+                "num_predict": 1024,
+            },
         }
 
         try:
@@ -225,8 +233,17 @@ class OllamaClient:
         content = ""
         if isinstance(message, dict):
             content = str(message.get("content") or "")
+            # think 미지원/구버전 폴백: thinking에만 JSON이 있는 경우
+            if not content.strip():
+                thinking = str(message.get("thinking") or "")
+                if thinking.strip().startswith("{"):
+                    content = thinking
         elif isinstance(body, dict):
             content = str(body.get("response") or "")
+            if not content.strip():
+                thinking = str(body.get("thinking") or "")
+                if thinking.strip().startswith("{"):
+                    content = thinking
 
         if not content.strip():
             raise OllamaError(

@@ -473,6 +473,13 @@ class Settings(BaseSettings):
     crypto_news_collection_query: str = "업비트 암호화폐"
     crypto_news_collection_display: int = Field(default=20, ge=1, le=50)
 
+    # STEP N4 — UPBIT AI News Analysis (기본 OFF, INFORMATIONAL ONLY)
+    upbit_news_ai_analysis_enabled: bool = False
+    upbit_news_ai_analysis_interval_seconds: float = 900.0
+    upbit_news_ai_analysis_batch_size: int = Field(default=5, ge=1, le=5)
+    upbit_news_ai_analysis_model: str = Field(default="")
+    upbit_news_ai_analysis_timeout_seconds: float = 180.0
+
     scheduler_enabled: bool = True
     # API lifecycle 내 cron(일손실·전략 등). False면 outbox 제외 cron 미기동
     lifecycle_scheduler_enabled: bool = True

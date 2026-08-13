@@ -193,6 +193,9 @@ export const queryKeys = {
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,
+    upbitNewsAnalysis: () => ["admin", "upbit-news-analysis"] as const,
+    upbitNewsAnalysisRecent: () =>
+      ["admin", "upbit-news-analysis-recent"] as const,
     marketQuality: () => ["admin", "market-quality"] as const,
     orderOutbox: () => ["admin", "order-outbox"] as const,
     liveTransitionHistory: () => ["admin", "live-transition-history"] as const,

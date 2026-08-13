@@ -7,14 +7,15 @@
 
 ## Current Phase
 
-**STEP N3.1 완료 — News Symbol Mapping Quality Guard** (`NEWS_SYMBOL_MAPPING_QUALITY_READY`)
+**STEP N4 완료 — UPBIT AI News Analysis v0** (`READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last STEP | N3.1 Quality Guard (`symbol_mapping_quality_v1`) |
-| N4 contract | **TRUSTED만** 기본 소비 (N4 미구현) |
-| Quality | TRUSTED / REVIEW_REQUIRED / AMBIGUOUS / REJECTED |
+| Last STEP | N4 AI News Analysis (`upbit_news_analysis_v1`) |
+| 결과 성격 | **INFORMATIONAL ONLY** (주문/Gate/Scanner 비연동) |
+| 입력 | TRUSTED mapping만 · 1 Article = 1 AI Call |
+| Scheduler | `UPBIT_NEWS_AI_ANALYSIS_ENABLED=false` (DEFAULT OFF) |
 | Cohort | `SAMPLE_ACCUMULATING` 유지 |
 | Scanner | **SHADOW_ONLY** |
 | LIVE | all live flags **false** |
@@ -23,11 +24,11 @@
 
 ## 현황 요약 (추정)
 
-개발 ~82% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **조건부**
+개발 ~83% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **조건부**
 
 ## Next Gate
 
-1. **STEP N4** — AI News Analysis (사용자 승인 후, TRUSTED mapping만)  
+1. **STEP N5** — 사용자 승인 후에만 (News Signal / Combined Score / Scanner 연동 금지까지 N4 STOP)  
 2. Cohort 자동 축적 → milestone READY  
 3. LIVE는 별도 승인  
 
