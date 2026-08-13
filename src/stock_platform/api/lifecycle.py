@@ -576,6 +576,18 @@ class ApplicationLifecycle:
                 "upbit_news_ai_analysis_start_failed",
                 error=str(exc)[:300],
             )
+        # STEP N5 — UPBIT News Signal (기본 OFF, deterministic, LLM 금지)
+        try:
+            from stock_platform.news.news_signal_scheduler import (
+                upbit_news_signal_scheduler,
+            )
+
+            upbit_news_signal_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_news_signal_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
         upbit_daily_settlement_scheduler.start()
         # STEP 8-8A — Post-Fill 재검증 (DB Claim)
@@ -740,6 +752,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_news_ai_analysis_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.news.news_signal_scheduler import (
+                upbit_news_signal_scheduler,
+            )
+
+            await upbit_news_signal_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await upbit_daily_settlement_scheduler.shutdown()

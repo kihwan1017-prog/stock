@@ -91,6 +91,44 @@ export function UpbitNewsNoticeCollectorPanel() {
     onError: (e) => message.error(toApiError(e).message),
   });
 
+  const signalStatus = useQuery({
+    queryKey: queryKeys.admin.upbitNewsSignals(),
+    queryFn: adminApi.getUpbitNewsSignalsStatus,
+    refetchInterval: 30_000,
+  });
+
+  const signalRecent = useQuery({
+    queryKey: queryKeys.admin.upbitNewsSignalsRecent(),
+    queryFn: () => adminApi.getUpbitNewsSignalsRecent({ limit: 20 }),
+    refetchInterval: 60_000,
+  });
+
+  const signalStats = useQuery({
+    queryKey: queryKeys.admin.upbitNewsSignalsStats(),
+    queryFn: adminApi.getUpbitNewsSignalsStats,
+    refetchInterval: 60_000,
+  });
+
+  const runSignals = useMutation({
+    mutationFn: () =>
+      adminApi.runUpbitNewsSignals({ limit: 50, force: false }),
+    onSuccess: () => {
+      message.success(
+        "News Signal 표준화 완료 (INFORMATIONAL ONLY / LLM·Scanner 없음)",
+      );
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.upbitNewsSignals(),
+      });
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.upbitNewsSignalsRecent(),
+      });
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.upbitNewsSignalsStats(),
+      });
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
   const st = asRecord(status.data) ?? {};
   const sources = asRecord(st.sources) ?? {};
   const notice = asRecord(sources.UPBIT_NOTICE) ?? {};
@@ -152,8 +190,8 @@ export function UpbitNewsNoticeCollectorPanel() {
         UPBIT News / Notice Collector
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        N2 COLLECT → N3 Mapping → N3.1 Quality → N4 AI Analysis.
-        AI 결과는 INFORMATIONAL ONLY. BUY/SELL/ALLOW/Scanner Apply 없음.
+        N2 COLLECT → N3 Mapping → N3.1 Quality → N4 AI Analysis → N5 News Signal.
+        Signal은 INFORMATIONAL ONLY. BUY/SELL/ALLOW/Scanner Apply 없음.
       </Typography.Paragraph>
       <Space wrap>
         <Tag color={st.enabled ? "green" : "default"}>
@@ -200,11 +238,20 @@ export function UpbitNewsNoticeCollectorPanel() {
           AI News Analysis (max 5)
         </Button>
         <Button
+          loading={runSignals.isPending}
+          onClick={() => runSignals.mutate()}
+        >
+          News Signal 표준화
+        </Button>
+        <Button
           onClick={() => {
             void status.refetch();
             void recent.refetch();
             void aiStatus.refetch();
             void aiRecent.refetch();
+            void signalStatus.refetch();
+            void signalRecent.refetch();
+            void signalStats.refetch();
           }}
         >
           새로고침
@@ -276,6 +323,68 @@ export function UpbitNewsNoticeCollectorPanel() {
         loading={aiStatus.isLoading}
         error={aiStatus.error ? toApiError(aiStatus.error) : null}
         data={aiStatus.data}
+      />
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        News Signals (INFORMATIONAL / OBSERVATION ONLY)
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        POSITIVE ≠ BUY · NEGATIVE ≠ SELL · News Signal ≠ AI Gate. LLM 호출 없음.
+      </Typography.Paragraph>
+      <Space wrap>
+        <Tag>
+          enabled=
+          {String(asRecord(signalStatus.data)?.enabled ?? false)}
+        </Tag>
+        <Tag>total={cell(asRecord(signalStatus.data)?.total_signals)}</Tag>
+        <Tag>
+          VALID=
+          {cell(asRecord(asRecord(signalStatus.data)?.by_status)?.VALID)}
+        </Tag>
+        <Tag>
+          LOW_CONF=
+          {cell(
+            asRecord(asRecord(signalStatus.data)?.by_status)?.LOW_CONFIDENCE,
+          )}
+        </Tag>
+        <Tag>
+          STALE=
+          {cell(asRecord(asRecord(signalStatus.data)?.by_status)?.STALE)}
+        </Tag>
+        <Tag>
+          INVALID=
+          {cell(asRecord(asRecord(signalStatus.data)?.by_status)?.INVALID)}
+        </Tag>
+      </Space>
+      <AdminDataTable
+        title="최근 News Signals"
+        loading={signalRecent.isLoading}
+        columns={[
+          { title: "symbol", dataIndex: "symbol", width: 110 },
+          { title: "direction", dataIndex: "direction", width: 100 },
+          { title: "strength", dataIndex: "strength", width: 90 },
+          { title: "reliability", dataIndex: "reliability", width: 100 },
+          { title: "status", dataIndex: "signal_status", width: 110 },
+          { title: "event", dataIndex: "event_type", width: 120 },
+          { title: "impact", dataIndex: "news_impact_level", width: 90 },
+          { title: "horizon", dataIndex: "time_horizon", width: 110 },
+          { title: "expires", dataIndex: "expires_at", width: 170 },
+          { title: "title", dataIndex: "title" },
+        ]}
+        dataSource={(
+          Array.isArray(asRecord(signalRecent.data)?.items)
+            ? (asRecord(signalRecent.data)?.items as Record<string, unknown>[])
+            : []
+        ).map((row, idx) => ({
+          key: String(row.signal_id ?? idx),
+          ...row,
+          title: cell(row.title),
+        }))}
+      />
+      <AdminJsonCard
+        title="News Signal stats"
+        loading={signalStats.isLoading}
+        error={signalStats.error ? toApiError(signalStats.error) : null}
+        data={signalStats.data}
       />
     </Space>
   );

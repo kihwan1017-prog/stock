@@ -7,28 +7,29 @@
 
 ## Current Phase
 
-**STEP N4 완료 — UPBIT AI News Analysis v0** (`READY_WITH_LIMITATIONS`)
+**STEP N5 완료 — UPBIT News Signal Standardization v0** (`UPBIT_NEWS_SIGNAL_READY`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last STEP | N4 AI News Analysis (`upbit_news_analysis_v1`) |
-| 결과 성격 | **INFORMATIONAL ONLY** (주문/Gate/Scanner 비연동) |
-| 입력 | TRUSTED mapping만 · 1 Article = 1 AI Call |
-| Scheduler | `UPBIT_NEWS_AI_ANALYSIS_ENABLED=false` (DEFAULT OFF) |
-| Cohort | `SAMPLE_ACCUMULATING` 유지 |
-| Scanner | **SHADOW_ONLY** |
+| Last STEP | N5 News Signal (`upbit_news_signal_v1`) |
+| 결과 성격 | **INFORMATIONAL / OBSERVATION ONLY** |
+| 입력 | N4 COMPLETED + TRUSTED mapping만 |
+| LLM | **0 calls** (deterministic) |
+| Scheduler | `UPBIT_NEWS_SIGNAL_ENABLED=false` |
+| Cohort | `SAMPLE_ACCUMULATING` (VALID 25 / MATCH 9 / mismatch 0) |
+| Scanner | **SHADOW_ONLY** · News Signal 미연동 |
 | LIVE | all live flags **false** |
 
 ---
 
 ## 현황 요약 (추정)
 
-개발 ~83% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **조건부**
+개발 ~84% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED** · Paper 무인 **조건부**
 
 ## Next Gate
 
-1. **STEP N5** — 사용자 승인 후에만 (News Signal / Combined Score / Scanner 연동 금지까지 N4 STOP)  
+1. **STEP N6** — Combined Shadow 등 (사용자 승인 후만; Scanner/Gate 연결 금지까지 N5 STOP)  
 2. Cohort 자동 축적 → milestone READY  
 3. LIVE는 별도 승인  
 

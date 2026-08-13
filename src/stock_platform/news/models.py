@@ -293,3 +293,7 @@ class NewsCollectionFailure(Base):
 from stock_platform.news.news_ai_analysis_models import (  # noqa: E402,F401
     NewsAIAnalysis,
 )
+# STEP N5 — News Signal
+from stock_platform.news.news_signal_models import (  # noqa: E402,F401
+    NewsSignal,
+)

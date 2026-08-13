@@ -479,6 +479,9 @@ class Settings(BaseSettings):
     upbit_news_ai_analysis_batch_size: int = Field(default=5, ge=1, le=5)
     upbit_news_ai_analysis_model: str = Field(default="")
     upbit_news_ai_analysis_timeout_seconds: float = 180.0
+    # STEP N5 — News Signal Standardization (DEFAULT OFF, LLM 금지)
+    upbit_news_signal_enabled: bool = False
+    upbit_news_signal_interval_seconds: float = 300.0
 
     scheduler_enabled: bool = True
     # API lifecycle 내 cron(일손실·전략 등). False면 outbox 제외 cron 미기동

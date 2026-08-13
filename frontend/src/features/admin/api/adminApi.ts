@@ -4399,6 +4399,33 @@ export async function runUpbitNewsAnalysis(body?: {
   });
 }
 
+/** STEP N5 — News Signal Standardization (INFORMATIONAL ONLY, no LLM) */
+export async function getUpbitNewsSignalsStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-signals/status");
+}
+
+export async function getUpbitNewsSignalsRecent(params?: {
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-signals/recent", params);
+}
+
+export async function getUpbitNewsSignalsStats(): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-signals/stats");
+}
+
+export async function runUpbitNewsSignals(body?: {
+  limit?: number;
+  analysis_ids?: number[] | null;
+  force?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/news-signals/run", {
+    limit: body?.limit ?? 50,
+    analysis_ids: body?.analysis_ids ?? null,
+    force: body?.force ?? false,
+  });
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;
