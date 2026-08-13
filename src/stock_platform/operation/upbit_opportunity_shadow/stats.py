@@ -119,8 +119,20 @@ def compute_shadow_stats(session: Session) -> dict[str, Any]:
             if latest_completed is not None
             else None
         ),
+        "cohort_milestone": _cohort_milestone(session),
         "orders_created": 0,
         "paper_shadow": True,
         "shadow_only": True,
         "auto_threshold_tuning": False,
     }
+
+
+def _cohort_milestone(session: Session) -> dict[str, Any]:
+    try:
+        from stock_platform.operation.upbit_opportunity_shadow.cohort_milestone import (
+            compute_cohort_milestone_snapshot,
+        )
+
+        return compute_cohort_milestone_snapshot(session)
+    except Exception:  # noqa: BLE001
+        return {"status": "SAMPLE_ACCUMULATING", "error": "COMPUTE_FAILED"}

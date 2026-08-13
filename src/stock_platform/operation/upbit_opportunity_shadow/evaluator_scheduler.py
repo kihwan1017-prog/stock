@@ -248,6 +248,14 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                             session
                         ).verify_many(pending_watch, notify=notify)
 
+                    from stock_platform.operation.upbit_opportunity_shadow.cohort_milestone import (
+                        ShadowCohortMilestoneWatch,
+                    )
+
+                    milestone_out = ShadowCohortMilestoneWatch(session).observe(
+                        notify=notify
+                    )
+
                     self._last_duration_ms = int(
                         (time.perf_counter() - started) * 1000
                     )
@@ -256,6 +264,15 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                         "evaluated": eval_out.get("evaluated"),
                         "completed": eval_out.get("completed"),
                         "mismatch": mismatch_out,
+                        "cohort_milestone": {
+                            "status": milestone_out.get("status"),
+                            "code": milestone_out.get("code"),
+                            "notified": milestone_out.get("notified"),
+                            "already_notified": milestone_out.get(
+                                "already_notified"
+                            ),
+                            "snapshot": milestone_out.get("snapshot"),
+                        },
                         "duration_ms": self._last_duration_ms,
                         "orders_created": 0,
                         "shadow_only": True,

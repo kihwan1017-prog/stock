@@ -5,7 +5,7 @@
 **최종 갱신:** 2026-08-13  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
-**Ops note:** Shadow #19 provenance APPLY (`RECONCILE SHADOW 19 PROVENANCE`) → mismatch_count 0. SHADOW_ONLY · UBA1380 보호.
+**Ops note:** Shadow cohort milestone watch — accumulating until READY gate. SHADOW_ONLY · UBA1380 보호.
 
 ---
 

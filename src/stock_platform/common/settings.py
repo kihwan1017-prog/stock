@@ -245,6 +245,7 @@ class Settings(BaseSettings):
     upbit_scanner_shadow_evaluator_interval_seconds: float = 180.0
     upbit_scanner_shadow_mismatch_watch_enabled: bool = True
     upbit_scanner_shadow_mismatch_tolerance: float = 5e-4
+    upbit_scanner_shadow_cohort_milestone_watch_enabled: bool = True
     # Paper ACCEPTED Fill Recovery Scheduler (기본 OFF)
     paper_fill_recovery_enabled: bool = False
     paper_fill_recovery_interval_seconds: float = 5.0

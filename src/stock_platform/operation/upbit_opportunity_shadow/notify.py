@@ -125,3 +125,38 @@ def publish_shadow_mismatch(
             "diff": diff,
         },
     )
+
+
+def publish_shadow_cohort_milestone(snapshot: dict[str, Any]) -> None:
+    """SHADOW_COHORT_30_REVIEW_READY — 정책 변경 없이 1회 알림."""
+
+    title = "UPBIT Shadow Cohort 30 Review Ready"
+    message = (
+        f"[UPBIT Shadow Cohort Milestone]\n"
+        f"Code: SHADOW_COHORT_30_REVIEW_READY\n"
+        f"VALID_COHORT_N: {snapshot.get('valid_cohort_n')}"
+        f" / {snapshot.get('valid_cohort_threshold')}\n"
+        f"NEW_POLICY_MATCH_N: {snapshot.get('new_policy_match_n')}"
+        f" / {snapshot.get('new_policy_match_threshold')}\n"
+        f"mismatch_count: {snapshot.get('mismatch_count')}\n"
+        f"Policy: LAST_KNOWN_PRICE_AT_TARGET (b8b954f)\n"
+        f"Auto reconcile: NO\n"
+        f"Threshold/ranking/AI Gate unchanged\n"
+        f"SHADOW ONLY\n"
+        f"LIVE ORDER: NO"
+    )
+    notification_publisher.publish(
+        event_type=_ensure_event("UPBIT_SHADOW_COHORT_30_REVIEW_READY"),
+        title=title,
+        message=message,
+        detail={
+            "source": "upbit_shadow_cohort_milestone_watch",
+            "code": "SHADOW_COHORT_30_REVIEW_READY",
+            "live_order": False,
+            "orders_created": 0,
+            "shadow_only": True,
+            "auto_reconcile": False,
+            "policy_unchanged": True,
+            "snapshot": snapshot,
+        },
+    )

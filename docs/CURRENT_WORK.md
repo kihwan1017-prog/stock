@@ -7,17 +7,16 @@
 
 ## Current Phase
 
-**Ops continuity — SHADOW_ONLY · mismatch cleared**
+**Ops continuity — Shadow cohort milestone watch**
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last ops STEP | Shadow #19 provenance APPLY (`SHADOW_19_PROVENANCE_RECONCILED`) |
-| Fingerprint | `c84e97c835f60603a462a35daa77a23804214364efcc168a08322c66ce054893` |
-| Phrase used | `RECONCILE SHADOW 19 PROVENANCE` |
-| Residual | mismatch_count **0** · cohort 운영 지속 |
-| Protected | UBA **1380** / #20 allowlist 외 |
-| Scanner | **SHADOW_ONLY** |
+| Last ops STEP | Shadow Cohort Review Milestone Watch |
+| Status | `SAMPLE_ACCUMULATING` (자동 관찰) |
+| Gate | VALID≥30 ∧ new-policy MATCH≥10 ∧ mismatch=0 → `SHADOW_COHORT_30_REVIEW_READY` (1회 Audit/Telegram) |
+| Policy | **변경 없음** (threshold/ranking/AI/SL/TP 유지) |
+| Scanner | **SHADOW_ONLY** · 900s · Evaluator 180s |
 | LIVE | all live flags **false** |
 
 ---
@@ -28,8 +27,8 @@
 
 ## Next Gate
 
-1. SHADOW cohort 운영 지속 · SAMPLE/정책 리뷰  
-2. P0 잔여(Realtime hardcode / Kiwoom fill ledger / Runtime promote) 워킹트리 정리·커밋 패키지  
+1. Cohort 자동 축적 → milestone READY 알림 대기  
+2. P0 잔여 워킹트리 정리·커밋 패키지  
 3. LIVE는 별도 승인·ARM·실계좌 Gate  
 
 → [ROADMAP.md](ROADMAP.md)
