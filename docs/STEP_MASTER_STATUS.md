@@ -46,7 +46,7 @@
 | NEWS-N2 | STEP N2 | UPBIT News/Notice Collector | COMPLETE_WITH_LIMITATIONS | YES | none (reuse news.news_article) | test_step_n2_* | N3 Symbol Mapping | `src/stock_platform/news/` |
 | NEWS-N3 | STEP N3 | News Symbol Mapping | READY_WITH_LIMITATIONS | YES | none (reuse news_article_symbol) | test_step_n3_* | N3.1 Quality | `symbol_resolver/mapper` |
 | NEWS-N3.1 | STEP N3.1 | Mapping Quality Guard | NEWS_SYMBOL_MAPPING_QUALITY_READY | YES | none | test_step_n3_1_* | N4 AI News | `symbol_mapping_quality*` |
-| NEWS-N4 | STEP N4 | AI News Analysis | READY_WITH_LIMITATIONS | YES (pending commit) | m4n5o6p7q8r9 | test_step_n4_* | N5 (승인 후) | `news_ai_analysis*` |
+| NEWS-N4 | STEP N4 | AI News Analysis | READY_WITH_LIMITATIONS | YES (`e76ab57`) | m4n5o6p7q8r9 | test_step_n4_* | N5 (승인 후) | `news_ai_analysis*` |
 
 ---
 
