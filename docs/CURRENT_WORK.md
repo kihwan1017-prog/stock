@@ -7,17 +7,16 @@
 
 ## Current Phase
 
-**STEP N2 완료 — UPBIT News/Notice Collector v0** (`UPBIT_NEWS_NOTICE_COLLECTOR_READY`)
+**STEP N3 완료 — UPBIT News/Notice Symbol Mapping v0** (`READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Last STEP | N2 COLLECT→NORMALIZE→DEDUP→STORE |
-| News track | **병렬** (Scanner/Shadow/Gate 미연동) |
-| Scheduler | 기본 **OFF** (`UPBIT_NOTICE_COLLECTION_ENABLED=false`) |
-| Sources | UPBIT official notice + CRYPTO_NEWS(Naver, 기본 OFF) |
-| Cohort | `SAMPLE_ACCUMULATING` 유지 (수집과 격리) |
-| Scanner | **SHADOW_ONLY** · threshold/TopN 동결 |
+| Last STEP | N3 Symbol Resolver → Mapping Evidence |
+| News track | Collector + Symbol Mapping (AI/Scanner/Gate **미연동**) |
+| Mapping | `news.news_article_symbol` 재사용 · evidence in `raw_data.symbol_mapping` |
+| Cohort | `SAMPLE_ACCUMULATING` 유지 |
+| Scanner | **SHADOW_ONLY** · 정책 동결 |
 | LIVE | all live flags **false** |
 
 ---
@@ -28,7 +27,7 @@
 
 ## Next Gate
 
-1. **STEP N3** — Symbol Mapping (뉴스→종목, AI/Gate 아직 금지)  
+1. **STEP N4** — AI News Analysis (사용자 승인 후)  
 2. Cohort 자동 축적 → milestone READY 알림 대기  
 3. LIVE는 별도 승인·ARM·실계좌 Gate  
 

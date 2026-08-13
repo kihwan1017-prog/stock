@@ -4359,6 +4359,23 @@ export async function runUpbitNewsCollector(body?: {
   });
 }
 
+/** STEP N3 — Symbol Mapping (AI/Scanner 미연동) */
+export async function getUpbitNewsSymbolMappingStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/news-collector/symbol-mapping/status");
+}
+
+export async function runUpbitNewsSymbolMapping(body?: {
+  include_notice?: boolean;
+  include_crypto?: boolean;
+  limit?: number | null;
+}): Promise<JsonValue> {
+  return postJson("/admin/upbit/news-collector/symbol-mapping/run", {
+    include_notice: body?.include_notice ?? true,
+    include_crypto: body?.include_crypto ?? true,
+    limit: body?.limit ?? null,
+  });
+}
+
 /** STEP 8-5-12 — Ambiguous Orders */
 export async function listUpbitAmbiguousOrders(params?: {
   limit?: number;

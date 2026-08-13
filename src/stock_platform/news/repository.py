@@ -506,3 +506,122 @@ class NewsRepository:
                 NewsArticle.source_code == source_code
             )
         )
+
+    def get_articles_by_ids(self, article_ids: list[int]) -> list[NewsArticle]:
+        if not article_ids:
+            return []
+        return list(
+            self._session.scalars(
+                select(NewsArticle).where(
+                    NewsArticle.article_id.in_(article_ids)
+                )
+            )
+        )
+
+    def upsert_symbol_mapping_link(
+        self,
+        *,
+        article_id: int,
+        market_code: str,
+        symbol: str,
+        match_type: str,
+        relevance_score: Decimal,
+    ) -> str:
+        """article_id+market+symbol 멱등. hard delete 없음.
+
+        Returns: inserted | updated | duplicate
+        """
+
+        market = str(market_code).upper()
+        sym = str(symbol).upper()
+        # placeholder 절대 저장 금지
+        if sym.startswith("_") or sym in {"_NOTICE_", "_CRYPTO_"}:
+            return "duplicate"
+
+        existing = self._session.scalar(
+            select(NewsArticleSymbol).where(
+                NewsArticleSymbol.article_id == article_id,
+                NewsArticleSymbol.market_code == market,
+                NewsArticleSymbol.symbol == sym,
+            )
+        )
+        score = Decimal(str(relevance_score))
+        mt = str(match_type)[:30]
+        if existing is None:
+            stmt = insert(NewsArticleSymbol).values(
+                article_id=article_id,
+                market_code=market,
+                symbol=sym,
+                match_type=mt,
+                relevance_score=score,
+            )
+            stmt = stmt.on_conflict_do_nothing(
+                index_elements=["article_id", "market_code", "symbol"],
+            )
+            result = self._session.execute(stmt)
+            self._session.flush()
+            # race: conflict → duplicate
+            if (result.rowcount or 0) == 0:
+                return "duplicate"
+            return "inserted"
+
+        changed = False
+        if existing.match_type != mt:
+            existing.match_type = mt
+            changed = True
+        if Decimal(str(existing.relevance_score)) != score:
+            # evidence 강화 시에만 상향/갱신
+            if score >= Decimal(str(existing.relevance_score)):
+                existing.relevance_score = score
+                changed = True
+        if changed:
+            self._session.flush()
+            return "updated"
+        return "duplicate"
+
+    def list_mappings_with_articles(
+        self,
+        *,
+        source_codes: list[str],
+        limit: int = 20,
+    ) -> list[tuple[NewsArticle, list[NewsArticleSymbol]]]:
+        articles = self.list_by_source_codes(
+            source_codes=source_codes,
+            limit=limit,
+        )
+        if not articles:
+            return []
+        ids = [int(a.article_id) for a in articles]
+        links = self.list_symbol_links(ids)
+        by_article: dict[int, list[NewsArticleSymbol]] = {}
+        for link in links:
+            if str(link.symbol).upper().startswith("_"):
+                continue
+            by_article.setdefault(int(link.article_id), []).append(link)
+        return [(a, by_article.get(int(a.article_id), [])) for a in articles]
+
+    def reconcile_resolver_links(
+        self,
+        *,
+        article_id: int,
+        keep_symbols: set[str],
+        resolver_match_types: set[str],
+    ) -> int:
+        """재매핑 시 resolver가 만든 링크만 정리 — PROVIDER 링크는 보존.
+
+        hard delete of article 금지. stale resolver link row만 제거.
+        """
+
+        links = self.list_symbol_links([article_id])
+        removed = 0
+        for link in links:
+            mt = str(link.match_type or "")
+            if mt not in resolver_match_types:
+                continue
+            if str(link.symbol).upper() in keep_symbols:
+                continue
+            self._session.delete(link)
+            removed += 1
+        if removed:
+            self._session.flush()
+        return removed
