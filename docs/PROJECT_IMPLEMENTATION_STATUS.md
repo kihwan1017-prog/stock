@@ -7,7 +7,7 @@
 **워킹트리:** Autotrading P0 package 일부 미커밋 가능 · Ops stale snapshot RETIRE 경로 추가
 
 **Ops (2026-08-13):** Shadow cohort milestone watch (`SAMPLE_ACCUMULATING` → READY@VALID≥30/new-policy MATCH≥10/mismatch=0). 정책 변경 없음. SHADOW_ONLY · UBA1380 보호.  
-**News (2026-08-14):** STEP N8 pipeline observation RUNNING — Notice/Crypto/N4/N5/N6 ON; post-collect mapping glue; look-ahead 유지; MATCHED 0/20 · NO_NEWS 12+/20; CONTROL apply 금지.
+**News (2026-08-14):** STEP N9 latency alignment — N4→N5 event trigger + fresh unprocessed priority; look-ahead 유지; MATCHED still accumulating.
 
 ---
 

@@ -340,30 +340,12 @@ class NewsAIAnalysisService:
                     )
                 )
             )
+            articles = articles[:batch]
         else:
-            articles = list(
-                self._session.scalars(
-                    select(NewsArticle)
-                    .where(
-                        NewsArticle.source_code.in_(
-                            [SOURCE_CODE_UPBIT_NOTICE, SOURCE_CODE_CRYPTO_NEWS]
-                        )
-                    )
-                    .order_by(
-                        NewsArticle.published_at.desc().nullslast(),
-                        NewsArticle.article_id.desc(),
-                    )
-                    .limit(200)
-                )
-            )
-            # TRUSTED 있는 것만 우선
-            articles = [
-                a for a in articles if extract_trusted_symbols(a)
-            ][:batch]
+            # N9: fresh TRUSTED + 미처리 우선 (이미 COMPLETED/FAILED 재조회 금지)
+            articles = self._list_fresh_unprocessed_trusted(limit=batch)
 
-        # article_ids 명시 시에도 batch 상한
-        articles = articles[:batch]
-
+        completed_analysis_ids: list[int] = []
         for article in articles:
             stats.scanned += 1
             out = await self.analyze_article(article, force=force)
@@ -378,6 +360,20 @@ class NewsAIAnalysisService:
                 sample = out.get("sample")
                 if sample and len(stats.samples) < 10:
                     stats.samples.append(sample)
+                analysis_id = out.get("analysis_id")
+                if analysis_id is not None:
+                    completed_analysis_ids.append(int(analysis_id))
+                    # 건별 commit 후 N5 — 별도 session이 N4 row를 보게 함
+                    try:
+                        self._session.commit()
+                    except Exception as commit_exc:  # noqa: BLE001
+                        logger.warning(
+                            "news_n4_mid_batch_commit_failed",
+                            error=str(commit_exc)[:200],
+                        )
+                        self._session.rollback()
+                    else:
+                        self._trigger_n5_fail_isolated([int(analysis_id)])
             elif status == STATUS_SKIPPED:
                 stats.skipped += 1
             else:
@@ -396,7 +392,89 @@ class NewsAIAnalysisService:
             stats.elapsed_ms_max = max(stats.elapsed_ms_max, elapsed)
 
         self._session.commit()
+        if completed_analysis_ids:
+            logger.info(
+                "news_n4_to_n5_event_trigger",
+                analysis_ids=completed_analysis_ids,
+                mode="per_article_fail_isolated",
+            )
         return stats
+
+    def _list_fresh_unprocessed_trusted(self, *, limit: int) -> list[NewsArticle]:
+        """created_at 최신 우선 · TRUSTED · analysis row 없는 article만."""
+
+        candidates = list(
+            self._session.scalars(
+                select(NewsArticle)
+                .where(
+                    NewsArticle.source_code.in_(
+                        [SOURCE_CODE_UPBIT_NOTICE, SOURCE_CODE_CRYPTO_NEWS]
+                    )
+                )
+                .order_by(
+                    NewsArticle.created_at.desc().nullslast(),
+                    NewsArticle.article_id.desc(),
+                )
+                .limit(500)
+            )
+        )
+        selected: list[NewsArticle] = []
+        for article in candidates:
+            if not extract_trusted_symbols(article):
+                continue
+            # 기존 FAILED/COMPLETED/SKIPPED 재분석 금지 — row 있으면 skip
+            existing_id = self._session.scalar(
+                select(NewsAIAnalysis.analysis_id)
+                .where(NewsAIAnalysis.article_id == int(article.article_id))
+                .limit(1)
+            )
+            if existing_id is not None:
+                continue
+            selected.append(article)
+            if len(selected) >= limit:
+                break
+        return selected
+
+    def _trigger_n5_fail_isolated(
+        self, analysis_ids: list[int]
+    ) -> dict[str, Any]:
+        """N5 실패가 N4 성공을 뒤집지 않음. 별도 session + LLM=0."""
+
+        if not analysis_ids:
+            return {"skipped": True, "reason": "NO_IDS"}
+        if not bool(
+            getattr(self._settings, "upbit_news_signal_enabled", False)
+        ):
+            return {"skipped": True, "reason": "N5_DISABLED"}
+
+        from dataclasses import asdict
+
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.news.news_signal_service import NewsSignalService
+
+        session = None
+        try:
+            session = get_session_factory()()
+            service = NewsSignalService(session)
+            stats = service.run_batch(
+                limit=max(1, len(analysis_ids)),
+                analysis_ids=analysis_ids,
+                force=False,
+            )
+            return {"ok": True, "stats": asdict(stats), "llm_calls": 0}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "news_n5_event_trigger_failed",
+                analysis_ids=analysis_ids,
+                error=str(exc)[:300],
+            )
+            return {
+                "ok": False,
+                "error": f"{type(exc).__name__}: {exc}"[:300],
+            }
+        finally:
+            if session is not None:
+                session.close()
 
     def _save_row(
         self,

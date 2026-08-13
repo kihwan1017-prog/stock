@@ -99,6 +99,54 @@ export function UpbitNewsCombinedShadowPanel() {
         <Tag>MappingGlue={String(asRecord(pipeline.n3_automation)?.post_collect_glue ?? false)}</Tag>
       </Space>
       <Space wrap>
+        <Tag>
+          N4_pending=
+          {cell(asRecord(asRecord(pipeline.latency_alignment)?.backlog)?.pending_n)}
+        </Tag>
+        <Tag>
+          oldest_pending_s=
+          {cell(
+            asRecord(asRecord(pipeline.latency_alignment)?.backlog)
+              ?.oldest_pending_age_s,
+          )}
+        </Tag>
+        <Tag>
+          N4→N5_med=
+          {cell(
+            asRecord(
+              asRecord(asRecord(pipeline.latency_alignment)?.historical)?.n4_to_n5,
+            )?.median_s,
+          )}
+        </Tag>
+        <Tag>
+          collect→N5_med=
+          {cell(
+            asRecord(
+              asRecord(asRecord(pipeline.latency_alignment)?.historical)
+                ?.collection_to_n5,
+            )?.median_s,
+          )}
+        </Tag>
+        <Tag>
+          in_1h=
+          {cell(
+            asRecord(asRecord(pipeline.latency_alignment)?.capacity)
+              ?.incoming_articles_1h,
+          )}
+        </Tag>
+        <Tag>
+          N4_cap/h=
+          {cell(
+            asRecord(asRecord(pipeline.latency_alignment)?.capacity)
+              ?.n4_theoretical_capacity_per_hour,
+          )}
+        </Tag>
+        <Tag>
+          latency_root=
+          {cell(asRecord(pipeline.latency_alignment)?.root_cause)}
+        </Tag>
+      </Space>
+      <Space wrap>
         <Tag>enabled={String(st.enabled ?? false)}</Tag>
         <Tag>rows={cell(st.total_rows)}</Tag>
         <Tag color="purple">sample={cell(milestone.status)}</Tag>
@@ -152,6 +200,7 @@ export function UpbitNewsCombinedShadowPanel() {
       <AdminDataTable
         title="Latest NEWS_MATCHED examples"
         loading={status.isLoading}
+        rowKey="experiment_id"
         columns={[
           { title: "symbol", dataIndex: "symbol", width: 100 },
           { title: "run", dataIndex: "scanner_run_id", width: 120 },
@@ -167,13 +216,15 @@ export function UpbitNewsCombinedShadowPanel() {
           { title: "MAE", dataIndex: "mae_pct", width: 70 },
         ]}
         dataSource={matchedExamples.map((row, idx) => ({
-          key: String(row.experiment_id ?? idx),
           ...row,
+          // AdminDataTable 기본 rowKey=id 대신 experiment_id 사용
+          experiment_id: row.experiment_id ?? `matched-${idx}`,
         }))}
       />
       <AdminDataTable
         title="Recent Experiment Rows"
         loading={recent.isLoading}
+        rowKey="experiment_id"
         columns={[
           { title: "symbol", dataIndex: "symbol", width: 100 },
           { title: "rank", dataIndex: "control_scanner_rank", width: 60 },
@@ -190,8 +241,8 @@ export function UpbitNewsCombinedShadowPanel() {
           { title: "status", dataIndex: "evaluation_status", width: 100 },
         ]}
         dataSource={items.map((row, idx) => ({
-          key: String(row.experiment_id ?? idx),
           ...row,
+          experiment_id: row.experiment_id ?? `exp-${idx}`,
         }))}
       />
       <AdminJsonCard

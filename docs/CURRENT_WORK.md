@@ -7,16 +7,15 @@
 
 ## Current Phase
 
-**STEP N8 — UPBIT News Pipeline Continuous Observation** (`NEWS_PIPELINE_OBSERVATION_RUNNING` / `NEWS_AB_SAMPLE_ACCUMULATING`)
+**STEP N9 — UPBIT News Pipeline Latency Alignment** (`NEWS_PIPELINE_LATENCY_ALIGNED` / `NEWS_AB_SAMPLE_ACCUMULATING`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Pipeline | Notice+Crypto Collector · N4 · N5 · N6 Experiment **ON** |
-| N3 glue | collector tick post-map (fail-isolated, limit=50) |
-| Look-ahead | **유지** (완화 금지) |
+| Fix | N4 COMPLETED → N5 event-driven (fail-isolated) · N4 fresh-unprocessed priority |
+| N4 interval/batch | **900s / ≤5 유지** (미변경) |
+| Look-ahead | **유지** |
 | CONTROL | Scanner/Shadow/Cohort/Trading **불변** |
-| Milestone | MATCHED/NO_NEWS → 20/20 누적 중 |
 | Apply | **금지** |
 
 ---
@@ -27,7 +26,7 @@
 
 ## Next Gate
 
-1. **STEP N9** — 사용자 승인 후에만 (REVIEW_READY 도달·Top-N Observation Snapshot 후보; Scanner/Gate production 적용 금지)  
+1. **STEP N10** — 사용자 승인 후에만 (자연 MATCHED 누적·Top-N Snapshot 후보; Scanner/Gate production 적용 금지)  
 2. Cohort milestone READY  
 3. LIVE 별도 승인  
 
