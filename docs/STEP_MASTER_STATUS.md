@@ -51,7 +51,7 @@
 | NEWS-N6 | STEP N6 | News Combined Shadow A/B | READY_WITH_LIMITATIONS | YES (`eac2b66`) | o6p7q8r9s0t1 | test_step_n6_* | N7 누적 | `upbit_news_combined_shadow*` |
 | NEWS-N7 | STEP N7 | News A/B Sample Accumulation | NEWS_AB_SAMPLE_ACCUMULATING | YES (`60a9969`) | none (reuse N6 table) | test_step_n7_* | N8 observation | diagnostics/scheduler/UI |
 | NEWS-N8 | STEP N8 | News Pipeline Continuous Observation | NEWS_PIPELINE_OBSERVATION_RUNNING | YES (`74102ad`) | none | test_step_n8_* | N9 latency | pipeline_observation* |
-| NEWS-N9 | STEP N9 | News Pipeline Latency Alignment | NEWS_PIPELINE_LATENCY_ALIGNED | YES (N9 commit) | none | test_step_n9_* | N10 (승인 후) | N4→N5 event trigger |
+| NEWS-N9 | STEP N9 | News Pipeline Latency Alignment | NEWS_PIPELINE_LATENCY_ALIGNED | YES (`622eb8d`) | none | test_step_n9_* | N10 (승인 후) | N4→N5 event trigger |
 
 ---
 
