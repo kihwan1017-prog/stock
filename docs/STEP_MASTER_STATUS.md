@@ -69,7 +69,9 @@
 | MENU-M5-0 | STEP M5-0 | Upbit Hub consolidation precheck | UPBIT_HUB_DESIGN_READY_WITH_LIMITATIONS | **YES** (with M5-A 본 커밋) | none | — | M5-A | `docs/audit/MENU_M5_UPBIT_HUB_PRECHECK.md` |
 | MENU-M5-A | STEP M5-A | Upbit Hub Tab shell + reorder | UPBIT_HUB_TAB_SHELL_READY_WITH_LIMITATIONS | **YES** (`285b521` · pushed) | none | upbitHubTabs.test.ts | M5-B0 | `docs/audit/MENU_M5A_UPBIT_HUB_TAB_SHELL.md` |
 | MENU-M5-B0 | STEP M5-B0 | Technical tab structure precheck | TECHNICAL_TAB_SECTION_REORGANIZE | **YES** (with M5-B 본 커밋) | none | — | M5-B | `docs/audit/MENU_M5B_TECHNICAL_TAB_PRECHECK.md` |
-| MENU-M5-B | STEP M5-B | Technical section reorder | TECHNICAL_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | upbitTechnicalSectionOrder.test.ts | M5-C0 (승인 후) | `docs/audit/MENU_M5B_TECHNICAL_SECTION_REORGANIZE.md` |
+| MENU-M5-B | STEP M5-B | Technical section reorder | TECHNICAL_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (`c1af96e`) | none | upbitTechnicalSectionOrder.test.ts | M5-C0 | `docs/audit/MENU_M5B_TECHNICAL_SECTION_REORGANIZE.md` |
+| MENU-M5-C0 | STEP M5-C0 | News pipeline tab precheck | NEWS_PIPELINE_SECTION_REORGANIZE | **YES** (with M5-C 본 커밋) | none | — | M5-C | `docs/audit/MENU_M5C_NEWS_PIPELINE_PRECHECK.md` |
+| MENU-M5-C | STEP M5-C | News pipeline section reorder | NEWS_PIPELINE_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (본 커밋 · rowKey WIP는 WT residual) | none | upbitNewsPipelineSectionOrder.test.ts | M5-D0 (승인 후) | `docs/audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md` |
 
 ---
 

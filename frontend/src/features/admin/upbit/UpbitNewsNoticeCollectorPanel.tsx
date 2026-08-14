@@ -186,13 +186,16 @@ export function UpbitNewsNoticeCollectorPanel() {
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Typography.Title level={5} style={{ marginBottom: 0 }}>
-        UPBIT News / Notice Collector
-      </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         N2 COLLECT → N3 Mapping → N3.1 Quality → N4 AI Analysis → N5 News Signal.
-        Signal은 INFORMATIONAL ONLY. BUY/SELL/ALLOW/Scanner Apply 없음.
+        Signal은 INFORMATIONAL ONLY. BUY/SELL/ALLOW/Scanner Apply 없음. N6 A/B는
+        「A/B 실험」탭을 사용합니다.
       </Typography.Paragraph>
+
+      {/* M5-C: N2 → N3/N3.1 → N4 → N5 */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        뉴스 수집
+      </Typography.Title>
       <Space wrap>
         <Tag color={st.enabled ? "green" : "default"}>
           enabled={String(st.enabled ?? false)}
@@ -208,13 +211,6 @@ export function UpbitNewsNoticeCollectorPanel() {
           crypto={String(crypto.enabled ?? false)}/
           {cell(crypto.interval_seconds)}s
         </Tag>
-        <Tag>universe={cell(mapping.universe_count)}</Tag>
-        <Tag color="green">trusted={cell(mapping.quality_trusted)}</Tag>
-        <Tag color="orange">review={cell(mapping.quality_review_required)}</Tag>
-        <Tag color="gold">ambiguous_q={cell(mapping.quality_ambiguous)}</Tag>
-        <Tag color="red">rejected={cell(mapping.quality_rejected)}</Tag>
-        <Tag>mapped={cell(mapping.mapped_articles)}</Tag>
-        <Tag>links={cell(mapping.mapping_link_count)}</Tag>
       </Space>
       <Typography.Text type="secondary">
         last_run={cell(st.last_run)} · next_run={cell(st.next_run)} · last_error=
@@ -227,21 +223,6 @@ export function UpbitNewsNoticeCollectorPanel() {
           onClick={() => runOnce.mutate()}
         >
           수동 수집 1회
-        </Button>
-        <Button
-          loading={runMapping.isPending}
-          onClick={() => runMapping.mutate()}
-        >
-          Symbol Mapping 실행
-        </Button>
-        <Button loading={runAi.isPending} onClick={() => runAi.mutate()}>
-          AI News Analysis (max 5)
-        </Button>
-        <Button
-          loading={runSignals.isPending}
-          onClick={() => runSignals.mutate()}
-        >
-          News Signal 표준화
         </Button>
         <Button
           onClick={() => {
@@ -266,9 +247,42 @@ export function UpbitNewsNoticeCollectorPanel() {
           ...row,
         }))}
       />
+
       <Typography.Title level={5} style={{ marginBottom: 0 }}>
-        AI News Analysis (INFORMATIONAL ONLY)
+        심볼 매핑 · 품질
       </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        N3 Symbol Mapping과 N3.1 quality(TRUSTED/REVIEW/AMBIGUOUS/REJECTED)입니다.
+        매핑 결과는 위 최근 기사 테이블의 Mapped Symbols에도 표시됩니다.
+      </Typography.Paragraph>
+      <Space wrap>
+        <Tag>universe={cell(mapping.universe_count)}</Tag>
+        <Tag color="green">trusted={cell(mapping.quality_trusted)}</Tag>
+        <Tag color="orange">review={cell(mapping.quality_review_required)}</Tag>
+        <Tag color="gold">ambiguous_q={cell(mapping.quality_ambiguous)}</Tag>
+        <Tag color="red">rejected={cell(mapping.quality_rejected)}</Tag>
+        <Tag>mapped={cell(mapping.mapped_articles)}</Tag>
+        <Tag>links={cell(mapping.mapping_link_count)}</Tag>
+        <Button
+          loading={runMapping.isPending}
+          onClick={() => runMapping.mutate()}
+        >
+          Symbol Mapping 실행
+        </Button>
+      </Space>
+      <AdminJsonCard
+        title="Collector + Mapping status"
+        loading={status.isLoading}
+        error={status.error ? toApiError(status.error) : null}
+        data={status.data}
+      />
+
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        AI 뉴스 분석
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        INFORMATIONAL ONLY. BUY/SELL/ALLOW/APPLY 없음.
+      </Typography.Paragraph>
       <Space wrap>
         <Tag>
           enabled=
@@ -289,6 +303,9 @@ export function UpbitNewsNoticeCollectorPanel() {
           skipped=
           {cell(asRecord(asRecord(aiStatus.data)?.status_counts)?.SKIPPED)}
         </Tag>
+        <Button loading={runAi.isPending} onClick={() => runAi.mutate()}>
+          AI News Analysis (max 5)
+        </Button>
       </Space>
       <AdminDataTable
         title="최근 AI 분석 (sentiment ≠ trade signal)"
@@ -313,19 +330,14 @@ export function UpbitNewsNoticeCollectorPanel() {
         }))}
       />
       <AdminJsonCard
-        title="Collector + Mapping status"
-        loading={status.isLoading}
-        error={status.error ? toApiError(status.error) : null}
-        data={status.data}
-      />
-      <AdminJsonCard
         title="AI News Analysis status"
         loading={aiStatus.isLoading}
         error={aiStatus.error ? toApiError(aiStatus.error) : null}
         data={aiStatus.data}
       />
+
       <Typography.Title level={5} style={{ marginBottom: 0 }}>
-        News Signals (INFORMATIONAL / OBSERVATION ONLY)
+        News Signal
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         POSITIVE ≠ BUY · NEGATIVE ≠ SELL · News Signal ≠ AI Gate. LLM 호출 없음.
@@ -354,6 +366,12 @@ export function UpbitNewsNoticeCollectorPanel() {
           INVALID=
           {cell(asRecord(asRecord(signalStatus.data)?.by_status)?.INVALID)}
         </Tag>
+        <Button
+          loading={runSignals.isPending}
+          onClick={() => runSignals.mutate()}
+        >
+          News Signal 표준화
+        </Button>
       </Space>
       <AdminDataTable
         title="최근 News Signals"

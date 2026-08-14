@@ -1,0 +1,112 @@
+{
+  "step": "M5-C0",
+  "title": "Upbit News Pipeline Tab Structure Precheck",
+  "mode": "PRECHECK_DESIGN_ONLY",
+  "date": "2026-08-15",
+  "baseline_commit": "c1af96e2cfe0edde66f642202f634a9f03d4956f",
+  "verdict": "NEWS_PIPELINE_SECTION_REORGANIZE",
+  "recommended_option": "B_SECTION_REORGANIZE",
+  "component_split_needed_now": false,
+  "parent_owned_data_needed_now": false,
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "panel_head": {
+    "path": "frontend/src/features/admin/upbit/UpbitNewsNoticeCollectorPanel.tsx",
+    "total_loc": 389,
+    "jsx_loc": 227,
+    "useState": 0,
+    "useEffect": 0,
+    "useQuery": 7,
+    "useMutation": 4,
+    "onclick_handlers": 5,
+    "api_functions_used": 11,
+    "get_count": 7,
+    "mutation_count": 4,
+    "tables": 3,
+    "json_cards": 3,
+    "title_sections": 3,
+    "practical_complexity": "MEDIUM"
+  },
+  "inventory": {
+    "N2_collection": true,
+    "N3_symbol_mapping": true,
+    "N3_1_quality": true,
+    "N3_1_separate_section": false,
+    "N4_ai_analysis": true,
+    "N5_news_signal": true,
+    "pipeline_observation_in_panel": false,
+    "pipeline_observation_location": "UpbitNewsCombinedShadowPanel_AB_tab"
+  },
+  "current_ui_order": [
+    "title_blurb",
+    "mixed_n2_n31_tags",
+    "last_run_line",
+    "all_manual_actions_n2_n5",
+    "recent_articles_with_mapped_symbols",
+    "n4_ai_section",
+    "collector_mapping_status_json",
+    "ai_status_json",
+    "n5_signals_section"
+  ],
+  "logical_pipeline_order": ["N2", "N3", "N3.1", "N4", "N5"],
+  "apis_used": [
+    "getUpbitNewsCollectorStatus",
+    "getUpbitNewsCollectorRecent",
+    "runUpbitNewsCollector",
+    "runUpbitNewsSymbolMapping",
+    "getUpbitNewsAnalysisStatus",
+    "getUpbitNewsAnalysisRecent",
+    "runUpbitNewsAnalysis",
+    "getUpbitNewsSignalsStatus",
+    "getUpbitNewsSignalsRecent",
+    "getUpbitNewsSignalsStats",
+    "runUpbitNewsSignals"
+  ],
+  "apis_unused_in_panel": ["getUpbitNewsSymbolMappingStatus"],
+  "coupling": {
+    "data": "MEDIUM",
+    "ui": "HIGH",
+    "mutation": "LOW_MEDIUM",
+    "overall": "MEDIUM"
+  },
+  "safety": {
+    "buy_sell_allow_apply_buttons": false,
+    "n4_informational_only": true,
+    "n5_not_trading_signal": true,
+    "n6_detail_in_news_tab": false,
+    "live_arm_scheduler_mutation": 0
+  },
+  "wip": {
+    "committed_base": "HEAD c1af96e",
+    "preexisting_wip": "rowKey for article/analysis/signal tables; remove synthetic key map (+7/-8)",
+    "m5c0_production_diff": 0,
+    "collision_risk_if_edit_file": "HIGH"
+  },
+  "options": {
+    "A_KEEP_SINGLE_PANEL": {"recommended": false},
+    "B_SECTION_REORGANIZE": {"recommended": true},
+    "C_COMPONENT_SPLIT": {
+      "recommended": false,
+      "defer_reason": "WIP collision + shared action/refresh; consider after WIP cleared with parent-owned queries"
+    }
+  },
+  "api_duplication_risk_if_split": "MEDIUM_unless_parent_owned",
+  "changes_required_for_B": {
+    "route": false,
+    "permission": false,
+    "backend_api": false
+  },
+  "desired_ui_flow": [
+    "N2_collection",
+    "N3_N3_1_mapping_quality",
+    "N4_ai_analysis",
+    "N5_news_signal"
+  ],
+  "n6_boundary": "A/B tab canonical; no new Combined UI in News tab",
+  "documents": [
+    "docs/audit/MENU_M5C_NEWS_PIPELINE_PRECHECK.md",
+    "docs/audit/MENU_M5C_NEWS_PIPELINE_PRECHECK.json"
+  ],
+  "next_step_exactly_one": "M5-C — News Pipeline SECTION_REORGANIZE only (N2→N5 order; no split; resolve WIP collision strategy first)"
+}

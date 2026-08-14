@@ -7,22 +7,21 @@
 
 ## Current Phase
 
-**STEP M5-B — Technical SECTION_REORGANIZE** — baseline 커밋 (`TECHNICAL_SECTION_REORGANIZE_READY_WITH_LIMITATIONS`)
+**STEP M5-C — News Pipeline SECTION_REORGANIZE** — baseline 커밋 (`NEWS_PIPELINE_SECTION_REORGANIZE_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Baseline | M5-A `285b521` · M5-B0 SECTION_REORGANIZE |
-| 변경 | `UpbitOpportunityScannerPanel` UI 순서만 (Scanner→Candidates→Shadow→Evaluate→Cohort) |
-| 미변경 | API/mutation/policy · component split 없음 |
-| Evidence | [audit/MENU_M5B_TECHNICAL_SECTION_REORGANIZE.md](audit/MENU_M5B_TECHNICAL_SECTION_REORGANIZE.md) |
-| commit | **본 커밋으로 baseline 고정** (push 없음 · Ambiguous/Collector/risk WIP 잔여 WT) |
+| 변경 | NewsCollector UI N2→N3→N4→N5 · action 분리 |
+| Evidence | [audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md](audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md) |
+| commit | **본 커밋으로 baseline 고정** (push 없음) |
+| residual | NewsCollector **rowKey WIP**는 WT에 재적용 (commit 제외) |
 
-병렬 트랙 (본 STEP과 혼합 금지):
+병렬 트랙:
 
-- Technical Shadow: VALID≈50 재리뷰 · TP apply **금지**
-- News A/B: `NEWS_AB_SAMPLE_ACCUMULATING`
-- Ambiguous/Collector/risk WIP — 별도 선별
+- Technical cohort 재리뷰 · TP apply **금지**
+- News A/B 누적
+- Ambiguous/risk/rowKey WIP — 별도 선별
 
 ---
 
@@ -32,8 +31,8 @@
 
 ## Next Gate
 
-1. **M5-C0** News Pipeline tab PRECHECK (**승인 후**)  
-2. Technical VALID cohort **≈50** 재리뷰 (자동 변경 금지)  
-3. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
+1. **M5-D0** A/B Experiment tab PRECHECK (**승인 후**)  
+2. Technical VALID≈50 재리뷰  
+3. NewsCollector rowKey WIP 별도 처리  
 
 → [ROADMAP.md](ROADMAP.md)
