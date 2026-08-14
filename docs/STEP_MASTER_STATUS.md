@@ -63,7 +63,9 @@
 | MENU-M4-A | STEP M4-A | READ-only ops labels/cross-links | MENU_M4A_READY_WITH_LIMITATIONS | **YES** (`62bd783`; risk page WIP 제외) | none | menu/ops tests | M4-B | `docs/audit/MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md` |
 | MENU-M4-B | STEP M4-B | Admin ops menu regroup | MENU_M4B_READY_WITH_LIMITATIONS | **YES** (`e045c63`) | none | menu.test.ts | M4-C0 | `docs/audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md` |
 | MENU-M4-C0 | STEP M4-C0 | LIVE/ARM canonical precheck | LIVE_CONTROL_CANONICAL_DESIGN_READY | **YES** (with M4-C 본 커밋) | none | — | M4-C | `docs/audit/MENU_M4C_LIVE_CONTROL_CANONICAL_PRECHECK.md` |
-| MENU-M4-C | STEP M4-C | LIVE/ARM panel single-mount | LIVE_CONTROL_SINGLE_MOUNT_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | upbitLiveControlSingleMount.test.ts | M4-C2 risk DEFER | `docs/audit/MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md` |
+| MENU-M4-C | STEP M4-C | LIVE/ARM panel single-mount | LIVE_CONTROL_SINGLE_MOUNT_READY_WITH_LIMITATIONS | **YES** (`85c3552`) | none | upbitLiveControlSingleMount.test.ts | M4-C2 | `docs/audit/MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md` |
+| MENU-M4-C2 | STEP M4-C2 | Risk LIVE duplicate precheck | RISK_LIVE_DUPLICATE_CONFIRMED | **YES** (with APPLY 본 커밋) | none | — | M4-C2-APPLY | `docs/audit/MENU_M4C2_RISK_LIVE_DUPLICATE_PRECHECK.md` |
+| MENU-M4-C2-APPLY | STEP M4-C2-APPLY | Risk LIVE/ARM mutation 제거 | RISK_LIVE_CONTROL_SINGLE_SURFACE_READY_WITH_LIMITATIONS | **YES** (본 커밋 · title/ops-link WIP 잔여 WT) | none | riskLiveControlSingleSurface.test.ts | WIP residual OK | `docs/audit/MENU_M4C2_RISK_LIVE_CONTROL_CLEANUP.md` |
 
 ---
 

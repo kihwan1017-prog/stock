@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   App,
   Button,
   Card,
@@ -9,8 +10,12 @@ import {
   InputNumber,
   Space,
   Switch,
+  Tag,
 } from "antd";
 import { useMemo, useState } from "react";
+import Link from "next/link";
+
+import { adminRoutes } from "@/config/routes";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -158,18 +163,7 @@ export default function AdminRiskPage() {
     onError: (e) => message.error(toApiError(e).message),
   });
 
-  const toggleLive = useMutation({
-    mutationFn: (args: { ubaId: number; enabled: boolean }) =>
-      adminApi.setAdminLiveOrderEnabled(args.ubaId, args.enabled),
-    onSuccess: (_, vars) => {
-      message.success(vars.enabled ? "LIVE 승인 ON" : "LIVE 승인 OFF");
-      void qc.invalidateQueries({
-        queryKey: queryKeys.admin.liveOrderAccounts(targetUserId),
-      });
-    },
-    onError: (e) => message.error(toApiError(e).message),
-  });
-
+  // M4-C2-APPLY: LIVE/ARM mutation은 /admin/accounts canonical만. 여기서는 한도·status만.
   const saveLiveLimits = useMutation({
     mutationFn: (args: {
       ubaId: number;
@@ -189,43 +183,6 @@ export default function AdminRiskPage() {
     onError: (e) => message.error(toApiError(e).message),
   });
 
-  // STEP 8-8 — ARM / DISARM (5분 토큰)
-  const armLive = useMutation({
-    mutationFn: (ubaId: number) => adminApi.armAdminLiveOrder(ubaId),
-    onSuccess: (data) => {
-      const token = String(asRecord(data)?.arm_token ?? "");
-      message.success(
-        token
-          ? `ARM 완료 — token 앞 8자: ${token.slice(0, 8)}…`
-          : "ARM 완료",
-      );
-      void qc.invalidateQueries({
-        queryKey: queryKeys.admin.liveOrderAccounts(targetUserId),
-      });
-      void qc.invalidateQueries({
-        queryKey: queryKeys.admin.liveOpsDashboard(),
-      });
-    },
-    onError: (e) => message.error(toApiError(e).message),
-  });
-  const disarmLive = useMutation({
-    mutationFn: (args: { ubaId: number; turnLiveOff?: boolean }) =>
-      adminApi.disarmAdminLiveOrder(args.ubaId, {
-        turn_live_off: args.turnLiveOff ?? false,
-        reason: "MANUAL",
-      }),
-    onSuccess: () => {
-      message.success("DISARM 완료");
-      void qc.invalidateQueries({
-        queryKey: queryKeys.admin.liveOrderAccounts(targetUserId),
-      });
-      void qc.invalidateQueries({
-        queryKey: queryKeys.admin.liveOpsDashboard(),
-      });
-    },
-    onError: (e) => message.error(toApiError(e).message),
-  });
-
   const liveAccountRows = extractRows(
     asRecord(liveAccounts.data)?.accounts ?? liveAccounts.data,
   );
@@ -235,7 +192,7 @@ export default function AdminRiskPage() {
       title="Risk 관리"
       description="kill-switch · 시스템/회원 리스크 설정 · daily-loss · risk-policies"
       extra={
-        <Space>
+        <Space wrap>
           <Button danger loading={activate.isPending} onClick={() => activate.mutate()}>
             Kill Switch ON
           </Button>
@@ -420,11 +377,20 @@ export default function AdminRiskPage() {
           </Form>
         </Card>
 
-        <Card title="STEP 8-7/8-8 — 계좌 LIVE 승인·ARM·한도" size="small">
-          <p style={{ marginBottom: 12 }}>
-            LIVE ON만으로는 주문 불가합니다. 관리자 ARM(기본 5분) + arm_token이
-            있어야 실주문이 허용되며, 만료 시 자동 LIVE OFF됩니다.
-          </p>
+        <Card
+          title="계좌 LIVE/ARM 상태 · 한도 (조회 + 한도만)"
+          size="small"
+          extra={
+            <Link href={adminRoutes.accounts}>계좌 LIVE 제어</Link>
+          }
+        >
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            title="LIVE/ARM 및 Trading Scheduler 제어는 계좌 관리에서 수행합니다."
+            description="이 화면은 상태 조회와 LIVE 리스크 한도 재적용만 제공합니다. Kill Switch는 위쪽 Risk 제어를 사용하세요."
+          />
           <AdminDataTable
             title={`GET /admin/live-order/users/${targetUserId}/accounts`}
             loading={liveAccounts.isLoading}
@@ -445,16 +411,9 @@ export default function AdminRiskPage() {
                 title: "LIVE",
                 key: "live",
                 render: (_: unknown, row: Record<string, unknown>) => (
-                  <Switch
-                    checked={Boolean(row.live_order_enabled)}
-                    loading={toggleLive.isPending}
-                    onChange={(enabled) =>
-                      toggleLive.mutate({
-                        ubaId: Number(row.user_broker_account_id),
-                        enabled,
-                      })
-                    }
-                  />
+                  <Tag color={row.live_order_enabled ? "green" : "default"}>
+                    {row.live_order_enabled ? "ON" : "OFF"}
+                  </Tag>
                 ),
               },
               {
@@ -464,39 +423,9 @@ export default function AdminRiskPage() {
                   const armed = Boolean(row.live_armed);
                   const expires = cell(row.arm_expires_at);
                   return (
-                    <Space orientation="vertical" size={4}>
-                      <span style={{ fontSize: 12 }}>
-                        {armed ? `ARMED (~${expires})` : "DISARMED"}
-                      </span>
-                      <Space size={4} wrap>
-                        <Button
-                          size="small"
-                          type="primary"
-                          disabled={!row.live_order_enabled}
-                          loading={armLive.isPending}
-                          onClick={() =>
-                            armLive.mutate(
-                              Number(row.user_broker_account_id),
-                            )
-                          }
-                        >
-                          ARM
-                        </Button>
-                        <Button
-                          size="small"
-                          danger
-                          loading={disarmLive.isPending}
-                          onClick={() =>
-                            disarmLive.mutate({
-                              ubaId: Number(row.user_broker_account_id),
-                              turnLiveOff: false,
-                            })
-                          }
-                        >
-                          DISARM
-                        </Button>
-                      </Space>
-                    </Space>
+                    <span style={{ fontSize: 12 }}>
+                      {armed ? `ARMED (~${expires})` : "DISARMED"}
+                    </span>
                   );
                 },
               },

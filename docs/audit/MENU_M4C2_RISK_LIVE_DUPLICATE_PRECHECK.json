@@ -1,0 +1,85 @@
+{
+  "step": "M4-C2",
+  "verdict": "RISK_LIVE_DUPLICATE_CONFIRMED",
+  "baseline_commit": "85c35523f10407b2a3f54912b3d410d47ced0345",
+  "production_mutation": 0,
+  "risk_page_primary_role": "RISK_CONFIG_AND_KILL_CONTROL",
+  "live_control_present": true,
+  "arm_control_present": true,
+  "scheduler_control_present": false,
+  "scheduler_classification": "SCHEDULER_CONTROL_NOT_PRESENT",
+  "duplicate_classification": "TRUE_DUPLICATE_LIVE_CONTROL",
+  "arm_duplicate_classification": "TRUE_DUPLICATE_ARM_CONTROL",
+  "removal_candidate": "REMOVE_CONTROL_CANDIDATE",
+  "status_policy": "KEEP_STATUS_ONLY",
+  "risk_live": {
+    "ui": "Switch",
+    "api": "PUT /api/v1/admin/live-order/accounts/{uba}",
+    "client": "setAdminLiveOrderEnabled",
+    "reason_prefix": "ADMIN_RISK_PAGE_LIVE_",
+    "confirmation": false,
+    "fe_gates": ["none_beyond_switch"]
+  },
+  "risk_arm": {
+    "ui": "Button ARM/DISARM",
+    "api_arm": "POST /api/v1/admin/live-order/accounts/{uba}/arm",
+    "api_disarm": "POST /api/v1/admin/live-order/accounts/{uba}/disarm",
+    "confirmation": false,
+    "fe_gates": ["arm_disabled_when_live_off"]
+  },
+  "accounts_canonical": {
+    "api_live": "PUT /api/v1/admin/live-order/accounts/{uba}",
+    "api_arm": "POST .../arm",
+    "api_disarm": "POST .../disarm",
+    "api_scheduler": "POST /admin/trading-scheduler/start|pause",
+    "confirmation": true,
+    "fe_gates": [
+      "modal_confirm",
+      "preflight_ready_fresh",
+      "scheduler_paused",
+      "trading_paused_resume",
+      "ordered_sequence"
+    ]
+  },
+  "endpoint_same": true,
+  "scope_same": "uba",
+  "payload_same": "live_order_enabled_core_same_reason_strings_differ",
+  "server_gate_same": true,
+  "fe_gate_weaker_on_risk": true,
+  "high_priority_duplicate": true,
+  "permission": {
+    "risk": "menu:risk",
+    "accounts": "menu:accounts",
+    "backend_live": "require_admin",
+    "admin_bypass": true
+  },
+  "kill_switch_role": "emergency_safety_canonical_on_risk",
+  "live_role": "account_execution_activation_canonical_on_accounts",
+  "keep_on_risk": [
+    "kill_switch",
+    "system_user_risk_settings",
+    "trading_flags",
+    "account_paused",
+    "live_risk_limits_reapply",
+    "live_arm_status_read"
+  ],
+  "remove_candidate_on_risk": ["live_switch_mutation", "arm_button", "disarm_button"],
+  "target_risk_ui": {
+    "control": ["kill", "risk_settings", "flags", "limits"],
+    "read": ["live_status", "arm_status"],
+    "link": "/admin/accounts"
+  },
+  "control_surfaces": {
+    "live_before": 2,
+    "live_target": 1,
+    "arm_before": 2,
+    "arm_target": 1,
+    "panel_mounts": 1
+  },
+  "route_change_required": false,
+  "backend_api_change_required": false,
+  "permission_change_required": false,
+  "implementation_risk": "MEDIUM_due_to_risk_page_wip_mix",
+  "m4c_single_mount_regression": "none_this_step_read_only",
+  "next_step": "M4-C2-APPLY — remove Risk LIVE/ARM mutations; keep status + link to accounts"
+}
