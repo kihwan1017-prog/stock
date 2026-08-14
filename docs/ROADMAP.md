@@ -115,7 +115,7 @@
 | P5-2 | PHASE 3 Archive 이동 계획 실행 | 사용자 승인 후 이동 | OPEN |
 | P5-3 | Deprecated `alembic/versions` 정리 | ARCHIVE 표기 | OPEN |
 | P5-4 | Dual dashboard router 문서화/통합 | KEEP or CONSOLIDATE | OPEN |
-| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M5-E Ops section reorder committed; Ambiguous WIP WT residual; next M5-F | **IN_PROGRESS** (M5-E committed) |
+| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M5 Hub CLOSE (`COMPLETE_WITH_LIMITATIONS`); next M6-0 shared-component PRECHECK | **IN_PROGRESS** (M5 closed · M6-0 pending) |
 
 ---
 

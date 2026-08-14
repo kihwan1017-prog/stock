@@ -1,0 +1,89 @@
+{
+  "step": "M5-F",
+  "title": "Upbit Hub Final Regression Audit",
+  "mode": "READ_ONLY_AUDIT",
+  "date": "2026-08-15",
+  "branch": "release/v1.1.0",
+  "head": "21632e63042a66697806a610d966b8b018604e59",
+  "verdict": "UPBIT_HUB_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS",
+  "m5_close": true,
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "commits": {
+    "M5-A": "285b5218989b3069131a51e488dad3f500678b6e",
+    "M5-B": "c1af96e2cfe0edde66f642202f634a9f03d4956f",
+    "M5-C": "ffaa247cdc447206842872a306d53d227a10b58a",
+    "M5-D": "SKIP_KEEP_AS_IS",
+    "M5-E": "21632e63042a66697806a610d966b8b018604e59"
+  },
+  "tabs": [
+    {"key": "overview", "label": "개요", "mount": "UpbitLiveStatusReadSummary"},
+    {"key": "technical", "label": "Technical", "mount": "UpbitOpportunityScannerPanel"},
+    {"key": "news", "label": "뉴스 파이프라인", "mount": "UpbitNewsNoticeCollectorPanel"},
+    {"key": "ab", "label": "A/B 실험", "mount": "UpbitNewsCombinedShadowPanel"},
+    {"key": "ops", "label": "운영·정합", "mount": "UpbitHubOpsSection", "inner": "UpbitAmbiguousOrdersPanel x1"}
+  ],
+  "duplicate_mount_count": 0,
+  "contracts": {
+    "technical": {"mutation": 2, "handlers_onclick": 3, "api": 3, "state_effect": [0, 0], "split": false},
+    "news": {"handlers": 5, "api": 11, "get": 7, "mutation": 4, "state_effect": [0, 0], "n6_in_news_tab": false},
+    "ab": {"mutation": 2, "get": 3, "experiment_only": true, "trading_mutation": 0},
+    "ops": {"mutation": 4, "get": 3, "state_effect": [1, 0], "ambiguous_mount": 1}
+  },
+  "regressions": {
+    "M5-A": "PASS",
+    "M5-B": "PASS",
+    "M5-C_HEAD": "PASS",
+    "M5-C_WT_rowKey_wip": "NOTED_NOT_FIXED",
+    "M5-D": "PASS_KEEP_AS_IS",
+    "M5-E": "PASS",
+    "M4-C_live": "PASS",
+    "M4-C2_risk": "PASS"
+  },
+  "canonical": {
+    "live_arm_scheduler_control": "/admin/accounts",
+    "upbit_hub": "/admin/upbit",
+    "runtime": "/admin/trading",
+    "orders_outbox": "/admin/orders",
+    "risk_kill": "/admin/risk",
+    "recovery": "/admin/recovery",
+    "monitoring": "/admin/monitoring",
+    "operations_dashboard": "/admin/operations-dashboard",
+    "preflight": "/admin/operations/preflight"
+  },
+  "deltas": {
+    "route": 0,
+    "permission": 0,
+    "auth_guard": 0,
+    "backend_api": 0,
+    "adminApi": 0
+  },
+  "ab_sample": {
+    "live_recount": "unavailable_public_tables_0",
+    "last_known_m5d0": {
+      "matched_completed": 2,
+      "no_news_completed": 22,
+      "excluded_completed": 4,
+      "milestone": "NEWS_AB_SAMPLE_ACCUMULATING"
+    }
+  },
+  "tests": {
+    "pass": 27,
+    "fail": 1,
+    "fail_classification": "WT_NewsCollector_rowKey_WIP",
+    "eslint_m5_paths": "PASS",
+    "tsc_m5_new_on_committed": 0,
+    "tsc_wip_news_collector": 2
+  },
+  "limitations": [
+    "NewsCollector rowKey WIP (WT)",
+    "AmbiguousOrdersPanel label/encoding WIP",
+    "Risk residual presentation WIP",
+    "RuntimePreflightPanel WIP",
+    "A/B MATCHED sample < 20 accumulating",
+    "URL ?tab= unsupported",
+    "Audit DB public schema empty for live A/B recount"
+  ],
+  "next_step_exactly_one": "M6-0 — ADMIN/USER SHARED COMPONENT CONSOLIDATION PRECHECK"
+}

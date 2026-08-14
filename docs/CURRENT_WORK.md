@@ -7,20 +7,20 @@
 
 ## Current Phase
 
-**STEP M5-E — Ops SECTION_REORGANIZE** — baseline 커밋 (`OPS_RECONCILIATION_SECTION_REORGANIZE_READY_WITH_LIMITATIONS`)
+**STEP M5-F — Upbit Hub Final Regression Audit** — docs baseline (`UPBIT_HUB_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS` · **M5_CLOSE=YES**)
 
 | 항목 | 값 |
 |------|-----|
-| Branch | `release/v1.1.0` |
-| 변경 | Ops Status→Sync→Rate→Snapshot→Reconcile→Ambiguous |
-| Evidence | [audit/MENU_M5E_OPS_RECONCILIATION_SECTION_REORGANIZE.md](audit/MENU_M5E_OPS_RECONCILIATION_SECTION_REORGANIZE.md) |
-| commit | **본 커밋으로 baseline 고정** (push 없음) |
-| residual | Ambiguous 한글 WIP · NewsCollector rowKey WIP — WT 유지 |
+| Branch | `release/v1.1.0` @ `21632e6` + 본 docs 커밋 |
+| 산출물 | [audit/MENU_M5F_UPBIT_HUB_FINAL_REGRESSION_AUDIT.md](audit/MENU_M5F_UPBIT_HUB_FINAL_REGRESSION_AUDIT.md) · JSON |
+| production mutation | **0** |
+| commit | **본 커밋으로 감사 docs 고정** (push 없음) |
+| next | **M6-0** PRECHECK (승인 후 · READ-ONLY) |
 
-병렬 트랙:
+병렬 트랙 (Hub 밖):
 
-- News A/B MATCHED 누적 · Technical VALID≈50
-- Ambiguous/risk/rowKey WIP — 별도 선별
+- NewsCollector rowKey WIP · Ambiguous WIP · risk/RuntimePreflight WIP  
+- News A/B MATCHED 누적 · Technical VALID≈50  
 
 ---
 
@@ -30,8 +30,8 @@
 
 ## Next Gate
 
-1. **M5-F** Upbit Hub Final Regression Audit (**승인 후**)  
-2. News A/B MATCHED≥20 · Technical VALID≈50  
-3. Ambiguous/rowKey WIP 별도 처리  
+1. **M6-0** Shared component consolidation PRECHECK (**승인 후 · READ-ONLY**)  
+2. Hub 구조 추가 변경 — **별도 요구 없는 한 종료**  
+3. residual WIP 별도 선별  
 
 → [ROADMAP.md](ROADMAP.md)
