@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Card, Space, Table, Tag, Typography } from "antd";
 
-import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { cell, extractRows } from "@/shared/utils/dataHelpers";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { PortfolioAssetHistorySection } from "@/features/user/portfolio/PortfolioAssetHistorySection";
 import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";

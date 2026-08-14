@@ -31,16 +31,12 @@ import { useState } from "react";
 import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
+import { STRATEGY_DRAFT_STATUS_COLOR } from "@/shared/utils/strategyStatusColors";
 
-const STATUS_COLOR: Record<string, string> = {
-  DRAFT: "processing",
-  REGENERATED: "default",
-  SUPERSEDED: "warning",
-  ARCHIVED: "error",
-};
+const STATUS_COLOR = STRATEGY_DRAFT_STATUS_COLOR;
 
 const STATUS_OPTIONS = [
   { value: "", label: "전체" },

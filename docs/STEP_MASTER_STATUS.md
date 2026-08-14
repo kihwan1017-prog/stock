@@ -75,7 +75,9 @@
 | MENU-M5-D0 | STEP M5-D0 | A/B experiment tab precheck | AB_EXPERIMENT_TAB_KEEP_AS_IS | **NO** (docs only · commit 없음) | none | — | M5-E0 | `docs/audit/MENU_M5D_AB_EXPERIMENT_TAB_PRECHECK.md` |
 | MENU-M5-E0 | STEP M5-E0 | Ops/reconciliation tab precheck | OPS_RECONCILIATION_SECTION_REORGANIZE | **NO** (docs only · commit 없음) | none | — | M5-E | `docs/audit/MENU_M5E_OPS_RECONCILIATION_PRECHECK.md` |
 | MENU-M5-E | STEP M5-E | Ops section reorder | OPS_RECONCILIATION_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (`21632e6` · Ambiguous WIP는 WT residual) | none | upbitOpsReconciliationSectionOrder.test.ts | M5-F | `docs/audit/MENU_M5E_OPS_RECONCILIATION_SECTION_REORGANIZE.md` |
-| MENU-M5-F | STEP M5-F | Upbit Hub final regression audit | UPBIT_HUB_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · M5_CLOSE=YES | **YES** (본 docs 커밋) | none | focused M5 suite | M6-0 (승인 후) | `docs/audit/MENU_M5F_UPBIT_HUB_FINAL_REGRESSION_AUDIT.md` |
+| MENU-M5-F | STEP M5-F | Upbit Hub final regression audit | UPBIT_HUB_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · M5_CLOSE=YES | **YES** (`a738d91`) | none | focused M5 suite | M6-0 | `docs/audit/MENU_M5F_UPBIT_HUB_FINAL_REGRESSION_AUDIT.md` |
+| MENU-M6-0 | STEP M6-0 | Admin/User shared component precheck | SHARED_COMPONENT_CONSOLIDATION_DESIGN_READY | **NO** (docs only · commit 없음) | none | — | M6-A | `docs/audit/MENU_M6_SHARED_COMPONENT_PRECHECK.md` |
+| MENU-M6-A | STEP M6-A | Shared formatters/utils extraction | SHARED_FORMATTERS_UTILS_READY_WITH_LIMITATIONS | **YES** (본 커밋 · admin shim 유지) | none | sharedUtils + m6aImportDirection | M6-B0 (승인 후) | `docs/audit/MENU_M6A_SHARED_FORMATTERS_UTILS.md` |
 
 ---
 

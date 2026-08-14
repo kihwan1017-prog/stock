@@ -16,7 +16,7 @@ import {
 } from "antd";
 import { useMemo, useState } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import * as userApi from "@/features/user/api/userApi";
 import { toApiError } from "@/lib/api/apiError";

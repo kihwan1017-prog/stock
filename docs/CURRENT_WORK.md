@@ -7,20 +7,20 @@
 
 ## Current Phase
 
-**STEP M5-F — Upbit Hub Final Regression Audit** — docs baseline (`UPBIT_HUB_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS` · **M5_CLOSE=YES**)
+**STEP M6-A — Shared Formatters / Utils** — baseline 커밋 (`SHARED_FORMATTERS_UTILS_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
-| Branch | `release/v1.1.0` @ `21632e6` + 본 docs 커밋 |
-| 산출물 | [audit/MENU_M5F_UPBIT_HUB_FINAL_REGRESSION_AUDIT.md](audit/MENU_M5F_UPBIT_HUB_FINAL_REGRESSION_AUDIT.md) · JSON |
-| production mutation | **0** |
-| commit | **본 커밋으로 감사 docs 고정** (push 없음) |
-| next | **M6-0** PRECHECK (승인 후 · READ-ONLY) |
+| Branch | `release/v1.1.0` |
+| 변경 | `shared/utils` · user→admin dataHelpers **0** · Request/Draft/Risk formatters |
+| Evidence | [audit/MENU_M6A_SHARED_FORMATTERS_UTILS.md](audit/MENU_M6A_SHARED_FORMATTERS_UTILS.md) |
+| commit | **본 커밋으로 baseline 고정** (push 없음) |
+| next | **M6-B0** Order RO shared columns PRECHECK (승인 후 · READ-ONLY) |
 
-병렬 트랙 (Hub 밖):
+병렬:
 
-- NewsCollector rowKey WIP · Ambiguous WIP · risk/RuntimePreflight WIP  
-- News A/B MATCHED 누적 · Technical VALID≈50  
+- Admin dataHelpers shim 잔존 (~56 admin files)  
+- residual WIP (Ambiguous/News rowKey/RuntimePreflight/portfolio rowKey/MarketExplorer 등) **WT 유지**
 
 ---
 
@@ -30,8 +30,8 @@
 
 ## Next Gate
 
-1. **M6-0** Shared component consolidation PRECHECK (**승인 후 · READ-ONLY**)  
-2. Hub 구조 추가 변경 — **별도 요구 없는 한 종료**  
-3. residual WIP 별도 선별  
+1. **M6-B0** Order RO shared columns PRECHECK (**승인 후 · READ-ONLY**)  
+2. Admin shim bulk migrate — 선택 후속  
+3. residual WIP 별도  
 
 → [ROADMAP.md](ROADMAP.md)

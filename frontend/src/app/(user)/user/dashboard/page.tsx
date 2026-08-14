@@ -18,7 +18,7 @@ import {
 import Link from "next/link";
 import { useMemo } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { pickFocusSymbol } from "@/features/user/dashboard/pickFocusSymbol";
 import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";

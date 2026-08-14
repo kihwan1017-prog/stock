@@ -21,7 +21,7 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { userRoutes } from "@/config/routes";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { canAccessAdminPortal } from "@/features/auth/utils/roles";

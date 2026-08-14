@@ -20,21 +20,10 @@ import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
-
-function rateToPercent(value: unknown): number | undefined {
-  if (value == null || value === "") return undefined;
-  const n = Number(value);
-  if (Number.isNaN(n)) return undefined;
-  return Number((n * 100).toFixed(4));
-}
-
-function percentToRate(value: number | null | undefined): number | null {
-  if (value == null) return null;
-  return Number((value / 100).toFixed(6));
-}
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
+import { percentToRate, rateToPercent } from "@/shared/utils/riskRatePercent";
 
 export default function AdminRiskPage() {
   const { message } = App.useApp();

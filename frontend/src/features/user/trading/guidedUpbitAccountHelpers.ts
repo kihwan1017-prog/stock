@@ -1,6 +1,6 @@
 /** LIVE Validation UBA 목록 정규화 (API 응답 shape 보정) */
 
-import { asRecord } from "@/features/admin/utils/dataHelpers";
+import { asRecord } from "@/shared/utils/dataHelpers";
 
 export type UbaOption = {
   user_broker_account_id: number;

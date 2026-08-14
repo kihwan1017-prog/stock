@@ -26,13 +26,9 @@ import type { StrategyDraftItem } from "@/features/user/api/userApi";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { STRATEGY_DRAFT_STATUS_COLOR } from "@/shared/utils/strategyStatusColors";
 
-const STATUS_COLOR: Record<string, string> = {
-  DRAFT: "processing",
-  REGENERATED: "default",
-  SUPERSEDED: "warning",
-  ARCHIVED: "error",
-};
+const STATUS_COLOR = STRATEGY_DRAFT_STATUS_COLOR;
 
 export default function UserStrategyDraftsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null);

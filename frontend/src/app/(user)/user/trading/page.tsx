@@ -22,7 +22,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { userRoutes } from "@/config/routes";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";

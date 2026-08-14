@@ -3,7 +3,7 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import { asRecord } from "@/features/admin/utils/dataHelpers";
+import { asRecord } from "@/shared/utils/dataHelpers";
 import { queryKeys } from "@/lib/query/queryKeys";
 
 import {

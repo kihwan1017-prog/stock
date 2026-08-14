@@ -1,0 +1,213 @@
+{
+  "step": "M6-0",
+  "title": "Admin/User Shared Component Consolidation Precheck",
+  "mode": "READ_ONLY_PRECHECK",
+  "date": "2026-08-15",
+  "branch": "release/v1.1.0",
+  "baseline_m5f": "a738d91ad2d6bc66a6b3ac96b79ddf664d6d0f53",
+  "verdict": "SHARED_COMPONENT_CONSOLIDATION_DESIGN_READY",
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "principles": [
+    "Shared View",
+    "Separate Scope",
+    "Separate Permission",
+    "Separate Mutation Ownership"
+  ],
+  "route_pairs": [
+    {
+      "domain": "accounts",
+      "admin": "/admin/accounts",
+      "user": "/user/accounts",
+      "admin_page_loc": 474,
+      "user_page_loc": 7,
+      "scope_admin": "ALL_USERS/UBA/SYSTEM",
+      "scope_user": "USER_OWNER",
+      "classification": "SAME_DOMAIN_DIFFERENT_WORKFLOW",
+      "share": "SHARE_PRESENTATIONAL_OPTIONAL",
+      "risk": "HIGH"
+    },
+    {
+      "domain": "strategies",
+      "admin": "/admin/strategies",
+      "user": "/user/strategies",
+      "admin_page_loc": 562,
+      "user_page_loc": 1431,
+      "classification": "SAME_DOMAIN_DIFFERENT_WORKFLOW",
+      "share": "KEEP_SEPARATE",
+      "risk": "HIGH"
+    },
+    {
+      "domain": "strategy_requests",
+      "admin": "/admin/strategy-requests",
+      "user": "/user/strategy-requests",
+      "admin_page_loc": 277,
+      "user_page_loc": 313,
+      "classification": "SHARED_PRESENTATION_DIFFERENT_ACTION",
+      "share": "SHARE_FORMATTER+SHARE_TABLE_COLUMNS",
+      "risk": "MEDIUM"
+    },
+    {
+      "domain": "strategy_drafts",
+      "admin": "/admin/strategy-drafts",
+      "user": "/user/strategy-drafts",
+      "admin_page_loc": 5231,
+      "user_page_loc": 146,
+      "classification": "SAME_DOMAIN_DIFFERENT_WORKFLOW",
+      "share": "SHARE_FORMATTER_ONLY",
+      "risk": "HIGH"
+    },
+    {
+      "domain": "orders",
+      "admin": "/admin/orders",
+      "user": "/user/orders",
+      "admin_page_loc": 732,
+      "user_page_loc": 332,
+      "classification": "SHARED_PRESENTATION_DIFFERENT_ACTION",
+      "share": "SHARE_TABLE_COLUMNS",
+      "risk": "HIGH"
+    },
+    {
+      "domain": "portfolio",
+      "admin": "/admin/portfolio",
+      "user": "/user/portfolio",
+      "admin_page_loc": 65,
+      "user_page_loc": 708,
+      "classification": "SIMILAR_LABEL_ONLY",
+      "share": "KEEP_SEPARATE",
+      "risk": "LOW"
+    },
+    {
+      "domain": "risk",
+      "admin": "/admin/risk",
+      "user": "/user/risk",
+      "admin_page_loc": 519,
+      "user_page_loc": 520,
+      "classification": "SHARED_PRESENTATION_DIFFERENT_ACTION",
+      "share": "SHARE_FORMATTER",
+      "risk": "HIGH"
+    },
+    {
+      "domain": "notifications",
+      "admin": "/admin/notifications",
+      "user": "/user/notifications",
+      "classification": "SIMILAR_LABEL_ONLY",
+      "share": "KEEP_SEPARATE",
+      "risk": "LOW"
+    },
+    {
+      "domain": "backtests",
+      "admin": "/admin/backtests",
+      "user": "/user/backtests",
+      "classification": "SIMILAR_LABEL_ONLY",
+      "share": "KEEP_SEPARATE",
+      "risk": "LOW"
+    },
+    {
+      "domain": "candidates",
+      "admin": "/admin/ai/candidate-*",
+      "user": "/user/candidates/*",
+      "classification": "SIMILAR_LABEL_ONLY",
+      "share": "KEEP_SEPARATE",
+      "risk": "MEDIUM"
+    },
+    {
+      "domain": "live_validation",
+      "admin": "/admin/live-validation/upbit",
+      "user": "/user/live-validation/upbit",
+      "classification": "SAME_DOMAIN_DIFFERENT_WORKFLOW",
+      "share": "KEEP_SEPARATE",
+      "risk": "HIGH"
+    },
+    {
+      "domain": "profile",
+      "admin": "/admin/profile",
+      "user": "/user/profile",
+      "classification": "ALREADY_SHARED",
+      "share": "NO_ACTION",
+      "risk": "LOW",
+      "component": "features/user/profile/ProfileWorkspace"
+    }
+  ],
+  "domain_analysis": [
+    {"domain": "Account", "verdict": "KEEP_SEPARATE", "note": "LIVE CONTROL excluded"},
+    {"domain": "Strategy", "verdict": "KEEP_SEPARATE"},
+    {"domain": "StrategyRequest", "verdict": "SHARE_FORMATTER+COLUMNS"},
+    {"domain": "StrategyDraft", "verdict": "SHARE_FORMATTER_ONLY"},
+    {"domain": "Order", "verdict": "SHARE_TABLE_COLUMNS_RO"},
+    {"domain": "Portfolio", "verdict": "KEEP_SEPARATE"},
+    {"domain": "Risk", "verdict": "SHARE_FORMATTER_ONLY"},
+    {"domain": "Notification", "verdict": "KEEP_SEPARATE"},
+    {"domain": "Backtest", "verdict": "KEEP_SEPARATE"},
+    {"domain": "Candidate", "verdict": "KEEP_SEPARATE"},
+    {"domain": "LiveValidation", "verdict": "KEEP_SEPARATE"},
+    {"domain": "Profile", "verdict": "ALREADY_SHARED"}
+  ],
+  "duplication_classification": {
+    "TRUE_UI_DUPLICATE": 0,
+    "SHARED_PRESENTATION_DIFFERENT_ACTION": 4,
+    "SAME_DOMAIN_DIFFERENT_WORKFLOW": 3,
+    "SIMILAR_LABEL_ONLY": 5,
+    "ALREADY_SHARED": 1
+  },
+  "shared_candidates": [
+    {"rank": 1, "item": "dataHelpers → shared/utils", "risk": "LOW", "pattern": "B/D"},
+    {"rank": 2, "item": "strategyRequest STATUS_COLOR", "risk": "LOW", "pattern": "B"},
+    {"rank": 3, "item": "strategyDraft STATUS_COLOR", "risk": "LOW", "pattern": "B"},
+    {"rank": 4, "item": "risk rateToPercent helpers", "risk": "LOW", "pattern": "B"},
+    {"rank": 5, "item": "strategyRequest RO columns", "risk": "MEDIUM", "pattern": "B/E"},
+    {"rank": 6, "item": "order RO columns", "risk": "MEDIUM", "pattern": "B/E"},
+    {"rank": 7, "item": "strategyRequest detail summary", "risk": "MEDIUM", "pattern": "A/E"},
+    {"rank": 8, "item": "liveValidation run columns", "risk": "MEDIUM", "pattern": "B"},
+    {"rank": 9, "item": "credential status chips", "risk": "MEDIUM", "pattern": "A"},
+    {"rank": 10, "item": "strategy shared types", "risk": "LOW", "pattern": "SHARE_TYPES"}
+  ],
+  "keep_separate": [
+    "AdminUpbitLiveUbaPanel",
+    "Risk Kill / system config",
+    "Recovery CONTROL",
+    "Strategy Draft admin hub",
+    "Strategy approve/reject merged with create/cancel",
+    "Order submit/cancel/outbox/Ambiguous",
+    "Credential secret forms",
+    "Upbit Hub panels",
+    "Candidate promotion lifecycle",
+    "LIVE validation execute UIs",
+    "Members / roles / system settings",
+    "Runtime / Scheduler"
+  ],
+  "existing_shared_components": [
+    "components/common/StatusBadge",
+    "components/common/EmptyState",
+    "components/common/ComingSoon",
+    "components/common/PageContainer",
+    "components/common/AppLoading",
+    "shared/components/UnimplementedNotice",
+    "features/user/profile/ProfileWorkspace"
+  ],
+  "accidental_coupling": {
+    "user_imports_admin_utils": [
+      "features/user/hooks/useMyPaperAccountId.ts",
+      "features/user/market/MarketExplorer.tsx",
+      "features/user/market/useMarketSessionStatus.ts",
+      "features/user/trading/guidedUpbitAccountHelpers.ts",
+      "features/user/trading/GuidedUpbitLiveSmokePanel.tsx",
+      "features/user/accounts/brokerCredentialVault.test.ts"
+    ]
+  },
+  "implementation_waves": [
+    {"id": "M6-A", "scope": "dataHelpers extract + STATUS_COLOR + risk rate helpers", "risk": "LOW"},
+    {"id": "M6-B", "scope": "Order RO table columns", "risk": "LOW-MEDIUM"},
+    {"id": "M6-C", "scope": "Strategy Request RO list/summary", "risk": "MEDIUM"},
+    {"id": "M6-D", "scope": "Draft RO list presentational only", "risk": "MEDIUM"},
+    {"id": "M6-E", "scope": "Optional credential chips / LIVE run columns", "risk": "MEDIUM", "gated": true}
+  ],
+  "policies": {
+    "route_merge": false,
+    "backend_api_change": false,
+    "permission_change": false,
+    "auth_guard_change": false
+  },
+  "next_step_exactly_one": "M6-A — LOW-risk shared formatters / utils extraction"
+}

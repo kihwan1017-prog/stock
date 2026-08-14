@@ -29,16 +29,11 @@ import type { StrategyRequestItem } from "@/features/user/api/userApi";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { STRATEGY_REQUEST_STATUS_COLOR } from "@/shared/utils/strategyStatusColors";
 
 const ELIGIBLE_STATUSES = new Set(["PROMOTED", "ACTIVE_REVIEW"]);
 
-const STATUS_COLOR: Record<string, string> = {
-  PENDING_REVIEW: "processing",
-  APPROVED: "success",
-  REJECTED: "error",
-  CANCELLED: "default",
-  EXPIRED: "warning",
-};
+const STATUS_COLOR = STRATEGY_REQUEST_STATUS_COLOR;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object"

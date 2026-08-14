@@ -25,17 +25,12 @@ import { useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
+import { STRATEGY_REQUEST_STATUS_COLOR } from "@/shared/utils/strategyStatusColors";
 
-const STATUS_COLOR: Record<string, string> = {
-  PENDING_REVIEW: "processing",
-  APPROVED: "success",
-  REJECTED: "error",
-  CANCELLED: "default",
-  EXPIRED: "warning",
-};
+const STATUS_COLOR = STRATEGY_REQUEST_STATUS_COLOR;
 
 const STATUS_OPTIONS = [
   { value: "", label: "전체" },

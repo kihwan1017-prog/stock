@@ -18,24 +18,13 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { userRoutes } from "@/config/routes";
-import { asRecord } from "@/features/admin/utils/dataHelpers";
 import type { RiskSettingsPayload, UserAccount } from "@/features/user/api/userApi";
 import * as userApi from "@/features/user/api/userApi";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
-
-function rateToPercent(value: unknown): number | undefined {
-  if (value == null || value === "") return undefined;
-  const n = Number(value);
-  if (Number.isNaN(n)) return undefined;
-  return Number((n * 100).toFixed(4));
-}
-
-function percentToRate(value: number | null | undefined): number | null {
-  if (value == null) return null;
-  return Number((value / 100).toFixed(6));
-}
+import { asRecord } from "@/shared/utils/dataHelpers";
+import { percentToRate, rateToPercent } from "@/shared/utils/riskRatePercent";
 
 export default function UserRiskPage() {
   const { message } = App.useApp();
