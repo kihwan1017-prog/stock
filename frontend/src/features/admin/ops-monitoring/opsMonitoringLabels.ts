@@ -1,13 +1,14 @@
 /** STEP 8-11A — Operations Dashboard display labels (UTF-8). */
 export const OPS_DASHBOARD_LABELS = {
-  pageTitle: '통합 모니터링',
-  pageDescription: '조회 전용 운영 상태. LIVE ON / ARM / 주문 실행 버튼 없음.',
+  pageTitle: '거래 운영 현황',
+  pageDescription:
+    '조회 전용 거래 운영 대시보드. Runtime·주문·리스크 요약만 표시하며 LIVE/ARM/Runtime 제어는 하지 않습니다.',
   lastChecked: '마지막 점검',
   autoOff: '자동 끔',
   refresh: '수동 새로고침',
   accountsLink: '계좌 관리',
   readOnlyBanner:
-    '이 화면은 조회 전용입니다. 실주문, LIVE ON, ARM, Scheduler Resume은 STEP 8-10/8-12 절차에서만 수행합니다.',
+    '조회 전용입니다. Runtime 제어는 자동매매 Runtime, LIVE/ARM은 업비트 계좌, Preflight·리스크·복구는 각 canonical 화면에서 수행합니다. 시스템 health 상세는 시스템 모니터링을 사용하세요.',
   overviewFailed: '개요 조회 실패 — 이전 데이터 유지',
   tabOverview: '개요',
   tabAccounts: '계좌 준비 상태',

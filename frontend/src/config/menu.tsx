@@ -356,7 +356,7 @@ export const adminMenuItems: AdminMenuItem[] = [
     children: [
       {
         key: "trading",
-        label: "자동매매관리",
+        label: "자동매매 Runtime",
         path: adminRoutes.trading,
         icon: <ThunderboltOutlined />,
         enabled: true,
@@ -412,7 +412,7 @@ export const adminMenuItems: AdminMenuItem[] = [
       },
       {
         key: "operations",
-        label: "운영센터",
+        label: "시스템 운영",
         path: adminRoutes.operations,
         icon: <ControlOutlined />,
         enabled: true,
@@ -428,7 +428,7 @@ export const adminMenuItems: AdminMenuItem[] = [
       },
       {
         key: "operations-dashboard",
-        label: "통합 모니터링",
+        label: "거래 운영 현황",
         path: adminRoutes.operationsDashboard,
         icon: <DashboardOutlined />,
         enabled: true,

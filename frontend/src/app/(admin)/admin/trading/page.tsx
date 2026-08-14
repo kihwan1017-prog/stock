@@ -2,6 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Space } from "antd";
+import Link from "next/link";
+
+import { adminRoutes } from "@/config/routes";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -73,8 +76,8 @@ export default function AdminTradingPage() {
 
   return (
     <AdminPageShell
-      title="자동매매관리"
-      description="realtime-strategy · realtime-execution · realtime-sessions · strategy-runtime"
+      title="자동매매 Runtime"
+      description="Scope Runtime과 Realtime Hub를 제어합니다. 주문·Outbox 관리는 /admin/orders 입니다."
       extra={
         <Space wrap>
           <Button type="primary" loading={startStrategy.isPending} onClick={() => startStrategy.mutate()}>
@@ -89,6 +92,9 @@ export default function AdminTradingPage() {
           <Button danger loading={stopExec.isPending} onClick={() => stopExec.mutate()}>
             체결 Stop
           </Button>
+          <Link href={adminRoutes.orders}>주문·Outbox</Link>
+          <Link href={adminRoutes.operationsPreflight}>Pre-flight</Link>
+          <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
         </Space>
       }
     >

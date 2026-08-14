@@ -114,11 +114,14 @@ export default function AdminRecoveryPage() {
   return (
     <AdminPageShell
       title="장애 복구"
-      description="실 API: /api/v1/admin/recovery — Kiwoom·Upbit·Paper 통합 Recovery Runtime"
+      description="Broker Recovery · Conflict · Lock 제어 전용 화면입니다. 시스템 운영 허브와 거래 운영 현황은 조회/이동만 제공합니다."
       extra={
-        <Space>
+        <Space wrap>
           <Link href={adminRoutes.operations}>
-            <Button>운영센터</Button>
+            <Button>시스템 운영</Button>
+          </Link>
+          <Link href={adminRoutes.operationsDashboard}>
+            <Button>거래 운영 현황</Button>
           </Link>
         </Space>
       }

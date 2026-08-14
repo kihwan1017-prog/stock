@@ -7,16 +7,17 @@
 
 ## Current Phase
 
-**STEP M3-B — Promote Hidden Active Strategy Workflows** — baseline 커밋 (`MENU_M3B_READY_WITH_LIMITATIONS`)
+**STEP M4-A — READ-ONLY Operations Status / Dashboard Consolidation** — baseline 커밋 (`MENU_M4A_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Baseline | M3-A `bab25d36577f817138830fbb13e78e6af6e401c9` |
-| 범위 | Strategy Request / Draft / Portfolio Validation **사이드바 노출만** |
-| 금지 | route·page·API·AuthGuard·신규 permission 키·User 12→8 |
-| Evidence | [audit/MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md](audit/MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md) |
+| Baseline | M3-B `90bbaef` |
+| 범위 | Admin 운영 화면 라벨·교차링크·READ summary |
+| 금지 | CONTROL 이동 · UBA 패널 단일 마운트 · 메뉴 그룹 재배치 · API/backend |
+| Evidence | [audit/MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md](audit/MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md) |
 | commit | **본 커밋으로 baseline 고정** (push 없음) |
+| deferred | `/admin/risk` heading/links — 기존 LIVE/ARM WIP와 분리 불가, 이번 커밋 제외 |
 
 병렬 트랙 (본 STEP과 혼합 금지):
 
@@ -31,7 +32,7 @@
 
 ## Next Gate
 
-1. **M4** — Operations Consolidation (**M3-B 승인 후**, 자동 진행 금지)  
+1. **M4-B** — Operations 메뉴 재배치 (**M4-A 승인 후**, 자동 진행 금지)  
 2. Technical VALID cohort **≈50** 재리뷰 (자동 변경 금지)  
 3. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
 

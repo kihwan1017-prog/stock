@@ -28,6 +28,7 @@ import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { OPS_DASHBOARD_LABELS as L } from "@/features/admin/ops-monitoring/opsMonitoringLabels";
+import { OPERATION_CANONICAL_LINKS } from "@/features/admin/operations/operationCanonicalLinks";
 import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -252,6 +253,13 @@ export default function AdminOperationsDashboardPage() {
           />
           <Button onClick={refreshAll}>{L.refresh}</Button>
           <Link href={adminRoutes.accounts}>{L.accountsLink}</Link>
+          {OPERATION_CANONICAL_LINKS.filter(
+            (item) => item.href !== adminRoutes.operationsDashboard,
+          ).map((item) => (
+            <Link key={item.id} href={item.href}>
+              {item.label}
+            </Link>
+          ))}
         </Space>
       }
     >

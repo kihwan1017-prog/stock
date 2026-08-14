@@ -18,6 +18,7 @@ import * as adminApi from "@/features/admin/api/adminApi";
 import { UnimplementedApiPanel } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { OPERATION_CENTER_TILES } from "@/features/admin/operations/operationCenterTiles";
+import { OPERATION_CANONICAL_LINKS } from "@/features/admin/operations/operationCanonicalLinks";
 import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { adminRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
@@ -126,13 +127,15 @@ export default function AdminOperationCenterPage() {
 
   return (
     <AdminPageShell
-      title="운영센터"
-      description="Scheduler · Broker · PostgreSQL · Monitor · Batch · Env · Logs · Backup · Health"
+      title="시스템 운영"
+      description="시스템 상태·모니터링·스케줄러·복구 등 운영 관리 화면으로 이동하는 허브입니다. LIVE/ARM/Runtime 제어는 이 화면에서 수행하지 않습니다."
       extra={
         <Space wrap>
-          <Link href={adminRoutes.monitoring}>모니터링</Link>
-          <Link href={adminRoutes.scheduler}>Scheduler</Link>
-          <Link href={adminRoutes.db}>DB</Link>
+          {OPERATION_CANONICAL_LINKS.map((item) => (
+            <Link key={item.id} href={item.href}>
+              {item.label}
+            </Link>
+          ))}
         </Space>
       }
     >
@@ -140,11 +143,16 @@ export default function AdminOperationCenterPage() {
         <Alert
           type="info"
           showIcon
-          title="Admin 전용 운영 허브"
-          description="상세 작업은 각 전용 화면에서 수행합니다. 웹 Backup dump / Restore / 앱 로그 테일은 Backend 미구현입니다."
+          title="시스템 운영 진입점"
+          description="상세 작업·제어는 각 canonical 화면에서 수행합니다. 웹 Backup dump / Restore / 앱 로그 테일은 Backend 미구현입니다."
         />
 
-        <Card size="small" title="Health Check" loading={healthQuery.isLoading}>
+        <Card
+          size="small"
+          title="시스템 상태 요약"
+          loading={healthQuery.isLoading}
+          extra={<Link href={adminRoutes.monitoring}>상세: 시스템 모니터링</Link>}
+        >
           {healthQuery.error ? (
             <Alert
               type="error"
@@ -432,7 +440,7 @@ export default function AdminOperationCenterPage() {
                   <Button>System Settings</Button>
                 </Link>
                 <Link href={adminRoutes.monitoring}>
-                  <Button type="primary">System Monitor</Button>
+                  <Button type="primary">시스템 모니터링</Button>
                 </Link>
               </Space>
             </Card>

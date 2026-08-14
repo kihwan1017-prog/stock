@@ -32,7 +32,7 @@ describe("STEP 8-11A operations dashboard labels", () => {
     const flat = flattenMenu(adminMenuItems);
     const found = flat.find((item) => item.key === "operations-dashboard");
     expect(found?.path).toBe(adminRoutes.operationsDashboard);
-    expect(found?.label).toContain("통합 모니터링");
+    expect(found?.label).toContain("거래 운영 현황");
   });
 
   it("UTF-8 Korean tab labels are intact", () => {
@@ -41,6 +41,6 @@ describe("STEP 8-11A operations dashboard labels", () => {
     expect(OPS_DASHBOARD_LABELS.tabOrders).toContain("주문");
     expect(OPS_DASHBOARD_LABELS.recoveryScheduler).toBe("복구 스케줄러");
     expect(OPS_DASHBOARD_LABELS.orderableKrw).toBe("주문 가능 원화");
-    expect(OPS_DASHBOARD_LABELS.pageTitle).toBe("통합 모니터링");
+    expect(OPS_DASHBOARD_LABELS.pageTitle).toBe("거래 운영 현황");
   });
 });

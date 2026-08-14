@@ -33,4 +33,6 @@
 | [MENU_IA_CONSOLIDATION_DESIGN.md](MENU_IA_CONSOLIDATION_DESIGN.md) | Admin/User 메뉴 IA 통합 설계 (STEP M2, DESIGN ONLY) |
 | [MENU_LOW_RISK_CLEANUP_M3A.md](MENU_LOW_RISK_CLEANUP_M3A.md) | Admin/User 메뉴 LOW-RISK 정리 (STEP M3-A, sidebar label/order/monitoring 중복) |
 | [MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md](MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md) | HIDDEN ACTIVE 전략 Request/Draft/Validation 메뉴 승격 (STEP M3-B) |
+| [MENU_M4_OPERATIONS_PRECHECK.md](MENU_M4_OPERATIONS_PRECHECK.md) | Admin 운영 화면 통합 전수 조사 (STEP M4-0, DESIGN/PRECHECK ONLY) |
+| [MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md](MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md) | 운영 화면 READ-ONLY 라벨/교차링크 정리 (STEP M4-A) |
 | [quarantined_migrations/README.md](quarantined_migrations/README.md) | Active Alembic graph에서 격리한 WIP migration 증거 (예: h1a2b3c4d5e6) |

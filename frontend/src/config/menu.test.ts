@@ -159,6 +159,27 @@ describe("menu link validity (STEP7)", () => {
     expect(getRouteTitle(userRoutes.strategyDrafts)).toBe("전략 초안");
   });
 
+  it("M4-A 운영 canonical route와 메뉴 label이 유지된다", () => {
+    const adminFlat = flattenMenuItems(adminMenuItems);
+    const byKey = (key: string) => adminFlat.find((item) => item.key === key);
+
+    expect(byKey("operations")?.path).toBe("/admin/operations");
+    expect(byKey("operations")?.label).toBe("시스템 운영");
+    expect(byKey("trading")?.path).toBe("/admin/trading");
+    expect(byKey("trading")?.label).toBe("자동매매 Runtime");
+    expect(byKey("operations-dashboard")?.path).toBe("/admin/operations-dashboard");
+    expect(byKey("operations-dashboard")?.label).toBe("거래 운영 현황");
+    expect(byKey("system-monitoring")?.path).toBe("/admin/monitoring");
+    expect(byKey("recovery")?.path).toBe("/admin/recovery");
+    expect(byKey("risk")?.path).toBe("/admin/risk");
+    expect(byKey("orders")?.path).toBe("/admin/orders");
+    expect(byKey("scheduler")?.path).toBe("/admin/scheduler");
+    expect(byKey("operations-preflight")?.path).toBe("/admin/operations/preflight");
+    expect(byKey("operations")?.permission).toBe("menu:scheduler");
+    expect(byKey("trading")?.permission).toBe("menu:trading");
+  });
+
+
   it("사이드바 leaf path에 대응하는 page.tsx가 존재한다", () => {
     const leaves = [
       ...flattenMenuItems(adminMenuItems),

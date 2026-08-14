@@ -2,6 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Card, Col, Descriptions, Row, Space, Tag, Typography } from "antd";
+import Link from "next/link";
+
+import { adminRoutes } from "@/config/routes";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -103,7 +106,13 @@ export default function AdminMonitoringPage() {
   return (
     <AdminPageShell
       title="시스템 모니터링"
-      description="STEP61 · overview · health live/ready · alerts"
+      description="인프라 health · live/ready · DB/Broker/Scheduler 상세. 거래 운영 요약은 거래 운영 현황 화면을 사용하세요."
+      extra={
+        <Space wrap>
+          <Link href={adminRoutes.operations}>시스템 운영</Link>
+          <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
+        </Space>
+      }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Card size="small" title="상태 요약" loading={overview.isLoading}>
