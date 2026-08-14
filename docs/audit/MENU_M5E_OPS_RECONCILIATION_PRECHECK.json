@@ -1,0 +1,100 @@
+{
+  "step": "M5-E0",
+  "title": "Upbit Ops / Reconciliation Tab Precheck",
+  "mode": "PRECHECK_DESIGN_ONLY",
+  "date": "2026-08-15",
+  "baseline_commit": "ffaa247cdc447206842872a306d53d227a10b58a",
+  "verdict": "OPS_RECONCILIATION_SECTION_REORGANIZE",
+  "recommended_option": "B_SECTION_REORGANIZE",
+  "section_reorder_needed": true,
+  "duplicate_action_removal_needed": false,
+  "component_split_needed": false,
+  "route_change_needed": false,
+  "permission_change_needed": false,
+  "backend_api_change_needed": false,
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "surfaces": {
+    "UpbitHubOpsSection": {
+      "loc": 278,
+      "useState": 1,
+      "useEffect": 0,
+      "useQuery": 3,
+      "useMutation": 4,
+      "apis": 7
+    },
+    "UpbitAmbiguousOrdersPanel_HEAD": {
+      "loc": 491,
+      "useQuery": 4,
+      "useMutation": 7,
+      "apis": 11
+    }
+  },
+  "mounts": {
+    "UpbitHubOpsSection": 1,
+    "UpbitAmbiguousOrdersPanel": 1
+  },
+  "inventory": [
+    {"id": "connection_test", "domain": "BROKER_OPS", "risk": "LOW_RISK_MUTATION"},
+    {"id": "balance_sync", "domain": "ACCOUNT_OPS", "risk": "MEDIUM_RISK_MUTATION"},
+    {"id": "reconcile_orders", "domain": "RECONCILIATION", "risk": "MEDIUM_RISK_MUTATION"},
+    {"id": "rate_recheck", "domain": "RATE_LIMIT", "risk": "LOW_RISK_MUTATION"},
+    {"id": "account_status_snapshot", "domain": "SNAPSHOT", "risk": "READ_ONLY"},
+    {"id": "ambiguous_ops", "domain": "AMBIGUOUS_ORDER", "risk": "MEDIUM_HIGH_PREP_ONLY"},
+    {"id": "accounts_link", "domain": "STATUS_ONLY", "location": "page_header"},
+    {"id": "recovery_link", "domain": "RECOVERY_REFERENCE", "location": "overview_LiveSummary_only"}
+  ],
+  "duplicates": {
+    "TRUE_DUPLICATE": [],
+    "SUMMARY_VS_DETAIL": ["account status JSON vs accounts UBA detail"],
+    "STATUS_VS_CONTROL": ["LiveSummary vs accounts LIVE CONTROL"],
+    "CROSS_DOMAIN_REFERENCE": ["accounts link", "recovery link on overview"],
+    "DIFFERENT_SCOPE": [
+      "ambiguous only on upbit ops",
+      "syncUpbitAccount vs refreshAdminUbaSnapshot",
+      "reconcile-orders vs ambiguous lookup",
+      "orders page Outbox UI"
+    ]
+  },
+  "canonical_fit": {
+    "ambiguous_on_upbit_ops": "KEEP",
+    "reconcile_on_upbit_ops": "KEEP",
+    "balance_sync_on_upbit_ops": "KEEP",
+    "connection_test_on_upbit_ops": "KEEP",
+    "live_control": "/admin/accounts_only"
+  },
+  "current_ui_order": [
+    "blurb",
+    "uba_connection_sync_reconcile_buttons",
+    "account_status_json",
+    "rate_table_health",
+    "snapshot_table_json",
+    "ambiguous_panel"
+  ],
+  "desired_ui_order": [
+    "status",
+    "connection_sync",
+    "rate",
+    "snapshot",
+    "reconciliation",
+    "ambiguous",
+    "optional_cross_links"
+  ],
+  "options": {
+    "A_KEEP_AS_IS": {"recommended": false},
+    "B_SECTION_REORGANIZE": {"recommended": true, "scope": "UpbitHubOpsSection_only"},
+    "C_REDUCE_DUPLICATE_ACTIONS": {"recommended": false},
+    "D_MOVE_CANONICAL_CONTROL": {"recommended": false},
+    "E_COMPONENT_SPLIT": {"recommended": false}
+  },
+  "ambiguous_wip": {
+    "preexisting": "Korean label/message encoding fixes ~+32/-32",
+    "m5e0_production_diff": 0
+  },
+  "documents": [
+    "docs/audit/MENU_M5E_OPS_RECONCILIATION_PRECHECK.md",
+    "docs/audit/MENU_M5E_OPS_RECONCILIATION_PRECHECK.json"
+  ],
+  "next_step_exactly_one": "M5-E — Ops SECTION_REORGANIZE only (UpbitHubOpsSection headings/order; do not edit AmbiguousOrdersPanel)"
+}

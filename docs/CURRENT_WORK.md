@@ -7,20 +7,19 @@
 
 ## Current Phase
 
-**STEP M5-C — News Pipeline SECTION_REORGANIZE** — baseline 커밋 (`NEWS_PIPELINE_SECTION_REORGANIZE_READY_WITH_LIMITATIONS`)
+**STEP M5-E — Ops SECTION_REORGANIZE** — baseline 커밋 (`OPS_RECONCILIATION_SECTION_REORGANIZE_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| 변경 | NewsCollector UI N2→N3→N4→N5 · action 분리 |
-| Evidence | [audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md](audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md) |
+| 변경 | Ops Status→Sync→Rate→Snapshot→Reconcile→Ambiguous |
+| Evidence | [audit/MENU_M5E_OPS_RECONCILIATION_SECTION_REORGANIZE.md](audit/MENU_M5E_OPS_RECONCILIATION_SECTION_REORGANIZE.md) |
 | commit | **본 커밋으로 baseline 고정** (push 없음) |
-| residual | NewsCollector **rowKey WIP**는 WT에 재적용 (commit 제외) |
+| residual | Ambiguous 한글 WIP · NewsCollector rowKey WIP — WT 유지 |
 
 병렬 트랙:
 
-- Technical cohort 재리뷰 · TP apply **금지**
-- News A/B 누적
+- News A/B MATCHED 누적 · Technical VALID≈50
 - Ambiguous/risk/rowKey WIP — 별도 선별
 
 ---
@@ -31,8 +30,8 @@
 
 ## Next Gate
 
-1. **M5-D0** A/B Experiment tab PRECHECK (**승인 후**)  
-2. Technical VALID≈50 재리뷰  
-3. NewsCollector rowKey WIP 별도 처리  
+1. **M5-F** Upbit Hub Final Regression Audit (**승인 후**)  
+2. News A/B MATCHED≥20 · Technical VALID≈50  
+3. Ambiguous/rowKey WIP 별도 처리  
 
 → [ROADMAP.md](ROADMAP.md)

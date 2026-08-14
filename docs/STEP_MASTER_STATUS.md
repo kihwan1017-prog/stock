@@ -71,7 +71,10 @@
 | MENU-M5-B0 | STEP M5-B0 | Technical tab structure precheck | TECHNICAL_TAB_SECTION_REORGANIZE | **YES** (with M5-B 본 커밋) | none | — | M5-B | `docs/audit/MENU_M5B_TECHNICAL_TAB_PRECHECK.md` |
 | MENU-M5-B | STEP M5-B | Technical section reorder | TECHNICAL_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (`c1af96e`) | none | upbitTechnicalSectionOrder.test.ts | M5-C0 | `docs/audit/MENU_M5B_TECHNICAL_SECTION_REORGANIZE.md` |
 | MENU-M5-C0 | STEP M5-C0 | News pipeline tab precheck | NEWS_PIPELINE_SECTION_REORGANIZE | **YES** (with M5-C 본 커밋) | none | — | M5-C | `docs/audit/MENU_M5C_NEWS_PIPELINE_PRECHECK.md` |
-| MENU-M5-C | STEP M5-C | News pipeline section reorder | NEWS_PIPELINE_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (본 커밋 · rowKey WIP는 WT residual) | none | upbitNewsPipelineSectionOrder.test.ts | M5-D0 (승인 후) | `docs/audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md` |
+| MENU-M5-C | STEP M5-C | News pipeline section reorder | NEWS_PIPELINE_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (`ffaa247` · rowKey WIP는 WT residual) | none | upbitNewsPipelineSectionOrder.test.ts | M5-D0 | `docs/audit/MENU_M5C_NEWS_PIPELINE_SECTION_REORGANIZE.md` |
+| MENU-M5-D0 | STEP M5-D0 | A/B experiment tab precheck | AB_EXPERIMENT_TAB_KEEP_AS_IS | **NO** (docs only · commit 없음) | none | — | M5-E0 | `docs/audit/MENU_M5D_AB_EXPERIMENT_TAB_PRECHECK.md` |
+| MENU-M5-E0 | STEP M5-E0 | Ops/reconciliation tab precheck | OPS_RECONCILIATION_SECTION_REORGANIZE | **NO** (docs only · commit 없음) | none | — | M5-E | `docs/audit/MENU_M5E_OPS_RECONCILIATION_PRECHECK.md` |
+| MENU-M5-E | STEP M5-E | Ops section reorder | OPS_RECONCILIATION_SECTION_REORGANIZE_READY_WITH_LIMITATIONS | **YES** (본 커밋 · Ambiguous WIP는 WT residual) | none | upbitOpsReconciliationSectionOrder.test.ts | M5-F (승인 후) | `docs/audit/MENU_M5E_OPS_RECONCILIATION_SECTION_REORGANIZE.md` |
 
 ---
 

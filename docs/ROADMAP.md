@@ -115,7 +115,7 @@
 | P5-2 | PHASE 3 Archive 이동 계획 실행 | 사용자 승인 후 이동 | OPEN |
 | P5-3 | Deprecated `alembic/versions` 정리 | ARCHIVE 표기 | OPEN |
 | P5-4 | Dual dashboard router 문서화/통합 | KEEP or CONSOLIDATE | OPEN |
-| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M5-C News section reorder committed; rowKey WIP WT residual; M5-D0는 승인 후 | **IN_PROGRESS** (M5-C committed) |
+| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M5-E Ops section reorder committed; Ambiguous WIP WT residual; next M5-F | **IN_PROGRESS** (M5-E committed) |
 
 ---
 

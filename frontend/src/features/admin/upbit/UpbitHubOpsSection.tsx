@@ -13,8 +13,8 @@ import { queryKeys } from "@/lib/query/queryKeys";
 
 /**
  * M5-A: page-level broker ops + Ambiguous를「운영·정합」탭으로 이동.
- * mutation/API 시그니처는 기존 page.tsx와 동일 (로직 변경 없음).
- * 탭 첫 방문 시에만 mount → Overview에서 rate/snapshot GET 방지.
+ * M5-E: Status → Sync → Rate → Snapshot → Reconcile → Ambiguous 순서만 정리.
+ * mutation/API 시그니처는 변경하지 않음.
  */
 export function UpbitHubOpsSection() {
   const { message } = App.useApp();
@@ -107,6 +107,23 @@ export function UpbitHubOpsSection() {
         제어는 계좌 관리에서 수행합니다.
       </Typography.Paragraph>
 
+      {/* 1. 운영 상태 — READ */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        운영 상태
+      </Typography.Title>
+      <AdminJsonCard
+        title="GET /broker/upbit/account/status"
+        loading={accountStatus.isLoading}
+        error={
+          accountStatus.error ? toApiError(accountStatus.error) : null
+        }
+        data={accountStatus.data}
+      />
+
+      {/* 2. 연결·동기화 */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        연결·동기화
+      </Typography.Title>
       <Space wrap>
         <InputNumber
           placeholder="UBA ID"
@@ -127,23 +144,12 @@ export function UpbitHubOpsSection() {
         >
           잔고 동기화
         </Button>
-        <Button
-          loading={reconcileOrders.isPending}
-          onClick={() => reconcileOrders.mutate()}
-        >
-          체결 동기화
-        </Button>
       </Space>
 
-      <AdminJsonCard
-        title="GET /broker/upbit/account/status"
-        loading={accountStatus.isLoading}
-        error={
-          accountStatus.error ? toApiError(accountStatus.error) : null
-        }
-        data={accountStatus.data}
-      />
-
+      {/* 3. Rate 상태 */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Rate 상태
+      </Typography.Title>
       <AdminDataTable
         title="Upbit Rate Limit (STEP 8-5-8)"
         loading={rateLimits.isLoading}
@@ -225,6 +231,10 @@ export function UpbitHubOpsSection() {
         }
       />
 
+      {/* 4. Snapshot */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Snapshot
+      </Typography.Title>
       <AdminDataTable
         title="보유 스냅샷 (UPBIT)"
         loading={accountSnapshot.isLoading}
@@ -269,8 +279,22 @@ export function UpbitHubOpsSection() {
         data={accountSnapshot.data}
       />
 
+      {/* 5. 주문·체결 정합 */}
       <Typography.Title level={5} style={{ marginBottom: 0 }}>
-        Ambiguous 주문 (STEP 8-5-12)
+        주문·체결 정합
+      </Typography.Title>
+      <Space wrap>
+        <Button
+          loading={reconcileOrders.isPending}
+          onClick={() => reconcileOrders.mutate()}
+        >
+          체결 동기화
+        </Button>
+      </Space>
+
+      {/* 6. Ambiguous — mount only, panel 내부 미수정 */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Ambiguous Orders
       </Typography.Title>
       <UpbitAmbiguousOrdersPanel />
     </Space>
