@@ -1,23 +1,23 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다. 과거 완료 목록을 나열하지 않는다.  
-**최종 갱신:** 2026-08-14
+**최종 갱신:** 2026-08-15
 
 ---
 
 ## Current Phase
 
-**STEP M4-A — READ-ONLY Operations Status / Dashboard Consolidation** — baseline 커밋 (`MENU_M4A_READY_WITH_LIMITATIONS`)
+**STEP M4-B — Admin Operations Menu Regroup** — baseline 커밋 (`MENU_M4B_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Baseline | M3-B `90bbaef` |
-| 범위 | Admin 운영 화면 라벨·교차링크·READ summary |
-| 금지 | CONTROL 이동 · UBA 패널 단일 마운트 · 메뉴 그룹 재배치 · API/backend |
-| Evidence | [audit/MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md](audit/MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md) |
+| Baseline | M4-A `62bd783` |
+| 범위 | Admin Sidebar 운영 메뉴 regroup만 |
+| 금지 | page/route/CONTROL/API · User UI · UBA · Strategy 위치 |
+| Evidence | [audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md](audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md) |
 | commit | **본 커밋으로 baseline 고정** (push 없음) |
-| deferred | `/admin/risk` heading/links — 기존 LIVE/ARM WIP와 분리 불가, 이번 커밋 제외 |
+| top-level | 10 → **11** (M2 target 9 — 억지 병합 안 함) |
 
 병렬 트랙 (본 STEP과 혼합 금지):
 
@@ -32,7 +32,7 @@
 
 ## Next Gate
 
-1. **M4-B** — Operations 메뉴 재배치 (**M4-A 승인 후**, 자동 진행 금지)  
+1. **M4-C** — LIVE/ARM control canonicalization precheck (**M4-B 승인 후**, 자동 진행 금지)  
 2. Technical VALID cohort **≈50** 재리뷰 (자동 변경 금지)  
 3. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
 

@@ -81,8 +81,8 @@ describe("menu link validity (STEP7)", () => {
     }
   });
 
-  it("M3-B 사이드바 카운트: Admin 10/55, User 12/29", () => {
-    expect(adminMenuItems).toHaveLength(10);
+  it("M4-B 사이드바 카운트: Admin 11/55, User 12/29", () => {
+    expect(adminMenuItems).toHaveLength(11);
     expect(flattenMenuItems(adminMenuItems)).toHaveLength(55);
     expect(userMenuItems).toHaveLength(12);
     expect(flattenMenuItems(userMenuItems)).toHaveLength(29);
@@ -179,6 +179,79 @@ describe("menu link validity (STEP7)", () => {
     expect(byKey("trading")?.permission).toBe("menu:trading");
   });
 
+  it("M4-B 운영 메뉴 regroup: 자동매매 운영 / 시스템 운영 / 리스크·안전", () => {
+    const topKeys = adminMenuItems.map((item) => item.key);
+    expect(topKeys).toContain("autotrading-ops");
+    expect(topKeys).toContain("system");
+    expect(topKeys).toContain("risk-ops");
+
+    const autotrading = adminMenuItems.find((item) => item.key === "autotrading-ops");
+    const system = adminMenuItems.find((item) => item.key === "system");
+    const risk = adminMenuItems.find((item) => item.key === "risk-ops");
+    const trading = adminMenuItems.find((item) => item.key === "trading-group");
+
+    expect(autotrading?.label).toBe("자동매매 운영");
+    expect(system?.label).toBe("시스템 운영");
+    expect(risk?.label).toBe("리스크·안전");
+
+    expect(autotrading?.children?.map((item) => item.key)).toEqual([
+      "operations-dashboard",
+      "trading",
+      "operations-preflight",
+    ]);
+    expect(autotrading?.children?.map((item) => item.path)).toEqual([
+      "/admin/operations-dashboard",
+      "/admin/trading",
+      "/admin/operations/preflight",
+    ]);
+
+    expect(system?.children?.slice(0, 5).map((item) => item.key)).toEqual([
+      "operations",
+      "system-monitoring",
+      "scheduler",
+      "recovery",
+      "batch",
+    ]);
+    expect(system?.children?.find((item) => item.key === "operations")?.path).toBe(
+      "/admin/operations",
+    );
+    expect(system?.children?.find((item) => item.key === "system-monitoring")?.path).toBe(
+      "/admin/monitoring",
+    );
+    expect(system?.children?.find((item) => item.key === "scheduler")?.path).toBe(
+      "/admin/scheduler",
+    );
+    expect(system?.children?.find((item) => item.key === "scheduler")?.label).toBe(
+      "시스템 스케줄러",
+    );
+    expect(system?.children?.find((item) => item.key === "recovery")?.path).toBe(
+      "/admin/recovery",
+    );
+
+    expect(risk?.children?.map((item) => item.key)).toEqual([
+      "risk",
+      "live-validation-upbit",
+    ]);
+    expect(risk?.children?.find((item) => item.key === "risk")?.path).toBe("/admin/risk");
+
+    // Orders는 거래 그룹 유지. LIVE UBA 중복 leaf 없음.
+    expect(trading?.children?.map((item) => item.key)).toEqual([
+      "orders",
+      "trades",
+      "portfolio",
+    ]);
+    expect(trading?.children?.find((item) => item.key === "orders")?.path).toBe(
+      "/admin/orders",
+    );
+    const liveControlLeaves = flattenMenuItems(adminMenuItems).filter(
+      (item) => item.label === "계좌 LIVE 제어",
+    );
+    expect(liveControlLeaves).toHaveLength(0);
+
+    // User 메뉴는 M4-B에서 변경하지 않는다.
+    expect(userMenuItems).toHaveLength(12);
+    expect(flattenMenuItems(userMenuItems)).toHaveLength(29);
+  });
 
   it("사이드바 leaf path에 대응하는 page.tsx가 존재한다", () => {
     const leaves = [

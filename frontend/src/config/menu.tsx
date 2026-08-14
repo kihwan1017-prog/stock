@@ -65,8 +65,8 @@ export type UserMenuItem = AppMenuItem<UserRoute>;
 
 /**
  * Admin 사이드바 메뉴 — 업무 흐름 순서(회원 → 계좌 → 시장데이터 → 전략·후보 →
- * 거래 → 리스크·운영 → 알림 → 운영관리 → 내 정보)로 구성한다.
- * M3-A: label/순서/monitoring 중복 노출만 정리. route·permission 불변.
+ * 자동매매 운영 → 거래 → 리스크·안전 → 알림 → 시스템 운영 → 내 정보).
+ * M4-B: 운영 메뉴 regroup만. route·permission·page 불변. monitoring sidebar=1.
  */
 export const adminMenuItems: AdminMenuItem[] = [
   {
@@ -349,11 +349,20 @@ export const adminMenuItems: AdminMenuItem[] = [
     ],
   },
   {
-    key: "trading-group",
-    label: "거래",
-    icon: <SwapOutlined />,
+    // M4-B: Runtime/Preflight/거래현황 — CONTROL/READ ownership은 각 page 유지.
+    key: "autotrading-ops",
+    label: "자동매매 운영",
+    icon: <ThunderboltOutlined />,
     enabled: true,
     children: [
+      {
+        key: "operations-dashboard",
+        label: "거래 운영 현황",
+        path: adminRoutes.operationsDashboard,
+        icon: <DashboardOutlined />,
+        enabled: true,
+        permission: "menu:scheduler",
+      },
       {
         key: "trading",
         label: "자동매매 Runtime",
@@ -362,6 +371,23 @@ export const adminMenuItems: AdminMenuItem[] = [
         enabled: true,
         permission: "menu:trading",
       },
+      {
+        key: "operations-preflight",
+        label: "Pre-flight Check",
+        path: adminRoutes.operationsPreflight,
+        icon: <SafetyCertificateOutlined />,
+        enabled: true,
+        permission: "menu:scheduler",
+      },
+    ],
+  },
+  {
+    // 주문·체결·잔고는 자동매매 운영과 분리 (중복 leaf 금지).
+    key: "trading-group",
+    label: "거래",
+    icon: <SwapOutlined />,
+    enabled: true,
+    children: [
       {
         key: "orders",
         label: "주문관리",
@@ -389,8 +415,9 @@ export const adminMenuItems: AdminMenuItem[] = [
     ],
   },
   {
+    // Risk/Kill canonical 유지. LIVE UBA leaf는 계좌 메뉴에 이미 있으므로 추가하지 않음.
     key: "risk-ops",
-    label: "리스크·운영",
+    label: "리스크·안전",
     icon: <SafetyCertificateOutlined />,
     enabled: true,
     children: [
@@ -409,53 +436,6 @@ export const adminMenuItems: AdminMenuItem[] = [
         icon: <ThunderboltOutlined />,
         enabled: true,
         permission: "menu:risk",
-      },
-      {
-        key: "operations",
-        label: "시스템 운영",
-        path: adminRoutes.operations,
-        icon: <ControlOutlined />,
-        enabled: true,
-        permission: "menu:scheduler",
-      },
-      {
-        key: "operations-preflight",
-        label: "Pre-flight Check",
-        path: adminRoutes.operationsPreflight,
-        icon: <SafetyCertificateOutlined />,
-        enabled: true,
-        permission: "menu:scheduler",
-      },
-      {
-        key: "operations-dashboard",
-        label: "거래 운영 현황",
-        path: adminRoutes.operationsDashboard,
-        icon: <DashboardOutlined />,
-        enabled: true,
-        permission: "menu:scheduler",
-      },
-      {
-        key: "scheduler",
-        label: "스케줄러 관리",
-        path: adminRoutes.scheduler,
-        icon: <ControlOutlined />,
-        enabled: true,
-        permission: "menu:scheduler",
-      },
-      {
-        key: "batch",
-        label: "배치 관리",
-        path: adminRoutes.batch,
-        icon: <CloudServerOutlined />,
-        enabled: true,
-        permission: "menu:batch",
-      },
-      {
-        key: "recovery",
-        label: "장애 복구",
-        path: adminRoutes.recovery,
-        icon: <ToolOutlined />,
-        enabled: true,
       },
     ],
   },
@@ -484,19 +464,51 @@ export const adminMenuItems: AdminMenuItem[] = [
     ],
   },
   {
+    // Launchpad + infra/ops. UBA Trading Scheduler와 구분하기 위해 scheduler label 명확화.
     key: "system",
-    label: "운영관리",
-    icon: <SettingOutlined />,
+    label: "시스템 운영",
+    icon: <ControlOutlined />,
     enabled: true,
     children: [
       {
-        // M3-A: 시장 데이터 그룹의 동일 route 중복 노출 제거. page/route 유지.
+        key: "operations",
+        label: "시스템 운영",
+        path: adminRoutes.operations,
+        icon: <ControlOutlined />,
+        enabled: true,
+        permission: "menu:scheduler",
+      },
+      {
+        // M3-A: monitoring sidebar 1회 유지.
         key: "system-monitoring",
         label: "시스템 모니터링",
         path: adminRoutes.monitoring,
         icon: <MonitorOutlined />,
         enabled: true,
         permission: "menu:monitoring",
+      },
+      {
+        key: "scheduler",
+        label: "시스템 스케줄러",
+        path: adminRoutes.scheduler,
+        icon: <ControlOutlined />,
+        enabled: true,
+        permission: "menu:scheduler",
+      },
+      {
+        key: "recovery",
+        label: "장애 복구",
+        path: adminRoutes.recovery,
+        icon: <ToolOutlined />,
+        enabled: true,
+      },
+      {
+        key: "batch",
+        label: "배치 관리",
+        path: adminRoutes.batch,
+        icon: <CloudServerOutlined />,
+        enabled: true,
+        permission: "menu:batch",
       },
       {
         key: "system-settings",
