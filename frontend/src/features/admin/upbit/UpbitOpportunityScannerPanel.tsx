@@ -74,13 +74,15 @@ export function UpbitOpportunityScannerPanel() {
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Typography.Title level={5} style={{ marginBottom: 0 }}>
-        Opportunity Scanner (SHADOW ONLY)
-      </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
         KRW universe → liquidity/technical Top N → AI → Telegram / Paper Shadow.
         Strategy / LIVE / ARM / 실주문과 연결되지 않습니다. LIVE ORDER: NO.
       </Typography.Paragraph>
+
+      {/* M5-B: Scanner → Candidates → Shadow → Evaluate → Cohort */}
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Scanner 상태
+      </Typography.Title>
       <Space wrap>
         <Tag color={st.enabled ? "green" : "default"}>
           enabled={String(st.enabled ?? false)}
@@ -94,29 +96,12 @@ export function UpbitOpportunityScannerPanel() {
         <Tag>interval={cell(st.interval_seconds)}</Tag>
         <Tag>duration_ms={cell(st.last_duration_ms)}</Tag>
         <Tag>top_n={cell(st.top_n)}</Tag>
-        <Tag color={evaluator.running ? "blue" : "default"}>
-          evaluator={String(evaluator.running ?? false)}/
-          {cell(evaluator.interval_seconds)}s
-        </Tag>
-        <Tag>
-          cohort={cell(shadowStats.cohort_n)}/{cell(shadowStats.cohort_status)}
-        </Tag>
-        <Tag color={Number(shadowStats.mismatch_count ?? 0) > 0 ? "red" : "default"}>
-          mismatch={cell(shadowStats.mismatch_count ?? 0)}
-        </Tag>
         <Button
           size="small"
           loading={runOnce.isPending}
           onClick={() => runOnce.mutate()}
         >
           Dry Run 1회
-        </Button>
-        <Button
-          size="small"
-          loading={evaluateShadows.isPending}
-          onClick={() => evaluateShadows.mutate()}
-        >
-          Shadow 평가
         </Button>
         <Button
           size="small"
@@ -155,6 +140,67 @@ export function UpbitOpportunityScannerPanel() {
           live_order: false,
         }}
       />
+
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        후보 / AI 분석
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        Scanner Top-N 후보와 기존 AI recommendation/confidence/risk 필드입니다.
+        별도 Market AI 화면이 아닙니다.
+      </Typography.Paragraph>
+      <AdminDataTable
+        title="Last Top Candidates"
+        loading={status.isLoading}
+        rowKey={(r) => cell(r.symbol ?? r.rank)}
+        columns={[
+          { title: "rank", dataIndex: "rank", width: 70 },
+          { title: "symbol", dataIndex: "symbol" },
+          { title: "score", dataIndex: "score" },
+          { title: "AI", dataIndex: "recommendation" },
+          { title: "confidence", dataIndex: "confidence" },
+          { title: "risk", dataIndex: "risk_level" },
+        ]}
+        dataSource={candidates}
+      />
+
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Paper Shadow
+      </Typography.Title>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        ALLOW/REDUCE만 추적. SHADOW ONLY / LIVE ORDER: NO. TradingOrder/Outbox
+        생성 없음.
+      </Typography.Paragraph>
+      <AdminDataTable
+        title="Active Shadows"
+        loading={status.isLoading}
+        rowKey={(r) => cell(r.shadow_id ?? r.symbol)}
+        columns={shadowColumns}
+        dataSource={activeShadows}
+      />
+      <AdminDataTable
+        title="Completed Shadows"
+        loading={status.isLoading}
+        rowKey={(r) => cell(r.shadow_id ?? r.symbol)}
+        columns={shadowColumns}
+        dataSource={completedShadows}
+      />
+
+      <Typography.Title level={5} style={{ marginBottom: 0 }}>
+        Shadow 평가
+      </Typography.Title>
+      <Space wrap>
+        <Tag color={evaluator.running ? "blue" : "default"}>
+          evaluator={String(evaluator.running ?? false)}/
+          {cell(evaluator.interval_seconds)}s
+        </Tag>
+        <Button
+          size="small"
+          loading={evaluateShadows.isPending}
+          onClick={() => evaluateShadows.mutate()}
+        >
+          Shadow 평가
+        </Button>
+      </Space>
       <AdminJsonCard
         title="Shadow Evaluator Scheduler"
         loading={status.isLoading}
@@ -173,46 +219,29 @@ export function UpbitOpportunityScannerPanel() {
           live_order: false,
         }}
       />
-      <AdminDataTable
-        title="Last Top Candidates"
-        loading={status.isLoading}
-        rowKey={(r) => cell(r.symbol ?? r.rank)}
-        columns={[
-          { title: "rank", dataIndex: "rank", width: 70 },
-          { title: "symbol", dataIndex: "symbol" },
-          { title: "score", dataIndex: "score" },
-          { title: "AI", dataIndex: "recommendation" },
-          { title: "confidence", dataIndex: "confidence" },
-          { title: "risk", dataIndex: "risk_level" },
-        ]}
-        dataSource={candidates}
-      />
 
       <Typography.Title level={5} style={{ marginBottom: 0 }}>
-        Paper Shadow (가상 성과)
+        Cohort 성과
       </Typography.Title>
       <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-        ALLOW/REDUCE만 추적. SHADOW ONLY / LIVE ORDER: NO. TradingOrder/Outbox 생성 없음.
+        cohort_n / cohort_status 등 기존 stats 필드만 표시합니다. 전용 Milestone
+        대시보드가 아닙니다.
       </Typography.Paragraph>
+      <Space wrap>
+        <Tag>
+          cohort={cell(shadowStats.cohort_n)}/{cell(shadowStats.cohort_status)}
+        </Tag>
+        <Tag
+          color={Number(shadowStats.mismatch_count ?? 0) > 0 ? "red" : "default"}
+        >
+          mismatch={cell(shadowStats.mismatch_count ?? 0)}
+        </Tag>
+      </Space>
       <AdminJsonCard
         title="Shadow Stats / Cohort"
         loading={status.isLoading}
         error={null}
         data={shadowStats}
-      />
-      <AdminDataTable
-        title="Active Shadows"
-        loading={status.isLoading}
-        rowKey={(r) => cell(r.shadow_id ?? r.symbol)}
-        columns={shadowColumns}
-        dataSource={activeShadows}
-      />
-      <AdminDataTable
-        title="Completed Shadows"
-        loading={status.isLoading}
-        rowKey={(r) => cell(r.shadow_id ?? r.symbol)}
-        columns={shadowColumns}
-        dataSource={completedShadows}
       />
     </Space>
   );

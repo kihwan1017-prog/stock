@@ -1,0 +1,169 @@
+{
+  "step": "M5-B0",
+  "title": "Technical Tab Structure Precheck",
+  "mode": "PRECHECK_DESIGN_ONLY",
+  "date": "2026-08-15",
+  "baseline_commit": "285b5218989b3069131a51e488dad3f500678b6e",
+  "verdict": "TECHNICAL_TAB_SECTION_REORGANIZE",
+  "recommended_option": "B_SECTION_REORGANIZE",
+  "component_split_needed": false,
+  "heading_section_reorder_needed": true,
+  "production_mutation": 0,
+  "commit": false,
+  "panel": {
+    "path": "frontend/src/features/admin/upbit/UpbitOpportunityScannerPanel.tsx",
+    "host": "/admin/upbit Technical tab",
+    "total_loc": 219,
+    "jsx_loc_from_return": 145,
+    "useState": 0,
+    "useEffect": 0,
+    "useQuery_hooks": 1,
+    "useMutation_hooks": 2,
+    "onclick_handlers": 3,
+    "api_calls_used": 3,
+    "admin_json_cards": 3,
+    "admin_data_tables": 3,
+    "title_sections": 2,
+    "practical_complexity": "LOW_MEDIUM"
+  },
+  "inventory": {
+    "Scanner": true,
+    "TechnicalCandidate": true,
+    "MarketAI_dedicated_ui": false,
+    "MarketAI_fields_in_tables": true,
+    "Shadow": true,
+    "ShadowEvaluation": true,
+    "Cohort": true,
+    "Milestone_dedicated_ui": false,
+    "Statistics": true,
+    "ManualActions": true
+  },
+  "ui_sections_render_order": [
+    "title_description",
+    "status_tags_and_actions",
+    "scanner_status_json",
+    "shadow_evaluator_scheduler_json",
+    "last_top_candidates_table",
+    "paper_shadow_heading",
+    "shadow_stats_cohort_json",
+    "active_shadows_table",
+    "completed_shadows_table"
+  ],
+  "apis": [
+    {
+      "fn": "getUpbitOpportunityScannerStatus",
+      "method": "GET",
+      "path": "/admin/upbit/opportunity-scanner/status",
+      "used": true
+    },
+    {
+      "fn": "runUpbitOpportunityScanner",
+      "method": "POST",
+      "path": "/admin/upbit/opportunity-scanner/run",
+      "used": true
+    },
+    {
+      "fn": "evaluateUpbitOpportunityShadows",
+      "method": "POST",
+      "path": "/admin/upbit/opportunity-scanner/shadows/evaluate",
+      "used": true
+    },
+    {
+      "fn": "listUpbitOpportunityShadows",
+      "method": "GET",
+      "path": "/admin/upbit/opportunity-scanner/shadows",
+      "used": false
+    }
+  ],
+  "mutations": [
+    {
+      "ui": "Dry Run 1회",
+      "trading_order": false,
+      "shadow_only": true,
+      "confirmation": false,
+      "live_arm_scheduler": false
+    },
+    {
+      "ui": "Shadow 평가",
+      "trading_order": false,
+      "shadow_only": true,
+      "confirmation": false,
+      "live_arm_scheduler": false
+    }
+  ],
+  "coupling": {
+    "classification": "HIGH_COUPLING",
+    "local_state_coupling": "LOW",
+    "reasons": [
+      "single GET status payload feeds all sections",
+      "both mutations invalidate same query key",
+      "no useState sharing required"
+    ]
+  },
+  "flows": {
+    "desired": [
+      "Scanner",
+      "Candidate_AI",
+      "Shadow",
+      "Evaluation",
+      "Cohort",
+      "MilestoneReview"
+    ],
+    "current_ui": [
+      "Scanner",
+      "Evaluator",
+      "Candidates",
+      "CohortStats",
+      "ActiveShadows",
+      "CompletedShadows"
+    ],
+    "suggested_reorder_design_only": [
+      "ScannerStatus",
+      "Candidates",
+      "ActiveCompletedShadows",
+      "EvaluatorAndEvaluateAction",
+      "CohortStats",
+      "no_new_milestone_ui"
+    ]
+  },
+  "options": {
+    "A_KEEP_SINGLE_PANEL": {
+      "score": "low_cost_but_flow_unfixed"
+    },
+    "B_SECTION_REORGANIZE": {
+      "recommended": true,
+      "score": "best_balance"
+    },
+    "C_COMPONENT_SPLIT": {
+      "recommended": false,
+      "score": "overkill_for_219_loc_and_shared_GET"
+    }
+  },
+  "market_ai_ui": false,
+  "milestone_ui": false,
+  "cohort_review_v2": "audit_docs_only_DETAIL_ONLY",
+  "changes_required": {
+    "api": false,
+    "backend": false,
+    "permission": false,
+    "route": false,
+    "authguard": false,
+    "menu": false
+  },
+  "regressions": {
+    "m5a_technical_tab": 1,
+    "scanner_panel_mount": 1,
+    "live_arm_scheduler_upbit": 0
+  },
+  "policy_impact": {
+    "scanner": "none_this_step",
+    "shadow": "none_this_step",
+    "cohort": "none_this_step",
+    "trading_order_outbox": "none_this_step"
+  },
+  "documents": [
+    "docs/audit/MENU_M5B_TECHNICAL_TAB_PRECHECK.md",
+    "docs/audit/MENU_M5B_TECHNICAL_TAB_PRECHECK.json"
+  ],
+  "next_step_exactly_one": "M5-B — Technical panel SECTION_REORGANIZE only (heading/order; no policy; no split; no new Market AI/Milestone UI)"
+}

@@ -115,7 +115,7 @@
 | P5-2 | PHASE 3 Archive 이동 계획 실행 | 사용자 승인 후 이동 | OPEN |
 | P5-3 | Deprecated `alembic/versions` 정리 | ARCHIVE 표기 | OPEN |
 | P5-4 | Dual dashboard router 문서화/통합 | KEEP or CONSOLIDATE | OPEN |
-| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M5-A Tab shell committed (`UPBIT_HUB_TAB_SHELL_READY_WITH_LIMITATIONS`); M5-B는 승인 후; risk/Ambiguous/Collector WIP 잔여 | **IN_PROGRESS** (M5-A committed) |
+| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M5-B Technical section reorder committed; M5-C0는 승인 후; Ambiguous/Collector/risk WIP 잔여 | **IN_PROGRESS** (M5-B committed) |
 
 ---
 
