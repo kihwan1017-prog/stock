@@ -58,11 +58,13 @@ describe("M4-C AdminUpbitLiveUbaPanel single-mount", () => {
     expect(page).not.toMatch(/startTradingScheduler/);
     expect(page).not.toMatch(/pauseTradingScheduler/);
 
-    // Upbit ops panels 유지
+    // Upbit ops panels 유지 (M5-A: Ambiguous는 Ops section으로 이동)
     expect(page).toMatch(/UpbitOpportunityScannerPanel/);
     expect(page).toMatch(/UpbitNewsCombinedShadowPanel/);
     expect(page).toMatch(/UpbitNewsNoticeCollectorPanel/);
-    expect(page).toMatch(/UpbitAmbiguousOrdersPanel/);
+    expect(page).toMatch(/UpbitHubTabs/);
+    const ops = readRel("features/admin/upbit/UpbitHubOpsSection.tsx");
+    expect(ops).toMatch(/UpbitAmbiguousOrdersPanel/);
   });
 
   it("READ summary는 GET만 사용하고 LIVE mutation을 import하지 않는다", () => {

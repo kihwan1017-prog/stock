@@ -40,4 +40,7 @@
 | [MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md](MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md) | LIVE/ARM panel single-mount OPTION A (STEP M4-C) |
 | [MENU_M4C2_RISK_LIVE_DUPLICATE_PRECHECK.md](MENU_M4C2_RISK_LIVE_DUPLICATE_PRECHECK.md) | Risk page LIVE/ARM duplicate 검증 (STEP M4-C2, PRECHECK ONLY) |
 | [MENU_M4C2_RISK_LIVE_CONTROL_CLEANUP.md](MENU_M4C2_RISK_LIVE_CONTROL_CLEANUP.md) | Risk LIVE/ARM mutation 제거 · status+link (STEP M4-C2-APPLY) |
+| [MENU_M5_UPBIT_HUB_PRECHECK.md](MENU_M5_UPBIT_HUB_PRECHECK.md) | Upbit Hub IA 전수 조사·탭 설계 (STEP M5-0, PRECHECK ONLY) |
+| [MENU_M5_UPBIT_HUB_PRECHECK.json](MENU_M5_UPBIT_HUB_PRECHECK.json) | M5-0 구조화 산출물 |
+| [MENU_M5A_UPBIT_HUB_TAB_SHELL.md](MENU_M5A_UPBIT_HUB_TAB_SHELL.md) | Upbit Hub Tab shell + 패널 재배치 (STEP M5-A) |
 | [quarantined_migrations/README.md](quarantined_migrations/README.md) | Active Alembic graph에서 격리한 WIP migration 증거 (예: h1a2b3c4d5e6) |
