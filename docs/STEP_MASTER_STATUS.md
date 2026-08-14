@@ -61,7 +61,9 @@
 | MENU-M3-B | STEP M3-B | Hidden strategy workflow 메뉴 승격 | MENU_M3B_READY_WITH_LIMITATIONS | **YES** (`90bbaef`) | none | menu.test.ts | M4-0 | `docs/audit/MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md` |
 | MENU-M4-0 | STEP M4-0 | Admin operations consolidation precheck | OPERATIONS_CONSOLIDATION_DESIGN_READY | **YES** (with M4-A `62bd783`) | none | — | M4-A | `docs/audit/MENU_M4_OPERATIONS_PRECHECK.md` |
 | MENU-M4-A | STEP M4-A | READ-only ops labels/cross-links | MENU_M4A_READY_WITH_LIMITATIONS | **YES** (`62bd783`; risk page WIP 제외) | none | menu/ops tests | M4-B | `docs/audit/MENU_M4A_OPERATIONS_READONLY_CONSOLIDATION.md` |
-| MENU-M4-B | STEP M4-B | Admin ops menu regroup | MENU_M4B_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | menu.test.ts | M4-C (승인 후) | `docs/audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md` |
+| MENU-M4-B | STEP M4-B | Admin ops menu regroup | MENU_M4B_READY_WITH_LIMITATIONS | **YES** (`e045c63`) | none | menu.test.ts | M4-C0 | `docs/audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md` |
+| MENU-M4-C0 | STEP M4-C0 | LIVE/ARM canonical precheck | LIVE_CONTROL_CANONICAL_DESIGN_READY | **YES** (with M4-C 본 커밋) | none | — | M4-C | `docs/audit/MENU_M4C_LIVE_CONTROL_CANONICAL_PRECHECK.md` |
+| MENU-M4-C | STEP M4-C | LIVE/ARM panel single-mount | LIVE_CONTROL_SINGLE_MOUNT_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | upbitLiveControlSingleMount.test.ts | M4-C2 risk DEFER | `docs/audit/MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md` |
 
 ---
 

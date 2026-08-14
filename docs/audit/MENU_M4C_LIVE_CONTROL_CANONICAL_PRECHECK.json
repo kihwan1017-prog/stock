@@ -1,0 +1,139 @@
+{
+  "step": "M4-C0",
+  "verdict": "LIVE_CONTROL_CANONICAL_DESIGN_READY",
+  "baseline_commit": "e045c638f6656f63a97f472f42a29bbddaaf0a0c",
+  "production_mutation": 0,
+  "mounts": [
+    {
+      "route": "/admin/accounts",
+      "parent": "accounts/page.tsx",
+      "component": "AdminUpbitLiveUbaPanel",
+      "props": {},
+      "uba_filter": "UPBIT"
+    },
+    {
+      "route": "/admin/upbit",
+      "parent": "upbit/page.tsx",
+      "component": "AdminUpbitLiveUbaPanel",
+      "props": {},
+      "uba_filter": "UPBIT"
+    }
+  ],
+  "mount_count": 2,
+  "duplicate_class": "TRUE_DUPLICATE_CONTROL",
+  "controls": [
+    {
+      "id": "LIVE_ON_OFF",
+      "api": "PUT /api/v1/admin/live-order/accounts/{uba}",
+      "confirm": true,
+      "scope": "uba"
+    },
+    {
+      "id": "ARM",
+      "api": "POST /api/v1/admin/live-order/accounts/{uba}/arm",
+      "confirm": true,
+      "scope": "uba"
+    },
+    {
+      "id": "DISARM",
+      "api": "POST /api/v1/admin/live-order/accounts/{uba}/disarm",
+      "confirm": true,
+      "scope": "uba"
+    },
+    {
+      "id": "SCHEDULER_RUN",
+      "api": "POST /api/v1/admin/trading-scheduler/start",
+      "confirm": true,
+      "scope": "uba_body"
+    },
+    {
+      "id": "SCHEDULER_PAUSE",
+      "api": "POST /api/v1/admin/trading-scheduler/pause",
+      "confirm": true,
+      "scope": "uba_optional"
+    },
+    {
+      "id": "RESUME_TRADING",
+      "api": "recovery resume",
+      "confirm": true,
+      "scope": "uba"
+    },
+    {
+      "id": "UBA_CRUD_CREDENTIAL_RISK_RECOVERY",
+      "note": "fat panel also includes non-LIVE mutations",
+      "scope": "uba"
+    }
+  ],
+  "api_ownership": [
+    {
+      "api": "/admin/live-order/*",
+      "class": "UBA_GENERIC",
+      "auth": "require_admin"
+    },
+    {
+      "api": "/admin/trading-scheduler/*",
+      "class": "UBA_SCOPED_ADMIN",
+      "auth": "admin"
+    }
+  ],
+  "option_analysis": [
+    {
+      "id": "A",
+      "canonical": "/admin/accounts",
+      "secondary": "/admin/upbit",
+      "extensibility": "best",
+      "recommended": true
+    },
+    {
+      "id": "B",
+      "canonical": "/admin/upbit",
+      "secondary": "/admin/accounts",
+      "extensibility": "worst",
+      "recommended": false
+    },
+    {
+      "id": "C",
+      "canonical": "/admin/live-control",
+      "note": "new route — out of M4-C scope",
+      "recommended": false
+    },
+    {
+      "id": "D",
+      "canonical": "dual_mount",
+      "recommended": false
+    }
+  ],
+  "recommended_option": "OPTION_A",
+  "canonical_page": "/admin/accounts",
+  "secondary_page": "/admin/upbit",
+  "risk_page_classification": "TRUE_DUPLICATE_LIVE_CONTROL",
+  "risk_page_note": "weaker FE gates; no scheduler; WIP — do not modify in M4-C",
+  "permission_diff": {
+    "accounts": "menu:accounts",
+    "upbit": "menu:upbit",
+    "admin_bypass": true
+  },
+  "status_duplication_policy": "ALLOWED",
+  "control_duplication_policy": "SINGLE_CANONICAL",
+  "high_risk_control_surfaces_before": {
+    "uba_panel_mounts": 2,
+    "risk_page_live_arm": 1,
+    "scheduler_on_panel": 2
+  },
+  "high_risk_control_surfaces_target": {
+    "uba_panel_mounts": 1,
+    "risk_page_live_arm": "DEFER",
+    "scheduler_on_panel": 1
+  },
+  "implementation_plan": [
+    "Keep AdminUpbitLiveUbaPanel full on /admin/accounts",
+    "Remove panel mount from /admin/upbit",
+    "Add READ summary + link to /admin/accounts on upbit",
+    "Do not touch risk page / AuthGuard / permissions / backend",
+    "Vitest: mount count accounts=1 upbit=0; Upbit Scanner/News panels remain"
+  ],
+  "route_mutation_required": false,
+  "backend_api_change_required": false,
+  "permission_change_required": false,
+  "next_step": "M4-C — LIVE/ARM single-mount OPTION A (approval required)"
+}

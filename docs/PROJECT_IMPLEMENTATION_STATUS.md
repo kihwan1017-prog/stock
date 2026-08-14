@@ -74,7 +74,7 @@
 | Fill/Position | PARTIAL | COMMITTED_BASELINE | Upbit OK / Kiwoom GAP / Paper GAP | PARTIALLY_VERIFIED | P0-5 | P0-2 | P0-2,P0-5 | fill sync, paper | Fill 파이프라인 |
 | Settlement/PnL | PARTIAL | WORKTREE FK | PARTIAL | PARTIALLY_VERIFIED | PARTIAL | PARTIAL | P0-4 | settlement/ | FK 커밋 |
 | Recovery/Reconcile | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | Upbit>Kiwoom | PARTIALLY_VERIFIED | OK | PARTIAL | P0-2 | recovery/ | Kiwoom reconcile |
-| Frontend | COMPLETE_WITH_LIMITATIONS | WORKTREE (STEP12 pages, Form) + **M3/M4-A/M4-B menu committed** | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | M4-C 승인 후 |
+| Frontend | COMPLETE_WITH_LIMITATIONS | WORKTREE + **M3/M4-A/M4-B/M4-C menu·LIVE panel committed** | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | M4-C2 risk LIVE DEFER |
 | Ops/Telegram | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | RO 명령 | PARTIALLY_VERIFIED | OK | 제한 | — | telegram/ | — |
 | Docs Canonical | COMPLETE (PHASE2) | NEW | — | link check | — | — | — | docs/* | PHASE3 archive |
 

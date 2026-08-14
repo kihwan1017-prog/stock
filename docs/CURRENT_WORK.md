@@ -7,17 +7,18 @@
 
 ## Current Phase
 
-**STEP M4-B — Admin Operations Menu Regroup** — baseline 커밋 (`MENU_M4B_READY_WITH_LIMITATIONS`)
+**STEP M4-C — LIVE/ARM Single-Mount (OPTION A)** — baseline 커밋 (`LIVE_CONTROL_SINGLE_MOUNT_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Baseline | M4-A `62bd783` |
-| 범위 | Admin Sidebar 운영 메뉴 regroup만 |
-| 금지 | page/route/CONTROL/API · User UI · UBA · Strategy 위치 |
-| Evidence | [audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md](audit/MENU_M4B_OPERATIONS_MENU_REGROUP.md) |
+| Baseline | M4-B `e045c63` |
+| canonical | `/admin/accounts` (panel full) |
+| secondary | `/admin/upbit` (READ summary + link) |
+| panel mounts | 2 → **1** |
+| 금지 | risk page · backend · accounts panel 수정 · LIVE 실행 |
+| Evidence | [audit/MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md](audit/MENU_M4C_LIVE_CONTROL_SINGLE_MOUNT.md) |
 | commit | **본 커밋으로 baseline 고정** (push 없음) |
-| top-level | 10 → **11** (M2 target 9 — 억지 병합 안 함) |
 
 병렬 트랙 (본 STEP과 혼합 금지):
 
@@ -32,7 +33,7 @@
 
 ## Next Gate
 
-1. **M4-C** — LIVE/ARM control canonicalization precheck (**M4-B 승인 후**, 자동 진행 금지)  
+1. **M4-C commit** 승인 후 선별 커밋 · **Risk LIVE duplicate (M4-C2)** 는 별도  
 2. Technical VALID cohort **≈50** 재리뷰 (자동 변경 금지)  
 3. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
 

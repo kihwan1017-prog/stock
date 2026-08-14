@@ -2,13 +2,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, InputNumber, Space, Typography } from "antd";
+import Link from "next/link";
 import { useState } from "react";
 
+import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
-import { AdminUpbitLiveUbaPanel } from "@/features/admin/accounts/AdminUpbitLiveUbaPanel";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { UpbitAmbiguousOrdersPanel } from "@/features/admin/upbit/UpbitAmbiguousOrdersPanel";
+import { UpbitLiveStatusReadSummary } from "@/features/admin/upbit/UpbitLiveStatusReadSummary";
 import { UpbitNewsCombinedShadowPanel } from "@/features/admin/upbit/UpbitNewsCombinedShadowPanel";
 import { UpbitNewsNoticeCollectorPanel } from "@/features/admin/upbit/UpbitNewsNoticeCollectorPanel";
 import { UpbitOpportunityScannerPanel } from "@/features/admin/upbit/UpbitOpportunityScannerPanel";
@@ -102,9 +104,10 @@ export default function AdminUpbitPage() {
   return (
     <AdminPageShell
       title="업비트 계좌"
-      description="UBA 연결 · 인증/잔고 스냅샷 · Ambiguous 주문 (시세/종목은 업비트 시세 메뉴)"
+      description="UPBIT 자동매매 운영 상태를 조회합니다. 계좌 설정 및 LIVE/ARM 제어는 계좌 관리에서 수행합니다."
       extra={
         <Space wrap>
+          <Link href={adminRoutes.accounts}>계좌 관리 (LIVE/ARM 제어)</Link>
           <InputNumber
             placeholder="UBA ID"
             min={1}
@@ -140,7 +143,8 @@ export default function AdminUpbitPage() {
           비활성(`UPBIT_LIVE_ORDER_ENABLED=false`)이 기본입니다.
         </Typography.Paragraph>
 
-        <AdminUpbitLiveUbaPanel />
+        {/* M4-C: LIVE/ARM panel은 /admin/accounts만. 여기는 READ summary. */}
+        <UpbitLiveStatusReadSummary />
 
         <UpbitOpportunityScannerPanel />
 
