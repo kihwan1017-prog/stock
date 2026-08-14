@@ -7,14 +7,15 @@
 
 ## Current Phase
 
-**STEP M3-A — LOW-RISK Menu Cleanup** — baseline 커밋 (`MENU_LOW_RISK_CLEANUP_READY_WITH_LIMITATIONS`)
+**STEP M3-B — Promote Hidden Active Strategy Workflows** — baseline 커밋 (`MENU_M3B_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| 범위 | sidebar label / 순서 / `/admin/monitoring` 중복 노출 제거만 |
-| 금지 | route·page·API·AuthGuard·permission·IA 10→9/12→8 미적용 |
-| Evidence | [audit/MENU_LOW_RISK_CLEANUP_M3A.md](audit/MENU_LOW_RISK_CLEANUP_M3A.md) |
+| Baseline | M3-A `bab25d36577f817138830fbb13e78e6af6e401c9` |
+| 범위 | Strategy Request / Draft / Portfolio Validation **사이드바 노출만** |
+| 금지 | route·page·API·AuthGuard·신규 permission 키·User 12→8 |
+| Evidence | [audit/MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md](audit/MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md) |
 | commit | **본 커밋으로 baseline 고정** (push 없음) |
 
 병렬 트랙 (본 STEP과 혼합 금지):
@@ -30,7 +31,7 @@
 
 ## Next Gate
 
-1. **M3-B** — Strategy Request / Draft / Portfolio Validation 메뉴 승격 (**M3-A 승인 후**, 자동 진행 금지)  
+1. **M4** — Operations Consolidation (**M3-B 승인 후**, 자동 진행 금지)  
 2. Technical VALID cohort **≈50** 재리뷰 (자동 변경 금지)  
 3. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
 

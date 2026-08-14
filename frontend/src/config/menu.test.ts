@@ -9,6 +9,7 @@ import {
 } from "@/config/menu";
 import {
   adminRoutes,
+  getRouteTitle,
   type AdminRoute,
   type UserRoute,
   userRoutes,
@@ -80,11 +81,11 @@ describe("menu link validity (STEP7)", () => {
     }
   });
 
-  it("M3-A 사이드바 카운트: Admin 10/52, User 12/27", () => {
+  it("M3-B 사이드바 카운트: Admin 10/55, User 12/29", () => {
     expect(adminMenuItems).toHaveLength(10);
-    expect(flattenMenuItems(adminMenuItems)).toHaveLength(52);
+    expect(flattenMenuItems(adminMenuItems)).toHaveLength(55);
     expect(userMenuItems).toHaveLength(12);
-    expect(flattenMenuItems(userMenuItems)).toHaveLength(27);
+    expect(flattenMenuItems(userMenuItems)).toHaveLength(29);
   });
 
   it("ADMIN·USER 사이드바에 동일 path가 중복 노출되지 않는다", () => {
@@ -98,6 +99,64 @@ describe("menu link validity (STEP7)", () => {
     );
     expect(monitoringLeaves).toHaveLength(1);
     expect(monitoringLeaves[0]?.key).toBe("system-monitoring");
+  });
+
+  it("M3-B HIDDEN ACTIVE 전략 workflow가 사이드바에 1회씩 노출된다", () => {
+    const adminFlat = flattenMenuItems(adminMenuItems);
+    const userFlat = flattenMenuItems(userMenuItems);
+
+    const adminRequest = adminFlat.find((item) => item.path === adminRoutes.strategyRequests);
+    const adminDraft = adminFlat.find((item) => item.path === adminRoutes.strategyDrafts);
+    const adminValidation = adminFlat.find(
+      (item) => item.path === adminRoutes.portfolioValidations,
+    );
+    const userRequest = userFlat.find((item) => item.path === userRoutes.strategyRequests);
+    const userDraft = userFlat.find((item) => item.path === userRoutes.strategyDrafts);
+
+    expect(adminRequest?.key).toBe("strategy-requests");
+    expect(adminDraft?.key).toBe("strategy-drafts");
+    expect(adminValidation?.key).toBe("portfolio-validations");
+    expect(userRequest?.key).toBe("strategy-requests");
+    expect(userDraft?.key).toBe("strategy-drafts");
+
+    expect(adminRoutes.strategyRequests).toBe("/admin/strategy-requests");
+    expect(adminRoutes.strategyDrafts).toBe("/admin/strategy-drafts");
+    expect(adminRoutes.portfolioValidations).toBe("/admin/portfolio-validations");
+    expect(userRoutes.strategyRequests).toBe("/user/strategy-requests");
+    expect(userRoutes.strategyDrafts).toBe("/user/strategy-drafts");
+
+    // 신규 permission 키를 만들지 않는다. 기존 직접 URL과 동일하게 role gate만 사용.
+    expect(adminRequest?.permission).toBeUndefined();
+    expect(adminDraft?.permission).toBeUndefined();
+    expect(adminValidation?.permission).toBeUndefined();
+    expect(userRequest?.minAccess).toBe("user");
+    expect(userDraft?.minAccess).toBe("user");
+
+    // User에는 Admin 전용 Portfolio Validation route를 만들지 않는다.
+    expect(userFlat.some((item) => item.path?.includes("portfolio-validations"))).toBe(
+      false,
+    );
+
+    const adminStrategyGroup = adminMenuItems.find((item) => item.key === "strategy-ai");
+    expect(adminStrategyGroup?.children?.slice(0, 5).map((item) => item.key)).toEqual([
+      "strategies",
+      "strategy-requests",
+      "strategy-drafts",
+      "portfolio-validations",
+      "backtests",
+    ]);
+    const userStrategyGroup = userMenuItems.find((item) => item.key === "my-strategies");
+    expect(userStrategyGroup?.children?.slice(0, 3).map((item) => item.key)).toEqual([
+      "strategies",
+      "strategy-requests",
+      "strategy-drafts",
+    ]);
+
+    expect(getRouteTitle(adminRoutes.strategyRequests)).toBe("전략 요청");
+    expect(getRouteTitle(adminRoutes.strategyDrafts)).toBe("전략 초안");
+    expect(getRouteTitle(adminRoutes.portfolioValidations)).toBe("포트폴리오 검증");
+    expect(getRouteTitle(userRoutes.strategyRequests)).toBe("전략 요청");
+    expect(getRouteTitle(userRoutes.strategyDrafts)).toBe("전략 초안");
   });
 
   it("사이드바 leaf path에 대응하는 page.tsx가 존재한다", () => {

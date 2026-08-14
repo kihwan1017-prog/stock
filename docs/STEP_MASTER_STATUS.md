@@ -57,7 +57,8 @@
 | MENU-M1 | STEP M1 | Menu inventory | MENU_INVENTORY_READY | NO (docs WT) | none | — | M2 | `docs/audit/MENU_INVENTORY_*` |
 | MENU-M2 | STEP M2 | Menu IA design | MENU_IA_DESIGN_READY | NO (docs WT) | none | — | M3-A | `docs/audit/MENU_IA_*` |
 | MENU-M2.1 | STEP M2.1 | Menu IA delta | MENU_IA_DELTA_CLEAR | NO | none | — | M3-A | — |
-| MENU-M3-A | STEP M3-A | LOW-RISK menu cleanup | MENU_LOW_RISK_CLEANUP_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | menu.test.ts | M3-B (승인 후) | `docs/audit/MENU_LOW_RISK_CLEANUP_M3A.md` |
+| MENU-M3-A | STEP M3-A | LOW-RISK menu cleanup | MENU_LOW_RISK_CLEANUP_READY_WITH_LIMITATIONS | **YES** (`bab25d3`) | none | menu.test.ts | M3-B | `docs/audit/MENU_LOW_RISK_CLEANUP_M3A.md` |
+| MENU-M3-B | STEP M3-B | Hidden strategy workflow 메뉴 승격 | MENU_M3B_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | menu.test.ts | M4 (승인 후) | `docs/audit/MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md` |
 
 ---
 

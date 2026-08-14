@@ -187,6 +187,30 @@ export const adminMenuItems: AdminMenuItem[] = [
         permission: "menu:strategies",
       },
       {
+        // M3-B: HIDDEN ACTIVE 승격. 신규 menu:* 키 없음 — Admin layout role만 사용.
+        key: "strategy-requests",
+        label: "전략 요청",
+        path: adminRoutes.strategyRequests,
+        icon: <FileSearchOutlined />,
+        enabled: true,
+      },
+      {
+        // M3-B: HIDDEN ACTIVE 승격. 신규 menu:* 키 없음 — Admin layout role만 사용.
+        key: "strategy-drafts",
+        label: "전략 초안",
+        path: adminRoutes.strategyDrafts,
+        icon: <FileTextOutlined />,
+        enabled: true,
+      },
+      {
+        // M3-B: HIDDEN ACTIVE 승격. 신규 menu:* 키 없음 — Admin layout role만 사용.
+        key: "portfolio-validations",
+        label: "포트폴리오 검증",
+        path: adminRoutes.portfolioValidations,
+        icon: <SafetyCertificateOutlined />,
+        enabled: true,
+      },
+      {
         key: "backtests",
         label: "백테스트",
         path: adminRoutes.backtests,
@@ -812,6 +836,24 @@ export const userMenuItems: UserMenuItem[] = [
         label: "전략",
         path: userRoutes.strategies,
         icon: <ExperimentOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        // M3-B: HIDDEN ACTIVE 승격. User owner scope, 기존 minAccess=user.
+        key: "strategy-requests",
+        label: "전략 요청",
+        path: userRoutes.strategyRequests,
+        icon: <FileSearchOutlined />,
+        enabled: true,
+        minAccess: "user",
+      },
+      {
+        // M3-B: HIDDEN ACTIVE 승격. User owner scope, 기존 minAccess=user.
+        key: "strategy-drafts",
+        label: "전략 초안",
+        path: userRoutes.strategyDrafts,
+        icon: <FileTextOutlined />,
         enabled: true,
         minAccess: "user",
       },

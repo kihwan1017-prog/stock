@@ -32,4 +32,5 @@
 | [MENU_INVENTORY_ADMIN_USER.md](MENU_INVENTORY_ADMIN_USER.md) | Admin/User 메뉴·route·권한 전수 인벤토리 (STEP M1, READ-ONLY) |
 | [MENU_IA_CONSOLIDATION_DESIGN.md](MENU_IA_CONSOLIDATION_DESIGN.md) | Admin/User 메뉴 IA 통합 설계 (STEP M2, DESIGN ONLY) |
 | [MENU_LOW_RISK_CLEANUP_M3A.md](MENU_LOW_RISK_CLEANUP_M3A.md) | Admin/User 메뉴 LOW-RISK 정리 (STEP M3-A, sidebar label/order/monitoring 중복) |
+| [MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md](MENU_M3B_HIDDEN_WORKFLOW_PROMOTION.md) | HIDDEN ACTIVE 전략 Request/Draft/Validation 메뉴 승격 (STEP M3-B) |
 | [quarantined_migrations/README.md](quarantined_migrations/README.md) | Active Alembic graph에서 격리한 WIP migration 증거 (예: h1a2b3c4d5e6) |
