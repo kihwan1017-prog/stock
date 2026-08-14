@@ -66,11 +66,12 @@ export type UserMenuItem = AppMenuItem<UserRoute>;
 /**
  * Admin 사이드바 메뉴 — 업무 흐름 순서(회원 → 계좌 → 시장데이터 → 전략·후보 →
  * 거래 → 리스크·운영 → 알림 → 운영관리 → 내 정보)로 구성한다.
+ * M3-A: label/순서/monitoring 중복 노출만 정리. route·permission 불변.
  */
 export const adminMenuItems: AdminMenuItem[] = [
   {
     key: "dashboard",
-    label: "Dashboard",
+    label: "운영 대시보드",
     path: adminRoutes.dashboard,
     icon: <DashboardOutlined />,
     enabled: true,
@@ -78,7 +79,7 @@ export const adminMenuItems: AdminMenuItem[] = [
   },
   {
     key: "members-group",
-    label: "회원관리",
+    label: "회원·권한",
     icon: <TeamOutlined />,
     enabled: true,
     children: [
@@ -139,30 +140,6 @@ export const adminMenuItems: AdminMenuItem[] = [
     enabled: true,
     children: [
       {
-        key: "monitoring",
-        label: "시스템 모니터링",
-        path: adminRoutes.monitoring,
-        icon: <MonitorOutlined />,
-        enabled: true,
-        permission: "menu:monitoring",
-      },
-      {
-        key: "news",
-        label: "뉴스관리",
-        path: adminRoutes.news,
-        icon: <ReadOutlined />,
-        enabled: true,
-        permission: "menu:news",
-      },
-      {
-        key: "disclosures",
-        label: "공시관리",
-        path: adminRoutes.disclosures,
-        icon: <FileTextOutlined />,
-        enabled: true,
-        permission: "menu:disclosures",
-      },
-      {
         key: "upbit-market",
         label: "업비트 시세",
         path: adminRoutes.upbitMarkets,
@@ -177,6 +154,22 @@ export const adminMenuItems: AdminMenuItem[] = [
         icon: <LineChartOutlined />,
         enabled: true,
       },
+      {
+        key: "news",
+        label: "뉴스 관리",
+        path: adminRoutes.news,
+        icon: <ReadOutlined />,
+        enabled: true,
+        permission: "menu:news",
+      },
+      {
+        key: "disclosures",
+        label: "공시 관리",
+        path: adminRoutes.disclosures,
+        icon: <FileTextOutlined />,
+        enabled: true,
+        permission: "menu:disclosures",
+      },
     ],
   },
   {
@@ -185,6 +178,22 @@ export const adminMenuItems: AdminMenuItem[] = [
     icon: <ExperimentOutlined />,
     enabled: true,
     children: [
+      {
+        key: "strategies",
+        label: "전략 관리",
+        path: adminRoutes.strategies,
+        icon: <ExperimentOutlined />,
+        enabled: true,
+        permission: "menu:strategies",
+      },
+      {
+        key: "backtests",
+        label: "백테스트",
+        path: adminRoutes.backtests,
+        icon: <BarChartOutlined />,
+        enabled: true,
+        permission: "menu:backtests",
+      },
       {
         key: "ai",
         label: "후보·LLM 관리",
@@ -312,22 +321,6 @@ export const adminMenuItems: AdminMenuItem[] = [
         icon: <RobotOutlined />,
         enabled: true,
         permission: "menu:ai",
-      },
-      {
-        key: "strategies",
-        label: "전략관리",
-        path: adminRoutes.strategies,
-        icon: <ExperimentOutlined />,
-        enabled: true,
-        permission: "menu:strategies",
-      },
-      {
-        key: "backtests",
-        label: "백테스트",
-        path: adminRoutes.backtests,
-        icon: <BarChartOutlined />,
-        enabled: true,
-        permission: "menu:backtests",
       },
     ],
   },
@@ -473,6 +466,7 @@ export const adminMenuItems: AdminMenuItem[] = [
     enabled: true,
     children: [
       {
+        // M3-A: 시장 데이터 그룹의 동일 route 중복 노출 제거. page/route 유지.
         key: "system-monitoring",
         label: "시스템 모니터링",
         path: adminRoutes.monitoring,
@@ -840,6 +834,14 @@ export const userMenuItems: UserMenuItem[] = [
     ],
   },
   {
+    key: "live-validation-upbit",
+    label: "업비트 LIVE 검증",
+    path: userRoutes.liveValidationUpbit,
+    icon: <ThunderboltOutlined />,
+    enabled: true,
+    minAccess: "user",
+  },
+  {
     key: "my-orders",
     label: "내 주문·체결",
     icon: <ApartmentOutlined />,
@@ -847,7 +849,7 @@ export const userMenuItems: UserMenuItem[] = [
     children: [
       {
         key: "trading",
-        label: "매매(주문 실행)",
+        label: "매매 실행",
         path: userRoutes.trading,
         icon: <SwapOutlined />,
         enabled: true,
@@ -892,14 +894,6 @@ export const userMenuItems: UserMenuItem[] = [
     label: "내 리스크",
     path: userRoutes.risk,
     icon: <SafetyCertificateOutlined />,
-    enabled: true,
-    minAccess: "user",
-  },
-  {
-    key: "live-validation-upbit",
-    label: "업비트 LIVE 검증",
-    path: userRoutes.liveValidationUpbit,
-    icon: <ThunderboltOutlined />,
     enabled: true,
     minAccess: "user",
   },

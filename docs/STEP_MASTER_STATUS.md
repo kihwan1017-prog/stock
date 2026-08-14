@@ -2,7 +2,7 @@
 
 **역할:** STEP 관리의 **유일한** Source of Truth.  
 **규칙:** 같은 숫자라도 네임스페이스가 다르면 **합치지 않는다.** 과거 번호를 삭제·재부여하지 않고 Mapping만 제공한다.  
-**최종 갱신:** 2026-08-13  
+**최종 갱신:** 2026-08-14  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
 **Ops note:** Shadow cohort milestone watch — accumulating until READY gate. SHADOW_ONLY · UBA1380 보호.  
@@ -18,6 +18,7 @@
 | AUDIT-STEP | `AUDIT21-*` | 21단계 코드 감사 | `docs/audit/STEP01–21` |
 | STRATEGY-STEP | `STRAT-12.*` | Strategy Lifecycle (현재) | 코드/tests + [architecture/STRATEGY_LIFECYCLE_STEP12.md](architecture/STRATEGY_LIFECYCLE_STEP12.md) |
 | NEWS-STEP | `NEWS-N*` | UPBIT News/Notice 병렬 트랙 | `src/stock_platform/news/` |
+| MENU-STEP | `MENU-M*` | Admin/User 메뉴 IA | `frontend/src/config/menu.tsx` + `docs/audit/MENU_*` |
 | LEGACY-STEP / SUBSTEP | `DEV-8.*`, `AI-11.*`, `OPS-10.*` | 활성 서브시리즈 | development/ai/operations |
 | REL | `REL-*` | 루트 릴리스 서술 | 루트 README_STEP* |
 
@@ -53,6 +54,10 @@
 | NEWS-N8 | STEP N8 | News Pipeline Continuous Observation | NEWS_PIPELINE_OBSERVATION_RUNNING | YES (`74102ad`) | none | test_step_n8_* | N9 latency | pipeline_observation* |
 | NEWS-N9 | STEP N9 | News Pipeline Latency Alignment | NEWS_PIPELINE_LATENCY_ALIGNED | YES (`622eb8d`) | none | test_step_n9_* | N10 | N4→N5 event trigger |
 | NEWS-N10 | STEP N10 | News A/B Coverage Decision | NEWS_AB_SAMPLE_ACCUMULATING | YES | none | test_step_n10_* | 자연 누적 / REVIEW_READY | coverage_funnel + TopN rec |
+| MENU-M1 | STEP M1 | Menu inventory | MENU_INVENTORY_READY | NO (docs WT) | none | — | M2 | `docs/audit/MENU_INVENTORY_*` |
+| MENU-M2 | STEP M2 | Menu IA design | MENU_IA_DESIGN_READY | NO (docs WT) | none | — | M3-A | `docs/audit/MENU_IA_*` |
+| MENU-M2.1 | STEP M2.1 | Menu IA delta | MENU_IA_DELTA_CLEAR | NO | none | — | M3-A | — |
+| MENU-M3-A | STEP M3-A | LOW-RISK menu cleanup | MENU_LOW_RISK_CLEANUP_READY_WITH_LIMITATIONS | **YES** (본 커밋) | none | menu.test.ts | M3-B (승인 후) | `docs/audit/MENU_LOW_RISK_CLEANUP_M3A.md` |
 
 ---
 

@@ -7,16 +7,20 @@
 
 ## Current Phase
 
-**Technical Shadow Cohort REVIEW_READY Performance Review v2** — 완료 (`TECHNICAL_COHORT_REVIEW_COMPLETE_CHANGE_CANDIDATES`)
+**STEP M3-A — LOW-RISK Menu Cleanup** — baseline 커밋 (`MENU_LOW_RISK_CLEANUP_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
 | Branch | `release/v1.1.0` |
-| Milestone | `SHADOW_COHORT_30_REVIEW_READY` (VALID=32, NEW_POLICY MATCH=16, mismatch=0) |
-| 판정 | CHANGE_CANDIDATE=TP만 (적용 **금지**) · next gate **n≈50** |
-| Evidence | `docs/audit/TECHNICAL_SHADOW_COHORT_REVIEW_READY_V2_20260814.*` |
-| News A/B | 별도 자연 누적 (`NEWS_AB_SAMPLE_ACCUMULATING`) — Technical과 미혼합 |
-| CONTROL / Apply | **불변 / 금지** |
+| 범위 | sidebar label / 순서 / `/admin/monitoring` 중복 노출 제거만 |
+| 금지 | route·page·API·AuthGuard·permission·IA 10→9/12→8 미적용 |
+| Evidence | [audit/MENU_LOW_RISK_CLEANUP_M3A.md](audit/MENU_LOW_RISK_CLEANUP_M3A.md) |
+| commit | **본 커밋으로 baseline 고정** (push 없음) |
+
+병렬 트랙 (본 STEP과 혼합 금지):
+
+- Technical Shadow: VALID≈50 재리뷰 대기 · TP apply **금지**
+- News A/B: `NEWS_AB_SAMPLE_ACCUMULATING`
 
 ---
 
@@ -26,8 +30,8 @@
 
 ## Next Gate
 
-1. Technical VALID cohort **≈50** 재리뷰 (TP candidate 재평가; 자동 변경 금지)  
-2. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
-3. Scanner/Gate/TP/SL production 적용 · LIVE — 별도 승인  
+1. **M3-B** — Strategy Request / Draft / Portfolio Validation 메뉴 승격 (**M3-A 승인 후**, 자동 진행 금지)  
+2. Technical VALID cohort **≈50** 재리뷰 (자동 변경 금지)  
+3. News A/B 자연 누적 → `NEWS_AB_REVIEW_READY`  
 
 → [ROADMAP.md](ROADMAP.md)
