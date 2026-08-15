@@ -1,0 +1,255 @@
+{
+  "step": "M6-C0",
+  "mode": "PRECHECK_ONLY",
+  "baseline_commit": "87d0229",
+  "verdict": "STRATEGY_REQUEST_READ_SHARE_RECOMMENDED",
+  "production_mutation": 0,
+  "routes": {
+    "admin": "/admin/strategy-requests",
+    "admin_page": "frontend/src/app/(admin)/admin/strategy-requests/page.tsx",
+    "user": "/user/strategy-requests",
+    "user_page": "frontend/src/app/(user)/user/strategy-requests/page.tsx"
+  },
+  "page_metrics": {
+    "admin": {
+      "loc": 272,
+      "components": 0,
+      "useState": 3,
+      "useEffect": 0,
+      "useQuery": 3,
+      "useMutation": 2,
+      "handlers_approx": 6,
+      "api_calls": 5,
+      "get": 3,
+      "mutation": 2,
+      "tables": 2,
+      "drawers": 1,
+      "modals": 0,
+      "major_sections": 4
+    },
+    "user": {
+      "loc": 308,
+      "components": 0,
+      "useState": 4,
+      "useEffect": 0,
+      "useQuery": 3,
+      "useMutation": 2,
+      "handlers_approx": 8,
+      "api_calls": 5,
+      "get": 3,
+      "mutation": 2,
+      "tables": 1,
+      "drawers": 1,
+      "modals": 0,
+      "major_sections": 4
+    }
+  },
+  "api_matrix": [
+    {
+      "role": "admin",
+      "op": "list",
+      "method": "GET",
+      "path": "/admin/strategy-requests"
+    },
+    {
+      "role": "admin",
+      "op": "detail",
+      "method": "GET",
+      "path": "/admin/strategy-requests/{id}"
+    },
+    {
+      "role": "admin",
+      "op": "history",
+      "method": "GET",
+      "path": "/admin/strategy-requests/{id}/history"
+    },
+    {
+      "role": "admin",
+      "op": "approve",
+      "method": "POST",
+      "path": "/admin/strategy-requests/{id}/approve"
+    },
+    {
+      "role": "admin",
+      "op": "reject",
+      "method": "POST",
+      "path": "/admin/strategy-requests/{id}/reject"
+    },
+    {
+      "role": "user",
+      "op": "lifecycle_gate",
+      "method": "GET",
+      "path": "/user/ai-candidates/{id}/lifecycle"
+    },
+    {
+      "role": "user",
+      "op": "create",
+      "method": "POST",
+      "path": "/user/strategy-requests"
+    },
+    {
+      "role": "user",
+      "op": "list",
+      "method": "GET",
+      "path": "/user/strategy-requests"
+    },
+    {
+      "role": "user",
+      "op": "detail",
+      "method": "GET",
+      "path": "/user/strategy-requests/{id}"
+    },
+    {
+      "role": "user",
+      "op": "cancel",
+      "method": "POST",
+      "path": "/user/strategy-requests/{id}/cancel"
+    }
+  ],
+  "api_overlap_class": "DIFFERENT_ENDPOINT_SAME_SCHEMA",
+  "row_type_compatibility": "STRUCTURALLY_COMPATIBLE",
+  "column_matrix": [
+    {
+      "dataIndex": "strategy_request_id",
+      "class": "COMMON_READ",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "candidate_id",
+      "class": "COMMON_READ",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "user_id",
+      "class": "ADMIN_ONLY_READ",
+      "admin": true,
+      "user": false
+    },
+    {
+      "dataIndex": "status",
+      "class": "COMMON_READ",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "candidate_lifecycle_status_snapshot",
+      "class": "ADMIN_ONLY_READ",
+      "admin": true,
+      "user": false
+    },
+    {
+      "dataIndex": "requested_at",
+      "class": "COMMON_READ",
+      "admin": true,
+      "user": true
+    }
+  ],
+  "common_read_keys": [
+    "strategy_request_id",
+    "candidate_id",
+    "status",
+    "requested_at"
+  ],
+  "common_read_ratio": 1.0,
+  "admin_read_count": 6,
+  "user_read_count": 4,
+  "detail_overlap": [
+    {
+      "field": "status_tag",
+      "class": "COMMON"
+    },
+    {
+      "field": "candidate_tag",
+      "class": "COMMON"
+    },
+    {
+      "field": "user_id",
+      "class": "ADMIN_VISIBILITY"
+    },
+    {
+      "field": "reviewer_user_id",
+      "class": "ADMIN_ONLY_UI"
+    },
+    {
+      "field": "request_note",
+      "class": "COMMON"
+    },
+    {
+      "field": "review_note",
+      "class": "COMMON"
+    },
+    {
+      "field": "timestamps",
+      "class": "SIMILAR"
+    },
+    {
+      "field": "cancelled_at",
+      "class": "USER_ONLY_UI"
+    }
+  ],
+  "detail_overlap_class": "SIMILAR_STRUCTURE",
+  "history_overlap": [
+    {
+      "field": "action",
+      "admin": true,
+      "user": false
+    },
+    {
+      "field": "previous_status",
+      "admin": true,
+      "user": false
+    },
+    {
+      "field": "new_status",
+      "admin": true,
+      "user": false
+    },
+    {
+      "field": "actor",
+      "admin": true,
+      "user": false,
+      "visibility_risk": "DO_NOT_EXPOSE_TO_USER_WITHOUT_GATE"
+    },
+    {
+      "field": "created_at",
+      "admin": true,
+      "user": false
+    }
+  ],
+  "sharing_judgments": {
+    "LIST_SHARING": "SHARE_TABLE_COLUMNS",
+    "DETAIL_SHARING": "OPTIONAL_LOW_MED",
+    "HISTORY_SHARING": "KEEP_SEPARATE"
+  },
+  "shared_candidates": [
+    "A.SHARE_FORMATTER_ONLY",
+    "B.STATUS_COLOR_ALREADY_SHARED",
+    "C.SHARE_TABLE_COLUMNS"
+  ],
+  "keep_separate": [
+    "approve",
+    "reject",
+    "create",
+    "cancel",
+    "admin_user_id_column",
+    "admin_lifecycle_snapshot_column",
+    "history_with_actor",
+    "query_hooks",
+    "api_clients",
+    "routes",
+    "permissions"
+  ],
+  "capability_prop_risk": "HIGH_IF_FULL_COMPONENT",
+  "options": {
+    "A": "KEEP_SEPARATE",
+    "B": "FORMATTERS_STATUS_MOSTLY_DONE",
+    "C": "COMMON_READ_TABLE_COLUMNS",
+    "D": "SUMMARY_OPTIONAL_HISTORY_NO",
+    "E": "FULL_COMPONENT_REJECT"
+  },
+  "recommended_option": "OPTION_C",
+  "m6c_scope_proposal": "COMMON_READ list columns (4 keys) only; actions/history/hooks out",
+  "next_step_exactly_one": "M6-C — Implement Strategy Request COMMON_READ list columns (RO only)"
+}

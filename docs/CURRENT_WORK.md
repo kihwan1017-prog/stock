@@ -7,18 +7,18 @@
 
 ## Current Phase
 
-**STEP M6-B — COMMON_READ Order Columns Shared** — baseline 커밋 (`ORDER_READ_COLUMNS_SHARED_READY_WITH_LIMITATIONS`)
+**STEP M6-C — Strategy Request COMMON_READ List Columns Shared** — baseline 커밋 (`STRATEGY_REQUEST_COLUMNS_SHARED_READY_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
-| Branch | `release/v1.1.0` · M6-A `239550d` |
-| shared | `frontend/src/shared/orders/orderReadColumns.ts` · **7** keys |
-| Evidence | [audit/MENU_M6B_ORDER_READ_COLUMNS_SHARED.md](audit/MENU_M6B_ORDER_READ_COLUMNS_SHARED.md) |
+| Branch | `release/v1.1.0` · M6-B `87d0229` |
+| shared | `frontend/src/shared/strategyRequests/` · **4** keys |
+| Evidence | [audit/MENU_M6C_STRATEGY_REQUEST_READ_COLUMNS_SHARED.md](audit/MENU_M6C_STRATEGY_REQUEST_READ_COLUMNS_SHARED.md) |
 | mutation/query/API | **0** |
 | commit | **본 커밋으로 baseline 고정** (push 없음) |
-| next | **M6-C0** Strategy Request READ presentation PRECHECK (승인 후 · READ-ONLY) |
+| next | **M6-D0** Strategy Draft READ presentation PRECHECK (승인 후 · READ-ONLY) |
 
-병렬: residual WIP **미수정** · Admin dataHelpers shim 유지
+병렬: residual WIP **미수정** · M6-B order columns **미수정** · Admin dataHelpers shim 유지
 
 ---
 
@@ -28,8 +28,8 @@
 
 ## Next Gate
 
-1. **M6-C0** Strategy Request READ presentation PRECHECK (**승인 후 · READ-ONLY**)  
-2. Order query/filter/hook/mutation 공용화 **금지**  
+1. **M6-D0** Strategy Draft READ presentation PRECHECK (**승인 후 · READ-ONLY**)  
+2. Detail/History/mutation 공용화 **금지**  
 3. residual WIP 별도  
 
 → [ROADMAP.md](ROADMAP.md)

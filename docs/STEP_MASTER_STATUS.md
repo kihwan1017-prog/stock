@@ -79,7 +79,9 @@
 | MENU-M6-0 | STEP M6-0 | Admin/User shared component precheck | SHARED_COMPONENT_CONSOLIDATION_DESIGN_READY | **NO** (docs only · commit 없음) | none | — | M6-A | `docs/audit/MENU_M6_SHARED_COMPONENT_PRECHECK.md` |
 | MENU-M6-A | STEP M6-A | Shared formatters/utils extraction | SHARED_FORMATTERS_UTILS_READY_WITH_LIMITATIONS | **YES** (`239550d` · admin shim 유지) | none | sharedUtils + m6aImportDirection | M6-B0 | `docs/audit/MENU_M6A_SHARED_FORMATTERS_UTILS.md` |
 | MENU-M6-B0 | STEP M6-B0 | Order RO columns precheck | ORDER_READ_COLUMNS_SHARE_RECOMMENDED | **YES** (with M6-B 본 커밋) | none | — | M6-B | `docs/audit/MENU_M6B_ORDER_COLUMNS_PRECHECK.md` |
-| MENU-M6-B | STEP M6-B | COMMON_READ order columns shared | ORDER_READ_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (본 커밋 · actions/query 분리) | none | orderReadColumns.test.ts | M6-C0 (승인 후) | `docs/audit/MENU_M6B_ORDER_READ_COLUMNS_SHARED.md` |
+| MENU-M6-B | STEP M6-B | COMMON_READ order columns shared | ORDER_READ_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (`87d0229` · actions/query 분리) | none | orderReadColumns.test.ts | M6-C0 | `docs/audit/MENU_M6B_ORDER_READ_COLUMNS_SHARED.md` |
+| MENU-M6-C0 | STEP M6-C0 | Strategy Request RO presentation precheck | STRATEGY_REQUEST_READ_SHARE_RECOMMENDED | **YES** (with M6-C 본 커밋) | none | — | M6-C | `docs/audit/MENU_M6C_STRATEGY_REQUEST_PRECHECK.md` |
+| MENU-M6-C | STEP M6-C | Strategy Request COMMON_READ list columns | STRATEGY_REQUEST_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (본 커밋 · actions/history/detail 분리) | none | strategyRequestReadColumns.test.ts | M6-D0 (승인 후) | `docs/audit/MENU_M6C_STRATEGY_REQUEST_READ_COLUMNS_SHARED.md` |
 
 ---
 

@@ -27,6 +27,13 @@ import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import {
+  ADMIN_SR_READ_AFTER_USER,
+  ADMIN_SR_READ_PREFIX,
+  ADMIN_SR_READ_SUFFIX,
+  STRATEGY_REQUEST_READ_TITLES,
+  buildStrategyRequestReadColumns,
+} from "@/shared/strategyRequests/strategyRequestReadColumns";
 import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { STRATEGY_REQUEST_STATUS_COLOR } from "@/shared/utils/strategyStatusColors";
 
@@ -142,23 +149,24 @@ export default function AdminStrategyRequestsPage() {
             },
           })}
           columns={[
-            { title: "ID", dataIndex: "strategy_request_id", width: 70, render: cell },
-            { title: "Candidate", dataIndex: "candidate_id", width: 100, render: cell },
+            // M6-C: COMMON_READ + Admin-only user/lifecycle (기존 순서 유지)
+            ...buildStrategyRequestReadColumns(ADMIN_SR_READ_PREFIX, {
+              titles: STRATEGY_REQUEST_READ_TITLES,
+              widths: { strategy_request_id: 70, candidate_id: 100 },
+            }),
             { title: "User", dataIndex: "user_id", width: 90, render: cell },
-            {
-              title: "상태",
-              dataIndex: "status",
-              width: 140,
-              render: (v: string) => (
-                <Tag color={STATUS_COLOR[v] ?? "default"}>{v}</Tag>
-              ),
-            },
+            ...buildStrategyRequestReadColumns(ADMIN_SR_READ_AFTER_USER, {
+              titles: STRATEGY_REQUEST_READ_TITLES,
+              widths: { status: 140 },
+            }),
             {
               title: "요청 시점 Candidate 상태",
               dataIndex: "candidate_lifecycle_status_snapshot",
               render: cell,
             },
-            { title: "요청일시", dataIndex: "requested_at", render: cell },
+            ...buildStrategyRequestReadColumns(ADMIN_SR_READ_SUFFIX, {
+              titles: STRATEGY_REQUEST_READ_TITLES,
+            }),
           ]}
         />
 

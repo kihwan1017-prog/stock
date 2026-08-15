@@ -29,6 +29,11 @@ import type { StrategyRequestItem } from "@/features/user/api/userApi";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import {
+  STRATEGY_REQUEST_READ_TITLES,
+  USER_SR_READ_COLUMN_ORDER,
+  buildStrategyRequestReadColumns,
+} from "@/shared/strategyRequests/strategyRequestReadColumns";
 import { STRATEGY_REQUEST_STATUS_COLOR } from "@/shared/utils/strategyStatusColors";
 
 const ELIGIBLE_STATUSES = new Set(["PROMOTED", "ACTIVE_REVIEW"]);
@@ -218,19 +223,18 @@ export default function UserStrategyRequestsPage() {
                 onClick: () => setSelectedId(row.strategy_request_id),
               })}
               columns={[
-                { title: "ID", dataIndex: "strategy_request_id", width: 80 },
-                { title: "Candidate", dataIndex: "candidate_id", width: 100 },
-                {
-                  title: "상태",
-                  dataIndex: "status",
-                  width: 140,
-                  render: (value: string) => (
-                    <Tag color={STATUS_COLOR[value] ?? "default"}>
-                      {value}
-                    </Tag>
-                  ),
-                },
-                { title: "요청일시", dataIndex: "requested_at" },
+                // M6-C: COMMON_READ (User list = 4 keys, create/cancel은 Drawer·Card 유지)
+                ...buildStrategyRequestReadColumns<StrategyRequestItem>(
+                  USER_SR_READ_COLUMN_ORDER,
+                  {
+                    titles: STRATEGY_REQUEST_READ_TITLES,
+                    widths: {
+                      strategy_request_id: 80,
+                      candidate_id: 100,
+                      status: 140,
+                    },
+                  },
+                ),
               ]}
             />
           )}
