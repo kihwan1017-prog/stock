@@ -828,9 +828,10 @@ export const userMenuItems: UserMenuItem[] = [
         minAccess: "user",
       },
       {
+        // M7-A: 메뉴는 canonical /user/ai 직접 진입. /user/candidates/llm redirect page는 북마크 호환용으로 유지.
         key: "candidates-llm",
         label: "LLM 분석",
-        path: userRoutes.candidatesLlm,
+        path: userRoutes.ai,
         icon: <RobotOutlined />,
         enabled: true,
         minAccess: "user",

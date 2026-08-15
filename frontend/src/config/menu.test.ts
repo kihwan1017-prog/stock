@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -267,5 +267,45 @@ describe("menu link validity (STEP7)", () => {
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it("M7-A User LLM 메뉴는 /user/ai canonical을 가리키고 llm redirect는 유지한다", () => {
+    const userFlat = flattenMenuItems(userMenuItems);
+    const llmLeaves = userFlat.filter((item) => item.key === "candidates-llm");
+    expect(llmLeaves).toHaveLength(1);
+    expect(llmLeaves[0]?.path).toBe(userRoutes.ai);
+    expect(llmLeaves[0]?.path).toBe("/user/ai");
+    expect(llmLeaves[0]?.label).toBe("LLM 분석");
+
+    // 메뉴에 legacy llm path 없음
+    expect(userFlat.some((item) => item.path === userRoutes.candidatesLlm)).toBe(false);
+    expect(userFlat.some((item) => item.path === "/user/candidates/llm")).toBe(false);
+
+    // /user/ai leaf 1회 · duplicate 0
+    expect(userFlat.filter((item) => item.path === userRoutes.ai)).toHaveLength(1);
+    expect(duplicatePaths(userFlat.map((item) => item.path))).toEqual([]);
+
+    const aiPage = pageFileForRoute(userRoutes.ai);
+    const llmPage = pageFileForRoute(userRoutes.candidatesLlm);
+    expect(aiPage && existsSync(aiPage)).toBe(true);
+    expect(llmPage && existsSync(llmPage)).toBe(true);
+
+    // redirect page 계약: /user/candidates/llm → userRoutes.ai
+    const llmSource = readFileSync(llmPage!, "utf8");
+    expect(llmSource).toMatch(/redirect\s*\(\s*userRoutes\.ai\s*\)/);
+    expect(userRoutes.candidatesLlm).toBe("/user/candidates/llm");
+    expect(userRoutes.ai).toBe("/user/ai");
+
+    // M3-B / Admin leaf 회귀 없음 (샘플)
+    expect(userFlat.find((item) => item.path === userRoutes.strategyRequests)?.key).toBe(
+      "strategy-requests",
+    );
+    expect(userFlat.find((item) => item.path === userRoutes.strategyDrafts)?.key).toBe(
+      "strategy-drafts",
+    );
+    expect(
+      flattenMenuItems(adminMenuItems).find((item) => item.path === adminRoutes.strategyRequests)
+        ?.key,
+    ).toBe("strategy-requests");
   });
 });

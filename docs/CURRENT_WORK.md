@@ -7,19 +7,18 @@
 
 ## Current Phase
 
-**STEP M6-F — Shared Component Consolidation Final Regression / CLOSE** — docs baseline (`SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS`)
+**STEP M7-A — Normalize User LLM menu → `/user/ai`** — READY FOR COMMIT (`LLM_MENU_CANONICAL_ROUTE_READY_FOR_COMMIT`)
 
 | 항목 | 값 |
 |------|-----|
-| Branch | `release/v1.1.0` · code HEAD `a3612c0` |
-| **M6_CLOSE** | **YES** |
-| Evidence | [audit/MENU_M6F_SHARED_COMPONENT_FINAL_REGRESSION.md](audit/MENU_M6F_SHARED_COMPONENT_FINAL_REGRESSION.md) · JSON |
-| production / shared mutation | **0** |
-| focused tests | M6 suite **31 PASS** |
-| commit | **본 커밋으로 M6-D0/E0/F docs + CLOSE 고정** (push 없음) |
-| next | **M7-0** Legacy / redirect route cleanup PRECHECK (READ-ONLY · 삭제 구현 금지) |
+| Branch | `release/v1.1.0` · baseline M6_CLOSE `de16a45` |
+| 변경 | `menu.tsx` leaf → `userRoutes.ai` · label `LLM 분석` 유지 |
+| Legacy | `/user/candidates/llm` redirect **유지** · page 삭제 **0** |
+| 산출물 | [audit/MENU_M7A_LLM_CANONICAL_ROUTE_NORMALIZE.md](audit/MENU_M7A_LLM_CANONICAL_ROUTE_NORMALIZE.md) |
+| Tests | `menu.test.ts` 11 PASS · eslint PASS |
+| commit | **본 커밋** (M7-A only · selective) · push **금지** |
 
-병렬: residual WIP **미수정** · M6-D/E SKIP 유지
+병렬: residual WIP **미수정** · 기타 DEPRECATE redirect **미수정** (M7-B)
 
 ---
 
@@ -29,8 +28,8 @@
 
 ## Next Gate
 
-1. **M7-0** Legacy/redirect route PRECHECK (**승인 후 · READ-ONLY · 삭제 구현 금지**)  
+1. **M7-B** DEPRECATE_REDIRECT documentation (승인 후 · 삭제 금지)  
 2. residual WIP 별도  
-3. M6 추가 shared refactor — 신규 구체 필요 전까지 **종료**  
+3. M7-A 이후 menu churn — 필요 시만  
 
 → [ROADMAP.md](ROADMAP.md)

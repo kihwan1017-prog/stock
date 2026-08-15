@@ -84,7 +84,9 @@
 | MENU-M6-C | STEP M6-C | Strategy Request COMMON_READ list columns | STRATEGY_REQUEST_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (`a3612c0` · actions/history/detail 분리) | none | strategyRequestReadColumns.test.ts | M6-D0 | `docs/audit/MENU_M6C_STRATEGY_REQUEST_READ_COLUMNS_SHARED.md` |
 | MENU-M6-D0 | STEP M6-D0 | Strategy Draft RO presentation precheck | STRATEGY_DRAFT_FORMATTER_ALREADY_SHARED_SUFFICIENT · **M6-D SKIP** | **YES** (with M6-F docs 본 커밋) | none | — | M6-E0 | `docs/audit/MENU_M6D_STRATEGY_DRAFT_PRECHECK.md` |
 | MENU-M6-E0 | STEP M6-E0 | Optional shared presentation final precheck | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6-E SKIP** | **YES** (with M6-F docs 본 커밋) | none | — | M6-F | `docs/audit/MENU_M6E_SHARED_PRESENTATION_FINAL_PRECHECK.md` |
-| MENU-M6-F | STEP M6-F | Shared consolidation final regression / CLOSE | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6_CLOSE=YES** | **YES** (본 커밋 · docs only) | none | M6 focused suite 31 PASS | M7-0 (승인 후) | `docs/audit/MENU_M6F_SHARED_COMPONENT_FINAL_REGRESSION.md` |
+| MENU-M6-F | STEP M6-F | Shared consolidation final regression / CLOSE | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6_CLOSE=YES** | **YES** (`de16a45` · docs only) | none | M6 focused suite 31 PASS | M7-0 | `docs/audit/MENU_M6F_SHARED_COMPONENT_FINAL_REGRESSION.md` |
+| MENU-M7-0 | STEP M7-0 | Legacy/redirect route cleanup precheck | LEGACY_REDIRECT_CLEANUP_DESIGN_READY · REMOVE=0 | **NO** (docs only · commit 없음) | none | — | M7-A | `docs/audit/MENU_M7_LEGACY_REDIRECT_PRECHECK.md` |
+| MENU-M7-A | STEP M7-A | User LLM menu → `/user/ai` canonical | LLM_MENU_CANONICAL_ROUTE_READY_FOR_COMMIT · llm redirect 유지 | **YES** (본 커밋 · selective) | none | menu.test 11 PASS | M7-B (승인 후) | `docs/audit/MENU_M7A_LLM_CANONICAL_ROUTE_NORMALIZE.md` |
 
 ---
 
