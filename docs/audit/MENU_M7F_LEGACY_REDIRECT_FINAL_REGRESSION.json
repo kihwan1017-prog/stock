@@ -1,0 +1,42 @@
+{
+  "step": "M7-F",
+  "mode": "FINAL_AUDIT_ONLY",
+  "baseline_commit": "d1d0634",
+  "verdict": "LEGACY_REDIRECT_CLEANUP_COMPLETE_WITH_LIMITATIONS",
+  "M7_CLOSE": true,
+  "production_mutation": 0,
+  "totals": {
+    "total_redirect": 12,
+    "KEEP_REDIRECT": 3,
+    "DEPRECATE_REDIRECT": 9,
+    "REMOVE_CANDIDATE": 0,
+    "REVIEW_REQUIRED": 0,
+    "redirect_target_verified": 12,
+    "redirect_chain": 0,
+    "canonical_missing": 0,
+    "legacy_menu_exposure": 0,
+    "active_internal_legacy_nav": 0
+  },
+  "m7a": {
+    "menu_llm_href": "/user/ai",
+    "legacy_llm_redirect": "/user/candidates/llm",
+    "redirect_target": "/user/ai",
+    "page_deletion": 0
+  },
+  "external_compatibility": "UNKNOWN_EXTERNAL_COMPATIBILITY",
+  "removal_gate": "FAIL",
+  "policy": "Do not reopen redirect deletion without telemetry/external evidence",
+  "tests": {
+    "menu_test_pass": 11,
+    "eslint_menu": "PASS"
+  },
+  "regressions": {
+    "M3B": "PASS",
+    "M4": "PASS",
+    "M5": "PASS",
+    "M6": "PASS",
+    "M7A": "PASS",
+    "M7B": "PASS"
+  },
+  "next_step_exactly_one": "M8-0 — FINAL ADMIN / USER MENU, ROUTE, PERMISSION REGRESSION AUDIT"
+}

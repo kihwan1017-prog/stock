@@ -115,7 +115,7 @@
 | P5-2 | PHASE 3 Archive 이동 계획 실행 | 사용자 승인 후 이동 | OPEN |
 | P5-3 | Deprecated `alembic/versions` 정리 | ARCHIVE 표기 | OPEN |
 | P5-4 | Dual dashboard router 문서화/통합 | KEEP or CONSOLIDATE | OPEN |
-| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | M7-A LLM menu → `/user/ai` committed; next M7-B DEPRECATE docs | **IN_PROGRESS** (M7-A done · M7-B 대기) |
+| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | **M7_CLOSE=YES**; next M8-0 final menu/route/permission audit | **IN_PROGRESS** (M7 closed · M8 대기) |
 
 ---
 

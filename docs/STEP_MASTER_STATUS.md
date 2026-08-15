@@ -86,7 +86,9 @@
 | MENU-M6-E0 | STEP M6-E0 | Optional shared presentation final precheck | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6-E SKIP** | **YES** (with M6-F docs 본 커밋) | none | — | M6-F | `docs/audit/MENU_M6E_SHARED_PRESENTATION_FINAL_PRECHECK.md` |
 | MENU-M6-F | STEP M6-F | Shared consolidation final regression / CLOSE | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6_CLOSE=YES** | **YES** (`de16a45` · docs only) | none | M6 focused suite 31 PASS | M7-0 | `docs/audit/MENU_M6F_SHARED_COMPONENT_FINAL_REGRESSION.md` |
 | MENU-M7-0 | STEP M7-0 | Legacy/redirect route cleanup precheck | LEGACY_REDIRECT_CLEANUP_DESIGN_READY · REMOVE=0 | **NO** (docs only · commit 없음) | none | — | M7-A | `docs/audit/MENU_M7_LEGACY_REDIRECT_PRECHECK.md` |
-| MENU-M7-A | STEP M7-A | User LLM menu → `/user/ai` canonical | LLM_MENU_CANONICAL_ROUTE_READY_FOR_COMMIT · llm redirect 유지 | **YES** (본 커밋 · selective) | none | menu.test 11 PASS | M7-B (승인 후) | `docs/audit/MENU_M7A_LLM_CANONICAL_ROUTE_NORMALIZE.md` |
+| MENU-M7-A | STEP M7-A | User LLM menu → `/user/ai` canonical | LLM_MENU_CANONICAL_ROUTE_READY_FOR_COMMIT · llm redirect 유지 | **YES** (`d1d0634` · selective) | none | menu.test 11 PASS | M7-B | `docs/audit/MENU_M7A_LLM_CANONICAL_ROUTE_NORMALIZE.md` |
+| MENU-M7-B | STEP M7-B | Document DEPRECATE_REDIRECT (9) | LEGACY_REDIRECT_DEPRECATION_DOCUMENTED · REMOVE=0 | **YES** (본 커밋 · docs) | none | — | M7-F | `docs/audit/MENU_M7B_DEPRECATED_REDIRECT_DOCUMENTATION.md` |
+| MENU-M7-F | STEP M7-F | Legacy/redirect final regression / CLOSE | LEGACY_REDIRECT_CLEANUP_COMPLETE_WITH_LIMITATIONS · **M7_CLOSE=YES** | **YES** (본 커밋 · docs) | none | menu.test 11 PASS | M8-0 (승인 후) | `docs/audit/MENU_M7F_LEGACY_REDIRECT_FINAL_REGRESSION.md` |
 
 ---
 
