@@ -1,8 +1,12 @@
 # ROADMAP
 
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
-**최종 갱신:** 2026-08-14  
+**최종 갱신:** 2026-08-15  
 
+**Ops note (2026-08-15):** COV-A/C/B atomic commit · path defer gate LIVE in code · next **COV-B POST-COMMIT REALTIME OBSERVATION PRECHECK** (not COV-D). TP FROZEN.  
+**Ops note (2026-08-15):** COV-C source reconciliation **READY** · dry defer 72%→0% · path_quality **v2** · **PATH_GATE_EVIDENCE_READY=YES**.
+**Ops note (2026-08-15):** TP OOS design → `CANDIDATE_DEFINITION_REQUIRED` (band 2–4% not freezable). Preferred future path Option C (6% policy keep + post-hoc candle recompute on new COMPLETED). Next: **TP CANDIDATE DEFINITION REVIEW**. APPLY=NO.
+**Ops note (2026-08-15):** Technical TP CHANGE_CANDIDATE re-review — `CHANGE_CANDIDATE_NEEDS_OOS_VALIDATION` · CURRENT_TP=6% · candidate band 2–4% · **TP_APPLY_READY=NO** · STRICT_VALID=48. Next: OOS validation design (no apply).
 **Ops note (2026-08-14):** Technical Shadow Cohort REVIEW_READY v2 완료 — `TECHNICAL_COHORT_REVIEW_COMPLETE_CHANGE_CANDIDATES` (TP only; **미적용**). Next sample gate **n≈50**. 정책/threshold 변경 없음. SHADOW_ONLY 유지.  
 **News note (2026-08-14):** STEP N10 `NEWS_AB_SAMPLE_ACCUMULATING` — 자연 MATCHED 1/20 · NO_NEWS 13/20; Top-N Snapshot **OBSERVE_MORE** (구현 금지). Next: 자연 누적 지속 → REVIEW_READY; production Scanner/Gate 적용 금지.  
 **P0 ID는 PHASE 2 Canonical 고정** (PHASE 1 remaining-work 파일의 P0 번호와 다를 수 있음 → **본 문서 우선**).

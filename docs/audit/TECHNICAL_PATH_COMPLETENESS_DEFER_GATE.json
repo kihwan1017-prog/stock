@@ -1,0 +1,43 @@
+{
+  "step": "COV-B",
+  "title": "REALTIME PATH COMPLETENESS DEFER GATE",
+  "date": "2026-08-15",
+  "verdict": "PATH_COMPLETENESS_DEFER_GATE_READY_WITH_LIMITATIONS",
+  "GATE_SCOPE": "REALTIME_ACTIVE_ONLY",
+  "HISTORICAL_COMPLETED_MUTATION": 0,
+  "PATH_GATE_BEFORE_COMPLETION_WRITE": true,
+  "path_quality_version": "technical_path_quality_v2",
+  "gate_predicate": {
+    "unresolved_missing": 0,
+    "source_unavailable": false
+  },
+  "defer_reasons": ["PATH_UNRESOLVED_MISSING", "SOURCE_UNAVAILABLE"],
+  "COV_B_ADDITIONAL_NETWORK_CALLS": 0,
+  "requests_per_window": "~1 when DB missing (COV-C only; COV-B adds 0)",
+  "INFINITE_DEFER_RISK": true,
+  "MAX_RETRY_POLICY": "NOT_ADDED",
+  "CURRENT_TP": 6.0,
+  "TP_ANALYSIS": "FROZEN_PENDING_COVERAGE_REMEDIATION",
+  "OOS": "NOT_STARTED",
+  "News": {
+    "MATCHED": "2/20",
+    "NO_NEWS": "22/20",
+    "status": "ACCUMULATING",
+    "note": "READ baseline; no mutation this STEP"
+  },
+  "production_read": {
+    "ACTIVE": 1,
+    "COMPLETED": 51,
+    "active_shadow_id": 52,
+    "force_evaluate": false
+  },
+  "dry_n47": {
+    "WOULD_PASS": 47,
+    "WOULD_DEFER": 0,
+    "DEFER_RATE": 0.0
+  },
+  "focused_tests_passed": 63,
+  "commit": false,
+  "push": false,
+  "next_step": "COV-A/C/B SELECTIVE COMMIT PRECHECK"
+}

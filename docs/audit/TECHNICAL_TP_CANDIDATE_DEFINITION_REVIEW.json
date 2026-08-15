@@ -1,0 +1,944 @@
+{
+  "mode": "READ_ONLY",
+  "discovery_cutoff": "2026-08-14T23:25:40.424000+00:00",
+  "max_shadow_id": 51,
+  "baseline_tp_pct": 6.0,
+  "candidate_set_pct": [
+    2.0,
+    3.0,
+    4.0
+  ],
+  "sl_pct": 3.0,
+  "evaluator_policy": "SAME_CANDLE_SL_CONSERVATIVE",
+  "candle_source": "market.candle_minute DB only (no sync)",
+  "look_ahead_violation": 0,
+  "counts": {
+    "discovery_completed": 50,
+    "strict_valid": 47,
+    "return_missing_excluded": 3,
+    "PAIRED_VALID_N": 47
+  },
+  "summaries": {
+    "2.0": {
+      "tp_pct": 2.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": -0.0487,
+        "median": 0.0,
+        "positive_rate": 0.4468,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 2.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_capture_efficiency": {
+        "n": 37,
+        "mean": -0.5604,
+        "median": 0.4286,
+        "positive_rate": 0.5676,
+        "loss_rate": 0.2973,
+        "min": -10.0,
+        "max": 1.0
+      },
+      "tp_hit_count": 7,
+      "tp_hit_rate": 0.1489,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 37,
+      "timeout_rate": 0.7872,
+      "same_candle_ambiguous_n": 0,
+      "raw_tp_flag_count": 7,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    },
+    "3.0": {
+      "tp_pct": 3.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": 0.0331,
+        "median": 0.0,
+        "positive_rate": 0.4468,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 3.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_capture_efficiency": {
+        "n": 37,
+        "mean": -0.5413,
+        "median": 0.4286,
+        "positive_rate": 0.5676,
+        "loss_rate": 0.2973,
+        "min": -10.0,
+        "max": 1.0
+      },
+      "tp_hit_count": 5,
+      "tp_hit_rate": 0.1064,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 39,
+      "timeout_rate": 0.8298,
+      "same_candle_ambiguous_n": 0,
+      "raw_tp_flag_count": 5,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    },
+    "4.0": {
+      "tp_pct": 4.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": -0.0007,
+        "median": 0.0,
+        "positive_rate": 0.4255,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 4.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_capture_efficiency": {
+        "n": 37,
+        "mean": -0.5651,
+        "median": 0.4286,
+        "positive_rate": 0.5405,
+        "loss_rate": 0.2973,
+        "min": -10.0,
+        "max": 1.0
+      },
+      "tp_hit_count": 2,
+      "tp_hit_rate": 0.0426,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 42,
+      "timeout_rate": 0.8936,
+      "same_candle_ambiguous_n": 0,
+      "raw_tp_flag_count": 2,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    },
+    "6.0": {
+      "tp_pct": 6.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": 0.0629,
+        "median": 0.0,
+        "positive_rate": 0.4255,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 6.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_capture_efficiency": {
+        "n": 37,
+        "mean": -0.5544,
+        "median": 0.4286,
+        "positive_rate": 0.5405,
+        "loss_rate": 0.2973,
+        "min": -10.0,
+        "max": 1.0
+      },
+      "tp_hit_count": 1,
+      "tp_hit_rate": 0.0213,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 43,
+      "timeout_rate": 0.9149,
+      "same_candle_ambiguous_n": 0,
+      "raw_tp_flag_count": 1,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    }
+  },
+  "deltas_vs_6": {
+    "2.0": {
+      "paired_delta_mean": -0.1116,
+      "paired_delta_median": 0.0,
+      "delta_mean_return": -0.1116,
+      "delta_median_return": 0.0,
+      "delta_positive_rate": 0.0213,
+      "delta_loss_rate": 0.0,
+      "delta_tp_hit_rate": 0.1276
+    },
+    "3.0": {
+      "paired_delta_mean": -0.0298,
+      "paired_delta_median": 0.0,
+      "delta_mean_return": -0.0298,
+      "delta_median_return": 0.0,
+      "delta_positive_rate": 0.0213,
+      "delta_loss_rate": 0.0,
+      "delta_tp_hit_rate": 0.0851
+    },
+    "4.0": {
+      "paired_delta_mean": -0.0636,
+      "paired_delta_median": 0.0,
+      "delta_mean_return": -0.0636,
+      "delta_median_return": 0.0,
+      "delta_positive_rate": 0.0,
+      "delta_loss_rate": 0.0,
+      "delta_tp_hit_rate": 0.0213
+    }
+  },
+  "concentration": {
+    "2.0": {
+      "by_symbol": [
+        {
+          "symbol": "KRW-AVNT",
+          "n": 2,
+          "sum_delta": 0.6308,
+          "mean_delta": 0.3154
+        },
+        {
+          "symbol": "KRW-WLD",
+          "n": 4,
+          "sum_delta": 0.5626,
+          "mean_delta": 0.1407
+        },
+        {
+          "symbol": "KRW-KAITO",
+          "n": 2,
+          "sum_delta": 0.5517,
+          "mean_delta": 0.2759
+        },
+        {
+          "symbol": "KRW-VIRTUAL",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-SOL",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-DOGE",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ONDO",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ELF",
+          "n": 1,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-BTC",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-MOVE",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-RE",
+          "n": 5,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ID",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        }
+      ],
+      "leave_one_symbol_out": [
+        {
+          "drop_symbol": "KRW-AVNT",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.1306,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-BTC",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.122,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-CAP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOGE",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.1165,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOS",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ELF",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ETH",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-GRVT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0271,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOLO",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.049,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOME",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ID",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-KAITO",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.1288,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MMT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MOVE",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ONDO",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-RE",
+          "remaining_n": 42,
+          "paired_delta_mean": -0.1249,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SHIB",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SOL",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.122,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-VIRTUAL",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-WLD",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.135,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-XRP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        }
+      ],
+      "any_sign_flip": false
+    },
+    "3.0": {
+      "by_symbol": [
+        {
+          "symbol": "KRW-KAITO",
+          "n": 2,
+          "sum_delta": 2.5517,
+          "mean_delta": 1.2759
+        },
+        {
+          "symbol": "KRW-AVNT",
+          "n": 2,
+          "sum_delta": 1.0392,
+          "mean_delta": 0.5196
+        },
+        {
+          "symbol": "KRW-VIRTUAL",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-SOL",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-DOGE",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ONDO",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ELF",
+          "n": 1,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-BTC",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-MOVE",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-WLD",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-RE",
+          "n": 5,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ID",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        }
+      ],
+      "leave_one_symbol_out": [
+        {
+          "drop_symbol": "KRW-AVNT",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0542,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-BTC",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0325,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-CAP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOGE",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0311,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOS",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ELF",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ETH",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-GRVT",
+          "remaining_n": 46,
+          "paired_delta_mean": 0.0348,
+          "sign_flip_vs_overall": true
+        },
+        {
+          "drop_symbol": "KRW-HOLO",
+          "remaining_n": 46,
+          "paired_delta_mean": 0.0128,
+          "sign_flip_vs_overall": true
+        },
+        {
+          "drop_symbol": "KRW-HOME",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ID",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-KAITO",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0878,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MMT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MOVE",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ONDO",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-RE",
+          "remaining_n": 42,
+          "paired_delta_mean": -0.0333,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SHIB",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SOL",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0325,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-VIRTUAL",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-WLD",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0325,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-XRP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        }
+      ],
+      "any_sign_flip": true
+    },
+    "4.0": {
+      "by_symbol": [
+        {
+          "symbol": "KRW-VIRTUAL",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-SOL",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-DOGE",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ONDO",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ELF",
+          "n": 1,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-BTC",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-KAITO",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-MOVE",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-WLD",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-RE",
+          "n": 5,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-AVNT",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        },
+        {
+          "symbol": "KRW-ID",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0
+        }
+      ],
+      "leave_one_symbol_out": [
+        {
+          "drop_symbol": "KRW-AVNT",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0664,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-BTC",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0695,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-CAP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOGE",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0664,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOS",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ELF",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ETH",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-GRVT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0215,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOLO",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0435,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOME",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ID",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-KAITO",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0664,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MMT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MOVE",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ONDO",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-RE",
+          "remaining_n": 42,
+          "paired_delta_mean": -0.0712,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SHIB",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SOL",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0695,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-VIRTUAL",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-WLD",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0695,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-XRP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        }
+      ],
+      "any_sign_flip": false
+    }
+  },
+  "paired_shadow_ids": [
+    1,
+    2,
+    3,
+    5,
+    7,
+    8,
+    9,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50
+  ],
+  "verdict": "CANDIDATE_EVIDENCE_INSUFFICIENT",
+  "FROZEN_CANDIDATE_TP": null,
+  "operational_recommendation": "KEEP_6",
+  "PRIMARY_METRIC": "paired_counterfactual_exit_return_pct",
+  "GUARD_METRICS": [
+    "loss_rate",
+    "median_return",
+    "mae",
+    "sl_exit_rate",
+    "symbol_concentration",
+    "same_candle_ambiguous"
+  ],
+  "OOS_FREEZE_PACKAGE_READY": false,
+  "selection_rationale": [
+    "All of 2/3/4% underperform 6% on paired mean exit return (deltas -0.1116/-0.0298/-0.0636).",
+    "Median exit return identical at 0 for all TP levels.",
+    "Loss rate identical at 0.4255; SL exit rate identical (SL fixed 3%).",
+    "Higher TP-hit at 2% does not improve returns (early lock-in).",
+    "Cannot freeze a defendable change candidate for OOS."
+  ],
+  "concentration_summary": {
+    "2.0": "MEDIUM",
+    "3.0": "HIGH",
+    "4.0": "LOW"
+  },
+  "next_step_exactly_one": "TECHNICAL OBSERVATION DATA REVIEW"
+}

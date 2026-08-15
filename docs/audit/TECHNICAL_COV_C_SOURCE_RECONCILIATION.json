@@ -1,0 +1,52 @@
+{
+  "mode": "IMPLEMENTATION_NO_COMPLETED_GATE",
+  "date": "2026-08-15",
+  "final_verdict": "SOURCE_RECONCILIATION_READY",
+  "COV_C_DOES_NOT_GATE_COMPLETION": true,
+  "PATH_GATE_EVIDENCE_READY": true,
+  "PATH_QUALITY_VERSION_AFTER_COV_C": "technical_path_quality_v2",
+  "SOURCE_RECONCILIATION_EFFECT": "HIGH",
+  "RATE_CONTENTION_RISK": "LOW",
+  "requests_per_window_when_missing": "~1",
+  "dry_n47": {
+    "before_WOULD_PASS": 13,
+    "before_WOULD_DEFER": 34,
+    "before_DEFER_RATE": 0.7234,
+    "after_WOULD_PASS": 47,
+    "after_WOULD_DEFER": 0,
+    "after_DEFER_RATE": 0.0,
+    "absent_confirmed_rows": 34,
+    "absent_confirmed_minutes": 503,
+    "db_missing_source_present_rows": 0,
+    "db_missing_source_present_minutes": 0,
+    "source_unavailable_rows": 0,
+    "total_requests_est": 47,
+    "historical_db_mutation": 0
+  },
+  "false_defer_risk_after": "LOW",
+  "new_files": [
+    "src/stock_platform/operation/upbit_opportunity_shadow/source_range_reconcile.py",
+    "tests/test_upbit_shadow_source_reconcile.py"
+  ],
+  "changed_files": [
+    "src/stock_platform/operation/upbit_opportunity_shadow/path_quality.py",
+    "src/stock_platform/operation/upbit_opportunity_shadow/evaluator.py"
+  ],
+  "CURRENT_TP": 6.0,
+  "TP_ANALYSIS_STATUS": "FROZEN_PENDING_COVERAGE_REMEDIATION",
+  "OOS": "NOT_STARTED",
+  "news_baseline": {
+    "MATCHED": "2/20",
+    "NO_NEWS": "22/20",
+    "status": "NEWS_AB_SAMPLE_ACCUMULATING"
+  },
+  "mutations": {
+    "completed_gate": 0,
+    "historical_rewrite": 0,
+    "trading": 0,
+    "live_arm_scheduler": 0,
+    "commit_push": 0
+  },
+  "focused_tests": "PASS",
+  "next_step_exactly_one": "COV-B — REALTIME PATH COMPLETENESS DEFER GATE"
+}

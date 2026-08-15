@@ -1,0 +1,115 @@
+{
+  "mode": "READ_ONLY_IMPLEMENTATION_BOUNDARY_FREEZE",
+  "date": "2026-08-15",
+  "final_verdict": "COVERAGE_IMPLEMENTATION_READY_WITH_LIMITATIONS",
+  "schema_change_required": "NO",
+  "TARGET_PRICE_POLICY": "KEEP",
+  "PATH_COMPLETENESS_POLICY": "NEW_SEPARATE_GATE",
+  "completeness_tokens": [
+    "OBSERVED_BAR_COUNT",
+    "SOURCE_ABSENCE_CONFIRMED",
+    "UNRESOLVED_MISSING"
+  ],
+  "production_gate_centers_on": "UNRESOLVED_MISSING",
+  "no_trade_states": {
+    "DB_PRESENT": "YES",
+    "DB_MISSING_SOURCE_PRESENT": "YES",
+    "SOURCE_ABSENT_CONFIRMED": "YES_OPERATIONAL",
+    "SOURCE_UNAVAILABLE": "YES",
+    "SOURCE_NOT_CHECKED": "YES",
+    "synthetic_ohlc": "FORBIDDEN",
+    "metaphysical_no_trade_proof": "NOT_CLAIMED"
+  },
+  "metrics_v2": {
+    "coverage_ratio_raw": "observed/expected_diagnostic",
+    "coverage_ratio_resolved": "(observed+source_absent_confirmed)/expected",
+    "unresolved_missing_count": "expected-resolved_minutes"
+  },
+  "source_absence_check": {
+    "method": "single_range_fetch_via_collector_or_soft_sync",
+    "n_plus_one_forbidden": true,
+    "est_requests_per_shadow_per_tick": "1_to_2"
+  },
+  "soft_sync_matrix": {
+    "success": "EVALUATE_OR_DEFER_BY_PATH_QUALITY",
+    "partial": "DEFER",
+    "source_unavailable": "DEFER_FAIL_CLOSED",
+    "rate_limited": "DEFER",
+    "exception": "DEFER"
+  },
+  "retry_defer": {
+    "scheduler": "existing_evaluator_tick_only",
+    "counter_location": "evaluation_detail.path_quality",
+    "max_attempts": "PROPOSED",
+    "max_age": "PROPOSED",
+    "exhausted": "ACTIVE_plus_terminal_incomplete_never_silent_COMPLETED"
+  },
+  "completed_gate": {
+    "target_finalization": "KEEP",
+    "path_quality_gate": "unresolved_missing==0 AND source_unavailable==false",
+    "insert_point": "evaluator._apply_timeseries_before_COMPLETED"
+  },
+  "mfe_mae_tp_sl": {
+    "actual_candles_only": true,
+    "no_synthetic_for_absent_confirmed": true,
+    "SAME_CANDLE_SL_CONSERVATIVE": "KEEP"
+  },
+  "historical": {
+    "mode": "BACKFILL_AND_COMPARE",
+    "preview_compare": "ALLOWED_IN_LATER_WAVE",
+    "apply": "SEPARATE_APPROVAL_REUSE_RECONCILIATION",
+    "rewrite_default": "FORBIDDEN",
+    "selection": "raw_cov_lt_0.8_review_set_then_unresolved_missing_filter"
+  },
+  "waves": {
+    "COV-A": {
+      "name": "PATH_QUALITY_OBSERVABILITY",
+      "defer_gate": false,
+      "primary_files": [
+        "operation/upbit_opportunity_shadow/path_quality.py (new)",
+        "operation/upbit_opportunity_shadow/evaluator.py (_compute_payload)",
+        "tests/test_upbit_shadow_path_quality.py (new)"
+      ],
+      "risk": "LOW"
+    },
+    "COV-B": {
+      "name": "REALTIME_COMPLETENESS_GATE_DEFER",
+      "primary_files": ["evaluator._apply_timeseries", "evaluator_scheduler (reuse)"],
+      "risk": "MED"
+    },
+    "COV-C": {
+      "name": "SOFT_SYNC_RELIABILITY_FAIL_CLOSED",
+      "primary_files": ["candle_loader.ensure_shadow_minute_bars"],
+      "risk": "MED"
+    },
+    "COV-D": {
+      "name": "HISTORICAL_PREVIEW_COMPARE",
+      "primary_files": ["reconciliation.py", "mismatch.py"],
+      "risk": "MED"
+    },
+    "COV-E": {
+      "name": "POST_REMEDIATION_VALIDATION",
+      "primary_files": ["audit docs", "optional to_public/UI"],
+      "risk": "LOW"
+    }
+  },
+  "CURRENT_TP": 6.0,
+  "TP_ANALYSIS_STATUS": "FROZEN_PENDING_COVERAGE_REMEDIATION",
+  "OOS": "NOT_STARTED",
+  "news_baseline": {
+    "MATCHED": "2/20",
+    "NO_NEWS": "22/20",
+    "status": "NEWS_AB_SAMPLE_ACCUMULATING"
+  },
+  "mutations": {
+    "production": 0,
+    "db": 0,
+    "migration": 0,
+    "backfill": 0,
+    "trading": 0,
+    "live_arm_scheduler": 0,
+    "commit_push": 0
+  },
+  "next_step_exactly_one": "COV-A — PATH QUALITY OBSERVABILITY",
+  "look_ahead_violation": 0
+}

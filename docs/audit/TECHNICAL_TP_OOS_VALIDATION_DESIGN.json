@@ -1,0 +1,38 @@
+{
+  "step": "TECHNICAL_TP_OOS_VALIDATION_DESIGN",
+  "mode": "READ_ONLY_DESIGN_ONLY",
+  "head": "4f0df10",
+  "verdict": "CANDIDATE_DEFINITION_REQUIRED",
+  "CURRENT_TP_pct": 6.0,
+  "candidate_band_pct": [2.0, 4.0],
+  "discovery_cohort": {
+    "max_shadow_id_completed": 51,
+    "max_completed_at": "2026-08-14T23:25:40.424Z",
+    "rule": "shadow_id<=51 OR completed_at<=cutoff; freeze discovery"
+  },
+  "oos_unit": "new COMPLETED after discovery cutoff only",
+  "COUNTERFACTUAL_PNL": "PARTIAL",
+  "COUNTERFACTUAL_PNL_WITH_CANDLE_RECOMPUTE": "EXACT_UNDER_SAME_CANDLE_SL_CONSERVATIVE",
+  "tp_sl_ordering": "available via compute_tp_sl.first_hit; same-candle = SL conservative / AMBIGUOUS intrabar",
+  "candidate_freeze": "CANDIDATE_NOT_FREEZABLE",
+  "frozen_candidate_proposal": null,
+  "primary_metric_proposal": "counterfactual_exit_return_pct_at_first_hit",
+  "guard_metrics": ["mae", "loss_rate", "median_return", "strict_valid_rate", "symbol_concentration"],
+  "existing_oos_sample_policy": "NO_EXISTING_OOS_SAMPLE_POLICY",
+  "proposed_MIN_REVIEW": 30,
+  "proposed_TARGET_REVIEW": 50,
+  "LOOK_AHEAD_PROTECTION_DESIGN": "PASS",
+  "recommended_option": "C",
+  "required_changes": {
+    "frontend": "NONE_TO_LOW",
+    "backend": "LOW_TO_MED",
+    "db_migration": "NONE",
+    "scheduler": "NONE_TO_LOW",
+    "trading_order_outbox": "NONE",
+    "live_arm_trading_scheduler": "NONE"
+  },
+  "news_isolation": true,
+  "production_mutation": 0,
+  "db_mutation": 0,
+  "next_step_exactly_one": "TP CANDIDATE DEFINITION REVIEW"
+}

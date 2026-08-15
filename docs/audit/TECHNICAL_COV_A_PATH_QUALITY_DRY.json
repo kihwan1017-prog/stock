@@ -1,0 +1,74 @@
+{
+  "mode": "READ_ONLY_DRY",
+  "cases": [
+    {
+      "shadow_id": 1,
+      "symbol": "KRW-VIRTUAL",
+      "path_quality": {
+        "path_quality_version": "technical_path_quality_v1",
+        "expected_minutes": 61,
+        "observed_candles": 51,
+        "source_absent_confirmed": 0,
+        "unresolved_missing": 10,
+        "coverage_ratio_raw": 0.836066,
+        "coverage_ratio_resolved": 0.836066,
+        "max_gap_minutes": 2,
+        "gap_count": 9,
+        "first_candle_at": "2026-08-12T20:05:00+00:00",
+        "last_candle_at": "2026-08-12T21:05:00+00:00",
+        "source_unavailable": false,
+        "sync_attempts": 0,
+        "sync_last_result": null,
+        "defer_reason": null,
+        "missing_range_count": 9
+      },
+      "db_updated": false
+    },
+    {
+      "shadow_id": 22,
+      "symbol": "KRW-ONDO",
+      "path_quality": {
+        "path_quality_version": "technical_path_quality_v1",
+        "expected_minutes": 61,
+        "observed_candles": 58,
+        "source_absent_confirmed": 0,
+        "unresolved_missing": 3,
+        "coverage_ratio_raw": 0.95082,
+        "coverage_ratio_resolved": 0.95082,
+        "max_gap_minutes": 1,
+        "gap_count": 3,
+        "first_candle_at": "2026-08-13T13:27:00+00:00",
+        "last_candle_at": "2026-08-13T14:26:00+00:00",
+        "source_unavailable": false,
+        "sync_attempts": 0,
+        "sync_last_result": null,
+        "defer_reason": null,
+        "missing_range_count": 3
+      },
+      "db_updated": false
+    },
+    {
+      "shadow_id": 49,
+      "symbol": "KRW-GRVT",
+      "path_quality": {
+        "path_quality_version": "technical_path_quality_v1",
+        "expected_minutes": 61,
+        "observed_candles": 24,
+        "source_absent_confirmed": 0,
+        "unresolved_missing": 37,
+        "coverage_ratio_raw": 0.393443,
+        "coverage_ratio_resolved": 0.393443,
+        "max_gap_minutes": 7,
+        "gap_count": 12,
+        "first_candle_at": "2026-08-13T21:21:00+00:00",
+        "last_candle_at": "2026-08-13T22:19:00+00:00",
+        "source_unavailable": false,
+        "sync_attempts": 0,
+        "sync_last_result": null,
+        "defer_reason": null,
+        "missing_range_count": 12
+      },
+      "db_updated": false
+    }
+  ]
+}

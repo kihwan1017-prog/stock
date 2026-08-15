@@ -7,19 +7,20 @@
 
 ## Current Phase
 
-**STEP M8-F — Menu Consolidation FINAL CLOSE** — **MENU_CONSOLIDATION_CLOSE=YES** (`MENU_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS`)
+**COV-A/C/B SELECTIVE COMMIT** — **OPTION C atomic** · message `feat(technical): reconcile and gate shadow candle paths`
 
 | 항목 | 값 |
 |------|-----|
-| Branch | `release/v1.1.0` · HEAD `f18d02f` · ahead **10** |
-| Final IA | Admin **11/55** · User **12/29** |
-| Close | **M3–M8 CLOSED** |
-| 산출물 | [audit/MENU_M8F_FINAL_MENU_ROUTE_PERMISSION_CLOSE.md](audit/MENU_M8F_FINAL_MENU_ROUTE_PERMISSION_CLOSE.md) · JSON |
-| production mutation | **0** |
-| commit | **본 커밋** (M8-0/F docs · selective) · push **금지** |
-| next | trading-system roadmap monitoring (menu 트랙 종료) |
+| Branch | `release/v1.1.0` |
+| Scope | path_quality v2 · source reconcile · ACTIVE path defer gate |
+| GATE_SCOPE | **REALTIME_ACTIVE_ONLY** |
+| Predicate | `unresolved_missing==0 AND source_unavailable==false` |
+| CURRENT_TP | **6.0%** · TP **FROZEN_PENDING_COVERAGE_REMEDIATION** |
+| OOS | **NOT_STARTED** |
+| push | **금지** |
+| next | **COV-B POST-COMMIT REALTIME OBSERVATION PRECHECK** (COV-D 금지) |
 
-병렬: residual WIP **미수정** · redirect 삭제 재개 **금지**
+News ACCUMULATING · MENU_CONSOLIDATION_CLOSE=YES · residual WIP 보호
 
 ---
 
@@ -29,8 +30,7 @@
 
 ## Next Gate
 
-1. **Trading roadmap monitoring** — Technical VALID cohort 50 / News A-B sample (READ)  
-2. residual WIP 별도 트랙  
-3. menu IA 변경 — 신규 기능/UX 요구 시에만 별도 STEP  
+1. **COV-B POST-COMMIT REALTIME OBSERVATION PRECHECK** (승인 후 · READ-ONLY)  
+2. News A/B 자연 누적 · residual WIP 별도  
 
 → [ROADMAP.md](ROADMAP.md)

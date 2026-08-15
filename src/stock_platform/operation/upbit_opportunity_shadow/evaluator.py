@@ -34,6 +34,16 @@ from stock_platform.operation.upbit_opportunity_shadow.entities import (
 from stock_platform.operation.upbit_opportunity_shadow.notify import (
     publish_shadow_result,
 )
+from stock_platform.operation.upbit_opportunity_shadow.path_quality import (
+    absent_ats_from_target_map,
+    build_path_defer_detail,
+    compute_path_quality,
+    path_completeness_pass,
+    source_unavailable_from_maps,
+)
+from stock_platform.operation.upbit_opportunity_shadow.source_range_reconcile import (
+    reconcile_observation_source,
+)
 from stock_platform.operation.upbit_opportunity_shadow.service import (
     UpbitOpportunityShadowService,
 )
@@ -187,13 +197,69 @@ class UpbitOpportunityShadowEvaluator:
 
         changed = False
         just_completed = False
+        deferred = False
         windows = computed.get("windows") or {}
+        path_quality = computed.get("path_quality")
+        # COV-B: path completeness gate — COMPLETED / 60m final write 직전
+        path_pass = path_completeness_pass(path_quality)
 
         if persist:
             detail = dict(row.evaluation_detail or {})
-            # detail.windows 와 return_* 컬럼을 동일 final 결과로만 갱신
             prev_windows = dict(detail.get("windows") or {})
 
+            if not path_pass:
+                # DEFER: ACTIVE 유지 · final column/COMPLETED 금지 · evidence만
+                deferred = True
+                for minutes in EVALUATION_WINDOWS_MINUTES:
+                    key = str(minutes)
+                    obs = dict(windows.get(key) or {})
+                    attr_at = f"evaluated_{minutes}m_at"
+                    if getattr(row, attr_at) is not None:
+                        # 이미 확정된 window는 유지 (idempotent detail sync)
+                        if obs.get("status") == "OK":
+                            prev_windows[key] = {**obs, "final": True}
+                        continue
+                    prev_windows[key] = {
+                        **obs,
+                        "observed_candle_at": None,
+                        "price": None,
+                        "return_pct": None,
+                        "final": False,
+                    }
+                    windows[key] = dict(prev_windows[key])
+
+                detail["windows"] = prev_windows
+                detail["source"] = "minute_candle_historical_v1"
+                detail["sl_pct"] = computed.get("sl_pct")
+                detail["tp_pct"] = computed.get("tp_pct")
+                detail["window_finalization"] = "last_known_price_at_target_v1"
+                detail["max_prior_lag_seconds"] = DEFAULT_MAX_PRIOR_LAG_SECONDS
+                detail["target_resolve"] = computed.get("target_resolve")
+                if path_quality is not None:
+                    detail["path_quality"] = path_quality
+                detail["path_defer"] = build_path_defer_detail(
+                    path_quality=path_quality
+                    if isinstance(path_quality, dict)
+                    else None,
+                    previous=detail.get("path_defer")
+                    if isinstance(detail.get("path_defer"), dict)
+                    else None,
+                    now=self._now,
+                )
+                if computed.get("source_reconcile") is not None:
+                    detail["source_reconcile"] = computed.get("source_reconcile")
+                row.evaluation_detail = detail
+                row.updated_at = self._now
+                changed = True
+                # evaluated_60m_at / COMPLETED / mfe·tp columns — 미기록
+                return {
+                    "changed": changed,
+                    "just_completed": False,
+                    "deferred": True,
+                    "computed": computed,
+                }
+
+            # PATH PASS — 기존 finalization
             for minutes in EVALUATION_WINDOWS_MINUTES:
                 key = str(minutes)
                 obs = dict(windows.get(key) or {})
@@ -201,7 +267,6 @@ class UpbitOpportunityShadowEvaluator:
                 already_final = getattr(row, attr_at) is not None
 
                 if already_final:
-                    # idempotent — 이미 final stamp 된 window 는 덮어쓰지 않음
                     if obs.get("status") == "OK":
                         synced = {**obs, "final": True}
                         prev_windows[key] = synced
@@ -209,7 +274,6 @@ class UpbitOpportunityShadowEvaluator:
                     continue
 
                 if obs.get("status") != "OK":
-                    # provisional / 미완료 — final column·evaluated_*_at 금지
                     prev_windows[key] = {
                         **obs,
                         "observed_candle_at": None,
@@ -220,7 +284,6 @@ class UpbitOpportunityShadowEvaluator:
                     windows[key] = dict(prev_windows[key])
                     continue
 
-                # FINAL — column + detail 한 트랜잭션에서 동일 observation
                 price = obs.get("price")
                 ret = obs.get("return_pct")
                 if price is None or ret is None:
@@ -273,6 +336,16 @@ class UpbitOpportunityShadowEvaluator:
             detail["window_finalization"] = "last_known_price_at_target_v1"
             detail["max_prior_lag_seconds"] = DEFAULT_MAX_PRIOR_LAG_SECONDS
             detail["target_resolve"] = computed.get("target_resolve")
+            if path_quality is not None:
+                detail["path_quality"] = path_quality
+            # PASS 시 path_defer 정리(남아 있으면 해소 표시)
+            if detail.get("path_defer"):
+                cleared = dict(detail["path_defer"])
+                cleared["resolved_at"] = as_utc(self._now).isoformat()
+                cleared["resolved"] = True
+                detail["path_defer"] = cleared
+            if computed.get("source_reconcile") is not None:
+                detail["source_reconcile"] = computed.get("source_reconcile")
             row.evaluation_detail = detail
             row.updated_at = self._now
 
@@ -288,6 +361,7 @@ class UpbitOpportunityShadowEvaluator:
         return {
             "changed": changed,
             "just_completed": just_completed,
+            "deferred": deferred,
             "computed": computed,
         }
 
@@ -343,6 +417,20 @@ class UpbitOpportunityShadowEvaluator:
             resolved.get("source_unavailable_by_target") or {}
         )
 
+        # COV-C: 60m observation window source range reconcile (evidence)
+        # COV-B gate는 _apply_timeseries에서 path_quality 기준 적용
+        bars, source_evidence = await reconcile_observation_source(
+            self._session,
+            symbol=str(row.symbol),
+            detected_at=detected,
+            terminal_at=terminal,
+            now=now_utc,
+            bars=bars,
+            timeframe=1,
+            allow_sync=self._allow_sync,
+            persist_upsert=bool(self._allow_sync),
+        )
+
         observations = observe_windows(
             bars,
             detected_at=detected,
@@ -383,6 +471,47 @@ class UpbitOpportunityShadowEvaluator:
         ]
         distinct_prices = len({p for p in ok_prices if p is not None})
 
+        # COV-A/C path quality — source evidence 반영 (COMPLETED gate는 _apply_timeseries).
+        sync_payload = loaded.get("sync")
+        source_unavail, sync_last = source_unavailable_from_maps(
+            source_unavailable_by_target=source_unavailable_by_target,
+            sync_payload=sync_payload,
+        )
+        if source_evidence.source_unavailable:
+            source_unavail = True
+            sync_last = (
+                source_evidence.source_check_result or sync_last or "SOURCE_RANGE_UNAVAILABLE"
+            )
+        sync_attempts = 0
+        if sync_payload is not None:
+            sync_attempts += 1
+        if source_evidence.source_check_performed:
+            sync_attempts += 1
+
+        absent_ats = absent_ats_from_target_map(absent_by_target)
+        absent_ats |= source_evidence.absent_ats()
+
+        path_quality = compute_path_quality(
+            detected_at=detected,
+            end_at=terminal,
+            now=now_utc,
+            bars=bars,
+            source_absent_confirmed_ats=absent_ats,
+            source_unavailable=source_unavail,
+            sync_attempts=sync_attempts,
+            sync_last_result=sync_last,
+            defer_reason=None,
+            source_check_performed=source_evidence.source_check_performed,
+            source_check_result=source_evidence.source_check_result,
+            source_candle_count=source_evidence.source_candle_count,
+            db_missing_source_present=len(
+                source_evidence.db_missing_source_present_ats
+            ),
+            source_reconcile_requests=source_evidence.requests,
+        ).to_detail_dict()
+        # provenance blob (migration 없이 detail에 첨부)
+        path_quality["source_reconcile"] = source_evidence.to_detail_dict()
+
         return {
             "ok": True,
             "symbol": row.symbol,
@@ -391,6 +520,7 @@ class UpbitOpportunityShadowEvaluator:
             "evaluated_at": now_utc.isoformat(),
             "candle_count": len(bars),
             "sync": loaded.get("sync"),
+            "source_reconcile": source_evidence.to_detail_dict(),
             "target_resolve": resolved.get("resolve_detail"),
             "windows": windows,
             "mfe_pct": _round6(mfe),
@@ -412,6 +542,7 @@ class UpbitOpportunityShadowEvaluator:
             "sl_pct": sl_pct,
             "distinct_window_prices": distinct_prices,
             "max_prior_lag_seconds": DEFAULT_MAX_PRIOR_LAG_SECONDS,
+            "path_quality": path_quality,
             "orders_created": 0,
         }
 
