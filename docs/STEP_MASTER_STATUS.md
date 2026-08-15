@@ -88,7 +88,9 @@
 | MENU-M7-0 | STEP M7-0 | Legacy/redirect route cleanup precheck | LEGACY_REDIRECT_CLEANUP_DESIGN_READY · REMOVE=0 | **NO** (docs only · commit 없음) | none | — | M7-A | `docs/audit/MENU_M7_LEGACY_REDIRECT_PRECHECK.md` |
 | MENU-M7-A | STEP M7-A | User LLM menu → `/user/ai` canonical | LLM_MENU_CANONICAL_ROUTE_READY_FOR_COMMIT · llm redirect 유지 | **YES** (`d1d0634` · selective) | none | menu.test 11 PASS | M7-B | `docs/audit/MENU_M7A_LLM_CANONICAL_ROUTE_NORMALIZE.md` |
 | MENU-M7-B | STEP M7-B | Document DEPRECATE_REDIRECT (9) | LEGACY_REDIRECT_DEPRECATION_DOCUMENTED · REMOVE=0 | **YES** (본 커밋 · docs) | none | — | M7-F | `docs/audit/MENU_M7B_DEPRECATED_REDIRECT_DOCUMENTATION.md` |
-| MENU-M7-F | STEP M7-F | Legacy/redirect final regression / CLOSE | LEGACY_REDIRECT_CLEANUP_COMPLETE_WITH_LIMITATIONS · **M7_CLOSE=YES** | **YES** (본 커밋 · docs) | none | menu.test 11 PASS | M8-0 (승인 후) | `docs/audit/MENU_M7F_LEGACY_REDIRECT_FINAL_REGRESSION.md` |
+| MENU-M7-F | STEP M7-F | Legacy/redirect final regression / CLOSE | LEGACY_REDIRECT_CLEANUP_COMPLETE_WITH_LIMITATIONS · **M7_CLOSE=YES** | **YES** (`f18d02f` · docs) | none | menu.test 11 PASS | M8-0 | `docs/audit/MENU_M7F_LEGACY_REDIRECT_FINAL_REGRESSION.md` |
+| MENU-M8-0 | STEP M8-0 | Final menu/route/permission regression precheck | FINAL_IA_REGRESSION_AUDIT_READY_WITH_LIMITATIONS | **YES** (본 커밋 · docs) | none | focused 66 PASS / 1 WIP FAIL | M8-F | `docs/audit/MENU_M8_FINAL_REGRESSION_PRECHECK.md` |
+| MENU-M8-F | STEP M8-F | Final menu consolidation CLOSE | MENU_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **MENU_CONSOLIDATION_CLOSE=YES** · M3–M8 CLOSED | **YES** (본 커밋 · docs) | none | 66 PASS / 1 WIP FAIL | trading roadmap monitoring | `docs/audit/MENU_M8F_FINAL_MENU_ROUTE_PERMISSION_CLOSE.md` |
 
 ---
 

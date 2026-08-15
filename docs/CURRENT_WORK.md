@@ -7,19 +7,19 @@
 
 ## Current Phase
 
-**STEP M7-F — Legacy/Redirect Final Regression** — **M7_CLOSE=YES** (`LEGACY_REDIRECT_CLEANUP_COMPLETE_WITH_LIMITATIONS`)
+**STEP M8-F — Menu Consolidation FINAL CLOSE** — **MENU_CONSOLIDATION_CLOSE=YES** (`MENU_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS`)
 
 | 항목 | 값 |
 |------|-----|
-| Branch | `release/v1.1.0` · code HEAD `d1d0634` |
-| redirects | 12 (KEEP 3 · DEPRECATE 9) · chain **0** · REMOVE **0** |
-| 산출물 | [audit/MENU_M7F_LEGACY_REDIRECT_FINAL_REGRESSION.md](audit/MENU_M7F_LEGACY_REDIRECT_FINAL_REGRESSION.md) · JSON |
+| Branch | `release/v1.1.0` · HEAD `f18d02f` · ahead **10** |
+| Final IA | Admin **11/55** · User **12/29** |
+| Close | **M3–M8 CLOSED** |
+| 산출물 | [audit/MENU_M8F_FINAL_MENU_ROUTE_PERMISSION_CLOSE.md](audit/MENU_M8F_FINAL_MENU_ROUTE_PERMISSION_CLOSE.md) · JSON |
 | production mutation | **0** |
-| Tests | `menu.test.ts` 11 PASS |
-| commit | **본 커밋** (M7-B/F docs · selective) · push **금지** |
-| next | **M8-0** Final Admin/User menu·route·permission regression |
+| commit | **본 커밋** (M8-0/F docs · selective) · push **금지** |
+| next | trading-system roadmap monitoring (menu 트랙 종료) |
 
-정책: external UNKNOWN → redirect 삭제 재개 금지 · residual WIP **미수정**
+병렬: residual WIP **미수정** · redirect 삭제 재개 **금지**
 
 ---
 
@@ -29,8 +29,8 @@
 
 ## Next Gate
 
-1. **M7-B/F docs selective commit** (사용자 승인 후)  
-2. **M8-0** Final menu/route/permission audit  
-3. residual WIP 별도  
+1. **Trading roadmap monitoring** — Technical VALID cohort 50 / News A-B sample (READ)  
+2. residual WIP 별도 트랙  
+3. menu IA 변경 — 신규 기능/UX 요구 시에만 별도 STEP  
 
 → [ROADMAP.md](ROADMAP.md)
