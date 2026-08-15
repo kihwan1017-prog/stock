@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Alert, Card, Empty, Select, Space, Table, Typography } from "antd";
+import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -12,6 +13,12 @@ import * as userApi from "@/features/user/api/userApi";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import {
+  USER_ORDER_READ_COLUMN_ORDER,
+  USER_ORDER_READ_TITLES,
+  buildOrderReadColumns,
+  replaceOrderReadColumn,
+} from "@/shared/orders/orderReadColumns";
 
 export type BrokerCode = "KIWOOM" | "UPBIT" | "PAPER";
 
@@ -99,6 +106,85 @@ export function BrokerOrdersView({ title, brokerCode }: BrokerOrdersViewProps) {
   });
 
   const rows = ordersQuery.data ?? [];
+
+  // M6-B: COMMON_READ + User rich status override + created_at
+  const orderColumns = useMemo(() => {
+    const common = buildOrderReadColumns<TradeOrder>(USER_ORDER_READ_COLUMN_ORDER, {
+      titles: USER_ORDER_READ_TITLES,
+      widths: {
+        order_id: 80,
+        symbol: 100,
+        exchange_code: 80,
+        side_code: 80,
+        status_code: 220,
+        order_quantity: 90,
+        order_price: 90,
+      },
+    });
+    const withRichStatus = replaceOrderReadColumn<TradeOrder>(common, "status_code", {
+      title: "상태",
+      dataIndex: "status_code",
+      key: "status_code",
+      width: 220,
+      render: (value: unknown, record: TradeOrder) => {
+        const code = String(value ?? "");
+        const labelMap: Record<string, string> = {
+          SUBMITTING: "주문 전송 중",
+          AMBIGUOUS_SUBMISSION: "주문 확인 중",
+          REMOTE_LOOKUP_PENDING: "재확인 예정",
+          ACCEPTED: "거래소 주문 확인 완료",
+          SENT: "거래소 주문 확인 완료",
+          MANUAL_REVIEW_REQUIRED: "관리자 확인 필요",
+          IDENTITY_CONFLICT: "관리자 확인 필요",
+        };
+        const label = labelMap[code] ?? code;
+        // STEP 8-5-14 — 재확인 진행 상황 안내 (Claim/Lock 비노출)
+        const isAmbiguousLike =
+          code === "AMBIGUOUS_SUBMISSION" ||
+          code === "REMOTE_LOOKUP_PENDING";
+        if (
+          !record ||
+          (!isAmbiguousLike && code !== "MANUAL_REVIEW_REQUIRED")
+        ) {
+          return label;
+        }
+        const attemptCount = Number(record.remote_lookup_attempt_count ?? 0);
+        if (code === "MANUAL_REVIEW_REQUIRED") {
+          return (
+            <span>
+              {label}
+              <br />
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                자동 재조회 {attemptCount}회 완료 — 관리자가 확인 후
+                처리합니다.
+              </Typography.Text>
+            </span>
+          );
+        }
+        const nextLookupAt = record.next_remote_lookup_at
+          ? dayjs(String(record.next_remote_lookup_at)).format("HH:mm:ss")
+          : null;
+        return (
+          <span>
+            {label}
+            <br />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              {nextLookupAt
+                ? `다음 재조회 ${nextLookupAt} (시도 ${attemptCount}회)`
+                : `자동 재조회 대기 중 (시도 ${attemptCount}회)`}
+            </Typography.Text>
+          </span>
+        );
+      },
+    });
+    const createdAt: ColumnsType<TradeOrder>[number] = {
+      title: "시각",
+      dataIndex: "created_at",
+      render: (value?: string) =>
+        value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "-",
+    };
+    return [...withRichStatus, createdAt];
+  }, []);
 
   return (
     <UserPageShell
@@ -205,77 +291,7 @@ export function BrokerOrdersView({ title, brokerCode }: BrokerOrdersViewProps) {
                   onChange: setPage,
                   showSizeChanger: false,
                 }}
-                columns={[
-                  { title: "ID", dataIndex: "order_id", width: 80 },
-                  { title: "종목", dataIndex: "symbol", width: 100 },
-                  { title: "시장", dataIndex: "exchange_code", width: 80 },
-                  { title: "구분", dataIndex: "side_code", width: 80 },
-                  {
-                    title: "상태",
-                    dataIndex: "status_code",
-                    width: 220,
-                    render: (value?: string, record?: TradeOrder) => {
-                      const code = String(value ?? "");
-                      const labelMap: Record<string, string> = {
-                        SUBMITTING: "주문 전송 중",
-                        AMBIGUOUS_SUBMISSION: "주문 확인 중",
-                        REMOTE_LOOKUP_PENDING: "재확인 예정",
-                        ACCEPTED: "거래소 주문 확인 완료",
-                        SENT: "거래소 주문 확인 완료",
-                        MANUAL_REVIEW_REQUIRED: "관리자 확인 필요",
-                        IDENTITY_CONFLICT: "관리자 확인 필요",
-                      };
-                      const label = labelMap[code] ?? code;
-                      // STEP 8-5-14 — 재확인 진행 상황을 사용자에게 안내
-                      // (Claim/Lock 등 내부 상태는 노출하지 않음)
-                      const isAmbiguousLike =
-                        code === "AMBIGUOUS_SUBMISSION" ||
-                        code === "REMOTE_LOOKUP_PENDING";
-                      if (!record || (!isAmbiguousLike && code !== "MANUAL_REVIEW_REQUIRED")) {
-                        return label;
-                      }
-                      const attemptCount = Number(
-                        record.remote_lookup_attempt_count ?? 0,
-                      );
-                      if (code === "MANUAL_REVIEW_REQUIRED") {
-                        return (
-                          <span>
-                            {label}
-                            <br />
-                            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                              자동 재조회 {attemptCount}회 완료 — 관리자가
-                              확인 후 처리합니다.
-                            </Typography.Text>
-                          </span>
-                        );
-                      }
-                      const nextLookupAt = record.next_remote_lookup_at
-                        ? dayjs(String(record.next_remote_lookup_at)).format(
-                            "HH:mm:ss",
-                          )
-                        : null;
-                      return (
-                        <span>
-                          {label}
-                          <br />
-                          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                            {nextLookupAt
-                              ? `다음 재조회 ${nextLookupAt} (시도 ${attemptCount}회)`
-                              : `자동 재조회 대기 중 (시도 ${attemptCount}회)`}
-                          </Typography.Text>
-                        </span>
-                      );
-                    },
-                  },
-                  { title: "수량", dataIndex: "order_quantity", width: 90 },
-                  { title: "가격", dataIndex: "order_price", width: 90 },
-                  {
-                    title: "시각",
-                    dataIndex: "created_at",
-                    render: (value?: string) =>
-                      value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "-",
-                  },
-                ]}
+                columns={orderColumns}
               />
             </Card>
           </>

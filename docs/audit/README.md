@@ -59,4 +59,7 @@
 | [MENU_M6_SHARED_COMPONENT_PRECHECK.md](MENU_M6_SHARED_COMPONENT_PRECHECK.md) | Admin/User 공유 컴포넌트 후보 전수 조사 (STEP M6-0, PRECHECK ONLY) |
 | [MENU_M6_SHARED_COMPONENT_PRECHECK.json](MENU_M6_SHARED_COMPONENT_PRECHECK.json) | M6-0 구조화 산출물 |
 | [MENU_M6A_SHARED_FORMATTERS_UTILS.md](MENU_M6A_SHARED_FORMATTERS_UTILS.md) | shared/utils 추출 · user→admin dataHelpers 제거 (STEP M6-A) |
+| [MENU_M6B_ORDER_COLUMNS_PRECHECK.md](MENU_M6B_ORDER_COLUMNS_PRECHECK.md) | Admin/User 주문 READ columns 공용화 사전점검 (STEP M6-B0) |
+| [MENU_M6B_ORDER_COLUMNS_PRECHECK.json](MENU_M6B_ORDER_COLUMNS_PRECHECK.json) | M6-B0 구조화 산출물 |
+| [MENU_M6B_ORDER_READ_COLUMNS_SHARED.md](MENU_M6B_ORDER_READ_COLUMNS_SHARED.md) | COMMON_READ 7 columns shared 추출 (STEP M6-B) |
 | [quarantined_migrations/README.md](quarantined_migrations/README.md) | Active Alembic graph에서 격리한 WIP migration 증거 (예: h1a2b3c4d5e6) |

@@ -22,6 +22,11 @@ import * as userApi from "@/features/user/api/userApi";
 import { AccountStrategyPerformancePanel } from "@/features/user/orders/AccountStrategyPerformancePanel";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import {
+  USER_ORDER_READ_COLUMN_ORDER,
+  USER_ORDER_READ_TITLES,
+  buildOrderReadColumns,
+} from "@/shared/orders/orderReadColumns";
 
 const { RangePicker } = DatePicker;
 
@@ -254,13 +259,19 @@ export default function UserOrdersPage() {
                   showSizeChanger: false,
                 }}
                 columns={[
-                  { title: "ID", dataIndex: "order_id", width: 80 },
-                  { title: "종목", dataIndex: "symbol", width: 100 },
-                  { title: "시장", dataIndex: "exchange_code", width: 80 },
-                  { title: "구분", dataIndex: "side_code", width: 80 },
-                  { title: "상태", dataIndex: "status_code", width: 120 },
-                  { title: "수량", dataIndex: "order_quantity", width: 90 },
-                  { title: "가격", dataIndex: "order_price", width: 90 },
+                  // M6-B: COMMON_READ (User 기존 순서) + created_at
+                  ...buildOrderReadColumns<TradeOrder>(USER_ORDER_READ_COLUMN_ORDER, {
+                    titles: USER_ORDER_READ_TITLES,
+                    widths: {
+                      order_id: 80,
+                      symbol: 100,
+                      exchange_code: 80,
+                      side_code: 80,
+                      status_code: 120,
+                      order_quantity: 90,
+                      order_price: 90,
+                    },
+                  }),
                   {
                     title: "시각",
                     dataIndex: "created_at",

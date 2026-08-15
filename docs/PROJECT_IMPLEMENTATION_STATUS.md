@@ -74,7 +74,7 @@
 | Fill/Position | PARTIAL | COMMITTED_BASELINE | Upbit OK / Kiwoom GAP / Paper GAP | PARTIALLY_VERIFIED | P0-5 | P0-2 | P0-2,P0-5 | fill sync, paper | Fill 파이프라인 |
 | Settlement/PnL | PARTIAL | WORKTREE FK | PARTIAL | PARTIALLY_VERIFIED | PARTIAL | PARTIAL | P0-4 | settlement/ | FK 커밋 |
 | Recovery/Reconcile | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | Upbit>Kiwoom | PARTIALLY_VERIFIED | OK | PARTIAL | P0-2 | recovery/ | Kiwoom reconcile |
-| Frontend | COMPLETE_WITH_LIMITATIONS | **M5 Hub CLOSE**; M6-0 DESIGN_READY; **M6-A shared/utils committed**; Ambiguous/rowKey WIP residual | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | user→admin dataHelpers=0 · admin shim 잔존 · next M6-B0 |
+| Frontend | COMPLETE_WITH_LIMITATIONS | **M5 Hub CLOSE**; **M6-A/M6-B committed** (COMMON_READ order columns); Ambiguous/rowKey WIP residual | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | next M6-C0 · Order query/mutation 공용화 금지 |
 | Ops/Telegram | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | RO 명령 | PARTIALLY_VERIFIED | OK | 제한 | — | telegram/ | — |
 | Docs Canonical | COMPLETE (PHASE2) | NEW | — | link check | — | — | — | docs/* | PHASE3 archive |
 

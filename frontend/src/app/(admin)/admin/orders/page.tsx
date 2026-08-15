@@ -30,6 +30,12 @@ import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+import {
+  ADMIN_ORDER_READ_PREFIX,
+  ADMIN_ORDER_READ_SUFFIX,
+  ADMIN_ORDER_READ_TITLES,
+  buildOrderReadColumns,
+} from "@/shared/orders/orderReadColumns";
 
 type OrderRow = Record<string, unknown>;
 
@@ -395,14 +401,16 @@ export default function AdminOrdersPage() {
           error={list.error ? toApiError(list.error) : null}
           rowKey={(r) => cell(r.order_id ?? r.id ?? JSON.stringify(r))}
           columns={[
-            { title: "order_id", dataIndex: "order_id", sorter: true },
+            // M6-B: COMMON_READ + Admin-only broker + actions (순서 유지)
+            ...buildOrderReadColumns(ADMIN_ORDER_READ_PREFIX, {
+              titles: ADMIN_ORDER_READ_TITLES,
+              sorters: { order_id: true },
+            }),
             { title: "broker", dataIndex: "broker_code" },
-            { title: "exchange", dataIndex: "exchange_code" },
-            { title: "symbol", dataIndex: "symbol", sorter: true },
-            { title: "side", dataIndex: "side_code" },
-            { title: "status", dataIndex: "status_code" },
-            { title: "qty", dataIndex: "order_quantity" },
-            { title: "price", dataIndex: "order_price" },
+            ...buildOrderReadColumns(ADMIN_ORDER_READ_SUFFIX, {
+              titles: ADMIN_ORDER_READ_TITLES,
+              sorters: { symbol: true },
+            }),
             {
               title: "취소",
               render: (_, row) => (
