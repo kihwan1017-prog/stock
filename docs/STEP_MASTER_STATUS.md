@@ -81,7 +81,10 @@
 | MENU-M6-B0 | STEP M6-B0 | Order RO columns precheck | ORDER_READ_COLUMNS_SHARE_RECOMMENDED | **YES** (with M6-B 본 커밋) | none | — | M6-B | `docs/audit/MENU_M6B_ORDER_COLUMNS_PRECHECK.md` |
 | MENU-M6-B | STEP M6-B | COMMON_READ order columns shared | ORDER_READ_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (`87d0229` · actions/query 분리) | none | orderReadColumns.test.ts | M6-C0 | `docs/audit/MENU_M6B_ORDER_READ_COLUMNS_SHARED.md` |
 | MENU-M6-C0 | STEP M6-C0 | Strategy Request RO presentation precheck | STRATEGY_REQUEST_READ_SHARE_RECOMMENDED | **YES** (with M6-C 본 커밋) | none | — | M6-C | `docs/audit/MENU_M6C_STRATEGY_REQUEST_PRECHECK.md` |
-| MENU-M6-C | STEP M6-C | Strategy Request COMMON_READ list columns | STRATEGY_REQUEST_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (본 커밋 · actions/history/detail 분리) | none | strategyRequestReadColumns.test.ts | M6-D0 (승인 후) | `docs/audit/MENU_M6C_STRATEGY_REQUEST_READ_COLUMNS_SHARED.md` |
+| MENU-M6-C | STEP M6-C | Strategy Request COMMON_READ list columns | STRATEGY_REQUEST_COLUMNS_SHARED_READY_WITH_LIMITATIONS | **YES** (`a3612c0` · actions/history/detail 분리) | none | strategyRequestReadColumns.test.ts | M6-D0 | `docs/audit/MENU_M6C_STRATEGY_REQUEST_READ_COLUMNS_SHARED.md` |
+| MENU-M6-D0 | STEP M6-D0 | Strategy Draft RO presentation precheck | STRATEGY_DRAFT_FORMATTER_ALREADY_SHARED_SUFFICIENT · **M6-D SKIP** | **YES** (with M6-F docs 본 커밋) | none | — | M6-E0 | `docs/audit/MENU_M6D_STRATEGY_DRAFT_PRECHECK.md` |
+| MENU-M6-E0 | STEP M6-E0 | Optional shared presentation final precheck | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6-E SKIP** | **YES** (with M6-F docs 본 커밋) | none | — | M6-F | `docs/audit/MENU_M6E_SHARED_PRESENTATION_FINAL_PRECHECK.md` |
+| MENU-M6-F | STEP M6-F | Shared consolidation final regression / CLOSE | SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS · **M6_CLOSE=YES** | **YES** (본 커밋 · docs only) | none | M6 focused suite 31 PASS | M7-0 (승인 후) | `docs/audit/MENU_M6F_SHARED_COMPONENT_FINAL_REGRESSION.md` |
 
 ---
 

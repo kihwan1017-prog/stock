@@ -1,0 +1,82 @@
+{
+  "step": "M6-F",
+  "mode": "FINAL_AUDIT_ONLY",
+  "baseline_head": "a3612c0",
+  "commits": {
+    "M6-A": "239550d",
+    "M6-B": "87d0229",
+    "M6-C": "a3612c0"
+  },
+  "verdict": "SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS",
+  "M6_CLOSE": true,
+  "production_mutation": 0,
+  "shared_code_mutation": 0,
+  "waves": {
+    "M6-A": "DONE",
+    "M6-B": "DONE",
+    "M6-C": "DONE",
+    "M6-D": "SKIP",
+    "M6-E": "SKIP",
+    "M6-F": "AUDIT_CLOSE"
+  },
+  "inventory": {
+    "shared_utils_helpers": 7,
+    "shared_column_modules": 2,
+    "shared_order_keys": 7,
+    "shared_strategy_request_keys": 4,
+    "shared_keys_total": 11,
+    "shared_hooks": 0,
+    "mega_shared_components": 0,
+    "capability_props": 0,
+    "route_merges": 0,
+    "api_merges": 0,
+    "permission_merges": 0,
+    "authguard_merges": 0,
+    "owner_isolation_delta": 0
+  },
+  "imports": {
+    "user_to_admin_utils": { "count": 0, "class": "CLEAN" },
+    "user_to_admin_api": {
+      "count": 1,
+      "files": ["features/user/market/useMarketSessionStatus.ts"],
+      "class": "INTENTIONAL_PREEXISTING"
+    },
+    "admin_to_user": {
+      "intentional": ["app/(admin)/admin/profile/page.tsx → ProfileWorkspace"],
+      "unexpected": 0
+    },
+    "circular": 0,
+    "admin_dataHelpers_shim": "retained"
+  },
+  "over_abstraction": {
+    "shared_utils": "KEEP",
+    "shared_orders": "KEEP",
+    "shared_strategyRequests": "KEEP",
+    "shared_strategyDrafts_module_exists": false
+  },
+  "quality": {
+    "vitest_m6_focused": { "files": 4, "tests": 31, "result": "PASS" },
+    "eslint_m6_paths": "PASS",
+    "tsc_m6_paths_new_errors": 0,
+    "tsc_preexisting_wip": [
+      "admin/live-validation/upbit/page.tsx",
+      "UpbitNewsNoticeCollectorPanel.tsx"
+    ]
+  },
+  "regressions": {
+    "m5_hub_tabs": ["개요", "Technical", "뉴스 파이프라인", "A/B 실험", "운영·정합"],
+    "m5_hub_touched_by_m6bc": false,
+    "m4_live_canonical_accounts": true,
+    "m4_risk_kill_control_live_read": true,
+    "trading_safety_deltas": 0,
+    "scanner_news_policy_deltas": 0
+  },
+  "limitations": [
+    "admin_dataHelpers_shim_not_bulk_migrated",
+    "useMarketSessionStatus_still_calls_adminApi",
+    "M6-D_E_SKIP",
+    "residual_WT_WIP_unrelated",
+    "M6-D0_E0_F_docs_in_this_commit"
+  ],
+  "next_step_exactly_one": "M7-0 — Legacy / redirect route cleanup PRECHECK"
+}
