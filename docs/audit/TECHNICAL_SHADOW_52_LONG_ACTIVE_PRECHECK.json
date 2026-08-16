@@ -1,0 +1,113 @@
+{
+  "step": "SHADOW_52_LONG_ACTIVE_TARGET_BLOCKED_PRECHECK",
+  "mode": "READ_ONLY_HYGIENE",
+  "date": "2026-08-16",
+  "HEAD": "3bbf0cd",
+  "verdict": "LONG_ACTIVE_TERMINATION_FIX_RECOMMENDED",
+  "shadow": {
+    "shadow_id": 52,
+    "symbol": "KRW-PRL",
+    "status": "ACTIVE",
+    "detected_at": "2026-08-13T21:19:40.472Z",
+    "created_at": "2026-08-15T01:39:12.339Z",
+    "updated_at": "2026-08-16T03:00:35.449Z",
+    "evaluated_5m_at": "2026-08-15T01:40:40.426Z",
+    "evaluated_15m_at": "2026-08-15T01:40:40.426Z",
+    "evaluated_30m_at": null,
+    "evaluated_60m_at": null,
+    "path_quality_version": "technical_path_quality_v2",
+    "unresolved_missing": 0,
+    "source_unavailable": false,
+    "coverage_ratio_resolved": 1.0,
+    "path_gate": "PASS",
+    "classification": "LONG_ACTIVE_TARGET_BLOCKED",
+    "active_age_hours_approx": 53.7
+  },
+  "targets": {
+    "max_prior_lag_seconds": 180,
+    "window_finalization": "last_known_price_at_target_v1",
+    "w5": {
+      "candle_start": "2026-08-13T21:24:00+00:00",
+      "result": "EXACT_OK",
+      "lag_seconds": 40.472423
+    },
+    "w15": {
+      "candle_start": "2026-08-13T21:34:00+00:00",
+      "exact": false,
+      "nearest_prior": "2026-08-13T21:32:00+00:00",
+      "prior_lag_seconds": 120,
+      "result": "LAST_KNOWN_OK"
+    },
+    "w30": {
+      "candle_start": "2026-08-13T21:49:00+00:00",
+      "exact": false,
+      "nearest_prior": "2026-08-13T21:32:00+00:00",
+      "prior_lag_seconds": 1020,
+      "result": "MISSING_FALLBACK_FAIL"
+    },
+    "w60": {
+      "candle_start": "2026-08-13T22:19:00+00:00",
+      "exact": false,
+      "nearest_prior": "2026-08-13T22:13:00+00:00",
+      "prior_lag_seconds": 360,
+      "result": "MISSING_FALLBACK_FAIL"
+    }
+  },
+  "TARGET_BLOCK_ROOT_CAUSE": [
+    "SOURCE_ABSENT",
+    "NO_PRIOR_WITHIN_FALLBACK",
+    "POLICY_CONSTRAINT"
+  ],
+  "TARGET_ABSENCE_MUTABILITY": "LIKELY_FINAL",
+  "FUTURE_RETRY_VALUE": "NONE_OR_LOW",
+  "RETRY_BEHAVIOR": "REDUNDANT_RETRY_LOW_COST_REPEAT",
+  "RESOURCE_IMPACT": "LOW_TO_MEDIUM",
+  "estimated_ticks_per_hour_max": 20,
+  "status_enum": ["ACTIVE", "COMPLETED", "CANCELLED"],
+  "CANCELLED_used_by_evaluator": false,
+  "LONG_ACTIVE_TERMINATION_POLICY": "NONE",
+  "NO_MAX_AGE": true,
+  "NO_MAX_ATTEMPT": true,
+  "NO_STALE_CLEANUP": true,
+  "SIMILAR_CASE_COUNT": 1,
+  "COMPLETED_WITH_LAST_KNOWN_60": 4,
+  "COMPLETED_STILL_MISSING_60": 0,
+  "RECOVERED_AFTER_TARGET_ABSENT_COUNT": 0,
+  "options": {
+    "A": "keep_infinite_active",
+    "B": "terminal_on_absent_fallback_fail",
+    "C": "max_age_or_attempt_terminal",
+    "D": "manual_review_only",
+    "E": "backoff_then_terminal"
+  },
+  "recommended_option": "E",
+  "recommended_minimal_fix": "backoff target API + terminal via existing CANCELLED/detail reason; no synthetic; no fake COMPLETED",
+  "SCHEMA_CHANGE_REQUIRED": false,
+  "impact": {
+    "evaluator": "MEDIUM",
+    "repository": "LOW",
+    "scheduler": "LOW",
+    "api": "NONE_TO_LOW",
+    "frontend": "LOW"
+  },
+  "COVERAGE_REMEDIATION_REOPEN": false,
+  "TP_ANALYSIS_REOPEN": false,
+  "News": {
+    "MATCHED_completed": 3,
+    "NO_NEWS_completed": 30,
+    "NO_NEWS_active": 10,
+    "EXCLUDED": 5,
+    "milestone": "ACCUMULATING"
+  },
+  "safety": {
+    "trading_order_n": 241,
+    "outbox_n": 52,
+    "LIVE": false,
+    "execution_running": false,
+    "production_mutation": 0,
+    "db_mutation": 0,
+    "commit": false,
+    "push": false
+  },
+  "next_step": "SHADOW LONG_ACTIVE TERMINATION DESIGN"
+}

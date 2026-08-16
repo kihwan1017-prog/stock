@@ -1,0 +1,18 @@
+{
+  "step": "U-TERM-A",
+  "verdict": "TERMINATION_TARGET_ONLY_READY",
+  "HEAD_baseline": "3bbf0cd",
+  "reason": "TARGET_PERMANENTLY_UNRESOLVABLE",
+  "status": "CANCELLED",
+  "SOURCE_UNAVAILABLE_MAX_AGE": false,
+  "schema": false,
+  "shadow52_production_update": false,
+  "files": [
+    "src/stock_platform/operation/upbit_opportunity_shadow/termination.py",
+    "src/stock_platform/operation/upbit_opportunity_shadow/evaluator.py",
+    "tests/test_upbit_shadow_long_active_termination.py"
+  ],
+  "next_u_step": "TERM-B — UPBIT TERMINATION RUNTIME LOAD + NATURAL OBSERVATION",
+  "commit": false,
+  "push": false
+}

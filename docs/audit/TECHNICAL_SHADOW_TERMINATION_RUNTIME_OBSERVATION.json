@@ -1,0 +1,22 @@
+{
+  "step": "U-TERM-B",
+  "verdict": "UPBIT_TERMINATION_RUNTIME_PROVEN_WITH_LIMITATIONS",
+  "U_TERMINATION_CODE_LOADED": true,
+  "shadow_52_before": {"status": "ACTIVE", "termination": null, "updated_at": "2026-08-16T03:48:35.446Z"},
+  "shadow_52_after": {
+    "status": "CANCELLED",
+    "reason": "TARGET_PERMANENTLY_UNRESOLVABLE",
+    "terminated_at": "2026-08-16T03:56:08.201692+00:00",
+    "evaluated_60m_at": null,
+    "updated_at": "2026-08-16T03:56:08.201Z"
+  },
+  "collateral_cancelled": [70],
+  "idempotency": "PASS",
+  "forced_evaluate": false,
+  "manual_update": false,
+  "trading_order_n": 241,
+  "outbox_n": 52,
+  "next_u_step": "UPBIT TERMINATION SELECTIVE COMMIT PRECHECK",
+  "commit": false,
+  "push": false
+}

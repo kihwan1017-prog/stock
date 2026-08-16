@@ -3,8 +3,13 @@
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
 **최종 갱신:** 2026-08-16  
 
-**Ops note (2026-08-16):** Coverage+TP closeout **SELECTIVE COMMIT** (OPTION C) · next **SHADOW 52 LONG_ACTIVE TARGET_BLOCKED PRECHECK**. Push 금지.  
-**Ops note (2026-08-16):** Coverage+TP closeout selective commit PRECHECK **CLEAN** · OPTION C.  
+**Ops note (2026-08-16):** U termination selective commit **CLOSE** · K credential **WAITING_FOR_USER_INPUT** (UI `/user/accounts/kiwoom`) · push 금지 · LIVE 금지.  
+**Ops note (2026-08-16):** U selective-commit PRECHECK **READY** · K provisioning PRECHECK **READY** (UI/API exist) · next U **SELECTIVE COMMIT** · next K **CREDENTIAL PROVISIONING** · secrets not via chat.  
+**Ops note (2026-08-16):** U-TERM-B **PROVEN_WITH_LIMITATIONS** (shadow52 CANCELLED natural) · K-CRED **PROVISIONING_REQUIRED** · next U **SELECTIVE COMMIT PRECHECK** · next K **CREDENTIAL PROVISIONING PRECHECK**.  
+**Ops note (2026-08-16):** Parallel **U-TERM-A** `TERMINATION_TARGET_ONLY_READY` · **K-B** `KIWOOM_P0_2_READY_WITH_LIMITATIONS` · SHARED_CHANGED=0 · next U **TERM-B** · next K **CREDENTIAL_UBA_ALIGNMENT** · commit 분리 예정.  
+**Ops note (2026-08-16):** Parallel tracks **U/K** — U-TERM-A0 **`TERMINATION_IMPLEMENTATION_READY_TARGET_ONLY`** · next U **TERMINATION IMPLEMENTATION (TARGET_ONLY)**; K-G0 **`KIWOOM_LIVE_BLOCKED`** · next K **`KIWOOM_P0-2_LIVE_POSITION_WRITE`** · `PARALLEL_WRITE_SAFE=YES_WITH_BOUNDARIES`.  
+**Ops note (2026-08-16):** Shadow LONG_ACTIVE TERMINATION DESIGN **READY** · OPTION E · CANCELLED reuse · IMPLEMENTATION PRECHECK **done**.  
+**Ops note (2026-08-16):** Shadow 52 LONG_ACTIVE PRECHECK — termination fix **RECOMMENDED**.  
 **Ops note (2026-08-15):** TP CANDIDATE REANALYSIS — paired n=47 · **KEEP_6_SUPERIOR** · `FROZEN_CANDIDATE_TP=null`.  
 **Ops note (2026-08-15):** COV-D CLOSEOUT — **NO historical APPLY** · `COVERAGE_REMEDIATION_CLOSE=YES` · coverage holes=SOURCE_ABSENT · math delta 0.  
 **Ops note (2026-08-15):** COV-A/C/B atomic commit · path defer gate LIVE · runtime PASS_COMPLETED proven.  

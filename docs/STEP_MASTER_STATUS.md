@@ -5,7 +5,7 @@
 **최종 갱신:** 2026-08-16  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
-**Ops note:** Coverage+TP closeout committed · next SHADOW 52 TARGET_BLOCKED PRECHECK. SHADOW_ONLY · UBA1380 보호.  
+**Ops note:** U Long-active termination **CLOSED** (selective commit) · K credential waiting for UI user input · News ACCUMULATING.  
 **News note:** `NEWS_AB_SAMPLE_ACCUMULATING` (MATCHED 3, NO_NEWS 30+10).
 
 ---

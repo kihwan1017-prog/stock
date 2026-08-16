@@ -28,6 +28,9 @@ from stock_platform.operation.upbit_opportunity_shadow.constants import (
     SHADOW_STATUS_ACTIVE,
     SHADOW_STATUS_COMPLETED,
 )
+from stock_platform.operation.upbit_opportunity_shadow.termination import (
+    apply_permanent_absence_termination,
+)
 from stock_platform.operation.upbit_opportunity_shadow.entities import (
     UpbitOpportunityShadowEntity,
 )
@@ -258,6 +261,55 @@ class UpbitOpportunityShadowEvaluator:
                     "deferred": True,
                     "computed": computed,
                 }
+
+            # PATH PASS — TARGET_ONLY permanent absence → CANCELLED (fake metric 금지)
+            term_result = apply_permanent_absence_termination(
+                row,
+                computed=computed,
+                now=self._now,
+            )
+            if term_result.get("terminated"):
+                detail = dict(row.evaluation_detail or {})
+                for minutes in EVALUATION_WINDOWS_MINUTES:
+                    key = str(minutes)
+                    obs = dict(windows.get(key) or {})
+                    attr_at = f"evaluated_{minutes}m_at"
+                    if getattr(row, attr_at) is not None:
+                        if obs.get("status") == "OK":
+                            prev_windows[key] = {**obs, "final": True}
+                        continue
+                    # MISSING 창은 final 금지 · price/return 미기록
+                    prev_windows[key] = {
+                        **obs,
+                        "observed_candle_at": None,
+                        "price": None,
+                        "return_pct": None,
+                        "final": False,
+                    }
+                detail["windows"] = prev_windows
+                detail["source"] = "minute_candle_historical_v1"
+                detail["sl_pct"] = computed.get("sl_pct")
+                detail["tp_pct"] = computed.get("tp_pct")
+                detail["window_finalization"] = "last_known_price_at_target_v1"
+                detail["max_prior_lag_seconds"] = DEFAULT_MAX_PRIOR_LAG_SECONDS
+                detail["target_resolve"] = computed.get("target_resolve")
+                if path_quality is not None:
+                    detail["path_quality"] = path_quality
+                if computed.get("source_reconcile") is not None:
+                    detail["source_reconcile"] = computed.get("source_reconcile")
+                row.evaluation_detail = detail
+                row.updated_at = self._now
+                return {
+                    "changed": True,
+                    "just_completed": False,
+                    "terminated": True,
+                    "computed": computed,
+                }
+
+            # grace 대기 중 first_blocked_at 스탬프 유지
+            if term_result.get("changed") or term_result.get("deferred_grace"):
+                detail = dict(row.evaluation_detail or {})
+                prev_windows = dict(detail.get("windows") or {})
 
             # PATH PASS — 기존 finalization
             for minutes in EVALUATION_WINDOWS_MINUTES:

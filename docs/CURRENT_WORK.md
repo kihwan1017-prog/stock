@@ -5,32 +5,34 @@
 
 ---
 
-## Current Phase
+## Parallel policy
 
-**Coverage + TP closeout committed** · next **SHADOW 52 LONG_ACTIVE TARGET_BLOCKED PRECHECK**
-
-| 항목 | 값 |
-|------|-----|
-| Branch | `release/v1.1.0` |
-| Coverage | **CLOSED** · Historical APPLY **NO** · integrity INTACT |
-| TP_ANALYSIS | **CLOSED_KEEP_6** |
-| CURRENT_TP / SL | **6%** / **3%** |
-| FROZEN_CANDIDATE_TP | **null** · OOS **NOT_STARTED** |
-| Closeout commit | `docs(technical): close coverage and keep tp at 6 percent` |
-| push | **금지** |
-| next | **SHADOW 52 LONG_ACTIVE TARGET_BLOCKED PRECHECK** |
-
-News ACCUMULATING · residual FE/broker/ops WIP 보호
+**TRACK U** / **TRACK K** / **SHARED** — 독립 WRITE 병행 · SHARED WRITE 동시 금지 · U+K commit 혼합 금지 · LIVE 금지  
 
 ---
 
-## 현황 요약 (추정)
+## Current Phase
 
-개발 ~85% · Paper ~85% · LIVE ~58% · 운영 **NOT READY** · LIVE **NOT APPROVED**
+| Track | STEP | Verdict | Next |
+|-------|------|---------|------|
+| **U** | TERMINATION SELECTIVE COMMIT | **`UPBIT_TERMINATION_CLOSE=YES`** (commit this STEP) | — (no auto next) |
+| **K** | CREDENTIAL PROVISIONING | **`KIWOOM_CREDENTIAL_WAITING_FOR_USER_INPUT`** | User UI register+verify → then continue |
+
+| 항목 | 값 |
+|------|-----|
+| Coverage | **CLOSED** |
+| TP | **CLOSED_KEEP_6** · TP **6%** · SL **3%** |
+| Long-active termination | **CLOSED** (52/70 CANCELLED proven) |
+| News | ACCUMULATING (background) |
+| push | **금지** |
+
+K: linked credential **0** — Cursor는 secret을 받지 않음. User는 `/user/accounts/kiwoom` UI에서 등록.
+
+---
 
 ## Next Gate
 
-1. **SHADOW 52 LONG_ACTIVE TARGET_BLOCKED PRECHECK** (승인 후 · READ-ONLY)  
-2. News A/B 자연 누적 · residual WIP 별도  
+1. **K:** 사용자 UI Credential 등록 완료 통지 후 검증 READ  
+2. Upbit 추가 개발 자동 시작 **금지**  
 
 → [ROADMAP.md](ROADMAP.md)

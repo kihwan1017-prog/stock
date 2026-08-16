@@ -2,11 +2,11 @@
 
 **역할:** 구현 현황의 **유일한** Source of Truth.  
 **근거:** PHASE 1 감사(2026-07-31) + 실행 경로 소스. 수치는 **추정치**이며 완료 판정이 아니다.  
-**최종 갱신:** 2026-08-15  
-**Branch / Commit baseline:** `release/v1.1.0` @ `5c6ad67` + residual WIP  
-**워킹트리:** Autotrading/UI residual 미커밋 가능 · COV closeout audit docs 미커밋
+**최종 갱신:** 2026-08-16  
+**Branch / Commit baseline:** `release/v1.1.0` @ `3bbf0cd` + residual WIP  
+**워킹트리:** Autotrading/UI residual 미커밋 가능 · parallel precheck audit docs 미커밋
 
-**Ops (2026-08-16):** Coverage CLOSED · TP **CLOSED_KEEP_6** · closeout docs/scripts selective-committed · next **SHADOW 52 PRECHECK**.  
+**Ops (2026-08-16):** Upbit Long-active termination **CLOSED** (selective commit) · Coverage/TP CLOSED_KEEP_6 · K credential **WAITING_FOR_USER_INPUT** · LIVE **NOT APPROVED**.  
 **News (2026-08-14):** STEP N10 observation/coverage — natural MATCHED completed 1/20 · NO_NEWS 13/20; funnel drop 주원인 `NO_SYMBOL_OVERLAP`; Top-N Snapshot **OBSERVE_MORE** (미구현); look-ahead/threshold 유지. Baseline note: MATCHED 2/20 · NO_NEWS 22/20+ accumulating.
 
 ---
@@ -37,7 +37,7 @@
 | ID | 내용 | 영향 | 상태 (2026-08-01) |
 |----|------|------|-------------------|
 | **P0-1** | Realtime broker hardcode | 잘못된 Outbox enqueue | **코드 수정(미커밋)** |
-| **P0-2** | Kiwoom Fill → TradingOrder | LIVE 장부 불일치 | **WS bridge(미커밋)**; Position WRITE OPEN |
+| **P0-2** | Kiwoom Fill → TradingOrder | LIVE 장부 불일치 | **WS/Mock/Recovery K_ONLY ensure (WT)**; ledger 시맨틱 SHARED 미변경 · account sync wipe 잔여 |
 | **P0-3** | READY_* ↔ Runtime ACTIVE | 승인≠실행 | **명시 Promote(미커밋)**; Runner OFF |
 | **P0-4** | Alembic Git/Head | 배포 스키마 | **DONE** `a7f3e91c4d28` |
 | **P0-5** | Paper Outbox auto-fill | Paper E2E 단절 | **코드 수정(미커밋)** |
