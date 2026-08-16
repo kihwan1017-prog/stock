@@ -3,11 +3,11 @@
 **역할:** 구현 현황의 **유일한** Source of Truth.  
 **근거:** PHASE 1 감사(2026-07-31) + 실행 경로 소스. 수치는 **추정치**이며 완료 판정이 아니다.  
 **최종 갱신:** 2026-08-15  
-**Branch / Commit baseline:** `release/v1.1.0` @ `4f0df10` + residual WIP  
-**워킹트리:** Autotrading/UI residual 미커밋 가능 · Technical observation audit docs 미커밋
+**Branch / Commit baseline:** `release/v1.1.0` @ `5c6ad67` + residual WIP  
+**워킹트리:** Autotrading/UI residual 미커밋 가능 · COV closeout audit docs 미커밋
 
-**Ops (2026-08-15):** COV-A/C/B atomic commit (path_quality v2 · source reconcile · ACTIVE defer gate) · next post-commit realtime observation precheck · TP FROZEN.  
-**News (2026-08-14):** STEP N10 observation/coverage — natural MATCHED completed 1/20 · NO_NEWS 13/20; funnel drop 주원인 `NO_SYMBOL_OVERLAP`; Top-N Snapshot **OBSERVE_MORE** (미구현); look-ahead/threshold 유지. Baseline note: MATCHED 2/20 · NO_NEWS 22/20 accumulating.
+**Ops (2026-08-16):** Coverage CLOSED · TP **CLOSED_KEEP_6** · closeout docs/scripts selective-committed · next **SHADOW 52 PRECHECK**.  
+**News (2026-08-14):** STEP N10 observation/coverage — natural MATCHED completed 1/20 · NO_NEWS 13/20; funnel drop 주원인 `NO_SYMBOL_OVERLAP`; Top-N Snapshot **OBSERVE_MORE** (미구현); look-ahead/threshold 유지. Baseline note: MATCHED 2/20 · NO_NEWS 22/20+ accumulating.
 
 ---
 
@@ -74,7 +74,7 @@
 | Fill/Position | PARTIAL | COMMITTED_BASELINE | Upbit OK / Kiwoom GAP / Paper GAP | PARTIALLY_VERIFIED | P0-5 | P0-2 | P0-2,P0-5 | fill sync, paper | Fill 파이프라인 |
 | Settlement/PnL | PARTIAL | WORKTREE FK | PARTIAL | PARTIALLY_VERIFIED | PARTIAL | PARTIAL | P0-4 | settlement/ | FK 커밋 |
 | Recovery/Reconcile | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | Upbit>Kiwoom | PARTIALLY_VERIFIED | OK | PARTIAL | P0-2 | recovery/ | Kiwoom reconcile |
-| Frontend | COMPLETE_WITH_LIMITATIONS | **MENU_CONSOLIDATION_CLOSE=YES**; COV-A/C/B committed (FE 미변경); Ambiguous/rowKey WIP residual | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | COV-B post-commit observation precheck · News 누적 · WIP 별도 |
+| Frontend | COMPLETE_WITH_LIMITATIONS | **MENU_CONSOLIDATION_CLOSE=YES**; COV coverage remediation CLOSED (FE 미변경); Ambiguous/rowKey WIP residual | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | SHADOW 52 PRECHECK · News 누적 · WIP 별도 |
 | Ops/Telegram | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | RO 명령 | PARTIALLY_VERIFIED | OK | 제한 | — | telegram/ | — |
 | Docs Canonical | COMPLETE (PHASE2) | NEW | — | link check | — | — | — | docs/* | PHASE3 archive |
 

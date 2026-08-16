@@ -1,9 +1,13 @@
 # ROADMAP
 
 **역할:** 자동매매·플랫폼 잔여 작업 (P0–P5).  
-**최종 갱신:** 2026-08-15  
+**최종 갱신:** 2026-08-16  
 
-**Ops note (2026-08-15):** COV-A/C/B atomic commit · path defer gate LIVE in code · next **COV-B POST-COMMIT REALTIME OBSERVATION PRECHECK** (not COV-D). TP FROZEN.  
+**Ops note (2026-08-16):** Coverage+TP closeout **SELECTIVE COMMIT** (OPTION C) · next **SHADOW 52 LONG_ACTIVE TARGET_BLOCKED PRECHECK**. Push 금지.  
+**Ops note (2026-08-16):** Coverage+TP closeout selective commit PRECHECK **CLEAN** · OPTION C.  
+**Ops note (2026-08-15):** TP CANDIDATE REANALYSIS — paired n=47 · **KEEP_6_SUPERIOR** · `FROZEN_CANDIDATE_TP=null`.  
+**Ops note (2026-08-15):** COV-D CLOSEOUT — **NO historical APPLY** · `COVERAGE_REMEDIATION_CLOSE=YES` · coverage holes=SOURCE_ABSENT · math delta 0.  
+**Ops note (2026-08-15):** COV-A/C/B atomic commit · path defer gate LIVE · runtime PASS_COMPLETED proven.  
 **Ops note (2026-08-15):** COV-C source reconciliation **READY** · dry defer 72%→0% · path_quality **v2** · **PATH_GATE_EVIDENCE_READY=YES**.
 **Ops note (2026-08-15):** TP OOS design → `CANDIDATE_DEFINITION_REQUIRED` (band 2–4% not freezable). Preferred future path Option C (6% policy keep + post-hoc candle recompute on new COMPLETED). Next: **TP CANDIDATE DEFINITION REVIEW**. APPLY=NO.
 **Ops note (2026-08-15):** Technical TP CHANGE_CANDIDATE re-review — `CHANGE_CANDIDATE_NEEDS_OOS_VALIDATION` · CURRENT_TP=6% · candidate band 2–4% · **TP_APPLY_READY=NO** · STRICT_VALID=48. Next: OOS validation design (no apply).

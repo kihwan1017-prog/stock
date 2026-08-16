@@ -2,11 +2,11 @@
 
 **역할:** STEP 관리의 **유일한** Source of Truth.  
 **규칙:** 같은 숫자라도 네임스페이스가 다르면 **합치지 않는다.** 과거 번호를 삭제·재부여하지 않고 Mapping만 제공한다.  
-**최종 갱신:** 2026-08-15  
+**최종 갱신:** 2026-08-16  
 **상세 Mapping 원본:** [audit/STEP_NUMBER_MAPPING_20260731.md](audit/STEP_NUMBER_MAPPING_20260731.md)
 
-**Ops note:** COV-A/C/B committed (atomic) · next COV-B post-commit realtime observation precheck. SHADOW_ONLY · UBA1380 보호.  
-**News note:** `NEWS_AB_SAMPLE_ACCUMULATING` (baseline MATCHED 2/20, NO_NEWS 22/20).
+**Ops note:** Coverage+TP closeout committed · next SHADOW 52 TARGET_BLOCKED PRECHECK. SHADOW_ONLY · UBA1380 보호.  
+**News note:** `NEWS_AB_SAMPLE_ACCUMULATING` (MATCHED 3, NO_NEWS 30+10).
 
 ---
 
