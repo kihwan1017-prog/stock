@@ -302,11 +302,13 @@ def _run_backtest(session, strategy_definition_id: int, symbol: str) -> int:
     return result["backtest_run_id"]
 
 
-def _seed_promotion_committed(session, *, symbol: str) -> dict:
+def _seed_promotion_committed(session, *, symbol: str, result_id_index: int = 0) -> dict:
     ids = session.info["result_ids"]
+    if result_id_index >= len(ids):
+        pytest.skip(f"result_ids[{result_id_index}] 없음 — 테스트 데이터 부족")
     _seed_prices(session, symbol, _triangle_wave(150, period=30), start=date(2024, 1, 1))
 
-    req = _create_approved_request(session, result_id=ids[0])
+    req = _create_approved_request(session, result_id=ids[result_id_index])
     approval = _approve(session, req["strategy_request_id"])
     strategy_id = approval["strategy_definition_id"]
 
@@ -457,7 +459,7 @@ def test_live_activation_review_package_blocked_without_credential(session) -> N
             StrategyPromotionStateEntity.strategy_definition_id == seed["strategy_id"]
         )
     )
-    assert state.current_status == PROMOTION_STATE_PROMOTION_COMMITTED  # 전이하지 않음.
+    assert state.current_status == PROMOTION_STATE_ACTIVATION_REVIEW  # BLOCKED여도 review 진입
 
 
 def test_live_activation_review_package_blocked_with_revoked_credential(session) -> None:
@@ -1348,7 +1350,8 @@ def test_live_trading_disabled_blocks_package(session, monkeypatch) -> None:
     assert "TRADING_DISABLED" in result["blocking_reason_codes"]
 
 
-def test_live_order_disabled_blocks_package(session) -> None:
+def test_live_order_disabled_warns_package(session) -> None:
+    """Strategy lifecycle activation은 LIVE OFF여도 review 가능 — 실주문은 별도 gate."""
     seed = _seed_promotion_committed(session, symbol="STEP1217AG")
     uba_id = _create_live_account(session, live_order_enabled=False)
     result = run_create_activation_review_package(
@@ -1358,7 +1361,9 @@ def test_live_order_disabled_blocks_package(session) -> None:
             target_broker_code="KIWOOM", target_user_broker_account_id=uba_id,
         ),
     )
-    assert "LIVE_ORDER_DISABLED" in result["blocking_reason_codes"]
+    assert result["readiness_status"] == ACTIVATION_READINESS_READY
+    assert "LIVE_ORDER_DISABLED" in result["warning_reason_codes"]
+    assert "LIVE_ORDER_DISABLED" not in result["blocking_reason_codes"]
 
 
 def test_kill_switch_active_blocks_package(session, monkeypatch) -> None:
@@ -1490,11 +1495,36 @@ def test_account_ownership_mismatch_blocks_package(session) -> None:
 
 
 def test_account_strategy_link_conflict_code(session) -> None:
-    """§ 보완(5) — Runtime Scope Conflict 세분화: 활성 AccountStrategyLink
-    가 이미 있으면 ACCOUNT_STRATEGY_LINK_CONFLICT로 명확히 표시한다."""
+    """§ 보완(5) — 다른 Strategy가 같은 Account에 활성 Link로 묶여 있으면
+    ACCOUNT_STRATEGY_LINK_CONFLICT로 차단한다. 동일 Strategy+Account Link는 허용."""
     from stock_platform.strategy_deployment.definition_entities import AccountStrategyLinkEntity
 
     seed = _seed_promotion_committed(session, symbol="STEP1217AM")
+    other_seed = _seed_promotion_committed(session, symbol="STEP1217AM2", result_id_index=1)
+    paper_id = _create_paper_account(session)
+    link = AccountStrategyLinkEntity(
+        strategy_id=other_seed["strategy_id"], user_id=_REQUESTER_USER_ID, paper_account_id=paper_id,
+        user_broker_account_id=None, is_active=True, created_by="STEP12_17_TEST:setup",
+    )
+    session.add(link)
+    session.commit()
+
+    result = run_create_activation_review_package(
+        session, seed["strategy_id"],
+        **_package_kwargs(
+            seed, target_account_kind=ACCOUNT_KIND_PAPER, requested_execution_mode=EXECUTION_MODE_PAPER,
+            target_paper_account_id=paper_id,
+        ),
+    )
+    assert result["readiness_status"] == ACTIVATION_READINESS_BLOCKED
+    assert "ACCOUNT_STRATEGY_LINK_CONFLICT" in result["blocking_reason_codes"]
+
+
+def test_matching_account_strategy_link_allows_package(session) -> None:
+    """동일 Strategy+Account의 활성 Link는 Activation positive evidence."""
+    from stock_platform.strategy_deployment.definition_entities import AccountStrategyLinkEntity
+
+    seed = _seed_promotion_committed(session, symbol="STEP1217AM3")
     paper_id = _create_paper_account(session)
     link = AccountStrategyLinkEntity(
         strategy_id=seed["strategy_id"], user_id=_REQUESTER_USER_ID, paper_account_id=paper_id,
@@ -1510,8 +1540,8 @@ def test_account_strategy_link_conflict_code(session) -> None:
             target_paper_account_id=paper_id,
         ),
     )
-    assert result["readiness_status"] == ACTIVATION_READINESS_BLOCKED
-    assert "ACCOUNT_STRATEGY_LINK_CONFLICT" in result["blocking_reason_codes"]
+    assert result["readiness_status"] == ACTIVATION_READINESS_READY
+    assert "ACCOUNT_STRATEGY_LINK_CONFLICT" not in result["blocking_reason_codes"]
 
 
 def test_package_status_fields_separated_and_not_immediately_stale(session) -> None:

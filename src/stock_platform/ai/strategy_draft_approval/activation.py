@@ -523,9 +523,12 @@ def _risk_snapshot_payload(
         blocking.append("TRADING_DISABLED")
     if not policy.buy_enabled:
         warning.append("BUY_DISABLED")
+    # Strategy lifecycle activation은 UBA `live_order_enabled`와 분리한다.
+    # LIVE OFF 상태에서도 Activation Review/Commit은 가능하며, 실주문은
+    # order/live_safety/autotrading gate에서 계속 차단된다.
     if requested_execution_mode == EXECUTION_MODE_LIVE and isinstance(account, UserBrokerAccount):
         if not bool(account.live_order_enabled):
-            blocking.append("LIVE_ORDER_DISABLED")
+            warning.append("LIVE_ORDER_DISABLED")
     return payload, blocking, warning
 
 
@@ -555,24 +558,23 @@ def _operational_snapshot_payload(
     if recovery_paused:
         blocking.append("RECOVERY_CONFLICT")
 
-    link_exists = False
+    matching_active_link = False
+    conflicting_active_link = False
     if account is not None:
-        stmt = select(AccountStrategyLinkEntity).where(
-            AccountStrategyLinkEntity.strategy_id == strategy_definition_id,
-            AccountStrategyLinkEntity.is_active.is_(True),
-        )
+        stmt = select(AccountStrategyLinkEntity).where(AccountStrategyLinkEntity.is_active.is_(True))
         if target_account_kind == ACCOUNT_KIND_USER_BROKER and isinstance(account, UserBrokerAccount):
             stmt = stmt.where(AccountStrategyLinkEntity.user_broker_account_id == int(account.user_broker_account_id))
         elif isinstance(account, PaperAccount):
             stmt = stmt.where(AccountStrategyLinkEntity.paper_account_id == int(account.account_id))
-        link_exists = session.scalar(stmt.limit(1)) is not None
-    # § STEP12-17 제한사항 보완(5) — "이미 Runtime에 등록됨"이라는 뭉뚱그린
-    # 표현 대신, 실제로 확인한 대상(AccountStrategyLink)을 이름에 그대로
-    # 반영한다. Runtime Scope 자체의 중복/충돌(RUNTIME_SCOPE_ALREADY_
-    # REGISTERED/RUNTIME_SCOPE_CONFLICT/STRATEGY_VERSION_CONFLICT)은 Runtime
-    # Scope가 실제로 확정되는 STEP12-18 Runtime Registration의 검증
-    # 범위다(이 STEP은 아직 Runtime Scope를 확정하지 않는다).
-    if link_exists:
+        for active_link in session.scalars(stmt):
+            if int(active_link.strategy_id) == int(strategy_definition_id):
+                matching_active_link = True
+            else:
+                conflicting_active_link = True
+    # § STEP12-17 — 동일 Strategy+Account의 활성 Link는 Activation 전제조건
+    # (positive evidence). 다른 Strategy가 같은 Account에 이미 활성 Link로
+    # 묶여 있을 때만 ACCOUNT_STRATEGY_LINK_CONFLICT로 차단한다.
+    if conflicting_active_link:
         blocking.append("ACCOUNT_STRATEGY_LINK_CONFLICT")
 
     deployment_exists = session.scalar(
@@ -589,7 +591,8 @@ def _operational_snapshot_payload(
     payload = {
         "kill_switch_active": kill_switch_active,
         "recovery_paused": recovery_paused,
-        "existing_runtime_link": link_exists,
+        "existing_runtime_link": matching_active_link,
+        "conflicting_active_link": conflicting_active_link,
         "existing_deployment": deployment_exists,
         "kill_switch_scope_codes": scope_codes,
     }
@@ -842,8 +845,11 @@ def run_create_activation_review_package(
         session.add(package)
         session.flush()
 
-        if readiness_status == ACTIVATION_READINESS_READY:
-            previous_status = promotion_state.current_status
+        # Activation Review Package 생성 자체가 ACTIVATION_REVIEW 진입을
+        # 의미한다 — readiness가 BLOCKED여도 human review/decision 경로는
+        # 열린다(실제 Commit 직전에 current validation으로 재검증).
+        previous_status = promotion_state.current_status
+        if previous_status == PROMOTION_STATE_PROMOTION_COMMITTED:
             new_status = PROMOTION_STATE_ACTIVATION_REVIEW
             if not _can_transition_activation_state(previous_status, new_status):
                 raise ActivationError(
@@ -864,18 +870,22 @@ def run_create_activation_review_package(
                 strategy_definition_id=strategy_definition_id, promotion_commit_id=int(commit.promotion_commit_id),
                 previous_status=previous_status, new_status=new_status, human_decision_id=commit.human_decision_id,
                 decision_package_id=commit.decision_package_id, actor=actor, occurred_at=created_at,
-                transition_reason=(review_note or "Activation Review Package READY"), algorithm_version=ALGORITHM_VERSION,
+                transition_reason=(review_note or "Activation Review Package created"), algorithm_version=ALGORITHM_VERSION,
             )
             history_entity = StrategyPromotionHistoryEntity(
                 strategy_definition_id=strategy_definition_id, promotion_commit_id=int(commit.promotion_commit_id),
                 previous_status=previous_status, new_status=new_status,
-                transition_reason=(review_note or "Activation Review Package READY"),
+                transition_reason=(review_note or "Activation Review Package created"),
                 human_decision_id=commit.human_decision_id, decision_package_id=commit.decision_package_id,
                 actor=actor, event_hash=event_hash, occurred_at=created_at, algorithm_version=ALGORITHM_VERSION,
-                metadata_payload={"activation_review_package_id": int(package.activation_review_package_id)},
+                metadata_payload={
+                    "activation_review_package_id": int(package.activation_review_package_id),
+                    "readiness_status": readiness_status,
+                },
             )
             session.add(history_entity)
-            session.flush()
+
+        session.flush()
         session.commit()
     except IntegrityError:
         session.rollback()
@@ -962,10 +972,21 @@ def check_activation_package_staleness(
         reasons.append("CREDENTIAL_SNAPSHOT_CHANGED")
     if validation["effective_risk_snapshot_payload"] != package.effective_risk_snapshot_payload:
         reasons.append("RISK_SNAPSHOT_CHANGED")
-    if validation["operational_snapshot_payload"] != package.operational_snapshot_payload:
-        reasons.append("OPERATIONAL_SNAPSHOT_CHANGED")
-    if sorted(validation["blocking"]) != sorted(package.blocking_reason_codes):
-        reasons.append("READINESS_CHANGED")
+    stored_op = package.operational_snapshot_payload or {}
+    current_op = validation["operational_snapshot_payload"] or {}
+    if stored_op != current_op:
+        # legacy package에 informational field만 추가된 경우(예:
+        # conflicting_active_link)는 stale로 보지 않는다 — 저장된 키 값이
+        # 모두 동일하면 material change 없음.
+        material_op_changed = any(stored_op.get(k) != current_op.get(k) for k in stored_op)
+        if material_op_changed:
+            reasons.append("OPERATIONAL_SNAPSHOT_CHANGED")
+    stored_blocking = sorted(package.blocking_reason_codes or [])
+    current_blocking = sorted(validation["blocking"])
+    if stored_blocking != current_blocking:
+        # 생성 시점 BLOCKED → 현재 READY 로 개선된 경우는 stale 아님(Commit 진행 허용).
+        if set(current_blocking) - set(stored_blocking) or current_blocking:
+            reasons.append("READINESS_CHANGED")
 
     return len(reasons) > 0, reasons
 
@@ -991,6 +1012,9 @@ def run_record_activation_decision(
     package = session.get(StrategyActivationReviewPackageEntity, package_id)
     if package is None or package.strategy_definition_id != strategy_definition_id:
         raise ActivationError("PACKAGE_NOT_FOUND", f"Activation Review Package not found: {package_id}")
+    definition = session.get(StrategyDefinitionEntity, package.strategy_definition_id)
+    if definition is None or definition.deleted_at is not None:
+        raise ActivationError("NOT_FOUND", f"Strategy Definition not found: {strategy_definition_id}")
     if decision_type not in ACTIVATION_DECISION_TYPES:
         raise ActivationError("INVALID_DECISION_TYPE", f"알 수 없는 Decision Type: {decision_type}")
     if reason_code not in REASON_CODES_BY_ACTIVATION_DECISION_TYPE.get(decision_type, frozenset()):
@@ -1040,8 +1064,23 @@ def run_record_activation_decision(
 
     activation_ready = False
     if decision_type == ACTIVATION_DECISION_APPROVE:
-        if package.readiness_status != ACTIVATION_READINESS_READY:
-            raise ActivationError("PACKAGE_NOT_READY", f"Package 상태가 READY_FOR_ACTIVATION_REVIEW가 아닙니다(현재: {package.readiness_status}).")
+        current_validation = _run_activation_validations(
+            session,
+            definition=definition,
+            strategy_definition_id=package.strategy_definition_id,
+            target_market_type=package.requested_market_type,
+            target_broker_code=package.requested_broker_code,
+            target_account_kind=package.requested_account_kind,
+            target_user_broker_account_id=package.requested_user_broker_account_id,
+            target_paper_account_id=package.requested_paper_account_id,
+            requested_execution_mode=package.requested_execution_mode,
+        )
+        if current_validation["blocking"]:
+            raise ActivationError(
+                "PACKAGE_NOT_READY",
+                "현재 Activation Readiness가 차단 상태입니다: "
+                f"{', '.join(current_validation['blocking'])}",
+            )
         required_codes = {
             c["checklist_code"] for c in build_activation_checklist_template(package.requested_execution_mode) if c["required"]
         }
@@ -1050,7 +1089,8 @@ def run_record_activation_decision(
             raise ActivationError(
                 "INCOMPLETE_CHECKLIST", f"필수 Checklist 미확인 항목이 있습니다: {', '.join(sorted(missing_confirmations))}"
             )
-        if package.warning_reason_codes and set(package.warning_reason_codes) - set(acknowledged_warnings) - {"ALL"}:
+        effective_warnings = sorted(set(current_validation["warning"]))
+        if effective_warnings and set(effective_warnings) - set(acknowledged_warnings) - {"ALL"}:
             if "ALL" not in acknowledged_warnings:
                 raise ActivationError("WARNING_NOT_ACKNOWLEDGED", "모든 Warning을 확인(acknowledge)해야 합니다.")
         activation_ready = True
@@ -1169,7 +1209,67 @@ def run_create_activation_commit(
             raise ActivationError("IDEMPOTENCY_CONFLICT", f"idempotency_key '{idempotency_key}'가 이미 다른 Activation Commit에 사용되었습니다.")
         raise ActivationError("ALREADY_ACTIVATED", f"Strategy Definition #{strategy_definition_id}은 이미 Activation Commit이 존재합니다.")
 
-    if promotion_state.current_status != PROMOTION_STATE_ACTIVATION_REVIEW:
+    if promotion_state.current_status == PROMOTION_STATE_PROMOTION_COMMITTED:
+        # legacy repair — BLOCKED package 생성 시 ACTIVATION_REVIEW 전이가
+        # 누락된 경우, approved decision이 있으면 Commit 직전에 repair한다.
+        if (
+            decision.activation_ready
+            and int(package.promotion_commit_id) == int(promotion_state.current_promotion_commit_id or 0)
+        ):
+            repair_at = datetime.now(timezone.utc)
+            previous_status = promotion_state.current_status
+            new_status = PROMOTION_STATE_ACTIVATION_REVIEW
+            if not _can_transition_activation_state(previous_status, new_status):
+                raise ActivationError(
+                    "INVALID_PROMOTION_STATE_TRANSITION", f"{previous_status} -> {new_status} 전이는 허용되지 않습니다."
+                )
+            new_version = promotion_state.status_version + 1
+            promotion_state.current_status = new_status
+            promotion_state.status_version = new_version
+            promotion_state.state_hash = compute_promotion_state_hash(
+                strategy_definition_id=strategy_definition_id, current_status=new_status,
+                status_version=new_version, current_promotion_commit_id=promotion_state.current_promotion_commit_id,
+                previous_event_hash=None, transitioned_at=repair_at, algorithm_version=ALGORITHM_VERSION,
+            )
+            promotion_state.updated_by = actor
+            commit_entity = session.get(StrategyPromotionCommitEntity, package.promotion_commit_id)
+            session.add(
+                StrategyPromotionHistoryEntity(
+                    strategy_definition_id=strategy_definition_id,
+                    promotion_commit_id=int(package.promotion_commit_id),
+                    previous_status=previous_status,
+                    new_status=new_status,
+                    transition_reason="Activation Review state repair before commit",
+                    human_decision_id=commit_entity.human_decision_id if commit_entity else None,
+                    decision_package_id=commit_entity.decision_package_id if commit_entity else None,
+                    actor=actor,
+                    event_hash=compute_promotion_state_event_hash(
+                        strategy_definition_id=strategy_definition_id,
+                        promotion_commit_id=int(package.promotion_commit_id),
+                        previous_status=previous_status,
+                        new_status=new_status,
+                        human_decision_id=commit_entity.human_decision_id if commit_entity else None,
+                        decision_package_id=commit_entity.decision_package_id if commit_entity else None,
+                        actor=actor,
+                        occurred_at=repair_at,
+                        transition_reason="Activation Review state repair before commit",
+                        algorithm_version=ALGORITHM_VERSION,
+                    ),
+                    occurred_at=repair_at,
+                    algorithm_version=ALGORITHM_VERSION,
+                    metadata_payload={
+                        "activation_review_package_id": activation_review_package_id,
+                        "activation_decision_id": activation_decision_id,
+                        "repair": True,
+                    },
+                )
+            )
+        else:
+            raise ActivationError(
+                "PROMOTION_STATE_NOT_ELIGIBLE",
+                f"Strategy Promotion State가 전이 불가 상태입니다(현재: {promotion_state.current_status}).",
+            )
+    elif promotion_state.current_status != PROMOTION_STATE_ACTIVATION_REVIEW:
         if promotion_state.current_status == PROMOTION_STATE_ACTIVATED:
             raise ActivationError("ALREADY_ACTIVATED", f"Strategy Promotion State가 이미 {PROMOTION_STATE_ACTIVATED}입니다.")
         raise ActivationError(
