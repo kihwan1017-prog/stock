@@ -106,7 +106,8 @@ describe("buildUbaAutoTradingViewModel", () => {
 
     expect(vm.headline).toBe("BLOCKED");
     expect(vm.finalLabel).toBe("BLOCKED");
-    expect(vm.displayBlockers).toContain("AI HOLD");
+    expect(vm.aiAnalysis.recommendation).toBe("HOLD");
+    expect(vm.displayBlockers).not.toContain("AI HOLD");
     expect(vm.displayBlockers).toContain("LIVE OFF");
     expect(vm.displayBlockers).toContain("ARM OFF");
     expect(vm.strategy.strategyId).toBe("17483");
@@ -119,6 +120,8 @@ describe("buildUbaAutoTradingViewModel", () => {
     expect(vm.dailyRisk.dailyOrderCount).toBe("0");
     expect(vm.dailyRisk.dailyOrderLimit).toBe("1");
     expect(vm.ops.transitionId).toBe("5");
+    expect(vm.ops.startAllForbidden).toBe(true);
+    expect(vm.ops.runtimeLifecycle).toBe("READY");
     expect(vm.checklist.find((c) => c.label === "LIVE")?.result).toBe("BLOCK");
     expect(vm.checklist.find((c) => c.label === "Market Feed")?.result).toBe(
       "PASS",

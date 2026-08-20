@@ -697,8 +697,87 @@ export async function getAdminUbaAutotradingReadiness(
   return getJson(`/admin/autotrading/uba/${ubaId}/readiness`);
 }
 
+export async function getAdminUbaOpsStatus(
+  ubaId: number,
+  strategyId?: number,
+): Promise<JsonValue> {
+  const qs =
+    strategyId != null ? `?strategy_id=${encodeURIComponent(strategyId)}` : "";
+  return getJson(`/admin/autotrading/uba/${ubaId}/ops-status${qs}`);
+}
+
+export async function getAdminUbaUnattendedStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/unattended`);
+}
+
+export async function enableAdminUbaUnattended(
+  ubaId: number,
+  body: {
+    confirmation_text: string;
+    approval_phrase: string;
+    reason: string;
+    horizon_hours?: number;
+    correlation_id?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/unattended/enable`, body);
+}
+
+export async function disableAdminUbaUnattended(
+  ubaId: number,
+  body: { confirmation_text: string; reason: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/unattended/disable`, body);
+}
+
 export async function getAdminLiveOutboxWorkerStatus(): Promise<JsonValue> {
   return getJson("/admin/autotrading/live-outbox-worker/status");
+}
+
+export async function startAdminLiveOutboxWorker(
+  confirmationText: string,
+): Promise<JsonValue> {
+  return postJson("/admin/autotrading/live-outbox-worker/start", {
+    confirmation_text: confirmationText,
+  });
+}
+
+export async function stopAdminLiveOutboxWorker(
+  confirmationText: string,
+): Promise<JsonValue> {
+  return postJson("/admin/autotrading/live-outbox-worker/stop", {
+    confirmation_text: confirmationText,
+  });
+}
+
+export async function startAdminUbaStrategyRuntime(
+  ubaId: number,
+  strategyId: number,
+  confirmationText: string,
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/strategy-runtime/start`,
+    {
+      strategy_id: strategyId,
+      confirmation_text: confirmationText,
+    },
+  );
+}
+
+export async function stopAdminUbaStrategyRuntime(
+  ubaId: number,
+  strategyId: number,
+  confirmationText: string,
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/strategy-runtime/stop`,
+    {
+      strategy_id: strategyId,
+      confirmation_text: confirmationText,
+    },
+  );
 }
 
 /** STEP 9-7 — LIVE ON 전 Runtime Pre-flight */
@@ -812,7 +891,8 @@ export function isPreflightLiveOnAllowed(
 }
 
 export async function getRuntimePreflight(params?: {
-  mode?: "LIVE_ON" | "SCHEDULER_RUN";
+  mode?: "LIVE_ON" | "SCHEDULER_RUN" | "ARM_ON" | "ORDER";
+  user_broker_account_id?: number;
 }): Promise<RuntimePreflightResponse> {
   const data = await getJson("/admin/runtime/preflight", params);
   return data as RuntimePreflightResponse;
@@ -4559,6 +4639,47 @@ export async function getOrderOutbox(): Promise<JsonValue> {
 
 export async function getLiveTransitionHistory(): Promise<JsonValue> {
   return getJson("/broker/live-transition/history");
+}
+
+export async function getLiveTransitionActive(): Promise<JsonValue> {
+  return getJson("/broker/live-transition/active");
+}
+
+/** ACCOUNT scope Live Transition — BROKER scope는 wrapper에서 받지 않는다. */
+export type LiveTransitionAccountBody = {
+  max_order_amount: number;
+  max_daily_loss: number;
+  paper_validation_approved?: boolean;
+  scope: "ACCOUNT";
+  broker_code: string;
+  user_broker_account_id: number;
+};
+
+export async function validateLiveTransition(
+  body: LiveTransitionAccountBody,
+): Promise<JsonValue> {
+  return postJson("/broker/live-transition/validate", body);
+}
+
+export async function requestLiveTransition(
+  body: LiveTransitionAccountBody & { requested_by: string },
+): Promise<JsonValue> {
+  return postJson("/broker/live-transition/request", body);
+}
+
+export async function approveLiveTransition(
+  transitionId: number,
+  body: {
+    approved_by: string;
+    approval_phrase: string;
+    reason?: string | null;
+    ttl_hours?: number;
+    scope: "ACCOUNT";
+    broker_code: string;
+    user_broker_account_id: number;
+  },
+): Promise<JsonValue> {
+  return postJson(`/broker/live-transition/${transitionId}/approve`, body);
 }
 
 export interface MemberRecord {

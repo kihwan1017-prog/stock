@@ -94,6 +94,10 @@ export interface UbaAutoTradingViewModel {
     workerEnabled: boolean | null;
     workerRunning: boolean | null;
     pendingOutbox: string;
+    runtimeLifecycle: string;
+    workerLifecycle: string;
+    exitMonitorLifecycle: string;
+    startAllForbidden: boolean;
   };
   checklist: Array<{ label: string; result: PassBlock }>;
   finalLabel: "READY_FOR_AUTO_TRADING" | "BLOCKED";
@@ -224,6 +228,7 @@ export function buildUbaAutoTradingViewModel(
   const live = asRecord(checks.live);
   const arm = asRecord(checks.arm);
   const worker = asRecord(checks.live_outbox_worker);
+  const ctrl = asRecord(checks.upbit_24x7_control);
   const risk = asRecord(checks.risk);
   const pipeline = asRecord(checks.pipeline);
 
@@ -252,12 +257,7 @@ export function buildUbaAutoTradingViewModel(
   const displayBlockers = [
     ...blockers.map((code) => humanizeBlocker(code, recommendation)),
   ];
-  if (
-    recommendation === "HOLD" &&
-    !displayBlockers.some((x) => x.includes("AI HOLD"))
-  ) {
-    displayBlockers.unshift("AI HOLD");
-  }
+  // AI HOLD는 AUTO STOPPED가 아님 — blockers에 섞지 않고 별도 표시
   if (
     fresh === false &&
     !displayBlockers.some((x) => x.includes("AI STALE") || x.includes("STALE"))
@@ -438,6 +438,10 @@ export function buildUbaAutoTradingViewModel(
       workerEnabled: boolOrNull(worker.enabled),
       workerRunning: boolOrNull(worker.running),
       pendingOutbox: str(checks.pending_live_outbox, "0"),
+      runtimeLifecycle: str(ctrl.strategy_runtime, runtimeStatus),
+      workerLifecycle: str(ctrl.outbox_worker, "-"),
+      exitMonitorLifecycle: str(ctrl.exit_monitor, "-"),
+      startAllForbidden: ctrl.start_all_forbidden !== false,
     },
     checklist,
     finalLabel:
