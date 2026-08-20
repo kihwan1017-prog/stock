@@ -144,6 +144,23 @@ class Settings(BaseSettings):
     live_activation_ttl_hours: int = Field(
         default=4, ge=1, le=LIVE_ACTIVATION_TTL_HOURS_MAX
     )
+    # 24H Unattended — 운영자 승인 horizon (시간). 무제한 금지.
+    live_unattended_default_horizon_hours: int = Field(
+        default=24, ge=1, le=168
+    )
+    live_unattended_max_horizon_hours: int = Field(default=168, ge=1, le=168)
+    live_unattended_renewal_interval_seconds: int = Field(
+        default=3600, ge=60, le=86400
+    )
+    live_unattended_renewal_margin_seconds: int = Field(
+        default=600, ge=60, le=3600
+    )
+    live_unattended_arm_lease_ttl_seconds: int = Field(
+        default=3600, ge=300, le=7200
+    )
+    live_unattended_activation_renew_hours: int = Field(
+        default=8, ge=1, le=LIVE_ACTIVATION_TTL_HOURS_MAX
+    )
     # ARM/Activation 만료 스캔 주기(초). 주문/Runtime 기동 아님.
     live_session_expiry_scan_interval_seconds: float = Field(
         default=15.0, ge=5.0, le=60.0

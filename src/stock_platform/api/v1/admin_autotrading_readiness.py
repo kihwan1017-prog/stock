@@ -1,8 +1,11 @@
-"""Admin UPBIT Autotrading readiness / Live Outbox Worker 상태 (조회·link만)."""
+"""Admin UPBIT Autotrading readiness / 24x7 Runtime·Worker 제어.
+
+START ALL 없음. Activation/LIVE/ARM은 이 라우터에서 변경하지 않는다.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,6 +30,15 @@ class StrategyLinkActiveBody(BaseModel):
     is_active: bool = True
 
 
+class Upbit24x7RuntimeBody(BaseModel):
+    strategy_id: int = Field(..., ge=1)
+    confirmation_text: str = Field(..., min_length=3)
+
+
+class Upbit24x7ConfirmBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=3)
+
+
 @router.get("/uba/{user_broker_account_id}/readiness")
 def admin_uba_autotrading_readiness(
     user_broker_account_id: int,
@@ -37,6 +49,74 @@ def admin_uba_autotrading_readiness(
 
     return evaluate_uba_autotrading_ready(
         session, user_broker_account_id=int(user_broker_account_id)
+    )
+
+
+@router.get("/kiwoom/market-realtime/status")
+def admin_kiwoom_market_realtime_status(
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """KIWOOM 시세 WS 상태 READ. START/주문 없음. 토큰 미포함."""
+
+    from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+        kiwoom_market_realtime_runtime,
+    )
+
+    return {
+        **kiwoom_market_realtime_runtime.status(),
+        "mutate_allowed": False,
+    }
+
+
+@router.get("/uba/{user_broker_account_id}/kiwoom-market-registration")
+def admin_kiwoom_market_registration(
+    user_broker_account_id: int,
+    strategy_id: int = Query(default=17579),
+    symbol: str = Query(default="034310"),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """시세 consumer 등록 dry-readiness. Runtime START 없음."""
+
+    from stock_platform.realtime.kiwoom_market_runtime_readiness import (
+        evaluate_kiwoom_market_runtime_registration,
+    )
+
+    return evaluate_kiwoom_market_runtime_registration(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        strategy_id=int(strategy_id),
+        symbol=str(symbol),
+    )
+
+
+@router.get("/exit-monitor/status")
+def admin_exit_monitor_status(
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Exit Monitor 상태. in-memory READ만. START/STOP 없음."""
+
+    from stock_platform.trading.upbit_24x7_control import exit_monitor_status
+
+    return {
+        **exit_monitor_status(),
+        "mutate_allowed": False,
+    }
+
+
+@router.get("/uba/{user_broker_account_id}/strategy-runtime/status")
+def admin_uba_strategy_runtime_status(
+    user_broker_account_id: int,
+    strategy_id: int | None = Query(default=None),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Strategy Runtime 상태. in-memory READ만. START/STOP 없음."""
+
+    from stock_platform.trading.upbit_24x7_control import runtime_status_for_uba
+
+    return runtime_status_for_uba(
+        user_broker_account_id=int(user_broker_account_id),
+        strategy_id=strategy_id,
     )
 
 
@@ -60,6 +140,277 @@ def admin_live_outbox_worker_status(
         ),
         "mutate_allowed": False,
     }
+
+
+@router.get("/uba/{user_broker_account_id}/24x7-control")
+def admin_uba_24x7_control_status(
+    user_broker_account_id: int,
+    strategy_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """UPBIT 24/7 Runtime/Worker/Exit 상태. START ALL 없음."""
+
+    from stock_platform.trading.upbit_24x7_control import (
+        combined_control_status,
+    )
+
+    return combined_control_status(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        strategy_id=strategy_id,
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/ops-status")
+def admin_uba_ops_status(
+    user_broker_account_id: int,
+    strategy_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """UBA 운영 상태 SoT aggregate (AUTO TRADING / TTL / Unattended)."""
+
+    from stock_platform.trading.uba_operational_summary import (
+        build_uba_operational_summary,
+    )
+
+    return build_uba_operational_summary(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        strategy_id=strategy_id,
+    )
+
+
+class UnattendedEnableBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=8)
+    approval_phrase: str = Field(..., min_length=3)
+    reason: str = Field(..., min_length=3, max_length=2000)
+    horizon_hours: int | None = Field(default=None, ge=1, le=168)
+    correlation_id: str | None = Field(default=None, max_length=128)
+
+
+class UnattendedDisableBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=8)
+    reason: str = Field(..., min_length=3, max_length=2000)
+
+
+@router.get("/uba/{user_broker_account_id}/unattended")
+def admin_uba_unattended_status(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+    )
+
+    return LiveUnattendedAuthorizationService(session).status_dict(
+        int(user_broker_account_id)
+    )
+
+
+@router.post("/uba/{user_broker_account_id}/unattended/enable")
+def admin_uba_unattended_enable(
+    user_broker_account_id: int,
+    body: UnattendedEnableBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """24H Unattended 명시 승인. 자동 ON 금지."""
+
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+        LiveUnattendedError,
+    )
+
+    try:
+        return LiveUnattendedAuthorizationService(session).enable(
+            int(user_broker_account_id),
+            actor=user.username,
+            confirmation_text=body.confirmation_text,
+            approval_phrase=body.approval_phrase,
+            reason=body.reason,
+            horizon_hours=body.horizon_hours,
+            correlation_id=body.correlation_id,
+        )
+    except LiveUnattendedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/uba/{user_broker_account_id}/unattended/disable")
+def admin_uba_unattended_disable(
+    user_broker_account_id: int,
+    body: UnattendedDisableBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+        LiveUnattendedError,
+    )
+
+    try:
+        return LiveUnattendedAuthorizationService(session).disable(
+            int(user_broker_account_id),
+            actor=user.username,
+            confirmation_text=body.confirmation_text,
+            reason=body.reason,
+            fail_closed=True,
+        )
+    except LiveUnattendedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/uba/{user_broker_account_id}/strategy-runtime/start")
+async def admin_uba_strategy_runtime_start(
+    user_broker_account_id: int,
+    body: Upbit24x7RuntimeBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.trading.upbit_24x7_control import (
+        Upbit24x7ControlError,
+        start_upbit_strategy_runtime,
+    )
+
+    try:
+        return await start_upbit_strategy_runtime(
+            session,
+            user_broker_account_id=int(user_broker_account_id),
+            strategy_id=int(body.strategy_id),
+            actor=user.username,
+            confirmation_text=body.confirmation_text,
+        )
+    except Upbit24x7ControlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/uba/{user_broker_account_id}/strategy-runtime/stop")
+async def admin_uba_strategy_runtime_stop(
+    user_broker_account_id: int,
+    body: Upbit24x7RuntimeBody,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.trading.upbit_24x7_control import (
+        Upbit24x7ControlError,
+        stop_upbit_strategy_runtime,
+    )
+
+    try:
+        return await stop_upbit_strategy_runtime(
+            session,
+            user_broker_account_id=int(user_broker_account_id),
+            strategy_id=int(body.strategy_id),
+            confirmation_text=body.confirmation_text,
+        )
+    except Upbit24x7ControlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/live-outbox-worker/start")
+async def admin_live_outbox_worker_start(
+    body: Upbit24x7ConfirmBody,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """operator START. asyncio.create_task 가 필요하므로 async 핸들러로 둔다."""
+
+    from stock_platform.trading.upbit_24x7_control import (
+        Upbit24x7ControlError,
+        start_live_outbox_worker,
+    )
+
+    try:
+        return start_live_outbox_worker(
+            confirmation_text=body.confirmation_text,
+        )
+    except Upbit24x7ControlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/live-outbox-worker/stop")
+async def admin_live_outbox_worker_stop(
+    body: Upbit24x7ConfirmBody,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """operator STOP. running loop 에서 shutdown task 를 스케줄한다."""
+
+    from stock_platform.trading.upbit_24x7_control import (
+        Upbit24x7ControlError,
+        stop_live_outbox_worker,
+    )
+
+    try:
+        return stop_live_outbox_worker(
+            confirmation_text=body.confirmation_text,
+        )
+    except Upbit24x7ControlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/exit-monitor/start")
+async def admin_exit_monitor_start(
+    body: Upbit24x7ConfirmBody,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """operator START. live_upbit 플래그는 변경하지 않는다."""
+
+    from stock_platform.trading.upbit_24x7_control import (
+        Upbit24x7ControlError,
+        start_exit_monitor,
+    )
+
+    try:
+        return start_exit_monitor(
+            confirmation_text=body.confirmation_text,
+        )
+    except Upbit24x7ControlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/exit-monitor/stop")
+async def admin_exit_monitor_stop(
+    body: Upbit24x7ConfirmBody,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """operator STOP. live scan scheduler 를 내린다. START는 이 STEP에서 호출 금지."""
+
+    from stock_platform.trading.upbit_24x7_control import (
+        Upbit24x7ControlError,
+        stop_exit_monitor,
+    )
+
+    try:
+        return await stop_exit_monitor(
+            confirmation_text=body.confirmation_text,
+        )
+    except Upbit24x7ControlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 
 @router.post("/uba/{user_broker_account_id}/strategy-link")

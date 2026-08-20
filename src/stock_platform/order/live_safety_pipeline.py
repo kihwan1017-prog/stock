@@ -31,6 +31,9 @@ from stock_platform.order.live_safety_audit import (
     emit_live_safety_audit,
 )
 from stock_platform.order.entities import TradingOrderEntity
+from stock_platform.order.live_open_order_exposure import (
+    evaluate_live_open_order_exposure,
+)
 from stock_platform.risk_engine.kill_switch_guard import (
     KillSwitchUnavailableError,
     PersistentKillSwitchGuard,
@@ -80,6 +83,7 @@ class LiveOrderSafetyPipeline:
         arm_token: str | None = None,
         reference_price: Decimal | None = None,
         require_arm: bool = True,
+        order_type: str | None = None,
     ) -> LiveSafetyDecision:
         env = (environment or "LIVE").upper()
         if env != "LIVE":
@@ -186,6 +190,53 @@ class LiveOrderSafetyPipeline:
                 )
                 return _fail(arm_reason, audit)
 
+        # 2b2) Unattended lease — ENTRY만 차단 (protective EXIT 유지)
+        is_entry = (not is_risk_reducing) and side_u in {
+            "BUY",
+            "BID",
+            "LONG",
+        }
+        if is_entry:
+            try:
+                from stock_platform.trading.live_unattended_authorization_service import (
+                    LiveUnattendedAuthorizationService,
+                )
+
+                unatt = LiveUnattendedAuthorizationService(self._session)
+                active = unatt.get_active(uba_id)
+                if active is not None and not unatt.is_entry_authorized(
+                    uba_id
+                ):
+                    return _fail(
+                        "UNATTENDED_ENTRY_BLOCKED",
+                        LIVE_REJECTED,
+                        {"unattended_status": active.status_code},
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 2c) KIWOOM LIMIT — 로컬 KRX tick (shared market quote 불필요)
+        order_type_u = str(order_type or "").strip().upper()
+        if broker == "KIWOOM" and order_type_u == "LIMIT":
+            if qty <= ZERO:
+                return _fail("INVALID_ORDER_QUANTITY", ORDER_QTY_REJECT)
+            if px <= ZERO:
+                return _fail("INVALID_ORDER_PRICE", ORDER_AMOUNT_REJECT)
+            from stock_platform.position.lot_rounding import (
+                is_krx_tick_aligned,
+                krx_tick_size,
+            )
+
+            if not is_krx_tick_aligned(px):
+                return _fail(
+                    "INVALID_KRX_TICK_SIZE",
+                    ORDER_AMOUNT_REJECT,
+                    {
+                        "tick_size": str(krx_tick_size(px)),
+                        "price": str(px),
+                    },
+                )
+
         policy = ResolvedRiskPolicyResolver(self._session).resolve(
             user_id=resolved_user_id,
             user_broker_account_id=uba_id,
@@ -222,8 +273,75 @@ class LiveOrderSafetyPipeline:
         except PermissionError:
             return _fail("KILL_SWITCH_ACTIVE", LOSS_LIMIT_REJECT)
 
-        # 5) Order Amount
-        if amount > policy.max_order_amount:
+        if qty <= ZERO:
+            return _fail("INVALID_ORDER_QUANTITY", ORDER_QTY_REJECT)
+
+        # 서버 EXIT 분류 — 클라이언트 is_risk_reducing 무시
+        from stock_platform.risk_engine.exit_risk import (
+            classify_risk_reducing_exit,
+        )
+
+        verified_exit = False
+        if side_u == "SELL":
+            exit_clf = classify_risk_reducing_exit(
+                self._session,
+                side=side_u,
+                symbol=sym,
+                exchange_code=exchange,
+                quantity=qty,
+                user_broker_account_id=uba_id,
+                paper_account_id=None,
+                environment=env,
+                broker_code=broker,
+            )
+            if not exit_clf.is_risk_reducing_exit:
+                return _fail(
+                    exit_clf.reason_code or "NO_POSITION_TO_SELL",
+                    LIVE_REJECTED,
+                    {
+                        "held_quantity": str(exit_clf.held_quantity),
+                        "pending_sell_quantity": str(
+                            exit_clf.pending_sell_quantity
+                        ),
+                        "sellable_quantity": str(exit_clf.sellable_quantity),
+                    },
+                )
+            verified_exit = True
+            is_risk_reducing = True
+            base_detail["exit_verified"] = True
+            base_detail["held_quantity"] = str(exit_clf.held_quantity)
+            base_detail["pending_sell_quantity"] = str(
+                exit_clf.pending_sell_quantity
+            )
+            base_detail["sellable_quantity"] = str(exit_clf.sellable_quantity)
+
+        # UPBIT 최소 노셔널 — EXIT도 스킵하지 않음 (확정 가능한 LIMIT만)
+        from stock_platform.broker.upbit.rules import (
+            REASON_UPBIT_MIN_NOTIONAL_NOT_MET,
+            UPBIT_MIN_NOTIONAL_KRW,
+            evaluate_upbit_min_notional,
+        )
+
+        min_notional_reason = evaluate_upbit_min_notional(
+            broker_code=broker,
+            environment=env,
+            side=side_u,
+            order_type=str(order_type or "LIMIT"),
+            quantity=qty,
+            price=px if px > ZERO else None,
+        )
+        if min_notional_reason:
+            return _fail(
+                REASON_UPBIT_MIN_NOTIONAL_NOT_MET,
+                LIVE_REJECTED,
+                {
+                    "minimum_notional": str(UPBIT_MIN_NOTIONAL_KRW),
+                    "reason_code": REASON_UPBIT_MIN_NOTIONAL_NOT_MET,
+                },
+            )
+
+        # 5) Order Amount — ENTRY 전용 (검증된 EXIT 스킵)
+        if (not verified_exit) and amount > policy.max_order_amount:
             return _fail(
                 "ORDER_AMOUNT_EXCEEDED",
                 ORDER_AMOUNT_REJECT,
@@ -233,7 +351,7 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 6) Order Quantity
+        # 6) Order Quantity — EXIT에도 안전 캡 유지
         if qty > policy.max_order_quantity:
             return _fail(
                 "ORDER_QTY_EXCEEDED",
@@ -244,10 +362,10 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 7) Daily order count
+        # 7) Daily order count — ENTRY 전용
         daily_count = self._count_orders_today(uba_id)
         base_detail["daily_order_count"] = daily_count
-        if daily_count >= int(policy.daily_order_limit):
+        if (not verified_exit) and daily_count >= int(policy.daily_order_limit):
             return _fail(
                 "DAILY_ORDER_LIMIT_EXCEEDED",
                 DAILY_LIMIT_REJECT,
@@ -257,19 +375,19 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 8) Daily loss (정책 한도 — Kill Switch는 DailyLossMonitor가 활성화)
+        # 8) Daily loss — ENTRY BLOCK (엔진은 SELL WARNING, 파이프라인은 EXIT 스킵)
         loss_hit = self._daily_loss_breached(
             user_broker_account_id=uba_id,
             limit=policy.daily_max_loss_amount,
         )
-        if loss_hit:
+        if (not verified_exit) and loss_hit:
             return _fail(
                 "DAILY_LOSS_LIMIT_REACHED",
                 LOSS_LIMIT_REJECT,
                 {"limit": str(policy.daily_max_loss_amount)},
             )
 
-        # 9) Duplicate window
+        # 9) Duplicate window — EXIT에도 유지 (idempotency)
         window = int(policy.duplicate_order_window_seconds)
         if window > 0 and self._is_duplicate(
             user_broker_account_id=uba_id,
@@ -285,7 +403,7 @@ class LiveOrderSafetyPipeline:
                 {"window_seconds": window},
             )
 
-        # 9b) STEP 8-8 — max open orders
+        # 9b) STEP 8-8 — max open orders (ENTRY 전용; EXIT는 pending SELL로 제한)
         from stock_platform.order.live_safety_audit import (
             ANOMALY_ORDER_RATE,
             LOOP_DETECTED,
@@ -293,9 +411,30 @@ class LiveOrderSafetyPipeline:
             SLIPPAGE_REJECT,
         )
 
-        open_count = self._count_open_orders(uba_id)
-        base_detail["open_order_count"] = open_count
-        if open_count >= int(policy.max_open_orders):
+        if broker == "UPBIT" and not verified_exit:
+            # UPBIT ENTRY: local + unmapped remote. 상태 불명이면 fail-closed.
+            exposure = evaluate_live_open_order_exposure(
+                self._session,
+                uba_id=uba_id,
+                broker_code=broker,
+                environment=env,
+            )
+            base_detail.update(exposure.as_detail())
+            if not exposure.remote_state_ok:
+                return _fail(
+                    str(exposure.reason_code or "REMOTE_OPEN_CHECK_FAILED"),
+                    OPEN_ORDER_LIMIT,
+                    {
+                        "limit": int(policy.max_open_orders),
+                        "count": exposure.canonical_count,
+                        "remote_open_state": exposure.remote_state,
+                    },
+                )
+            open_count = int(exposure.canonical_count)
+        else:
+            open_count = self._count_open_orders(uba_id)
+            base_detail["open_order_count"] = open_count
+        if (not verified_exit) and open_count >= int(policy.max_open_orders):
             return _fail(
                 "OPEN_ORDER_LIMIT_EXCEEDED",
                 OPEN_ORDER_LIMIT,
@@ -325,11 +464,11 @@ class LiveOrderSafetyPipeline:
                     },
                 )
 
-        # 9d) 1분 주문 폭주
+        # 9d) 1분 주문 폭주 — ENTRY 스팸 방지 (검증된 EXIT 스킵)
         per_min = self._count_orders_since(
             uba_id, seconds=60
         )
-        if per_min >= int(policy.anomaly_orders_per_minute):
+        if (not verified_exit) and per_min >= int(policy.anomaly_orders_per_minute):
             return _fail(
                 "ANOMALY_ORDER_RATE",
                 ANOMALY_ORDER_RATE,
@@ -339,13 +478,17 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 9e) BUY/SELL loop 감지
+        # 9e) BUY/SELL loop 감지 — ENTRY 전용
         loop_window = int(policy.loop_detect_window_seconds)
-        if loop_window > 0 and self._detect_flip_loop(
-            user_broker_account_id=uba_id,
-            symbol=sym,
-            next_side=side_u,
-            window_seconds=loop_window,
+        if (
+            (not verified_exit)
+            and loop_window > 0
+            and self._detect_flip_loop(
+                user_broker_account_id=uba_id,
+                symbol=sym,
+                next_side=side_u,
+                window_seconds=loop_window,
+            )
         ):
             return _fail(
                 "ORDER_LOOP_DETECTED",
@@ -360,11 +503,16 @@ class LiveOrderSafetyPipeline:
             and broker == "KIWOOM"
         ):
             try:
+                from stock_platform.operation.calendar_repository import (
+                    TradingCalendarRepository,
+                )
                 from stock_platform.operation.calendar_service import (
                     TradingCalendarService,
                 )
 
-                TradingCalendarService(self._session).require_live_order_session(
+                TradingCalendarService(
+                    TradingCalendarRepository(self._session)
+                ).require_live_order_session(
                     exchange_code="KRX",
                     is_risk_reducing=is_risk_reducing,
                 )
@@ -408,11 +556,29 @@ class LiveOrderSafetyPipeline:
                 evaluate_live_flag_consistency,
             )
 
-            cfg = evaluate_live_flag_consistency()
+            cfg = evaluate_live_flag_consistency(
+                broker_code=broker,
+                session=self._session,
+                user_broker_account_id=uba_id,
+            )
             if cfg.code in {
-                "LIVE_MOCK_CONFLICT",
                 "LIVE_FLAG_MISMATCH_KIWOOM",
+                "GLOBAL_LIVE_OFF",
+                "UPBIT_LIVE_OFF",
+                "UPBIT_MOCK_LIVE_CONFLICT",
             }:
+                return _fail(cfg.code, LIVE_REJECTED)
+            if cfg.code == "LIVE_MOCK_CONFLICT" and broker == "KIWOOM":
+                from stock_platform.broker.kiwoom.execution_env import (
+                    kiwoom_global_mock_blocks_live_execution,
+                )
+
+                if kiwoom_global_mock_blocks_live_execution(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                ):
+                    return _fail(cfg.code, LIVE_REJECTED)
+            elif cfg.code == "LIVE_MOCK_CONFLICT" and broker != "UPBIT":
                 return _fail(cfg.code, LIVE_REJECTED)
             if broker == "KIWOOM" and cfg.code == "KIWOOM_LIVE_OFF":
                 return _fail("KIWOOM_LIVE_OFF", LIVE_REJECTED)

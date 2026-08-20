@@ -121,6 +121,7 @@ class LiveArmService:
                 "live_required",
                 "LIVE must be ON before ARM enable",
             )
+        self._require_session_activation(uba)
         assert_uba_connection_ready(
             uba,
             raise_error=lambda c, m: LiveArmError(c, m),
@@ -245,6 +246,73 @@ class LiveArmService:
             "arm_ttl_seconds": risk.get("arm_ttl_seconds"),
         }
 
+    def _require_session_activation(self, uba: UserBrokerAccount):
+        """effective ACCOUNT/broker Activation. 없으면 ACTIVATION_INACTIVE."""
+
+        from stock_platform.broker.live_transition_service import (
+            LiveTradingTransitionService,
+        )
+
+        entity = LiveTradingTransitionService(self._session).peek_active(
+            broker_code=str(uba.broker_code),
+            user_broker_account_id=int(uba.user_broker_account_id),
+        )
+        if entity is None:
+            raise LiveArmError(
+                "ACTIVATION_INACTIVE",
+                "No active live trading transition approval",
+            )
+        return entity
+
+    def _clamp_arm_ttl(
+        self,
+        uba: UserBrokerAccount,
+        requested_ttl: int | None,
+        policy_ttl: int,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[int, datetime, Any]:
+        """effective ARM TTL = min(요청, 잔여 Activation).
+
+        무제한 ARM 금지. 절대 상한은 Activation 최대 창(시간×3600).
+        """
+
+        from stock_platform.common.settings import (
+            LIVE_ACTIVATION_TTL_HOURS_MAX,
+        )
+        from stock_platform.trading.live_session_expiry import (
+            activation_remaining_seconds,
+            aware_utc,
+        )
+
+        current = now or datetime.now(timezone.utc)
+        activation = self._require_session_activation(uba)
+        remaining = activation_remaining_seconds(
+            activation, now=current
+        )
+        if remaining <= 0:
+            raise LiveArmError(
+                "ACTIVATION_INACTIVE",
+                "No active live trading transition approval",
+            )
+        if requested_ttl is not None:
+            requested = int(requested_ttl)
+        else:
+            requested = int(policy_ttl)
+        if requested <= 0:
+            raise LiveArmError(
+                "invalid_ttl", "arm_ttl_seconds must be > 0"
+            )
+        absolute_max = int(LIVE_ACTIVATION_TTL_HOURS_MAX) * 3600
+        requested = min(requested, absolute_max)
+        effective = min(requested, remaining)
+        expires = current + timedelta(seconds=effective)
+        act_exp = aware_utc(activation.expires_at)
+        if act_exp is not None and expires > act_exp:
+            expires = act_exp
+            effective = max(1, remaining)
+        return effective, expires, activation
+
     def arm(
         self,
         user_broker_account_id: int,
@@ -255,8 +323,12 @@ class LiveArmService:
         reason: str | None = None,
         correlation_id: str | None = None,
         enforce_gates: bool = False,
+        force_renew: bool = False,
     ) -> dict[str, Any]:
-        """ARM만 ON. LIVE·Scheduler·Runtime은 변경하지 않는다."""
+        """ARM만 ON. LIVE·Scheduler·Runtime은 변경하지 않는다.
+
+        force_renew: unattended renewal 전용 — 이미 ARM이어도 TTL/토큰 재발급.
+        """
         uba = self._require_uba(user_broker_account_id)
         before_live = bool(uba.live_order_enabled)
         before_arm = bool(uba.live_armed)
@@ -272,7 +344,12 @@ class LiveArmService:
                     "correlation_id is required",
                 )
             # 이미 ARM이면 idempotent (토큰 재발급·Audit 없음)
-            if before_arm and uba.arm_expires_at is not None:
+            # force_renew=True 이면 unattended lease 갱신 경로에서 TTL 재발급
+            if (
+                before_arm
+                and uba.arm_expires_at is not None
+                and not force_renew
+            ):
                 now = datetime.now(timezone.utc)
                 if uba.arm_expires_at > now:
                     status = self.get_arm_status(int(user_broker_account_id))
@@ -306,20 +383,40 @@ class LiveArmService:
             user_id=int(uba.user_id),
             user_broker_account_id=int(user_broker_account_id),
         )
-        ttl = int(
-            ttl_seconds
+        now = datetime.now(timezone.utc)
+        requested = (
+            int(ttl_seconds)
             if ttl_seconds is not None
-            else getattr(policy, "arm_ttl_seconds", DEFAULT_ARM_TTL_SECONDS)
-        )
-        if ttl <= 0:
-            raise LiveArmError(
-                "invalid_ttl", "arm_ttl_seconds must be > 0"
+            else int(
+                getattr(
+                    policy, "arm_ttl_seconds", DEFAULT_ARM_TTL_SECONDS
+                )
             )
-
+        )
+        ttl, expires, activation = self._clamp_arm_ttl(
+            uba,
+            ttl_seconds,
+            int(
+                getattr(
+                    policy, "arm_ttl_seconds", DEFAULT_ARM_TTL_SECONDS
+                )
+            ),
+            now=now,
+        )
         token = secrets.token_urlsafe(32)
         token_hash = self.hash_token(token)
-        now = datetime.now(timezone.utc)
-        expires = now + timedelta(seconds=ttl)
+        act_exp = getattr(activation, "expires_at", None)
+        clamp_meta = {
+            "requested_ttl_seconds": requested,
+            "effective_ttl_seconds": ttl,
+            "clamped_to_activation": ttl < requested,
+            "activation_id": getattr(
+                activation, "live_trading_transition_id", None
+            ),
+            "activation_expires_at": (
+                act_exp.isoformat() if act_exp is not None else None
+            ),
+        }
 
         uba.live_armed = True
         uba.arm_token_hash = token_hash
@@ -342,6 +439,7 @@ class LiveArmService:
                     "previous_arm": before_arm,
                     "new_arm": True,
                     "live": before_live,
+                    **clamp_meta,
                 },
             )
         )
@@ -372,6 +470,7 @@ class LiveArmService:
                     trading.trading_scheduler_actual_state
                 ),
                 "runtime_paused": True,
+                **clamp_meta,
             },
             commit=False,
         )
@@ -402,6 +501,7 @@ class LiveArmService:
                 "reason": (reason or "")[:2000] or None,
                 "correlation_id": (correlation_id or "")[:128] or None,
                 "actor": actor,
+                **clamp_meta,
             }
         )
         return status
