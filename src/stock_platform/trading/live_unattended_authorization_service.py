@@ -42,6 +42,14 @@ STATUS_PROTECTIVE = "PROTECTIVE_EXIT_ONLY"
 CONFIRM_ENABLE = "ENABLE 24H UNATTENDED"
 CONFIRM_DISABLE = "DISABLE 24H UNATTENDED"
 
+# Unattended 전용 승인 모델 — LIVE ON approval_phrase 와 역할 분리
+APPROVAL_MODEL_UNATTENDED_LEASE = "UNATTENDED_LEASE_ACK"
+SOURCE_ADMIN_UI = "ADMIN_UI"
+SOURCE_ADMIN_API = "ADMIN_API"
+ALLOWED_ENABLE_SOURCES = frozenset({SOURCE_ADMIN_UI, SOURCE_ADMIN_API})
+_OK_RECOVERY_STRICT = frozenset({"SUCCESS", "READY"})
+_HIGH_CONFLICT_LEVELS = frozenset({"HIGH", "CRITICAL"})
+
 
 class LiveUnattendedError(Exception):
     def __init__(self, code: str, message: str) -> None:
@@ -140,38 +148,23 @@ class LiveUnattendedAuthorizationService:
 
     @staticmethod
     def _required_phrase_meta(broker_code: str | None) -> dict[str, Any]:
-        """UI/API SoT — confirmation vs LIVE approval phrase는 별개."""
+        """UI/API SoT — Unattended lease ACK vs LIVE ON phrase 역할 분리."""
 
-        from stock_platform.broker.live_transition_validators import (
-            approval_phrase_for_broker,
-        )
-
-        required_live: str | None = None
-        if broker_code:
-            try:
-                required_live = approval_phrase_for_broker(broker_code)
-            except PermissionError:
-                required_live = None
         return {
+            "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
             "required_confirmation_text": CONFIRM_ENABLE,
             "required_confirmation_text_disable": CONFIRM_DISABLE,
-            "required_approval_phrase": required_live,
+            "requires_live_approval_phrase": False,
+            "required_approval_phrase": None,
             "approval_phrase_note": (
-                "approval_phrase is the LIVE broker approval phrase "
-                "(same as Activation approve). "
-                "It is NOT the unattended confirmation_text."
+                "24H Unattended Enable no longer accepts LIVE approval_phrase. "
+                "It authorizes limited unattended operation on an already "
+                "approved LIVE session. LIVE ON still requires its own "
+                "broker approval phrase on LIVE transition APIs. "
+                f"Unattended confirmation_text must be '{CONFIRM_ENABLE}'. "
+                f"broker={broker_code or 'UNKNOWN'}"
             ),
         }
-
-    @staticmethod
-    def _approval_phrase_matches(provided: str, required: str) -> bool:
-        """길이 달라도 ValueError 없이 False (검증 약화 없음)."""
-
-        left = (provided or "").encode("utf-8")
-        right = required.encode("utf-8")
-        if len(left) != len(right):
-            return False
-        return secrets.compare_digest(left, right)
 
     def enable(
         self,
@@ -179,19 +172,30 @@ class LiveUnattendedAuthorizationService:
         *,
         actor: str,
         confirmation_text: str,
-        approval_phrase: str,
         reason: str,
+        source: str = SOURCE_ADMIN_API,
         horizon_hours: int | None = None,
         correlation_id: str | None = None,
     ) -> dict[str, Any]:
-        """관리자 명시 승인. 기존 LIVE 계좌 자동 전환 금지."""
+        """이미 승인된 LIVE 세션에 대한 제한된 unattended lease 승인.
+
+        LIVE ON approval_phrase 검증은 이 API에서 수행하지 않는다
+        (LIVE transition 경로에서만 유지).
+        """
 
         text_u = (confirmation_text or "").strip().upper()
-        if CONFIRM_ENABLE not in text_u:
+        if not secrets.compare_digest(text_u, CONFIRM_ENABLE):
             raise LiveUnattendedError(
                 "CONFIRMATION_REQUIRED",
-                f"confirmation_text must include '{CONFIRM_ENABLE}'",
+                f"confirmation_text must be exactly '{CONFIRM_ENABLE}'",
             )
+        source_u = str(source or "").strip().upper()
+        if source_u not in ALLOWED_ENABLE_SOURCES:
+            raise LiveUnattendedError(
+                "INVALID_SOURCE",
+                f"source must be one of {sorted(ALLOWED_ENABLE_SOURCES)}",
+            )
+
         uba = self._session.get(
             UserBrokerAccount, int(user_broker_account_id)
         )
@@ -202,21 +206,6 @@ class LiveUnattendedAuthorizationService:
             raise LiveUnattendedError(
                 "BROKER_NOT_SUPPORTED",
                 "24H unattended is UPBIT-only in this release",
-            )
-
-        from stock_platform.broker.live_transition_validators import (
-            approval_phrase_for_broker,
-        )
-
-        required = approval_phrase_for_broker(broker)
-        if not self._approval_phrase_matches(approval_phrase, required):
-            raise LiveUnattendedError(
-                "INVALID_APPROVAL_PHRASE",
-                (
-                    "Live approval phrase is invalid. "
-                    f"For {broker} use exact phrase: {required} "
-                    f"(not confirmation_text '{CONFIRM_ENABLE}')"
-                ),
             )
 
         settings = get_settings()
@@ -252,6 +241,11 @@ class LiveUnattendedAuthorizationService:
             user_broker_account_id=int(user_broker_account_id),
         )
         now = _now()
+        act_expires = (
+            aware_utc(act.expires_at).isoformat()
+            if act is not None and act.expires_at is not None
+            else None
+        )
         row = LiveUnattendedAuthorizationEntity(
             user_broker_account_id=int(user_broker_account_id),
             broker_code=broker,
@@ -276,12 +270,17 @@ class LiveUnattendedAuthorizationService:
             approved_by=actor[:100],
             approved_at=now,
             approval_reason=(reason or "")[:2000],
-            approval_phrase_hash=_hash_phrase(approval_phrase),
+            # Unattended lease ACK 해시 (LIVE phrase 아님)
+            approval_phrase_hash=_hash_phrase(
+                f"{APPROVAL_MODEL_UNATTENDED_LEASE}:{CONFIRM_ENABLE}"
+            ),
             source_activation_id=(
                 int(act.live_trading_transition_id) if act is not None else None
             ),
             last_renewal_detail={
                 "correlation_id": (correlation_id or "")[:128],
+                "source": source_u,
+                "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
                 "gates": gates,
             },
         )
@@ -296,10 +295,21 @@ class LiveUnattendedAuthorizationService:
             account_id=int(user_broker_account_id),
             strategy_id=None,
             detail={
-                "authorization_id": int(row.live_unattended_authorization_id),
+                "actor": actor,
+                "user_broker_account_id": int(user_broker_account_id),
+                "broker": broker,
+                "enabled_at": now.isoformat(),
+                "authorization_horizon_hours": hours,
                 "authorized_until": row.authorized_until.isoformat(),
-                "horizon_hours": hours,
+                "live_state": gates.get("live"),
+                "arm_state": gates.get("arm"),
+                "activation_id": gates.get("activation_id"),
+                "activation_expires_at": act_expires,
                 "reason": (reason or "")[:500],
+                "source": source_u,
+                "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "execution_env": gates.get("execution_env"),
             },
             commit=False,
         )
@@ -368,46 +378,186 @@ class LiveUnattendedAuthorizationService:
     def evaluate_enable_gates(
         self, user_broker_account_id: int
     ) -> dict[str, Any]:
-        """Unattended enable 시 최소 안전 조건 (Runtime RUNNING 비필수)."""
+        """Unattended enable 최소 안전 조건 — 하나라도 실패 시 FAIL CLOSED.
+
+        Runtime RUNNING은 비필수(이후 운영 스택 START에서 기동).
+        LIVE ON approval_phrase는 여기서 재검증하지 않는다.
+        """
 
         blockers: list[str] = []
+        checks: dict[str, Any] = {}
         uba = self._session.get(
             UserBrokerAccount, int(user_broker_account_id)
         )
         if uba is None:
-            return {"ok": False, "blockers": ["UBA_NOT_FOUND"]}
+            return {
+                "ok": False,
+                "blockers": ["UBA_NOT_FOUND"],
+                "checks": {},
+                "live": "OFF",
+                "arm": "OFF",
+                "activation_id": None,
+                "execution_env": None,
+            }
+
+        broker = str(uba.broker_code or "").upper()
+        checks["broker"] = broker
+        if broker != "UPBIT":
+            blockers.append("BROKER_NOT_UPBIT")
+
         if not bool(uba.is_active):
             blockers.append("UBA_INACTIVE")
-        if not bool(uba.live_order_enabled):
+
+        # LIVE ON
+        live_on = bool(uba.live_order_enabled)
+        checks["live"] = "ON" if live_on else "OFF"
+        if not live_on:
             blockers.append("LIVE_OFF")
 
+        # ARM ON (만료 포함)
+        now = _now()
+        arm_exp = aware_utc(getattr(uba, "arm_expires_at", None))
+        arm_on = bool(uba.live_armed) and (
+            arm_exp is None or arm_exp > now
+        )
+        checks["arm"] = "ON" if arm_on else "OFF"
+        if not arm_on:
+            blockers.append("ARM_OFF")
+
+        # UPBIT REAL (mock LIVE conflict 금지)
+        execution_env = "UNKNOWN"
+        try:
+            from stock_platform.broker.live_config_gate import (
+                evaluate_live_flag_consistency,
+            )
+
+            flag = evaluate_live_flag_consistency(
+                broker_code=broker,
+                session=self._session,
+                user_broker_account_id=int(user_broker_account_id),
+            )
+            checks["live_config"] = {
+                "allowed": flag.allowed,
+                "code": flag.code,
+                "status": flag.status,
+            }
+            if not flag.allowed:
+                blockers.append(str(flag.code or "LIVE_CONFIG_BLOCKED"))
+                if flag.code == "UPBIT_MOCK_LIVE_CONFLICT":
+                    execution_env = "MOCK"
+                else:
+                    execution_env = "BLOCKED"
+            else:
+                execution_env = "REAL"
+        except Exception:  # noqa: BLE001
+            blockers.append("LIVE_CONFIG_CHECK_FAILED")
+        checks["execution_env"] = execution_env
+        if execution_env == "MOCK":
+            blockers.append("UBA_NOT_REAL")
+
+        # Connection CONNECTED
         def _gate_error(code: str, message: str) -> Exception:
             return LiveUnattendedError(str(code).upper(), message)
 
         try:
             from stock_platform.trading.runtime_control_gates import (
-                assert_recovery_ready,
-                assert_risk_account_not_paused,
                 assert_uba_connection_ready,
             )
 
             assert_uba_connection_ready(uba, raise_error=_gate_error)
-            assert_recovery_ready(
+            checks["connection"] = "CONNECTED"
+        except LiveUnattendedError as exc:
+            blockers.append(exc.code.upper())
+            checks["connection"] = "FAIL"
+        except Exception as exc:  # noqa: BLE001
+            blockers.append(str(getattr(exc, "code", "CONNECTION_CHECK_FAILED")).upper())
+            checks["connection"] = "FAIL"
+
+        # Credential VERIFIED
+        try:
+            from stock_platform.broker.credential_vault_service import (
+                BrokerCredentialVaultService,
+            )
+
+            cred = BrokerCredentialVaultService(self._session).status(
+                int(user_broker_account_id),
+                broker_code=broker,
+            )
+            ver = str(cred.verification_status or "").upper()
+            checks["credential"] = ver or "MISSING"
+            if ver != "VERIFIED":
+                blockers.append("CREDENTIAL_NOT_VERIFIED")
+        except Exception:  # noqa: BLE001
+            blockers.append("CREDENTIAL_CHECK_FAILED")
+            checks["credential"] = "FAIL"
+
+        # Recovery SUCCESS + trading_paused
+        try:
+            from stock_platform.trading.runtime_control_gates import (
+                assert_recovery_ready,
+            )
+
+            recovery = assert_recovery_ready(
                 self._session,
                 int(user_broker_account_id),
                 raise_error=_gate_error,
             )
-            assert_risk_account_not_paused(
-                self._session,
-                uba,
-                raise_error=_gate_error,
+            recovery_status = str(
+                recovery.get("recovery_status") or ""
+            ).upper()
+            checks["recovery"] = recovery_status or "EMPTY"
+            checks["trading_paused_recovery"] = bool(
+                recovery.get("trading_paused")
             )
+            if recovery_status not in _OK_RECOVERY_STRICT:
+                blockers.append("RECOVERY_NOT_SUCCESS")
+            if bool(recovery.get("trading_paused")):
+                blockers.append("TRADING_PAUSED")
         except LiveUnattendedError as exc:
-            blockers.append(exc.code)
-        except Exception as exc:  # noqa: BLE001
-            blockers.append(str(getattr(exc, "code", type(exc).__name__)))
+            blockers.append(exc.code.upper())
+        except Exception:  # noqa: BLE001
+            blockers.append("RECOVERY_CHECK_FAILED")
+
         if bool(getattr(uba, "trading_paused", False)):
             blockers.append("TRADING_PAUSED")
+            checks["trading_paused_uba"] = True
+        else:
+            checks["trading_paused_uba"] = False
+
+        # Active HIGH/CRITICAL Conflict = 0
+        try:
+            from stock_platform.broker.recovery_conflict_constants import (
+                ACTIVE_REVIEW_STATUSES,
+            )
+            from stock_platform.broker.recovery_conflict_entities import (
+                BrokerRecoveryConflictEntity,
+            )
+            from sqlalchemy import func, select
+
+            high_count = int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(BrokerRecoveryConflictEntity)
+                    .where(
+                        BrokerRecoveryConflictEntity.user_broker_account_id
+                        == int(user_broker_account_id),
+                        BrokerRecoveryConflictEntity.review_status.in_(
+                            list(ACTIVE_REVIEW_STATUSES)
+                        ),
+                        BrokerRecoveryConflictEntity.risk_level.in_(
+                            list(_HIGH_CONFLICT_LEVELS)
+                        ),
+                    )
+                )
+                or 0
+            )
+            checks["high_critical_conflict_count"] = high_count
+            if high_count > 0:
+                blockers.append(f"CONFLICT_HIGH_{high_count}")
+        except Exception:  # noqa: BLE001
+            blockers.append("CONFLICT_CHECK_FAILED")
+
+        # Kill Switch OFF
         try:
             from stock_platform.risk_engine.kill_switch_service import (
                 KillSwitchService,
@@ -415,20 +565,74 @@ class LiveUnattendedAuthorizationService:
 
             if KillSwitchService(self._session).is_active():
                 blockers.append("KILL_SWITCH_ACTIVE")
+                checks["kill_switch"] = "ON"
+            else:
+                checks["kill_switch"] = "OFF"
         except Exception:  # noqa: BLE001
             blockers.append("KILL_SWITCH_CHECK_FAILED")
+            checks["kill_switch"] = "UNKNOWN"
+
+        # Activation ACTIVE
         act = LiveTradingTransitionService(self._session).peek_active(
-            broker_code=str(uba.broker_code or "").upper(),
+            broker_code=broker,
             user_broker_account_id=int(user_broker_account_id),
         )
         if act is None:
             blockers.append("ACTIVATION_INACTIVE")
+            checks["activation"] = "INACTIVE"
+        else:
+            checks["activation"] = "ACTIVE"
+            checks["activation_id"] = int(act.live_trading_transition_id)
+            exp = aware_utc(act.expires_at)
+            checks["activation_expires_at"] = (
+                exp.isoformat() if exp is not None else None
+            )
+
+        # Risk PASS + account safety
+        try:
+            from stock_platform.trading.runtime_control_gates import (
+                assert_risk_account_not_paused,
+            )
+
+            risk = assert_risk_account_not_paused(
+                self._session,
+                uba,
+                raise_error=_gate_error,
+            )
+            checks["risk"] = "PASS"
+            checks["account_safety"] = "PASS"
+            checks["risk_detail"] = {
+                k: risk.get(k)
+                for k in ("account_paused", "arm_ttl_seconds")
+                if isinstance(risk, dict)
+            }
+        except LiveUnattendedError as exc:
+            blockers.append(exc.code.upper())
+            checks["risk"] = "FAIL"
+            checks["account_safety"] = "FAIL"
+        except Exception:  # noqa: BLE001
+            blockers.append("RISK_CHECK_FAILED")
+            checks["risk"] = "FAIL"
+            checks["account_safety"] = "FAIL"
+
+        # 중복 blocker 제거 (순서 유지)
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for code in blockers:
+            if code in seen:
+                continue
+            seen.add(code)
+            uniq.append(code)
+
         return {
-            "ok": len(blockers) == 0,
-            "blockers": blockers,
-            "activation_id": (
-                int(act.live_trading_transition_id) if act else None
-            ),
+            "ok": len(uniq) == 0,
+            "blockers": uniq,
+            "checks": checks,
+            "live": checks.get("live", "OFF"),
+            "arm": checks.get("arm", "OFF"),
+            "activation_id": checks.get("activation_id"),
+            "activation_expires_at": checks.get("activation_expires_at"),
+            "execution_env": execution_env,
         }
 
     def evaluate_renewal_gates(
@@ -436,46 +640,7 @@ class LiveUnattendedAuthorizationService:
     ) -> dict[str, Any]:
         """자동 renewal 허용 조건. 하나라도 실패하면 ok=False."""
 
-        base = self.evaluate_enable_gates(int(user_broker_account_id))
-        blockers = list(base["blockers"])
-        uba = self._session.get(
-            UserBrokerAccount, int(user_broker_account_id)
-        )
-        if uba is None:
-            return base
-
-        try:
-            from stock_platform.broker.recovery_resolution_service import (
-                RecoveryResolutionService,
-            )
-
-            summary = RecoveryResolutionService(
-                self._session
-            ).conflict_summary_for_uba(int(user_broker_account_id))
-            high = int(
-                (summary or {}).get("blocking_conflict_count")
-                or (summary or {}).get("high_or_critical_open_count")
-                or 0
-            )
-            if high > 0:
-                blockers.append(f"CONFLICT_HIGH_{high}")
-        except Exception:  # noqa: BLE001
-            pass
-
-        act = None
-        if base.get("activation_id"):
-            act = self._session.get(
-                LiveTradingTransitionEntity, int(base["activation_id"])
-            )
-        return {
-            "ok": len(blockers) == 0,
-            "blockers": blockers,
-            "activation_id": (
-                int(act.live_trading_transition_id)
-                if act is not None
-                else base.get("activation_id")
-            ),
-        }
+        return self.evaluate_enable_gates(int(user_broker_account_id))
 
     def renew_due_for_uba(
         self,

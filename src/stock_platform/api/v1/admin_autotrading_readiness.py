@@ -183,11 +183,13 @@ def admin_uba_ops_status(
 
 
 class UnattendedEnableBody(BaseModel):
+    """Unattended lease ACK — LIVE approval_phrase 미사용."""
+
     confirmation_text: str = Field(..., min_length=8)
-    approval_phrase: str = Field(..., min_length=3)
     reason: str = Field(..., min_length=3, max_length=2000)
     horizon_hours: int | None = Field(default=None, ge=1, le=168)
     correlation_id: str | None = Field(default=None, max_length=128)
+    source: str = Field(default="ADMIN_UI", min_length=3, max_length=32)
 
 
 class UnattendedDisableBody(BaseModel):
@@ -229,8 +231,8 @@ def admin_uba_unattended_enable(
             int(user_broker_account_id),
             actor=user.username,
             confirmation_text=body.confirmation_text,
-            approval_phrase=body.approval_phrase,
             reason=body.reason,
+            source=body.source,
             horizon_hours=body.horizon_hours,
             correlation_id=body.correlation_id,
         )

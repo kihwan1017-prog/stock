@@ -40,7 +40,6 @@ import {
   findActiveAccountActivation,
   kiwoomExecutionBadges,
   remainingActivationSeconds,
-  approvalPhraseForBroker,
 } from "./accountLiveActivation";
 import {
   runtimeGateBlockers,
@@ -95,10 +94,6 @@ export function AdminAccountLiveControlPanel() {
   const [createForm] = Form.useForm();
   const [credForm] = Form.useForm();
   const [editForm] = Form.useForm();
-  const [unattendedEnableForm] = Form.useForm<{
-    approval_phrase: string;
-    reason: string;
-  }>();
 
   // Modal.confirm / mutation 콜백이 렌더 경로와 겹치면 antd Message 경고 발생 → 다음 틱으로 미룸
   const notifySuccess = (text: string) => {
@@ -1948,17 +1943,9 @@ export function AdminAccountLiveControlPanel() {
         title="24시간 무인운영 시작"
         open={unattendedEnableOpen}
         confirmLoading={unattendedEnableBusy}
-        okText="Enable 24H Unattended"
+        okText="24시간 무인운영 시작"
         cancelText="취소"
         destroyOnHidden
-        forceRender
-        afterOpenChange={(opened) => {
-          if (!opened) return;
-          unattendedEnableForm.setFieldsValue({
-            approval_phrase: "",
-            reason: "admin_ui_24h_unattended",
-          });
-        }}
         onCancel={() => {
           if (unattendedEnableBusy) return;
           setUnattendedEnableOpen(false);
@@ -1966,14 +1953,13 @@ export function AdminAccountLiveControlPanel() {
         onOk={async () => {
           if (detailUbaId == null) return;
           try {
-            const values = await unattendedEnableForm.validateFields();
             setUnattendedEnableBusy(true);
             await adminApi.enableAdminUbaUnattended(Number(detailUbaId), {
               confirmation_text: "ENABLE 24H UNATTENDED",
-              approval_phrase: values.approval_phrase,
-              reason: values.reason || "admin_ui_24h_unattended",
+              reason: "admin_ui_24h_unattended",
               horizon_hours: 24,
               correlation_id: newCorrelationId("unatt"),
+              source: "ADMIN_UI",
             });
             notifySuccess("24H Unattended enabled");
             setUnattendedEnableOpen(false);
@@ -1983,7 +1969,7 @@ export function AdminAccountLiveControlPanel() {
             await queryClient.invalidateQueries({
               queryKey: ["admin", "uba-ops-status", detailUbaId],
             });
-            // lease 성공 후 Worker/Exit/Runtime 스택 기동 제안 (LIVE/ARM은 이미 게이트 통과)
+            // lease 성공 후 Worker/Exit/Runtime 스택 기동 제안
             const readyVm = autotradingReadyQuery.data
               ? buildUbaAutoTradingViewModel(autotradingReadyQuery.data)
               : null;
@@ -2033,10 +2019,6 @@ export function AdminAccountLiveControlPanel() {
               });
             }
           } catch (err) {
-            // form validate 실패는 Ant Design이 처리
-            if (err && typeof err === "object" && "errorFields" in err) {
-              return;
-            }
             notifyError(err);
             throw err;
           } finally {
@@ -2044,85 +2026,55 @@ export function AdminAccountLiveControlPanel() {
           }
         }}
       >
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          title="두 가지 문구가 다릅니다"
-          description={
-            <Space orientation="vertical" size={4}>
-              <Typography.Text>
-                confirmation_text (자동 전송):{" "}
-                <Typography.Text code>
-                  {String(
-                    (detailUnattendedQuery.data as Record<string, unknown> | undefined)
-                      ?.required_confirmation_text ?? "ENABLE 24H UNATTENDED",
-                  )}
-                </Typography.Text>
+        {(() => {
+          const opsSum = detailOpsQuery.data
+            ? buildOpsStatusSummary(detailOpsQuery.data)
+            : null;
+          return (
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              <Typography.Text strong>
+                24시간 무인운영을 시작하시겠습니까?
               </Typography.Text>
-              <Typography.Text>
-                LIVE approval_phrase (아래 입력 · Activation과 동일):{" "}
-                <Typography.Text code copyable>
-                  {String(
-                    (detailUnattendedQuery.data as Record<string, unknown> | undefined)
-                      ?.required_approval_phrase ??
-                      approvalPhraseForBroker(detailBroker) ??
-                      "",
-                  )}
-                </Typography.Text>
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                confirmation 문구를 approval에 넣으면 INVALID_APPROVAL_PHRASE 입니다.
-              </Typography.Text>
+              <Descriptions size="small" column={1} bordered>
+                <Descriptions.Item label="UBA">
+                  {detailUbaId ?? "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="Broker">
+                  {detailBroker ?? "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="REAL">
+                  서버 gate에서 UPBIT REAL 검증 (mock LIVE 금지)
+                </Descriptions.Item>
+                <Descriptions.Item label="LIVE">
+                  {opsSum?.liveLabel ?? "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="ARM">
+                  {opsSum?.armLabel ?? "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="Activation">
+                  {opsSum?.activationLabel ?? "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="승인 시간">
+                  24h
+                </Descriptions.Item>
+              </Descriptions>
+              <Alert
+                type="warning"
+                showIcon
+                title="Fail Closed"
+                description={
+                  <>
+                    안전조건(Credential VERIFIED · Connection · Recovery ·
+                    Conflict · Kill Switch · LIVE/ARM/Activation · Risk) 중
+                    하나라도 실패하면 Unattended Enable이 거부됩니다. LIVE ON
+                    문구 입력은 이 화면에서 요구하지 않으며, LIVE 진입 승인과
+                    역할이 분리되어 있습니다.
+                  </>
+                }
+              />
             </Space>
-          }
-        />
-        <Form
-          form={unattendedEnableForm}
-          layout="vertical"
-          initialValues={{
-            approval_phrase: "",
-            reason: "admin_ui_24h_unattended",
-          }}
-        >
-          <Form.Item
-            name="approval_phrase"
-            label="LIVE approval_phrase"
-            extra={
-              (() => {
-                const required = String(
-                  (detailUnattendedQuery.data as Record<string, unknown> | undefined)
-                    ?.required_approval_phrase ??
-                    approvalPhraseForBroker(detailBroker) ??
-                    "",
-                );
-                return required
-                  ? `정확히 입력: ${required}`
-                  : "broker별 LIVE 승인 phrase 필요";
-              })()
-            }
-            rules={[{ required: true, message: "LIVE approval phrase 필요" }]}
-          >
-            <Input
-              autoComplete="off"
-              placeholder={
-                String(
-                  (detailUnattendedQuery.data as Record<string, unknown> | undefined)
-                    ?.required_approval_phrase ??
-                    approvalPhraseForBroker(detailBroker) ??
-                    "ENABLE UPBIT LIVE TRADING",
-                )
-              }
-            />
-          </Form.Item>
-          <Form.Item
-            name="reason"
-            label="사유"
-            rules={[{ required: true, message: "사유 필요" }]}
-          >
-            <Input.TextArea rows={2} />
-          </Form.Item>
-        </Form>
+          );
+        })()}
       </Modal>
 
       <ArmTokenOnceModal
