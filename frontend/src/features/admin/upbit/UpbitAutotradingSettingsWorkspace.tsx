@@ -15,6 +15,7 @@ import {
   Descriptions,
   Form,
   InputNumber,
+  Modal,
   Row,
   Select,
   Space,
@@ -22,6 +23,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import Link from "next/link";
@@ -35,8 +37,11 @@ import { toApiError } from "@/lib/api/apiError";
 
 import {
   CONSERVATIVE_PORTFOLIO_DEFAULTS,
+  CONFIRM_DISABLE_PORTFOLIO,
+  CONFIRM_ENABLE_PORTFOLIO,
   DEFAULT_UPBIT_AUTOTRADING_UBA_ID,
   formatUpbitAutotradingModeLabel,
+  resolvePortfolioEnableControl,
   UPBIT_AUTOTRADING_TAB_KEYS,
   UPBIT_AUTOTRADING_TAB_LABELS,
   UPBIT_AUTOTRADING_TAB_ORDER,
@@ -46,6 +51,11 @@ type Props = {
   ubaId: number;
   onUbaIdChange: (next: number) => void;
 };
+
+/** 로딩/에러 시 null 중첩 접근 방지 */
+function asObj(value: unknown): Record<string, unknown> {
+  return asRecord(value) ?? {};
+}
 
 function pctLabel(value: unknown, digits = 0): string {
   if (value == null || value === "") return "—";
@@ -68,6 +78,10 @@ export function UpbitAutotradingSettingsWorkspace({
   const [capitalForm] = Form.useForm();
   const [entryForm] = Form.useForm();
   const [safetyForm] = Form.useForm();
+  const [activeTab, setActiveTab] = useState<string>(
+    UPBIT_AUTOTRADING_TAB_KEYS.market,
+  );
+  const [enableOpen, setEnableOpen] = useState(false);
   const [previewResult, setPreviewResult] = useState<Record<
     string,
     unknown
@@ -108,27 +122,28 @@ export function UpbitAutotradingSettingsWorkspace({
   });
 
   const opsSnap = opsQuery.data ? snapshotFromOpsStatus(opsQuery.data) : null;
-  const opsRoot = asRecord(opsQuery.data);
-  const fmFromOps = asRecord(opsRoot.full_market);
-  const scanner = asRecord(opsRoot.scanner);
-  const fm = { ...fmFromOps, ...asRecord(fullMarketQuery.data) };
-  const portfolio = asRecord(portfolioQuery.data);
-  const policy = asRecord(portfolio.policy);
-  const summary = asRecord(portfolio.summary);
+  const opsRoot = asObj(opsQuery.data);
+  const fmFromOps = asObj(opsRoot.full_market);
+  const scanner = asObj(opsRoot.scanner);
+  const fm = { ...fmFromOps, ...asObj(fullMarketQuery.data) };
+  const portfolio = asObj(portfolioQuery.data);
+  const policy = asObj(portfolio.policy);
+  const summary = asObj(portfolio.summary);
   const slots = Array.isArray(portfolio.slots) ? portfolio.slots : [];
   const modeRaw = String(
     portfolio.mode ?? fm.mode ?? "FIXED_SYMBOL",
   ).toUpperCase();
   const modeLabel = formatUpbitAutotradingModeLabel(modeRaw);
   const aiGate = String(fm.ai_live_gate_mode ?? "ENFORCE").toUpperCase();
+  const fmLatest = asObj(fullMarketQuery.data).latest_recommendations;
   const candidates = Array.isArray(scanner.candidates)
     ? scanner.candidates
-    : Array.isArray(asRecord(fullMarketQuery.data).latest_recommendations)
-      ? (asRecord(fullMarketQuery.data).latest_recommendations as unknown[])
+    : Array.isArray(fmLatest)
+      ? fmLatest
       : [];
 
   const ubaOptions = useMemo(() => {
-    const root = asRecord(accountsQuery.data);
+    const root = asObj(accountsQuery.data);
     const items = Array.isArray(root.items)
       ? root.items
       : Array.isArray(accountsQuery.data)
@@ -136,7 +151,7 @@ export function UpbitAutotradingSettingsWorkspace({
         : [];
     const opts = items
       .map((row) => {
-        const r = asRecord(row);
+        const r = asObj(row);
         const id = Number(r.user_broker_account_id ?? r.id ?? 0);
         if (!id) return null;
         const alias = String(r.account_alias ?? r.alias ?? "").trim();
@@ -197,18 +212,24 @@ export function UpbitAutotradingSettingsWorkspace({
     [policy],
   );
 
-  // 서버 policy가 바뀌면 폼 동기화 (페이지 로드 mutate 없음)
+  // Form이 탭에 묶여 있으므로 forceRender 전에는 setFieldsValue 하지 않음
+  const formsReady =
+    portfolioQuery.isFetched || portfolioQuery.isError;
+
   useEffect(() => {
+    if (!formsReady) return;
     capitalForm.setFieldsValue(capitalInitial);
-  }, [capitalForm, capitalInitial]);
+  }, [capitalForm, capitalInitial, formsReady]);
 
   useEffect(() => {
+    if (!formsReady) return;
     entryForm.setFieldsValue(entryInitial);
-  }, [entryForm, entryInitial]);
+  }, [entryForm, entryInitial, formsReady]);
 
   useEffect(() => {
+    if (!formsReady) return;
     safetyForm.setFieldsValue(safetyInitial);
-  }, [safetyForm, safetyInitial]);
+  }, [safetyForm, safetyInitial, formsReady]);
 
   const invalidate = async () => {
     await Promise.all([
@@ -228,7 +249,7 @@ export function UpbitAutotradingSettingsWorkspace({
     mutationFn: (body: Record<string, unknown>) =>
       adminApi.patchAdminUbaPortfolioPolicy(ubaId, body),
     onSuccess: async (res) => {
-      const row = asRecord(res);
+      const row = asObj(res);
       const warnings = Array.isArray(row.warnings) ? row.warnings : [];
       if (warnings.length) {
         message.warning(`저장됨 · Risk 완화 경고: ${warnings.join(", ")}`);
@@ -253,8 +274,8 @@ export function UpbitAutotradingSettingsWorkspace({
   const drySelectMut = useMutation({
     mutationFn: () => adminApi.drySelectAdminUbaFullMarket(ubaId, {}),
     onSuccess: (data) => {
-      const row = asRecord(data);
-      const sel = asRecord(row.selected);
+      const row = asObj(data);
+      const sel = asObj(row.selected);
       if (row.ok) {
         message.success(
           `Dry select: ${String(sel.symbol ?? "")} rank=#${String(sel.rank ?? "")}`,
@@ -274,10 +295,48 @@ export function UpbitAutotradingSettingsWorkspace({
         account_max_order_amount: previewMaxOrder,
       }),
     onSuccess: (res) => {
-      const row = asRecord(res);
+      const row = asObj(res);
       message.info(
         `Dry Top-K: ${String(row.reason ?? "ok")} reserved=${JSON.stringify(row.reserved ?? [])}`,
       );
+    },
+    onError: (err) => message.error(toApiError(err).message),
+  });
+
+  const enablePortfolioMut = useMutation({
+    mutationFn: () =>
+      adminApi.enableAdminUbaPortfolio(ubaId, {
+        confirmation_text: CONFIRM_ENABLE_PORTFOLIO,
+        strategy_id:
+          Number(fm.strategy_id ?? portfolio.strategy_id ?? 0) || undefined,
+        deployment_id:
+          Number(fm.deployment_id ?? portfolio.deployment_id ?? 0) || undefined,
+        template_symbol: String(
+          fm.template_symbol ?? fm.current_symbol ?? "KRW-XRP",
+        ),
+        max_positions: Number(policy.max_positions ?? 3),
+        portfolio_capital_limit_krw:
+          policy.portfolio_capital_limit_krw != null
+            ? Number(policy.portfolio_capital_limit_krw)
+            : undefined,
+      }),
+    onSuccess: async () => {
+      message.success("FULL_MARKET_PORTFOLIO enabled (강제 주문 없음)");
+      setEnableOpen(false);
+      await invalidate();
+    },
+    onError: (err) => message.error(toApiError(err).message),
+  });
+
+  const disablePortfolioMut = useMutation({
+    mutationFn: () =>
+      adminApi.disableAdminUbaPortfolio(ubaId, {
+        confirmation_text: CONFIRM_DISABLE_PORTFOLIO,
+        fallback_mode: "FULL_MARKET_SINGLE",
+      }),
+    onSuccess: async () => {
+      message.success("PORTFOLIO 중지 → FULL_MARKET_SINGLE (강제 청산 없음)");
+      await invalidate();
     },
     onError: (err) => message.error(toApiError(err).message),
   });
@@ -290,7 +349,7 @@ export function UpbitAutotradingSettingsWorkspace({
         account_max_order_amount: previewMaxOrder,
       }),
     onSuccess: (res) => {
-      setPreviewResult(asRecord(res));
+      setPreviewResult(asObj(res));
       message.success("Sizing Preview 완료 (주문 없음)");
     },
     onError: (err) => message.error(toApiError(err).message),
@@ -335,23 +394,48 @@ export function UpbitAutotradingSettingsWorkspace({
     message.info("보수적 기본값을 폼에 채웠습니다. 저장은 별도 확인이 필요합니다.");
   };
 
-  const riskFromOps = asRecord(opsRoot.risk);
-  const accountRisk = asRecord(opsRoot.account_risk);
-  const exitFromOps = asRecord(opsRoot.exit ?? opsRoot.protective_exit);
-  const unattended = asRecord(opsRoot.unattended);
+  const riskFromOps = asObj(opsRoot.risk);
+  const accountRisk = asObj(opsRoot.account_risk);
+  const exitFromOps = asObj(opsRoot.exit ?? opsRoot.protective_exit);
+  const unattended = asObj(opsRoot.unattended);
+  const portfolioOn = modeLabel === "PORTFOLIO";
+  const enableControl = resolvePortfolioEnableControl({
+    portfolioOn,
+    live: opsSnap?.live,
+    arm: opsSnap?.arm,
+    unattendedEnabled: opsSnap?.unattendedEnabled,
+    unattendedRemainingSeconds: Number(unattended.remaining_seconds ?? 0),
+    primaryBlocker: opsSnap?.primaryBlocker,
+    killActive: Boolean(
+      riskFromOps.kill_switch_active === true ||
+        opsRoot.kill_switch === true ||
+        String(opsRoot.kill_switch ?? "").toUpperCase() === "ON",
+    ),
+    conflictHighCritical: Number(
+      asObj(opsRoot.conflicts).high_critical_count ??
+        asObj(opsRoot.recovery).high_critical_count ??
+        0,
+    ),
+  });
 
   const tabItems = UPBIT_AUTOTRADING_TAB_ORDER.map((key) => {
     const label = UPBIT_AUTOTRADING_TAB_LABELS[key];
+    // 폼이 있는 탭은 비활성 시에도 마운트 — useForm 연결 경고 방지
+    const forceRender =
+      key === UPBIT_AUTOTRADING_TAB_KEYS.capital ||
+      key === UPBIT_AUTOTRADING_TAB_KEYS.entry ||
+      key === UPBIT_AUTOTRADING_TAB_KEYS.safety;
     if (key === UPBIT_AUTOTRADING_TAB_KEYS.market) {
       return {
         key,
         label,
+        forceRender: false,
         children: (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert
               type="info"
               showIcon
-              title="모드 표시 · Dry 시뮬레이션만. PORTFOLIO Enable은 자동 실행하지 않습니다."
+              title="모드 전환은 명시 버튼으로만. Dry Select/Top-K는 시뮬레이션이며 Enable과 다릅니다."
             />
             <Descriptions size="small" bordered column={2}>
               <Descriptions.Item label="MODE">
@@ -367,11 +451,38 @@ export function UpbitAutotradingSettingsWorkspace({
                   {modeLabel} ({modeRaw})
                 </Tag>
               </Descriptions.Item>
+              <Descriptions.Item label="PORTFOLIO">
+                <Tag color={portfolioOn ? "orange" : "default"}>
+                  {portfolioOn ? "ON" : "OFF"}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="UBA">{ubaId}</Descriptions.Item>
+              <Descriptions.Item label="Broker">UPBIT REAL</Descriptions.Item>
               <Descriptions.Item label="TARGET">
                 {String(fm.current_symbol ?? fm.template_symbol ?? "—")}
               </Descriptions.Item>
               <Descriptions.Item label="STATE">
                 {String(fm.state ?? "IDLE")}
+              </Descriptions.Item>
+              <Descriptions.Item label="Max positions">
+                {numOrDash(policy.max_positions ?? 3)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Pending BUY">
+                {numOrDash(policy.portfolio_max_pending_entries ?? 1)}
+              </Descriptions.Item>
+              <Descriptions.Item label="Total exposure">
+                {(Number(policy.max_total_exposure_pct ?? 0.3) * 100).toFixed(0)}
+                %
+              </Descriptions.Item>
+              <Descriptions.Item label="Cash reserve">
+                {(Number(policy.min_cash_reserve_pct ?? 0.6) * 100).toFixed(0)}%
+              </Descriptions.Item>
+              <Descriptions.Item label="LIVE / ARM">
+                LIVE {opsSnap?.live ?? "—"} · ARM {opsSnap?.arm ?? "—"}
+              </Descriptions.Item>
+              <Descriptions.Item label="24H / STACK">
+                24H {opsSnap?.unattendedEnabled ? "ON" : "OFF"} ·{" "}
+                {opsSnap?.stackLabel ?? "—"}
               </Descriptions.Item>
               <Descriptions.Item label="AI GATE">
                 {aiGate}
@@ -389,7 +500,7 @@ export function UpbitAutotradingSettingsWorkspace({
                   ? candidates
                       .slice(0, 5)
                       .map((c) => {
-                        const r = asRecord(c);
+                        const r = asObj(c);
                         return `${r.symbol}(${r.recommendation ?? r.score ?? "—"})`;
                       })
                       .join(" · ")
@@ -407,6 +518,54 @@ export function UpbitAutotradingSettingsWorkspace({
               </Descriptions.Item>
             </Descriptions>
             <Space wrap>
+              {enableControl.showEnable ? (
+                <Tooltip
+                  title={
+                    enableControl.enableDisabled
+                      ? `Enable 불가: ${enableControl.disableReasons.join(", ")}`
+                      : "확인 후 FULL_MARKET_PORTFOLIO 시작"
+                  }
+                >
+                  <Button
+                    type="primary"
+                    danger
+                    disabled={enableControl.enableDisabled}
+                    onClick={() => setEnableOpen(true)}
+                  >
+                    FULL MARKET PORTFOLIO 시작
+                  </Button>
+                </Tooltip>
+              ) : null}
+              {enableControl.showDisable ? (
+                <Button
+                  danger
+                  loading={disablePortfolioMut.isPending}
+                  onClick={() => {
+                    modal.confirm({
+                      title: "FULL MARKET PORTFOLIO 중지",
+                      content: (
+                        <Space orientation="vertical">
+                          <Typography.Paragraph>
+                            신규 ENTRY만 중지합니다. OPEN slot 강제 청산 없음 ·
+                            protective EXIT 유지 · 자연 종료 후 SINGLE 전환.
+                          </Typography.Paragraph>
+                          <Typography.Text>
+                            확인:{" "}
+                            <Typography.Text code>
+                              {CONFIRM_DISABLE_PORTFOLIO}
+                            </Typography.Text>
+                          </Typography.Text>
+                        </Space>
+                      ),
+                      okText: "FULL MARKET PORTFOLIO 중지",
+                      okButtonProps: { danger: true },
+                      onOk: () => disablePortfolioMut.mutateAsync(),
+                    });
+                  }}
+                >
+                  FULL MARKET PORTFOLIO 중지
+                </Button>
+              ) : null}
               <Button
                 loading={drySelectMut.isPending}
                 onClick={() => drySelectMut.mutate()}
@@ -420,6 +579,13 @@ export function UpbitAutotradingSettingsWorkspace({
                 Dry Top-K
               </Button>
             </Space>
+            {enableControl.showEnable && enableControl.enableDisabled ? (
+              <Alert
+                type="warning"
+                showIcon
+                title={`Enable 버튼 표시 · 비활성: ${enableControl.disableReasons.join(", ")}`}
+              />
+            ) : null}
           </Space>
         ),
       };
@@ -429,6 +595,7 @@ export function UpbitAutotradingSettingsWorkspace({
       return {
         key,
         label,
+        forceRender,
         children: (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert
@@ -510,7 +677,7 @@ export function UpbitAutotradingSettingsWorkspace({
               size="small"
               pagination={false}
               rowKey={(r) =>
-                String(asRecord(r).slot_id ?? asRecord(r).slot_no)
+                String(asObj(r).slot_id ?? asObj(r).slot_no)
               }
               dataSource={slots as Record<string, unknown>[]}
               columns={[
@@ -551,6 +718,7 @@ export function UpbitAutotradingSettingsWorkspace({
       return {
         key,
         label,
+        forceRender,
         children: (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert
@@ -560,12 +728,12 @@ export function UpbitAutotradingSettingsWorkspace({
             />
             <Descriptions size="small" bordered column={2}>
               <Descriptions.Item label="Min Score (표시)">
-                {numOrDash(fm.min_score ?? asRecord(fm.selection_policy).min_score)}
+                {numOrDash(fm.min_score ?? asObj(fm.selection_policy).min_score)}
               </Descriptions.Item>
               <Descriptions.Item label="Min Confidence (표시)">
                 {numOrDash(
                   fm.min_confidence ??
-                    asRecord(fm.selection_policy).min_confidence,
+                    asObj(fm.selection_policy).min_confidence,
                 )}
               </Descriptions.Item>
               <Descriptions.Item label="Warmup">
@@ -771,6 +939,7 @@ export function UpbitAutotradingSettingsWorkspace({
     return {
       key: UPBIT_AUTOTRADING_TAB_KEYS.safety,
       label: UPBIT_AUTOTRADING_TAB_LABELS.safety,
+      forceRender,
       children: (
         <Space orientation="vertical" size={12} style={{ width: "100%" }}>
           <Alert
@@ -784,13 +953,13 @@ export function UpbitAutotradingSettingsWorkspace({
               {numOrDash(
                 riskFromOps.current_daily_loss ??
                   accountRisk.current_daily_loss ??
-                  asRecord(opsRoot.daily_loss).current,
+                  asObj(opsRoot.daily_loss).current,
               )}{" "}
               /{" "}
               {numOrDash(
                 riskFromOps.max_daily_loss_limit ??
                   accountRisk.max_daily_loss_limit ??
-                  asRecord(opsRoot.daily_loss).limit,
+                  asObj(opsRoot.daily_loss).limit,
               )}
             </Descriptions.Item>
             <Descriptions.Item label="포트폴리오 일손실 %">
@@ -1037,7 +1206,77 @@ export function UpbitAutotradingSettingsWorkspace({
         )}
       </Card>
 
-      <Tabs items={tabItems} />
+      <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        destroyOnHidden={false}
+        items={tabItems}
+      />
+
+      <Modal
+        title="FULL MARKET PORTFOLIO 시작"
+        open={enableOpen}
+        onCancel={() => setEnableOpen(false)}
+        okText="FULL MARKET PORTFOLIO 시작"
+        okButtonProps={{
+          danger: true,
+          loading: enablePortfolioMut.isPending,
+        }}
+        onOk={() => enablePortfolioMut.mutateAsync()}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title="최대 3개 종목까지 자동으로 순차 진입할 수 있습니다. 강제 REAL 주문은 아닙니다."
+        />
+        <Typography.Paragraph>
+          확인 문구(API audit):{" "}
+          <Typography.Text code>{CONFIRM_ENABLE_PORTFOLIO}</Typography.Text>
+        </Typography.Paragraph>
+        <ul>
+          <li>
+            UBA {ubaId} · UPBIT REAL · current mode {modeLabel} ({modeRaw})
+          </li>
+          <li>
+            target/current{" "}
+            {String(fm.current_symbol ?? fm.template_symbol ?? "—")}
+          </li>
+          <li>max positions {String(policy.max_positions ?? 3)}</li>
+          <li>
+            capital limit{" "}
+            {policy.portfolio_capital_limit_krw != null
+              ? String(policy.portfolio_capital_limit_krw)
+              : "미설정(보수 비율)"}
+          </li>
+          <li>
+            per-position{" "}
+            {(Number(policy.per_position_target_pct ?? 0.08) * 100).toFixed(0)}%
+            · symbol max{" "}
+            {(Number(policy.max_symbol_exposure_pct ?? 0.12) * 100).toFixed(0)}%
+            · total{" "}
+            {(Number(policy.max_total_exposure_pct ?? 0.3) * 100).toFixed(0)}%
+          </li>
+          <li>
+            cash reserve{" "}
+            {(Number(policy.min_cash_reserve_pct ?? 0.6) * 100).toFixed(0)}% ·
+            daily loss{" "}
+            {(Number(policy.daily_loss_limit_pct ?? 0.02) * 100).toFixed(0)}% ·
+            consecutive {String(policy.consecutive_loss_limit ?? 3)}
+          </li>
+          <li>
+            averaging{" "}
+            {policy.allow_averaging_down ? "ON" : "OFF"} · duplicate{" "}
+            {policy.allow_duplicate_symbol ? "ON" : "OFF"} · pending BUY=
+            {String(policy.portfolio_max_pending_entries ?? 1)}
+          </li>
+          <li>
+            LIVE {opsSnap?.live ?? "—"} · ARM {opsSnap?.arm ?? "—"} · 24H{" "}
+            {opsSnap?.unattendedEnabled ? "ON" : "OFF"} ·{" "}
+            {opsSnap?.stackLabel ?? "—"}
+          </li>
+        </ul>
+      </Modal>
     </Space>
   );
 }

@@ -82,3 +82,79 @@ export function isFullMarketSingleMode(mode: unknown): boolean {
 }
 
 export const DEFAULT_UPBIT_AUTOTRADING_UBA_ID = 1380;
+
+/** Backend confirmation phrases (audit gate) */
+export const CONFIRM_ENABLE_PORTFOLIO = "전체시장 포트폴리오 모드 시작";
+export const CONFIRM_DISABLE_PORTFOLIO = "전체시장 포트폴리오 모드 중지";
+
+export type PortfolioEnableGateInput = {
+  portfolioOn: boolean;
+  live?: string | null;
+  arm?: string | null;
+  unattendedEnabled?: boolean;
+  unattendedRemainingSeconds?: number;
+  primaryBlocker?: string | null;
+  killActive?: boolean;
+  conflictHighCritical?: number;
+};
+
+/**
+ * Enable 버튼은 항상 노출. 불가 시 disabled + reason.
+ * (숨기지 않음)
+ */
+export function resolvePortfolioEnableControl(input: PortfolioEnableGateInput): {
+  showEnable: boolean;
+  showDisable: boolean;
+  enableDisabled: boolean;
+  disableReasons: string[];
+} {
+  if (input.portfolioOn) {
+    return {
+      showEnable: false,
+      showDisable: true,
+      enableDisabled: true,
+      disableReasons: [],
+    };
+  }
+  const reasons: string[] = [];
+  if (String(input.live ?? "OFF").toUpperCase() !== "ON") {
+    reasons.push("LIVE_OFF");
+  }
+  if (String(input.arm ?? "OFF").toUpperCase() !== "ON") {
+    reasons.push("ARM_OFF");
+  }
+  if (!input.unattendedEnabled) {
+    reasons.push("UNATTENDED_OFF");
+  } else if (
+    input.unattendedRemainingSeconds != null &&
+    Number(input.unattendedRemainingSeconds) < 60
+  ) {
+    reasons.push("UNATTENDED_EXPIRING");
+  }
+  if (input.killActive) {
+    reasons.push("KILL_SWITCH");
+  }
+  const blocker = String(input.primaryBlocker ?? "").toUpperCase();
+  if (blocker && blocker !== "NONE" && blocker !== "NULL") {
+    // LIVE/ARM은 위에서 이미 집계 — 중복 아닌 추가 blocker만
+    if (
+      !blocker.includes("LIVE_OFF") &&
+      !blocker.includes("ARM_OFF") &&
+      !reasons.includes(blocker)
+    ) {
+      reasons.push(blocker);
+    }
+  }
+  if (
+    input.conflictHighCritical != null &&
+    Number(input.conflictHighCritical) > 0
+  ) {
+    reasons.push("CONFLICT_HIGH_CRITICAL");
+  }
+  return {
+    showEnable: true,
+    showDisable: false,
+    enableDisabled: reasons.length > 0,
+    disableReasons: reasons,
+  };
+}

@@ -6,9 +6,11 @@ import { adminMenuItems, flattenMenuItems } from "@/config/menu";
 import { adminRoutes } from "@/config/routes";
 import {
   CONSERVATIVE_PORTFOLIO_DEFAULTS,
+  CONFIRM_ENABLE_PORTFOLIO,
   formatUpbitAutotradingModeLabel,
   isFullMarketSingleMode,
   isPortfolioMode,
+  resolvePortfolioEnableControl,
   UPBIT_AUTOTRADING_TAB_KEYS,
   UPBIT_AUTOTRADING_TAB_LABELS,
   UPBIT_AUTOTRADING_TAB_ORDER,
@@ -94,19 +96,86 @@ describe("UPBIT autotrading settings workspace", () => {
     expect(item?.permission).toBe("menu:upbit");
   });
 
-  it("drawer는 요약+링크이며 자동 Enable 호출 문자열이 없다", () => {
+  it("drawer는 요약+링크이며 설정 상세는 워크스페이스", () => {
     const d = drawer();
     expect(d).toMatch(/adminRoutes\.upbitAutotrading/);
     expect(d).toMatch(/업비트 자동매매 설정 열기/);
     expect(d).not.toMatch(/Save Policy/);
     expect(d).not.toMatch(/previewAdminUbaPortfolioSizing/);
+  });
+
+  it("settings workspace에 Portfolio Enable UI·API wiring이 있다", () => {
     const ws = workspace();
-    expect(ws).not.toMatch(/enableAdminUbaPortfolio/);
+    expect(ws).toMatch(/enableAdminUbaPortfolio/);
+    expect(ws).toMatch(/disableAdminUbaPortfolio/);
+    expect(ws).toContain("FULL MARKET PORTFOLIO 시작");
+    expect(ws).toContain("FULL MARKET PORTFOLIO 중지");
+    expect(ws).toContain("CONFIRM_ENABLE_PORTFOLIO");
+    expect(ws).toContain("confirmation_text: CONFIRM_ENABLE_PORTFOLIO");
+    expect(CONFIRM_ENABLE_PORTFOLIO).toBe("전체시장 포트폴리오 모드 시작");
     expect(ws).toMatch(/previewAdminUbaPortfolioSizing/);
+    expect(ws).toMatch(/Dry Select/);
+    expect(ws).toMatch(/resolvePortfolioEnableControl/);
+  });
+
+  it("SINGLE + Portfolio OFF → Enable visible; blocked면 disabled reason", () => {
+    const ok = resolvePortfolioEnableControl({
+      portfolioOn: false,
+      live: "ON",
+      arm: "ON",
+      unattendedEnabled: true,
+      unattendedRemainingSeconds: 3600,
+      primaryBlocker: null,
+      killActive: false,
+      conflictHighCritical: 0,
+    });
+    expect(ok.showEnable).toBe(true);
+    expect(ok.enableDisabled).toBe(false);
+
+    const blocked = resolvePortfolioEnableControl({
+      portfolioOn: false,
+      live: "OFF",
+      arm: "OFF",
+      unattendedEnabled: false,
+      primaryBlocker: "LIVE_OFF",
+      killActive: false,
+      conflictHighCritical: 0,
+    });
+    expect(blocked.showEnable).toBe(true);
+    expect(blocked.enableDisabled).toBe(true);
+    expect(blocked.disableReasons).toEqual(
+      expect.arrayContaining(["LIVE_OFF", "ARM_OFF", "UNATTENDED_OFF"]),
+    );
+  });
+
+  it("Portfolio ON → Disable visible", () => {
+    const on = resolvePortfolioEnableControl({
+      portfolioOn: true,
+      live: "ON",
+      arm: "ON",
+      unattendedEnabled: true,
+    });
+    expect(on.showDisable).toBe(true);
+    expect(on.showEnable).toBe(false);
   });
 
   it("탭 키 상수가 안정적이다", () => {
     expect(UPBIT_AUTOTRADING_TAB_KEYS.market).toBe("market");
     expect(UPBIT_AUTOTRADING_TAB_KEYS.safety).toBe("safety");
+  });
+
+  it("쿼리 로딩 시 asRecord null 중첩 접근을 asObj로 방어한다", () => {
+    const ws = workspace();
+    expect(ws).toContain("function asObj");
+    expect(ws).toContain("asRecord(value) ?? {}");
+    expect(ws).toContain("const portfolio = asObj(portfolioQuery.data)");
+    expect(ws).toContain("const policy = asObj(portfolio.policy)");
+  });
+
+  it("탭 Form은 forceRender/destroyOnHidden=false로 useForm 연결을 유지한다", () => {
+    const ws = workspace();
+    expect(ws).toContain("destroyOnHidden={false}");
+    expect(ws).toContain("forceRender");
+    expect(ws).toMatch(/formsReady/);
   });
 });
