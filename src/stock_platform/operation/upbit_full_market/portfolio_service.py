@@ -702,6 +702,24 @@ class UpbitPortfolioService:
             out["reason"] = "PENDING_ENTRY_LIMIT"
             return out
 
+        # portfolio_daily_entry_limit — 계좌 daily_order_limit과 분리 (무시 금지)
+        day_start = _now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_entries = list(
+            self._session.scalars(
+                select(UpbitLiveCandidateSelectionEntity).where(
+                    UpbitLiveCandidateSelectionEntity.user_broker_account_id
+                    == uba_id,
+                    UpbitLiveCandidateSelectionEntity.selected_at >= day_start,
+                    UpbitLiveCandidateSelectionEntity.selection_reason.like(
+                        "PORTFOLIO_SLOT_%"
+                    ),
+                )
+            )
+        )
+        if len(today_entries) >= int(policy.portfolio_daily_entry_limit):
+            out["reason"] = "PORTFOLIO_DAILY_ENTRY_LIMIT"
+            return out
+
         empty = list(
             self._session.scalars(
                 select(UpbitPositionSlotEntity)
