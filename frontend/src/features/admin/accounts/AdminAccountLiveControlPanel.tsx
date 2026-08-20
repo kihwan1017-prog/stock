@@ -88,9 +88,15 @@ export function AdminAccountLiveControlPanel() {
     useState<LiveControlBrokerFilter>("ALL");
   const [activationUbaId, setActivationUbaId] = useState<number | null>(null);
   const [armReveal, setArmReveal] = useState<ArmTokenOnceReveal | null>(null);
+  const [unattendedEnableOpen, setUnattendedEnableOpen] = useState(false);
+  const [unattendedEnableBusy, setUnattendedEnableBusy] = useState(false);
   const [createForm] = Form.useForm();
   const [credForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const [unattendedEnableForm] = Form.useForm<{
+    approval_phrase: string;
+    reason: string;
+  }>();
 
   // Modal.confirm / mutation 콜백이 렌더 경로와 겹치면 antd Message 경고 발생 → 다음 틱으로 미룸
   const notifySuccess = (text: string) => {
@@ -1463,69 +1469,43 @@ export function AdminAccountLiveControlPanel() {
                       startDisabledReason={startReason}
                       loading={detailUnattendedQuery.isFetching}
                       onStart={() => {
-                        modal.confirm({
-                          title: "24시간 무인운영 시작",
-                          content:
-                            "ENABLE 24H UNATTENDED 승인이 필요합니다. LIVE/ARM/Activation이 유효해야 합니다. 자동 ON은 하지 않습니다.",
-                          onOk: async () => {
-                            const phrase = window.prompt(
-                              "승인 phrase (UPBIT)",
-                            );
-                            if (!phrase) return;
-                            await adminApi.enableAdminUbaUnattended(
-                              Number(detailUbaId),
-                              {
-                                confirmation_text: "ENABLE 24H UNATTENDED",
-                                approval_phrase: phrase,
-                                reason: "admin_ui_24h_unattended",
-                                horizon_hours: 24,
-                                correlation_id: newCorrelationId("unatt"),
-                              },
-                            );
-                            notifySuccess("24H Unattended enabled");
-                            await queryClient.invalidateQueries({
-                              queryKey: [
-                                "admin",
-                                "uba-unattended",
-                                detailUbaId,
-                              ],
-                            });
-                            await queryClient.invalidateQueries({
-                              queryKey: [
-                                "admin",
-                                "uba-ops-status",
-                                detailUbaId,
-                              ],
-                            });
-                          },
+                        unattendedEnableForm.setFieldsValue({
+                          approval_phrase: "",
+                          reason: "admin_ui_24h_unattended",
                         });
+                        setUnattendedEnableOpen(true);
                       }}
                       onStop={() => {
                         modal.confirm({
                           title: "24시간 무인운영 중지",
                           onOk: async () => {
-                            await adminApi.disableAdminUbaUnattended(
-                              Number(detailUbaId),
-                              {
-                                confirmation_text: "DISABLE 24H UNATTENDED",
-                                reason: "admin_ui_disable",
-                              },
-                            );
-                            notifySuccess("24H Unattended disabled");
-                            await queryClient.invalidateQueries({
-                              queryKey: [
-                                "admin",
-                                "uba-unattended",
-                                detailUbaId,
-                              ],
-                            });
-                            await queryClient.invalidateQueries({
-                              queryKey: [
-                                "admin",
-                                "uba-ops-status",
-                                detailUbaId,
-                              ],
-                            });
+                            try {
+                              await adminApi.disableAdminUbaUnattended(
+                                Number(detailUbaId),
+                                {
+                                  confirmation_text: "DISABLE 24H UNATTENDED",
+                                  reason: "admin_ui_disable",
+                                },
+                              );
+                              notifySuccess("24H Unattended disabled");
+                              await queryClient.invalidateQueries({
+                                queryKey: [
+                                  "admin",
+                                  "uba-unattended",
+                                  detailUbaId,
+                                ],
+                              });
+                              await queryClient.invalidateQueries({
+                                queryKey: [
+                                  "admin",
+                                  "uba-ops-status",
+                                  detailUbaId,
+                                ],
+                              });
+                            } catch (err) {
+                              notifyError(err);
+                              throw err;
+                            }
                           },
                         });
                       }}
@@ -1939,6 +1919,74 @@ export function AdminAccountLiveControlPanel() {
           );
         })() : null}
       </Drawer>
+
+      <Modal
+        title="24시간 무인운영 시작"
+        open={unattendedEnableOpen}
+        confirmLoading={unattendedEnableBusy}
+        okText="Enable 24H Unattended"
+        cancelText="취소"
+        destroyOnHidden
+        onCancel={() => {
+          if (unattendedEnableBusy) return;
+          setUnattendedEnableOpen(false);
+        }}
+        onOk={async () => {
+          if (detailUbaId == null) return;
+          try {
+            const values = await unattendedEnableForm.validateFields();
+            setUnattendedEnableBusy(true);
+            await adminApi.enableAdminUbaUnattended(Number(detailUbaId), {
+              confirmation_text: "ENABLE 24H UNATTENDED",
+              approval_phrase: values.approval_phrase,
+              reason: values.reason || "admin_ui_24h_unattended",
+              horizon_hours: 24,
+              correlation_id: newCorrelationId("unatt"),
+            });
+            notifySuccess("24H Unattended enabled");
+            setUnattendedEnableOpen(false);
+            await queryClient.invalidateQueries({
+              queryKey: ["admin", "uba-unattended", detailUbaId],
+            });
+            await queryClient.invalidateQueries({
+              queryKey: ["admin", "uba-ops-status", detailUbaId],
+            });
+          } catch (err) {
+            // form validate 실패는 Ant Design이 처리
+            if (err && typeof err === "object" && "errorFields" in err) {
+              return;
+            }
+            notifyError(err);
+            throw err;
+          } finally {
+            setUnattendedEnableBusy(false);
+          }
+        }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 12 }}
+          title="명시 승인 필요"
+          description="LIVE/ARM/Activation이 유효해야 합니다. confirmation은 ENABLE 24H UNATTENDED 로 고정 전송됩니다."
+        />
+        <Form form={unattendedEnableForm} layout="vertical">
+          <Form.Item
+            name="approval_phrase"
+            label="승인 phrase (UPBIT)"
+            rules={[{ required: true, message: "승인 phrase 필요" }]}
+          >
+            <Input.Password autoComplete="off" placeholder="UPBIT LIVE 승인 phrase" />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="사유"
+            rules={[{ required: true, message: "사유 필요" }]}
+          >
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <ArmTokenOnceModal
         reveal={armReveal}

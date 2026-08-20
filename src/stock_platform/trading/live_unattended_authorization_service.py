@@ -158,7 +158,7 @@ class LiveUnattendedAuthorizationService:
                 "24H unattended is UPBIT-only in this release",
             )
 
-        from stock_platform.broker.live_approval_phrase import (
+        from stock_platform.broker.live_transition_validators import (
             approval_phrase_for_broker,
         )
 
