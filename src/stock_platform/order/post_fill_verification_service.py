@@ -28,7 +28,11 @@ from stock_platform.order.post_fill_verification_constants import (
     POST_FILL_BROKER_DOWN_DELAY,
     POST_FILL_MISMATCH,
     POST_FILL_RETRY_SCHEDULED,
+    POST_FILL_POSITION_SYNC_PENDING,
     POST_FILL_SNAPSHOT_STALE,
+    POST_FILL_SYNC_PENDING_REASONS,
+    CASH_SYNC_PENDING,
+    POSITION_SYNC_PENDING,
     POST_FILL_VERIFIED,
     POST_FILL_VERIFY_EXPIRED,
     POST_FILL_VERIFY_FAILED,
@@ -177,21 +181,33 @@ class PostFillVerificationService:
 
         now = datetime.now(timezone.utc)
         payload = dict(detail or {})
-        if reason_code in {
-            "SNAPSHOT_STALE_SKIP",
-            "SNAPSHOT_MISSING_SKIP",
-            "SNAPSHOT_STALE",
-            "SNAPSHOT_MISSING",
-        }:
+        if reason_code in POST_FILL_SYNC_PENDING_REASONS:
+            pending = reason_code in {
+                POSITION_SYNC_PENDING,
+                CASH_SYNC_PENDING,
+            }
             row.status_code = PostFillVerifyStatus.WAITING_SNAPSHOT.value
-            row.last_error_code = "SNAPSHOT_STALE"
+            row.last_error_code = (
+                POSITION_SYNC_PENDING if pending else "SNAPSHOT_STALE"
+            )[:80]
+            if reason_code == CASH_SYNC_PENDING:
+                row.last_error_code = CASH_SYNC_PENDING
             row.last_error_summary = reason_code[:200]
-            row.detail = {**(row.detail or {}), **payload, "stale": True}
+            row.detail = {
+                **(row.detail or {}),
+                **payload,
+                "stale": not pending,
+                "sync_pending": pending,
+            }
             row.next_retry_at = self._next_retry_at(row.retry_count)
             row.updated_at = now
             self._session.flush()
             self._audit(
-                event_type=POST_FILL_SNAPSHOT_STALE,
+                event_type=(
+                    POST_FILL_POSITION_SYNC_PENDING
+                    if pending
+                    else POST_FILL_SNAPSHOT_STALE
+                ),
                 row=row,
                 actor=actor,
                 detail={"reason_code": reason_code, **payload},
@@ -216,6 +232,7 @@ class PostFillVerificationService:
         if reason_code in {"VERIFY_OK", "OK"} or reason_code.endswith("_OK"):
             return self._mark_verified(row, actor=actor, detail=payload)
 
+        # 즉시 경로에서 남은 진짜 mismatch (kill 이미 다른 경로에서)
         if reason_code in {"POSITION_MISMATCH", "CASH_MISMATCH"}:
             return self._mark_mismatch(
                 row, actor=actor, reason=reason_code, detail=payload
@@ -575,6 +592,9 @@ class PostFillVerificationService:
                     allow_live_off = True
             except Exception:  # noqa: BLE001
                 allow_live_off = False
+        next_retry = int(row.retry_count) + 1
+        # 마지막 시도에서만 Kill. 그 전은 sync-pending 재시도.
+        final_attempt = next_retry >= int(row.max_attempts)
         result = runner.verify_uba_against_expected(
             user_broker_account_id=int(row.user_broker_account_id),
             user_id=row.user_id,
@@ -587,18 +607,30 @@ class PostFillVerificationService:
             ),
             actor="POST_FILL_WORKER",
             allow_live_off_for_submitted=allow_live_off,
-            # Kill은 서비스가 상태 전환 후 verifier를 통해 처리
-            # verify_uba 내부 verifier는 activate_kill_on_mismatch=True
+            activate_kill_on_mismatch=final_attempt,
         )
-        # 위 호출이 mismatch면 이미 kill됨 — 상태만 맞춤
-        if result.reason_code in {
-            "SNAPSHOT_STALE_SKIP",
-            "SNAPSHOT_MISSING_SKIP",
-            "SNAPSHOT_STALE",
-        }:
-            row.retry_count = int(row.retry_count) + 1
+        if result.reason_code in POST_FILL_SYNC_PENDING_REASONS or (
+            result.reason_code
+            in {"POSITION_MISMATCH", "CASH_MISMATCH"}
+            and not final_attempt
+        ):
+            row.retry_count = next_retry
             row.status_code = PostFillVerifyStatus.WAITING_SNAPSHOT.value
-            row.last_error_code = "SNAPSHOT_STALE"
+            if result.reason_code in {
+                "POSITION_MISMATCH",
+                POSITION_SYNC_PENDING,
+            }:
+                row.last_error_code = POSITION_SYNC_PENDING
+            elif result.reason_code in {"CASH_MISMATCH", CASH_SYNC_PENDING}:
+                row.last_error_code = CASH_SYNC_PENDING
+            else:
+                row.last_error_code = "SNAPSHOT_STALE"
+            row.detail = {
+                **(row.detail or {}),
+                **(result.detail or {}),
+                "sync_pending": True,
+                "deferred_kill": True,
+            }
             row.next_retry_at = self._next_retry_at(row.retry_count)
             row.claimed_by = None
             row.claim_expires_at = None
@@ -608,9 +640,11 @@ class PostFillVerificationService:
                 event_type=POST_FILL_RETRY_SCHEDULED,
                 row=row,
                 actor="POST_FILL_WORKER",
-                detail={"retry_count": row.retry_count},
+                detail={
+                    "retry_count": row.retry_count,
+                    "reason_code": result.reason_code,
+                },
             )
-            # 만료/최대시도는 다음 due에서 처리
             if row.retry_count >= int(row.max_attempts):
                 self._mark_expired(
                     row, actor="POST_FILL_WORKER", reason="MAX_ATTEMPTS"
@@ -644,7 +678,7 @@ class PostFillVerificationService:
                 actor="POST_FILL_WORKER",
                 reason=result.reason_code,
                 detail=result.detail,
-                already_killed=True,
+                already_killed=final_attempt,
             )
             return {
                 "verification_id": row.verification_id,

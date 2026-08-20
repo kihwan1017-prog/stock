@@ -227,6 +227,16 @@ class UpbitFillSyncService:
         )
 
         executed = summary["executed_volume"]
+
+        # 원장을 post-fill 검증보다 먼저 반영 — 스냅샷 race 완화
+        if new_ids and getattr(order, "user_broker_account_id", None):
+            self._apply_live_fill_ledger(
+                order=order,
+                remote=remote,
+                new_execution_ids=new_ids,
+                actor=actor,
+            )
+
         post_fill = False
         if target in {OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED} and (
             executed > ZERO or new_ids
@@ -234,15 +244,6 @@ class UpbitFillSyncService:
             post_fill = self._enqueue_post_fill(
                 order=order,
                 execution_id=new_ids[-1] if new_ids else None,
-                actor=actor,
-            )
-
-        # LIVE/UBA 원장 — 신규 체결만 Position/Cash 반영
-        if new_ids and getattr(order, "user_broker_account_id", None):
-            self._apply_live_fill_ledger(
-                order=order,
-                remote=remote,
-                new_execution_ids=new_ids,
                 actor=actor,
             )
 

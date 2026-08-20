@@ -233,6 +233,8 @@ class PostFillVerifyRunner:
                     )
                 return result
 
+        # 즉시 경로: Kill 없이 비교. 불일치는 sync-pending + 재시도.
+        # (fill 직후 broker snapshot eventual consistency window)
         result = self.verify_uba_against_expected(
             user_broker_account_id=int(uba_id),
             user_id=getattr(order, "user_id", None),
@@ -242,16 +244,31 @@ class PostFillVerifyRunner:
             broker_positions=broker_positions,
             broker_cash=None,
             actor=actor,
+            activate_kill_on_mismatch=False,
             allow_live_off_for_submitted=bool(
                 str(getattr(order, "broker_order_id", "") or "").strip()
             ),
         )
+        reason = result.reason_code
+        detail = dict(result.detail or {})
+        if reason == "POSITION_MISMATCH":
+            reason = "POSITION_SYNC_PENDING"
+            detail["deferred_kill"] = True
+            detail["pending_reason"] = "POSITION_MISMATCH"
+        elif reason == "CASH_MISMATCH":
+            reason = "CASH_SYNC_PENDING"
+            detail["deferred_kill"] = True
+            detail["pending_reason"] = "CASH_MISMATCH"
         if row is not None:
             svc.handle_immediate_result(
                 row=row,
-                reason_code=result.reason_code,
-                detail=result.detail,
+                reason_code=reason,
+                detail=detail,
                 actor=actor,
-                request_sync=False,
+                request_sync=True,
             )
-        return result
+        return PostFillVerifyResult(
+            ok=result.ok,
+            reason_code=reason,
+            detail=detail,
+        )
