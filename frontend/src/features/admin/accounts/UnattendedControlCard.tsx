@@ -57,7 +57,7 @@ export function UnattendedControlCard({
                 title={
                   startDisabled
                     ? startDisabledReason || "시작 불가"
-                    : "관리자 승인 후 24H Unattended lease 활성화"
+                    : "관리자 승인 후 24H Unattended lease 활성화. 성공 시 운영 스택(Worker/Exit/Runtime) 기동을 제안합니다."
                 }
               >
                 <Button
@@ -75,6 +75,10 @@ export function UnattendedControlCard({
               </Button>
             )}
           </Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            LIVE ON / ARM / Activation은 LIVE 패널 강한 승인. Runtime·Worker는
+            「운영 스택 시작」또는 개별 Modal 확인(문구 타이핑 없음).
+          </Typography.Text>
         </Space>
       }
     />

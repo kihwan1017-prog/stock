@@ -780,6 +780,26 @@ export async function stopAdminUbaStrategyRuntime(
   );
 }
 
+export async function getAdminExitMonitorStatus(): Promise<JsonValue> {
+  return getJson("/admin/autotrading/exit-monitor/status");
+}
+
+export async function startAdminExitMonitor(
+  confirmationText: string,
+): Promise<JsonValue> {
+  return postJson("/admin/autotrading/exit-monitor/start", {
+    confirmation_text: confirmationText,
+  });
+}
+
+export async function stopAdminExitMonitor(
+  confirmationText: string,
+): Promise<JsonValue> {
+  return postJson("/admin/autotrading/exit-monitor/stop", {
+    confirmation_text: confirmationText,
+  });
+}
+
 /** STEP 9-7 — LIVE ON 전 Runtime Pre-flight */
 export const PREFLIGHT_TTL_SECONDS = 60;
 

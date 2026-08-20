@@ -65,6 +65,7 @@ import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
 import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
 import { buildOpsStatusSummary } from "./opsStatusSummary";
 import { UnattendedControlCard } from "./UnattendedControlCard";
+import { runUpbit24x7StackStart } from "./upbit24x7StackOrchestrator";
 
 function newCorrelationId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -955,7 +956,14 @@ export function AdminAccountLiveControlPanel() {
                 <Tooltip
                   title={
                     <Space orientation="vertical" size={2}>
+                      <span>{ops.liveLabel}</span>
+                      <span>{ops.armLabel}</span>
+                      <span>{ops.activationLabel}</span>
                       <span>{ops.unattendedLabel}</span>
+                      <span>
+                        {ops.runtimeLabel} · {ops.runnerLabel} ·{" "}
+                        {ops.workerLabel} · {ops.exitLabel}
+                      </span>
                       <span>{ops.marketLabel}</span>
                       <span>{ops.aiLabel}</span>
                       {ops.primaryBlocker ? (
@@ -963,20 +971,23 @@ export function AdminAccountLiveControlPanel() {
                       ) : (
                         <span>Blocker: NONE</span>
                       )}
-                      <span>24H 시작은 「운영 상세」에서</span>
+                      <span>운영 제어는 「운영 상세」에서</span>
                     </Space>
                   }
                 >
                   <Space orientation="vertical" size={0}>
                     <Tag color={ops.color}>{ops.autoTradingState}</Tag>
                     <Typography.Text style={{ fontSize: 11 }}>
-                      {ops.stackLabel}
+                      {ops.liveLabel} · {ops.stackLabel}
                     </Typography.Text>
                     <Typography.Text style={{ fontSize: 11 }} type="secondary">
                       {ops.armLabel} · {ops.activationLabel}
                     </Typography.Text>
                     <Typography.Text style={{ fontSize: 11 }}>
                       {ops.unattendedLabel}
+                    </Typography.Text>
+                    <Typography.Text style={{ fontSize: 11 }} type="secondary">
+                      {ops.workerLabel} · {ops.runtimeLabel}
                     </Typography.Text>
                   </Space>
                 </Tooltip>
@@ -1440,18 +1451,33 @@ export function AdminAccountLiveControlPanel() {
                         type={
                           opsSum.autoTradingState === "RUNNING"
                             ? "success"
-                            : "info"
+                            : opsSum.autoTradingState === "BLOCKED"
+                              ? "error"
+                              : "info"
                         }
                         showIcon
-                        title={`AUTO ${opsSum.autoTradingState} · ${opsSum.stackLabel}`}
+                        title={`AUTO TRADING ${opsSum.autoTradingState} · ${opsSum.stackLabel}`}
                         description={
-                          <Typography.Text type="secondary">
-                            {opsSum.armLabel} · {opsSum.activationLabel} ·{" "}
-                            {opsSum.marketLabel} · {opsSum.aiLabel}
-                            {opsSum.primaryBlocker
-                              ? ` · Blocker ${opsSum.primaryBlocker}`
-                              : " · Blocker NONE"}
-                          </Typography.Text>
+                          <Space
+                            orientation="vertical"
+                            size={2}
+                            style={{ width: "100%" }}
+                          >
+                            <Typography.Text type="secondary">
+                              {opsSum.liveLabel} · {opsSum.armLabel} ·{" "}
+                              {opsSum.activationLabel} · {opsSum.unattendedLabel}
+                            </Typography.Text>
+                            <Typography.Text type="secondary">
+                              {opsSum.runtimeLabel} · {opsSum.runnerLabel} ·{" "}
+                              {opsSum.workerLabel} · {opsSum.exitLabel}
+                            </Typography.Text>
+                            <Typography.Text type="secondary">
+                              {opsSum.marketLabel} · {opsSum.aiLabel}
+                              {opsSum.primaryBlocker
+                                ? ` · Blocker ${opsSum.primaryBlocker}`
+                                : " · Blocker NONE"}
+                            </Typography.Text>
+                          </Space>
                         }
                       />
                     ) : detailOpsQuery.isError ? (
@@ -1957,6 +1983,55 @@ export function AdminAccountLiveControlPanel() {
             await queryClient.invalidateQueries({
               queryKey: ["admin", "uba-ops-status", detailUbaId],
             });
+            // lease 성공 후 Worker/Exit/Runtime 스택 기동 제안 (LIVE/ARM은 이미 게이트 통과)
+            const readyVm = autotradingReadyQuery.data
+              ? buildUbaAutoTradingViewModel(autotradingReadyQuery.data)
+              : null;
+            const strategyIdNum = Number(readyVm?.strategy.strategyId ?? 0);
+            const ubaForStack = Number(detailUbaId);
+            if (strategyIdNum > 0) {
+              modal.confirm({
+                title: "운영 스택도 시작할까요?",
+                content:
+                  "Unattended lease는 활성화되었습니다. Worker → Exit Monitor → Runtime 순으로 기동합니다. 실패 시 FAIL CLOSED이며 LIVE/ARM safety gate는 우회하지 않습니다.",
+                okText: "스택 시작",
+                cancelText: "나중에",
+                onOk: async () => {
+                  const outcome = await runUpbit24x7StackStart({
+                    fetchOpsStatus: () =>
+                      adminApi.getAdminUbaOpsStatus(ubaForStack, strategyIdNum),
+                    startWorker: (phrase) =>
+                      adminApi.startAdminLiveOutboxWorker(phrase),
+                    startExitMonitor: (phrase) =>
+                      adminApi.startAdminExitMonitor(phrase),
+                    startRuntime: (phrase) =>
+                      adminApi.startAdminUbaStrategyRuntime(
+                        ubaForStack,
+                        strategyIdNum,
+                        phrase,
+                      ),
+                  });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["admin", "uba-ops-status", ubaForStack],
+                  });
+                  await queryClient.invalidateQueries({
+                    queryKey: ["admin", "autotrading-readiness", ubaForStack],
+                  });
+                  if (outcome.ok) {
+                    notifySuccess("운영 스택 START 완료");
+                  } else {
+                    notifyError(
+                      new Error(
+                        `스택 FAIL @ ${outcome.failedStep}: ${outcome.failedReason ?? ""}`,
+                      ),
+                    );
+                    throw new Error(
+                      outcome.failedReason ?? "STACK_START_FAILED",
+                    );
+                  }
+                },
+              });
+            }
           } catch (err) {
             // form validate 실패는 Ant Design이 처리
             if (err && typeof err === "object" && "errorFields" in err) {

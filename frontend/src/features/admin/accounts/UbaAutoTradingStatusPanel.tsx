@@ -17,6 +17,8 @@ import {
 } from "antd";
 import type { ReactNode } from "react";
 
+import { Upbit24x7OperatorControls } from "./Upbit24x7OperatorControls";
+
 import {
   buildUbaAutoTradingViewModel,
   headlineAlertType,
@@ -345,10 +347,10 @@ export function UbaAutoTradingStatusPanel({
           <Descriptions.Item label="transition_id">
             {vm.ops.transitionId}
           </Descriptions.Item>
-          <Descriptions.Item label="expires_at">
+          <Descriptions.Item label="Activation expires_at">
             {vm.ops.expiresAt}
           </Descriptions.Item>
-          <Descriptions.Item label="remaining TTL">
+          <Descriptions.Item label="Activation remaining">
             {vm.ops.remainingTtl}
           </Descriptions.Item>
           <Descriptions.Item label="LIVE">
@@ -370,7 +372,56 @@ export function UbaAutoTradingStatusPanel({
           <Descriptions.Item label="pending LIVE outbox">
             {vm.ops.pendingOutbox}
           </Descriptions.Item>
+          <Descriptions.Item label="Strategy Runtime">
+            <Tag
+              color={
+                vm.ops.runtimeLifecycle === "RUNNING"
+                  ? "green"
+                  : vm.ops.runtimeLifecycle === "ERROR"
+                    ? "red"
+                    : "default"
+              }
+            >
+              {vm.ops.runtimeLifecycle}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Outbox Worker">
+            <Tag
+              color={
+                vm.ops.workerLifecycle === "RUNNING"
+                  ? "green"
+                  : vm.ops.workerLifecycle === "ERROR"
+                    ? "red"
+                    : "default"
+              }
+            >
+              {vm.ops.workerLifecycle}
+            </Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="Exit Monitor">
+            <Tag
+              color={
+                vm.ops.exitMonitorLifecycle === "RUNNING"
+                  ? "green"
+                  : vm.ops.exitMonitorLifecycle === "ERROR"
+                    ? "red"
+                    : "default"
+              }
+            >
+              {vm.ops.exitMonitorLifecycle}
+            </Tag>
+          </Descriptions.Item>
         </Descriptions>
+        <div style={{ marginTop: 12 }}>
+          <Upbit24x7OperatorControls
+            ubaId={ubaId}
+            strategyId={
+              Number(vm.strategy.strategyId) > 0
+                ? Number(vm.strategy.strategyId)
+                : null
+            }
+          />
+        </div>
       </Section>
 
       <Section title="Readiness Checklist">
