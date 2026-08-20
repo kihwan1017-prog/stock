@@ -194,6 +194,7 @@ class UpbitStrategyPositionBindingEntity(Base):
     strategy_id: Mapped[int | None] = mapped_column(BigInteger)
     deployment_id: Mapped[int | None] = mapped_column(BigInteger)
     selection_id: Mapped[int | None] = mapped_column(BigInteger)
+    slot_id: Mapped[int | None] = mapped_column(BigInteger)
     symbol: Mapped[str] = mapped_column(String(40), nullable=False)
     status: Mapped[str] = mapped_column(
         String(30),
@@ -211,4 +212,149 @@ class UpbitStrategyPositionBindingEntity(Base):
     )
     meta_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+
+
+class UpbitPortfolioPolicyEntity(Base):
+    """FULL_MARKET_PORTFOLIO 계좌 정책 (default OFF)."""
+
+    __tablename__ = "upbit_portfolio_policy"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_broker_account_id",
+            name="uq_upbit_portfolio_policy_uba",
+        ),
+        {"schema": "operation"},
+    )
+
+    policy_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    user_broker_account_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    max_positions: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("3")
+    )
+    portfolio_capital_limit_krw: Mapped[float | None] = mapped_column(Float)
+    per_position_target_pct: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.08")
+    )
+    max_symbol_exposure_pct: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.12")
+    )
+    max_total_exposure_pct: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.30")
+    )
+    min_cash_reserve_pct: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.60")
+    )
+    daily_loss_limit_pct: Mapped[float] = mapped_column(
+        Float, nullable=False, server_default=text("0.02")
+    )
+    consecutive_loss_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("3")
+    )
+    allow_averaging_down: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    allow_duplicate_symbol: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    entry_cooldown_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("300")
+    )
+    candidate_max_age_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1800")
+    )
+    portfolio_max_pending_entries: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+    portfolio_daily_entry_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("10")
+    )
+    entry_state: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'RUNNING'"),
+    )
+    consecutive_loss_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class UpbitPositionSlotEntity(Base):
+    """Portfolio position slot — 한 slot = 한 active symbol."""
+
+    __tablename__ = "upbit_position_slot"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_broker_account_id",
+            "slot_no",
+            name="uq_upbit_position_slot_uba_no",
+        ),
+        {"schema": "operation"},
+    )
+
+    slot_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    user_broker_account_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False
+    )
+    strategy_id: Mapped[int | None] = mapped_column(BigInteger)
+    deployment_id: Mapped[int | None] = mapped_column(BigInteger)
+    slot_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        server_default=text("'EMPTY'"),
+    )
+    symbol: Mapped[str | None] = mapped_column(String(40))
+    candidate_selection_id: Mapped[int | None] = mapped_column(BigInteger)
+    scanner_run_id: Mapped[str | None] = mapped_column(String(64))
+    ai_analysis_id: Mapped[int | None] = mapped_column(BigInteger)
+    recommended_amount_krw: Mapped[float | None] = mapped_column(Float)
+    allocated_amount_krw: Mapped[float | None] = mapped_column(Float)
+    reserved_amount_krw: Mapped[float | None] = mapped_column(Float)
+    clamp_reasons: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    entry_order_id: Mapped[int | None] = mapped_column(BigInteger)
+    position_binding_id: Mapped[int | None] = mapped_column(BigInteger)
+    opened_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("1")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
     )
