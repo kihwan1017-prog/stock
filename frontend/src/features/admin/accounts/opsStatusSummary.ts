@@ -12,6 +12,7 @@ export type OpsStatusSummary = {
   marketLabel: string;
   aiLabel: string;
   primaryBlocker: string | null;
+  blockers: string[];
   color: string;
 };
 
@@ -62,6 +63,9 @@ export function buildOpsStatusSummary(payload: unknown): OpsStatusSummary {
     aiLabel: `AI ${String(root.ai_state ?? "HOLD")}`,
     primaryBlocker:
       root.primary_blocker != null ? String(root.primary_blocker) : null,
+    blockers: Array.isArray(root.blockers)
+      ? root.blockers.map((x) => String(x))
+      : [],
     color: stateColor(state),
   };
 }

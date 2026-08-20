@@ -63,6 +63,7 @@ import {
 import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
 import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
 import { buildOpsStatusSummary } from "./opsStatusSummary";
+import { UnattendedControlCard } from "./UnattendedControlCard";
 
 function newCorrelationId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -140,6 +141,19 @@ export function AdminAccountLiveControlPanel() {
     queryKey: ["admin", "uba-ops-status", detailUbaId],
     queryFn: () => adminApi.getAdminUbaOpsStatus(Number(detailUbaId)),
     enabled: detailUbaId != null,
+    refetchInterval: 20_000,
+  });
+
+  const detailBroker = useMemo(() => {
+    if (detailUbaId == null) return null;
+    const row = allRows.find((r) => rowUbaId(r) === Number(detailUbaId));
+    return row ? rowBrokerCode(row) : null;
+  }, [allRows, detailUbaId]);
+
+  const detailUnattendedQuery = useQuery({
+    queryKey: ["admin", "uba-unattended", detailUbaId],
+    queryFn: () => adminApi.getAdminUbaUnattendedStatus(Number(detailUbaId)),
+    enabled: detailUbaId != null && detailBroker === "UPBIT",
     refetchInterval: 20_000,
   });
 
@@ -921,7 +935,14 @@ export function AdminAccountLiveControlPanel() {
               }
               const ops = opsByUbaId.get(ubaId);
               if (!ops) {
-                return <Tag>…</Tag>;
+                return (
+                  <Space orientation="vertical" size={0}>
+                    <Tag>AUTO …</Tag>
+                    <Typography.Text style={{ fontSize: 11 }} type="secondary">
+                      Unattended · 운영 상세
+                    </Typography.Text>
+                  </Space>
+                );
               }
               return (
                 <Tooltip
@@ -935,6 +956,7 @@ export function AdminAccountLiveControlPanel() {
                       ) : (
                         <span>Blocker: NONE</span>
                       )}
+                      <span>24H 시작은 「운영 상세」에서</span>
                     </Space>
                   }
                 >
@@ -945,6 +967,9 @@ export function AdminAccountLiveControlPanel() {
                     </Typography.Text>
                     <Typography.Text style={{ fontSize: 11 }} type="secondary">
                       {ops.armLabel} · {ops.activationLabel}
+                    </Typography.Text>
+                    <Typography.Text style={{ fontSize: 11 }}>
+                      {ops.unattendedLabel}
                     </Typography.Text>
                   </Space>
                 </Tooltip>
@@ -1372,101 +1397,140 @@ export function AdminAccountLiveControlPanel() {
               }
             />
 
-            {detailOpsQuery.data ? (
+            {detailBroker === "UPBIT" ? (
               (() => {
-                const sum = buildOpsStatusSummary(detailOpsQuery.data);
+                const unatt = (detailUnattendedQuery.data ?? {}) as Record<
+                  string,
+                  unknown
+                >;
+                const enabled = Boolean(unatt.unattended_enabled);
+                const remaining = Number(unatt.remaining_seconds ?? 0);
+                const statusCode = String(unatt.status_code ?? "OFF");
+                const opsSum = detailOpsQuery.data
+                  ? buildOpsStatusSummary(detailOpsQuery.data)
+                  : null;
+                const startBlockers = (opsSum?.blockers ?? []).filter((b) =>
+                  [
+                    "KILL_SWITCH_ACTIVE",
+                    "LIVE_OFF",
+                    "ARM_OFF",
+                    "ACTIVATION_INACTIVE",
+                  ].includes(b),
+                );
+                // ops 실패 시에도 버튼은 노출(비활성 아님) — enable API가 gate로 거절
+                const startBlocked = startBlockers.length > 0;
+                const startReason = startBlocked
+                  ? `${startBlockers.join(", ")} — 해소 후 시작 가능`
+                  : null;
                 return (
-                  <Alert
-                    type={
-                      sum.autoTradingState === "RUNNING" ? "success" : "info"
-                    }
-                    showIcon
-                    title={`AUTO ${sum.autoTradingState} · ${sum.stackLabel}`}
-                    description={
-                      <Space orientation="vertical" size={2}>
-                        <Typography.Text>
-                          {sum.armLabel} · {sum.activationLabel} ·{" "}
-                          {sum.unattendedLabel}
-                        </Typography.Text>
-                        <Typography.Text type="secondary">
-                          {sum.marketLabel} · {sum.aiLabel}
-                          {sum.primaryBlocker
-                            ? ` · Blocker ${sum.primaryBlocker}`
-                            : " · Blocker NONE"}
-                        </Typography.Text>
-                        <Space wrap>
-                          <Button
-                            size="small"
-                            type="primary"
-                            onClick={() => {
-                              modal.confirm({
-                                title: "24시간 무인운영 시작",
-                                content:
-                                  "ENABLE 24H UNATTENDED 승인이 필요합니다. LIVE/ARM/Activation이 유효해야 합니다. 자동 ON은 하지 않습니다.",
-                                onOk: async () => {
-                                  const phrase = window.prompt(
-                                    "승인 phrase (UPBIT)",
-                                  );
-                                  if (!phrase) return;
-                                  await adminApi.enableAdminUbaUnattended(
-                                    Number(detailUbaId),
-                                    {
-                                      confirmation_text:
-                                        "ENABLE 24H UNATTENDED",
-                                      approval_phrase: phrase,
-                                      reason: "admin_ui_24h_unattended",
-                                      horizon_hours: 24,
-                                      correlation_id:
-                                        newCorrelationId("unatt"),
-                                    },
-                                  );
-                                  notifySuccess("24H Unattended enabled");
-                                  await queryClient.invalidateQueries({
-                                    queryKey: [
-                                      "admin",
-                                      "uba-ops-status",
-                                      detailUbaId,
-                                    ],
-                                  });
-                                },
-                              });
-                            }}
-                          >
-                            24시간 무인운영 시작
-                          </Button>
-                          <Button
-                            size="small"
-                            danger
-                            onClick={() => {
-                              modal.confirm({
-                                title: "24H Unattended 중지",
-                                onOk: async () => {
-                                  await adminApi.disableAdminUbaUnattended(
-                                    Number(detailUbaId),
-                                    {
-                                      confirmation_text:
-                                        "DISABLE 24H UNATTENDED",
-                                      reason: "admin_ui_disable",
-                                    },
-                                  );
-                                  notifySuccess("24H Unattended disabled");
-                                  await queryClient.invalidateQueries({
-                                    queryKey: [
-                                      "admin",
-                                      "uba-ops-status",
-                                      detailUbaId,
-                                    ],
-                                  });
-                                },
-                              });
-                            }}
-                          >
-                            Unattended 중지
-                          </Button>
-                        </Space>
-                      </Space>
-                    }
-                  />
+                  <Space
+                    orientation="vertical"
+                    size={8}
+                    style={{ width: "100%" }}
+                  >
+                    {opsSum ? (
+                      <Alert
+                        type={
+                          opsSum.autoTradingState === "RUNNING"
+                            ? "success"
+                            : "info"
+                        }
+                        showIcon
+                        title={`AUTO ${opsSum.autoTradingState} · ${opsSum.stackLabel}`}
+                        description={
+                          <Typography.Text type="secondary">
+                            {opsSum.armLabel} · {opsSum.activationLabel} ·{" "}
+                            {opsSum.marketLabel} · {opsSum.aiLabel}
+                            {opsSum.primaryBlocker
+                              ? ` · Blocker ${opsSum.primaryBlocker}`
+                              : " · Blocker NONE"}
+                          </Typography.Text>
+                        }
+                      />
+                    ) : detailOpsQuery.isError ? (
+                      <Alert
+                        type="warning"
+                        showIcon
+                        title="운영 요약(ops-status) 일시 오류"
+                        description="Unattended 제어는 아래에서 계속 사용 가능합니다."
+                      />
+                    ) : null}
+                    <UnattendedControlCard
+                      enabled={enabled}
+                      remainingSeconds={remaining}
+                      statusCode={statusCode}
+                      startDisabled={Boolean(startBlocked)}
+                      startDisabledReason={startReason}
+                      loading={detailUnattendedQuery.isFetching}
+                      onStart={() => {
+                        modal.confirm({
+                          title: "24시간 무인운영 시작",
+                          content:
+                            "ENABLE 24H UNATTENDED 승인이 필요합니다. LIVE/ARM/Activation이 유효해야 합니다. 자동 ON은 하지 않습니다.",
+                          onOk: async () => {
+                            const phrase = window.prompt(
+                              "승인 phrase (UPBIT)",
+                            );
+                            if (!phrase) return;
+                            await adminApi.enableAdminUbaUnattended(
+                              Number(detailUbaId),
+                              {
+                                confirmation_text: "ENABLE 24H UNATTENDED",
+                                approval_phrase: phrase,
+                                reason: "admin_ui_24h_unattended",
+                                horizon_hours: 24,
+                                correlation_id: newCorrelationId("unatt"),
+                              },
+                            );
+                            notifySuccess("24H Unattended enabled");
+                            await queryClient.invalidateQueries({
+                              queryKey: [
+                                "admin",
+                                "uba-unattended",
+                                detailUbaId,
+                              ],
+                            });
+                            await queryClient.invalidateQueries({
+                              queryKey: [
+                                "admin",
+                                "uba-ops-status",
+                                detailUbaId,
+                              ],
+                            });
+                          },
+                        });
+                      }}
+                      onStop={() => {
+                        modal.confirm({
+                          title: "24시간 무인운영 중지",
+                          onOk: async () => {
+                            await adminApi.disableAdminUbaUnattended(
+                              Number(detailUbaId),
+                              {
+                                confirmation_text: "DISABLE 24H UNATTENDED",
+                                reason: "admin_ui_disable",
+                              },
+                            );
+                            notifySuccess("24H Unattended disabled");
+                            await queryClient.invalidateQueries({
+                              queryKey: [
+                                "admin",
+                                "uba-unattended",
+                                detailUbaId,
+                              ],
+                            });
+                            await queryClient.invalidateQueries({
+                              queryKey: [
+                                "admin",
+                                "uba-ops-status",
+                                detailUbaId,
+                              ],
+                            });
+                          },
+                        });
+                      }}
+                    />
+                  </Space>
                 );
               })()
             ) : null}

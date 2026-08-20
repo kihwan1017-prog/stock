@@ -71,7 +71,6 @@ def build_uba_operational_summary(
     activation_remaining = 0
     if uba is not None:
         act = LiveTradingTransitionService(session).peek_active(
-            scope="ACCOUNT",
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=uba_id,
         )

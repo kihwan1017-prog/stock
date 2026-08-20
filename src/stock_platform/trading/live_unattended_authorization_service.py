@@ -198,7 +198,6 @@ class LiveUnattendedAuthorizationService:
             )
 
         act = LiveTradingTransitionService(self._session).peek_active(
-            scope="ACCOUNT",
             broker_code=broker,
             user_broker_account_id=int(user_broker_account_id),
         )
@@ -357,7 +356,6 @@ class LiveUnattendedAuthorizationService:
         except Exception:  # noqa: BLE001
             blockers.append("KILL_SWITCH_CHECK_FAILED")
         act = LiveTradingTransitionService(self._session).peek_active(
-            scope="ACCOUNT",
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=int(user_broker_account_id),
         )
@@ -475,7 +473,6 @@ class LiveUnattendedAuthorizationService:
 
         margin = int(row.renewal_margin_seconds)
         act = LiveTradingTransitionService(self._session).peek_active(
-            scope="ACCOUNT",
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=int(user_broker_account_id),
         )
