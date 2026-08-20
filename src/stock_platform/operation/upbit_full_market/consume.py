@@ -10,13 +10,20 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from stock_platform.operation.upbit_full_market.constants import (
-    MODE_FULL_MARKET_AUTO,
+    FULL_MARKET_ANY_MODES,
 )
 from stock_platform.operation.upbit_full_market.entities import (
     UpbitFullMarketAssignmentEntity,
 )
+from stock_platform.operation.upbit_full_market.portfolio_service import (
+    UpbitPortfolioService,
+)
 from stock_platform.operation.upbit_full_market.service import (
     UpbitFullMarketAssignmentService,
+)
+from stock_platform.operation.upbit_full_market.constants import (
+    is_full_market_portfolio,
+    is_full_market_single,
 )
 
 logger = structlog.get_logger(__name__)
@@ -56,23 +63,37 @@ def consume_latest_scanner_for_full_market_accounts(
     rows = list(
         session.scalars(
             select(UpbitFullMarketAssignmentEntity).where(
-                UpbitFullMarketAssignmentEntity.mode == MODE_FULL_MARKET_AUTO,
+                UpbitFullMarketAssignmentEntity.mode.in_(
+                    list(FULL_MARKET_ANY_MODES)
+                ),
                 UpbitFullMarketAssignmentEntity.broker_code == "UPBIT",
             )
         )
     )
     svc = UpbitFullMarketAssignmentService(session)
+    portfolio = UpbitPortfolioService(session)
     accounts: list[dict[str, Any]] = []
     for row in rows:
         try:
             svc.tick_cooldown_to_idle(int(row.user_broker_account_id))
-            result = svc.consume_scanner_candidates(
-                int(row.user_broker_account_id),
-                candidates=candidates,
-                scanner_run_id=run_id,
-                scanner_completed_at=completed_at,
-                dry_run=dry_run,
-            )
+            if is_full_market_portfolio(row.mode):
+                result = portfolio.consume_top_k(
+                    int(row.user_broker_account_id),
+                    candidates=candidates,
+                    scanner_run_id=run_id,
+                    scanner_completed_at=completed_at,
+                    dry_run=dry_run,
+                )
+            elif is_full_market_single(row.mode):
+                result = svc.consume_scanner_candidates(
+                    int(row.user_broker_account_id),
+                    candidates=candidates,
+                    scanner_run_id=run_id,
+                    scanner_completed_at=completed_at,
+                    dry_run=dry_run,
+                )
+            else:
+                continue
             accounts.append(result)
         except Exception as exc:  # noqa: BLE001
             logger.warning(

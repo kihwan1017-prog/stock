@@ -18,10 +18,13 @@ from stock_platform.operation.upbit_full_market.constants import (
     CONFIRM_ENABLE_FULL_MARKET,
     MODE_FIXED_SYMBOL,
     MODE_FULL_MARKET_AUTO,
+    PORTFOLIO_ENTRY_PAUSED,
     SELECTION_STATUS_ACTIVE,
     SELECTION_STATUS_CLOSED,
     SELECTION_STATUS_SELECTED,
     SELECTION_STATUS_SUPERSEDED,
+    SLOT_ENTRY_PENDING,
+    SLOT_OPEN,
     SOURCE_UPBIT_OPPORTUNITY_SCANNER,
     STATE_BLOCKED,
     STATE_CANDIDATE_SELECTED,
@@ -32,6 +35,9 @@ from stock_platform.operation.upbit_full_market.constants import (
     STATE_SWITCH_PRECHECK,
     STATE_SWITCHED,
     STATE_WARMUP,
+    is_any_full_market,
+    is_full_market_portfolio,
+    is_full_market_single,
 )
 from stock_platform.operation.upbit_full_market.entities import (
     UpbitFullMarketAssignmentEntity,
@@ -168,20 +174,39 @@ class UpbitFullMarketAssignmentService:
                 "current_symbol": None,
                 "template_symbol": None,
                 "full_market_enabled": False,
+                "portfolio_enabled": False,
                 "warmup_ready": False,
                 "market_data_fresh": False,
                 "cooldown_until": None,
                 "block_reason": None,
                 "active_selection_id": None,
                 "ai_live_gate_mode": AI_GATE_ENFORCE,
+                "active_symbols": [],
             }
+        active_symbols: list[str] = []
+        if is_full_market_portfolio(row.mode):
+            try:
+                from stock_platform.operation.upbit_full_market.portfolio_service import (
+                    UpbitPortfolioService,
+                )
+
+                active_symbols = UpbitPortfolioService(
+                    self._session
+                ).active_symbols(int(row.user_broker_account_id))
+            except Exception:  # noqa: BLE001
+                active_symbols = []
+            if row.current_symbol and row.current_symbol not in active_symbols:
+                active_symbols = [str(row.current_symbol).upper(), *active_symbols]
+        elif row.current_symbol:
+            active_symbols = [str(row.current_symbol).upper()]
         return {
             "assignment_id": int(row.assignment_id),
             "mode": row.mode,
             "state": row.state,
             "current_symbol": row.current_symbol,
             "template_symbol": row.template_symbol,
-            "full_market_enabled": row.mode == MODE_FULL_MARKET_AUTO,
+            "full_market_enabled": is_full_market_single(row.mode),
+            "portfolio_enabled": is_full_market_portfolio(row.mode),
             "warmup_ready": bool(row.warmup_ready),
             "market_data_fresh": bool(row.market_data_fresh),
             "signals_paused": bool(row.signals_paused),
@@ -194,6 +219,7 @@ class UpbitFullMarketAssignmentService:
             "ai_live_gate_mode": row.ai_live_gate_mode,
             "strategy_id": row.strategy_id,
             "deployment_id": row.deployment_id,
+            "active_symbols": active_symbols,
         }
 
     def resolve_runtime_symbol(
@@ -210,13 +236,49 @@ class UpbitFullMarketAssignmentService:
                 == int(user_broker_account_id)
             )
         )
-        if row is None or row.mode != MODE_FULL_MARKET_AUTO:
+        if row is None or not is_any_full_market(row.mode):
             return (fallback_symbol or None) and str(fallback_symbol).upper()
         if row.current_symbol:
             return str(row.current_symbol).upper()
         return (row.template_symbol or fallback_symbol or None) and str(
             row.current_symbol or row.template_symbol or fallback_symbol
         ).upper()
+
+    def resolve_runtime_symbols(
+        self,
+        user_broker_account_id: int,
+        *,
+        fallback_symbol: str | None,
+    ) -> list[str]:
+        """PORTFOLIO는 active slot 집합, SINGLE은 current 1개."""
+
+        row = self._session.scalar(
+            select(UpbitFullMarketAssignmentEntity).where(
+                UpbitFullMarketAssignmentEntity.user_broker_account_id
+                == int(user_broker_account_id)
+            )
+        )
+        if row is None:
+            fb = (fallback_symbol or None) and str(fallback_symbol).upper()
+            return [fb] if fb else []
+        if is_full_market_portfolio(row.mode):
+            from stock_platform.operation.upbit_full_market.portfolio_service import (
+                UpbitPortfolioService,
+            )
+
+            syms = UpbitPortfolioService(self._session).active_symbols(
+                int(user_broker_account_id)
+            )
+            if not syms and row.current_symbol:
+                syms = [str(row.current_symbol).upper()]
+            if not syms and fallback_symbol:
+                syms = [str(fallback_symbol).upper()]
+            return syms
+        one = self.resolve_runtime_symbol(
+            int(user_broker_account_id),
+            fallback_symbol=fallback_symbol,
+        )
+        return [one] if one else []
 
     def enable_full_market(
         self,
@@ -391,7 +453,10 @@ class UpbitFullMarketAssignmentService:
             "orders_created": 0,
         }
 
-        if assignment.mode != MODE_FULL_MARKET_AUTO:
+        if is_full_market_portfolio(assignment.mode):
+            out["reason"] = "USE_PORTFOLIO_CONSUME"
+            return out
+        if not is_full_market_single(assignment.mode):
             out["reason"] = "MODE_FIXED_SYMBOL"
             return out
 
@@ -589,7 +654,9 @@ class UpbitFullMarketAssignmentService:
         row = self.get_or_create(int(user_broker_account_id))
         row.warmup_ready = bool(warmup_ready)
         row.market_data_fresh = bool(market_data_fresh)
-        if row.warmup_ready and row.market_data_fresh and row.mode == MODE_FULL_MARKET_AUTO:
+        if row.warmup_ready and row.market_data_fresh and is_full_market_single(
+            row.mode
+        ):
             if row.state == STATE_WARMUP:
                 row.state = STATE_SWITCHED
             row.signals_paused = False
@@ -603,17 +670,19 @@ class UpbitFullMarketAssignmentService:
         symbol: str,
         entry_order_id: int | None = None,
         selection_id: int | None = None,
+        slot_id: int | None = None,
     ) -> dict[str, Any]:
         uba_id = int(user_broker_account_id)
         sym = str(symbol).upper()
         assignment = self.get_or_create(uba_id)
-        if assignment.mode != MODE_FULL_MARKET_AUTO:
+        if not is_any_full_market(assignment.mode):
             return {"ok": False, "reason": "MODE_FIXED_SYMBOL"}
         binding = UpbitStrategyPositionBindingEntity(
             user_broker_account_id=uba_id,
             strategy_id=assignment.strategy_id,
             deployment_id=assignment.deployment_id,
             selection_id=selection_id or assignment.active_selection_id,
+            slot_id=slot_id,
             symbol=sym,
             status=BINDING_STATUS_OPEN,
             entry_order_id=entry_order_id,
@@ -621,10 +690,42 @@ class UpbitFullMarketAssignmentService:
             meta_json={},
         )
         self._session.add(binding)
-        assignment.state = STATE_POSITION_OPEN
-        assignment.current_symbol = sym
         self._session.flush()
-        return {"ok": True, "binding_id": int(binding.binding_id)}
+
+        if is_full_market_portfolio(assignment.mode):
+            from stock_platform.operation.upbit_full_market.entities import (
+                UpbitPositionSlotEntity,
+            )
+
+            slot = None
+            if slot_id is not None:
+                slot = self._session.get(UpbitPositionSlotEntity, int(slot_id))
+            if slot is None:
+                slot = self._session.scalar(
+                    select(UpbitPositionSlotEntity).where(
+                        UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                        UpbitPositionSlotEntity.symbol == sym,
+                        UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
+                    )
+                )
+            if slot is not None:
+                slot.status = SLOT_OPEN
+                slot.entry_order_id = entry_order_id
+                slot.position_binding_id = int(binding.binding_id)
+                slot.opened_at = _now()
+                slot.reserved_amount_krw = None
+                slot.version = int(slot.version or 1) + 1
+                binding.slot_id = int(slot.slot_id)
+            assignment.current_symbol = sym
+        else:
+            assignment.state = STATE_POSITION_OPEN
+            assignment.current_symbol = sym
+        self._session.flush()
+        return {
+            "ok": True,
+            "binding_id": int(binding.binding_id),
+            "slot_id": binding.slot_id,
+        }
 
     def mark_position_closed(
         self,
@@ -646,9 +747,60 @@ class UpbitFullMarketAssignmentService:
             q = q.where(
                 UpbitStrategyPositionBindingEntity.symbol == str(symbol).upper()
             )
-        for b in list(self._session.scalars(q)):
+        closed_bindings = list(self._session.scalars(q))
+        for b in closed_bindings:
             b.status = BINDING_STATUS_CLOSED
             b.closed_at = now
+
+        if is_full_market_portfolio(assignment.mode):
+            from stock_platform.operation.upbit_full_market.constants import (
+                SLOT_COOLDOWN,
+                SLOT_EXIT_PENDING,
+            )
+            from stock_platform.operation.upbit_full_market.entities import (
+                UpbitPositionSlotEntity,
+                UpbitPortfolioPolicyEntity,
+            )
+
+            cool = cooldown_seconds
+            if cool is None:
+                policy = self._session.scalar(
+                    select(UpbitPortfolioPolicyEntity).where(
+                        UpbitPortfolioPolicyEntity.user_broker_account_id
+                        == uba_id
+                    )
+                )
+                cool = float(
+                    getattr(policy, "entry_cooldown_seconds", None)
+                    or getattr(
+                        get_settings(),
+                        "upbit_full_market_entry_cooldown_seconds",
+                        300.0,
+                    )
+                )
+            slot_q = select(UpbitPositionSlotEntity).where(
+                UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                UpbitPositionSlotEntity.status.in_(
+                    [SLOT_OPEN, SLOT_EXIT_PENDING]
+                ),
+            )
+            if symbol:
+                slot_q = slot_q.where(
+                    UpbitPositionSlotEntity.symbol == str(symbol).upper()
+                )
+            for slot in list(self._session.scalars(slot_q)):
+                slot.status = SLOT_COOLDOWN
+                slot.closed_at = now
+                slot.cooldown_until = now + timedelta(seconds=float(cool))
+                slot.reserved_amount_krw = None
+                slot.version = int(slot.version or 1) + 1
+            self._session.flush()
+            return {
+                "ok": True,
+                "mode": assignment.mode,
+                "closed_bindings": len(closed_bindings),
+                "cooldown_seconds": float(cool),
+            }
 
         if assignment.active_selection_id:
             sel = self._session.get(
@@ -692,6 +844,14 @@ class UpbitFullMarketAssignmentService:
             row.signals_paused = False
             row.block_reason = None
             self._session.flush()
+        if is_full_market_portfolio(row.mode):
+            from stock_platform.operation.upbit_full_market.portfolio_service import (
+                UpbitPortfolioService,
+            )
+
+            UpbitPortfolioService(self._session).tick_cooldown_slots(
+                int(user_broker_account_id)
+            )
         return self.status_dict(int(user_broker_account_id))
 
     def entry_allowed(
@@ -705,8 +865,41 @@ class UpbitFullMarketAssignmentService:
                 == int(user_broker_account_id)
             )
         )
-        if row is None or row.mode != MODE_FULL_MARKET_AUTO:
+        if row is None or not is_any_full_market(row.mode):
             return True, "FIXED_SYMBOL_DELEGATE"
+
+        if is_full_market_portfolio(row.mode):
+            from stock_platform.operation.upbit_full_market.entities import (
+                UpbitPortfolioPolicyEntity,
+                UpbitPositionSlotEntity,
+            )
+
+            policy = self._session.scalar(
+                select(UpbitPortfolioPolicyEntity).where(
+                    UpbitPortfolioPolicyEntity.user_broker_account_id
+                    == int(user_broker_account_id)
+                )
+            )
+            if policy is None or not policy.enabled:
+                return False, "PORTFOLIO_POLICY_DISABLED"
+            if str(policy.entry_state or "") == PORTFOLIO_ENTRY_PAUSED:
+                return False, "PORTFOLIO_ENTRY_PAUSED"
+            if str(policy.entry_state or "") == "BLOCKED":
+                return False, "PORTFOLIO_ENTRY_BLOCKED"
+            if not symbol:
+                return False, "SYMBOL_REQUIRED"
+            slot = self._session.scalar(
+                select(UpbitPositionSlotEntity).where(
+                    UpbitPositionSlotEntity.user_broker_account_id
+                    == int(user_broker_account_id),
+                    UpbitPositionSlotEntity.symbol == str(symbol).upper(),
+                    UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
+                )
+            )
+            if slot is None:
+                return False, "NO_ENTRY_PENDING_SLOT"
+            return True, "PORTFOLIO_PASS"
+
         if row.signals_paused:
             return False, "SIGNALS_PAUSED"
         if not row.warmup_ready:

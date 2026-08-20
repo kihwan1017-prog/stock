@@ -405,7 +405,7 @@ class PositionExitMonitorLoader:
             # 수동/기존 보유 vs strategy-owned 구분 — 의도치 않은 청산 방지
             try:
                 from stock_platform.operation.upbit_full_market.constants import (
-                    MODE_FULL_MARKET_AUTO,
+                    is_any_full_market,
                 )
                 from stock_platform.operation.upbit_full_market.service import (
                     UpbitFullMarketAssignmentService,
@@ -414,7 +414,7 @@ class PositionExitMonitorLoader:
                 fma = UpbitFullMarketAssignmentService(self._session)
                 st = fma.status_dict(uba_id)
                 mode = str(st.get("mode") or "")
-                if mode == MODE_FULL_MARKET_AUTO:
+                if is_any_full_market(mode):
                     if not fma.is_strategy_owned_symbol(uba_id, symbol):
                         skipped.append(
                             f"manual_holding:LIVE:{uba_id}/{symbol}"

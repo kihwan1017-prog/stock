@@ -41,14 +41,30 @@ def apply_runtime_target_symbol(
     clone용 normalize_upbit_symbol(XRP 예약)과 분리 — FULL_MARKET 동적 target 허용.
     """
 
-    target = str(symbol or "").strip().upper()
-    if not target:
-        raise ValueError("symbol required")
-    if not target.startswith("KRW-"):
-        raise ValueError("UPBIT runtime target must be KRW-*")
+    return apply_runtime_target_symbols(payload, symbols=[symbol])
+
+
+def apply_runtime_target_symbols(
+    payload: dict[str, Any] | None,
+    *,
+    symbols: list[str],
+) -> dict[str, Any]:
+    """PORTFOLIO multi-symbol runtime subscription용 payload."""
+
+    clean: list[str] = []
+    for raw in symbols:
+        target = str(raw or "").strip().upper()
+        if not target:
+            continue
+        if not target.startswith("KRW-"):
+            raise ValueError("UPBIT runtime target must be KRW-*")
+        if target not in clean:
+            clean.append(target)
+    if not clean:
+        raise ValueError("symbols required")
     cloned = dict(payload or {})
-    cloned["symbol"] = target
-    cloned["symbols"] = [target]
+    cloned["symbol"] = clean[0]
+    cloned["symbols"] = list(clean)
     cloned["exchange_code"] = "UPBIT"
     return cloned
 

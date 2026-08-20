@@ -164,18 +164,31 @@ class ActiveStrategyRuntimeLoader:
         if user_broker_account_id is not None:
             try:
                 from stock_platform.operation.upbit_full_market.constants import (
-                    MODE_FULL_MARKET_AUTO,
+                    is_any_full_market,
+                    is_full_market_portfolio,
+                    is_full_market_single,
                 )
                 from stock_platform.operation.upbit_full_market.service import (
                     UpbitFullMarketAssignmentService,
                 )
                 from stock_platform.strategy_deployment.symbol_payload import (
                     apply_runtime_target_symbol,
+                    apply_runtime_target_symbols,
                 )
 
                 fma = UpbitFullMarketAssignmentService(self._session)
                 status = fma.status_dict(int(user_broker_account_id))
-                if status.get("mode") == MODE_FULL_MARKET_AUTO and status.get(
+                mode = str(status.get("mode") or "")
+                if is_full_market_portfolio(mode):
+                    targets = list(status.get("active_symbols") or [])
+                    if not targets and status.get("current_symbol"):
+                        targets = [str(status["current_symbol"]).upper()]
+                    if targets:
+                        resolved_symbol = str(targets[0]).upper()
+                        resolved_payload = apply_runtime_target_symbols(
+                            resolved_payload, symbols=targets
+                        )
+                elif is_full_market_single(mode) and status.get(
                     "current_symbol"
                 ):
                     target = str(status["current_symbol"]).upper()
@@ -183,6 +196,8 @@ class ActiveStrategyRuntimeLoader:
                     resolved_payload = apply_runtime_target_symbol(
                         resolved_payload, symbol=target
                     )
+                elif is_any_full_market(mode):
+                    pass
             except Exception:  # noqa: BLE001
                 pass
         strategy = self._registry.create(
