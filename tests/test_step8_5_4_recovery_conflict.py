@@ -189,6 +189,94 @@ def test_ignore_requires_note() -> None:
     assert exc.value.code == "note_required"
 
 
+def test_upsert_skips_new_conflict_for_terminal_remote_only() -> None:
+    """done/cancel remote-only는 신규 HIGH Conflict를 만들지 않는다."""
+
+    session = MagicMock()
+    repo_order = MagicMock()
+    repo_order.get_by_broker_order_id.return_value = None
+    # terminal 기존 행 없음 + active 행 없음
+    session.scalar.side_effect = [None, None]
+
+    svc = BrokerRecoveryConflictService(session)
+    import stock_platform.broker.recovery_conflict_service as mod
+
+    original = mod.TradingOrderRepository
+    mod.TradingOrderRepository = lambda _s: repo_order  # type: ignore[misc,assignment]
+    try:
+        for state in ("done", "cancel"):
+            session.scalar.side_effect = [None, None]
+            session.add.reset_mock()
+            result = svc.upsert_remote_only(
+                remote={
+                    "uuid": f"ext-terminal-{state}",
+                    "market": "KRW-ETH",
+                    "side": "ask",
+                    "state": state,
+                    "volume": "1",
+                    "executed_volume": "1" if state == "done" else "0",
+                    "remaining_volume": "0" if state == "done" else "1",
+                },
+                user_id=1,
+                user_broker_account_id=10,
+                recovery_run_id=None,
+            )
+            assert result is None
+            session.add.assert_not_called()
+    finally:
+        mod.TradingOrderRepository = original
+
+
+def test_upsert_still_creates_for_wait_remote_only() -> None:
+    """wait remote-only는 기존처럼 HIGH PENDING Conflict를 생성한다."""
+
+    session = MagicMock()
+    repo_order = MagicMock()
+    repo_order.get_by_broker_order_id.return_value = None
+    session.scalar.side_effect = [None, None]
+
+    def _flush_assign_id() -> None:
+        # Identity 미할당 mock 환경에서 audit detail 직렬화 가능하도록
+        for args in session.add.call_args_list:
+            obj = args[0][0]
+            if getattr(obj, "broker_recovery_conflict_id", None) is None:
+                obj.broker_recovery_conflict_id = 999
+
+    session.flush.side_effect = _flush_assign_id
+
+    svc = BrokerRecoveryConflictService(session)
+    import stock_platform.broker.recovery_conflict_service as mod
+
+    original = mod.TradingOrderRepository
+    mod.TradingOrderRepository = lambda _s: repo_order  # type: ignore[misc,assignment]
+    try:
+        result = svc.upsert_remote_only(
+            remote={
+                "uuid": "ext-wait-1",
+                "market": "KRW-BTC",
+                "side": "bid",
+                "state": "wait",
+                "volume": "0.01",
+                "executed_volume": "0",
+                "remaining_volume": "0.01",
+                "price": "100000000",
+            },
+            user_id=1,
+            user_broker_account_id=10,
+            recovery_run_id=None,
+        )
+    finally:
+        mod.TradingOrderRepository = original
+
+    assert result is not None
+    session.add.assert_called()
+    assert (
+        result.review_status
+        == RecoveryConflictReviewStatus.PENDING_REVIEW
+    )
+    assert result.risk_level == "HIGH"
+
+
 def test_conflict_type_constant() -> None:
     assert (
         RecoveryConflictType.REMOTE_ORDER_NOT_FOUND_LOCALLY

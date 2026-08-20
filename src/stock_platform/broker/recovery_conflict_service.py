@@ -204,6 +204,18 @@ class BrokerRecoveryConflictService:
         )
         now = _utcnow()
         created_new = False
+        remote_state = str(remote.get("state") or "").strip().lower()
+        # 종료(done/cancel) remote-only는 잔고 sync SoT로 이미 반영된다.
+        # wait/watch가 아닌데 HIGH PENDING Conflict를 반복 생성하면
+        # Recovery가 MANUAL_REVIEW에 고착된다 → 신규 생성만 억제.
+        # 이미 ACTIVE인 Conflict는 스냅샷 갱신·운영자 해소 경로를 유지한다.
+        if row is None and remote_state in {
+            "done",
+            "cancel",
+            "cancelled",
+            "canceled",
+        }:
+            return None
         if row is None:
             created_new = True
             row = BrokerRecoveryConflictEntity(
@@ -964,6 +976,13 @@ class BrokerRecoveryConflictService:
             raise RecoveryConflictError(
                 "uba_inactive", "Account not found or inactive"
             )
+        # Resume SoT = UBA entity broker_code (request/env/global 금지)
+        broker = str(uba.broker_code or "").strip().upper()
+        if broker not in {"UPBIT", "KIWOOM"}:
+            raise RecoveryConflictError(
+                "unsupported_broker",
+                f"Resume not supported for broker={broker or 'UNKNOWN'}",
+            )
         active = self.count_active_for_uba(uba_id)
         if active > 0:
             raise RecoveryConflictError(
@@ -998,7 +1017,7 @@ class BrokerRecoveryConflictService:
         try:
             BrokerCredentialVaultService(
                 self._session
-            ).assert_live_order_allowed(uba_id, broker_code="UPBIT")
+            ).assert_live_order_allowed(uba_id, broker_code=broker)
         except BrokerCredentialVaultError as exc:
             raise RecoveryConflictError(exc.code, exc.message) from exc
 
@@ -1010,17 +1029,24 @@ class BrokerRecoveryConflictService:
         stmt = select(BrokerRecoveryAccountStateEntity).where(
             BrokerRecoveryAccountStateEntity.user_broker_account_id
             == int(uba_id),
-            BrokerRecoveryAccountStateEntity.broker_code == "UPBIT",
+            BrokerRecoveryAccountStateEntity.broker_code == broker,
         )
         state = self._session.scalar(stmt.limit(1))
+        live_on = bool(getattr(uba, "live_order_enabled", False))
+        armed = bool(getattr(uba, "live_armed", False))
         if state is None:
             return {
                 "user_broker_account_id": uba_id,
+                "broker_code": broker,
                 "trading_paused": False,
                 "resumed": True,
                 "actor": actor,
                 "reason": reason.strip()[:2000],
                 "correlation_id": correlation_id.strip()[:128],
+                "live_order_enabled": live_on,
+                "live_armed": armed,
+                "live_arm_unchanged": True,
+                "scheduler_unchanged": True,
             }
         if state.recovery_status == "RUNNING":
             raise RecoveryConflictError(
@@ -1032,6 +1058,7 @@ class BrokerRecoveryConflictService:
             # STEP 8-16 — 이미 Resume된 계좌: idempotent (상태 변경·추가 부작용 없음)
             return {
                 "user_broker_account_id": uba_id,
+                "broker_code": broker,
                 "trading_paused": False,
                 "resumed": False,
                 "already_resumed": True,
@@ -1040,6 +1067,10 @@ class BrokerRecoveryConflictService:
                 "reason": reason.strip()[:2000],
                 "correlation_id": correlation_id.strip()[:128],
                 "blocking_orders": blocking,
+                "live_order_enabled": live_on,
+                "live_armed": armed,
+                "live_arm_unchanged": True,
+                "scheduler_unchanged": True,
             }
         state.trading_paused = False
         state.recovery_status = "SUCCESS"
@@ -1050,6 +1081,7 @@ class BrokerRecoveryConflictService:
         self._session.flush()
         return {
             "user_broker_account_id": uba_id,
+            "broker_code": broker,
             "trading_paused": False,
             "resumed": True,
             "already_resumed": False,
@@ -1058,6 +1090,10 @@ class BrokerRecoveryConflictService:
             "reason": reason.strip()[:2000],
             "correlation_id": correlation_id.strip()[:128],
             "blocking_orders": blocking,
+            "live_order_enabled": live_on,
+            "live_armed": armed,
+            "live_arm_unchanged": True,
+            "scheduler_unchanged": True,
         }
 
     def _vault_order_client(
