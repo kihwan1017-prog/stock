@@ -500,6 +500,10 @@ def test_consume_top_k_pending_entry_limit_semantics() -> None:
     svc.ensure_slots = MagicMock(return_value=slots)  # type: ignore[method-assign]
     svc.pending_entry_count = MagicMock(return_value=1)  # type: ignore[method-assign]
     svc.get_or_create_policy = MagicMock(return_value=policy)  # type: ignore[method-assign]
+    svc.recover_stale_entry_pending_without_order = MagicMock(  # type: ignore[method-assign]
+        return_value={"ok": True, "released": 0}
+    )
+    svc._candidate_hold_block = MagicMock(return_value={"blocked": False})  # type: ignore[method-assign]
 
     now = datetime.now(timezone.utc)
     out = svc.consume_top_k(
@@ -539,6 +543,10 @@ def test_consume_top_k_dry_sequential_pending() -> None:
     svc.strategy_exposure_total = MagicMock(return_value=Decimal("0"))  # type: ignore[method-assign]
     svc.reserved_amount_total = MagicMock(return_value=Decimal("0"))  # type: ignore[method-assign]
     svc.get_or_create_policy = MagicMock(return_value=policy)  # type: ignore[method-assign]
+    svc.recover_stale_entry_pending_without_order = MagicMock(  # type: ignore[method-assign]
+        return_value={"ok": True, "released": 0}
+    )
+    svc._candidate_hold_block = MagicMock(return_value={"blocked": False})  # type: ignore[method-assign]
 
     # empty slots + daily entries (빈)
     def scalars_side_effect(stmt):  # noqa: ANN001
@@ -561,9 +569,11 @@ def test_consume_top_k_dry_sequential_pending() -> None:
     )
     assert out["ok"] is True
     assert out["orders_created"] == 0
-    assert out["reserved"]
-    assert out["reserved"][0]["symbol"] == "KRW-ETH"
-    assert out["reserved"][0]["approved_amount_krw"] <= 10000
+    assert out["reason"] == "DRY_WAITING_SIGNAL"
+    assert out["reserved"] == []
+    assert out["allocation_preview"]["symbol"] == "KRW-ETH"
+    assert out["allocation_preview"]["approved_amount_krw"] <= 10000
+    assert out["allocation_preview"]["reserved_amount_krw"] == 0.0
 
 
 def test_enable_portfolio_requires_confirm() -> None:

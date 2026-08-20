@@ -256,6 +256,7 @@ class RiskIntegratedRealtimeOrderExecutor:
                 return self._skipped(signal, "ACCOUNT_PAUSE_CHECK_FAILED")
 
         # FULL_MARKET Dynamic: ENTRY만 assignment/warmup/cooldown gate
+        portfolio_approved_amount: Decimal | None = None
         if (
             str(signal.action.value).upper() == "BUY"
             and environment == "LIVE"
@@ -277,6 +278,37 @@ class RiskIntegratedRealtimeOrderExecutor:
                     return self._skipped(
                         signal, f"FULL_MARKET_{fm_reason}"
                     )
+                # Portfolio: WAITING_SIGNAL → reserve → ENTRY_PENDING (signal 직후)
+                from stock_platform.operation.upbit_full_market.constants import (
+                    is_full_market_portfolio,
+                )
+                from stock_platform.operation.upbit_full_market.portfolio_service import (
+                    UpbitPortfolioService,
+                )
+
+                fm_status = UpbitFullMarketAssignmentService(
+                    self._session
+                ).status_dict(int(user_broker_account_id))
+                if is_full_market_portfolio(fm_status.get("mode")):
+                    begin = UpbitPortfolioService(
+                        self._session
+                    ).begin_entry_from_signal(
+                        int(user_broker_account_id),
+                        symbol=str(getattr(signal, "symbol", "") or ""),
+                        available_krw=None,
+                        account_max_order_amount=Decimal(
+                            str(self._execution_config.order_amount)
+                        ),
+                    )
+                    if not begin.get("ok") and not begin.get("already"):
+                        return self._skipped(
+                            signal,
+                            f"PORTFOLIO_{begin.get('reason') or 'BEGIN_ENTRY_FAILED'}",
+                        )
+                    if begin.get("approved_amount_krw") is not None:
+                        portfolio_approved_amount = Decimal(
+                            str(begin["approved_amount_krw"])
+                        )
             except Exception:  # noqa: BLE001
                 return self._skipped(signal, "FULL_MARKET_GATE_FAILED")
 
@@ -307,6 +339,8 @@ class RiskIntegratedRealtimeOrderExecutor:
 
         # MA Signal → AI Gate (LLM은 주문 생성/한도 확대 금지)
         order_amount = Decimal(str(self._execution_config.order_amount))
+        if portfolio_approved_amount is not None:
+            order_amount = portfolio_approved_amount
         try:
             from stock_platform.realtime.ai_signal_gate import (
                 evaluate_ai_signal_gate,

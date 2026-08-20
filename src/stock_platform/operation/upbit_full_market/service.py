@@ -893,11 +893,16 @@ class UpbitFullMarketAssignmentService:
                     UpbitPositionSlotEntity.user_broker_account_id
                     == int(user_broker_account_id),
                     UpbitPositionSlotEntity.symbol == str(symbol).upper(),
-                    UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
+                    UpbitPositionSlotEntity.status.in_(
+                        [
+                            "WAITING_SIGNAL",
+                            "ENTRY_PENDING",
+                        ]
+                    ),
                 )
             )
             if slot is None:
-                return False, "NO_ENTRY_PENDING_SLOT"
+                return False, "NO_WAITING_SIGNAL_SLOT"
             return True, "PORTFOLIO_PASS"
 
         if row.signals_paused:

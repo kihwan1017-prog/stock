@@ -15,6 +15,7 @@ from stock_platform.operation.upbit_full_market.capital_allocator import (
     allocate_entry_amount,
 )
 from stock_platform.operation.upbit_full_market.constants import (
+    CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
     CONFIRM_DISABLE_PORTFOLIO,
     CONFIRM_ENABLE_PORTFOLIO,
     CONFIRM_RECOVER_STALE_ENTRY_PENDING,
@@ -27,7 +28,10 @@ from stock_platform.operation.upbit_full_market.constants import (
     DEFAULT_MAX_TOTAL_EXPOSURE_PCT,
     DEFAULT_MIN_CASH_RESERVE_PCT,
     DEFAULT_PER_POSITION_TARGET_PCT,
+    DEFAULT_PORTFOLIO_CANDIDATE_HOLD_SECONDS,
+    DEFAULT_PORTFOLIO_CANDIDATE_SWITCH_MIN_SCORE_DELTA,
     DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT,
+    DEFAULT_PORTFOLIO_ENTRY_PENDING_TIMEOUT_SECONDS,
     DEFAULT_PORTFOLIO_MAX_PENDING_ENTRIES,
     MODE_FIXED_SYMBOL,
     MODE_FULL_MARKET_PORTFOLIO,
@@ -35,12 +39,19 @@ from stock_platform.operation.upbit_full_market.constants import (
     PORTFOLIO_ENTRY_PAUSED,
     PORTFOLIO_ENTRY_RUNNING,
     SLOT_ACTIVE_SYMBOL_STATUSES,
+    SLOT_BLOCKED,
+    SLOT_CANDIDATE_HOLD_STATUSES,
     SLOT_COOLDOWN,
     SLOT_EMPTY,
     SLOT_ENTRY_PENDING,
     SLOT_EXIT_PENDING,
     SLOT_OPEN,
     SLOT_RESERVED,
+    SLOT_RESERVED_STATUSES,
+    SLOT_RUNTIME_SYMBOL_STATUSES,
+    SLOT_SELECTED,
+    SLOT_WAITING_SIGNAL,
+    SLOT_WARMING_UP,
     STATE_IDLE,
     is_full_market_portfolio,
 )
@@ -270,6 +281,21 @@ class UpbitPortfolioService:
         open_n = sum(
             1 for s in slots if s["status"] in {SLOT_OPEN, SLOT_EXIT_PENDING}
         )
+        waiting_n = sum(
+            1
+            for s in slots
+            if s["status"]
+            in {
+                SLOT_SELECTED,
+                SLOT_WARMING_UP,
+                SLOT_WAITING_SIGNAL,
+            }
+        )
+        pending_order_n = sum(
+            1
+            for s in slots
+            if s["status"] in {SLOT_RESERVED, SLOT_ENTRY_PENDING}
+        )
         reserved = float(self.reserved_amount_total(int(user_broker_account_id)))
         exposure = float(self.strategy_exposure_total(int(user_broker_account_id)))
         capital = float(policy.get("portfolio_capital_limit_krw") or 0) or None
@@ -281,6 +307,8 @@ class UpbitPortfolioService:
             "portfolio_enabled": bool(assignment.get("portfolio_enabled")),
             "positions_open": open_n,
             "max_positions": int(policy["max_positions"]),
+            "candidates_waiting": waiting_n,
+            "pending_orders": pending_order_n,
             "exposure_krw": exposure,
             "exposure_pct": exposure_pct,
             "max_total_exposure_pct": float(policy["max_total_exposure_pct"]),
@@ -697,10 +725,16 @@ class UpbitPortfolioService:
             strategy_id=assignment.strategy_id,
             deployment_id=assignment.deployment_id,
         )
-        # ENTRY_PENDING 고착이 pending limit를 영구 점유하지 않도록 DB timestamp 기준 복구
+        # ENTRY_PENDING(실제 주문 단계) 고착만 timeout 복구 — WAITING_SIGNAL 제외
         stale_rec = self.recover_stale_entry_pending_without_order(uba_id)
         if int(stale_rec.get("released") or 0) > 0:
             out["stale_entry_recovered"] = stale_rec
+
+        hold = self._candidate_hold_block(uba_id, candidates=candidates)
+        if hold.get("blocked"):
+            out["reason"] = str(hold.get("reason") or "CANDIDATE_HOLD")
+            out["hold"] = hold
+            return out
 
         if self.pending_entry_count(uba_id) >= int(
             policy.portfolio_max_pending_entries
@@ -871,16 +905,17 @@ class UpbitPortfolioService:
             "recommended_amount_krw": float(alloc.recommended_amount_krw),
             "approved_amount_krw": float(alloc.approved_amount_krw),
             "clamp_reasons": list(alloc.clamp_reasons),
+            "reserved_amount_krw": 0.0,
         }
-        out["reserved"] = [payload]
-        out["allocation"] = payload
+        out["allocation_preview"] = payload
+        out["reserved"] = []
 
         if dry_run:
             out["ok"] = True
-            out["reason"] = "DRY_RESERVED"
+            out["reason"] = "DRY_WAITING_SIGNAL"
             return out
 
-        # persist selection + reserve slot
+        # persist selection — 자금 reservation 없음 (BUY signal 직전까지)
         sel = UpbitLiveCandidateSelectionEntity(
             user_broker_account_id=uba_id,
             strategy_id=assignment.strategy_id,
@@ -903,26 +938,64 @@ class UpbitPortfolioService:
         self._session.add(sel)
         self._session.flush()
 
-        slot.status = SLOT_RESERVED
+        slot.status = SLOT_SELECTED
         slot.symbol = chosen.symbol
         slot.candidate_selection_id = int(sel.selection_id)
         slot.scanner_run_id = scanner_run_id
         slot.ai_analysis_id = chosen.ai_analysis_id
-        slot.recommended_amount_krw = float(alloc.recommended_amount_krw)
-        slot.allocated_amount_krw = float(alloc.approved_amount_krw)
-        slot.reserved_amount_krw = float(alloc.approved_amount_krw)
-        slot.clamp_reasons = list(alloc.clamp_reasons)
+        # BUY 전: recommended만 기록, reserved/allocated=0
+        slot.recommended_amount_krw = None
+        slot.allocated_amount_krw = None
+        slot.reserved_amount_krw = None
+        slot.clamp_reasons = []
+        slot.entry_order_id = None
         slot.version = int(slot.version or 1) + 1
-        # sequential: immediately mark ENTRY_PENDING readiness (주문은 별도 path)
-        slot.status = SLOT_ENTRY_PENDING
         assignment.last_scanner_run_id = scanner_run_id
         assignment.current_symbol = chosen.symbol
         self._session.flush()
 
+        runtime_sync: dict[str, Any] | None = None
+        if not dry_run:
+            try:
+                from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                    sync_portfolio_runtime_symbols,
+                )
+
+                runtime_sync = sync_portfolio_runtime_symbols(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    ensure_quote_feed=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                runtime_sync = {
+                    "ok": False,
+                    "reason": type(exc).__name__,
+                }
+            if runtime_sync and not bool(runtime_sync.get("ok")):
+                # sync 실패 시 SELECTED/BLOCKED 유지 — ENTRY_PENDING/reserve 금지
+                slot.status = SLOT_BLOCKED
+                slot.version = int(slot.version or 1) + 1
+                self._session.flush()
+                out["ok"] = False
+                out["reason"] = "RUNTIME_SYNC_FAILED"
+                out["runtime_sync"] = runtime_sync
+                out["selection_id"] = int(sel.selection_id)
+                out["slot_id"] = int(slot.slot_id)
+                out["slots"] = self.list_slots(uba_id)
+                return out
+            # sync OK → WAITING_SIGNAL (warmup은 consumer 내부; 외부 상태는 신호 대기)
+            slot.status = SLOT_WAITING_SIGNAL
+            slot.version = int(slot.version or 1) + 1
+            self._session.flush()
+        else:
+            slot.status = SLOT_WAITING_SIGNAL
+
         out["ok"] = True
-        out["reason"] = "SLOT_ENTRY_PENDING"
+        out["reason"] = "SLOT_WAITING_SIGNAL"
         out["selection_id"] = int(sel.selection_id)
         out["slot_id"] = int(slot.slot_id)
+        out["runtime_sync"] = runtime_sync
+        out["reserved"] = []
         out["slots"] = self.list_slots(uba_id)
         return out
 
@@ -1025,6 +1098,23 @@ class UpbitPortfolioService:
                         ),
                     }
                 )
+            if (
+                s.status
+                in {
+                    SLOT_SELECTED,
+                    SLOT_WARMING_UP,
+                    SLOT_WAITING_SIGNAL,
+                }
+                and float(s.reserved_amount_krw or 0) > 0
+            ):
+                issues.append(
+                    {
+                        "code": "WAITING_WITH_RESERVATION",
+                        "slot_id": int(s.slot_id),
+                        "symbol": s.symbol,
+                        "reserved_amount_krw": s.reserved_amount_krw,
+                    }
+                )
         for b in bindings:
             if b.slot_id is None:
                 issues.append(
@@ -1035,6 +1125,291 @@ class UpbitPortfolioService:
                     }
                 )
         return issues
+
+    def _candidate_hold_block(
+        self,
+        user_broker_account_id: int,
+        *,
+        candidates: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """WAITING_SIGNAL 등 hold 중이면 매 scanner 주기 교체 금지."""
+
+        from stock_platform.common.settings import get_settings
+
+        uba_id = int(user_broker_account_id)
+        settings = get_settings()
+        hold_sec = float(
+            getattr(
+                settings,
+                "upbit_portfolio_candidate_hold_seconds",
+                DEFAULT_PORTFOLIO_CANDIDATE_HOLD_SECONDS,
+            )
+            or DEFAULT_PORTFOLIO_CANDIDATE_HOLD_SECONDS
+        )
+        min_delta = float(
+            getattr(
+                settings,
+                "upbit_portfolio_candidate_switch_min_score_delta",
+                DEFAULT_PORTFOLIO_CANDIDATE_SWITCH_MIN_SCORE_DELTA,
+            )
+            or DEFAULT_PORTFOLIO_CANDIDATE_SWITCH_MIN_SCORE_DELTA
+        )
+        held = list(
+            self._session.scalars(
+                select(UpbitPositionSlotEntity).where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.status.in_(
+                        list(SLOT_CANDIDATE_HOLD_STATUSES)
+                    ),
+                )
+            )
+        )
+        if not held:
+            return {"blocked": False}
+        now = _now()
+        best_new = 0.0
+        for raw in candidates or []:
+            if isinstance(raw, dict):
+                try:
+                    best_new = max(best_new, float(raw.get("score") or 0))
+                except (TypeError, ValueError):
+                    continue
+        for slot in held:
+            updated = slot.updated_at or slot.created_at or now
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            age = max(0.0, (now - updated.astimezone(timezone.utc)).total_seconds())
+            cur_score = 0.0
+            if slot.candidate_selection_id is not None:
+                sel = self._session.get(
+                    UpbitLiveCandidateSelectionEntity,
+                    int(slot.candidate_selection_id),
+                )
+                if sel is not None:
+                    try:
+                        cur_score = float(sel.score or 0)
+                    except (TypeError, ValueError):
+                        cur_score = 0.0
+            if age < hold_sec and (best_new - cur_score) < min_delta:
+                return {
+                    "blocked": True,
+                    "reason": "CANDIDATE_HOLD",
+                    "slot_id": int(slot.slot_id),
+                    "symbol": slot.symbol,
+                    "age_seconds": age,
+                    "hold_seconds": hold_sec,
+                    "current_score": cur_score,
+                    "best_new_score": best_new,
+                    "min_score_delta": min_delta,
+                }
+        return {"blocked": False}
+
+    def begin_entry_from_signal(
+        self,
+        user_broker_account_id: int,
+        *,
+        symbol: str,
+        available_krw: Decimal | None = None,
+        account_max_order_amount: Decimal | None = None,
+        activation_max_order_amount: Decimal | None = None,
+        scanner_score: float | None = None,
+        ai_confidence: float | None = None,
+    ) -> dict[str, Any]:
+        """WAITING_SIGNAL → capital reserve → ENTRY_PENDING (BUY signal 직후)."""
+
+        uba_id = int(user_broker_account_id)
+        sym = str(symbol or "").upper()
+        if not sym:
+            return {"ok": False, "reason": "SYMBOL_REQUIRED"}
+        if self.pending_entry_count(uba_id) >= 1:
+            # max_pending_entries=1 — 다른 심볼이 이미 주문 단계면 대기
+            existing = self._session.scalar(
+                select(UpbitPositionSlotEntity).where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.symbol == sym,
+                    UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
+                )
+            )
+            if existing is not None:
+                return {
+                    "ok": True,
+                    "already": True,
+                    "slot_id": int(existing.slot_id),
+                    "status": SLOT_ENTRY_PENDING,
+                    "reserved_amount_krw": existing.reserved_amount_krw,
+                }
+            return {"ok": False, "reason": "PENDING_ENTRY_LIMIT"}
+
+        slot = self._session.scalar(
+            select(UpbitPositionSlotEntity)
+            .where(
+                UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                UpbitPositionSlotEntity.symbol == sym,
+                UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+            )
+            .with_for_update()
+        )
+        if slot is None:
+            return {"ok": False, "reason": "NO_WAITING_SIGNAL_SLOT"}
+
+        policy = self.get_or_create_policy(uba_id)
+        if not policy.enabled:
+            return {"ok": False, "reason": "POLICY_DISABLED"}
+        if str(policy.entry_state or "") == PORTFOLIO_ENTRY_PAUSED:
+            return {"ok": False, "reason": "ENTRY_PAUSED"}
+
+        score = float(scanner_score or 80.0)
+        conf = float(ai_confidence or 0.8)
+        if slot.candidate_selection_id is not None:
+            sel = self._session.get(
+                UpbitLiveCandidateSelectionEntity,
+                int(slot.candidate_selection_id),
+            )
+            if sel is not None:
+                score = float(sel.score or score)
+                conf = float(sel.confidence or conf)
+
+        capital = Decimal(
+            str(policy.portfolio_capital_limit_krw or available_krw or 0)
+        )
+        if capital <= 0 and available_krw is not None:
+            capital = Decimal(str(available_krw)) * Decimal("0.40")
+        max_order = account_max_order_amount or Decimal("10000")
+        alloc = allocate_entry_amount(
+            AllocationInput(
+                portfolio_capital_limit_krw=capital,
+                available_krw=Decimal(str(available_krw or capital)),
+                min_cash_reserve_pct=float(policy.min_cash_reserve_pct),
+                per_position_target_pct=float(policy.per_position_target_pct),
+                max_symbol_exposure_pct=float(policy.max_symbol_exposure_pct),
+                max_total_exposure_pct=float(policy.max_total_exposure_pct),
+                current_strategy_exposure_krw=self.strategy_exposure_total(
+                    uba_id
+                ),
+                pending_reserved_krw=self.reserved_amount_total(uba_id),
+                current_symbol_exposure_krw=Decimal("0"),
+                account_max_order_amount=max_order,
+                activation_max_order_amount=activation_max_order_amount,
+                scanner_score=score,
+                ai_confidence=conf,
+                volatility="MEDIUM",
+            )
+        )
+        if alloc.skipped or float(alloc.approved_amount_krw) <= 0:
+            return {
+                "ok": False,
+                "reason": alloc.skip_reason or "ALLOCATION_SKIPPED",
+                "allocation": {
+                    "recommended": str(alloc.recommended_amount_krw),
+                    "approved": str(alloc.approved_amount_krw),
+                    "clamp_reasons": alloc.clamp_reasons,
+                },
+            }
+
+        slot.status = SLOT_ENTRY_PENDING
+        slot.recommended_amount_krw = float(alloc.recommended_amount_krw)
+        slot.allocated_amount_krw = float(alloc.approved_amount_krw)
+        slot.reserved_amount_krw = float(alloc.approved_amount_krw)
+        slot.clamp_reasons = list(alloc.clamp_reasons)
+        slot.version = int(slot.version or 1) + 1
+        self._session.flush()
+        return {
+            "ok": True,
+            "slot_id": int(slot.slot_id),
+            "status": SLOT_ENTRY_PENDING,
+            "reserved_amount_krw": float(alloc.approved_amount_krw),
+            "approved_amount_krw": float(alloc.approved_amount_krw),
+            "clamp_reasons": list(alloc.clamp_reasons),
+            "orders_created": 0,
+        }
+
+    def align_legacy_reserved_entry_pending(
+        self,
+        user_broker_account_id: int,
+        *,
+        confirmation_text: str,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        """구 semantics(ENTRY_PENDING+reserve, 주문없음) → WAITING_SIGNAL+reserve0."""
+
+        if str(confirmation_text or "").strip() != CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE:
+            return {
+                "ok": False,
+                "reason": "CONFIRMATION_MISMATCH",
+                "expected": CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
+            }
+        uba_id = int(user_broker_account_id)
+        slots = list(
+            self._session.scalars(
+                select(UpbitPositionSlotEntity)
+                .where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
+                    UpbitPositionSlotEntity.entry_order_id.is_(None),
+                )
+                .with_for_update()
+            )
+        )
+        aligned: list[dict[str, Any]] = []
+        for slot in slots:
+            if self._has_local_open_order(
+                uba_id, symbol=str(slot.symbol or "")
+            ) or self._has_pending_outbox_for_symbol(
+                uba_id, symbol=str(slot.symbol or "")
+            ):
+                aligned.append(
+                    {
+                        "slot_id": int(slot.slot_id),
+                        "skipped": True,
+                        "reason": "ORDER_EVIDENCE",
+                    }
+                )
+                continue
+            prior = {
+                "status": slot.status,
+                "reserved_amount_krw": slot.reserved_amount_krw,
+                "allocated_amount_krw": slot.allocated_amount_krw,
+            }
+            slot.status = SLOT_WAITING_SIGNAL
+            slot.reserved_amount_krw = None
+            slot.allocated_amount_krw = None
+            slot.clamp_reasons = []
+            slot.version = int(slot.version or 1) + 1
+            aligned.append(
+                {
+                    "slot_id": int(slot.slot_id),
+                    "symbol": slot.symbol,
+                    "from": prior,
+                    "to": SLOT_WAITING_SIGNAL,
+                }
+            )
+        if aligned:
+            self._session.flush()
+        sync = None
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                sync_portfolio_runtime_symbols,
+            )
+
+            sync = sync_portfolio_runtime_symbols(
+                self._session,
+                user_broker_account_id=uba_id,
+                ensure_quote_feed=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            sync = {"ok": False, "reason": type(exc).__name__}
+        logger.info(
+            "portfolio_legacy_entry_pending_aligned",
+            uba_id=uba_id,
+            actor=str(actor)[:80],
+            aligned=len(aligned),
+        )
+        return {
+            "ok": True,
+            "aligned": aligned,
+            "runtime_sync": sync,
+            "orders_created": 0,
+        }
 
     def recover_stale_entry_pending_without_order(
         self,
@@ -1128,38 +1503,20 @@ class UpbitPortfolioService:
                 blocked.append({**row_info, "reason": "BROKER_OPEN_ORDER"})
                 continue
 
-            # selection history 보존 — status만 SUPERSEDED 표기(있으면)
-            if slot.candidate_selection_id is not None:
-                sel = self._session.get(
-                    UpbitLiveCandidateSelectionEntity,
-                    int(slot.candidate_selection_id),
-                )
-                if sel is not None and str(sel.status or "") in {
-                    "SELECTED",
-                    "ACTIVE",
-                }:
-                    sel.status = "SUPERSEDED"
-
-            slot.status = SLOT_EMPTY
-            slot.symbol = None
-            slot.candidate_selection_id = None
-            slot.scanner_run_id = None
+            # selection history 보존 — ENTRY_PENDING timeout 시 WAITING_SIGNAL로 복귀
+            # (무한 고착 방지 + 재선정 루프 완화)
+            slot.status = SLOT_WAITING_SIGNAL
             slot.reserved_amount_krw = None
             slot.allocated_amount_krw = None
-            slot.recommended_amount_krw = None
             slot.clamp_reasons = []
             slot.entry_order_id = None
             slot.version = int(slot.version or 1) + 1
             released_ids.append(int(slot.slot_id))
             row_info["released"] = True
+            row_info["rolled_back_to"] = SLOT_WAITING_SIGNAL
 
         if released_ids:
             assignment = self._assignment.get_or_create(uba_id)
-            # orphan이 current_symbol을 점유 중이면 비움 (재선정 허용)
-            active = set(self.active_symbols(uba_id))
-            cur = str(assignment.current_symbol or "").upper()
-            if cur and cur not in active:
-                assignment.current_symbol = None
             assignment.signals_paused = False
             if is_full_market_portfolio(assignment.mode):
                 assignment.state = STATE_IDLE

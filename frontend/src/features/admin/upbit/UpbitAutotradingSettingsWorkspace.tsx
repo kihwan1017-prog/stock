@@ -1156,6 +1156,12 @@ export function UpbitAutotradingSettingsWorkspace({
         <Descriptions.Item label="ENTRY">
           {String(summary.entry_state ?? policy.entry_state ?? "—")}
         </Descriptions.Item>
+        <Descriptions.Item label="Waiting Signal">
+          {numOrDash(summary.candidates_waiting ?? 0)}
+        </Descriptions.Item>
+        <Descriptions.Item label="Pending Orders">
+          {numOrDash(summary.pending_orders ?? 0)}
+        </Descriptions.Item>
         <Descriptions.Item label="Reserved KRW">
           {numOrDash(summary.reserved_krw ?? 0)}
         </Descriptions.Item>

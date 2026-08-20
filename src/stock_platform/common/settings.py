@@ -219,7 +219,13 @@ class Settings(BaseSettings):
     # AUTO LIVE readiness — 시세 stale 임계(초). 초과 시 BLOCKER
     autotrading_market_feed_stale_seconds: float = 30.0
     # Portfolio: ENTRY_PENDING + entry_order_id null 고착 해제 (DB updated_at 기준)
+    # 실제 reservation/주문 단계에만 적용 (WAITING_SIGNAL 제외)
     upbit_portfolio_entry_pending_timeout_seconds: float = 120.0
+    # WAITING_SIGNAL 후보 유지 / 교체 임계
+    upbit_portfolio_candidate_hold_seconds: float = 1800.0
+    upbit_portfolio_candidate_switch_min_score_delta: float = 8.0
+    # MA entry policy — CROSS_EVENT(기존) | TREND_STATE(미사용 기본)
+    upbit_portfolio_entry_signal_policy: str = "CROSS_EVENT"
     # MA Signal → AI Gate (기본 OFF). LIVE Gate는 별도 플래그(기본 OFF)
     autotrading_ai_signal_gate_enabled: bool = False
     autotrading_ai_signal_gate_live_enabled: bool = False

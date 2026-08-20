@@ -81,8 +81,8 @@ def test_stale_entry_pending_without_order_releases() -> None:
     )
     assert out["ok"] is True
     assert out["released"] == 1
-    assert slot.status == SLOT_EMPTY
-    assert slot.symbol is None
+    assert slot.status == "WAITING_SIGNAL"
+    assert slot.reserved_amount_krw is None
     assert slot.entry_order_id is None
 
 

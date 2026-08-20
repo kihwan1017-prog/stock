@@ -500,8 +500,41 @@ def admin_portfolio_recover_stale_entry_pending(
             detail=result,
         )
     session.commit()
+class PortfolioAlignPipelineBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=3)
+
+
+@router.post(
+    "/uba/{user_broker_account_id}/portfolio/align-entry-pipeline"
+)
+def admin_portfolio_align_entry_pipeline(
+    user_broker_account_id: int,
+    body: PortfolioAlignPipelineBody,
+    session: Session = Depends(get_db_session),
+    admin: AuthenticatedUser = Depends(require_admin),
+):
+    """구 ENTRY_PENDING+reserve(주문없음) → WAITING_SIGNAL+reserve0 + runtime sync."""
+
+    from stock_platform.operation.upbit_full_market.constants import (
+        CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
+    )
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    result = UpbitPortfolioService(session).align_legacy_reserved_entry_pending(
+        int(user_broker_account_id),
+        confirmation_text=body.confirmation_text,
+        actor=str(getattr(admin, "username", None) or admin.user_id),
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result,
+        )
+    session.commit()
     return {
         **result,
-        "confirm_phrase": CONFIRM_RECOVER_STALE_ENTRY_PENDING,
+        "confirm_phrase": CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
         "orders_created": 0,
     }
