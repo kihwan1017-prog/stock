@@ -82,18 +82,27 @@ class LiveUnattendedAuthorizationService:
         )
 
     def status_dict(self, user_broker_account_id: int) -> dict[str, Any]:
+        uba = self._session.get(
+            UserBrokerAccount, int(user_broker_account_id)
+        )
+        broker = (
+            str(uba.broker_code or "").upper() if uba is not None else None
+        )
+        phrase_meta = self._required_phrase_meta(broker)
         row = self.get_active(int(user_broker_account_id))
         now = _now()
         if row is None:
             return {
                 "unattended_enabled": False,
                 "status_code": "OFF",
+                "broker_code": broker,
                 "authorized_until": None,
                 "remaining_seconds": 0,
                 "entry_authorized": False,
                 "protective_exit_authorized": False,
                 "last_renewed_at": None,
                 "last_renewal_actor": None,
+                **phrase_meta,
             }
         until = aware_utc(row.authorized_until)
         remaining = (
@@ -102,6 +111,7 @@ class LiveUnattendedAuthorizationService:
         return {
             "unattended_enabled": bool(row.enabled),
             "status_code": row.status_code,
+            "broker_code": broker or str(row.broker_code or "").upper(),
             "authorization_id": int(row.live_unattended_authorization_id),
             "authorized_until": until.isoformat() if until else None,
             "remaining_seconds": remaining,
@@ -125,7 +135,43 @@ class LiveUnattendedAuthorizationService:
                 if row.approved_at
                 else None
             ),
+            **phrase_meta,
         }
+
+    @staticmethod
+    def _required_phrase_meta(broker_code: str | None) -> dict[str, Any]:
+        """UI/API SoT — confirmation vs LIVE approval phrase는 별개."""
+
+        from stock_platform.broker.live_transition_validators import (
+            approval_phrase_for_broker,
+        )
+
+        required_live: str | None = None
+        if broker_code:
+            try:
+                required_live = approval_phrase_for_broker(broker_code)
+            except PermissionError:
+                required_live = None
+        return {
+            "required_confirmation_text": CONFIRM_ENABLE,
+            "required_confirmation_text_disable": CONFIRM_DISABLE,
+            "required_approval_phrase": required_live,
+            "approval_phrase_note": (
+                "approval_phrase is the LIVE broker approval phrase "
+                "(same as Activation approve). "
+                "It is NOT the unattended confirmation_text."
+            ),
+        }
+
+    @staticmethod
+    def _approval_phrase_matches(provided: str, required: str) -> bool:
+        """길이 달라도 ValueError 없이 False (검증 약화 없음)."""
+
+        left = (provided or "").encode("utf-8")
+        right = required.encode("utf-8")
+        if len(left) != len(right):
+            return False
+        return secrets.compare_digest(left, right)
 
     def enable(
         self,
@@ -163,10 +209,14 @@ class LiveUnattendedAuthorizationService:
         )
 
         required = approval_phrase_for_broker(broker)
-        if not secrets.compare_digest(approval_phrase or "", required):
+        if not self._approval_phrase_matches(approval_phrase, required):
             raise LiveUnattendedError(
                 "INVALID_APPROVAL_PHRASE",
-                "Live approval phrase is invalid",
+                (
+                    "Live approval phrase is invalid. "
+                    f"For {broker} use exact phrase: {required} "
+                    f"(not confirmation_text '{CONFIRM_ENABLE}')"
+                ),
             )
 
         settings = get_settings()
@@ -330,6 +380,10 @@ class LiveUnattendedAuthorizationService:
             blockers.append("UBA_INACTIVE")
         if not bool(uba.live_order_enabled):
             blockers.append("LIVE_OFF")
+
+        def _gate_error(code: str, message: str) -> Exception:
+            return LiveUnattendedError(str(code).upper(), message)
+
         try:
             from stock_platform.trading.runtime_control_gates import (
                 assert_recovery_ready,
@@ -337,11 +391,19 @@ class LiveUnattendedAuthorizationService:
                 assert_uba_connection_ready,
             )
 
-            assert_uba_connection_ready(self._session, uba)
-            assert_recovery_ready(self._session, uba)
-            assert_risk_account_not_paused(
-                self._session, int(user_broker_account_id)
+            assert_uba_connection_ready(uba, raise_error=_gate_error)
+            assert_recovery_ready(
+                self._session,
+                int(user_broker_account_id),
+                raise_error=_gate_error,
             )
+            assert_risk_account_not_paused(
+                self._session,
+                uba,
+                raise_error=_gate_error,
+            )
+        except LiveUnattendedError as exc:
+            blockers.append(exc.code)
         except Exception as exc:  # noqa: BLE001
             blockers.append(str(getattr(exc, "code", type(exc).__name__)))
         if bool(getattr(uba, "trading_paused", False)):

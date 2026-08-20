@@ -40,6 +40,7 @@ import {
   findActiveAccountActivation,
   kiwoomExecutionBadges,
   remainingActivationSeconds,
+  approvalPhraseForBroker,
 } from "./accountLiveActivation";
 import {
   runtimeGateBlockers,
@@ -1967,16 +1968,65 @@ export function AdminAccountLiveControlPanel() {
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          title="명시 승인 필요"
-          description="LIVE/ARM/Activation이 유효해야 합니다. confirmation은 ENABLE 24H UNATTENDED 로 고정 전송됩니다."
+          title="두 가지 문구가 다릅니다"
+          description={
+            <Space orientation="vertical" size={4}>
+              <Typography.Text>
+                confirmation_text (자동 전송):{" "}
+                <Typography.Text code>
+                  {String(
+                    (detailUnattendedQuery.data as Record<string, unknown> | undefined)
+                      ?.required_confirmation_text ?? "ENABLE 24H UNATTENDED",
+                  )}
+                </Typography.Text>
+              </Typography.Text>
+              <Typography.Text>
+                LIVE approval_phrase (아래 입력 · Activation과 동일):{" "}
+                <Typography.Text code copyable>
+                  {String(
+                    (detailUnattendedQuery.data as Record<string, unknown> | undefined)
+                      ?.required_approval_phrase ??
+                      approvalPhraseForBroker(detailBroker) ??
+                      "",
+                  )}
+                </Typography.Text>
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                confirmation 문구를 approval에 넣으면 INVALID_APPROVAL_PHRASE 입니다.
+              </Typography.Text>
+            </Space>
+          }
         />
         <Form form={unattendedEnableForm} layout="vertical">
           <Form.Item
             name="approval_phrase"
-            label="승인 phrase (UPBIT)"
-            rules={[{ required: true, message: "승인 phrase 필요" }]}
+            label="LIVE approval_phrase"
+            extra={
+              (() => {
+                const required = String(
+                  (detailUnattendedQuery.data as Record<string, unknown> | undefined)
+                    ?.required_approval_phrase ??
+                    approvalPhraseForBroker(detailBroker) ??
+                    "",
+                );
+                return required
+                  ? `정확히 입력: ${required}`
+                  : "broker별 LIVE 승인 phrase 필요";
+              })()
+            }
+            rules={[{ required: true, message: "LIVE approval phrase 필요" }]}
           >
-            <Input.Password autoComplete="off" placeholder="UPBIT LIVE 승인 phrase" />
+            <Input
+              autoComplete="off"
+              placeholder={
+                String(
+                  (detailUnattendedQuery.data as Record<string, unknown> | undefined)
+                    ?.required_approval_phrase ??
+                    approvalPhraseForBroker(detailBroker) ??
+                    "ENABLE UPBIT LIVE TRADING",
+                )
+              }
+            />
           </Form.Item>
           <Form.Item
             name="reason"

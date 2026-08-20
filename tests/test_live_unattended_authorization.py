@@ -36,9 +36,58 @@ def test_enable_requires_confirmation() -> None:
 def test_status_dict_off_when_missing() -> None:
     session = MagicMock()
     session.scalar.return_value = None
+    uba = SimpleNamespace(broker_code="UPBIT")
+    session.get.return_value = uba
     out = LiveUnattendedAuthorizationService(session).status_dict(1380)
     assert out["unattended_enabled"] is False
     assert out["status_code"] == "OFF"
+    assert out["required_confirmation_text"] == CONFIRM_ENABLE
+    assert out["required_approval_phrase"] == "ENABLE UPBIT LIVE TRADING"
+
+
+def test_approval_phrase_rejects_confirmation_text() -> None:
+    """confirmation과 LIVE phrase 혼동 방지 — 검증 약화 없음."""
+
+    assert (
+        LiveUnattendedAuthorizationService._approval_phrase_matches(
+            CONFIRM_ENABLE,
+            "ENABLE UPBIT LIVE TRADING",
+        )
+        is False
+    )
+    assert (
+        LiveUnattendedAuthorizationService._approval_phrase_matches(
+            "ENABLE UPBIT LIVE TRADING",
+            "ENABLE UPBIT LIVE TRADING",
+        )
+        is True
+    )
+
+
+def test_enable_rejects_wrong_live_phrase() -> None:
+    session = MagicMock()
+    uba = SimpleNamespace(
+        user_broker_account_id=1380,
+        broker_code="UPBIT",
+        user_id=7,
+        is_active=True,
+        live_order_enabled=True,
+    )
+    session.get.return_value = uba
+    svc = LiveUnattendedAuthorizationService(session)
+    with (
+        patch.object(svc, "get_active", return_value=None),
+        pytest.raises(LiveUnattendedError) as exc,
+    ):
+        svc.enable(
+            1380,
+            actor="admin",
+            confirmation_text=CONFIRM_ENABLE,
+            approval_phrase=CONFIRM_ENABLE,  # 흔한 혼동
+            reason="test",
+        )
+    assert exc.value.code == "INVALID_APPROVAL_PHRASE"
+    assert "ENABLE UPBIT LIVE TRADING" in exc.value.message
 
 
 def test_is_entry_authorized_true_without_lease() -> None:
