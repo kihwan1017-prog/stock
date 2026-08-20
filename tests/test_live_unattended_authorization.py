@@ -165,6 +165,64 @@ def test_enable_does_not_accept_live_approval_phrase_kwarg() -> None:
     assert "source" in params
 
 
+def test_evaluate_restore_gates_ignores_live_arm_activation() -> None:
+    session = MagicMock()
+    svc = LiveUnattendedAuthorizationService(session)
+    with patch.object(
+        svc,
+        "evaluate_enable_gates",
+        return_value={
+            "ok": False,
+            "blockers": [
+                "LIVE_OFF",
+                "ARM_OFF",
+                "ACTIVATION_INACTIVE",
+                "KILL_SWITCH_ACTIVE",
+            ],
+            "checks": {},
+            "live": "OFF",
+            "arm": "OFF",
+            "activation_id": None,
+            "activation_expires_at": None,
+            "execution_env": "REAL",
+        },
+    ):
+        out = svc.evaluate_restore_gates(1380)
+    assert out["ok"] is False
+    assert out["blockers"] == ["KILL_SWITCH_ACTIVE"]
+
+
+def test_renew_routes_to_restore_when_live_off() -> None:
+    session = MagicMock()
+    uba = SimpleNamespace(
+        user_broker_account_id=1380,
+        broker_code="UPBIT",
+        live_order_enabled=False,
+        live_armed=False,
+    )
+    row = SimpleNamespace(
+        live_unattended_authorization_id=4,
+        user_broker_account_id=1380,
+        status_code=STATUS_ACTIVE,
+        enabled=True,
+        authorized_until=datetime.now(timezone.utc) + timedelta(hours=12),
+    )
+    session.get.return_value = uba
+    svc = LiveUnattendedAuthorizationService(session)
+    with (
+        patch.object(svc, "get_active", return_value=row),
+        patch.object(
+            svc,
+            "restore_from_active_lease",
+            return_value={"restored": True, "detail": {"live_restored": True}},
+        ) as restore,
+    ):
+        out = svc.renew_due_for_uba(1380, actor="SYSTEM_UNATTENDED_RENEWAL")
+    assert out["renewed"] is True
+    assert out["reason"] == "RESTORED_FROM_LEASE"
+    restore.assert_called_once()
+
+
 def test_is_entry_authorized_true_without_lease() -> None:
     session = MagicMock()
     session.scalar.return_value = None

@@ -642,6 +642,177 @@ class LiveUnattendedAuthorizationService:
 
         return self.evaluate_enable_gates(int(user_broker_account_id))
 
+    def evaluate_restore_gates(
+        self, user_broker_account_id: int
+    ) -> dict[str, Any]:
+        """startup fail-closed 이후 lease 복구용 gate.
+
+        LIVE/ARM/Activation은 복구 대상이므로 blocker에서 제외한다.
+        Kill/Recovery/Conflict 등 안전 게이트는 그대로 적용한다.
+        """
+
+        gates = self.evaluate_enable_gates(int(user_broker_account_id))
+        ignored = {
+            "LIVE_OFF",
+            "ARM_OFF",
+            "ARM_EXPIRED",
+            "ACTIVATION_INACTIVE",
+            "RUNTIME_NOT_RUNNING",
+            "OUTBOX_WORKER_NOT_RUNNING",
+        }
+        blockers = [b for b in gates["blockers"] if b not in ignored]
+        return {
+            **gates,
+            "ok": len(blockers) == 0,
+            "blockers": blockers,
+        }
+
+    def restore_from_active_lease(
+        self,
+        user_broker_account_id: int,
+        *,
+        actor: str = "SYSTEM_UNATTENDED_RESTORE",
+    ) -> dict[str, Any]:
+        """ACTIVE unattended lease가 있으면 startup 강제 OFF 이후 LIVE/ARM/Activation 복구.
+
+        운영자가 승인한 24H lease 범위 안에서만 동작한다.
+        임의 TTL 연장이 아니라 lease horizon 내 세션 재기동이다.
+        """
+
+        row = self.get_active(int(user_broker_account_id))
+        if row is None:
+            return {"restored": False, "reason": "NO_ACTIVE_LEASE"}
+
+        now = _now()
+        until = aware_utc(row.authorized_until)
+        if until is None or until <= now:
+            self._expire_authorization(
+                row, actor=actor, reason="HORIZON_EXPIRED"
+            )
+            return {"restored": False, "reason": "HORIZON_EXPIRED"}
+
+        if row.status_code == STATUS_PROTECTIVE:
+            return {"restored": False, "reason": "PROTECTIVE_ONLY"}
+
+        uba = self._session.get(
+            UserBrokerAccount, int(user_broker_account_id)
+        )
+        if uba is None:
+            return {"restored": False, "reason": "UBA_NOT_FOUND"}
+
+        gates = self.evaluate_restore_gates(int(user_broker_account_id))
+        if not gates["ok"]:
+            return {
+                "restored": False,
+                "reason": "SAFETY_GATES_FAILED",
+                "blockers": gates["blockers"],
+            }
+
+        detail: dict[str, Any] = {
+            "authorization_id": int(row.live_unattended_authorization_id),
+            "horizon_until": until.isoformat(),
+        }
+
+        # 1) Activation 확보 (만료/부재 시 successor)
+        act = LiveTradingTransitionService(self._session).peek_active(
+            broker_code=str(uba.broker_code or "").upper(),
+            user_broker_account_id=int(user_broker_account_id),
+        )
+        act_remaining = activation_remaining_seconds(act, now=now)
+        if act is None or act_remaining <= 0:
+            previous = None
+            if row.source_activation_id is not None:
+                previous = self._session.get(
+                    LiveTradingTransitionEntity,
+                    int(row.source_activation_id),
+                )
+            if previous is None:
+                return {
+                    "restored": False,
+                    "reason": "NO_SOURCE_ACTIVATION",
+                }
+            renew_hours = min(
+                int(row.activation_renew_hours),
+                max(1, int((until - now).total_seconds() // 3600)),
+            )
+            act = self._create_successor_activation(
+                uba=uba,
+                previous=previous,
+                actor=actor,
+                ttl_hours=renew_hours,
+            )
+            row.source_activation_id = int(act.live_trading_transition_id)
+            detail["activation_restored"] = True
+            detail["successor_activation_id"] = int(
+                act.live_trading_transition_id
+            )
+        else:
+            detail["activation_id"] = int(act.live_trading_transition_id)
+            detail["activation_remaining"] = act_remaining
+
+        # 2) LIVE ON (lease가 이미 승인한 세션 복구)
+        from stock_platform.trading.live_order_approval_service import (
+            LiveOrderApprovalService,
+        )
+
+        live_result = LiveOrderApprovalService(self._session).set_live_enabled(
+            int(user_broker_account_id),
+            enabled=True,
+            actor=actor,
+            reason="UNATTENDED_LEASE_RESTORE_AFTER_STARTUP",
+            correlation_id=(
+                f"unatt-restore-{row.live_unattended_authorization_id}"
+            ),
+            enforce_enable_gates=True,
+        )
+        detail["live_restored"] = True
+        detail["live_already_enabled"] = bool(
+            live_result.get("already_enabled")
+        )
+
+        # 3) ARM ON (lease TTL, activation remaining으로 clamp)
+        from stock_platform.trading.live_arm_service import LiveArmService
+
+        arm_ttl = min(
+            int(row.arm_lease_ttl_seconds),
+            max(60, int((until - now).total_seconds())),
+        )
+        arm_result = LiveArmService(self._session).arm(
+            int(user_broker_account_id),
+            actor=actor,
+            ttl_seconds=arm_ttl,
+            reason="UNATTENDED_LEASE_RESTORE_AFTER_STARTUP",
+            correlation_id=(
+                f"unatt-restore-{row.live_unattended_authorization_id}"
+            ),
+            enforce_gates=True,
+            force_renew=True,
+        )
+        detail["arm_restored"] = True
+        detail["arm_ttl_seconds"] = arm_ttl
+        detail["arm_expires_at"] = arm_result.get("arm_expires_at")
+
+        row.last_renewed_at = now
+        row.last_renewal_actor = actor[:100]
+        row.last_renewal_detail = {
+            "restore": True,
+            **detail,
+        }
+        row.updated_at = now
+        self._session.flush()
+        emit_live_safety_audit(
+            self._session,
+            event_type="UNATTENDED_AUTHORIZATION_RESTORED",
+            actor=actor,
+            run_id=None,
+            user_id=int(uba.user_id),
+            account_id=int(user_broker_account_id),
+            strategy_id=None,
+            detail=detail,
+            commit=False,
+        )
+        return {"restored": True, "detail": detail}
+
     def renew_due_for_uba(
         self,
         user_broker_account_id: int,
@@ -671,11 +842,21 @@ class LiveUnattendedAuthorizationService:
         if uba is None:
             return {"renewed": False, "reason": "UBA_NOT_FOUND"}
 
-        # LIVE/ARM 필수 (renewal 경로)
-        if not bool(uba.live_order_enabled):
-            return {"renewed": False, "reason": "LIVE_OFF", "blockers": ["LIVE_OFF"]}
-        if not bool(uba.live_armed):
-            return {"renewed": False, "reason": "ARM_OFF", "blockers": ["ARM_OFF"]}
+        # LIVE/ARM이 꺼져 있으면 renew 대신 lease restore (startup fail-closed 복구)
+        if not bool(uba.live_order_enabled) or not bool(uba.live_armed):
+            restored = self.restore_from_active_lease(
+                int(user_broker_account_id),
+                actor=actor.replace("RENEWAL", "RESTORE")
+                if "RENEWAL" in actor
+                else f"{actor}_RESTORE",
+            )
+            return {
+                "renewed": bool(restored.get("restored")),
+                "reason": "RESTORED_FROM_LEASE"
+                if restored.get("restored")
+                else restored.get("reason"),
+                "restore": restored,
+            }
 
         gates = self.evaluate_renewal_gates(int(user_broker_account_id))
         # LIVE/ARM 관련 false-positive 제거 후 재평가
