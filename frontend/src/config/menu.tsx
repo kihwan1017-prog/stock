@@ -372,6 +372,14 @@ export const adminMenuItems: AdminMenuItem[] = [
         permission: "menu:trading",
       },
       {
+        key: "upbit-autotrading",
+        label: "업비트 자동매매 설정",
+        path: adminRoutes.upbitAutotrading,
+        icon: <SettingOutlined />,
+        enabled: true,
+        permission: "menu:upbit",
+      },
+      {
         key: "operations-preflight",
         label: "Pre-flight Check",
         path: adminRoutes.operationsPreflight,
