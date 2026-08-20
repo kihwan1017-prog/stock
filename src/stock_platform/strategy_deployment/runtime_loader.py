@@ -160,6 +160,31 @@ class ActiveStrategyRuntimeLoader:
         resolved_payload, resolved_symbol = _resolve_runtime_payload_and_symbol(
             self._session, deployment, definition
         )
+        # FULL_MARKET operational assignment override (deployment 원본 mutate 금지)
+        if user_broker_account_id is not None:
+            try:
+                from stock_platform.operation.upbit_full_market.constants import (
+                    MODE_FULL_MARKET_AUTO,
+                )
+                from stock_platform.operation.upbit_full_market.service import (
+                    UpbitFullMarketAssignmentService,
+                )
+                from stock_platform.strategy_deployment.symbol_payload import (
+                    apply_runtime_target_symbol,
+                )
+
+                fma = UpbitFullMarketAssignmentService(self._session)
+                status = fma.status_dict(int(user_broker_account_id))
+                if status.get("mode") == MODE_FULL_MARKET_AUTO and status.get(
+                    "current_symbol"
+                ):
+                    target = str(status["current_symbol"]).upper()
+                    resolved_symbol = target
+                    resolved_payload = apply_runtime_target_symbol(
+                        resolved_payload, symbol=target
+                    )
+            except Exception:  # noqa: BLE001
+                pass
         strategy = self._registry.create(
             strategy_code=deployment.strategy_code,
             parameter_payload=resolved_payload,

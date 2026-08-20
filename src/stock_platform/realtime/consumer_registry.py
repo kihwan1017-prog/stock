@@ -178,6 +178,12 @@ class ScopedRealtimeConsumer:
             "signals_allowed": self.signals_allowed,
             "warmup_status": overall,
             "warmup_by_symbol": warmups,
+            "timeframe": self.evaluator.config.timeframe or "",
+            "ma_input_unit": (
+                "DAY"
+                if self.evaluator.config.uses_daily_bars()
+                else "TICK"
+            ),
             "last_event_at": (
                 self.last_event_at.isoformat() if self.last_event_at else None
             ),
@@ -254,12 +260,29 @@ class ScopeConsumerRegistry:
         with self._lock:
             existing = self._by_scope.get(scope.scope_key)
             if existing is not None:
-                # 동일 Scope 중복 등록 → symbols 병합·상태 갱신
-                existing.symbols |= clean
+                # Dynamic symbol switch: 병합이 아니라 교체 (이중 signal 방지)
+                old_symbols = set(existing.symbols)
+                for sym in old_symbols - clean:
+                    sk = self.subscription_key(
+                        broker_code=scope.broker_code,
+                        market_type=scope.market_type,
+                        symbol=sym,
+                    )
+                    bucket = self._by_subscription.get(sk)
+                    if bucket is not None:
+                        bucket.discard(scope.scope_key)
+                        if not bucket:
+                            self._by_subscription.pop(sk, None)
+                existing.symbols = clean
                 existing.runtime_status = runtime_status
                 existing.signals_allowed = (
                     runtime_status == RuntimeLifecycleStatus.RUNNING
                 )
+                # evaluator 심볼 상태 리셋 — warmup 재시작
+                try:
+                    existing.evaluator.reset()
+                except Exception:  # noqa: BLE001
+                    pass
                 for sym in clean:
                     sk = self.subscription_key(
                         broker_code=scope.broker_code,
@@ -363,6 +386,15 @@ class ScopeConsumerRegistry:
                 raise KeyError(scope_key)
             consumer.evaluator.reset()
             consumer.last_error = None
+            if consumer.evaluator.config.uses_daily_bars():
+                try:
+                    from stock_platform.realtime.daily_bar_seed import (
+                        seed_registered_consumer,
+                    )
+
+                    seed_registered_consumer(consumer, force=True)
+                except Exception as exc:  # noqa: BLE001
+                    consumer.last_error = str(exc)[:200]
 
     def dispatch(
         self, event: RealtimeMarketEvent

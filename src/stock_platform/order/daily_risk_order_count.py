@@ -100,6 +100,11 @@ def count_daily_risk_orders(
 
     포함: PENDING/QUEUED/SENT/제출 후 CANCELLED 등 일반 주문.
     제외: 공식 미전송 retire(UNSUBMITTED_LIVE_RETIRED) CANCELLED.
+
+    참고:
+    - LiveOrderSafetyPipeline은 verified EXIT에 대해 이 한도를 적용하지 않는다
+      (protective EXIT가 ENTRY quota에 막히지 않음).
+    - ENTRY-only 집계는 count_daily_entry_orders.
     """
 
     uba_id = int(user_broker_account_id)
@@ -110,6 +115,29 @@ def count_daily_risk_orders(
         .where(
             TradingOrderEntity.user_broker_account_id == uba_id,
             TradingOrderEntity.created_at >= day_start,
+            not_(retired_unsubmitted_exclusion_clause()),
+        )
+    )
+    return int(count or 0)
+
+
+def count_daily_entry_orders(
+    session: Session,
+    user_broker_account_id: int,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """오늘(KST) BUY(ENTRY) 건수만 — EXIT는 제외."""
+
+    uba_id = int(user_broker_account_id)
+    day_start = day_start_kst_as_utc(now)
+    count = session.scalar(
+        select(func.count())
+        .select_from(TradingOrderEntity)
+        .where(
+            TradingOrderEntity.user_broker_account_id == uba_id,
+            TradingOrderEntity.created_at >= day_start,
+            TradingOrderEntity.side_code == "BUY",
             not_(retired_unsubmitted_exclusion_clause()),
         )
     )

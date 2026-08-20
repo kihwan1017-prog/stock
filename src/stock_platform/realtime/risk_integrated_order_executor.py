@@ -17,6 +17,11 @@ from stock_platform.realtime.execution_models import (
     RealtimeExecutionMode,
     RealtimeExecutionResult,
 )
+from stock_platform.realtime.execution_scope import (
+    SUPPORTED_LIVE_BROKERS,
+    resolve_signal_broker_code,
+    resolve_signal_user_broker_account_id,
+)
 from stock_platform.realtime.order_executor import (
     RealtimePaperOrderExecutor,
 )
@@ -33,19 +38,6 @@ from stock_platform.risk_engine.kill_switch_guard import (
 from stock_platform.risk_engine.order_guard import (
     DatabaseBackedRiskOrderGuard,
 )
-
-
-def resolve_signal_broker_code(signal: RealtimeSignal) -> str:
-    """Scope/신호의 broker_code 우선, 없으면 거래소 휴리스틱."""
-
-    raw = getattr(signal, "broker_code", None)
-    if raw:
-        return str(raw).strip().upper()
-
-    exchange = str(signal.exchange_code or "").strip().upper()
-    if exchange in {"UPBIT", "CRYPTO", "BINANCE"}:
-        return "UPBIT"
-    return "KIWOOM"
 
 
 def resolve_execution_environment(
@@ -113,6 +105,110 @@ class RiskIntegratedRealtimeOrderExecutor:
                 # 설정 기본 Paper 계좌를 유지한다.
                 exec_account_id = self._execution_config.account_id
 
+        signal_uba = resolve_signal_user_broker_account_id(signal)
+        if signal_uba is not None and account_kind == "USER_BROKER":
+            user_broker_account_id = int(signal_uba)
+
+        cfg_uba = getattr(
+            self._execution_config, "user_broker_account_id", None
+        )
+        cfg_broker = str(
+            getattr(self._execution_config, "broker_code", "") or ""
+        ).upper()
+        if environment == "LIVE" and cfg_uba:
+            if account_kind == "PAPER":
+                return self._skipped(signal, "PAPER_SIGNAL_IN_LIVE")
+            if user_broker_account_id is None:
+                return self._skipped(signal, "LIVE_UBA_REQUIRED")
+            if int(user_broker_account_id) != int(cfg_uba):
+                return self._skipped(signal, "CROSS_UBA_SIGNAL")
+            expected_broker = cfg_broker or broker_code
+            if expected_broker not in SUPPORTED_LIVE_BROKERS:
+                return self._skipped(signal, "UNSUPPORTED_BROKER")
+            if broker_code != expected_broker:
+                return self._skipped(signal, "CROSS_BROKER_SIGNAL")
+
+        if (
+            environment == "LIVE"
+            and broker_code == "UPBIT"
+            and user_broker_account_id
+        ):
+            from stock_platform.trading.upbit_24x7_control import (
+                evaluate_runtime_run_gates,
+            )
+
+            run_gates = evaluate_runtime_run_gates(
+                self._session,
+                user_broker_account_id=int(user_broker_account_id),
+                strategy_id=getattr(signal, "strategy_id", None),
+                enforce_pause=True,
+            )
+            if not run_gates.get("ok"):
+                return self._skipped(
+                    signal,
+                    str(
+                        (run_gates.get("blockers") or ["RUN_GATE_FAILED"])[0]
+                    ),
+                )
+
+        if (
+            environment == "LIVE"
+            and broker_code == "KIWOOM"
+            and user_broker_account_id
+        ):
+            from stock_platform.realtime.kiwoom_runtime_run_gates import (
+                evaluate_kiwoom_runtime_run_gates,
+            )
+
+            run_gates = evaluate_kiwoom_runtime_run_gates(
+                self._session,
+                user_broker_account_id=int(user_broker_account_id),
+                strategy_id=getattr(signal, "strategy_id", None),
+                tick_source_code=getattr(signal, "source_code", None),
+            )
+            if not run_gates.get("ok"):
+                return self._skipped(
+                    signal,
+                    str(
+                        (run_gates.get("blockers") or ["RUN_GATE_FAILED"])[0]
+                    ),
+                )
+            from stock_platform.realtime.kiwoom_market_source_gate import (
+                evaluate_real_execution_market_source,
+            )
+
+            market_src = evaluate_real_execution_market_source(
+                self._session,
+                user_broker_account_id=int(user_broker_account_id),
+                broker_code="KIWOOM",
+                source_code=getattr(signal, "source_code", None),
+            )
+            if market_src.get("applied") and not market_src.get("ok"):
+                return self._skipped(
+                    signal,
+                    str(market_src.get("reason") or "MARKET_SOURCE_BLOCKED"),
+                )
+            from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+                kiwoom_market_realtime_runtime,
+            )
+            from stock_platform.broker.kiwoom.execution_env import (
+                kiwoom_uba_has_explicit_real_execution,
+            )
+            from stock_platform.broker.kiwoom.market_realtime_contract import (
+                REASON_MARKET_DATA_DISCONNECTED,
+            )
+
+            if kiwoom_uba_has_explicit_real_execution(
+                self._session, int(user_broker_account_id)
+            ):
+                feed = kiwoom_market_realtime_runtime.status()
+                client = feed.get("client") or {}
+                if not bool(client.get("connected")):
+                    return self._skipped(
+                        signal,
+                        REASON_MARKET_DATA_DISCONNECTED,
+                    )
+
         account_number = self._resolve_account_number(
             broker_code=broker_code,
             environment=environment,
@@ -158,6 +254,31 @@ class RiskIntegratedRealtimeOrderExecutor:
             # Pause 조회 실패 시 BUY는 fail-closed, SELL은 위험축소로 통과
             if str(signal.action.value).upper() != "SELL":
                 return self._skipped(signal, "ACCOUNT_PAUSE_CHECK_FAILED")
+
+        # FULL_MARKET Dynamic: ENTRY만 assignment/warmup/cooldown gate
+        if (
+            str(signal.action.value).upper() == "BUY"
+            and environment == "LIVE"
+            and user_broker_account_id is not None
+            and str(broker_code).upper() == "UPBIT"
+        ):
+            try:
+                from stock_platform.operation.upbit_full_market.service import (
+                    UpbitFullMarketAssignmentService,
+                )
+
+                allowed, fm_reason = UpbitFullMarketAssignmentService(
+                    self._session
+                ).entry_allowed(
+                    int(user_broker_account_id),
+                    symbol=str(getattr(signal, "symbol", "") or None),
+                )
+                if not allowed:
+                    return self._skipped(
+                        signal, f"FULL_MARKET_{fm_reason}"
+                    )
+            except Exception:  # noqa: BLE001
+                return self._skipped(signal, "FULL_MARKET_GATE_FAILED")
 
         try:
             PersistentKillSwitchGuard(
@@ -286,47 +407,40 @@ class RiskIntegratedRealtimeOrderExecutor:
                 # MOCK/LIVE 자동매매: SELL 신호 시 전량 청산
                 quantity = Decimal(str(held))
 
-        # MOCK/LIVE SELL: 원장 전량 캡 — Paper Risk 보유검사 스킵
-        # LIVE_SHADOW/DRY_RUN도 LIVE와 동일 Risk·세션 정책 적용 (submit만 차단)
-        if (
-            environment in {"MOCK", "LIVE"}
-            and signal.action.value.upper() == "SELL"
-        ):
-            risk_allowed = True
-            risk_blocked = None
-        else:
-            risk_result = DatabaseBackedRiskOrderGuard(
-                self._session,
-                broker_code=broker_code,
-            ).check(
-                account_number=account_number or f"PAPER-{exec_account_id}",
-                # LIVE/UBA: Paper FK와 XOR — Risk ownership Fail Closed
-                account_id=(
-                    None
-                    if (
-                        environment in {"LIVE", "MOCK"}
-                        and user_broker_account_id is not None
-                    )
-                    else exec_account_id
-                ),
-                exchange_code=signal.exchange_code,
-                symbol=signal.symbol,
-                side=signal.action.value,
-                quantity=quantity,
-                price=signal.signal_price,
-                user_id=(
-                    getattr(signal, "user_id", None)
-                    or getattr(self._execution_config, "user_id", None)
-                ),
-                user_broker_account_id=user_broker_account_id,
-                order_source="AUTO",
-                is_risk_reducing=(
-                    signal.action.value.upper() == "SELL"
-                ),
-                environment=environment,
-            )
-            risk_allowed = risk_result.allowed
-            risk_blocked = risk_result.blocked_reason
+        # MOCK/LIVE SELL도 outstanding/EXIT Risk를 건너뛰지 않는다.
+        # 전량 캡은 위에서 snapshot 수량으로 이미 적용했다.
+        risk_result = DatabaseBackedRiskOrderGuard(
+            self._session,
+            broker_code=broker_code,
+        ).check(
+            account_number=account_number or f"PAPER-{exec_account_id}",
+            # LIVE/UBA: Paper FK와 XOR — Risk ownership Fail Closed
+            account_id=(
+                None
+                if (
+                    environment in {"LIVE", "MOCK"}
+                    and user_broker_account_id is not None
+                )
+                else exec_account_id
+            ),
+            exchange_code=signal.exchange_code,
+            symbol=signal.symbol,
+            side=signal.action.value,
+            quantity=quantity,
+            price=signal.signal_price,
+            user_id=(
+                getattr(signal, "user_id", None)
+                or getattr(self._execution_config, "user_id", None)
+            ),
+            user_broker_account_id=user_broker_account_id,
+            order_source="AUTO",
+            is_risk_reducing=(
+                signal.action.value.upper() == "SELL"
+            ),
+            environment=environment,
+        )
+        risk_allowed = risk_result.allowed
+        risk_blocked = risk_result.blocked_reason
 
         if not risk_allowed:
             return self._skipped(
