@@ -175,11 +175,21 @@ def admin_uba_ops_status(
         build_uba_operational_summary,
     )
 
-    return build_uba_operational_summary(
+    out = build_uba_operational_summary(
         session,
         user_broker_account_id=int(user_broker_account_id),
         strategy_id=strategy_id,
     )
+    # FIXED_SYMBOL assignment ensure (get_or_create) persist
+    try:
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
+    return out
+
+
+# NOTE: full-market FIXED row ensure는 summary 내부 get_or_create.
+# 세션 autocommit 없음 → 위에서 commit.
 
 
 class UnattendedEnableBody(BaseModel):

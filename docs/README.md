@@ -23,7 +23,7 @@
 | [architecture/STRATEGY_LIFECYCLE_STEP12.md](architecture/STRATEGY_LIFECYCLE_STEP12.md) | Strategy STEP12 |
 | [audit/PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md](audit/PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md) | PHASE 2 완료보고 |
 
-운영: **NOT READY** · LIVE: **NOT APPROVED**. 상세는 IMPLEMENTATION_STATUS.
+운영: UPBIT UBA1380 24x7 **COMPLETED** (controlled session) · 플랫폼 LIVE: P0·KIWOOM 잔여로 **NOT APPROVED**. 상세는 IMPLEMENTATION_STATUS.
 
 ## Domain folders
 
@@ -116,7 +116,7 @@
 - 모의계좌 Soft Delete: [trading/README_PAPER_ACCOUNT_DELETE.md](trading/README_PAPER_ACCOUNT_DELETE.md)
 - 모의계좌 수정: [trading/README_PAPER_ACCOUNT_UPDATE.md](trading/README_PAPER_ACCOUNT_UPDATE.md)
 - Install: [manual/설치매뉴얼.md](manual/설치매뉴얼.md) · [deployment/INSTALL.md](deployment/INSTALL.md)
-- Ops: [manual/운영매뉴얼.md](manual/운영매뉴얼.md) · [trading/OPERATIONS_RUNBOOK.md](trading/OPERATIONS_RUNBOOK.md)
+- Ops: [manual/운영매뉴얼.md](manual/운영매뉴얼.md) · [trading/OPERATIONS_RUNBOOK.md](trading/OPERATIONS_RUNBOOK.md) · [trading/UPBIT_UBA1380_24X7_SESSION_RENEWAL.md](trading/UPBIT_UBA1380_24X7_SESSION_RENEWAL.md) · [trading/UPBIT_FULL_MARKET_DYNAMIC_AUTOTRADING.md](trading/UPBIT_FULL_MARKET_DYNAMIC_AUTOTRADING.md)
 - API: [manual/API사용매뉴얼.md](manual/API사용매뉴얼.md)
 - DB rules: [database/DB_DEVELOPMENT_RULES.md](database/DB_DEVELOPMENT_RULES.md)
 - Admin: [../frontend/README.md](../frontend/README.md)

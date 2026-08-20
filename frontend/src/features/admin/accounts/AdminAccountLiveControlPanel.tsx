@@ -954,6 +954,9 @@ export function AdminAccountLiveControlPanel() {
                       </span>
                       <span>{ops.marketLabel}</span>
                       <span>{ops.aiLabel}</span>
+                      <span>{ops.modeLabel}</span>
+                      <span>{ops.targetLabel}</span>
+                      <span>{ops.scannerLabel}</span>
                       {ops.primaryBlocker ? (
                         <span>Blocker: {ops.primaryBlocker}</span>
                       ) : (
@@ -973,6 +976,9 @@ export function AdminAccountLiveControlPanel() {
                     </Typography.Text>
                     <Typography.Text style={{ fontSize: 11 }}>
                       {ops.unattendedLabel}
+                    </Typography.Text>
+                    <Typography.Text style={{ fontSize: 11 }} type="secondary">
+                      {ops.modeLabel} · {ops.targetLabel}
                     </Typography.Text>
                     <Typography.Text style={{ fontSize: 11 }} type="secondary">
                       {ops.workerLabel} · {ops.runtimeLabel}

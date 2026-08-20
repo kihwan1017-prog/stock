@@ -34,6 +34,37 @@ describe("buildOpsStatusSummary", () => {
     expect(vm.color).toBe("success");
   });
 
+  it("renders FIXED / FULL market mode labels", () => {
+    const fixed = buildOpsStatusSummary({
+      auto_trading_state: "RUNNING",
+      full_market: {
+        mode: "FIXED_SYMBOL",
+        current_symbol: "KRW-XRP",
+        template_symbol: "KRW-XRP",
+      },
+      scanner: {
+        universe_count: 250,
+        liquidity_pass_count: 32,
+        top_n: 5,
+        candidates: [{ symbol: "KRW-CAP", recommendation: "HOLD" }],
+      },
+    });
+    expect(fixed.modeLabel).toBe("FIXED SYMBOL");
+    expect(fixed.targetLabel).toBe("TARGET KRW-XRP");
+    expect(fixed.scannerLabel).toContain("250");
+    expect(fixed.scannerLabel).toContain("HOLD");
+
+    const full = buildOpsStatusSummary({
+      auto_trading_state: "RUNNING",
+      full_market: {
+        mode: "FULL_MARKET_AUTO",
+        current_symbol: "KRW-ETH",
+      },
+    });
+    expect(full.modeLabel).toBe("FULL MARKET");
+    expect(full.targetLabel).toBe("TARGET KRW-ETH");
+  });
+
   it("shows BLOCKED with primary blocker", () => {
     const vm = buildOpsStatusSummary({
       auto_trading_state: "BLOCKED",

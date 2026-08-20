@@ -16,6 +16,9 @@ export type OpsStatusSummary = {
   stackLabel: string;
   marketLabel: string;
   aiLabel: string;
+  modeLabel: string;
+  targetLabel: string;
+  scannerLabel: string;
   primaryBlocker: string | null;
   blockers: string[];
   color: string;
@@ -66,6 +69,28 @@ export function buildOpsStatusSummary(payload: unknown): OpsStatusSummary {
     root.exit_monitor ?? stack.exit_monitor ?? "STOPPED",
   ).toUpperCase();
 
+  const fullMarket = asRecord(root.full_market);
+  const scanner = asRecord(root.scanner);
+  const mode = String(fullMarket.mode ?? "FIXED_SYMBOL").toUpperCase();
+  const target = String(
+    fullMarket.current_symbol ?? fullMarket.template_symbol ?? "—",
+  ).toUpperCase();
+  const uni = scanner.universe_count != null ? String(scanner.universe_count) : "—";
+  const liq =
+    scanner.liquidity_pass_count != null
+      ? String(scanner.liquidity_pass_count)
+      : "—";
+  const top = scanner.top_n != null ? String(scanner.top_n) : "—";
+  const cands = Array.isArray(scanner.candidates) ? scanner.candidates : [];
+  const topRec =
+    cands.length > 0
+      ? String(
+          asRecord(cands[0]).recommendation ??
+            asRecord(cands[0]).symbol ??
+            "",
+        )
+      : "";
+
   return {
     autoTradingState: state,
     liveLabel: liveOn ? "LIVE ON" : "LIVE OFF",
@@ -81,6 +106,9 @@ export function buildOpsStatusSummary(payload: unknown): OpsStatusSummary {
     stackLabel: String(stack.label ?? "0/4"),
     marketLabel: String(market.status ?? "UNKNOWN"),
     aiLabel: `AI ${String(root.ai_state ?? "HOLD")}`,
+    modeLabel: mode === "FULL_MARKET_AUTO" ? "FULL MARKET" : "FIXED SYMBOL",
+    targetLabel: `TARGET ${target}`,
+    scannerLabel: `SCAN ${uni}→${liq}→${top}${topRec ? ` · ${topRec}` : ""}`,
     primaryBlocker:
       root.primary_blocker != null ? String(root.primary_blocker) : null,
     blockers: Array.isArray(root.blockers)

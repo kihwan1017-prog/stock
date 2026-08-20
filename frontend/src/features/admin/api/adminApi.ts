@@ -706,6 +706,42 @@ export async function getAdminUbaOpsStatus(
   return getJson(`/admin/autotrading/uba/${ubaId}/ops-status${qs}`);
 }
 
+export async function getAdminUbaFullMarketStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/full-market`);
+}
+
+export async function enableAdminUbaFullMarket(
+  ubaId: number,
+  body: {
+    confirmation_text: string;
+    strategy_id?: number;
+    deployment_id?: number;
+    template_symbol?: string;
+    ai_live_gate_mode?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/full-market/enable`, body);
+}
+
+export async function disableAdminUbaFullMarket(
+  ubaId: number,
+  body: { confirmation_text: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/full-market/disable`, body);
+}
+
+export async function drySelectAdminUbaFullMarket(
+  ubaId: number,
+  body?: { candidates?: Record<string, unknown>[]; scanner_run_id?: string },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/full-market/dry-select`,
+    body ?? {},
+  );
+}
+
 export async function getAdminUbaUnattendedStatus(
   ubaId: number,
 ): Promise<JsonValue> {

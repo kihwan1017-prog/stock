@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from stock_platform.broker.live_transition_service import (
@@ -203,6 +204,75 @@ def build_uba_operational_summary(
 
     primary_blocker = blockers[0] if blockers else None
 
+    full_market: dict[str, Any] = {
+        "mode": "FIXED_SYMBOL",
+        "full_market_enabled": False,
+    }
+    scanner_summary: dict[str, Any] | None = None
+    try:
+        from stock_platform.operation.upbit_full_market.service import (
+            UpbitFullMarketAssignmentService,
+        )
+        from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+            upbit_opportunity_scanner_scheduler,
+        )
+
+        # 기존 FIXED 보호 — 없으면 FIXED_SYMBOL row 생성
+        template = None
+        try:
+            dep = (ctrl.get("deployment") or {}) if isinstance(ctrl, dict) else {}
+            template = dep.get("symbol") or ctrl.get("symbol")
+        except Exception:  # noqa: BLE001
+            template = None
+        if not template and strategy_id is not None:
+            try:
+                from stock_platform.strategy_deployment.entities import (
+                    StrategyDeploymentEntity,
+                )
+
+                dep_row = session.scalar(
+                    select(StrategyDeploymentEntity)
+                    .where(
+                        StrategyDeploymentEntity.strategy_id
+                        == int(strategy_id),
+                        StrategyDeploymentEntity.status_code == "ACTIVE",
+                    )
+                    .limit(1)
+                )
+                if dep_row is not None and dep_row.symbol:
+                    template = str(dep_row.symbol)
+            except Exception:  # noqa: BLE001
+                pass
+        if not template:
+            template = "KRW-XRP" if strategy_id == 17483 else None
+        fma = UpbitFullMarketAssignmentService(session)
+        fma.get_or_create(
+            uba_id,
+            strategy_id=strategy_id,
+            template_symbol=str(template).upper() if template else None,
+        )
+        full_market = fma.status_dict(uba_id)
+        sc = upbit_opportunity_scanner_scheduler.status()
+        last = sc.get("last_result_summary") or {}
+        cands = last.get("candidates") or []
+        scanner_summary = {
+            "enabled": sc.get("enabled"),
+            "mode": sc.get("mode"),
+            "running": sc.get("running"),
+            "interval_seconds": sc.get("interval_seconds"),
+            "next_run_at": sc.get("next_run_at"),
+            "universe_count": last.get("universe_count"),
+            "liquidity_pass_count": last.get("liquidity_pass_count"),
+            "technical_candidate_count": last.get(
+                "technical_candidate_count"
+            ),
+            "top_n": last.get("top_n"),
+            "candidates": cands[:5],
+            "scanner_run_id": last.get("scanner_run_id"),
+        }
+    except Exception:  # noqa: BLE001
+        pass
+
     return {
         "user_broker_account_id": uba_id,
         "broker_code": (
@@ -241,5 +311,7 @@ def build_uba_operational_summary(
         "warnings": warnings,
         "primary_blocker": primary_blocker,
         "control": ctrl,
+        "full_market": full_market,
+        "scanner": scanner_summary,
         "as_of": now.isoformat(),
     }
