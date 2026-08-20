@@ -19,6 +19,45 @@ from stock_platform.strategy_deployment.runtime_models import (
     LoadedStrategyRuntime,
     build_runtime_scope_key,
 )
+from stock_platform.strategy_deployment.symbol_payload import (
+    symbols_from_parameter_payload,
+)
+
+
+def _resolve_runtime_payload_and_symbol(
+    session: Session,
+    deployment,
+    definition,
+) -> tuple[dict, str | None]:
+    """Deployment row가 비어 있어도 Definition/대표 Backtest에서 실행 payload·symbol을 복원."""
+
+    payload = dict(getattr(deployment, "parameter_payload", None) or {})
+    if not payload and definition is not None:
+        payload = dict(definition.parameter_payload or {})
+
+    symbol = str(getattr(deployment, "symbol", None) or "").strip().upper() or None
+    if not symbol:
+        symbols = symbols_from_parameter_payload(payload)
+        if symbols:
+            symbol = symbols[0]
+
+    if not symbol and definition is not None:
+        from stock_platform.ai.strategy_draft_approval.backtest_execution import (
+            get_latest_primary_backtest_run_id,
+        )
+        from stock_platform.backtest.persistence_models import BacktestRunEntity
+
+        run_id = get_latest_primary_backtest_run_id(session, int(definition.strategy_id))
+        if run_id is not None:
+            run = session.get(BacktestRunEntity, int(run_id))
+            if run is not None and run.symbol:
+                symbol = str(run.symbol).strip().upper()
+
+    if symbol and not payload.get("symbol"):
+        payload = dict(payload)
+        payload["symbol"] = symbol
+
+    return payload, symbol
 
 
 class ActiveStrategyRuntimeLoader:
@@ -99,14 +138,10 @@ class ActiveStrategyRuntimeLoader:
         ):
             raise LookupError("Deployment ownership mismatch")
 
-        strategy = self._registry.create(
-            strategy_code=deployment.strategy_code,
-            parameter_payload=deployment.parameter_payload,
-        )
-
         dep_strategy_id = getattr(deployment, "strategy_id", None)
         market_type = None
         strategy_version = f"dep:{deployment.strategy_deployment_id}"
+        definition = None
         if dep_strategy_id is not None:
             from stock_platform.strategy_deployment.definition_entities import (
                 StrategyDefinitionEntity,
@@ -121,6 +156,14 @@ class ActiveStrategyRuntimeLoader:
                     f"sid:{definition.strategy_id}:"
                     f"{definition.updated_at.isoformat() if definition.updated_at else '1'}"
                 )
+
+        resolved_payload, resolved_symbol = _resolve_runtime_payload_and_symbol(
+            self._session, deployment, definition
+        )
+        strategy = self._registry.create(
+            strategy_code=deployment.strategy_code,
+            parameter_payload=resolved_payload,
+        )
 
         resolved_user = (
             int(user_id)
@@ -151,8 +194,8 @@ class ActiveStrategyRuntimeLoader:
             deployment_id=deployment.strategy_deployment_id,
             strategy_code=deployment.strategy_code,
             market_code=deployment.market_code,
-            symbol=deployment.symbol,
-            parameter_payload=deployment.parameter_payload,
+            symbol=resolved_symbol or deployment.symbol,
+            parameter_payload=resolved_payload,
             loaded_at=datetime.now(timezone.utc),
             user_id=resolved_user,
             account_id=account_id,
