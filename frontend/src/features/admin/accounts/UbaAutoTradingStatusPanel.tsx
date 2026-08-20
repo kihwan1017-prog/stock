@@ -337,6 +337,17 @@ export function UbaAutoTradingStatusPanel({
         </Descriptions>
       </Section>
 
+      <Section title="자동매매 운영">
+        <Upbit24x7OperatorControls
+          ubaId={ubaId}
+          strategyId={
+            Number(vm.strategy.strategyId) > 0
+              ? Number(vm.strategy.strategyId)
+              : null
+          }
+        />
+      </Section>
+
       <Section title="Activation / LIVE / ARM / Worker">
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="Activation">
@@ -412,16 +423,6 @@ export function UbaAutoTradingStatusPanel({
             </Tag>
           </Descriptions.Item>
         </Descriptions>
-        <div style={{ marginTop: 12 }}>
-          <Upbit24x7OperatorControls
-            ubaId={ubaId}
-            strategyId={
-              Number(vm.strategy.strategyId) > 0
-                ? Number(vm.strategy.strategyId)
-                : null
-            }
-          />
-        </div>
       </Section>
 
       <Section title="Readiness Checklist">

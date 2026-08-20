@@ -4,9 +4,13 @@ import {
   CONFIRM_START_EXIT_MONITOR,
   CONFIRM_START_RUNTIME,
   CONFIRM_START_WORKER,
+  CONFIRM_STOP_EXIT_MONITOR,
+  CONFIRM_STOP_RUNTIME,
+  CONFIRM_STOP_WORKER,
 } from "./upbit24x7Confirmations";
 import {
   runUpbit24x7StackStart,
+  runUpbit24x7StackStop,
   snapshotFromOpsStatus,
 } from "./upbit24x7StackOrchestrator";
 
@@ -27,6 +31,7 @@ function readyOps(overrides: Record<string, unknown> = {}) {
       outbox_worker: "STOPPED",
       exit_monitor: "STOPPED",
     },
+    unattended: { unattended_enabled: false },
     blockers: [],
     primary_blocker: null,
     ...overrides,
@@ -35,9 +40,16 @@ function readyOps(overrides: Record<string, unknown> = {}) {
 
 describe("snapshotFromOpsStatus", () => {
   it("maps canonical ops fields", () => {
-    const snap = snapshotFromOpsStatus(readyOps({ live: "ON", runtime: "RUNNING" }));
+    const snap = snapshotFromOpsStatus(
+      readyOps({
+        live: "ON",
+        runtime: "RUNNING",
+        unattended: { unattended_enabled: true },
+      }),
+    );
     expect(snap.live).toBe("ON");
     expect(snap.runtime).toBe("RUNNING");
+    expect(snap.unattendedEnabled).toBe(true);
     expect(snap.outboxWorker).toBe("STOPPED");
   });
 });
@@ -48,7 +60,8 @@ describe("runUpbit24x7StackStart", () => {
     const startExitMonitor = vi.fn();
     const startRuntime = vi.fn();
     const outcome = await runUpbit24x7StackStart({
-      fetchOpsStatus: async () => readyOps({ live: "OFF", blockers: ["LIVE_OFF"] }),
+      fetchOpsStatus: async () =>
+        readyOps({ live: "OFF", blockers: ["LIVE_OFF"] }),
       startWorker,
       startExitMonitor,
       startRuntime,
@@ -74,6 +87,7 @@ describe("runUpbit24x7StackStart", () => {
           outbox_worker: "RUNNING",
           exit_monitor: "RUNNING",
           auto_trading_state: "RUNNING",
+          runtime_stack: { label: "4/4 RUNNING" },
         });
       },
       startWorker,
@@ -123,5 +137,45 @@ describe("runUpbit24x7StackStart", () => {
     expect(outcome.steps.find((s) => s.id === "RUNTIME_START")?.status).toBe(
       "SKIPPED",
     );
+  });
+});
+
+describe("runUpbit24x7StackStop", () => {
+  it("stops Runtime → Exit → Worker with canonical phrases", async () => {
+    const stopRuntime = vi.fn(async () => ({ ok: true }));
+    const stopExitMonitor = vi.fn(async () => ({ ok: true }));
+    const stopWorker = vi.fn(async () => ({ ok: true }));
+    const outcome = await runUpbit24x7StackStop({
+      fetchOpsStatus: async () =>
+        readyOps({
+          runtime: "RUNNING",
+          exit_monitor: "RUNNING",
+          outbox_worker: "RUNNING",
+          runtime_stack: { label: "4/4 RUNNING" },
+        }),
+      stopRuntime,
+      stopExitMonitor,
+      stopWorker,
+    });
+    expect(outcome.ok).toBe(true);
+    expect(stopRuntime).toHaveBeenCalledWith(CONFIRM_STOP_RUNTIME);
+    expect(stopExitMonitor).toHaveBeenCalledWith(CONFIRM_STOP_EXIT_MONITOR);
+    expect(stopWorker).toHaveBeenCalledWith(CONFIRM_STOP_WORKER);
+  });
+
+  it("FAIL CLOSED on runtime stop error", async () => {
+    const stopExitMonitor = vi.fn();
+    const outcome = await runUpbit24x7StackStop({
+      fetchOpsStatus: async () =>
+        readyOps({ runtime: "RUNNING", exit_monitor: "RUNNING" }),
+      stopRuntime: async () => {
+        throw new Error("RUNTIME_STOP_DENIED");
+      },
+      stopExitMonitor,
+      stopWorker: async () => ({ ok: true }),
+    });
+    expect(outcome.ok).toBe(false);
+    expect(outcome.failedStep).toBe("RUNTIME_STOP");
+    expect(stopExitMonitor).not.toHaveBeenCalled();
   });
 });

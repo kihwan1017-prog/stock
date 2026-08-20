@@ -64,6 +64,7 @@ import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
 import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
 import { buildOpsStatusSummary } from "./opsStatusSummary";
 import { UnattendedControlCard } from "./UnattendedControlCard";
+import { Upbit24x7OperatorControls } from "./Upbit24x7OperatorControls";
 import { runUpbit24x7StackStart } from "./upbit24x7StackOrchestrator";
 
 function newCorrelationId(prefix: string): string {
@@ -1529,6 +1530,20 @@ export function AdminAccountLiveControlPanel() {
                         });
                       }}
                     />
+                    {(() => {
+                      const readyVm = autotradingReadyQuery.data
+                        ? buildUbaAutoTradingViewModel(
+                            autotradingReadyQuery.data,
+                          )
+                        : null;
+                      const sid = Number(readyVm?.strategy.strategyId ?? 0);
+                      return (
+                        <Upbit24x7OperatorControls
+                          ubaId={Number(detailUbaId)}
+                          strategyId={sid > 0 ? sid : null}
+                        />
+                      );
+                    })()}
                   </Space>
                 );
               })()

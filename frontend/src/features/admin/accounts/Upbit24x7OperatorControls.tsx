@@ -1,16 +1,18 @@
 "use client";
 
 /**
- * UPBIT 24/7 Runtime / Outbox Worker / Exit Monitor 개별 제어 + 운영 스택 START.
- * 텍스트 confirmation 입력 없음 — Modal 확인 후 canonical phrase를 API에 전송.
- * LIVE/ARM/Activation/Unattended 강한 승인은 건드리지 않는다.
+ * UPBIT 자동매매 운영 — 스택 시작/중지 중심 UI.
+ * 개별 Runtime/Worker/Exit는 「고급 제어」로 접는다.
+ * LIVE/ARM/Unattended 강한 승인은 건드리지 않는다.
  */
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,
   App,
   Button,
+  Collapse,
+  Descriptions,
   List,
   Space,
   Tag,
@@ -31,7 +33,10 @@ import {
 } from "./upbit24x7Confirmations";
 import {
   runUpbit24x7StackStart,
+  runUpbit24x7StackStop,
+  snapshotFromOpsStatus,
   type StackStartOutcome,
+  type StackStartSnapshot,
   type StackStartStepStatus,
 } from "./upbit24x7StackOrchestrator";
 
@@ -50,6 +55,76 @@ function stepTagColor(status: StackStartStepStatus): string {
   }
 }
 
+function onOffTag(on: boolean, onLabel = "ON", offLabel = "OFF") {
+  return <Tag color={on ? "green" : "default"}>{on ? onLabel : offLabel}</Tag>;
+}
+
+function autoTradingTag(state: string) {
+  const u = state.toUpperCase();
+  const color =
+    u === "RUNNING"
+      ? "green"
+      : u === "WAITING_SIGNAL"
+        ? "processing"
+        : u === "BLOCKED"
+          ? "red"
+          : "default";
+  return <Tag color={color}>{u || "—"}</Tag>;
+}
+
+function StackOutcomeAlert({
+  kind,
+  outcome,
+}: {
+  kind: "START" | "STOP";
+  outcome: StackStartOutcome;
+}) {
+  return (
+    <Alert
+      type={outcome.ok ? "success" : "error"}
+      showIcon
+      title={
+        outcome.ok
+          ? `스택 ${kind} PASS`
+          : `스택 ${kind} FAIL @ ${outcome.failedStep}`
+      }
+      description={
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+          {!outcome.ok ? (
+            <Typography.Text type="danger">
+              {outcome.failedReason}
+            </Typography.Text>
+          ) : null}
+          {outcome.snapshot ? (
+            <Typography.Text style={{ fontSize: 12 }}>
+              AUTO {outcome.snapshot.autoTradingState} · LIVE{" "}
+              {outcome.snapshot.live} · ARM {outcome.snapshot.arm} · STACK{" "}
+              {outcome.snapshot.stackLabel}
+            </Typography.Text>
+          ) : null}
+          <List
+            size="small"
+            dataSource={outcome.steps}
+            renderItem={(item) => (
+              <List.Item style={{ padding: "4px 0" }}>
+                <Space>
+                  <Tag color={stepTagColor(item.status)}>{item.status}</Tag>
+                  <Typography.Text>{item.id}</Typography.Text>
+                  {item.reason ? (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      {item.reason}
+                    </Typography.Text>
+                  ) : null}
+                </Space>
+              </List.Item>
+            )}
+          />
+        </Space>
+      }
+    />
+  );
+}
+
 export function Upbit24x7OperatorControls({
   ubaId,
   strategyId,
@@ -62,7 +137,22 @@ export function Upbit24x7OperatorControls({
   const [stackOutcome, setStackOutcome] = useState<StackStartOutcome | null>(
     null,
   );
+  const [stackKind, setStackKind] = useState<"START" | "STOP">("START");
   const [stackPending, setStackPending] = useState(false);
+
+  const opsQuery = useQuery({
+    queryKey: ["admin", "uba-ops-status", ubaId, strategyId],
+    queryFn: () =>
+      adminApi.getAdminUbaOpsStatus(
+        ubaId,
+        strategyId != null && strategyId > 0 ? strategyId : undefined,
+      ),
+    refetchInterval: 15_000,
+  });
+
+  const snap: StackStartSnapshot | null = opsQuery.data
+    ? snapshotFromOpsStatus(opsQuery.data)
+    : null;
 
   const invalidate = async () => {
     await Promise.all([
@@ -171,10 +261,12 @@ export function Upbit24x7OperatorControls({
       return;
     }
     setStackPending(true);
+    setStackKind("START");
     setStackOutcome(null);
     try {
       const outcome = await runUpbit24x7StackStart({
-        fetchOpsStatus: () => adminApi.getAdminUbaOpsStatus(ubaId, Number(strategyId)),
+        fetchOpsStatus: () =>
+          adminApi.getAdminUbaOpsStatus(ubaId, Number(strategyId)),
         startWorker: (phrase) => adminApi.startAdminLiveOutboxWorker(phrase),
         startExitMonitor: (phrase) => adminApi.startAdminExitMonitor(phrase),
         startRuntime: (phrase) =>
@@ -187,7 +279,7 @@ export function Upbit24x7OperatorControls({
       setStackOutcome(outcome);
       await invalidate();
       if (outcome.ok) {
-        messageApi.success("운영 스택 START 완료 (Worker · Exit · Runtime)");
+        messageApi.success("운영 스택 START 완료");
       } else {
         messageApi.error(
           `스택 START 실패 @ ${outcome.failedStep}: ${outcome.failedReason ?? ""}`,
@@ -200,32 +292,59 @@ export function Upbit24x7OperatorControls({
     }
   };
 
+  const runStackStop = async () => {
+    if (!runtimeReady) {
+      messageApi.error("strategy_id가 없어 Runtime STOP를 진행할 수 없습니다.");
+      return;
+    }
+    setStackPending(true);
+    setStackKind("STOP");
+    setStackOutcome(null);
+    try {
+      const outcome = await runUpbit24x7StackStop({
+        fetchOpsStatus: () =>
+          adminApi.getAdminUbaOpsStatus(ubaId, Number(strategyId)),
+        stopWorker: (phrase) => adminApi.stopAdminLiveOutboxWorker(phrase),
+        stopExitMonitor: (phrase) => adminApi.stopAdminExitMonitor(phrase),
+        stopRuntime: (phrase) =>
+          adminApi.stopAdminUbaStrategyRuntime(
+            ubaId,
+            Number(strategyId),
+            phrase,
+          ),
+      });
+      setStackOutcome(outcome);
+      await invalidate();
+      if (outcome.ok) {
+        messageApi.success("운영 스택 STOP 완료 (LIVE/ARM/24H 유지)");
+      } else {
+        messageApi.error(
+          `스택 STOP 실패 @ ${outcome.failedStep}: ${outcome.failedReason ?? ""}`,
+        );
+      }
+    } catch (err) {
+      messageApi.error(toApiError(err).message);
+    } finally {
+      setStackPending(false);
+    }
+  };
+
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-      <Alert
-        type="info"
-        showIcon
-        title="운영 제어 (문구 타이핑 없음)"
-        description={
-          <>
-            Runtime / Worker / Exit는 Modal 확인만으로 기동합니다. Backend
-            confirmation phrase는 자동 전송되며 safety gate는 완화되지 않습니다.
-            LIVE ON · ARM · 24H Unattended · Kill Switch 해제는 강한 승인
-            입력을 유지합니다.
-          </>
-        }
-      />
+      <Typography.Title level={5} style={{ margin: 0 }}>
+        자동매매 운영
+      </Typography.Title>
 
       <Space wrap>
         <Button
           type="primary"
-          loading={stackPending}
-          disabled={!runtimeReady}
+          loading={stackPending && stackKind === "START"}
+          disabled={!runtimeReady || stackPending}
           onClick={() =>
             confirmThen(
-              "24H 운영 스택 시작",
-              "Preflight → Activation/LIVE/ARM 게이트 확인 후 Worker → Exit Monitor → Runtime 순으로 기동합니다. 어느 단계든 실패하면 즉시 중단(FAIL CLOSED)합니다. LIVE/ARM은 이 버튼으로 켜지지 않습니다.",
-              "스택 시작",
+              "운영 스택 시작",
+              "Activation/LIVE/ARM 게이트 확인 후 Worker → Exit Monitor → Runtime 순으로 기동합니다. 실패 시 FAIL CLOSED. LIVE/ARM/24H는 변경하지 않습니다.",
+              "시작",
               false,
               () => {
                 void runStackStart();
@@ -235,158 +354,202 @@ export function Upbit24x7OperatorControls({
         >
           운영 스택 시작
         </Button>
+        <Button
+          danger
+          loading={stackPending && stackKind === "STOP"}
+          disabled={!runtimeReady || stackPending}
+          onClick={() =>
+            confirmThen(
+              "운영 스택 중지",
+              "Runtime → Exit Monitor → Worker 순으로 중지합니다. LIVE/ARM/24H Unattended는 끄지 않습니다.",
+              "중지",
+              true,
+              () => {
+                void runStackStop();
+              },
+            )
+          }
+        >
+          운영 스택 중지
+        </Button>
       </Space>
 
-      {stackOutcome ? (
+      <Descriptions
+        size="small"
+        column={1}
+        bordered
+      >
+        <Descriptions.Item label="AUTO TRADING">
+          {snap ? autoTradingTag(snap.autoTradingState) : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="24H">
+          {snap
+            ? onOffTag(snap.unattendedEnabled)
+            : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="LIVE">
+          {snap ? onOffTag(snap.live === "ON") : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="ARM">
+          {snap ? onOffTag(snap.arm === "ON") : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="STACK">
+          {snap ? (
+            <Tag
+              color={
+                snap.stackLabel.startsWith("4/")
+                  ? "green"
+                  : snap.stackLabel.startsWith("0/")
+                    ? "default"
+                    : "processing"
+              }
+            >
+              {snap.stackLabel}
+            </Tag>
+          ) : (
+            "—"
+          )}
+        </Descriptions.Item>
+      </Descriptions>
+
+      {snap?.primaryBlocker ? (
         <Alert
-          type={stackOutcome.ok ? "success" : "error"}
+          type="warning"
           showIcon
-          title={
-            stackOutcome.ok
-              ? "스택 START PASS"
-              : `스택 START FAIL @ ${stackOutcome.failedStep}`
-          }
+          title={`Blocker: ${snap.primaryBlocker}`}
           description={
-            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
-              {!stackOutcome.ok ? (
-                <Typography.Text type="danger">
-                  {stackOutcome.failedReason}
-                </Typography.Text>
-              ) : null}
-              {stackOutcome.snapshot ? (
-                <Typography.Text style={{ fontSize: 12 }}>
-                  LIVE {stackOutcome.snapshot.live} · ARM{" "}
-                  {stackOutcome.snapshot.arm} · Runtime{" "}
-                  {stackOutcome.snapshot.runtime} · Worker{" "}
-                  {stackOutcome.snapshot.outboxWorker} · Exit{" "}
-                  {stackOutcome.snapshot.exitMonitor} · AUTO{" "}
-                  {stackOutcome.snapshot.autoTradingState}
-                  {stackOutcome.snapshot.primaryBlocker
-                    ? ` · blocker ${stackOutcome.snapshot.primaryBlocker}`
-                    : ""}
-                </Typography.Text>
-              ) : null}
-              <List
-                size="small"
-                dataSource={stackOutcome.steps}
-                renderItem={(item) => (
-                  <List.Item style={{ padding: "4px 0" }}>
-                    <Space>
-                      <Tag color={stepTagColor(item.status)}>{item.status}</Tag>
-                      <Typography.Text>{item.id}</Typography.Text>
-                      {item.reason ? (
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                          {item.reason}
-                        </Typography.Text>
-                      ) : null}
-                    </Space>
-                  </List.Item>
-                )}
-              />
-            </Space>
+            snap.blockers.length > 1
+              ? snap.blockers.slice(0, 6).join(" · ")
+              : undefined
           }
         />
       ) : null}
 
-      <Typography.Text type="secondary">개별 제어</Typography.Text>
-      <Space wrap>
-        <Button
-          type="primary"
-          disabled={!runtimeReady}
-          loading={runtimeStart.isPending}
-          onClick={() =>
-            confirmThen(
-              "Runtime START",
-              `UBA ${ubaId} / strategy ${strategyId} Runtime을 시작합니다.`,
-              "START",
-              false,
-              () => runtimeStart.mutate(),
-            )
-          }
-        >
-          Runtime START
-        </Button>
-        <Button
-          danger
-          disabled={!runtimeReady}
-          loading={runtimeStop.isPending}
-          onClick={() =>
-            confirmThen(
-              "Runtime STOP",
-              `UBA ${ubaId} Runtime을 중지합니다.`,
-              "STOP",
-              true,
-              () => runtimeStop.mutate(),
-            )
-          }
-        >
-          Runtime STOP
-        </Button>
-      </Space>
-      <Space wrap>
-        <Button
-          type="primary"
-          loading={workerStart.isPending}
-          onClick={() =>
-            confirmThen(
-              "Outbox Worker START",
-              "Live Outbox Worker를 시작합니다. (프로세스 전역)",
-              "START",
-              false,
-              () => workerStart.mutate(),
-            )
-          }
-        >
-          Worker START
-        </Button>
-        <Button
-          danger
-          loading={workerStop.isPending}
-          onClick={() =>
-            confirmThen(
-              "Outbox Worker STOP",
-              "Live Outbox Worker를 중지합니다.",
-              "STOP",
-              true,
-              () => workerStop.mutate(),
-            )
-          }
-        >
-          Worker STOP
-        </Button>
-      </Space>
-      <Space wrap>
-        <Button
-          type="primary"
-          loading={exitStart.isPending}
-          onClick={() =>
-            confirmThen(
-              "Exit Monitor START",
-              "Exit Monitor를 시작합니다.",
-              "START",
-              false,
-              () => exitStart.mutate(),
-            )
-          }
-        >
-          Exit Monitor START
-        </Button>
-        <Button
-          danger
-          loading={exitStop.isPending}
-          onClick={() =>
-            confirmThen(
-              "Exit Monitor STOP",
-              "Exit Monitor를 중지합니다.",
-              "STOP",
-              true,
-              () => exitStop.mutate(),
-            )
-          }
-        >
-          Exit Monitor STOP
-        </Button>
-      </Space>
+      {stackOutcome ? (
+        <StackOutcomeAlert kind={stackKind} outcome={stackOutcome} />
+      ) : null}
+
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: "advanced",
+            label: "▶ 고급 제어",
+            children: (
+              <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  Modal 확인만으로 canonical confirmation phrase를 전송합니다.
+                  Backend safety gate는 완화되지 않습니다.
+                </Typography.Text>
+                <Space wrap>
+                  <Button
+                    size="small"
+                    type="primary"
+                    disabled={!runtimeReady}
+                    loading={runtimeStart.isPending}
+                    onClick={() =>
+                      confirmThen(
+                        "Runtime START",
+                        `UBA ${ubaId} / strategy ${strategyId}`,
+                        "START",
+                        false,
+                        () => runtimeStart.mutate(),
+                      )
+                    }
+                  >
+                    Runtime START
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    disabled={!runtimeReady}
+                    loading={runtimeStop.isPending}
+                    onClick={() =>
+                      confirmThen(
+                        "Runtime STOP",
+                        `UBA ${ubaId} Runtime 중지`,
+                        "STOP",
+                        true,
+                        () => runtimeStop.mutate(),
+                      )
+                    }
+                  >
+                    Runtime STOP
+                  </Button>
+                </Space>
+                <Space wrap>
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={workerStart.isPending}
+                    onClick={() =>
+                      confirmThen(
+                        "Worker START",
+                        "Live Outbox Worker 시작 (프로세스 전역)",
+                        "START",
+                        false,
+                        () => workerStart.mutate(),
+                      )
+                    }
+                  >
+                    Worker START
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    loading={workerStop.isPending}
+                    onClick={() =>
+                      confirmThen(
+                        "Worker STOP",
+                        "Live Outbox Worker 중지",
+                        "STOP",
+                        true,
+                        () => workerStop.mutate(),
+                      )
+                    }
+                  >
+                    Worker STOP
+                  </Button>
+                </Space>
+                <Space wrap>
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={exitStart.isPending}
+                    onClick={() =>
+                      confirmThen(
+                        "Exit Monitor START",
+                        "Exit Monitor 시작",
+                        "START",
+                        false,
+                        () => exitStart.mutate(),
+                      )
+                    }
+                  >
+                    Exit Monitor START
+                  </Button>
+                  <Button
+                    size="small"
+                    danger
+                    loading={exitStop.isPending}
+                    onClick={() =>
+                      confirmThen(
+                        "Exit Monitor STOP",
+                        "Exit Monitor 중지",
+                        "STOP",
+                        true,
+                        () => exitStop.mutate(),
+                      )
+                    }
+                  >
+                    Exit Monitor STOP
+                  </Button>
+                </Space>
+              </Space>
+            ),
+          },
+        ]}
+      />
     </Space>
   );
 }
