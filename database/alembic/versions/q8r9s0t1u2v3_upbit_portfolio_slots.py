@@ -38,11 +38,26 @@ def upgrade() -> None:
               portfolio_daily_entry_limit INTEGER NOT NULL DEFAULT 10,
               entry_state VARCHAR(30) NOT NULL DEFAULT 'RUNNING',
               consecutive_loss_count INTEGER NOT NULL DEFAULT 0,
+              -- future-ready nullable JSON policy bag (groups / overlays)
+              risk_group_policy_json JSONB NOT NULL DEFAULT '{}'::jsonb,
               version INTEGER NOT NULL DEFAULT 1,
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               CONSTRAINT uq_upbit_portfolio_policy_uba UNIQUE (user_broker_account_id)
             )
+            """
+        )
+    )
+    # 이미 CREATE된 DB용 additive ALTER (idempotent)
+    # Documented SQL:
+    #   ALTER TABLE operation.upbit_portfolio_policy
+    #   ADD COLUMN IF NOT EXISTS risk_group_policy_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+    op.execute(
+        sa.text(
+            """
+            ALTER TABLE operation.upbit_portfolio_policy
+            ADD COLUMN IF NOT EXISTS risk_group_policy_json
+              JSONB NOT NULL DEFAULT '{}'::jsonb
             """
         )
     )
@@ -116,6 +131,14 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute(
+        sa.text(
+            """
+            ALTER TABLE operation.upbit_portfolio_policy
+            DROP COLUMN IF EXISTS risk_group_policy_json
+            """
+        )
+    )
     op.execute(
         sa.text(
             "DROP INDEX IF EXISTS operation.ix_upbit_spb_slot_id"

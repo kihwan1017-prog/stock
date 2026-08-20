@@ -284,6 +284,10 @@ class UpbitPortfolioPolicyEntity(Base):
     consecutive_loss_count: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("0")
     )
+    # future-ready: 그룹별 리스크 오버레이 (현재 미사용, default {})
+    risk_group_policy_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
     version: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("1")
     )
