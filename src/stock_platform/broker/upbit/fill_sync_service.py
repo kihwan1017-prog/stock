@@ -611,6 +611,19 @@ class UpbitFillSyncService:
             OrderStatus.CANCELLED,
         }:
             return
+        # 오분류 FAILED + broker_order_id 존재 시 fill-sync 전 ACCEPTED로 복구
+        if status == OrderStatus.FAILED and str(
+            getattr(order, "broker_order_id", None) or ""
+        ).strip():
+            self._orders.change_status(
+                entity=order,
+                new_status=OrderStatus.ACCEPTED,
+                actor=actor,
+                reason_code="UPBIT_FILL_NORMALIZE_FAILED_RECOVERY",
+                message="broker_order_id present; recover FAILED before fill apply",
+                commit=False,
+            )
+            return
         # CREATED/PENDING/SUBMITTING/SENT → ACCEPTED
         if status == OrderStatus.CREATED:
             self._orders.change_status(

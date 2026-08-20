@@ -1,6 +1,8 @@
 from __future__ import annotations
-from stock_platform.order.models import OrderStatus, TERMINAL_ORDER_STATUSES
+
+from stock_platform.order.models import OrderStatus
 from stock_platform.order.state_models import InvalidOrderStateTransition
+
 
 class OrderStateMachine:
     _TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
@@ -89,7 +91,14 @@ class OrderStateMachine:
         OrderStatus.CANCELLED: set(),
         OrderStatus.REPLACED: set(),
         OrderStatus.REJECTED: set(),
-        OrderStatus.FAILED: set(),
+        # FAILED는 운영상 terminal이지만, 브로커 체결/취소 증거가 있으면
+        # fill-sync·reconcile 복구 전이를 허용한다 (오분류 FAILED 복구).
+        OrderStatus.FAILED: {
+            OrderStatus.ACCEPTED,
+            OrderStatus.PARTIALLY_FILLED,
+            OrderStatus.FILLED,
+            OrderStatus.CANCELLED,
+        },
     }
 
     @classmethod
@@ -98,8 +107,10 @@ class OrderStateMachine:
 
     @classmethod
     def validate_transition(cls, *, current: OrderStatus, target: OrderStatus) -> None:
-        if current in TERMINAL_ORDER_STATUSES or not cls.can_transition(current, target):
-            raise InvalidOrderStateTransition(current=current, target=target)
+        # 명시적 recovery edge(FAILED→FILLED 등)는 TERMINAL 여부와 무관하게 허용
+        if cls.can_transition(current, target):
+            return
+        raise InvalidOrderStateTransition(current=current, target=target)
 
     @classmethod
     def transition(cls, *, current: OrderStatus, target: OrderStatus) -> OrderStatus:
