@@ -63,7 +63,6 @@ import {
 import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
 import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
 import { buildOpsStatusSummary } from "./opsStatusSummary";
-import { UnattendedControlCard } from "./UnattendedControlCard";
 import { Upbit24x7OperatorControls } from "./Upbit24x7OperatorControls";
 import { runUpbit24x7StackStart } from "./upbit24x7StackOrchestrator";
 
@@ -153,13 +152,6 @@ export function AdminAccountLiveControlPanel() {
     const row = allRows.find((r) => rowUbaId(r) === Number(detailUbaId));
     return row ? rowBrokerCode(row) : null;
   }, [allRows, detailUbaId]);
-
-  const detailUnattendedQuery = useQuery({
-    queryKey: ["admin", "uba-unattended", detailUbaId],
-    queryFn: () => adminApi.getAdminUbaUnattendedStatus(Number(detailUbaId)),
-    enabled: detailUbaId != null && detailBroker === "UPBIT",
-    refetchInterval: 20_000,
-  });
 
   // Worker 상태는 readiness.checks.live_outbox_worker로 표시 (중복 호출 최소화)
 
@@ -1400,6 +1392,23 @@ export function AdminAccountLiveControlPanel() {
           <Alert type="error" title={toApiError(opsQuery.error).message} />
         ) : (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            {detailBroker === "UPBIT" ? (
+              (() => {
+                const readyVm = autotradingReadyQuery.data
+                  ? buildUbaAutoTradingViewModel(autotradingReadyQuery.data)
+                  : null;
+                const sid = Number(readyVm?.strategy.strategyId ?? 0);
+                return (
+                  <Upbit24x7OperatorControls
+                    ubaId={Number(detailUbaId)}
+                    strategyId={sid > 0 ? sid : null}
+                    showUnattendedActions
+                    onUnattendedEnable={() => setUnattendedEnableOpen(true)}
+                  />
+                );
+              })()
+            ) : null}
+
             <UbaAutoTradingStatusPanel
               ubaId={Number(detailUbaId)}
               readiness={autotradingReadyQuery.data}
@@ -1410,144 +1419,6 @@ export function AdminAccountLiveControlPanel() {
                   : null
               }
             />
-
-            {detailBroker === "UPBIT" ? (
-              (() => {
-                const unatt = (detailUnattendedQuery.data ?? {}) as Record<
-                  string,
-                  unknown
-                >;
-                const enabled = Boolean(unatt.unattended_enabled);
-                const remaining = Number(unatt.remaining_seconds ?? 0);
-                const statusCode = String(unatt.status_code ?? "OFF");
-                const opsSum = detailOpsQuery.data
-                  ? buildOpsStatusSummary(detailOpsQuery.data)
-                  : null;
-                const startBlockers = (opsSum?.blockers ?? []).filter((b) =>
-                  [
-                    "KILL_SWITCH_ACTIVE",
-                    "LIVE_OFF",
-                    "ARM_OFF",
-                    "ACTIVATION_INACTIVE",
-                  ].includes(b),
-                );
-                // ops 실패 시에도 버튼은 노출(비활성 아님) — enable API가 gate로 거절
-                const startBlocked = startBlockers.length > 0;
-                const startReason = startBlocked
-                  ? `${startBlockers.join(", ")} — 해소 후 시작 가능`
-                  : null;
-                return (
-                  <Space
-                    orientation="vertical"
-                    size={8}
-                    style={{ width: "100%" }}
-                  >
-                    {opsSum ? (
-                      <Alert
-                        type={
-                          opsSum.autoTradingState === "RUNNING"
-                            ? "success"
-                            : opsSum.autoTradingState === "BLOCKED"
-                              ? "error"
-                              : "info"
-                        }
-                        showIcon
-                        title={`AUTO TRADING ${opsSum.autoTradingState} · ${opsSum.stackLabel}`}
-                        description={
-                          <Space
-                            orientation="vertical"
-                            size={2}
-                            style={{ width: "100%" }}
-                          >
-                            <Typography.Text type="secondary">
-                              {opsSum.liveLabel} · {opsSum.armLabel} ·{" "}
-                              {opsSum.activationLabel} · {opsSum.unattendedLabel}
-                            </Typography.Text>
-                            <Typography.Text type="secondary">
-                              {opsSum.runtimeLabel} · {opsSum.runnerLabel} ·{" "}
-                              {opsSum.workerLabel} · {opsSum.exitLabel}
-                            </Typography.Text>
-                            <Typography.Text type="secondary">
-                              {opsSum.marketLabel} · {opsSum.aiLabel}
-                              {opsSum.primaryBlocker
-                                ? ` · Blocker ${opsSum.primaryBlocker}`
-                                : " · Blocker NONE"}
-                            </Typography.Text>
-                          </Space>
-                        }
-                      />
-                    ) : detailOpsQuery.isError ? (
-                      <Alert
-                        type="warning"
-                        showIcon
-                        title="운영 요약(ops-status) 일시 오류"
-                        description="Unattended 제어는 아래에서 계속 사용 가능합니다."
-                      />
-                    ) : null}
-                    <UnattendedControlCard
-                      enabled={enabled}
-                      remainingSeconds={remaining}
-                      statusCode={statusCode}
-                      startDisabled={Boolean(startBlocked)}
-                      startDisabledReason={startReason}
-                      loading={detailUnattendedQuery.isFetching}
-                      onStart={() => {
-                        // destroyOnHidden — Form 연결 전 setFieldsValue 금지
-                        setUnattendedEnableOpen(true);
-                      }}
-                      onStop={() => {
-                        modal.confirm({
-                          title: "24시간 무인운영 중지",
-                          onOk: async () => {
-                            try {
-                              await adminApi.disableAdminUbaUnattended(
-                                Number(detailUbaId),
-                                {
-                                  confirmation_text: "DISABLE 24H UNATTENDED",
-                                  reason: "admin_ui_disable",
-                                },
-                              );
-                              notifySuccess("24H Unattended disabled");
-                              await queryClient.invalidateQueries({
-                                queryKey: [
-                                  "admin",
-                                  "uba-unattended",
-                                  detailUbaId,
-                                ],
-                              });
-                              await queryClient.invalidateQueries({
-                                queryKey: [
-                                  "admin",
-                                  "uba-ops-status",
-                                  detailUbaId,
-                                ],
-                              });
-                            } catch (err) {
-                              notifyError(err);
-                              throw err;
-                            }
-                          },
-                        });
-                      }}
-                    />
-                    {(() => {
-                      const readyVm = autotradingReadyQuery.data
-                        ? buildUbaAutoTradingViewModel(
-                            autotradingReadyQuery.data,
-                          )
-                        : null;
-                      const sid = Number(readyVm?.strategy.strategyId ?? 0);
-                      return (
-                        <Upbit24x7OperatorControls
-                          ubaId={Number(detailUbaId)}
-                          strategyId={sid > 0 ? sid : null}
-                        />
-                      );
-                    })()}
-                  </Space>
-                );
-              })()
-            ) : null}
 
             {ops ? (
               <>

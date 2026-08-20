@@ -17,8 +17,6 @@ import {
 } from "antd";
 import type { ReactNode } from "react";
 
-import { Upbit24x7OperatorControls } from "./Upbit24x7OperatorControls";
-
 import {
   buildUbaAutoTradingViewModel,
   headlineAlertType,
@@ -335,17 +333,6 @@ export function UbaAutoTradingStatusPanel({
             {vm.dailyRisk.riskCountedOrderIds}
           </Descriptions.Item>
         </Descriptions>
-      </Section>
-
-      <Section title="자동매매 운영">
-        <Upbit24x7OperatorControls
-          ubaId={ubaId}
-          strategyId={
-            Number(vm.strategy.strategyId) > 0
-              ? Number(vm.strategy.strategyId)
-              : null
-          }
-        />
       </Section>
 
       <Section title="Activation / LIVE / ARM / Worker">

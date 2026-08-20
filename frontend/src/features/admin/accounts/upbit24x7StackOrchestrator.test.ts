@@ -52,6 +52,29 @@ describe("snapshotFromOpsStatus", () => {
     expect(snap.unattendedEnabled).toBe(true);
     expect(snap.outboxWorker).toBe("STOPPED");
   });
+
+  it("maps remaining and AI fields", () => {
+    const snap = snapshotFromOpsStatus(
+      readyOps({
+        live: "ON",
+        arm: "ON",
+        arm_remaining_label: "2h 10m",
+        activation: "ACTIVE",
+        activation_remaining_label: "5h 00m",
+        ai_state: "ALLOW",
+        unattended: { unattended_enabled: true, remaining_seconds: 7200 },
+        runtime_stack: { label: "4/4 RUNNING" },
+        primary_blocker: null,
+      }),
+    );
+    expect(snap.unattendedEnabled).toBe(true);
+    expect(snap.unattendedRemainingLabel).toContain("h");
+    expect(snap.armRemainingLabel).toBe("2h 10m");
+    expect(snap.activationRemainingLabel).toBe("5h 00m");
+    expect(snap.aiState).toBe("ALLOW");
+    expect(snap.primaryBlocker).toBeNull();
+    expect(snap.stackLabel).toBe("4/4 RUNNING");
+  });
 });
 
 describe("runUpbit24x7StackStart", () => {

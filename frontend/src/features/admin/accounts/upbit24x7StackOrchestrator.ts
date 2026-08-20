@@ -47,13 +47,17 @@ export type StackStartSnapshot = {
   live: string;
   arm: string;
   activation: string;
+  armRemainingLabel: string;
+  activationRemainingLabel: string;
   runtime: string;
   runner: string;
   outboxWorker: string;
   exitMonitor: string;
   autoTradingState: string;
   unattendedEnabled: boolean;
+  unattendedRemainingLabel: string;
   stackLabel: string;
+  aiState: string;
   blockers: string[];
   primaryBlocker: string | null;
 };
@@ -86,14 +90,32 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function formatRemainingSeconds(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m.toString().padStart(2, "0")}m`;
+  return `${m}m`;
+}
+
 export function snapshotFromOpsStatus(payload: unknown): StackStartSnapshot {
   const root = asRecord(payload);
   const stack = asRecord(root.runtime_stack);
   const unattended = asRecord(root.unattended);
+  const remUnatt = Number(unattended.remaining_seconds ?? 0);
+  const unattOn = Boolean(unattended.unattended_enabled);
   return {
     live: String(root.live ?? "OFF").toUpperCase(),
     arm: String(root.arm ?? "OFF").toUpperCase(),
     activation: String(root.activation ?? "INACTIVE").toUpperCase(),
+    armRemainingLabel: String(
+      root.arm_remaining_label ??
+        formatRemainingSeconds(Number(root.arm_remaining_seconds ?? 0)),
+    ),
+    activationRemainingLabel: String(
+      root.activation_remaining_label ??
+        formatRemainingSeconds(Number(root.activation_remaining_seconds ?? 0)),
+    ),
     runtime: String(root.runtime ?? stack.runtime ?? "STOPPED").toUpperCase(),
     runner: String(root.runner ?? stack.runner ?? "STOPPED").toUpperCase(),
     outboxWorker: String(
@@ -103,8 +125,12 @@ export function snapshotFromOpsStatus(payload: unknown): StackStartSnapshot {
       root.exit_monitor ?? stack.exit_monitor ?? "STOPPED",
     ).toUpperCase(),
     autoTradingState: String(root.auto_trading_state ?? "STOPPED").toUpperCase(),
-    unattendedEnabled: Boolean(unattended.unattended_enabled),
+    unattendedEnabled: unattOn,
+    unattendedRemainingLabel: unattOn
+      ? formatRemainingSeconds(remUnatt)
+      : "—",
     stackLabel: String(stack.label ?? "0/4"),
+    aiState: String(root.ai_state ?? "HOLD").toUpperCase(),
     blockers: Array.isArray(root.blockers)
       ? root.blockers.map((x) => String(x))
       : [],

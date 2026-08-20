@@ -16,6 +16,7 @@ import {
   List,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from "antd";
 import { useState } from "react";
@@ -128,9 +129,15 @@ function StackOutcomeAlert({
 export function Upbit24x7OperatorControls({
   ubaId,
   strategyId,
+  showUnattendedActions = false,
+  onUnattendedEnable,
 }: {
   ubaId: number;
   strategyId: number | null;
+  /** Drawer canonical 패널에서 24H 시작/중지 노출 */
+  showUnattendedActions?: boolean;
+  /** 24H Enable Modal은 부모가 소유 (강한 승인 UX) */
+  onUnattendedEnable?: () => void;
 }) {
   const { message: messageApi, modal } = App.useApp();
   const queryClient = useQueryClient();
@@ -163,12 +170,48 @@ export function Upbit24x7OperatorControls({
         queryKey: ["admin", "uba-ops-status", ubaId],
       }),
       queryClient.invalidateQueries({
+        queryKey: ["admin", "uba-unattended", ubaId],
+      }),
+      queryClient.invalidateQueries({
         queryKey: ["admin", "uba-ops"],
       }),
     ]);
   };
 
   const runtimeReady = strategyId != null && strategyId > 0;
+
+  const unattendedStartBlocked = Boolean(
+    snap?.blockers.some((b) =>
+      ["KILL_SWITCH_ACTIVE", "LIVE_OFF", "ARM_OFF", "ACTIVATION_INACTIVE"].includes(
+        b,
+      ),
+    ),
+  );
+  const unattendedStartReason = unattendedStartBlocked
+    ? `${(snap?.blockers ?? [])
+        .filter((b) =>
+          [
+            "KILL_SWITCH_ACTIVE",
+            "LIVE_OFF",
+            "ARM_OFF",
+            "ACTIVATION_INACTIVE",
+          ].includes(b),
+        )
+        .join(", ")} — 해소 후 시작 가능`
+    : null;
+
+  const unattendedDisable = useMutation({
+    mutationFn: () =>
+      adminApi.disableAdminUbaUnattended(ubaId, {
+        confirmation_text: "DISABLE 24H UNATTENDED",
+        reason: "admin_ui_disable",
+      }),
+    onSuccess: async () => {
+      messageApi.success("24H Unattended disabled");
+      await invalidate();
+    },
+    onError: (err) => messageApi.error(toApiError(err).message),
+  });
 
   const runtimeStart = useMutation({
     mutationFn: () =>
@@ -335,6 +378,86 @@ export function Upbit24x7OperatorControls({
         자동매매 운영
       </Typography.Title>
 
+      <Descriptions size="small" column={1} bordered>
+        <Descriptions.Item label="AUTO TRADING">
+          {snap ? autoTradingTag(snap.autoTradingState) : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="24H">
+          {snap ? (
+            <Space size={4}>
+              {onOffTag(snap.unattendedEnabled)}
+              {snap.unattendedEnabled ? (
+                <Typography.Text type="secondary">
+                  · {snap.unattendedRemainingLabel}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ) : (
+            "—"
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label="LIVE">
+          {snap ? onOffTag(snap.live === "ON") : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="ARM">
+          {snap ? (
+            <Space size={4}>
+              {onOffTag(snap.arm === "ON")}
+              {snap.arm === "ON" ? (
+                <Typography.Text type="secondary">
+                  · {snap.armRemainingLabel}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ) : (
+            "—"
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label="Activation">
+          {snap ? (
+            <Space size={4}>
+              <Tag color={snap.activation === "ACTIVE" ? "green" : "default"}>
+                {snap.activation}
+              </Tag>
+              {snap.activation === "ACTIVE" ? (
+                <Typography.Text type="secondary">
+                  · {snap.activationRemainingLabel}
+                </Typography.Text>
+              ) : null}
+            </Space>
+          ) : (
+            "—"
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label="STACK">
+          {snap ? (
+            <Tag
+              color={
+                snap.stackLabel.startsWith("4/")
+                  ? "green"
+                  : snap.stackLabel.startsWith("0/")
+                    ? "default"
+                    : "processing"
+              }
+            >
+              {snap.stackLabel}
+            </Tag>
+          ) : (
+            "—"
+          )}
+        </Descriptions.Item>
+        <Descriptions.Item label="AI">
+          {snap ? <Tag>{snap.aiState}</Tag> : "—"}
+        </Descriptions.Item>
+        <Descriptions.Item label="Blocker">
+          {snap?.primaryBlocker ? (
+            <Tag color="red">{snap.primaryBlocker}</Tag>
+          ) : (
+            <Tag>NONE</Tag>
+          )}
+        </Descriptions.Item>
+      </Descriptions>
+
       <Space wrap>
         <Button
           type="primary"
@@ -372,58 +495,36 @@ export function Upbit24x7OperatorControls({
         >
           운영 스택 중지
         </Button>
-      </Space>
-
-      <Descriptions
-        size="small"
-        column={1}
-        bordered
-      >
-        <Descriptions.Item label="AUTO TRADING">
-          {snap ? autoTradingTag(snap.autoTradingState) : "—"}
-        </Descriptions.Item>
-        <Descriptions.Item label="24H">
-          {snap
-            ? onOffTag(snap.unattendedEnabled)
-            : "—"}
-        </Descriptions.Item>
-        <Descriptions.Item label="LIVE">
-          {snap ? onOffTag(snap.live === "ON") : "—"}
-        </Descriptions.Item>
-        <Descriptions.Item label="ARM">
-          {snap ? onOffTag(snap.arm === "ON") : "—"}
-        </Descriptions.Item>
-        <Descriptions.Item label="STACK">
-          {snap ? (
-            <Tag
-              color={
-                snap.stackLabel.startsWith("4/")
-                  ? "green"
-                  : snap.stackLabel.startsWith("0/")
-                    ? "default"
-                    : "processing"
+        {showUnattendedActions ? (
+          snap?.unattendedEnabled ? (
+            <Button
+              danger
+              loading={unattendedDisable.isPending}
+              onClick={() =>
+                confirmThen(
+                  "24시간 무인운영 중지",
+                  "Unattended lease를 해제합니다. LIVE/ARM/스택은 유지됩니다.",
+                  "중지",
+                  true,
+                  () => unattendedDisable.mutate(),
+                )
               }
             >
-              {snap.stackLabel}
-            </Tag>
+              24시간 무인운영 중지
+            </Button>
           ) : (
-            "—"
-          )}
-        </Descriptions.Item>
-      </Descriptions>
-
-      {snap?.primaryBlocker ? (
-        <Alert
-          type="warning"
-          showIcon
-          title={`Blocker: ${snap.primaryBlocker}`}
-          description={
-            snap.blockers.length > 1
-              ? snap.blockers.slice(0, 6).join(" · ")
-              : undefined
-          }
-        />
-      ) : null}
+            <Tooltip title={unattendedStartReason ?? undefined}>
+              <Button
+                type="primary"
+                disabled={unattendedStartBlocked || !onUnattendedEnable}
+                onClick={() => onUnattendedEnable?.()}
+              >
+                24시간 무인운영 시작
+              </Button>
+            </Tooltip>
+          )
+        ) : null}
+      </Space>
 
       {stackOutcome ? (
         <StackOutcomeAlert kind={stackKind} outcome={stackOutcome} />
@@ -431,6 +532,7 @@ export function Upbit24x7OperatorControls({
 
       <Collapse
         size="small"
+        defaultActiveKey={[]}
         items={[
           {
             key: "advanced",
