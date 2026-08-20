@@ -264,6 +264,16 @@ class Settings(BaseSettings):
     upbit_scanner_stablecoin_base_assets: str = (
         "USDT,USDC,USD1,DAI,BUSD,TUSD,USDP,FDUSD,USDE,USDS,USDD"
     )
+    # FULL_MARKET Dynamic LIVE — 기본 OFF, FIXED_SYMBOL 보호
+    upbit_full_market_min_score: float = 0.0
+    upbit_full_market_min_liquidity_krw: float = 0.0
+    upbit_full_market_min_confidence: float = 0.0
+    upbit_full_market_max_candidate_age_seconds: float = 1800.0
+    upbit_full_market_entry_cooldown_seconds: float = 300.0
+    upbit_full_market_ai_live_gate_mode: str = "ENFORCE"
+    upbit_full_market_allow_reduce_as_entry: bool = True
+    upbit_full_market_excluded_symbols: str = ""
+    upbit_full_market_consume_after_scanner: bool = True
     # Paper Shadow v1 — 실주문 없이 가상 성과만 (Scanner enabled와 독립)
     upbit_scanner_shadow_enabled: bool = True
     upbit_scanner_shadow_assumed_amount_krw: float = 5000.0

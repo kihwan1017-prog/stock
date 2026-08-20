@@ -266,6 +266,41 @@ class UpbitOpportunityScannerScheduler:
                         self._last_success_at = datetime.now(timezone.utc)
                         self._success_count += 1
                         self._last_error = None
+                        # LIVE consume layer (FULL_MARKET만). Scanner 주문 없음.
+                        try:
+                            from stock_platform.common.settings import (
+                                get_settings as _gs,
+                            )
+
+                            if bool(
+                                getattr(
+                                    _gs(),
+                                    "upbit_full_market_consume_after_scanner",
+                                    True,
+                                )
+                            ):
+                                from stock_platform.operation.upbit_full_market.consume import (
+                                    consume_latest_scanner_for_full_market_accounts,
+                                )
+
+                                consume_out = (
+                                    consume_latest_scanner_for_full_market_accounts(
+                                        session,
+                                        scanner_result=result,
+                                        dry_run=False,
+                                    )
+                                )
+                                result["full_market_consume"] = consume_out
+                                session.commit()
+                        except Exception as consume_exc:  # noqa: BLE001
+                            logger.warning(
+                                "upbit_full_market_consume_hook_failed",
+                                error=type(consume_exc).__name__,
+                            )
+                            try:
+                                session.rollback()
+                            except Exception:  # noqa: BLE001
+                                pass
                     else:
                         self._last_failure_at = datetime.now(timezone.utc)
                         self._failure_count += 1
