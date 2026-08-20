@@ -1470,10 +1470,7 @@ export function AdminAccountLiveControlPanel() {
                       startDisabledReason={startReason}
                       loading={detailUnattendedQuery.isFetching}
                       onStart={() => {
-                        unattendedEnableForm.setFieldsValue({
-                          approval_phrase: "",
-                          reason: "admin_ui_24h_unattended",
-                        });
+                        // destroyOnHidden — Form 연결 전 setFieldsValue 금지
                         setUnattendedEnableOpen(true);
                       }}
                       onStop={() => {
@@ -1928,6 +1925,14 @@ export function AdminAccountLiveControlPanel() {
         okText="Enable 24H Unattended"
         cancelText="취소"
         destroyOnHidden
+        forceRender
+        afterOpenChange={(opened) => {
+          if (!opened) return;
+          unattendedEnableForm.setFieldsValue({
+            approval_phrase: "",
+            reason: "admin_ui_24h_unattended",
+          });
+        }}
         onCancel={() => {
           if (unattendedEnableBusy) return;
           setUnattendedEnableOpen(false);
@@ -1997,7 +2002,14 @@ export function AdminAccountLiveControlPanel() {
             </Space>
           }
         />
-        <Form form={unattendedEnableForm} layout="vertical">
+        <Form
+          form={unattendedEnableForm}
+          layout="vertical"
+          initialValues={{
+            approval_phrase: "",
+            reason: "admin_ui_24h_unattended",
+          }}
+        >
           <Form.Item
             name="approval_phrase"
             label="LIVE approval_phrase"
