@@ -181,7 +181,7 @@
 | P5-2 | PHASE 3 Archive 이동 계획 실행 | 사용자 승인 후 이동 | OPEN |
 | P5-3 | Deprecated `alembic/versions` 정리 | ARCHIVE 표기 | OPEN |
 | P5-4 | Dual dashboard router 문서화/통합 | KEEP or CONSOLIDATE | OPEN |
-| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | **MENU_CONSOLIDATION_CLOSE=YES** (M3–M8 CLOSED · Admin 11/55 · User 12/29) | **DONE** |
+| P5-5 | Admin/User 메뉴 IA (M3-A→M8) | **MENU_CONSOLIDATION_CLOSE=YES** (M3–M8 CLOSED · Admin 11/40 · User 12/29; 2026-08-21 전략·후보 21→5 Workspace) | **DONE** |
 
 ---
 

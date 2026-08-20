@@ -2,11 +2,12 @@
 
 **역할:** 구현 현황의 **유일한** Source of Truth.  
 **근거:** PHASE 1 감사(2026-07-31) + 실행 경로 소스. 플랫폼 기타 수치는 추정치다. **UPBIT UBA1380은 COMPLETED**이며 추정치로 되돌리지 않는다.  
-**최종 갱신:** 2026-08-20 (UPBIT FULL-MARKET DYNAMIC LIVE READY TO ENABLE)  
-**Branch / Commit baseline:** `release/v1.1.0` @ `3bbf0cd` + residual WIP  
+**최종 갱신:** 2026-08-21 (STRATEGY_CANDIDATE Admin UX Consolidation)  
+**Branch / Commit baseline:** `release/v1.1.0` + residual WIP  
 **워킹트리:** Autotrading/UI residual 미커밋 가능 · parallel precheck audit docs 미커밋
 
-**Ops (2026-08-20):** TRACK U `UPBIT_FULL_MARKET_AUTOTRADING_READY_TO_ENABLE`. Scanner SHADOW + LIVE Selection layer · assignment FIXED_SYMBOL default · UBA1380 FIXED KRW-XRP · FULL_MARKET Enable 0 · REAL 주문 Δ0 · UBA1381 untouched. Next=`ENABLE UBA1380 FULL MARKET AUTO MODE FROM ADMIN UI`.
+**Ops (2026-08-21):** SHARED `STRATEGY_CANDIDATE_UX_CONSOLIDATION` — Admin 전략·후보 사이드바 21→5 Workspace (Tab+matchPaths). API/DB/Runtime Δ0. UBA1380 PORTFOLIO ENTRY_PENDING KRW-NEAR READ-ONLY unchanged. Doc: `docs/frontend/STRATEGY_CANDIDATE_UX_CONSOLIDATION.md`.
+**Ops (2026-08-20 SUPERSEDED):** TRACK U `UPBIT_FULL_MARKET_AUTOTRADING_READY_TO_ENABLE`. Scanner SHADOW + LIVE Selection layer · assignment FIXED_SYMBOL default · UBA1380 FIXED KRW-XRP · FULL_MARKET Enable 0 · REAL 주문 Δ0 · UBA1381 untouched. Next=`ENABLE UBA1380 FULL MARKET AUTO MODE FROM ADMIN UI`.
 **Ops (2026-08-20 SUPERSEDED):** TRACK K `KIWOOM_UBA1381_LIVE_DEPLOYMENT_BLOCKED_LIFECYCLE`. 17579 STEP12 NOT_PROMOTED · ACTIVE LIVE deployment 0. Deployment/LIVE/ARM/Runtime 0. 주문 Δ0. Next=`KIWOOM UBA1381 STRATEGY PROMOTION DECISION PACKAGE`. UPBIT cooldown 별도 STEP.
 **Ops (2026-08-20 SUPERSEDED):** TRACK K `KIWOOM_UBA1381_RUNTIME_START_FAILED`. LIVE ON+RE-ARM 성공. ensure-scope 500=Active strategy deployment not found. Runner/Scheduler RUN 0. 주문 Δ0. Next=`KIWOOM UBA1381 LIVE STRATEGY DEPLOYMENT`. UPBIT cooldown 별도 STEP.
 **Ops (2026-08-20 SUPERSEDED):** TRACK K `KIWOOM_UBA1381_REARMED_READY_FOR_RUNTIME_START`. ARM ON POST 1 · TTL 300s (~11:28:01 KST). Runtime/Runner/Scheduler RUN 0. 주문 Δ0. Next=`KIWOOM UBA1381 RUNTIME START`. UPBIT cooldown 별도 STEP.

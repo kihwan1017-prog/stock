@@ -57,6 +57,11 @@ export interface AppMenuItem<TPath extends string = AppRoute> {
    * admin = 관리자 전용 메뉴 (현재 User 메뉴에서는 미사용)
    */
   minAccess?: "user" | "admin";
+  /**
+   * 사이드바 선택·권한 매칭용 추가 경로 (Workspace 통합 시).
+   * leaf path 외 하위 화면 bookmark를 부모 Workspace에 귀속시킨다.
+   */
+  matchPaths?: readonly TPath[];
   children?: AppMenuItem<TPath>[];
 }
 
@@ -173,6 +178,8 @@ export const adminMenuItems: AdminMenuItem[] = [
     ],
   },
   {
+    // STRATEGY_CANDIDATE_MENU UX: 세부 화면은 Workspace Tab으로 이동.
+    // 기존 route/page/API는 유지 (사이드바 leaf만 5개로 축소).
     key: "strategy-ai",
     label: "전략·후보",
     icon: <ExperimentOutlined />,
@@ -185,166 +192,69 @@ export const adminMenuItems: AdminMenuItem[] = [
         icon: <ExperimentOutlined />,
         enabled: true,
         permission: "menu:strategies",
+        matchPaths: [
+          adminRoutes.strategies,
+          adminRoutes.strategyRequests,
+          adminRoutes.strategyDrafts,
+        ],
       },
       {
-        // M3-B: HIDDEN ACTIVE 승격. 신규 menu:* 키 없음 — Admin layout role만 사용.
-        key: "strategy-requests",
-        label: "전략 요청",
-        path: adminRoutes.strategyRequests,
-        icon: <FileSearchOutlined />,
-        enabled: true,
-      },
-      {
-        // M3-B: HIDDEN ACTIVE 승격. 신규 menu:* 키 없음 — Admin layout role만 사용.
-        key: "strategy-drafts",
-        label: "전략 초안",
-        path: adminRoutes.strategyDrafts,
-        icon: <FileTextOutlined />,
-        enabled: true,
-      },
-      {
-        // M3-B: HIDDEN ACTIVE 승격. 신규 menu:* 키 없음 — Admin layout role만 사용.
-        key: "portfolio-validations",
-        label: "포트폴리오 검증",
-        path: adminRoutes.portfolioValidations,
-        icon: <SafetyCertificateOutlined />,
-        enabled: true,
-      },
-      {
-        key: "backtests",
-        label: "백테스트",
-        path: adminRoutes.backtests,
-        icon: <BarChartOutlined />,
-        enabled: true,
-        permission: "menu:backtests",
-      },
-      {
-        key: "ai",
-        label: "후보·LLM 관리",
-        path: adminRoutes.ai,
-        icon: <RobotOutlined />,
+        key: "strategy-candidates",
+        label: "후보 관리",
+        path: adminRoutes.aiCandidateLifecycle,
+        icon: <BulbOutlined />,
         enabled: true,
         permission: "menu:ai",
+        matchPaths: [
+          adminRoutes.ai,
+          adminRoutes.aiCandidateLifecycle,
+          adminRoutes.aiCandidatePromotions,
+          adminRoutes.aiCandidateAssessments,
+          adminRoutes.aiCandidateConsensuses,
+          adminRoutes.aiCandidateRecommendationQueues,
+        ],
       },
       {
-        key: "ai-providers",
-        label: "Provider 관리",
+        key: "strategy-ai-config",
+        label: "AI 전략 설정",
         path: adminRoutes.aiProviders,
         icon: <RobotOutlined />,
         enabled: true,
         permission: "menu:ai",
+        matchPaths: [
+          adminRoutes.aiProviders,
+          adminRoutes.aiPrompts,
+          adminRoutes.aiSchemas,
+          adminRoutes.aiPolicies,
+          adminRoutes.aiExecutions,
+        ],
       },
       {
-        key: "ai-prompts",
-        label: "Prompt 관리",
-        path: adminRoutes.aiPrompts,
-        icon: <RobotOutlined />,
+        key: "strategy-validation",
+        label: "전략 검증",
+        path: adminRoutes.backtests,
+        icon: <BarChartOutlined />,
         enabled: true,
-        permission: "menu:ai",
+        permission: "menu:backtests",
+        matchPaths: [
+          adminRoutes.backtests,
+          adminRoutes.portfolioValidations,
+          adminRoutes.aiEvaluationDatasets,
+          adminRoutes.aiBenchmarks,
+        ],
       },
       {
-        key: "ai-schemas",
-        label: "Output Schema 관리",
-        path: adminRoutes.aiSchemas,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-policies",
-        label: "Policy 관리",
-        path: adminRoutes.aiPolicies,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-executions",
-        label: "Execution 관리",
-        path: adminRoutes.aiExecutions,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-document-analyses",
-        label: "문서 분석",
-        path: adminRoutes.aiDocumentAnalyses,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-market-analyses",
-        label: "시장·차트 분석",
-        path: adminRoutes.aiMarketAnalyses,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-reviews",
-        label: "Human Review",
+        key: "strategy-advanced",
+        label: "고급 관리",
         path: adminRoutes.aiReviews,
-        icon: <RobotOutlined />,
+        icon: <ToolOutlined />,
         enabled: true,
         permission: "menu:ai",
-      },
-      {
-        key: "ai-evaluation-datasets",
-        label: "Evaluation Dataset",
-        path: adminRoutes.aiEvaluationDatasets,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-benchmarks",
-        label: "Benchmark/Scorecard",
-        path: adminRoutes.aiBenchmarks,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-candidate-assessments",
-        label: "후보 평가 초안",
-        path: adminRoutes.aiCandidateAssessments,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-candidate-consensuses",
-        label: "Multi-AI 합의 초안",
-        path: adminRoutes.aiCandidateConsensuses,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-candidate-recommendation-queues",
-        label: "후보 추천 검토 큐",
-        path: adminRoutes.aiCandidateRecommendationQueues,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-candidate-promotions",
-        label: "Candidate Promotion Gateway",
-        path: adminRoutes.aiCandidatePromotions,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
-      },
-      {
-        key: "ai-candidate-lifecycle",
-        label: "Candidate Lifecycle",
-        path: adminRoutes.aiCandidateLifecycle,
-        icon: <RobotOutlined />,
-        enabled: true,
-        permission: "menu:ai",
+        matchPaths: [
+          adminRoutes.aiReviews,
+          adminRoutes.aiDocumentAnalyses,
+          adminRoutes.aiMarketAnalyses,
+        ],
       },
     ],
   },
@@ -700,15 +610,31 @@ export function permissionForPath(
   items: AppMenuItem[] = adminMenuItems,
 ): string | undefined {
   const flat = flattenMenuItems(items);
-  const exact = flat.find((item) => item.path === pathname);
-  if (exact?.permission) {
-    return exact.permission;
+
+  const pathScore = (path: string): number | null => {
+    if (pathname === path) return path.length;
+    // /admin/ai 단독 leaf만 정확 매칭 (providers 등과 구분)
+    if (path === "/admin/ai") return null;
+    if (pathname.startsWith(`${path}/`)) return path.length;
+    return null;
+  };
+
+  let bestPerm: string | undefined;
+  let bestLen = -1;
+  for (const item of flat) {
+    const candidates = [
+      ...(item.path ? [item.path] : []),
+      ...((item.matchPaths as readonly string[] | undefined) ?? []),
+    ];
+    for (const path of candidates) {
+      const score = pathScore(path);
+      if (score != null && score > bestLen && item.permission) {
+        bestLen = score;
+        bestPerm = item.permission;
+      }
+    }
   }
-  // 하위 경로 매칭 (가장 긴 path 우선)
-  const matched = flat
-    .filter((item) => item.path && pathname.startsWith(item.path))
-    .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0));
-  return matched[0]?.permission;
+  return bestPerm;
 }
 
 /**

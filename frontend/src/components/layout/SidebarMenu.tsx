@@ -34,6 +34,40 @@ function toAntdItems(items: AppMenuItem[]): MenuProps["items"] {
     });
 }
 
+/** leaf path 또는 Workspace matchPaths로 현재 경로 매칭 */
+function menuItemMatchesPath(item: AppMenuItem, pathname: string): boolean {
+  const paths = [
+    ...(item.path ? [item.path] : []),
+    ...((item.matchPaths as readonly string[] | undefined) ?? []),
+  ];
+  for (const path of paths) {
+    if (pathname === path) return true;
+    // /admin/ai 는 하위 /admin/ai/* 를 먹지 않음
+    if (path === "/admin/ai") continue;
+    if (pathname.startsWith(`${path}/`)) return true;
+  }
+  return false;
+}
+
+function matchPathLength(item: AppMenuItem, pathname: string): number {
+  const paths = [
+    ...(item.path ? [item.path] : []),
+    ...((item.matchPaths as readonly string[] | undefined) ?? []),
+  ];
+  let max = 0;
+  for (const path of paths) {
+    if (pathname === path) {
+      max = Math.max(max, path.length);
+      continue;
+    }
+    if (path === "/admin/ai") continue;
+    if (pathname.startsWith(`${path}/`)) {
+      max = Math.max(max, path.length);
+    }
+  }
+  return max;
+}
+
 export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -43,18 +77,15 @@ export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
   const flat = useMemo(() => flattenMenuItems(items), [items]);
 
   const selectedKeys = useMemo(() => {
-    const matches = flat.filter(
-      (item) =>
-        item.path &&
-        (pathname === item.path || pathname.startsWith(`${item.path}/`)),
-    );
+    const matches = flat.filter((item) => menuItemMatchesPath(item, pathname));
     if (!matches.length) {
       return [];
     }
-    // 가장 긴 path 일치 우선 (중첩 경로), 동일 path면 모두 선택
-    const maxLen = Math.max(...matches.map((item) => item.path!.length));
+    const maxLen = Math.max(
+      ...matches.map((item) => matchPathLength(item, pathname)),
+    );
     return matches
-      .filter((item) => item.path!.length === maxLen)
+      .filter((item) => matchPathLength(item, pathname) === maxLen)
       .map((item) => item.key);
   }, [flat, pathname]);
 
@@ -62,10 +93,8 @@ export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
     const keys: string[] = [];
     for (const group of items) {
       if (!group.children?.length) continue;
-      const hit = group.children.some(
-        (child) =>
-          child.path &&
-          (pathname === child.path || pathname.startsWith(`${child.path}/`)),
+      const hit = group.children.some((child) =>
+        menuItemMatchesPath(child, pathname),
       );
       if (hit) keys.push(group.key);
     }

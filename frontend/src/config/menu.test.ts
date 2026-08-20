@@ -81,9 +81,10 @@ describe("menu link validity (STEP7)", () => {
     }
   });
 
-  it("M4-B 사이드바 카운트: Admin 11/55, User 12/29", () => {
+  it("M4-B 사이드바 카운트: Admin 11/40, User 12/29", () => {
     expect(adminMenuItems).toHaveLength(11);
-    expect(flattenMenuItems(adminMenuItems)).toHaveLength(55);
+    // 전략·후보 Workspace 통합(21→5 leaf) 후 Admin leaf=40
+    expect(flattenMenuItems(adminMenuItems)).toHaveLength(40);
     expect(userMenuItems).toHaveLength(12);
     expect(flattenMenuItems(userMenuItems)).toHaveLength(29);
   });
@@ -101,21 +102,28 @@ describe("menu link validity (STEP7)", () => {
     expect(monitoringLeaves[0]?.key).toBe("system-monitoring");
   });
 
-  it("M3-B HIDDEN ACTIVE 전략 workflow가 사이드바에 1회씩 노출된다", () => {
+  it("M3-B 전략 workflow route는 유지되고 Admin 사이드바는 Workspace 5개로 통합된다", () => {
     const adminFlat = flattenMenuItems(adminMenuItems);
     const userFlat = flattenMenuItems(userMenuItems);
 
-    const adminRequest = adminFlat.find((item) => item.path === adminRoutes.strategyRequests);
-    const adminDraft = adminFlat.find((item) => item.path === adminRoutes.strategyDrafts);
-    const adminValidation = adminFlat.find(
-      (item) => item.path === adminRoutes.portfolioValidations,
+    // Admin: 개별 leaf 제거 — Workspace matchPaths로 커버
+    expect(adminFlat.find((item) => item.path === adminRoutes.strategyRequests)).toBeUndefined();
+    expect(adminFlat.find((item) => item.path === adminRoutes.strategyDrafts)).toBeUndefined();
+    expect(
+      adminFlat.find((item) => item.path === adminRoutes.portfolioValidations),
+    ).toBeUndefined();
+
+    const strategiesWs = adminFlat.find((item) => item.key === "strategies");
+    expect(strategiesWs?.matchPaths).toEqual(
+      expect.arrayContaining([
+        adminRoutes.strategies,
+        adminRoutes.strategyRequests,
+        adminRoutes.strategyDrafts,
+      ]),
     );
+
     const userRequest = userFlat.find((item) => item.path === userRoutes.strategyRequests);
     const userDraft = userFlat.find((item) => item.path === userRoutes.strategyDrafts);
-
-    expect(adminRequest?.key).toBe("strategy-requests");
-    expect(adminDraft?.key).toBe("strategy-drafts");
-    expect(adminValidation?.key).toBe("portfolio-validations");
     expect(userRequest?.key).toBe("strategy-requests");
     expect(userDraft?.key).toBe("strategy-drafts");
 
@@ -125,10 +133,6 @@ describe("menu link validity (STEP7)", () => {
     expect(userRoutes.strategyRequests).toBe("/user/strategy-requests");
     expect(userRoutes.strategyDrafts).toBe("/user/strategy-drafts");
 
-    // 신규 permission 키를 만들지 않는다. 기존 직접 URL과 동일하게 role gate만 사용.
-    expect(adminRequest?.permission).toBeUndefined();
-    expect(adminDraft?.permission).toBeUndefined();
-    expect(adminValidation?.permission).toBeUndefined();
     expect(userRequest?.minAccess).toBe("user");
     expect(userDraft?.minAccess).toBe("user");
 
@@ -138,13 +142,15 @@ describe("menu link validity (STEP7)", () => {
     );
 
     const adminStrategyGroup = adminMenuItems.find((item) => item.key === "strategy-ai");
-    expect(adminStrategyGroup?.children?.slice(0, 5).map((item) => item.key)).toEqual([
+    expect(adminStrategyGroup?.children?.map((item) => item.key)).toEqual([
       "strategies",
-      "strategy-requests",
-      "strategy-drafts",
-      "portfolio-validations",
-      "backtests",
+      "strategy-candidates",
+      "strategy-ai-config",
+      "strategy-validation",
+      "strategy-advanced",
     ]);
+    expect(adminStrategyGroup?.children).toHaveLength(5);
+
     const userStrategyGroup = userMenuItems.find((item) => item.key === "my-strategies");
     expect(userStrategyGroup?.children?.slice(0, 3).map((item) => item.key)).toEqual([
       "strategies",
@@ -157,6 +163,11 @@ describe("menu link validity (STEP7)", () => {
     expect(getRouteTitle(adminRoutes.portfolioValidations)).toBe("포트폴리오 검증");
     expect(getRouteTitle(userRoutes.strategyRequests)).toBe("전략 요청");
     expect(getRouteTitle(userRoutes.strategyDrafts)).toBe("전략 초안");
+
+    // page.tsx backward compatibility
+    expect(existsSync(pageFileForRoute(adminRoutes.strategyRequests)!)).toBe(true);
+    expect(existsSync(pageFileForRoute(adminRoutes.strategyDrafts)!)).toBe(true);
+    expect(existsSync(pageFileForRoute(adminRoutes.portfolioValidations)!)).toBe(true);
   });
 
   it("M4-A 운영 canonical route와 메뉴 label이 유지된다", () => {
@@ -197,11 +208,13 @@ describe("menu link validity (STEP7)", () => {
     expect(autotrading?.children?.map((item) => item.key)).toEqual([
       "operations-dashboard",
       "trading",
+      "upbit-autotrading",
       "operations-preflight",
     ]);
     expect(autotrading?.children?.map((item) => item.path)).toEqual([
       "/admin/operations-dashboard",
       "/admin/trading",
+      "/admin/upbit/autotrading",
       "/admin/operations/preflight",
     ]);
 
@@ -303,9 +316,16 @@ describe("menu link validity (STEP7)", () => {
     expect(userFlat.find((item) => item.path === userRoutes.strategyDrafts)?.key).toBe(
       "strategy-drafts",
     );
+    // Admin strategy-requests는 Workspace Tab으로 이동 — leaf 없음, route/page 유지
     expect(
-      flattenMenuItems(adminMenuItems).find((item) => item.path === adminRoutes.strategyRequests)
-        ?.key,
-    ).toBe("strategy-requests");
+      flattenMenuItems(adminMenuItems).find(
+        (item) => item.path === adminRoutes.strategyRequests,
+      ),
+    ).toBeUndefined();
+    expect(
+      flattenMenuItems(adminMenuItems)
+        .find((item) => item.key === "strategies")
+        ?.matchPaths?.includes(adminRoutes.strategyRequests),
+    ).toBe(true);
   });
 });

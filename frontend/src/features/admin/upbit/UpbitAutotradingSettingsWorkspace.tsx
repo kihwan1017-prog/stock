@@ -484,7 +484,7 @@ export function UpbitAutotradingSettingsWorkspace({
                 24H {opsSnap?.unattendedEnabled ? "ON" : "OFF"} ·{" "}
                 {opsSnap?.stackLabel ?? "—"}
               </Descriptions.Item>
-              <Descriptions.Item label="AI GATE">
+              <Descriptions.Item label="AI GATE" span={2}>
                 {aiGate}
               </Descriptions.Item>
               <Descriptions.Item label="SCANNER" span={2}>
@@ -899,7 +899,15 @@ export function UpbitAutotradingSettingsWorkspace({
             <Table
               size="small"
               pagination={false}
-              rowKey={(_, idx) => String(idx)}
+              rowKey={(r) => {
+                const row = asObj(r);
+                return [
+                  String(row.symbol ?? "sym"),
+                  String(row.rank ?? ""),
+                  String(row.recommendation ?? ""),
+                  String(row.score ?? ""),
+                ].join("|");
+              }}
               dataSource={candidates.slice(0, 10) as Record<string, unknown>[]}
               locale={{ emptyText: "추천 없음" }}
               columns={[
@@ -1053,6 +1061,18 @@ export function UpbitAutotradingSettingsWorkspace({
         type="info"
         showIcon
         title="설정 워크스페이스 — PORTFOLIO 자동 Enable · REAL 주문 · 로드 시 risk mutate 없음"
+      />
+      <Alert
+        type="warning"
+        showIcon
+        title="역할 구분: 이 화면은 UBA별 LIVE Portfolio 운영 정책입니다"
+        description={
+          <>
+            Provider/Prompt/Policy 등 전역 전략·AI 시스템 설정은{" "}
+            <Link href={adminRoutes.aiProviders}>전략·후보 → AI 전략 설정</Link>
+            에서 관리합니다. 여기서는 계좌(UBA) LIVE 자동매매 정책만 다룹니다.
+          </>
+        }
       />
 
       <Row gutter={[12, 12]}>
