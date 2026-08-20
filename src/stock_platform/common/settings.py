@@ -19,6 +19,10 @@ _TRUTHY = frozenset({"1", "true", "yes", "on"})
 # 레거시 머신 고정 경로 — 호환용. 신규 배포는 STOCK_PLATFORM_ENV_FILE 권장
 _LEGACY_ENV_PATH = Path(r"E:\StockTrading\secrets\stock-platform.env")
 
+# LIVE Activation 최대 창(시간). ARM 세션 절대 상한은 이 값×3600초.
+# 3600초 하드캡으로 1시간마다 재ARM을 강제하지 않는다.
+LIVE_ACTIVATION_TTL_HOURS_MAX = 72
+
 
 def is_testing_runtime() -> bool:
     """pytest / 명시적 테스트 플래그 여부."""
@@ -133,9 +137,17 @@ class Settings(BaseSettings):
     kiwoom_app_key: str = Field(default="")
     kiwoom_secret_key: str = Field(default="")
     kiwoom_use_mock: bool = True
+    # 시세 WS 전용. None이면 KIWOOM_USE_MOCK 상속. 주문 host(UBA is_mock)와 분리.
+    kiwoom_market_data_use_mock: bool | None = Field(default=None)
     kiwoom_live_order_enabled: bool = False
     # STEP 8-5-21 — LIVE Activation 기본 만료(시간). 무기한 금지.
-    live_activation_ttl_hours: int = Field(default=4, ge=1, le=72)
+    live_activation_ttl_hours: int = Field(
+        default=4, ge=1, le=LIVE_ACTIVATION_TTL_HOURS_MAX
+    )
+    # ARM/Activation 만료 스캔 주기(초). 주문/Runtime 기동 아님.
+    live_session_expiry_scan_interval_seconds: float = Field(
+        default=15.0, ge=5.0, le=60.0
+    )
     # LIVE Dry Run / 소액 한도 (설정 없으면 Fail Closed는 Risk/Transition 경로)
     live_small_max_order_amount: float = Field(default=100_000.0, gt=0)
     live_small_max_daily_order_amount: float = Field(default=300_000.0, gt=0)
@@ -155,6 +167,10 @@ class Settings(BaseSettings):
     kiwoom_ws_url: str = Field(default="")
     kiwoom_ws_path: str = "/api/dostk/websocket"
     kiwoom_ws_execution_type: str = "00"
+    # 공식 국내주식 체결 실시간 type (주문체결 00과 혼용 금지)
+    kiwoom_ws_market_type: str = "0B"
+    # 백엔드 기동 시 REAL/MOCK 시세 WS 자동 시작 금지 (명시 probe/ops만)
+    kiwoom_market_realtime_auto_start: bool = False
     kiwoom_ws_reconnect_min_seconds: float = 1.0
     kiwoom_ws_reconnect_max_seconds: float = 30.0
     kiwoom_ws_ping_interval_seconds: float = 20.0
@@ -266,8 +282,8 @@ class Settings(BaseSettings):
     live_order_dry_run_enabled: bool = False
     # Upbit 24/7 Shadow 시세·Candidate Runtime (기본 OFF, 실주문 Flag와 분리)
     realtime_upbit_shadow_auto_start_enabled: bool = False
-    # KRX 장 종료 시 UPBIT feed/runner 유지 (기본 OFF — 운영 준비 후 ON)
-    realtime_upbit_24x7_keep_on_krx_close: bool = False
+    # KRX 장 종료 시 UPBIT feed/runner 유지 (24/7 — Scheduler PAUSE와 무관)
+    realtime_upbit_24x7_keep_on_krx_close: bool = True
     realtime_upbit_default_symbol: str = "KRW-BTC"
     # Kiwoom MOCK realtime loop (기본 OFF — Fail Closed, LIVE와 분리)
     realtime_kiwoom_mock_auto_start_enabled: bool = False
@@ -591,6 +607,8 @@ class Settings(BaseSettings):
     upbit_live_smoke_max_amount: float = 10000.0
     # Confirm 발급 시각 기준 one-shot Worker dispatch TTL (ARM TTL과 분리)
     smoke_one_shot_dispatch_ttl_seconds: int = Field(default=90, ge=30, le=300)
+    # Smoke 검증 중 autonomous EXIT submission 억제 TTL (초)
+    smoke_exit_isolation_ttl_seconds: int = Field(default=600, ge=30, le=3600)
     # STEP 8-9A — Broker 추적 (거래 Scheduler와 분리)
     upbit_live_track_enabled: bool = True
     upbit_live_track_poll_seconds: int = 2
@@ -623,6 +641,8 @@ class Settings(BaseSettings):
     position_exit_take_profit_ratio: float = 0.10
     position_exit_trailing_stop_ratio: float | None = 0.03
     position_exit_relative_loss_ratio: float | None = 0.08
+    # UPBIT LIVE 확장 — 기본 OFF (실 운영 START는 후속 controlled step)
+    position_exit_monitor_live_upbit_enabled: bool = False
 
     # 백업 디렉터리 (머신 고정 경로 제거 — env로 주입)
     backup_dir: str = Field(default="backups")
@@ -980,8 +1000,26 @@ class Settings(BaseSettings):
         return "wss://api.kiwoom.com:10000"
 
     @property
+    def kiwoom_market_data_is_mock(self) -> bool:
+        """시세 WS REAL/MOCK SoT. 주문 credential.is_mock과 독립."""
+
+        if self.kiwoom_market_data_use_mock is None:
+            return bool(self.kiwoom_use_mock)
+        return bool(self.kiwoom_market_data_use_mock)
+
+    @property
+    def kiwoom_market_ws_default_url(self) -> str:
+        if self.kiwoom_market_data_is_mock:
+            return "wss://mockapi.kiwoom.com:10000"
+        return "wss://api.kiwoom.com:10000"
+
+    @property
     def kiwoom_ws_url_resolved(self) -> str:
         return self.kiwoom_ws_url.strip() or self.kiwoom_ws_default_url
+
+    @property
+    def kiwoom_market_ws_url_resolved(self) -> str:
+        return self.kiwoom_ws_url.strip() or self.kiwoom_market_ws_default_url
 
     @property
     def kiwoom_order_ws_url_resolved(self) -> str:
@@ -1048,11 +1086,9 @@ class Settings(BaseSettings):
     def validate_startup(self) -> None:
         """서버 기동 시 필수 설정을 검증한다. import 시점에는 호출하지 말 것."""
 
-        if self.kiwoom_live_order_enabled and self.kiwoom_use_mock:
-            raise ValueError(
-                "KIWOOM_LIVE_ORDER_ENABLED cannot be true "
-                "when KIWOOM_USE_MOCK is true"
-            )
+        # Option D: KIWOOM_USE_MOCK 은 shared market/WS SoT.
+        # 실주문 eligibility 는 UBA credential / Activation / LIVE / ARM 게이트.
+        # 기동 시 DB/credential 조회를 하지 않으므로 LIVE+shared MOCK 조합은 허용.
         if self.upbit_live_order_enabled and self.upbit_use_mock:
             raise ValueError(
                 "UPBIT_LIVE_ORDER_ENABLED cannot be true "

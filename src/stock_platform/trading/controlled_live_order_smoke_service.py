@@ -1131,20 +1131,29 @@ class ControlledLiveOrderSmokeService:
         from stock_platform.trading.upbit_live_smoke_constants import (
             CONFIRMATION_TEXT,
         )
+        from stock_platform.position.smoke_exit_isolation import (
+            smoke_exit_isolation,
+        )
 
         try:
-            result = UpbitLiveSmokeService(self._session).execute(
+            with smoke_exit_isolation(
                 user_broker_account_id=int(uba_id),
-                market=str(market).upper(),
-                side=side_u,
-                amount=Decimal(str(amount)),
-                limit_price=Decimal(str(limit_price)),
-                actor=actor,
-                arm_token=arm_token,
-                execute_live=True,
-                confirmation_text=CONFIRMATION_TEXT,
-                skip_live_network=False,
-            )
+                symbol=str(market).upper(),
+                reason="CONTROLLED_LIVE_ORDER_SMOKE",
+                correlation_id=str(preview_id or "") or None,
+            ):
+                result = UpbitLiveSmokeService(self._session).execute(
+                    user_broker_account_id=int(uba_id),
+                    market=str(market).upper(),
+                    side=side_u,
+                    amount=Decimal(str(amount)),
+                    limit_price=Decimal(str(limit_price)),
+                    actor=actor,
+                    arm_token=arm_token,
+                    execute_live=True,
+                    confirmation_text=CONFIRMATION_TEXT,
+                    skip_live_network=False,
+                )
         except UpbitLiveSmokeError as exc:
             emit_live_safety_audit(
                 self._session,

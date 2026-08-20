@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+import re
+import traceback
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from stock_platform.common.settings import get_settings
@@ -32,6 +36,37 @@ from stock_platform.risk_engine.kill_switch_guard import (
 from stock_platform.risk_engine.order_guard import (
     DatabaseBackedRiskOrderGuard,
 )
+
+logger = logging.getLogger(__name__)
+
+# persist 구간 stage — 예외 시 failed_stage 로 반환
+PERSIST_CREATE_ORDER = "PERSIST_CREATE_ORDER"
+PERSIST_FLUSH_ORDER = "PERSIST_FLUSH_ORDER"
+PERSIST_STATUS_PENDING = "PERSIST_STATUS_PENDING"
+PERSIST_ENQUEUE_OUTBOX = "PERSIST_ENQUEUE_OUTBOX"
+PERSIST_COMMIT = "PERSIST_COMMIT"
+
+# 기술 실패 reason_code (비즈니스 _blocked 코드와 분리)
+REASON_ORDER_PERSIST_FAILED = "ORDER_PERSIST_FAILED"
+REASON_ORDER_OUTBOX_ENQUEUE_FAILED = "ORDER_OUTBOX_ENQUEUE_FAILED"
+REASON_ORDER_COMMIT_FAILED = "ORDER_COMMIT_FAILED"
+
+_STAGE_REASON_CODE: dict[str, str] = {
+    PERSIST_CREATE_ORDER: REASON_ORDER_PERSIST_FAILED,
+    PERSIST_FLUSH_ORDER: REASON_ORDER_PERSIST_FAILED,
+    PERSIST_STATUS_PENDING: REASON_ORDER_PERSIST_FAILED,
+    PERSIST_ENQUEUE_OUTBOX: REASON_ORDER_OUTBOX_ENQUEUE_FAILED,
+    PERSIST_COMMIT: REASON_ORDER_COMMIT_FAILED,
+}
+
+_SECRET_KV_RE = re.compile(
+    r"(?i)\b("
+    r"arm_token|app_key|appkey|secret_key|access_token|refresh_token|"
+    r"account_number|authorization|bearer|password|api_secret|api_key|"
+    r"oauth_token|token"
+    r")\b\s*[:=]\s*\S+"
+)
+_LONG_SECRET_RE = re.compile(r"(?i)\b(?:sk-|Bearer\s+)[A-Za-z0-9_\-.]{8,}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +124,38 @@ class OrderExecutionResult:
     quantity: Decimal | None
     price: Decimal | None
     position_plan: dict[str, Any] | None = None
+    # persist 기술 실패 전용 — 비즈니스 _blocked 는 비움
+    failed_stage: str | None = None
+    exception_class: str | None = None
+    sanitized_message: str | None = None
+
+
+def sanitize_persist_error_message(exc: BaseException) -> str:
+    """예외 메시지에서 시크릿·계좌 원문을 제거하고 길이를 제한한다."""
+
+    raw = str(exc or "")
+    text = _SECRET_KV_RE.sub(r"\1=<redacted>", raw)
+    text = _LONG_SECRET_RE.sub("[SECRET]", text)
+    text = " ".join(text.split())
+    return text[:200]
+
+
+def persist_error_application_frame(exc: BaseException) -> str | None:
+    """stack 전체가 아니라 stock_platform 최초 frame만."""
+
+    tb = exc.__traceback__
+    if tb is None:
+        return None
+    for frame in traceback.extract_tb(tb):
+        path = frame.filename.replace("\\", "/")
+        if "/stock_platform/" in path or path.endswith("execution_service.py"):
+            name = path.rsplit("/", 1)[-1]
+            return f"{name}:{frame.name}:{frame.lineno}"
+    return None
+
+
+def persist_reason_code_for_stage(stage: str) -> str:
+    return _STAGE_REASON_CODE.get(stage, REASON_ORDER_PERSIST_FAILED)
 
 
 class OrderExecutionService:
@@ -110,6 +177,28 @@ class OrderExecutionService:
         self,
         command: OrderExecutionCommand,
     ) -> OrderExecutionResult:
+        from stock_platform.risk_engine.exit_risk import (
+            exit_sell_transaction_fence,
+        )
+
+        side_u = (
+            command.side.value
+            if hasattr(command.side, "value")
+            else str(command.side or "")
+        )
+        with exit_sell_transaction_fence(
+            self._session,
+            user_broker_account_id=command.user_broker_account_id,
+            paper_account_id=command.account_id,
+            symbol=command.symbol,
+            side=side_u,
+        ):
+            return self._submit_inner(command)
+
+    def _submit_inner(
+        self,
+        command: OrderExecutionCommand,
+    ) -> OrderExecutionResult:
         environment = (command.environment or "PAPER").upper()
         # LIVE+UBA: 환경변수 단일 계좌를 사용자 계좌처럼 쓰지 않음
         account_number = command.account_number
@@ -124,6 +213,14 @@ class OrderExecutionService:
             )
         if environment == "LIVE" and command.user_broker_account_id is None:
             return self._blocked("UBA_REQUIRED")
+        if environment == "LIVE":
+            from stock_platform.trading.upbit_24x7_control import (
+                live_outbox_queue_block_reason,
+            )
+
+            worker_block = live_outbox_queue_block_reason()
+            if worker_block:
+                return self._blocked(worker_block)
         try:
             paper_account_id, uba_id = self._resolve_account_ownership(
                 account_id=command.account_id,
@@ -151,6 +248,34 @@ class OrderExecutionService:
                 "POSITION_SIZING_REJECTED",
                 message=str(exc),
             )
+
+        # skip_risk_checks여도 persist 전 outstanding SELL + UPBIT 최소노셔널 강제
+        from stock_platform.order.pre_persist_exit_gate import (
+            evaluate_pre_persist_exit_gate,
+        )
+
+        order_type_text = (
+            command.order_type.value
+            if hasattr(command.order_type, "value")
+            else str(command.order_type or "")
+        )
+        pre_persist_block = evaluate_pre_persist_exit_gate(
+            self._session,
+            side=command.side.value
+            if hasattr(command.side, "value")
+            else str(command.side or ""),
+            symbol=command.symbol,
+            exchange_code=command.exchange_code,
+            quantity=quantity,
+            price=price,
+            order_type=order_type_text,
+            broker_code=str(command.broker_code or ""),
+            environment=environment,
+            user_broker_account_id=uba_id,
+            paper_account_id=paper_account_id,
+        )
+        if pre_persist_block:
+            return self._blocked(pre_persist_block)
 
         if not command.skip_risk_checks:
             if environment == "LIVE":
@@ -197,6 +322,12 @@ class OrderExecutionService:
                     arm_token=command.arm_token,
                     reference_price=command.reference_price,
                     require_arm=True,
+                    # KIWOOM LIMIT tick 검증 — 주문 유형을 파이프라인에 전달
+                    order_type=(
+                        command.order_type.value
+                        if hasattr(command.order_type, "value")
+                        else str(command.order_type or "")
+                    ),
                 )
                 if not safety.allowed:
                     return self._blocked(safety.reason_code)
@@ -296,6 +427,7 @@ class OrderExecutionService:
                 user_id=command.user_id or command.owner_user_id,
                 user_broker_account_id=uba_id,
                 order_source=command.order_source,
+                # 서버가 보유·pending으로 EXIT 재분류 — 클라이언트 플래그 미신뢰
                 is_risk_reducing=command.is_risk_reducing,
                 environment=environment,
             )
@@ -569,102 +701,129 @@ class OrderExecutionService:
             )
 
         # 주문+Outbox를 한 트랜잭션에 묶어 orphan CREATED 방지
-        order = self._order_service.create(
-            CreateOrderCommand(
-                account_id=paper_account_id,
-                user_broker_account_id=uba_id,
-                broker_code=command.broker_code,
-                exchange_code=command.exchange_code,
-                symbol=command.symbol,
-                side=command.side,
-                order_type=command.order_type,
-                quantity=quantity,
-                price=price,
-                time_in_force=command.time_in_force,
-                strategy_code=command.strategy_code,
-                strategy_deployment_id=(
-                    command.strategy_deployment_id
-                ),
-                portfolio_id=command.portfolio_id,
-                position_id=command.position_id,
-                client_order_id=client_order_id,
-                metadata_payload=metadata,
-            ),
-            actor=command.actor,
-            commit=False,
-        )
-
-        # 자동매매 signal provenance — 기존 컬럼 재사용
-        signal_fp = (
-            metadata.get("source_signal_fingerprint")
-            or metadata.get("fingerprint")
-            or metadata.get("signal_id")
-        )
-        if signal_fp:
-            order.source_signal_fingerprint = str(signal_fp)[:64]
-        strategy_id_meta = metadata.get("strategy_id")
-        if strategy_id_meta is not None and getattr(
-            order, "strategy_id", None
-        ) is None:
+        persist_stage = PERSIST_CREATE_ORDER
+        try:
+            persist_stage = PERSIST_CREATE_ORDER
             try:
-                order.strategy_id = int(strategy_id_meta)
-            except (TypeError, ValueError):
+                order = self._order_service.create(
+                    CreateOrderCommand(
+                        account_id=paper_account_id,
+                        user_broker_account_id=uba_id,
+                        broker_code=command.broker_code,
+                        exchange_code=command.exchange_code,
+                        symbol=command.symbol,
+                        side=command.side,
+                        order_type=command.order_type,
+                        quantity=quantity,
+                        price=price,
+                        time_in_force=command.time_in_force,
+                        strategy_code=command.strategy_code,
+                        strategy_deployment_id=(
+                            command.strategy_deployment_id
+                        ),
+                        portfolio_id=command.portfolio_id,
+                        position_id=command.position_id,
+                        client_order_id=client_order_id,
+                        metadata_payload=metadata,
+                    ),
+                    actor=command.actor,
+                    commit=False,
+                )
+            except ValueError:
+                persist_stage = PERSIST_CREATE_ORDER
+                raise
+            except IntegrityError:
+                # create() 내부 flush 실패
+                persist_stage = PERSIST_FLUSH_ORDER
+                raise
+
+            persist_stage = PERSIST_FLUSH_ORDER
+            self._session.flush()
+
+            # 자동매매 signal provenance — 기존 컬럼 재사용
+            signal_fp = (
+                metadata.get("source_signal_fingerprint")
+                or metadata.get("fingerprint")
+                or metadata.get("signal_id")
+            )
+            if signal_fp:
+                order.source_signal_fingerprint = str(signal_fp)[:64]
+            strategy_id_meta = metadata.get("strategy_id")
+            if strategy_id_meta is not None and getattr(
+                order, "strategy_id", None
+            ) is None:
+                try:
+                    order.strategy_id = int(strategy_id_meta)
+                except (TypeError, ValueError):
+                    pass
+
+            persist_stage = PERSIST_STATUS_PENDING
+            order = self._order_repository.change_status(
+                entity=order,
+                new_status=OrderStatus.PENDING,
+                actor=command.actor,
+                reason_code="PIPELINE_QUEUED",
+                message="Queued via OrderExecutionService",
+                commit=False,
+            )
+
+            persist_stage = PERSIST_ENQUEUE_OUTBOX
+            outbox = self._outbox_repository.enqueue(
+                order_id=order.order_id,
+                event_type=OutboxEventType.SUBMIT_ORDER,
+                idempotency_key=idempotency_key,
+                payload_json={
+                    # Upbit identifier claim 등 Outbox dispatch에 필요
+                    "order_id": order.order_id,
+                    "client_order_id": order.client_order_id,
+                    "account_id": order.account_id,
+                    "user_broker_account_id": (
+                        order.user_broker_account_id
+                    ),
+                    "broker_code": order.broker_code,
+                    "environment": environment,
+                    "account_type": environment,
+                    "external_account_ref": (
+                        command.external_account_ref
+                    ),
+                    "owner_user_id": command.owner_user_id,
+                    "arm_token_present": bool(command.arm_token),
+                    # STEP 8-5-2 — 사용자 LIVE는 UBA Vault (env 공용 대체 금지)
+                    "uses_system_shared_credential": False,
+                    "credential_ref": (
+                        f"USER_BROKER_ACCOUNT:{order.user_broker_account_id}"
+                        if (
+                            order.user_broker_account_id is not None
+                            and environment == "LIVE"
+                        )
+                        else None
+                    ),
+                    "exchange_code": order.exchange_code,
+                    "symbol": order.symbol,
+                    "side": order.side_code,
+                    "order_type": order.order_type_code,
+                    "quantity": str(order.order_quantity),
+                    "price": (
+                        None
+                        if order.order_price is None
+                        else str(order.order_price)
+                    ),
+                    "time_in_force": order.time_in_force_code,
+                },
+            )
+            persist_stage = PERSIST_COMMIT
+            self._session.commit()
+            try:
+                self._session.refresh(order)
+            except Exception:  # noqa: BLE001
                 pass
-
-        order = self._order_repository.change_status(
-            entity=order,
-            new_status=OrderStatus.PENDING,
-            actor=command.actor,
-            reason_code="PIPELINE_QUEUED",
-            message="Queued via OrderExecutionService",
-            commit=False,
-        )
-
-        outbox = self._outbox_repository.enqueue(
-            order_id=order.order_id,
-            event_type=OutboxEventType.SUBMIT_ORDER,
-            idempotency_key=idempotency_key,
-            payload_json={
-                # Upbit identifier claim 등 Outbox dispatch에 필요
-                "order_id": order.order_id,
-                "client_order_id": order.client_order_id,
-                "account_id": order.account_id,
-                "user_broker_account_id": (
-                    order.user_broker_account_id
-                ),
-                "broker_code": order.broker_code,
-                "environment": environment,
-                "account_type": environment,
-                "external_account_ref": (
-                    command.external_account_ref
-                ),
-                "owner_user_id": command.owner_user_id,
-                "arm_token_present": bool(command.arm_token),
-                # STEP 8-5-2 — 사용자 LIVE는 UBA Vault (env 공용 대체 금지)
-                "uses_system_shared_credential": False,
-                "credential_ref": (
-                    f"USER_BROKER_ACCOUNT:{order.user_broker_account_id}"
-                    if (
-                        order.user_broker_account_id is not None
-                        and environment == "LIVE"
-                    )
-                    else None
-                ),
-                "exchange_code": order.exchange_code,
-                "symbol": order.symbol,
-                "side": order.side_code,
-                "order_type": order.order_type_code,
-                "quantity": str(order.order_quantity),
-                "price": (
-                    None
-                    if order.order_price is None
-                    else str(order.order_price)
-                ),
-                "time_in_force": order.time_in_force_code,
-            },
-        )
-        self._session.commit()
-        self._session.refresh(order)
+        except Exception as exc:  # noqa: BLE001 — persist 기술 실패는 반환으로 남긴다
+            return self._persist_failure(
+                stage=persist_stage,
+                exc=exc,
+                command=command,
+                client_order_id=client_order_id,
+            )
 
         if environment == "LIVE":
             try:
@@ -708,6 +867,35 @@ class OrderExecutionService:
                 )
                 self._session.commit()
             except Exception:  # noqa: BLE001
+                pass
+
+        # LIVE smoke 주문이면 exit monitor submission isolation 자동 acquire (TTL)
+        if environment == "LIVE" and uba_id is not None:
+            try:
+                from stock_platform.position.smoke_exit_isolation import (
+                    maybe_acquire_from_order_metadata,
+                )
+
+                lease = maybe_acquire_from_order_metadata(
+                    user_broker_account_id=int(uba_id),
+                    symbol=str(order.symbol),
+                    metadata=metadata,
+                    environment="LIVE",
+                )
+                if lease is not None:
+                    metadata["smoke_exit_isolation_lease_id"] = lease.lease_id
+                    metadata["smoke_exit_isolation_expires_at"] = (
+                        lease.expires_at.isoformat()
+                    )
+                    try:
+                        order.metadata_payload = dict(metadata)
+                        from sqlalchemy.orm.attributes import flag_modified
+
+                        flag_modified(order, "metadata_payload")
+                        self._session.flush()
+                    except Exception:  # noqa: BLE001
+                        pass
+            except Exception:  # noqa: BLE001 — isolation 실패가 주문을 롤백하지 않음
                 pass
 
         return OrderExecutionResult(
@@ -882,6 +1070,93 @@ class OrderExecutionService:
         if account_id is None or int(account_id) <= 0:
             raise ValueError("PAPER_ACCOUNT_REQUIRED")
         return int(account_id), None
+
+    def _persist_failure(
+        self,
+        *,
+        stage: str,
+        exc: BaseException,
+        command: OrderExecutionCommand,
+        client_order_id: str | None,
+    ) -> OrderExecutionResult:
+        """persist 예외 → rollback + 관측 가능한 technical block. 삼키지 않음."""
+
+        reason_code = persist_reason_code_for_stage(stage)
+        exception_class = type(exc).__name__
+        sanitized = sanitize_persist_error_message(exc)
+        frame = persist_error_application_frame(exc)
+
+        try:
+            self._session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+
+        logger.error(
+            "order_persist_failed reason_code=%s failed_stage=%s "
+            "exception_class=%s frame=%s client_order_id=%s "
+            "broker=%s symbol=%s uba_id=%s message=%s",
+            reason_code,
+            stage,
+            exception_class,
+            frame,
+            client_order_id,
+            command.broker_code,
+            command.symbol,
+            command.user_broker_account_id,
+            sanitized,
+        )
+
+        try:
+            from stock_platform.order.outbox_fencing import (
+                record_outbox_audit,
+            )
+
+            record_outbox_audit(
+                self._session,
+                event_type=reason_code,
+                detail={
+                    "reason_code": reason_code,
+                    "failed_stage": stage,
+                    "exception_class": exception_class,
+                    "sanitized_message": sanitized,
+                    "application_frame": frame,
+                    "client_order_id": client_order_id,
+                    "broker_code": command.broker_code,
+                    "exchange_code": command.exchange_code,
+                    "symbol": command.symbol,
+                    "user_broker_account_id": (
+                        command.user_broker_account_id
+                    ),
+                    "arm_token_present": bool(command.arm_token),
+                },
+                actor=command.actor or "ORDER_EXECUTION",
+            )
+            self._session.commit()
+        except Exception:  # noqa: BLE001
+            try:
+                self._session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+        return OrderExecutionResult(
+            allowed=False,
+            reason_code=reason_code,
+            order_id=None,
+            outbox_id=None,
+            status_code=None,
+            client_order_id=client_order_id,
+            quantity=None,
+            price=None,
+            failed_stage=stage,
+            exception_class=exception_class,
+            sanitized_message=sanitized,
+            position_plan={
+                "failed_stage": stage,
+                "exception_class": exception_class,
+                "sanitized_message": sanitized,
+                "application_frame": frame,
+            },
+        )
 
     @staticmethod
     def _blocked(

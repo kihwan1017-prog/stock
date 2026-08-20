@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from stock_platform.common.settings import LIVE_ACTIVATION_TTL_HOURS_MAX
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -68,7 +68,11 @@ class AccountRiskLimitsRequest(BaseModel):
 class ArmRequest(BaseModel):
     """ARM만 ON. LIVE·Scheduler·Runtime은 변경하지 않는다."""
 
-    ttl_seconds: int | None = Field(default=None, ge=1, le=3600)
+    ttl_seconds: int | None = Field(
+        default=None,
+        ge=1,
+        le=LIVE_ACTIVATION_TTL_HOURS_MAX * 3600,
+    )
     reason: str | None = Field(default=None, max_length=2000)
     correlation_id: str | None = Field(default=None, max_length=128)
 
@@ -79,6 +83,47 @@ class DisarmRequest(BaseModel):
     turn_live_off: bool = False
     reason: str = Field(min_length=1, max_length=2000)
     correlation_id: str | None = Field(default=None, max_length=128)
+
+
+def _record_runtime_rejection(
+    *,
+    audit: AuditLogService,
+    session: Session,
+    http_request: Request,
+    event_type: str,
+    actor: str,
+    uba_id: int,
+    code: str,
+    message: str,
+    reason: str | None,
+    correlation_id: str | None,
+    action: str,
+) -> None:
+    """게이트 거부도 Audit에 남긴다 (민감정보 없음)."""
+    try:
+        audit.record(
+            event_type=event_type,
+            actor=actor,
+            request_id=getattr(http_request.state, "request_id", None),
+            detail={
+                "result": "REJECTED",
+                "failure_reason": message,
+                "code": code,
+                "action": action,
+                "user_broker_account_id": int(uba_id),
+                "admin_user_id": actor,
+                "reason": reason,
+                "correlation_id": correlation_id,
+                "client_ip": getattr(http_request.client, "host", None)
+                if http_request.client
+                else None,
+                "user_agent": http_request.headers.get("user-agent"),
+                "actor_role": "ADMIN",
+            },
+        )
+        session.commit()
+    except Exception:  # noqa: BLE001 — 거부 Audit 실패가 본 응답을 가리지 않음
+        session.rollback()
 
 
 @admin_router.get("/accounts/{user_broker_account_id}")
@@ -134,6 +179,19 @@ def admin_set_live_enabled(
         ) from exc
     except LiveOrderApprovalError as exc:
         session.rollback()
+        _record_runtime_rejection(
+            audit=audit,
+            session=session,
+            http_request=http_request,
+            event_type="LIVE_REJECTED",
+            actor=user.username,
+            uba_id=user_broker_account_id,
+            code=exc.code,
+            message=exc.message,
+            reason=body.reason,
+            correlation_id=body.correlation_id,
+            action="LIVE_ON" if body.live_order_enabled else "LIVE_OFF",
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
@@ -145,9 +203,7 @@ def admin_set_live_enabled(
         return result
     audit.record(
         event_type=(
-            "LIVE_APPROVED"
-            if body.live_order_enabled
-            else "LIVE_DISABLED"
+            "LIVE_ON" if body.live_order_enabled else "LIVE_OFF"
         ),
         actor=user.username,
         request_id=getattr(http_request.state, "request_id", None),
@@ -158,9 +214,23 @@ def admin_set_live_enabled(
             "live_order_enabled": body.live_order_enabled,
             "previous_live": result.get("previous_live"),
             "new_live": body.live_order_enabled,
+            "previous_state": {
+                "live": result.get("previous_live"),
+                "arm": result.get("live_armed"),
+            },
+            "new_state": {
+                "live": body.live_order_enabled,
+                "arm": result.get("live_armed"),
+            },
             "arm": result.get("live_armed"),
             "reason": body.reason,
             "correlation_id": body.correlation_id,
+            "result": "SUCCESS",
+            "admin_user_id": user.username,
+            "client_ip": getattr(http_request.client, "host", None)
+            if http_request.client
+            else None,
+            "user_agent": http_request.headers.get("user-agent"),
             "actor_role": "ADMIN",
         },
     )
@@ -257,6 +327,19 @@ def admin_arm_live(
         session.commit()
     except LiveArmError as exc:
         session.rollback()
+        _record_runtime_rejection(
+            audit=audit,
+            session=session,
+            http_request=http_request,
+            event_type="ARM_REJECTED",
+            actor=user.username,
+            uba_id=user_broker_account_id,
+            code=exc.code,
+            message=exc.message,
+            reason=body.reason,
+            correlation_id=body.correlation_id,
+            action="ARM_ON",
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
@@ -277,7 +360,7 @@ def admin_arm_live(
         if k != "arm_token"
     }
     audit.record(
-        event_type="LIVE_ARM",
+        event_type="ARM_ON",
         actor=user.username,
         request_id=getattr(http_request.state, "request_id", None),
         detail={
@@ -286,11 +369,25 @@ def admin_arm_live(
             "broker_code": audit_safe.get("broker_code"),
             "previous_arm": result.get("previous_arm"),
             "new_arm": True,
+            "previous_state": {
+                "live": audit_safe.get("live_order_enabled"),
+                "arm": result.get("previous_arm"),
+            },
+            "new_state": {
+                "live": audit_safe.get("live_order_enabled"),
+                "arm": True,
+            },
             "live": audit_safe.get("live_order_enabled"),
             "live_order_enabled": audit_safe.get("live_order_enabled"),
             "arm_expires_at": audit_safe.get("arm_expires_at"),
             "reason": body.reason,
             "correlation_id": body.correlation_id,
+            "result": "SUCCESS",
+            "admin_user_id": user.username,
+            "client_ip": getattr(http_request.client, "host", None)
+            if http_request.client
+            else None,
+            "user_agent": http_request.headers.get("user-agent"),
             "actor_role": "ADMIN",
             "trading_scheduler": "PAUSED",
             "runtime": "paused",
@@ -332,6 +429,19 @@ def admin_disarm_live(
         session.commit()
     except LiveArmError as exc:
         session.rollback()
+        _record_runtime_rejection(
+            audit=audit,
+            session=session,
+            http_request=http_request,
+            event_type="ARM_REJECTED",
+            actor=user.username,
+            uba_id=user_broker_account_id,
+            code=exc.code,
+            message=exc.message,
+            reason=body.reason,
+            correlation_id=body.correlation_id,
+            action="ARM_OFF",
+        )
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
@@ -342,7 +452,7 @@ def admin_disarm_live(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
         ) from exc
     audit.record(
-        event_type="LIVE_DISARM",
+        event_type="ARM_OFF",
         actor=user.username,
         request_id=getattr(http_request.state, "request_id", None),
         detail={
@@ -353,6 +463,14 @@ def admin_disarm_live(
             "live": result.get("live_order_enabled"),
             "previous_arm": result.get("previous_arm"),
             "new_arm": False,
+            "previous_state": {"arm": result.get("previous_arm")},
+            "new_state": {"arm": False},
+            "result": "SUCCESS",
+            "admin_user_id": user.username,
+            "client_ip": getattr(http_request.client, "host", None)
+            if http_request.client
+            else None,
+            "user_agent": http_request.headers.get("user-agent"),
             "actor_role": "ADMIN",
         },
     )
@@ -635,3 +753,111 @@ def user_live_ops_dashboard_readonly(
         ).dashboard_counts(user_broker_account_ids=uba_ids),
         "readonly": True,
     }
+
+
+class SmokeExitIsolationBody(BaseModel):
+    symbol: str | None = Field(default=None, max_length=30)
+    reason: str = Field(default="SMOKE_VALIDATION", max_length=200)
+    correlation_id: str | None = Field(default=None, max_length=128)
+    ttl_seconds: int | None = Field(default=None, ge=30, le=3600)
+
+
+@admin_router.get("/accounts/{uba_id}/smoke-exit-isolation")
+def admin_list_smoke_exit_isolation(
+    uba_id: int,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """대상 UBA의 활성 smoke exit isolation lease 조회."""
+
+    from stock_platform.position.smoke_exit_isolation import (
+        get_smoke_exit_isolation_registry,
+    )
+
+    registry = get_smoke_exit_isolation_registry()
+    items = [
+        lease.as_dict()
+        for lease in registry.list_active()
+        if int(lease.user_broker_account_id) == int(uba_id)
+    ]
+    return {
+        "user_broker_account_id": int(uba_id),
+        "active_count": len(items),
+        "leases": items,
+    }
+
+
+@admin_router.post("/accounts/{uba_id}/smoke-exit-isolation")
+def admin_acquire_smoke_exit_isolation(
+    uba_id: int,
+    body: SmokeExitIsolationBody,
+    user: AuthenticatedUser = Depends(require_admin),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Smoke 검증 중 autonomous EXIT submission 억제 lease 발급."""
+
+    from stock_platform.position.smoke_exit_isolation import (
+        ACQUIRE_EVENT,
+        acquire_smoke_exit_isolation,
+    )
+
+    lease = acquire_smoke_exit_isolation(
+        user_broker_account_id=int(uba_id),
+        symbol=body.symbol,
+        reason=body.reason,
+        correlation_id=body.correlation_id,
+        ttl_seconds=body.ttl_seconds,
+    )
+    audit.record(
+        event_type=ACQUIRE_EVENT,
+        actor=user.username,
+        detail=lease.as_dict(),
+    )
+    return {"ok": True, "lease": lease.as_dict()}
+
+
+@admin_router.delete("/accounts/{uba_id}/smoke-exit-isolation")
+def admin_release_smoke_exit_isolation(
+    uba_id: int,
+    symbol: str | None = None,
+    lease_id: str | None = None,
+    user: AuthenticatedUser = Depends(require_admin),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """lease_id 또는 UBA(±symbol) 단위로 isolation 해제 — production exit 복구."""
+
+    from stock_platform.position.smoke_exit_isolation import (
+        RELEASE_EVENT,
+        get_smoke_exit_isolation_registry,
+        release_smoke_exit_isolation,
+    )
+
+    registry = get_smoke_exit_isolation_registry()
+    released = 0
+    if lease_id:
+        released = 1 if release_smoke_exit_isolation(str(lease_id)) else 0
+    else:
+        released = registry.clear_for_uba(
+            user_broker_account_id=int(uba_id),
+            symbol=symbol,
+        )
+    audit.record(
+        event_type=RELEASE_EVENT,
+        actor=user.username,
+        detail={
+            "user_broker_account_id": int(uba_id),
+            "symbol": symbol,
+            "lease_id": lease_id,
+            "released": released,
+        },
+    )
+    return {
+        "ok": True,
+        "user_broker_account_id": int(uba_id),
+        "released": released,
+        "remaining": [
+            lease.as_dict()
+            for lease in registry.list_active()
+            if int(lease.user_broker_account_id) == int(uba_id)
+        ],
+    }
+
