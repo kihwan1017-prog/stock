@@ -175,3 +175,241 @@ def admin_full_market_dry_select(
         ),
         "mode": assignment.mode,
     }
+
+
+# ── Portfolio (FULL_MARKET_PORTFOLIO) ──
+
+
+class PortfolioEnableBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=3)
+    strategy_id: int | None = Field(default=None, ge=1)
+    deployment_id: int | None = Field(default=None, ge=1)
+    template_symbol: str | None = Field(default=None, max_length=40)
+    portfolio_capital_limit_krw: float | None = Field(default=None, ge=0)
+    max_positions: int = Field(default=3, ge=1, le=10)
+
+
+class PortfolioDisableBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=3)
+    fallback_mode: str = Field(default="FULL_MARKET_SINGLE", max_length=40)
+
+
+class PortfolioPolicyPatchBody(BaseModel):
+    max_positions: int | None = Field(default=None, ge=1, le=10)
+    portfolio_capital_limit_krw: float | None = Field(default=None, ge=0)
+    per_position_target_pct: float | None = Field(default=None, gt=0, le=1)
+    max_symbol_exposure_pct: float | None = Field(default=None, gt=0, le=1)
+    max_total_exposure_pct: float | None = Field(default=None, gt=0, le=1)
+    min_cash_reserve_pct: float | None = Field(default=None, ge=0, le=1)
+    daily_loss_limit_pct: float | None = Field(default=None, gt=0, le=1)
+    consecutive_loss_limit: int | None = Field(default=None, ge=1, le=50)
+    allow_averaging_down: bool | None = None
+    allow_duplicate_symbol: bool | None = None
+    entry_cooldown_seconds: int | None = Field(default=None, ge=0)
+    candidate_max_age_seconds: int | None = Field(default=None, ge=60)
+    portfolio_max_pending_entries: int | None = Field(default=None, ge=1, le=10)
+    portfolio_daily_entry_limit: int | None = Field(default=None, ge=1, le=100)
+    entry_state: str | None = Field(default=None, max_length=30)
+
+
+class PortfolioPreviewBody(BaseModel):
+    symbol: str = Field(default="KRW-ETH", max_length=40)
+    scanner_score: float = Field(default=80.0)
+    ai_confidence: float = Field(default=0.85)
+    volatility: str = Field(default="MEDIUM", max_length=20)
+    available_krw: float | None = Field(default=None, ge=0)
+    account_max_order_amount: float | None = Field(default=None, ge=0)
+
+
+class PortfolioDryTopKBody(BaseModel):
+    candidates: list[dict] | None = None
+    scanner_run_id: str | None = None
+    available_krw: float | None = Field(default=500_000, ge=0)
+    account_max_order_amount: float | None = Field(default=10_000, ge=0)
+
+
+@router.get("/uba/{user_broker_account_id}/portfolio")
+def admin_portfolio_status(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.operation.upbit_full_market.constants import (
+        CONFIRM_DISABLE_PORTFOLIO,
+        CONFIRM_ENABLE_PORTFOLIO,
+    )
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    fm = UpbitFullMarketAssignmentService(session)
+    pf = UpbitPortfolioService(session)
+    fm.get_or_create(int(user_broker_account_id))
+    pf.get_or_create_policy(int(user_broker_account_id))
+    session.commit()
+    return {
+        "ok": True,
+        **fm.status_dict(int(user_broker_account_id)),
+        "policy": pf.policy_dict(int(user_broker_account_id)),
+        "slots": pf.list_slots(int(user_broker_account_id)),
+        "summary": pf.drawer_summary(int(user_broker_account_id)),
+        "confirm_enable": CONFIRM_ENABLE_PORTFOLIO,
+        "confirm_disable": CONFIRM_DISABLE_PORTFOLIO,
+        "orders_created": 0,
+    }
+
+
+@router.post("/uba/{user_broker_account_id}/portfolio/enable")
+def admin_portfolio_enable(
+    user_broker_account_id: int,
+    body: PortfolioEnableBody,
+    session: Session = Depends(get_db_session),
+    admin: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    result = UpbitPortfolioService(session).enable_portfolio(
+        int(user_broker_account_id),
+        confirmation_text=body.confirmation_text,
+        actor=str(getattr(admin, "username", None) or admin.user_id),
+        strategy_id=body.strategy_id,
+        deployment_id=body.deployment_id,
+        template_symbol=body.template_symbol,
+        portfolio_capital_limit_krw=body.portfolio_capital_limit_krw,
+        max_positions=body.max_positions,
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result,
+        )
+    session.commit()
+    return result
+
+
+@router.post("/uba/{user_broker_account_id}/portfolio/disable")
+def admin_portfolio_disable(
+    user_broker_account_id: int,
+    body: PortfolioDisableBody,
+    session: Session = Depends(get_db_session),
+    admin: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    result = UpbitPortfolioService(session).disable_portfolio(
+        int(user_broker_account_id),
+        confirmation_text=body.confirmation_text,
+        actor=str(getattr(admin, "username", None) or admin.user_id),
+        fallback_mode=body.fallback_mode,
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result,
+        )
+    session.commit()
+    return result
+
+
+@router.patch("/uba/{user_broker_account_id}/portfolio/policy")
+def admin_portfolio_policy_patch(
+    user_broker_account_id: int,
+    body: PortfolioPolicyPatchBody,
+    session: Session = Depends(get_db_session),
+    admin: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    patches = body.model_dump(exclude_none=True)
+    result = UpbitPortfolioService(session).update_policy(
+        int(user_broker_account_id),
+        patches=patches,
+        actor=str(getattr(admin, "username", None) or admin.user_id),
+    )
+    session.commit()
+    return result
+
+
+@router.post("/uba/{user_broker_account_id}/portfolio/preview-sizing")
+def admin_portfolio_preview_sizing(
+    user_broker_account_id: int,
+    body: PortfolioPreviewBody,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    result = UpbitPortfolioService(session).preview_allocation(
+        int(user_broker_account_id),
+        symbol=body.symbol,
+        scanner_score=body.scanner_score,
+        ai_confidence=body.ai_confidence,
+        volatility=body.volatility,
+        available_krw=body.available_krw,
+        account_max_order_amount=body.account_max_order_amount,
+    )
+    session.rollback()
+    return {"ok": True, **result}
+
+
+@router.post("/uba/{user_broker_account_id}/portfolio/dry-topk")
+def admin_portfolio_dry_topk(
+    user_broker_account_id: int,
+    body: PortfolioDryTopKBody,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """실주문 없이 Top-K slot 배정 시뮬레이션."""
+
+    from decimal import Decimal
+
+    from stock_platform.operation.upbit_full_market.constants import (
+        MODE_FULL_MARKET_PORTFOLIO,
+    )
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    candidates = list(body.candidates or [])
+    run_id = body.scanner_run_id or "dry-topk"
+    fm = UpbitFullMarketAssignmentService(session)
+    assignment = fm.get_or_create(int(user_broker_account_id))
+    # dry: 임시 PORTFOLIO mode로 정책 검증 (persist 후 rollback)
+    prev_mode = assignment.mode
+    assignment.mode = MODE_FULL_MARKET_PORTFOLIO
+    pf = UpbitPortfolioService(session)
+    policy = pf.get_or_create_policy(int(user_broker_account_id))
+    policy.enabled = True
+    pf.ensure_slots(
+        int(user_broker_account_id),
+        max_positions=int(policy.max_positions),
+        strategy_id=assignment.strategy_id,
+        deployment_id=assignment.deployment_id,
+    )
+    result = pf.consume_top_k(
+        int(user_broker_account_id),
+        candidates=candidates,
+        scanner_run_id=str(run_id),
+        available_krw=(
+            Decimal(str(body.available_krw))
+            if body.available_krw is not None
+            else None
+        ),
+        account_max_order_amount=(
+            Decimal(str(body.account_max_order_amount))
+            if body.account_max_order_amount is not None
+            else None
+        ),
+        dry_run=True,
+    )
+    assignment.mode = prev_mode
+    session.rollback()
+    return result

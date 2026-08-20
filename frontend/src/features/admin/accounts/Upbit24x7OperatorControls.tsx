@@ -41,6 +41,7 @@ import {
   type StackStartStepStatus,
 } from "./upbit24x7StackOrchestrator";
 import { UpbitFullMarketControls } from "./UpbitFullMarketControls";
+import { UpbitPortfolioControls } from "./UpbitPortfolioControls";
 
 function stepTagColor(status: StackStartStepStatus): string {
   switch (status) {
@@ -464,6 +465,12 @@ export function Upbit24x7OperatorControls({
         strategyId={strategyId ?? undefined}
         templateSymbol="KRW-XRP"
         opsPayload={opsQuery.data}
+      />
+
+      <UpbitPortfolioControls
+        ubaId={ubaId}
+        strategyId={strategyId ?? undefined}
+        templateSymbol="KRW-XRP"
       />
 
       <Space wrap>

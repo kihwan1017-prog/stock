@@ -63,7 +63,9 @@ export function UpbitFullMarketControls({
     ...asRecord(statusQuery.data),
   };
   const mode = String(fm.mode ?? "FIXED_SYMBOL").toUpperCase();
-  const enabled = mode === "FULL_MARKET_AUTO";
+  const enabled =
+    mode === "FULL_MARKET_AUTO" || mode === "FULL_MARKET_SINGLE";
+  const portfolioMode = mode === "FULL_MARKET_PORTFOLIO";
   const scanner = asRecord(asRecord(opsPayload).scanner);
   const cands = Array.isArray(scanner.candidates) ? scanner.candidates : [];
 
@@ -141,18 +143,24 @@ export function UpbitFullMarketControls({
     <Space orientation="vertical" size={8} style={{ width: "100%" }}>
       <Typography.Text strong>Dynamic Selection (Full Market)</Typography.Text>
       <Alert
-        type={enabled ? "warning" : "info"}
+        type={enabled || portfolioMode ? "warning" : "info"}
         showIcon
-        message={
-          enabled
-            ? "FULL_MARKET_AUTO — Scanner 후보 자동 선정 활성"
-            : "FIXED_SYMBOL — 현재 고정 심볼 모드 (기본·안전)"
+        title={
+          portfolioMode
+            ? "FULL_MARKET_PORTFOLIO — 포트폴리오 패널에서 관리"
+            : enabled
+              ? "FULL_MARKET_SINGLE — Scanner 후보 자동 선정 활성"
+              : "FIXED_SYMBOL — 현재 고정 심볼 모드 (기본·안전)"
         }
       />
       <Descriptions size="small" column={1} bordered>
         <Descriptions.Item label="MODE">
-          <Tag color={enabled ? "orange" : "default"}>
-            {enabled ? "FULL MARKET" : "FIXED SYMBOL"}
+          <Tag color={enabled || portfolioMode ? "orange" : "default"}>
+            {portfolioMode
+              ? "PORTFOLIO"
+              : enabled
+                ? "FULL MARKET SINGLE"
+                : "FIXED SYMBOL"}
           </Tag>
         </Descriptions.Item>
         <Descriptions.Item label="CURRENT TARGET">
@@ -226,7 +234,7 @@ export function UpbitFullMarketControls({
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="명시 승인 후 Enable. REAL 테스트 주문은 강제하지 않습니다."
+          title="명시 승인 후 Enable. REAL 테스트 주문은 강제하지 않습니다."
         />
         <Typography.Paragraph>
           확인 문구: <Typography.Text code>{CONFIRM_ENABLE}</Typography.Text>

@@ -742,6 +742,60 @@ export async function drySelectAdminUbaFullMarket(
   );
 }
 
+export async function getAdminUbaPortfolioStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/portfolio`);
+}
+
+export async function enableAdminUbaPortfolio(
+  ubaId: number,
+  body: {
+    confirmation_text: string;
+    strategy_id?: number;
+    deployment_id?: number;
+    template_symbol?: string;
+    portfolio_capital_limit_krw?: number;
+    max_positions?: number;
+  },
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/portfolio/enable`, body);
+}
+
+export async function disableAdminUbaPortfolio(
+  ubaId: number,
+  body: { confirmation_text: string; fallback_mode?: string },
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/portfolio/disable`, body);
+}
+
+export async function patchAdminUbaPortfolioPolicy(
+  ubaId: number,
+  body: Record<string, unknown>,
+): Promise<JsonValue> {
+  return patchJson(`/admin/autotrading/uba/${ubaId}/portfolio/policy`, body);
+}
+
+export async function previewAdminUbaPortfolioSizing(
+  ubaId: number,
+  body?: Record<string, unknown>,
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/portfolio/preview-sizing`,
+    body ?? {},
+  );
+}
+
+export async function dryTopKAdminUbaPortfolio(
+  ubaId: number,
+  body?: Record<string, unknown>,
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/portfolio/dry-topk`,
+    body ?? {},
+  );
+}
+
 export async function getAdminUbaUnattendedStatus(
   ubaId: number,
 ): Promise<JsonValue> {
