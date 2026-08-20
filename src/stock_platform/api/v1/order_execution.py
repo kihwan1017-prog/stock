@@ -143,7 +143,8 @@ def submit_order(
                 account_number=request.account_number,
                 external_account_ref=external_account_ref,
                 owner_user_id=owner_user_id,
-                user_id=int(user.user_id),
+                # LIVE UBA: 리스크/ARM 주체는 계좌 소유자. actor는 호출자(admin)로 유지.
+                user_id=owner_user_id,
                 order_source="MANUAL",
                 is_risk_reducing=(
                     request.side.value.upper() == "SELL"
