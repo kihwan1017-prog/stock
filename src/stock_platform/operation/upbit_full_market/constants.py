@@ -92,6 +92,10 @@ CONFIRM_ENABLE_FULL_MARKET = "전체시장 자동선정 모드 시작"
 CONFIRM_DISABLE_FULL_MARKET = "전체시장 자동선정 모드 중지"
 CONFIRM_ENABLE_PORTFOLIO = "전체시장 포트폴리오 모드 시작"
 CONFIRM_DISABLE_PORTFOLIO = "전체시장 포트폴리오 모드 중지"
+# ENTRY_PENDING + entry_order_id null 고착 해제 (주문/히스토리 삭제 아님)
+CONFIRM_RECOVER_STALE_ENTRY_PENDING = (
+    "CONFIRM_RECOVER_STALE_ENTRY_PENDING"
+)
 
 ALLOW_RECOMMENDATIONS = frozenset({"ALLOW", "REDUCE"})
 BLOCK_RECOMMENDATIONS = frozenset({"BLOCK", "REJECT"})

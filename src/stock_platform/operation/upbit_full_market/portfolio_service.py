@@ -17,6 +17,7 @@ from stock_platform.operation.upbit_full_market.capital_allocator import (
 from stock_platform.operation.upbit_full_market.constants import (
     CONFIRM_DISABLE_PORTFOLIO,
     CONFIRM_ENABLE_PORTFOLIO,
+    CONFIRM_RECOVER_STALE_ENTRY_PENDING,
     DEFAULT_CANDIDATE_MAX_AGE_SECONDS,
     DEFAULT_CONSECUTIVE_LOSS_LIMIT,
     DEFAULT_DAILY_LOSS_LIMIT_PCT,
@@ -40,6 +41,7 @@ from stock_platform.operation.upbit_full_market.constants import (
     SLOT_EXIT_PENDING,
     SLOT_OPEN,
     SLOT_RESERVED,
+    STATE_IDLE,
     is_full_market_portfolio,
 )
 from stock_platform.operation.upbit_full_market.entities import (
@@ -695,6 +697,10 @@ class UpbitPortfolioService:
             strategy_id=assignment.strategy_id,
             deployment_id=assignment.deployment_id,
         )
+        # ENTRY_PENDING 고착이 pending limit를 영구 점유하지 않도록 DB timestamp 기준 복구
+        stale_rec = self.recover_stale_entry_pending_without_order(uba_id)
+        if int(stale_rec.get("released") or 0) > 0:
+            out["stale_entry_recovered"] = stale_rec
 
         if self.pending_entry_count(uba_id) >= int(
             policy.portfolio_max_pending_entries
@@ -1014,6 +1020,9 @@ class UpbitPortfolioService:
                         "code": "ENTRY_PENDING_WITHOUT_ORDER",
                         "slot_id": int(s.slot_id),
                         "symbol": s.symbol,
+                        "updated_at": (
+                            s.updated_at.isoformat() if s.updated_at else None
+                        ),
                     }
                 )
         for b in bindings:
@@ -1026,3 +1035,209 @@ class UpbitPortfolioService:
                     }
                 )
         return issues
+
+    def recover_stale_entry_pending_without_order(
+        self,
+        user_broker_account_id: int,
+        *,
+        timeout_seconds: float | None = None,
+        confirmation_text: str | None = None,
+        broker_open_symbols: set[str] | frozenset[str] | None = None,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        """ENTRY_PENDING + entry_order_id null 이고 주문 흔적 없으면 slot release.
+
+        - DB `updated_at` 기준 timeout (process-memory timer 금지)
+        - local open order / pending outbox / broker open 존재 시 release 금지
+        - history/selection row 삭제 금지 (slot만 EMPTY로 되돌림)
+        """
+
+        from stock_platform.common.settings import get_settings
+
+        uba_id = int(user_broker_account_id)
+        settings = get_settings()
+        timeout = float(
+            timeout_seconds
+            if timeout_seconds is not None
+            else getattr(
+                settings,
+                "upbit_portfolio_entry_pending_timeout_seconds",
+                120.0,
+            )
+            or 120.0
+        )
+        if confirmation_text is not None:
+            if (
+                str(confirmation_text).strip()
+                != CONFIRM_RECOVER_STALE_ENTRY_PENDING
+            ):
+                return {
+                    "ok": False,
+                    "reason": "CONFIRMATION_MISMATCH",
+                    "expected": CONFIRM_RECOVER_STALE_ENTRY_PENDING,
+                    "released": 0,
+                }
+
+        now = _now()
+        slots = list(
+            self._session.scalars(
+                select(UpbitPositionSlotEntity)
+                .where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
+                    UpbitPositionSlotEntity.entry_order_id.is_(None),
+                )
+                .with_for_update()
+            )
+        )
+        inspected: list[dict[str, Any]] = []
+        released_ids: list[int] = []
+        blocked: list[dict[str, Any]] = []
+
+        for slot in slots:
+            sym = str(slot.symbol or "").upper() or None
+            updated = slot.updated_at or slot.created_at or now
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            else:
+                updated = updated.astimezone(timezone.utc)
+            age_sec = max(0.0, (now - updated).total_seconds())
+            row_info: dict[str, Any] = {
+                "slot_id": int(slot.slot_id),
+                "symbol": sym,
+                "age_seconds": age_sec,
+                "timeout_seconds": timeout,
+            }
+            inspected.append(row_info)
+
+            if age_sec < timeout:
+                blocked.append({**row_info, "reason": "NOT_YET_TIMEOUT"})
+                continue
+            if not sym:
+                blocked.append({**row_info, "reason": "SYMBOL_MISSING"})
+                continue
+            if self._has_local_open_order(uba_id, symbol=sym):
+                blocked.append({**row_info, "reason": "LOCAL_OPEN_ORDER"})
+                continue
+            if self._has_pending_outbox_for_symbol(uba_id, symbol=sym):
+                blocked.append({**row_info, "reason": "OUTBOX_PENDING"})
+                continue
+            if broker_open_symbols is not None and sym in {
+                str(x).upper() for x in broker_open_symbols
+            }:
+                blocked.append({**row_info, "reason": "BROKER_OPEN_ORDER"})
+                continue
+
+            # selection history 보존 — status만 SUPERSEDED 표기(있으면)
+            if slot.candidate_selection_id is not None:
+                sel = self._session.get(
+                    UpbitLiveCandidateSelectionEntity,
+                    int(slot.candidate_selection_id),
+                )
+                if sel is not None and str(sel.status or "") in {
+                    "SELECTED",
+                    "ACTIVE",
+                }:
+                    sel.status = "SUPERSEDED"
+
+            slot.status = SLOT_EMPTY
+            slot.symbol = None
+            slot.candidate_selection_id = None
+            slot.scanner_run_id = None
+            slot.reserved_amount_krw = None
+            slot.allocated_amount_krw = None
+            slot.recommended_amount_krw = None
+            slot.clamp_reasons = []
+            slot.entry_order_id = None
+            slot.version = int(slot.version or 1) + 1
+            released_ids.append(int(slot.slot_id))
+            row_info["released"] = True
+
+        if released_ids:
+            assignment = self._assignment.get_or_create(uba_id)
+            # orphan이 current_symbol을 점유 중이면 비움 (재선정 허용)
+            active = set(self.active_symbols(uba_id))
+            cur = str(assignment.current_symbol or "").upper()
+            if cur and cur not in active:
+                assignment.current_symbol = None
+            assignment.signals_paused = False
+            if is_full_market_portfolio(assignment.mode):
+                assignment.state = STATE_IDLE
+            self._session.flush()
+            logger.info(
+                "portfolio_stale_entry_pending_recovered",
+                uba_id=uba_id,
+                released_slot_ids=released_ids,
+                actor=str(actor or "system")[:80],
+                timeout_seconds=timeout,
+            )
+
+        return {
+            "ok": True,
+            "released": len(released_ids),
+            "released_slot_ids": released_ids,
+            "blocked": blocked,
+            "inspected": inspected,
+            "timeout_seconds": timeout,
+            "orders_created": 0,
+        }
+
+    def _has_local_open_order(
+        self, user_broker_account_id: int, *, symbol: str
+    ) -> bool:
+        from sqlalchemy import func
+
+        from stock_platform.order.entities import TradingOrderEntity
+
+        open_statuses = (
+            "CREATED",
+            "PENDING",
+            "SENT",
+            "ACCEPTED",
+            "PARTIALLY_FILLED",
+            "CANCEL_REQUESTED",
+            "REPLACE_REQUESTED",
+        )
+        count = self._session.scalar(
+            select(func.count())
+            .select_from(TradingOrderEntity)
+            .where(
+                TradingOrderEntity.user_broker_account_id
+                == int(user_broker_account_id),
+                TradingOrderEntity.symbol == str(symbol).upper(),
+                TradingOrderEntity.status_code.in_(open_statuses),
+            )
+        )
+        return int(count or 0) > 0
+
+    def _has_pending_outbox_for_symbol(
+        self, user_broker_account_id: int, *, symbol: str
+    ) -> bool:
+        from sqlalchemy import func
+
+        from stock_platform.order.entities import TradingOrderEntity
+        from stock_platform.order.outbox_entities import OrderOutbox
+        from stock_platform.order.outbox_models import OutboxStatus
+
+        pending = (
+            OutboxStatus.PENDING.value,
+            OutboxStatus.PROCESSING.value,
+            OutboxStatus.RETRY.value,
+            OutboxStatus.AMBIGUOUS.value,
+            OutboxStatus.MANUAL_REVIEW.value,
+        )
+        count = self._session.scalar(
+            select(func.count())
+            .select_from(OrderOutbox)
+            .join(
+                TradingOrderEntity,
+                TradingOrderEntity.order_id == OrderOutbox.order_id,
+            )
+            .where(
+                TradingOrderEntity.user_broker_account_id
+                == int(user_broker_account_id),
+                TradingOrderEntity.symbol == str(symbol).upper(),
+                OrderOutbox.status_code.in_(pending),
+            )
+        )
+        return int(count or 0) > 0

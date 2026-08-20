@@ -5,6 +5,8 @@ REAL 주문/FULL_MARKET 자동 Enable 없음. 확인 문구 필수.
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -413,3 +415,93 @@ def admin_portfolio_dry_topk(
     assignment.mode = prev_mode
     session.rollback()
     return result
+
+
+class PortfolioRecoverStaleEntryBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=3)
+    timeout_seconds: float | None = Field(default=None, ge=60, le=180)
+    check_broker_open_orders: bool = True
+
+
+@router.post(
+    "/uba/{user_broker_account_id}/portfolio/recover-stale-entry-pending"
+)
+def admin_portfolio_recover_stale_entry_pending(
+    user_broker_account_id: int,
+    body: PortfolioRecoverStaleEntryBody,
+    session: Session = Depends(get_db_session),
+    admin: AuthenticatedUser = Depends(require_admin),
+):
+    """ENTRY_PENDING without order 고착 해제. REAL CREATE/CANCEL 없음."""
+
+    from stock_platform.operation.upbit_full_market.constants import (
+        CONFIRM_RECOVER_STALE_ENTRY_PENDING,
+    )
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    broker_syms: set[str] | None = None
+    if body.check_broker_open_orders:
+        try:
+            from stock_platform.broker.credential_adapter_factory import (
+                build_upbit_settings_from_vault,
+            )
+            from stock_platform.broker.credential_vault_service import (
+                BrokerCredentialVaultService,
+            )
+            from stock_platform.broker.upbit.order_client import (
+                UpbitOrderRestClient,
+            )
+
+            resolved = BrokerCredentialVaultService(session).resolve_for_runtime(
+                int(user_broker_account_id),
+                expected_broker="UPBIT",
+                require_verified=True,
+                touch_last_used=False,
+            )
+            client = UpbitOrderRestClient(
+                settings=build_upbit_settings_from_vault(resolved),
+                user_broker_account_id=int(user_broker_account_id),
+            )
+            # READ-ONLY — wait/watch only (CREATE/CANCEL 없음)
+            remote_rows: list[Any] = []
+            remote_rows.extend(client.list_orders(state="wait", limit=100) or [])
+            remote_rows.extend(client.list_orders(state="watch", limit=100) or [])
+            broker_syms = set()
+            for row in remote_rows:
+                if not isinstance(row, dict):
+                    continue
+                market = str(
+                    row.get("market") or row.get("symbol") or ""
+                ).upper()
+                if market:
+                    broker_syms.add(market)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "ok": False,
+                    "reason": "BROKER_OPEN_ORDER_CHECK_FAILED",
+                    "error": type(exc).__name__,
+                },
+            ) from exc
+
+    result = UpbitPortfolioService(session).recover_stale_entry_pending_without_order(
+        int(user_broker_account_id),
+        timeout_seconds=body.timeout_seconds,
+        confirmation_text=body.confirmation_text,
+        broker_open_symbols=broker_syms,
+        actor=str(getattr(admin, "username", None) or admin.user_id),
+    )
+    if not result.get("ok"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=result,
+        )
+    session.commit()
+    return {
+        **result,
+        "confirm_phrase": CONFIRM_RECOVER_STALE_ENTRY_PENDING,
+        "orders_created": 0,
+    }

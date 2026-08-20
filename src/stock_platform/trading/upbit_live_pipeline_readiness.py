@@ -273,11 +273,21 @@ class UpbitLivePipelineReadinessService:
                 upbit_client = upbit_client_obj.status()
             else:
                 upbit_client = {}
+            connected = bool(upbit_client.get("connected"))
+            running = bool(
+                upbit_client.get("running")
+                or upbit_client.get("connecting")
+                or upbit_client_obj
+            )
+            # last_received_at 누락 시 AUTO LIVE가 NO_RECENT_QUOTE로 영구 BLOCK
             quote_ws = {
-                "running": bool(upbit_client_obj),
-                "connected": bool(upbit_client.get("connected")),
+                "ok": connected,
+                "running": running,
+                "connected": connected,
                 "received_count": upbit_client.get("received_count"),
                 "reconnect_count": upbit_client.get("reconnect_count"),
+                "last_received_at": upbit_client.get("last_received_at"),
+                "symbols": upbit_client.get("symbols"),
                 "last_error": upbit_client.get("last_error"),
             }
         except Exception as exc:  # noqa: BLE001
@@ -291,6 +301,13 @@ class UpbitLivePipelineReadinessService:
             )
 
             hub = get_realtime_market_data_hub().status()
+            # feed evaluator는 ok/running/dispatch_running 중 하나 필요
+            if isinstance(hub, dict):
+                hub = {
+                    **hub,
+                    "ok": bool(hub.get("dispatch_running")),
+                    "running": bool(hub.get("dispatch_running")),
+                }
         except Exception as exc:  # noqa: BLE001
             hub = {"error": type(exc).__name__}
         checks["hub_status"] = hub
