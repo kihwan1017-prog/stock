@@ -33,7 +33,7 @@ from stock_platform.ai.strategy_draft_approval.service import (
 from stock_platform.ai.strategy_draft_approval.readiness import (
     ReadinessError,
     check_readiness,
-    validate_provenance,
+    resolve_strategy_provenance,
 )
 from stock_platform.ai.strategy_draft_approval.backtest_spec import (
     BacktestSpecificationError,
@@ -42,6 +42,14 @@ from stock_platform.ai.strategy_draft_approval.backtest_spec import (
 from stock_platform.ai.strategy_draft_approval.backtest_execution import (
     BacktestExecutionError,
     run_definition_backtest,
+)
+from stock_platform.trading.paper_historical_replay import (
+    PaperHistoricalReplayError,
+    PaperHistoricalReplayService,
+)
+from stock_platform.trading.paper_validation_policy import (
+    PaperValidationPolicyService,
+    paper_validation_result_as_dict,
 )
 from stock_platform.ai.strategy_draft_approval.walk_forward import (
     WalkForwardError,
@@ -417,6 +425,167 @@ def unpublish_strategy(
     return after
 
 
+class CloneForUserBody(BaseModel):
+    target_user_id: int = Field(gt=0)
+    name: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/{strategy_id}/clone-for-user", status_code=status.HTTP_201_CREATED)
+def admin_clone_strategy_for_user(
+    strategy_id: int,
+    body: CloneForUserBody,
+    http_request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Draft 유래 PRIVATE 전략을 타 사용자 PRIVATE 복제한다. owner overwrite 금지."""
+
+    service = StrategyDefinitionService(session)
+    try:
+        row = service.clone_strategy(
+            user,
+            strategy_id,
+            actor=user.username,
+            name=body.name,
+            for_user_id=int(body.target_user_id),
+        )
+        session.commit()
+    except StrategyOwnershipError as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    audit.record(
+        event_type="ADMIN_STRATEGY_CLONE_FOR_USER",
+        actor=user.username,
+        request_id=getattr(http_request.state, "request_id", None),
+        strategy_id=str(row.strategy_id),
+        detail={
+            "source_strategy_id": strategy_id,
+            "new_strategy_id": int(row.strategy_id),
+            "target_user_id": int(body.target_user_id),
+        },
+    )
+    session.commit()
+    return service.as_dict(row)
+
+
+class CloneForSymbolBody(BaseModel):
+    symbol: str = Field(min_length=1, max_length=30)
+    target_user_id: int = Field(gt=0)
+    name: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/{strategy_id}/clone-for-symbol", status_code=status.HTTP_201_CREATED)
+def admin_clone_strategy_for_symbol(
+    strategy_id: int,
+    body: CloneForSymbolBody,
+    http_request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """CRYPTO 심볼 전용 복제. 원본 provenance/evidence를 상속하지 않는다."""
+
+    service = StrategyDefinitionService(session)
+    try:
+        row = service.clone_strategy_for_symbol(
+            user,
+            strategy_id,
+            symbol=body.symbol,
+            actor=f"admin:{user.user_id}",
+            name=body.name,
+            for_user_id=int(body.target_user_id),
+        )
+        session.commit()
+    except (StrategyOwnershipError, ValueError) as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    audit.record(
+        event_type="ADMIN_STRATEGY_CLONE_FOR_SYMBOL",
+        actor=user.username,
+        request_id=getattr(http_request.state, "request_id", None),
+        strategy_id=str(row.strategy_id),
+        detail={
+            "source_strategy_id": strategy_id,
+            "new_strategy_id": int(row.strategy_id),
+            "target_user_id": int(body.target_user_id),
+            "symbol": body.symbol,
+            "strategy_request_id": row.strategy_request_id,
+        },
+    )
+    session.commit()
+    return service.as_dict(row)
+
+
+@router.get("/{strategy_id}/link-eligibility")
+def admin_strategy_link_eligibility(
+    strategy_id: int,
+    user_id: int = Query(..., gt=0),
+    user_broker_account_id: int | None = Query(default=None, gt=0),
+    account_broker: str = Query(default="KIWOOM"),
+    session: Session = Depends(get_db_session),
+):
+    from stock_platform.auth.models import AuthUser
+
+    target = session.get(AuthUser, int(user_id))
+    if target is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    principal = AuthenticatedUser(
+        user_id=int(target.user_id),
+        username=str(target.username),
+        roles=["user"],
+        permissions=["trading:read", "trading:write"],
+    )
+    service = StrategyDefinitionService(session)
+    return service.evaluate_link_eligibility(
+        principal,
+        strategy_id=strategy_id,
+        user_broker_account_id=user_broker_account_id,
+        paper_account_id=None,
+        account_broker=account_broker,
+    )
+
+
+@router.get("/{strategy_id}/validation-evidence")
+def admin_strategy_validation_evidence(
+    strategy_id: int,
+    session: Session = Depends(get_db_session),
+):
+    from sqlalchemy import select
+
+    from stock_platform.backtest.persistence_models import BacktestRunEntity
+    from stock_platform.performance.entities import StrategyPerformanceRunEntity
+
+    service = StrategyDefinitionService(session)
+    row = service.require(strategy_id)
+    source_id = int(row.source_strategy_id or row.strategy_id)
+    backtests = list(
+        session.scalars(
+            select(BacktestRunEntity).where(
+                BacktestRunEntity.strategy_definition_id == source_id
+            )
+        )
+    )
+    paper = list(
+        session.scalars(
+            select(StrategyPerformanceRunEntity).where(
+                StrategyPerformanceRunEntity.strategy_id == source_id,
+                StrategyPerformanceRunEntity.run_type == "PAPER",
+            )
+        )
+    )
+    return {
+        "strategy_id": int(row.strategy_id),
+        "source_strategy_id": row.source_strategy_id,
+        "evidence_strategy_id": source_id,
+        "backtest_ids": [int(b.backtest_run_id) for b in backtests],
+        "paper_run_ids": [
+            int(p.strategy_performance_run_id) for p in paper
+        ],
+        "inherited_as_pass": False,
+    }
+
+
 @router.post("/{strategy_id}/activate")
 def activate_strategy(
     strategy_id: int,
@@ -598,7 +767,7 @@ def get_strategy_provenance(
     audit: AuditLogService = Depends(get_audit_service),
 ):
     try:
-        result = validate_provenance(session, strategy_id)
+        result = resolve_strategy_provenance(session, strategy_id)
     except ReadinessError as exc:
         _raise_readiness(exc)
         return {}
@@ -756,6 +925,189 @@ def create_strategy_backtest(
     )
     session.commit()
     return result
+
+
+class RunPaperHistoricalReplayBody(BaseModel):
+    symbol: str = Field(min_length=1, max_length=30)
+    exchange_code: str = Field(default="KRX", min_length=1, max_length=20)
+    start_date: date | None = None
+    end_date: date | None = None
+
+
+@router.post(
+    "/{strategy_id}/paper-historical-replays",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_paper_historical_replay(
+    strategy_id: int,
+    body: RunPaperHistoricalReplayBody,
+    http_request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """PAPER only. LIVE/KIWOOM/UPBIT broker 경로를 호출하지 않는다."""
+
+    audit.record(
+        event_type="PAPER_HISTORICAL_REPLAY_REQUESTED",
+        actor=user.username,
+        request_id=getattr(http_request.state, "request_id", None),
+        strategy_id=str(strategy_id),
+        detail={"symbol": body.symbol, "exchange_code": body.exchange_code},
+    )
+    session.commit()
+    try:
+        result = PaperHistoricalReplayService(session).run(
+            strategy_definition_id=strategy_id,
+            symbol=body.symbol,
+            exchange_code=body.exchange_code,
+            actor_user_id=int(user.user_id),
+            start_date=body.start_date,
+            end_date=body.end_date,
+        )
+    except PaperHistoricalReplayError as exc:
+        audit.record(
+            event_type="PAPER_HISTORICAL_REPLAY_FAILED",
+            actor=user.username,
+            request_id=getattr(http_request.state, "request_id", None),
+            strategy_id=str(strategy_id),
+            detail={"code": exc.code, "message": exc.message},
+        )
+        session.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    audit.record(
+        event_type="PAPER_HISTORICAL_REPLAY_COMPLETED",
+        actor=user.username,
+        request_id=getattr(http_request.state, "request_id", None),
+        strategy_id=str(strategy_id),
+        detail={
+            "paper_validation_id": result.get("paper_validation_id"),
+            "idempotent_replay": result.get("idempotent_replay"),
+        },
+    )
+    session.commit()
+    return result
+
+
+@router.get("/{strategy_id}/paper-historical-replays/{run_id}")
+def get_paper_historical_replay(
+    strategy_id: int,
+    run_id: int,
+    session: Session = Depends(get_db_session),
+):
+    from stock_platform.performance.entities import StrategyPerformanceRunEntity
+
+    run = session.get(StrategyPerformanceRunEntity, run_id)
+    if run is None or int(run.strategy_id or 0) != int(strategy_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+    if run.run_type != "PAPER":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+    return {
+        "paper_validation_id": int(run.strategy_performance_run_id),
+        "status_code": run.status_code,
+        "result_payload": run.result_payload,
+        "period_start": str(run.period_start_date),
+        "period_end": str(run.period_end_date),
+    }
+
+
+@router.post("/{strategy_id}/paper-validations/{run_id}/evaluate")
+def evaluate_paper_validation_policy(
+    strategy_id: int,
+    run_id: int,
+    http_request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Paper run을 READ-only로 평가한다. metric/run payload는 수정하지 않는다."""
+
+    from sqlalchemy import select
+
+    from stock_platform.operation.audit_models import AuditEvent
+    from stock_platform.performance.entities import StrategyPerformanceRunEntity
+
+    run = session.get(StrategyPerformanceRunEntity, run_id)
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+    if run.run_type != "PAPER":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_FOUND")
+
+    existing = session.scalar(
+        select(AuditEvent)
+        .where(
+            AuditEvent.event_type == "PAPER_VALIDATION_POLICY_EVALUATED",
+            AuditEvent.run_id == str(run_id),
+            AuditEvent.strategy_id == str(strategy_id),
+        )
+        .order_by(AuditEvent.audit_event_id.desc())
+        .limit(1)
+    )
+    if existing is not None:
+        detail = dict(existing.detail or {})
+        detail["idempotent"] = True
+        detail["audit_event_id"] = int(existing.audit_event_id)
+        return detail
+
+    service = PaperValidationPolicyService(session)
+    if int(run.strategy_id or 0) != int(strategy_id):
+        result = service.evaluate_strategy_isolation(
+            strategy_id=strategy_id,
+            run_id=run_id,
+        )
+    else:
+        result = service.evaluate_run(
+            run_id=run_id,
+            evaluated_strategy_id=strategy_id,
+        )
+    payload = paper_validation_result_as_dict(result)
+    payload["paper_validation_id"] = int(run_id)
+    payload["evaluated_strategy_id"] = int(strategy_id)
+    payload["evidence_strategy_id"] = int(run.strategy_id) if run.strategy_id else None
+    payload["idempotent"] = False
+    event = audit.record(
+        event_type="PAPER_VALIDATION_POLICY_EVALUATED",
+        actor=user.username,
+        request_id=getattr(http_request.state, "request_id", None),
+        run_id=str(run_id),
+        strategy_id=str(strategy_id),
+        symbol=run.symbol,
+        detail=payload,
+        auto_commit=False,
+    )
+    session.commit()
+    payload["audit_event_id"] = int(event.audit_event_id)
+    return payload
+
+
+@router.get("/{strategy_id}/paper-validations/{run_id}/evaluate")
+def get_paper_validation_policy_evaluation(
+    strategy_id: int,
+    run_id: int,
+    session: Session = Depends(get_db_session),
+):
+    from sqlalchemy import select
+
+    from stock_platform.operation.audit_models import AuditEvent
+
+    existing = session.scalar(
+        select(AuditEvent)
+        .where(
+            AuditEvent.event_type == "PAPER_VALIDATION_POLICY_EVALUATED",
+            AuditEvent.run_id == str(run_id),
+            AuditEvent.strategy_id == str(strategy_id),
+        )
+        .order_by(AuditEvent.audit_event_id.desc())
+        .limit(1)
+    )
+    if existing is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NOT_EVALUATED")
+    detail = dict(existing.detail or {})
+    detail["audit_event_id"] = int(existing.audit_event_id)
+    return detail
 
 
 # ---------------------------------------------------------------------------

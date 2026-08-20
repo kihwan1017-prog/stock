@@ -1,13 +1,13 @@
 # CURRENT_WORK
 
-**역할:** 현재 진행 중인 작업만 기록한다. 과거 완료 목록을 나열하지 않는다.  
-**최종 갱신:** 2026-08-16
+**역할:** 현재 진행 중인 작업만 기록한다.  
+**최종 갱신:** 2026-08-20 (KIWOOM STRATEGY 17579 DERIVED PROVENANCE ALIGNED)
 
 ---
 
 ## Parallel policy
 
-**TRACK U** / **TRACK K** / **SHARED** — 독립 WRITE 병행 · SHARED WRITE 동시 금지 · U+K commit 혼합 금지 · LIVE 금지  
+**TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
 
 ---
 
@@ -15,24 +15,15 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | TERMINATION SELECTIVE COMMIT | **`UPBIT_TERMINATION_CLOSE=YES`** (commit this STEP) | — (no auto next) |
-| **K** | CREDENTIAL PROVISIONING | **`KIWOOM_CREDENTIAL_WAITING_FOR_USER_INPUT`** | User UI register+verify → then continue |
+| **K** | KIWOOM STRATEGY 17579 DERIVED CLONE PROVENANCE ALIGNMENT | **`KIWOOM_STRATEGY_17579_DERIVED_PROVENANCE_ALIGNED_READY_FOR_PROMOTION_COMMIT`** | **KIWOOM STRATEGY 17579 PROMOTION COMMIT** |
+| **U** | UPBIT REMOTE SELL CANCEL | **`UPBIT_REMOTE_SELL_ORDERS_CANCELLED_COOLDOWN_ALIGNMENT_PENDING`** | 별도 STEP: **UPBIT KRW-SOL LIVE COOLDOWN ALIGNMENT** |
 
-| 항목 | 값 |
-|------|-----|
-| Coverage | **CLOSED** |
-| TP | **CLOSED_KEEP_6** · TP **6%** · SL **3%** |
-| Long-active termination | **CLOSED** (52/70 CANCELLED proven) |
-| News | ACCUMULATING (background) |
-| push | **금지** |
-
-K: linked credential **0** — Cursor는 secret을 받지 않음. User는 `/user/accounts/kiwoom` UI에서 등록.
+Strategy 17579: Explainability #142 · Decision Package #142 READY · Human Decision #140 APPROVE · promotion-readiness ready. Package #140–141 BLOCKED (audit 보존). LIVE/ARM OFF · Promotion Commit 0.
 
 ---
 
 ## Next Gate
 
-1. **K:** 사용자 UI Credential 등록 완료 통지 후 검증 READ  
-2. Upbit 추가 개발 자동 시작 **금지**  
+**Exactly one:** **KIWOOM STRATEGY 17579 PROMOTION COMMIT**
 
-→ [ROADMAP.md](ROADMAP.md)
+Activation #20 ACTIVE ~13:51 KST. Promotion Commit → Activation → Runtime Registration → Deployment Readiness → LIVE deployment.

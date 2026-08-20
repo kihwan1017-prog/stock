@@ -18,7 +18,7 @@ SOURCE_FACT는 기존 Report에서 그대로 읽은 값(Evidence Reference의
 
 재사용(중복 생성 금지 확인):
 - Strategy Overview/Provenance: STEP12-5 `check_readiness()`/
-  `validate_provenance()`를 그대로 재사용(재구현하지 않음).
+  STEP12-5 `resolve_strategy_provenance()`를 재사용(derived clone 포함).
 - Entry/Exit/Stop Loss/Take Profit/Position Sizing 규칙: STEP12-6
   `compile_specification()`이 반환하는 정규화된 Rule Payload를 그대로
   읽는다(새 Rule Evaluator/Compiler를 만들지 않음).
@@ -78,7 +78,7 @@ from stock_platform.ai.strategy_draft_approval.readiness import (
     ReadinessError,
     _require_definition,
     check_readiness,
-    validate_provenance,
+    resolve_strategy_provenance,
 )
 from stock_platform.ai.strategy_draft_approval.walk_forward import WalkForwardError
 from stock_platform.backtest.repository import BacktestRepository
@@ -929,7 +929,8 @@ def _build_provenance_evidence(
     evidence: _EvidenceCollector,
 ) -> tuple[dict[str, Any], _CategoryOutcome]:
     weight = BASE_EVIDENCE_WEIGHTS["provenance"]
-    provenance = validate_provenance(session, strategy_definition_id)
+    # derived clone은 source_draft_id 없이 source equivalence로 provenance를 본다.
+    provenance = resolve_strategy_provenance(session, strategy_definition_id)
 
     mismatches = [
         {"source": source, "stored_executable_hash": h, "current_executable_hash": current_executable_hash}

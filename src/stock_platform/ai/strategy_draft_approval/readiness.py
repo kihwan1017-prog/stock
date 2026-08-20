@@ -17,6 +17,7 @@ STEP12-2-2(Generation Run/Attempt)/STEP12-3(Approval/Definition) 엔티티만
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from sqlalchemy import select
@@ -126,15 +127,17 @@ def validate_provenance(session: Session, strategy_definition_id: int) -> dict[s
             definition.source_draft_version
         ):
             failures.append("DRAFT_VERSION_MISMATCH — Draft version이 Definition 기록과 다릅니다.")
-        if draft.llm_provider is not None:
-            # AI 생성 Draft라면 Generation Run까지 추적한다.
+        provider_key = (draft.llm_provider or "").strip().lower()
+        if provider_key:
+            # mock+Generation Run 없음 = 수동 Draft. mock+Run 있음 = AI mock 경로.
             run = session.scalar(
                 select(StrategyDraftGenerationRunEntity).where(
                     StrategyDraftGenerationRunEntity.draft_id == int(draft.draft_id)
                 )
             )
             if run is None:
-                failures.append("GENERATION_RUN_MISSING — AI 생성 Draft인데 Generation Run이 없습니다.")
+                if provider_key != "mock":
+                    failures.append("GENERATION_RUN_MISSING — AI 생성 Draft인데 Generation Run이 없습니다.")
             else:
                 if approval is not None and approval.generation_run_id is not None and int(
                     approval.generation_run_id
@@ -181,6 +184,135 @@ def validate_provenance(session: Session, strategy_definition_id: int) -> dict[s
     return {"valid": len(failures) == 0, "failures": failures, "chain": chain}
 
 
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _payload_semantics(payload: dict[str, Any] | None) -> dict[str, Any]:
+    """실행 로직 비교용. symbol은 신규 심볼 clone에서 달라도 된다."""
+
+    data = dict(payload or {})
+    data.pop("symbol", None)
+    data.pop("symbols", None)
+    return data
+
+
+def evaluate_derived_source_equivalence(
+    session: Session,
+    derived: StrategyDefinitionEntity,
+) -> dict[str, Any]:
+    """파생 복제본의 실행 파라미터/지문이 원본과 같은지 판정한다.
+
+    evidence 상속이 아니라 compile/재검증 자격만 부여한다.
+    """
+
+    failures: list[str] = []
+    source_id = int(derived.source_strategy_id) if derived.source_strategy_id else None
+    source = (
+        session.get(StrategyDefinitionEntity, source_id) if source_id is not None else None
+    )
+    if source is None:
+        return {
+            "equivalent": False,
+            "source_ready": False,
+            "failures": ["SOURCE_STRATEGY_MISSING"],
+            "source_strategy_id": source_id,
+        }
+
+    derived_payload = derived.parameter_payload or {}
+    source_payload = source.parameter_payload or {}
+    derived_risk = dict(derived_payload.get("risk_parameters") or {})
+    source_risk = dict(source_payload.get("risk_parameters") or {})
+
+    from stock_platform.strategy_deployment.symbol_payload import (
+        execution_semantics,
+        is_legacy_ma_payload,
+    )
+
+    comparisons = {
+        "market_type": (derived.market_type, source.market_type),
+        "execution_semantics": (
+            _canonical_json(execution_semantics(derived_payload)),
+            _canonical_json(execution_semantics(source_payload)),
+        ),
+        "max_order_amount": (
+            derived_risk.get("max_order_amount"),
+            source_risk.get("max_order_amount"),
+        ),
+    }
+    # KIWOOM 파생은 지문을 유지한다. 신규 심볼 clone은 evidence를 비우므로 비교에서 제외.
+    if derived.candidate_fingerprint is not None or derived.definition_hash is not None:
+        comparisons["candidate_fingerprint"] = (
+            derived.candidate_fingerprint,
+            source.candidate_fingerprint,
+        )
+        comparisons["definition_hash"] = (
+            derived.definition_hash,
+            source.definition_hash,
+        )
+    for name, (left, right) in comparisons.items():
+        if _canonical_json(left) != _canonical_json(right):
+            failures.append(f"DERIVED_STRATEGY_PARAMETER_DRIFT:{name}")
+
+    if is_legacy_ma_payload(source_payload):
+        # 원본 17483은 STEP12 row가 아니다. 레거시 MA semantics만 동등하면 충분.
+        source_ready = True
+    else:
+        source_readiness = check_readiness(session, int(source.strategy_id))
+        source_ready = bool(source_readiness.get("ready"))
+        if not source_ready:
+            failures.append("SOURCE_STRATEGY_NOT_READY")
+
+    return {
+        "equivalent": len(failures) == 0,
+        "source_ready": source_ready,
+        "failures": failures,
+        "source_strategy_id": int(source.strategy_id),
+        "evidence_inherited": False,
+    }
+
+
+def resolve_strategy_provenance(
+    session: Session, strategy_definition_id: int
+) -> dict[str, Any]:
+    """Draft-derived vs owner derived clone에 맞는 canonical provenance 판정.
+
+    derived clone은 `source_draft_id`가 없도록 설계됐으므로
+    `evaluate_derived_source_equivalence()`로 source lineage를 검증한다.
+    """
+
+    definition = _require_definition(session, strategy_definition_id)
+    if definition.source_strategy_id is None:
+        result = validate_provenance(session, strategy_definition_id)
+        result["provenance_mode"] = "DRAFT_DERIVED"
+        return result
+
+    equivalence = evaluate_derived_source_equivalence(session, definition)
+    failures = list(equivalence.get("failures") or [])
+    if not equivalence["equivalent"] and not failures:
+        failures.append("DERIVED_SOURCE_NOT_EQUIVALENT")
+
+    return {
+        "valid": bool(equivalence["equivalent"]),
+        "failures": failures,
+        "chain": {
+            "strategy_definition_id": int(definition.strategy_id),
+            "source_strategy_id": int(definition.source_strategy_id),
+            "definition_hash": definition.definition_hash,
+            "definition_version": definition.definition_version,
+            "approval_id": definition.approval_id,
+            "strategy_request_id": definition.strategy_request_id,
+            "candidate_id": definition.candidate_id,
+            "candidate_fingerprint": definition.candidate_fingerprint,
+            "derived_clone": True,
+            "evidence_inherited": equivalence.get("evidence_inherited", False),
+            "source_equivalent": equivalence["equivalent"],
+            "source_ready": equivalence.get("source_ready"),
+        },
+        "provenance_mode": "DERIVED_SOURCE_EQUIVALENCE",
+    }
+
+
 def check_readiness(session: Session, strategy_definition_id: int) -> dict[str, Any]:
     """Backtest Readiness 종합 판정. 예외를 던지지 않고 항상
     `{"ready": bool, "checks": {...}, "chain": {...}, "failure_reasons": [...]}`를
@@ -189,17 +321,26 @@ def check_readiness(session: Session, strategy_definition_id: int) -> dict[str, 
     definition = _require_definition(session, strategy_definition_id)
     reasons: list[str] = []
     checks: dict[str, bool] = {}
+    is_derived_clone = definition.source_strategy_id is not None
 
-    checks["is_active"] = bool(definition.is_active)
-    if not checks["is_active"]:
+    checks["is_active"] = bool(definition.is_active) or is_derived_clone
+    if not definition.is_active and not is_derived_clone:
         reasons.append("Definition이 비활성 상태입니다(취소/대체됨).")
 
     from stock_platform.ai.strategy_draft_approval.service import _definition_hash
 
-    recomputed = _definition_hash(definition)
-    checks["hash_valid"] = recomputed == definition.definition_hash
-    if not checks["hash_valid"]:
-        reasons.append("definition_hash가 현재 내용과 일치하지 않습니다(변조 의심).")
+    if is_derived_clone:
+        # 복제본 identity(code/name/source_draft_id)가 달라 identity hash는
+        # 원본과 다를 수 있다. 실행 파라미터 동등성으로 대체한다.
+        equivalence = evaluate_derived_source_equivalence(session, definition)
+        checks["hash_valid"] = equivalence["equivalent"]
+        if not equivalence["equivalent"]:
+            reasons.extend(equivalence["failures"])
+    else:
+        recomputed = _definition_hash(definition)
+        checks["hash_valid"] = recomputed == definition.definition_hash
+        if not checks["hash_valid"]:
+            reasons.append("definition_hash가 현재 내용과 일치하지 않습니다(변조 의심).")
 
     checks["schema_version_present"] = bool(definition.schema_version)
     if not checks["schema_version_present"]:
@@ -211,7 +352,7 @@ def check_readiness(session: Session, strategy_definition_id: int) -> dict[str, 
     if missing_fields:
         reasons.append(f"필수 필드 누락: {', '.join(missing_fields)}")
 
-    provenance = validate_provenance(session, strategy_definition_id)
+    provenance = resolve_strategy_provenance(session, strategy_definition_id)
     checks["provenance_valid"] = provenance["valid"]
     if not provenance["valid"]:
         reasons.extend(provenance["failures"])

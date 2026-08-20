@@ -15,7 +15,8 @@ STEP의 명시적 Commit 입력으로만 쓰인다).
   종합해 둔 값만 읽는다(재계산 없음) — Explainability가 참조한
   Quality Gate/Sensitivity/Monte Carlo/Portfolio Report ID를 그대로
   재사용하고, 명시된 ID가 다르면 차단한다(사칭 방지).
-- Provenance는 STEP12-5 `check_readiness()`/`validate_provenance()`,
+- Provenance는 STEP12-5 `resolve_strategy_provenance()`(Explainability
+  경유),
   Specification은 STEP12-6 `compile_specification()`을 재사용해 Stale
   Detection의 기준선(Definition Version/Hash/Executable Hash)을
   재검증한다(재계산이 아니라 "달라졌는지"만 비교).
@@ -66,7 +67,6 @@ from stock_platform.ai.strategy_draft_approval.quality_gate_entities import (
 from stock_platform.ai.strategy_draft_approval.readiness import (
     ReadinessError,
     _require_definition,
-    validate_provenance,
 )
 from stock_platform.ai.strategy_request.entities import StrategyRequestEntity
 from stock_platform.strategy_deployment.definition_entities import StrategyDefinitionEntity
