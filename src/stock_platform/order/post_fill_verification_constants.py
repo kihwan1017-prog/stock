@@ -24,6 +24,11 @@ TERMINAL_STATUSES = frozenset(
     }
 )
 
+# Admin stale mismatch 해소 확인 문구 (실주문/ LIVE 변경 없음)
+CONFIRM_RESOLVE_STALE_POST_FILL_MISMATCH = (
+    "CONFIRM_RESOLVE_STALE_POST_FILL_MISMATCH"
+)
+
 ACTIVE_STATUSES = frozenset(
     {
         PostFillVerifyStatus.PENDING.value,

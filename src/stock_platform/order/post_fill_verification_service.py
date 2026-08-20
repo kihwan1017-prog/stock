@@ -574,6 +574,114 @@ class PostFillVerificationService:
             ),
         }
 
+    def resolve_stale_mismatch(
+        self,
+        verification_id: int,
+        *,
+        actor: str,
+        confirmation_text: str,
+    ) -> dict[str, Any]:
+        """MISMATCH 행을 현재 스냅샷 기준으로 재검증 후 VERIFIED로 해소.
+
+        - 실주문/LIVE/ARM 변경 없음
+        - evidence 행 삭제 없음 (상태만 VERIFIED + detail)
+        - 현재도 불일치면 GENUINE_CURRENT_MISMATCH 로 거부
+        """
+
+        from stock_platform.broker.account_repository import (
+            BrokerAccountSnapshotRepository,
+        )
+        from stock_platform.order.post_fill_runner import PostFillVerifyRunner
+        from stock_platform.order.post_fill_verification_constants import (
+            CONFIRM_RESOLVE_STALE_POST_FILL_MISMATCH,
+        )
+
+        if str(confirmation_text or "").strip() != (
+            CONFIRM_RESOLVE_STALE_POST_FILL_MISMATCH
+        ):
+            return {
+                "ok": False,
+                "code": "CONFIRMATION_REQUIRED",
+                "verification_id": int(verification_id),
+            }
+
+        row = self._session.get(
+            PostFillVerificationEntity, int(verification_id)
+        )
+        if row is None:
+            return {
+                "ok": False,
+                "code": "NOT_FOUND",
+                "verification_id": int(verification_id),
+            }
+        if str(row.status_code) != PostFillVerifyStatus.MISMATCH.value:
+            return {
+                "ok": False,
+                "code": "NOT_MISMATCH",
+                "verification_id": int(verification_id),
+                "status_code": row.status_code,
+            }
+
+        uba_id = int(row.user_broker_account_id)
+        symbol = str(row.symbol or "").upper()
+        runner = PostFillVerifyRunner(self._session)
+        expected = runner.build_expected_positions_from_orders(
+            user_broker_account_id=uba_id,
+            symbol=symbol or None,
+        )
+        _account, positions = BrokerAccountSnapshotRepository(
+            self._session
+        ).get_active_by_uba(uba_id)
+        broker_positions = [
+            {"symbol": str(p.symbol), "quantity": str(p.quantity)}
+            for p in positions
+            if not symbol or str(p.symbol).upper() == symbol
+        ]
+        result = runner.verify_uba_against_expected(
+            user_broker_account_id=uba_id,
+            user_id=row.user_id,
+            broker_code=str(row.broker_code or "UPBIT"),
+            expected_positions=expected,
+            expected_cash=None,
+            broker_positions=broker_positions,
+            actor=actor,
+            activate_kill_on_mismatch=False,
+            allow_live_off_for_submitted=True,
+        )
+        if not result.ok or result.reason_code not in {
+            "VERIFY_OK",
+            "OK",
+            "LIVE_OFF_SKIP",
+            "NO_UBA_SKIP",
+            "UBA_NOT_FOUND_SKIP",
+        }:
+            return {
+                "ok": False,
+                "code": "GENUINE_CURRENT_MISMATCH",
+                "verification_id": int(verification_id),
+                "reason_code": result.reason_code,
+                "detail": result.detail,
+            }
+
+        prior = {
+            "prior_status": PostFillVerifyStatus.MISMATCH.value,
+            "prior_error": row.last_error_code,
+            "prior_detail": dict(row.detail or {}),
+            "resolution": "STALE_RESOLVED_AFTER_RECONCILE",
+            "resolution_reason_code": result.reason_code,
+            "expected_positions_now": expected,
+            "broker_positions_symbol_now": broker_positions,
+        }
+        self._mark_verified(row, actor=actor, detail=prior)
+        return {
+            "ok": True,
+            "code": "RESOLVED",
+            "verification_id": int(row.verification_id),
+            "order_id": int(row.order_id) if row.order_id else None,
+            "status_code": row.status_code,
+            "detail": prior,
+        }
+
     # --- internal ---
 
     def _reverify(self, row: PostFillVerificationEntity) -> dict[str, Any]:

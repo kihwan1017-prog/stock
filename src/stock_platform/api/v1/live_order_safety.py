@@ -666,6 +666,65 @@ def admin_retry_order_post_fill(
     }
 
 
+class StalePostFillResolveBody(BaseModel):
+    confirmation_text: str = Field(min_length=8, max_length=120)
+
+
+@admin_router.post(
+    "/post-fill-verifications/{verification_id}/resolve-stale"
+)
+def admin_resolve_stale_post_fill(
+    verification_id: int,
+    body: StalePostFillResolveBody,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """STALE MISMATCH 해소 — 현재 스냅샷 재검증 후 VERIFIED.
+
+    실주문/LIVE/ARM/Scheduler 변경 없음. evidence 삭제 없음.
+    """
+
+    from stock_platform.order.post_fill_verification_entities import (
+        PostFillVerificationEntity,
+    )
+    from stock_platform.order.post_fill_verification_service import (
+        PostFillVerificationService,
+    )
+
+    row = session.get(PostFillVerificationEntity, int(verification_id))
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="VERIFICATION_NOT_FOUND",
+        )
+    if row.user_broker_account_id is not None:
+        assert_broker_account_access(
+            user, int(row.user_broker_account_id), session
+        )
+    result = PostFillVerificationService(session).resolve_stale_mismatch(
+        int(verification_id),
+        actor=user.username,
+        confirmation_text=body.confirmation_text,
+    )
+    if not result.get("ok"):
+        code = str(result.get("code") or "RESOLVE_FAILED")
+        http = (
+            status.HTTP_409_CONFLICT
+            if code == "GENUINE_CURRENT_MISMATCH"
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=http, detail=result)
+    session.commit()
+    audit.record(
+        event_type="ADMIN_POST_FILL_STALE_RESOLVED",
+        actor=user.username,
+        detail=result,
+    )
+    session.commit()
+    return result
+
+
 @admin_router.post("/broker-disconnect/{broker_code}")
 def admin_simulate_broker_disconnect(
     broker_code: str,

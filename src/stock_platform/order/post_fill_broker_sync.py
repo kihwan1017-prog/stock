@@ -70,24 +70,33 @@ def sync_broker_snapshot_for_uba(
 def _sync_kiwoom(session: Session, *, uba_id: int) -> dict[str, Any]:
     import asyncio
 
-    from stock_platform.broker.kiwoom.account_factory import (
-        build_kiwoom_account_client,
+    from stock_platform.broker.credential_adapter_factory import (
+        build_kiwoom_account_client_for_uba,
+    )
+    from stock_platform.broker.credential_vault_service import (
+        BrokerCredentialVaultError,
     )
     from stock_platform.broker.kiwoom.account_sync_service import (
         KiwoomAccountSyncService,
     )
 
     async def _run() -> dict[str, Any]:
+        account_client, _account_number = build_kiwoom_account_client_for_uba(
+            session, uba_id
+        )
         return await KiwoomAccountSyncService(
             session=session,
-            account_client=build_kiwoom_account_client(),
+            account_client=account_client,
             user_broker_account_id=uba_id,
         ).synchronize(user_broker_account_id=uba_id)
 
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        result = asyncio.run(_run())
+        try:
+            result = asyncio.run(_run())
+        except BrokerCredentialVaultError as exc:
+            raise PostFillBrokerSyncError(exc.code, exc.message) from exc
     else:
         # 이미 이벤트 루프가 있으면 동기 sync가 막히지 않도록 예외 처리
         # 스케줄러 경로는 async worker에서 await 가능한 별도 진입 사용
@@ -133,16 +142,26 @@ async def sync_broker_snapshot_for_uba_async(
             return {"broker_code": "UPBIT", "synced": True, "result": result}
 
         if code == "KIWOOM":
-            from stock_platform.broker.kiwoom.account_factory import (
-                build_kiwoom_account_client,
+            from stock_platform.broker.credential_adapter_factory import (
+                build_kiwoom_account_client_for_uba,
+            )
+            from stock_platform.broker.credential_vault_service import (
+                BrokerCredentialVaultError,
             )
             from stock_platform.broker.kiwoom.account_sync_service import (
                 KiwoomAccountSyncService,
             )
 
+            try:
+                account_client, _account_number = (
+                    build_kiwoom_account_client_for_uba(session, uba_id)
+                )
+            except BrokerCredentialVaultError as exc:
+                raise PostFillBrokerSyncError(exc.code, exc.message) from exc
+
             result = await KiwoomAccountSyncService(
                 session=session,
-                account_client=build_kiwoom_account_client(),
+                account_client=account_client,
                 user_broker_account_id=uba_id,
             ).synchronize(user_broker_account_id=uba_id)
             return {
