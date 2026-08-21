@@ -30,11 +30,31 @@ class CompositeNotificationSender:
         title: str,
         message: str,
         detail: dict,
+        rendered_title: str | None = None,
+        rendered_body: str | None = None,
+        include_raw_json: bool = False,
+        original_payload: dict | None = None,
+        template_id: int | None = None,
+        template_version: int | None = None,
+        locale: str = "ko-KR",
+        missing_variables: tuple[str, ...] = (),
+        category: str | None = None,
+        severity: str | None = None,
     ) -> NotificationSendResult:
         notification = NotificationMessage(
             title=title,
             message=message,
             detail=detail,
+            rendered_title=rendered_title,
+            rendered_body=rendered_body,
+            include_raw_json=include_raw_json,
+            original_payload=original_payload,
+            template_id=template_id,
+            template_version=template_version,
+            locale=locale,
+            missing_variables=missing_variables,
+            category=category,
+            severity=severity,
         )
 
         results = await asyncio.gather(

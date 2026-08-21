@@ -4406,13 +4406,70 @@ export async function testNotification(body?: {
   title?: string;
   message?: string;
   detail?: Record<string, unknown>;
+  event_type?: string;
 }): Promise<JsonValue> {
   return postJson("/notification/test", {
-    title: body?.title ?? "Admin Web 테스트 알림",
+    title: body?.title ?? "🧪 알림 전송 테스트",
     message:
-      body?.message ?? "Admin 알림 관리 화면에서 전송된 테스트입니다.",
+      body?.message ??
+      "이 메시지는 테스트용입니다. 실주문이 아닙니다.",
     detail: body?.detail ?? {},
+    event_type: body?.event_type ?? "TEST_NOTIFICATION",
   });
+}
+
+export async function listNotificationTemplates(params?: {
+  channel?: string;
+  event_type?: string;
+  locale?: string;
+}): Promise<JsonValue> {
+  return getJson("/admin/notification-templates", params);
+}
+
+export async function previewNotificationTemplate(body: {
+  event_type?: string;
+  title_template: string;
+  body_template: string;
+  sample_detail?: Record<string, unknown>;
+}): Promise<JsonValue> {
+  return postJson("/admin/notification-templates/preview", body);
+}
+
+export async function seedNotificationTemplates(): Promise<JsonValue> {
+  return postJson("/admin/notification-templates/seed", {});
+}
+
+export async function upsertNotificationTemplate(body: {
+  event_type: string;
+  channel?: string;
+  locale?: string;
+  severity?: string;
+  category?: string;
+  audience?: string;
+  title_template: string;
+  body_template: string;
+  short_body_template?: string;
+  enabled?: boolean;
+  version?: number;
+}): Promise<JsonValue> {
+  return postJson("/admin/notification-templates", body);
+}
+
+export async function setNotificationTemplateEnabled(
+  templateId: number,
+  enabled: boolean,
+): Promise<JsonValue> {
+  return patchJson(
+    `/admin/notification-templates/${templateId}/enabled?enabled=${enabled}`,
+    {},
+  );
+}
+
+export async function listNotificationDeliveryLogs(params?: {
+  limit?: number;
+  event_type?: string;
+}): Promise<JsonValue> {
+  return getJson("/admin/notification-templates/delivery-logs", params);
 }
 
 export async function listAuditEvents(params?: {

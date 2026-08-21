@@ -153,15 +153,23 @@ class TelegramNotificationSender(NotificationSender):
     def _format_message(
         notification: NotificationMessage,
     ) -> str:
-        detail_text = json.dumps(
-            notification.detail,
-            ensure_ascii=False,
-            indent=2,
-            default=str,
-        )
-
-        return (
-            f"<b>🚨 {html.escape(notification.title)}</b>\n\n"
-            f"{html.escape(notification.message)}\n\n"
-            f"<pre>{html.escape(detail_text)}</pre>"
-        )
+        title = notification.rendered_title or notification.title
+        body = notification.rendered_body or notification.message
+        parts = [
+            f"<b>{html.escape(title)}</b>",
+            "",
+            html.escape(body),
+        ]
+        if notification.include_raw_json:
+            detail_text = json.dumps(
+                notification.original_payload
+                if notification.original_payload is not None
+                else notification.detail,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+            parts.extend(
+                ["", f"<pre>{html.escape(detail_text)}</pre>"]
+            )
+        return "\n".join(parts)

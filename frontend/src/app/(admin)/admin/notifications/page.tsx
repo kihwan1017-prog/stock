@@ -11,6 +11,7 @@ import {
 } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { NOTIFICATION_EVENT_CATALOG } from "@/features/admin/notifications/opsCatalog";
+import { MessageTemplatesPanel } from "@/features/admin/notifications/MessageTemplatesPanel";
 import { adminRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -38,7 +39,7 @@ export default function AdminNotificationsPage() {
   return (
     <AdminPageShell
       title="알림 관리"
-      description="notification/status · notification/test — Telegram 운영은 Telegram 페이지"
+      description="한글 템플릿 · notification/status · test — Telegram 운영은 Telegram 페이지"
       extra={
         <Space wrap>
           <Button
@@ -54,9 +55,11 @@ export default function AdminNotificationsPage() {
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          Discord 채널 UI는 다루지 않습니다. Telegram Bot·이벤트·운영 명령은{" "}
-          <Link href={adminRoutes.telegram}>Telegram 운영</Link>을 사용하세요.
+          정형 알림은 JSON dump 대신 한글 템플릿으로 전송됩니다. 원본 JSON은
+          관리자 전송 이력에서 확인하세요. Discord 채널 UI는 다루지 않습니다.
         </Typography.Paragraph>
+
+        <MessageTemplatesPanel />
 
         <AdminJsonCard
           title="GET /notification/status"

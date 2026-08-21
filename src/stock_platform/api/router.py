@@ -231,6 +231,9 @@ from stock_platform.api.v1.market_quality import (
 )
 from stock_platform.api.v1.news import router as news_router
 from stock_platform.api.v1.notifications import router as notifications_router
+from stock_platform.api.v1.admin_notification_templates import (
+    router as admin_notification_templates_router,
+)
 from stock_platform.api.v1.telegram_ops import (
     router as telegram_ops_router,
 )
@@ -596,6 +599,7 @@ _ROUTER_GROUPS = (
     guarded_pipeline_router,
     daily_reports_router,
     notifications_router,
+    admin_notification_templates_router,
     telegram_ops_router,
 )
 

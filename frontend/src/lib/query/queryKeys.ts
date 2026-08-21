@@ -182,6 +182,10 @@ export const queryKeys = {
     pipelineLatest: () => ["admin", "pipeline-latest"] as const,
     dailyReports: () => ["admin", "daily-reports"] as const,
     notificationStatus: () => ["admin", "notification-status"] as const,
+    notificationTemplates: (params?: object) =>
+      ["admin", "notification-templates", params ?? {}] as const,
+    notificationDeliveryLogs: (params?: object) =>
+      ["admin", "notification-delivery-logs", params ?? {}] as const,
     auditEvents: (params?: object) =>
       ["admin", "audit-events", params ?? {}] as const,
     upbitMarkets: () => ["admin", "upbit-markets"] as const,

@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     Identity,
     Index,
+    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -43,6 +44,16 @@ class Notification(Base):
     message: Mapped[str] = mapped_column(Text, nullable=False)
     payload_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    rendered_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    rendered_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    locale: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default=text("'ko-KR'")
+    )
+    template_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    original_payload_json: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
     )
     severity: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'INFO'")

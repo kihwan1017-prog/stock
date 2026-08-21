@@ -68,20 +68,56 @@ class NotificationService:
             )
             return None
 
-        result = await self._sender.send(
-            title=event.title,
-            message=event.message,
-            detail={
-                "event_type": event.event_type,
-                **event.detail,
-            },
+        detail = {
+            "event_type": event.event_type,
+            **event.detail,
+        }
+        rendered = self._render_korean(event.event_type, event.title, event.message, detail)
+        if rendered is not None and rendered.suppressed:
+            logger.info(
+                "notification_suppressed",
+                event_type=event.event_type,
+                reason=rendered.suppress_reason,
+            )
+            return None
+
+        send_kwargs: dict[str, Any] = {
+            "title": event.title,
+            "message": event.message,
+            "detail": detail,
+        }
+        if rendered is not None:
+            send_kwargs.update(
+                {
+                    "title": rendered.title,
+                    "message": rendered.body,
+                    "rendered_title": rendered.title,
+                    "rendered_body": rendered.body,
+                    "include_raw_json": False,
+                    "original_payload": rendered.original_payload,
+                    "template_id": rendered.template_id,
+                    "template_version": rendered.template_version,
+                    "locale": rendered.locale,
+                    "missing_variables": tuple(rendered.missing_variables),
+                    "category": rendered.category,
+                    "severity": rendered.severity,
+                }
+            )
+
+        result = await self._sender.send(**send_kwargs)
+
+        display_title = (
+            rendered.title if rendered is not None else event.title
+        )
+        display_message = (
+            rendered.body if rendered is not None else event.message
         )
 
         self._history.append(
             NotificationHistoryRecord(
                 event_type=event.event_type,
-                title=event.title,
-                message=event.message,
+                title=display_title,
+                message=display_message,
                 channel_results=[
                     {
                         "channel": item.channel.value,
@@ -93,6 +129,12 @@ class NotificationService:
                 success=result.success,
                 created_at=datetime.now(timezone.utc),
             )
+        )
+
+        self._persist_delivery_log(
+            event_type=event.event_type,
+            rendered=rendered,
+            result=result,
         )
 
         logger.debug(
@@ -115,7 +157,13 @@ class NotificationService:
                 actor="NOTIFICATION_SERVICE",
                 detail={
                     "event_type": event.event_type,
-                    "title": event.title,
+                    "title": display_title,
+                    "template_id": (
+                        rendered.template_id if rendered else None
+                    ),
+                    "missing_variables": (
+                        list(rendered.missing_variables) if rendered else []
+                    ),
                     "success": result.success,
                     "results": [
                         {
@@ -129,6 +177,134 @@ class NotificationService:
             )
 
         return result
+
+    @staticmethod
+    def _render_korean(
+        event_type: str,
+        title: str,
+        message: str,
+        detail: dict[str, Any],
+    ):
+        """DB/builtin 한글 템플릿 렌더. 실패 시 None → 기존 title/message."""
+
+        try:
+            from stock_platform.notification.template_cache import (
+                ensure_cache_loaded,
+                get_cached_template,
+            )
+            from stock_platform.notification.template_pipeline import (
+                render_notification,
+            )
+
+            session = None
+            try:
+                from stock_platform.database.session import (
+                    get_session_factory,
+                )
+
+                session = get_session_factory()()
+                ensure_cache_loaded(session)
+            except Exception:  # noqa: BLE001
+                pass
+            finally:
+                if session is not None:
+                    session.close()
+
+            db_tpl = get_cached_template(
+                event_type=event_type,
+                channel="TELEGRAM",
+                locale="ko-KR",
+            ) or get_cached_template(
+                event_type=event_type,
+                channel="COMMON",
+                locale="ko-KR",
+            )
+            return render_notification(
+                event_type=event_type,
+                title=title,
+                message=message,
+                detail=detail,
+                channel="TELEGRAM",
+                locale="ko-KR",
+                db_template=db_tpl,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "notification_korean_render_failed",
+                event_type=event_type,
+                error=type(exc).__name__,
+            )
+            return None
+
+    @staticmethod
+    def _persist_delivery_log(
+        *,
+        event_type: str,
+        rendered: Any,
+        result: NotificationSendResult,
+    ) -> None:
+        """채널 전송 결과 + 원본 JSON 보존 (실패해도 전송에 영향 없음)."""
+
+        try:
+            from stock_platform.database.session import get_session_factory
+            from stock_platform.notification.template_entities import (
+                ChannelDeliveryLogEntity,
+            )
+
+            session = get_session_factory()()
+            try:
+                for item in result.results:
+                    session.add(
+                        ChannelDeliveryLogEntity(
+                            event_type=str(event_type).upper(),
+                            channel=item.channel.value,
+                            recipient=None,
+                            rendered_title=(
+                                rendered.title if rendered else None
+                            ),
+                            rendered_message=(
+                                rendered.body if rendered else None
+                            ),
+                            original_payload_json=(
+                                rendered.original_payload
+                                if rendered
+                                else {}
+                            ),
+                            status=item.status.value,
+                            error_message=(
+                                item.message
+                                if item.status.value == "FAILED"
+                                else None
+                            ),
+                            template_id=(
+                                rendered.template_id if rendered else None
+                            ),
+                            template_version=(
+                                rendered.template_version
+                                if rendered
+                                else None
+                            ),
+                            locale=(
+                                rendered.locale if rendered else "ko-KR"
+                            ),
+                            missing_variables_json=(
+                                list(rendered.missing_variables)
+                                if rendered
+                                else None
+                            ),
+                            sent_at=item.sent_at,
+                        )
+                    )
+                session.commit()
+            except Exception:
+                session.rollback()
+            finally:
+                session.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "notification_delivery_log_skipped",
+                error=type(exc).__name__,
+            )
 
     def status(self) -> dict[str, Any]:
         settings = NotificationSettings.from_env()

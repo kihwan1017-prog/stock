@@ -66,22 +66,28 @@ class SlackNotificationSender(NotificationSender):
         )
 
         try:
+            title = notification.rendered_title or notification.title
+            body = notification.rendered_body or notification.message
+            text = f"*{title}*\n{body}"
+            if notification.include_raw_json:
+                payload = (
+                    notification.original_payload
+                    if notification.original_payload is not None
+                    else notification.detail
+                )
+                text += (
+                    "\n```"
+                    + json.dumps(
+                        payload,
+                        ensure_ascii=False,
+                        indent=2,
+                        default=str,
+                    )
+                    + "```"
+                )
             response = await client.post(
                 self._webhook_url,
-                json={
-                    "text": (
-                        f":red_circle: *{notification.title}*\n"
-                        f"{notification.message}\n"
-                        "```"
-                        + json.dumps(
-                            notification.detail,
-                            ensure_ascii=False,
-                            indent=2,
-                            default=str,
-                        )
-                        + "```"
-                    )
-                },
+                json={"text": text},
             )
             response.raise_for_status()
 

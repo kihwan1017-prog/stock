@@ -47,6 +47,7 @@ class NotificationEventType(StrEnum):
     AI_TIMEOUT = "AI_TIMEOUT"
     TELEGRAM_FAILURE = "TELEGRAM_FAILURE"
     MONITORING_ALERT = "MONITORING_ALERT"
+    TEST_NOTIFICATION = "TEST_NOTIFICATION"
 
 
 class NotificationLevel(IntEnum):
@@ -100,6 +101,7 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.AI_TIMEOUT: NotificationLevel.WARN,
     NotificationEventType.TELEGRAM_FAILURE: NotificationLevel.WARN,
     NotificationEventType.MONITORING_ALERT: NotificationLevel.WARN,
+    NotificationEventType.TEST_NOTIFICATION: NotificationLevel.INFO,
 }
 
 
