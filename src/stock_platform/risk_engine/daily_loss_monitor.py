@@ -160,11 +160,10 @@ class DailyLossMonitor:
                 detail_payload=detail,
             )
             await self._notifier.send(
-                title="계좌 Daily Drawdown (telemetry)",
+                title="계좌 손실 현황",
                 message=(
-                    "Account MTM drawdown exceeded telemetry threshold; "
-                    "Kill not auto-activated. Strategy ENTRY uses "
-                    "strategy-owned PnL."
+                    "계좌 전체 평가손실이 알림 기준을 초과했습니다. "
+                    "Kill Switch는 자동 작동하지 않았습니다."
                 ),
                 detail=detail,
             )

@@ -8,8 +8,15 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 # 표준 reject/approve 이벤트 타입
-LIVE_APPROVED = "LIVE_APPROVED"
+# LIVE 승인: LIVE_ON / LIVE_OFF 가 공식값
+LIVE_ON = "LIVE_ON"
+LIVE_OFF = "LIVE_OFF"
+LIVE_APPROVED = "LIVE_APPROVED"  # legacy — LIVE_ON 권장
+LIVE_DISABLED = LIVE_OFF  # legacy alias
 LIVE_REJECTED = "LIVE_REJECTED"
+ARM_REJECTED = "ARM_REJECTED"
+SCHEDULER_REJECTED = "SCHEDULER_REJECTED"
+RUNTIME_CONTROL_REJECTED = "RUNTIME_CONTROL_REJECTED"
 ORDER_AMOUNT_REJECT = "ORDER_AMOUNT_REJECT"
 ORDER_QTY_REJECT = "ORDER_QTY_REJECT"
 DAILY_LIMIT_REJECT = "DAILY_LIMIT_REJECT"
@@ -24,6 +31,10 @@ ARM_OFF = "ARM_OFF"
 LIVE_ARM = ARM_ON
 LIVE_DISARM = ARM_OFF
 LIVE_ARM_EXPIRED = "LIVE_ARM_EXPIRED"
+ACTIVATION_EXPIRED = "ACTIVATION_EXPIRED"
+# Scheduler 제어 audit
+SCHEDULER_RUN = "SCHEDULER_RUN"
+SCHEDULER_PAUSE = "SCHEDULER_PAUSE"
 OPEN_ORDER_LIMIT = "OPEN_ORDER_LIMIT"
 SLIPPAGE_REJECT = "SLIPPAGE_REJECT"
 POSITION_MISMATCH = "POSITION_MISMATCH"
@@ -157,11 +168,22 @@ def emit_live_order_telegram(
             LOOP_DETECTED,
             ANOMALY_ORDER_RATE,
             LIVE_ARM_EXPIRED,
+            ACTIVATION_EXPIRED,
         }:
             mapped = NotificationEventType.ORDER_REJECTED.value
-        elif event_type in {LIVE_ORDER_SUBMITTED, LIVE_APPROVED, LIVE_ARM}:
+        elif event_type in {
+            LIVE_ORDER_SUBMITTED,
+            LIVE_APPROVED,
+        }:
+            # 실제 주문 제출만 ORDER_SUBMITTED — ARM/LIVE ON 은 모니터링 알림
             mapped = NotificationEventType.ORDER_SUBMITTED.value
-        elif event_type in {LIVE_DISARM}:
+        elif event_type in {
+            LIVE_ON,
+            LIVE_ARM,
+            ARM_ON,
+        }:
+            mapped = NotificationEventType.MONITORING_ALERT.value
+        elif event_type in {LIVE_DISARM, ARM_OFF, LIVE_OFF, LIVE_DISABLED, ACTIVATION_EXPIRED}:
             mapped = NotificationEventType.MONITORING_ALERT.value
         elif event_type in {POSITION_MISMATCH, CASH_MISMATCH}:
             mapped = NotificationEventType.KILL_SWITCH.value
@@ -183,7 +205,11 @@ def emit_live_order_telegram(
             mapped = NotificationEventType.BROKER_DISCONNECTED.value
         elif event_type == BROKER_RECOVERED:
             mapped = NotificationEventType.BROKER_RECONNECTED.value
-        elif event_type in {"SCHEDULER_PAUSE", "SCHEDULER_RESUME"}:
+        elif event_type in {
+            SCHEDULER_PAUSE,
+            SCHEDULER_RUN,
+            "SCHEDULER_RESUME",
+        }:
             mapped = NotificationEventType.SCHEDULER_ERROR.value
         elif event_type in {"KILL_SWITCH", "KILL_SWITCH_ACTIVATE"}:
             mapped = NotificationEventType.KILL_SWITCH.value

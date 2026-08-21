@@ -21,19 +21,8 @@ def _ensure_event(name: str) -> str:
 
 def publish_shadow_opened(shadow: dict[str, Any]) -> None:
     symbol = shadow.get("symbol")
-    title = f"UPBIT Shadow Opportunity {symbol}"
-    message = (
-        f"[UPBIT Shadow Opportunity]\n"
-        f"Symbol: {symbol}\n"
-        f"Rank: {shadow.get('scanner_rank')}\n"
-        f"Score: {shadow.get('scanner_score')}\n"
-        f"AI: {shadow.get('recommendation')}\n"
-        f"Confidence: {shadow.get('confidence')}\n"
-        f"Entry: {shadow.get('entry_price')}\n"
-        f"Shadow Amount: {shadow.get('assumed_amount_krw')} KRW\n"
-        f"SHADOW ONLY\n"
-        f"LIVE ORDER: NO"
-    )
+    title = "Shadow 후보 추적 시작"
+    message = f"종목 {symbol} Shadow 추적 시작 (실주문 아님)"
     notification_publisher.publish(
         event_type=_ensure_event("UPBIT_SCANNER_SHADOW_OPENED"),
         title=title,
@@ -46,6 +35,13 @@ def publish_shadow_opened(shadow: dict[str, Any]) -> None:
             "paper_shadow": True,
             "shadow_only": True,
             "shadow": shadow,
+            "symbol": symbol,
+            "rank": shadow.get("scanner_rank"),
+            "scanner_score": shadow.get("scanner_score"),
+            "recommendation": shadow.get("recommendation"),
+            "confidence": shadow.get("confidence"),
+            "entry_price": shadow.get("entry_price"),
+            "assumed_amount_krw": shadow.get("assumed_amount_krw"),
         },
     )
 

@@ -20,13 +20,19 @@ BUILTIN_KO: dict[str, dict[str, str]] = {
         "SELL_SHORT": "매도",
     },
     "order_status": {
-        "SUBMITTED": "제출됨",
+        "SUBMITTED": "제출",
         "ACCEPTED": "주문 접수",
         "FILLED": "체결 완료",
         "PARTIAL_FILLED": "부분 체결",
         "CANCELLED": "주문 취소",
         "REJECTED": "주문 거부",
         "PENDING": "대기",
+    },
+    "order_type": {
+        "LIMIT": "지정가",
+        "MARKET": "시장가",
+        "BEST": "최유리",
+        "PRICE": "지정가",
     },
     "runtime": {
         "RUNNING": "실행 중",

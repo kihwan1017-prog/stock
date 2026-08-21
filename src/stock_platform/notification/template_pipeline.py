@@ -101,6 +101,26 @@ def should_suppress_state_event(
             if last and now - last < _STATE_TTL_SECONDS:
                 return True, "SCANNER_HOLD_SUPPRESS"
             _state_dedupe[key] = now
+        return False, None
+
+    if et == "ACCOUNT_DAILY_DRAWDOWN":
+        # 동일 계좌·동일 손실 구간 반복 → 45분 cooldown (Risk 동작 변경 없음)
+        loss_raw = detail.get("current_loss_amount")
+        try:
+            loss_bucket = int(float(loss_raw) // 10000) if loss_raw is not None else 0
+        except (TypeError, ValueError):
+            loss_bucket = 0
+        key = (
+            f"DD|{variables.get('uba_id')}|{detail.get('broker_code')}|"
+            f"{detail.get('trading_date')}|{loss_bucket}"
+        )
+        now = time.time()
+        last = _state_dedupe.get(key)
+        if last and now - last < 2700:  # 45분
+            return True, "ACCOUNT_DRAWDOWN_COOLDOWN_45M"
+        _state_dedupe[key] = now
+        return False, None
+
     return False, None
 
 

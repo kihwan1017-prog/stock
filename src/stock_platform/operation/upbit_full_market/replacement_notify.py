@@ -62,6 +62,7 @@ def publish_slot_replacement_alert(
         "orders_created": 0,
         "symbol_display": new_symbol,
         "old_symbol_display": old_symbol,
+        "new_symbol_display": new_symbol,
         "scanner_score": new_score,
         "old_scanner_score": old_score,
     }

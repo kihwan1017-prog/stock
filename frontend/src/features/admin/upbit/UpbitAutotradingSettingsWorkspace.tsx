@@ -706,6 +706,43 @@ export function UpbitAutotradingSettingsWorkspace({
                   render: (v) => <Tag>{String(v)}</Tag>,
                 },
                 {
+                  title: "Score",
+                  dataIndex: "scanner_score",
+                  width: 72,
+                  render: (_: unknown, row) => {
+                    const o = asObj(row);
+                    const v = o.scanner_score ?? o.score;
+                    return v == null ? "—" : String(v);
+                  },
+                },
+                {
+                  title: "AI",
+                  dataIndex: "ai_recommendation",
+                  width: 88,
+                  render: (v) => (v == null ? "—" : String(v)),
+                },
+                {
+                  title: "Entry 판정",
+                  key: "entry_eval",
+                  width: 120,
+                  render: (_: unknown, row) => {
+                    const o = asObj(row);
+                    const d = o.last_entry_decision ?? o.entry_decision;
+                    return d == null ? "—" : String(d);
+                  },
+                },
+                {
+                  title: "차단 사유",
+                  key: "block_reason",
+                  ellipsis: true,
+                  render: (_: unknown, row) => {
+                    const o = asObj(row);
+                    const v =
+                      o.last_entry_block_reason ?? o.entry_block_reason;
+                    return v == null ? "—" : String(v);
+                  },
+                },
+                {
                   title: "Allocated",
                   dataIndex: "allocated_amount_krw",
                   render: (v) => (v == null ? "—" : String(v)),

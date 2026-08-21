@@ -507,6 +507,10 @@ class UpbitPortfolioService:
         }
 
     def list_slots(self, user_broker_account_id: int) -> list[dict[str, Any]]:
+        from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            portfolio_entry_telemetry,
+        )
+
         rows = list(
             self._session.scalars(
                 select(UpbitPositionSlotEntity)
@@ -517,27 +521,85 @@ class UpbitPortfolioService:
                 .order_by(UpbitPositionSlotEntity.slot_no)
             )
         )
-        return [
-            {
-                "slot_id": int(s.slot_id),
-                "slot_no": int(s.slot_no),
-                "status": s.status,
-                "symbol": s.symbol,
-                "recommended_amount_krw": s.recommended_amount_krw,
-                "allocated_amount_krw": s.allocated_amount_krw,
-                "reserved_amount_krw": s.reserved_amount_krw,
-                "clamp_reasons": s.clamp_reasons,
-                "candidate_selection_id": s.candidate_selection_id,
-                "scanner_run_id": s.scanner_run_id,
-                "entry_order_id": s.entry_order_id,
-                "position_binding_id": s.position_binding_id,
-                "cooldown_until": (
-                    s.cooldown_until.isoformat() if s.cooldown_until else None
-                ),
-                "version": int(s.version),
-            }
+        sel_ids = [
+            int(s.candidate_selection_id)
             for s in rows
+            if s.candidate_selection_id is not None
         ]
+        sel_by_id: dict[int, Any] = {}
+        if sel_ids:
+            for sel in self._session.scalars(
+                select(UpbitLiveCandidateSelectionEntity).where(
+                    UpbitLiveCandidateSelectionEntity.selection_id.in_(sel_ids)
+                )
+            ):
+                sel_by_id[int(sel.selection_id)] = sel
+        evals = portfolio_entry_telemetry.snapshot(int(user_broker_account_id))
+        out: list[dict[str, Any]] = []
+        for s in rows:
+            sel = (
+                sel_by_id.get(int(s.candidate_selection_id))
+                if s.candidate_selection_id is not None
+                else None
+            )
+            sym = str(s.symbol or "").upper()
+            ev = evals.get(sym) if isinstance(evals, dict) else None
+            if not isinstance(ev, dict):
+                ev = {}
+            waiting_age_seconds = None
+            if sel is not None and getattr(sel, "selected_at", None) is not None:
+                try:
+                    selected = sel.selected_at
+                    if selected.tzinfo is None:
+                        selected = selected.replace(tzinfo=timezone.utc)
+                    waiting_age_seconds = max(
+                        0.0,
+                        (datetime.now(timezone.utc) - selected).total_seconds(),
+                    )
+                except Exception:  # noqa: BLE001
+                    waiting_age_seconds = None
+            out.append(
+                {
+                    "slot_id": int(s.slot_id),
+                    "slot_no": int(s.slot_no),
+                    "status": s.status,
+                    "symbol": s.symbol,
+                    "recommended_amount_krw": s.recommended_amount_krw,
+                    "allocated_amount_krw": s.allocated_amount_krw,
+                    "reserved_amount_krw": s.reserved_amount_krw,
+                    "clamp_reasons": s.clamp_reasons,
+                    "candidate_selection_id": s.candidate_selection_id,
+                    "scanner_run_id": s.scanner_run_id,
+                    "entry_order_id": s.entry_order_id,
+                    "position_binding_id": s.position_binding_id,
+                    "cooldown_until": (
+                        s.cooldown_until.isoformat()
+                        if s.cooldown_until
+                        else None
+                    ),
+                    "version": int(s.version),
+                    "scanner_score": (
+                        float(sel.score) if sel is not None and sel.score is not None else None
+                    ),
+                    "score": (
+                        float(sel.score) if sel is not None and sel.score is not None else None
+                    ),
+                    "ai_recommendation": (
+                        sel.ai_recommendation if sel is not None else None
+                    ),
+                    "ai_confidence": (
+                        float(sel.confidence)
+                        if sel is not None and sel.confidence is not None
+                        else None
+                    ),
+                    "waiting_age_seconds": waiting_age_seconds,
+                    "last_entry_decision": ev.get("last_decision"),
+                    "last_entry_block_reason": ev.get("last_block_reason"),
+                    "last_entry_evaluated_at": ev.get("last_evaluated_at"),
+                    "entry_evaluation_count": ev.get("evaluation_count"),
+                }
+            )
+        return out
 
     def active_symbols(self, user_broker_account_id: int) -> list[str]:
         rows = list(

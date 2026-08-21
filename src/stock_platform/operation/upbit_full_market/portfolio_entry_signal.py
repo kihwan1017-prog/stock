@@ -7,9 +7,11 @@ BULLISH_STATE 를 켠다.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -89,8 +91,16 @@ class EntryEvalRecord:
     indicator_snapshot: dict[str, Any] = field(default_factory=dict)
 
 
+def _latest_eval_store_path(uba_id: int) -> Path:
+    """재시작 후에도 latest decision/reason 확인용 bounded JSON SoT."""
+
+    root = Path(__file__).resolve().parents[4] / ".run"
+    root.mkdir(parents=True, exist_ok=True)
+    return root / f"uba_{int(uba_id)}_entry_eval_latest.json"
+
+
 class PortfolioEntryTelemetry:
-    """슬롯별 in-memory 평가 요약 — 고빈도 DB write 금지."""
+    """슬롯별 평가 요약 — 메모리 + decision 변경 시만 JSON persist."""
 
     def __init__(self) -> None:
         self._lock = Lock()
@@ -110,50 +120,80 @@ class PortfolioEntryTelemetry:
         with self._lock:
             bucket = self._by_uba.setdefault(int(uba_id), {})
             row = bucket.setdefault(symbol.upper(), EntryEvalRecord())
+            prev_decision = row.last_decision
+            prev_reason = row.last_block_reason
             row.last_evaluated_at = now
             row.evaluation_count += 1
             row.last_decision = decision
             row.last_block_reason = block_reason
             row.last_reason_code = reason_code
             row.indicator_snapshot = dict(snapshot)
+            # tick마다 쓰지 않고 decision/reason 변경 시에만 저장
+            if (
+                prev_decision != decision
+                or prev_reason != block_reason
+                or row.evaluation_count == 1
+            ):
+                self._persist_unlocked(int(uba_id))
+
+    def _row_dict(self, row: EntryEvalRecord) -> dict[str, Any]:
+        return {
+            "last_evaluated_at": (
+                row.last_evaluated_at.isoformat()
+                if row.last_evaluated_at
+                else None
+            ),
+            "evaluation_count": row.evaluation_count,
+            "last_decision": row.last_decision,
+            "last_block_reason": row.last_block_reason,
+            "last_reason_code": row.last_reason_code,
+            "indicator_snapshot": dict(row.indicator_snapshot),
+        }
+
+    def _persist_unlocked(self, uba_id: int) -> None:
+        # 단위테스트가 운영 SoT 파일을 오염시키지 않도록 차단
+        import os
+
+        if os.environ.get("PYTEST_CURRENT_TEST"):
+            return
+        payload = {
+            sym: self._row_dict(r)
+            for sym, r in self._by_uba.get(int(uba_id), {}).items()
+        }
+        try:
+            _latest_eval_store_path(uba_id).write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    def _load_persisted(self, uba_id: int) -> dict[str, Any]:
+        path = _latest_eval_store_path(uba_id)
+        if not path.is_file():
+            return {}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return raw if isinstance(raw, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
 
     def snapshot(self, uba_id: int | None = None) -> dict[str, Any]:
         with self._lock:
             if uba_id is None:
                 return {
                     str(k): {
-                        sym: {
-                            "last_evaluated_at": (
-                                r.last_evaluated_at.isoformat()
-                                if r.last_evaluated_at
-                                else None
-                            ),
-                            "evaluation_count": r.evaluation_count,
-                            "last_decision": r.last_decision,
-                            "last_block_reason": r.last_block_reason,
-                            "last_reason_code": r.last_reason_code,
-                            "indicator_snapshot": dict(r.indicator_snapshot),
-                        }
-                        for sym, r in v.items()
+                        sym: self._row_dict(r) for sym, r in v.items()
                     }
                     for k, v in self._by_uba.items()
                 }
-            data = self._by_uba.get(int(uba_id), {})
-            return {
-                sym: {
-                    "last_evaluated_at": (
-                        r.last_evaluated_at.isoformat()
-                        if r.last_evaluated_at
-                        else None
-                    ),
-                    "evaluation_count": r.evaluation_count,
-                    "last_decision": r.last_decision,
-                    "last_block_reason": r.last_block_reason,
-                    "last_reason_code": r.last_reason_code,
-                    "indicator_snapshot": dict(r.indicator_snapshot),
-                }
-                for sym, r in data.items()
+            mem = {
+                sym: self._row_dict(r)
+                for sym, r in self._by_uba.get(int(uba_id), {}).items()
             }
+            if mem:
+                return mem
+            return self._load_persisted(int(uba_id))
 
 
 portfolio_entry_telemetry = PortfolioEntryTelemetry()

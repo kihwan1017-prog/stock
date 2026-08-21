@@ -332,3 +332,93 @@ def test_contract_audit_no_high_priority_fail() -> None:
     summary = summarize_contract_audit()
     assert summary["by_status"].get("INVALID_TEMPLATE_VARIABLE", 0) == 0
     assert summary["high_priority_fail"] == []
+
+
+def test_portfolio_replacement_and_shadow_korean() -> None:
+    replaced = render_notification(
+        event_type="UPBIT_PORTFOLIO_CANDIDATE_REPLACED",
+        title="t",
+        message="m",
+        detail={
+            "old_symbol": "KRW-PUMP",
+            "new_symbol": "KRW-TREE",
+            "old_score": 75.31,
+            "new_score": 80.33,
+            "reason_ko": "후보 신선도 만료",
+            "slot_no": 2,
+            "user_broker_account_id": 1380,
+        },
+    )
+    assert replaced.diagnostic_code is None
+    assert "PUMP" in replaced.body
+    assert "TREE" in replaced.body
+    assert "80.33" in replaced.body
+    assert "누락" not in replaced.body
+
+    shadow = render_notification(
+        event_type="UPBIT_SCANNER_SHADOW_OPENED",
+        title="t",
+        message="m",
+        detail={
+            "shadow": {
+                "symbol": "KRW-TREE",
+                "scanner_rank": 1,
+                "scanner_score": 80.33,
+                "recommendation": "ALLOW",
+                "confidence": 0.85,
+                "entry_price": 52,
+                "assumed_amount_krw": 5000,
+            }
+        },
+    )
+    assert "Shadow" in shadow.title or "추적" in shadow.title
+    assert "TREE" in shadow.body
+    assert "실제 주문" in shadow.body
+    assert "json" not in shadow.body.lower()
+
+
+def test_account_drawdown_korean_and_cooldown() -> None:
+    detail = {
+        "broker_code": "KIWOOM",
+        "user_broker_account_id": 1381,
+        "masked_account_ref": "******4511",
+        "current_loss_amount": "577104.00",
+        "loss_limit_amount": "300000",
+        "trading_date": "2026-08-21",
+        "auto_kill": False,
+    }
+    first = render_notification(
+        event_type="ACCOUNT_DAILY_DRAWDOWN",
+        title="t",
+        message="m",
+        detail=detail,
+    )
+    assert "계좌 손실" in first.title
+    assert "키움" in first.body
+    assert "Kill Switch는 작동하지 않았습니다" in first.body
+    assert first.suppressed is False
+
+    second = render_notification(
+        event_type="ACCOUNT_DAILY_DRAWDOWN",
+        title="t",
+        message="m",
+        detail=detail,
+    )
+    assert second.suppressed is True
+    assert second.suppress_reason == "ACCOUNT_DRAWDOWN_COOLDOWN_45M"
+
+
+def test_arm_renewal_payload_not_required_as_order_symbol() -> None:
+    """ARM/unattended 잔여 payload가 ORDER_SUBMITTED로 오면 fallback 진단."""
+
+    rendered = render_notification(
+        event_type="ORDER_SUBMITTED",
+        title="t",
+        message="m",
+        detail={
+            "actor": "SYSTEM_UNATTENDED",
+            "expires_at": "2026-08-21T13:17:11.444494+00:00",
+            "user_broker_account_id": 1380,
+        },
+    )
+    assert rendered.diagnostic_code == "TEMPLATE_REQUIRED_FIELD_MISSING"

@@ -76,7 +76,11 @@ EVENT_CATEGORY: dict[str, str] = {
 # event별 필수 표시 필드(없으면 fallback + diagnostic)
 REQUIRED_FIELDS: dict[str, frozenset[str]] = {
     "UPBIT_SCANNER_CANDIDATE": frozenset({"symbol_display"}),
-    "UPBIT_PORTFOLIO_CANDIDATE_REPLACED": frozenset({"symbol_display"}),
+    "UPBIT_PORTFOLIO_CANDIDATE_REPLACED": frozenset(
+        {"old_symbol_display", "new_symbol_display"}
+    ),
+    "UPBIT_SCANNER_SHADOW_OPENED": frozenset({"symbol_display"}),
+    "ACCOUNT_DAILY_DRAWDOWN": frozenset({"account_display"}),
     "ORDER_SUBMITTED": frozenset({"symbol_display"}),
     "ORDER_FILLED": frozenset({"symbol_display"}),
     "ORDER_PARTIAL_FILLED": frozenset({"symbol_display"}),
@@ -125,6 +129,7 @@ def flatten_event_detail(detail: dict[str, Any] | None) -> dict[str, Any]:
         "ai",
         "analysis",
         "payload",
+        "shadow",
     ):
         blob = raw.get(nest_key)
         if isinstance(blob, dict):
@@ -227,8 +232,20 @@ def normalize_variables(
         flat.get("signal_action"),
         flat.get("action"),
     )
-    symbol = _first(flat.get("symbol"), flat.get("market"), flat.get("ticker"))
+    symbol = _first(
+        flat.get("symbol"),
+        flat.get("new_symbol"),
+        flat.get("market"),
+        flat.get("ticker"),
+    )
+    old_symbol = _first(flat.get("old_symbol"), flat.get("previous_symbol"))
+    new_symbol = _first(flat.get("new_symbol"), flat.get("symbol"))
     status = _first(flat.get("status"), flat.get("order_status"), flat.get("status_code"))
+    order_type = _first(
+        flat.get("order_type"),
+        flat.get("order_type_code"),
+        flat.get("type"),
+    )
     prev = _first(
         flat.get("previous_recommendation"),
         flat.get("prev_recommendation"),
@@ -247,6 +264,7 @@ def normalize_variables(
         flat.get("order_amount"),
         flat.get("approved_amount_krw"),
         flat.get("recommended_amount_krw"),
+        flat.get("assumed_amount_krw"),
     )
     price = _first(
         flat.get("avg_price"),
@@ -254,6 +272,7 @@ def normalize_variables(
         flat.get("price"),
         flat.get("signal_price"),
         flat.get("order_price"),
+        flat.get("entry_price"),
     )
     qty = _first(
         flat.get("filled_qty"),
@@ -279,10 +298,16 @@ def normalize_variables(
         flat.get("account_display"),
         flat.get("uba_label"),
         (
+            f"{broker_ko(broker)} {flat.get('masked_account_ref')}"
+            if broker and flat.get("masked_account_ref")
+            else None
+        ),
+        (
             f"UBA{flat['user_broker_account_id']}"
             if flat.get("user_broker_account_id") is not None
             else None
         ),
+        flat.get("masked_account_ref"),
         broker_ko(broker) if broker else None,
     )
     position_status = _first(flat.get("position_status"), flat.get("slot_status"))
@@ -295,7 +320,7 @@ def normalize_variables(
         flat.get("analyzed_at"),
     )
     score = _first(flat.get("scanner_score"), flat.get("score"))
-    rank = flat.get("rank")
+    rank = _first(flat.get("rank"), flat.get("scanner_rank"))
     slot_no = _first(flat.get("slot_no"), flat.get("slot"))
     ai_rec = _first(flat.get("ai_recommendation"), new)
     candidates_summary = _candidates_summary(safe)
@@ -307,10 +332,42 @@ def normalize_variables(
     )
     if symbol_display == "-":
         symbol_display = None
+    old_symbol_display = (
+        format_symbol(old_symbol) if old_symbol else None
+    )
+    if old_symbol_display == "-":
+        old_symbol_display = None
+    # 명시 필드도 심볼 포맷 적용 (KRW-TREE → TREE)
+    if flat.get("old_symbol_display"):
+        old_symbol_display = format_symbol(flat.get("old_symbol_display"))
+        if old_symbol_display == "-":
+            old_symbol_display = None
+    new_symbol_display = (
+        format_symbol(new_symbol) if new_symbol else symbol_display
+    )
+    if new_symbol_display == "-":
+        new_symbol_display = None
+    if flat.get("new_symbol_display"):
+        new_symbol_display = format_symbol(flat.get("new_symbol_display"))
+        if new_symbol_display == "-":
+            new_symbol_display = None
+    if flat.get("symbol_display") and not symbol_display:
+        symbol_display = format_symbol(flat.get("symbol_display"))
+        if symbol_display == "-":
+            symbol_display = None
+    # 교체 이벤트: symbol_display = 신규 종목
+    et_upper = str(event_type or "").upper()
+    if et_upper == "UPBIT_PORTFOLIO_CANDIDATE_REPLACED" and new_symbol_display:
+        symbol_display = new_symbol_display
 
     ai_ko = recommendation_ko(ai_rec) if ai_rec else None
     if ai_ko == "-":
         ai_ko = None
+
+    old_score = _first(flat.get("old_score"), flat.get("old_scanner_score"))
+    new_score = _first(
+        flat.get("new_score"), flat.get("scanner_score"), flat.get("score")
+    )
 
     vars_: dict[str, Any] = {
         "event_type": str(event_type or "").upper(),
@@ -322,6 +379,17 @@ def normalize_variables(
         "side_ko": side_ko(side) if side else None,
         "symbol": str(symbol).upper() if symbol else None,
         "symbol_display": symbol_display,
+        "old_symbol_display": old_symbol_display,
+        "new_symbol_display": new_symbol_display,
+        "old_scanner_score": (
+            format_number(old_score, digits=2) if old_score is not None else None
+        ),
+        "new_scanner_score": (
+            format_number(new_score, digits=2) if new_score is not None else None
+        ),
+        "order_type_ko": (
+            translate(order_type, group="order_type") if order_type else None
+        ),
         "status": str(status).upper() if status else None,
         "status_ko": translate(status, group="order_status") if status else None,
         "position_status_ko": (
@@ -362,6 +430,16 @@ def normalize_variables(
         "limit_value": (
             str(flat.get("limit_value") or flat.get("limit"))
             if (flat.get("limit_value") or flat.get("limit")) is not None
+            else None
+        ),
+        "current_loss_display": (
+            format_krw(flat.get("current_loss_amount"))
+            if flat.get("current_loss_amount") is not None
+            else None
+        ),
+        "loss_limit_display": (
+            format_krw(flat.get("loss_limit_amount"))
+            if flat.get("loss_limit_amount") is not None
             else None
         ),
         "created_at_kst": format_datetime_kst(created)

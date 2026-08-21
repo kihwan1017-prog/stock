@@ -10,15 +10,16 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "event_type": "ORDER_SUBMITTED",
         "category": "TRADE",
         "severity": "INFO",
-        "title_template": "📤 {broker_ko} 주문 제출",
+        "title_template": "📤 자동매매 주문 제출",
         "body_template": (
+            "거래소: {broker_ko}\n"
             "종목: {symbol_display}\n"
             "구분: {side_ko}\n"
-            "수량: {quantity}\n"
-            "주문가격: {price_display}\n"
-            "전략: {strategy_name}"
+            "주문금액: {amount_krw}\n"
+            "주문유형: {order_type_ko}\n"
+            "상태: {status_ko}"
         ),
-        "short_body_template": "{symbol_display} {side_ko} 제출 · {price_display}",
+        "short_body_template": "{symbol_display} {side_ko} 제출 · {amount_krw}",
     },
     {
         "event_type": "PORTFOLIO_BULLISH_STATE_ENTRY",
@@ -161,16 +162,48 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "severity": "INFO",
         "title_template": "🔄 자동매매 후보 교체",
         "body_template": (
+            "슬롯: {slot_no}\n"
             "기존 종목: {old_symbol_display}\n"
-            "신규 종목: {symbol_display}\n"
+            "신규 종목: {new_symbol_display}\n"
             "기존 점수: {old_scanner_score}\n"
-            "신규 점수: {scanner_score}\n"
-            "사유: {reason_ko}\n"
-            "슬롯: {slot_no}"
+            "신규 점수: {new_scanner_score}\n"
+            "교체 사유: {reason_ko}"
         ),
         "short_body_template": (
-            "{old_symbol_display} → {symbol_display} · {reason_ko}"
+            "{old_symbol_display} → {new_symbol_display} · {reason_ko}"
         ),
+    },
+    {
+        "event_type": "UPBIT_SCANNER_SHADOW_OPENED",
+        "category": "PORTFOLIO",
+        "severity": "INFO",
+        "title_template": "🧪 Shadow 후보 추적 시작",
+        "body_template": (
+            "종목: {symbol_display}\n"
+            "순위: {rank}\n"
+            "Scanner 점수: {scanner_score}\n"
+            "AI: {ai_recommendation_ko}\n"
+            "신뢰도: {confidence_pct}\n"
+            "기준가격: {price_display}\n"
+            "가상금액: {amount_krw}\n"
+            "※ 실제 주문이 아닙니다."
+        ),
+        "short_body_template": "Shadow {symbol_display} · AI {ai_recommendation_ko}",
+    },
+    {
+        "event_type": "ACCOUNT_DAILY_DRAWDOWN",
+        "category": "RISK",
+        "severity": "WARNING",
+        "title_template": "ℹ️ 계좌 손실 현황",
+        "body_template": (
+            "계좌: {broker_ko} / {account_display}\n"
+            "계좌 전체 평가손실이 알림 기준을 초과했습니다.\n"
+            "현재 평가손실: {current_loss_display}\n"
+            "알림 기준: {loss_limit_display}\n"
+            "자동매매 손익과는 별도로 관리됩니다.\n"
+            "자동매매 Kill Switch는 작동하지 않았습니다."
+        ),
+        "short_body_template": "계좌 손실 현황 · {broker_ko} {account_display}",
     },
     {
         "event_type": "KILL_SWITCH",

@@ -17,6 +17,8 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
         "amount_krw": 10000,
         "price": 1600,
         "quantity": 6,
+        "order_type": "LIMIT",
+        "status": "SUBMITTED",
     },
     "ORDER_FILLED": {
         "broker_code": "UPBIT",
@@ -94,6 +96,40 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
             "confidence": 0.95,
         },
         "slot_no": 3,
+    },
+    "UPBIT_PORTFOLIO_CANDIDATE_REPLACED": {
+        "old_symbol": "KRW-PUMP",
+        "new_symbol": "KRW-TREE",
+        "old_score": 75.31,
+        "new_score": 80.33,
+        "reason_ko": "후보 신선도 만료",
+        "slot_no": 2,
+        "user_broker_account_id": 1380,
+    },
+    "UPBIT_SCANNER_SHADOW_OPENED": {
+        "shadow": {
+            "symbol": "KRW-TREE",
+            "scanner_rank": 1,
+            "scanner_score": 80.33,
+            "recommendation": "ALLOW",
+            "confidence": 0.85,
+            "entry_price": 52,
+            "assumed_amount_krw": 5000,
+        }
+    },
+    "ACCOUNT_DAILY_DRAWDOWN": {
+        "broker_code": "KIWOOM",
+        "user_broker_account_id": 1381,
+        "masked_account_ref": "******4511",
+        "current_loss_amount": "577104.00",
+        "loss_limit_amount": "300000",
+        "auto_kill": False,
+    },
+    "POST_FILL_MISMATCH": {
+        "broker_code": "UPBIT",
+        "symbol": "KRW-XRP",
+        "user_broker_account_id": 1380,
+        "reason": "qty mismatch",
     },
     "KILL_SWITCH": {
         "broker_code": "KIWOOM",
@@ -182,6 +218,13 @@ OPTIONAL_PLACEHOLDERS = frozenset(
         "broker_ko",
         "side_ko",
         "status_ko",
+        "order_type_ko",
+        "current_loss_display",
+        "loss_limit_display",
+        "old_scanner_score",
+        "new_scanner_score",
+        "old_symbol_display",
+        "new_symbol_display",
     }
 )
 
@@ -242,18 +285,22 @@ def summarize_contract_audit(
     for row in data:
         by_status[row["status"]] = by_status.get(row["status"], 0) + 1
     high_priority = {
-        "UPBIT_SCANNER_CANDIDATE",
-        "AI_GATE_RECOMMENDATION_CHANGED",
         "ORDER_SUBMITTED",
         "ORDER_FILLED",
         "ORDER_PARTIAL_FILLED",
-        "ORDER_CANCELLED",
         "ORDER_REJECTED",
+        "ORDER_CANCELLED",
+        "UPBIT_PORTFOLIO_CANDIDATE_REPLACED",
+        "UPBIT_SCANNER_CANDIDATE",
+        "UPBIT_SCANNER_SHADOW_OPENED",
+        "PORTFOLIO_BULLISH_STATE_ENTRY",
+        "ACCOUNT_DAILY_DRAWDOWN",
+        "KILL_SWITCH",
+        "POST_FILL_MISMATCH",
+        "AI_GATE_RECOMMENDATION_CHANGED",
         "TAKE_PROFIT",
         "STOP_LOSS",
         "TRAILING_STOP",
-        "PORTFOLIO_BULLISH_STATE_ENTRY",
-        "KILL_SWITCH",
         "DAILY_LOSS",
         "RECOVERY_STARTED",
         "RECOVERY_FAILED",
