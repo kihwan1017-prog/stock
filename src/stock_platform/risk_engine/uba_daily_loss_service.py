@@ -16,6 +16,13 @@ from stock_platform.broker.account_models import BrokerAccountSnapshotEntity
 from stock_platform.broker.account_repository import (
     BrokerAccountSnapshotRepository,
 )
+from stock_platform.broker.kiwoom.equity_policy import (
+    KIWOOM_EQUITY_V1_IMMEDIATE_CASH,
+    KIWOOM_EQUITY_V2_SETTLEMENT_AWARE,
+    compute_kiwoom_equity_for_risk,
+    default_policy_for_new_kiwoom_baseline,
+    resolve_kiwoom_policy_for_baseline,
+)
 from stock_platform.order.entities import TradingOrderEntity
 from stock_platform.order.live_safety_audit import emit_live_safety_audit
 from stock_platform.risk_engine.uba_daily_equity_baseline_entities import (
@@ -50,6 +57,11 @@ class UbaDailyLossBreakdown:
     baseline_at: datetime | None
     baseline_source: str | None
     correlation_id: str
+    equity_policy_version: str | None = None
+    equity_source: str | None = None
+    pending_settlement_cash: str | None = None
+    legacy_equity: str | None = None
+    external_cash_flow_gap: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -77,16 +89,63 @@ class UbaDailyLossBreakdown:
             ),
             "baseline_source": self.baseline_source,
             "correlation_id": self.correlation_id,
+            "equity_policy_version": self.equity_policy_version,
+            "equity_source": self.equity_source,
+            "pending_settlement_cash": self.pending_settlement_cash,
+            "legacy_equity": self.legacy_equity,
+            "external_cash_flow_gap": self.external_cash_flow_gap,
             "scope": f"UBA:{self.user_broker_account_id}",
         }
 
 
-def snapshot_equity(account: BrokerAccountSnapshotEntity) -> Decimal:
-    """총평가 = 예수금 + 보유평가 (누적 total_profit_loss 사용 금지)."""
+def snapshot_equity(
+    account: BrokerAccountSnapshotEntity,
+    *,
+    policy_version: str | None = None,
+) -> Decimal:
+    """
+    Daily Loss용 equity.
+
+    KIWOOM: settlement-aware policy (V1/V2).
+    UPBIT/PAPER/기타: 예수금 + 보유평가 (기존 공식 유지).
+    누적 total_profit_loss 사용 금지.
+    """
+
+    broker = str(getattr(account, "broker_code", "") or "").upper()
+    if broker == "KIWOOM":
+        breakdown = compute_kiwoom_equity_for_risk(
+            account,
+            policy_version=policy_version,
+        )
+        return breakdown.equity_for_risk
 
     deposit = Decimal(str(account.deposit_amount or ZERO))
     evaluation = Decimal(str(account.total_evaluation_amount or ZERO))
     return (deposit + evaluation).quantize(Decimal("0.01"))
+
+
+def snapshot_equity_detail(
+    account: BrokerAccountSnapshotEntity,
+    *,
+    policy_version: str | None = None,
+) -> dict[str, Any]:
+    """additive provenance — UI/진단용."""
+
+    broker = str(getattr(account, "broker_code", "") or "").upper()
+    if broker == "KIWOOM":
+        return compute_kiwoom_equity_for_risk(
+            account,
+            policy_version=policy_version,
+        ).to_raw_dict()
+    equity = snapshot_equity(account, policy_version=policy_version)
+    return {
+        "equity_for_risk": str(equity),
+        "equity_source": "CASH_PLUS_STOCK_EVALUATION",
+        "equity_policy_version": None,
+        "pending_settlement_cash": "0",
+        "legacy_equity": str(equity),
+        "external_cash_flow_gap": None,
+    }
 
 
 def daily_loss_from_pnl(daily_pnl: Decimal) -> Decimal:
@@ -99,12 +158,31 @@ class UbaDailyLossService:
     """
     Preflight / Monitor 공통.
     Daily PnL = closing_equity - opening_equity (당일 Baseline).
-    당일 체결 0이면 Baseline=현재 equity 로 재설정 가능 (오염 정정).
+    opening/current는 동일 equity_policy_version을 사용한다.
     """
 
     def __init__(self, session: Session) -> None:
         self._session = session
         self._snapshots = BrokerAccountSnapshotRepository(session)
+
+    def resolve_equity_policy(
+        self,
+        *,
+        broker_code: str,
+        baseline: UbaDailyEquityBaselineEntity | None,
+        for_new_baseline: bool = False,
+    ) -> str | None:
+        """KIWOOM만 version 관리. 그 외는 None(기존 공식)."""
+
+        if str(broker_code).upper() != "KIWOOM":
+            return None
+        if for_new_baseline and baseline is None:
+            return default_policy_for_new_kiwoom_baseline()
+        if baseline is None:
+            return default_policy_for_new_kiwoom_baseline()
+        return resolve_kiwoom_policy_for_baseline(
+            getattr(baseline, "equity_policy_version", None)
+        )
 
     def diagnose(
         self,
@@ -118,25 +196,29 @@ class UbaDailyLossService:
         uba = self._session.get(UserBrokerAccount, uba_id)
         if uba is None:
             raise LookupError(f"UBA not found: {uba_id}")
-        if str(uba.broker_code).upper() != "UPBIT":
-            # 타 브로커도 equity 공식은 동일, 코드만 기록
-            pass
 
         account, positions = self._snapshots.get_active_by_uba(uba_id)
         if account is None:
             raise LookupError("ACTIVE broker snapshot missing")
 
-        closing = snapshot_equity(account)
+        broker_code = str(account.broker_code).upper()
         baseline = self._get_baseline(uba_id, day)
+        # mid-day: 기존 baseline version 유지 (NULL → KIWOOM V1)
+        policy = self.resolve_equity_policy(
+            broker_code=broker_code,
+            baseline=baseline,
+            for_new_baseline=False,
+        )
+        closing = snapshot_equity(account, policy_version=policy)
+        detail = snapshot_equity_detail(account, policy_version=policy)
         opening = (
             Decimal(str(baseline.opening_equity))
             if baseline is not None
             else closing
         )
         daily_pnl = (closing - opening).quantize(Decimal("0.01"))
-        # 체결 기반 realized는 별도(현재 주문 0이면 0). equity 변화는 unrealized 성격
         exec_stats = self._execution_stats(uba_id, day)
-        realized = ZERO  # 당일 체결 실현손익 테이블 미연결 시 0 (Fail Closed 보수)
+        realized = ZERO
         fees = ZERO
         unrealized = daily_pnl - realized
         loss = daily_loss_from_pnl(daily_pnl)
@@ -155,7 +237,7 @@ class UbaDailyLossService:
         return UbaDailyLossBreakdown(
             user_broker_account_id=uba_id,
             trading_date=day,
-            broker_code=str(account.broker_code).upper(),
+            broker_code=broker_code,
             execution_count=exec_stats["total"],
             buy_fill_count=exec_stats["buy"],
             sell_fill_count=exec_stats["sell"],
@@ -173,6 +255,11 @@ class UbaDailyLossService:
             baseline_at=baseline.baseline_at if baseline else None,
             baseline_source=baseline.source_code if baseline else None,
             correlation_id=f"uba-dl-{uba_id}-{day.isoformat()}",
+            equity_policy_version=policy or detail.get("equity_policy_version"),
+            equity_source=detail.get("equity_source"),
+            pending_settlement_cash=detail.get("pending_settlement_cash"),
+            legacy_equity=detail.get("legacy_equity"),
+            external_cash_flow_gap=detail.get("external_cash_flow_gap"),
         )
 
     def ensure_baseline(
@@ -185,6 +272,7 @@ class UbaDailyLossService:
         actor: str = "SYSTEM",
         broker_code: str | None = None,
         force_replace: bool = False,
+        equity_policy_version: str | None = None,
     ) -> UbaDailyEquityBaselineEntity:
         """당일 Baseline 없으면 생성. force_replace 시 재설정(정정)."""
 
@@ -203,6 +291,8 @@ class UbaDailyLossService:
             existing.baseline_at = datetime.now(timezone.utc)
             if broker_code:
                 existing.broker_code = broker_code
+            if equity_policy_version is not None:
+                existing.equity_policy_version = equity_policy_version
             self._session.flush()
             emit_live_safety_audit(
                 self._session,
@@ -217,10 +307,16 @@ class UbaDailyLossService:
                     "after_opening_equity": str(opening_equity),
                     "trading_date": day.isoformat(),
                     "source_code": source_code,
+                    "equity_policy_version": equity_policy_version,
                 },
                 commit=False,
             )
             return existing
+
+        # 신규 baseline — KIWOOM이면 V2 stamp
+        policy = equity_policy_version
+        if policy is None and str(broker_code or "").upper() == "KIWOOM":
+            policy = default_policy_for_new_kiwoom_baseline()
 
         row = UbaDailyEquityBaselineEntity(
             user_broker_account_id=uba_id,
@@ -228,6 +324,7 @@ class UbaDailyLossService:
             currency_code="KRW",
             opening_equity=Decimal(str(opening_equity)),
             source_code=source_code,
+            equity_policy_version=policy,
             correlation_id=corr,
             broker_code=broker_code,
             baseline_at=datetime.now(timezone.utc),
@@ -247,6 +344,7 @@ class UbaDailyLossService:
                 "opening_equity": str(opening_equity),
                 "trading_date": day.isoformat(),
                 "source_code": source_code,
+                "equity_policy_version": policy,
             },
             commit=False,
         )
@@ -280,7 +378,27 @@ class UbaDailyLossService:
         if account is None:
             raise LookupError("ACTIVE broker snapshot missing")
 
-        equity = snapshot_equity(account)
+        broker_code = str(account.broker_code).upper()
+        existing = self._get_baseline(uba_id, day)
+        if reset_baseline_if_no_executions:
+            stats_probe = self._execution_stats(uba_id, day)
+            will_replace = stats_probe["total"] == 0 and existing is not None
+        else:
+            will_replace = False
+        if will_replace or existing is None:
+            policy = (
+                default_policy_for_new_kiwoom_baseline()
+                if broker_code == "KIWOOM"
+                else None
+            )
+        else:
+            policy = self.resolve_equity_policy(
+                broker_code=broker_code,
+                baseline=existing,
+                for_new_baseline=False,
+            )
+
+        equity = snapshot_equity(account, policy_version=policy)
         stats = self._execution_stats(uba_id, day)
         before = self.diagnose(
             user_broker_account_id=uba_id, loss_limit=loss_limit, trading_date=day
@@ -293,18 +411,24 @@ class UbaDailyLossService:
                 trading_date=day,
                 source_code="RECALC_NO_EXECUTIONS",
                 actor=actor,
-                broker_code=str(account.broker_code).upper(),
+                broker_code=broker_code,
                 force_replace=True,
+                equity_policy_version=policy,
             )
         else:
             self.ensure_baseline(
                 user_broker_account_id=uba_id,
-                opening_equity=equity if before.baseline_source is None else before.opening_equity,
+                opening_equity=(
+                    equity
+                    if before.baseline_source is None
+                    else before.opening_equity
+                ),
                 trading_date=day,
                 source_code="FIRST_OBSERVED",
                 actor=actor,
-                broker_code=str(account.broker_code).upper(),
+                broker_code=broker_code,
                 force_replace=False,
+                equity_policy_version=policy,
             )
 
         after = self.diagnose(
@@ -318,7 +442,7 @@ class UbaDailyLossService:
         snap = DailyLossSnapshot(
             user_broker_account_id=uba_id,
             paper_account_id=None,
-            broker_code=str(account.broker_code).upper(),
+            broker_code=broker_code,
             masked_account_ref=mask_account_number(account.account_number),
             trading_date=day.isoformat(),
             currency="KRW",
@@ -334,9 +458,7 @@ class UbaDailyLossService:
         AccountDailyLossRepository(self._session).upsert_from_snapshot(
             snap,
             market_code=(
-                "UPBIT"
-                if str(account.broker_code).upper() == "UPBIT"
-                else "KRX"
+                "UPBIT" if broker_code == "UPBIT" else "KRX"
             ),
         )
         emit_live_safety_audit(
@@ -354,7 +476,6 @@ class UbaDailyLossService:
             },
             commit=False,
         )
-        # 잘못된 lifetime PnL 로 켜진 UBA scope kill 해제 (한도 미만일 때만)
         if after.current_daily_loss < loss_limit:
             from stock_platform.risk_engine.kill_switch_service import (
                 KillSwitchService,
@@ -414,13 +535,18 @@ class UbaDailyLossService:
         total_filled = 0
         for row in rows:
             status = str(getattr(row, "status_code", "") or "").upper()
-            if status in {"CANCELLED", "REJECTED", "EXPIRED", "CREATED", "PENDING"}:
+            if status in {
+                "CANCELLED",
+                "REJECTED",
+                "EXPIRED",
+                "CREATED",
+                "PENDING",
+            }:
                 continue
             if status not in filled_statuses and status not in {
                 "SENT",
                 "ACCEPTED",
             }:
-                # 미체결·취소 제외 — FILLED만
                 if status not in filled_statuses:
                     continue
             if status in filled_statuses:
@@ -431,3 +557,14 @@ class UbaDailyLossService:
                 elif side == "SELL":
                     sell += 1
         return {"total": total_filled, "buy": buy, "sell": sell}
+
+
+__all__ = [
+    "UbaDailyLossBreakdown",
+    "UbaDailyLossService",
+    "snapshot_equity",
+    "snapshot_equity_detail",
+    "daily_loss_from_pnl",
+    "KIWOOM_EQUITY_V1_IMMEDIATE_CASH",
+    "KIWOOM_EQUITY_V2_SETTLEMENT_AWARE",
+]

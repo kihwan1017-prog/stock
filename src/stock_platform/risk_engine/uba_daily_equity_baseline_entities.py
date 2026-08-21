@@ -51,6 +51,8 @@ class UbaDailyEquityBaselineEntity(Base):
     source_code: Mapped[str] = mapped_column(
         String(40), nullable=False, server_default=text("'FIRST_OBSERVED'")
     )
+    # Kiwoom V1/V2 등 — NULL이면 legacy(V1 immediate cash)로 해석
+    equity_policy_version: Mapped[str | None] = mapped_column(String(80))
     correlation_id: Mapped[str | None] = mapped_column(String(80))
     broker_code: Mapped[str | None] = mapped_column(String(20))
     baseline_at: Mapped[datetime] = mapped_column(

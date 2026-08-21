@@ -8,6 +8,11 @@ from stock_platform.broker.account_dto import (
     BrokerAccountSyncResult,
     BrokerPositionSnapshot,
 )
+from stock_platform.broker.kiwoom.equity_policy import (
+    KIWOOM_EQUITY_V2_SETTLEMENT_AWARE,
+    compute_kiwoom_equity_for_risk,
+)
+from stock_platform.broker.kiwoom.price import normalize_kiwoom_price
 
 
 ZERO = Decimal("0")
@@ -49,15 +54,22 @@ class KiwoomAccountMapper:
             )
         ]
 
-        return BrokerAccountSyncResult(
+        deposit_amount = cls._number(
+            deposit_payload,
+            "entr",
+            "deposit",
+            "deposit_amount",
+        )
+        total_evaluation_amount = cls._number(
+            balance_payload,
+            "tot_evlt_amt",
+            "total_evaluation_amount",
+        )
+        # deposit_amount는 주문 가능 예수금(entr) 의미 유지 — equity는 raw에 별도
+        provisional = BrokerAccountSyncResult(
             broker_code="KIWOOM",
             account_number=account_number,
-            deposit_amount=cls._number(
-                deposit_payload,
-                "entr",
-                "deposit",
-                "deposit_amount",
-            ),
+            deposit_amount=deposit_amount,
             available_order_amount=cls._number(
                 deposit_payload,
                 "ord_alow_amt",
@@ -69,11 +81,7 @@ class KiwoomAccountMapper:
                 "tot_pur_amt",
                 "total_purchase_amount",
             ),
-            total_evaluation_amount=cls._number(
-                balance_payload,
-                "tot_evlt_amt",
-                "total_evaluation_amount",
-            ),
+            total_evaluation_amount=total_evaluation_amount,
             total_profit_loss=cls._number(
                 balance_payload,
                 "tot_evlt_pl",
@@ -90,6 +98,30 @@ class KiwoomAccountMapper:
                 "deposit": deposit_payload,
                 "balance": balance_payload,
             },
+        )
+        equity_meta = compute_kiwoom_equity_for_risk(
+            provisional,
+            policy_version=KIWOOM_EQUITY_V2_SETTLEMENT_AWARE,
+        )
+        return BrokerAccountSyncResult(
+            broker_code=provisional.broker_code,
+            account_number=provisional.account_number,
+            deposit_amount=provisional.deposit_amount,
+            available_order_amount=provisional.available_order_amount,
+            total_purchase_amount=provisional.total_purchase_amount,
+            total_evaluation_amount=provisional.total_evaluation_amount,
+            total_profit_loss=provisional.total_profit_loss,
+            total_return_rate=provisional.total_return_rate,
+            positions=provisional.positions,
+            synchronized_at=provisional.synchronized_at,
+            raw_data={
+                "deposit": deposit_payload,
+                "balance": balance_payload,
+                "equity_for_risk": equity_meta.to_raw_dict(),
+            },
+            user_broker_account_id=provisional.user_broker_account_id,
+            paper_account_id=provisional.paper_account_id,
+            broker_server_time=provisional.broker_server_time,
         )
 
     @classmethod
@@ -128,13 +160,13 @@ class KiwoomAccountMapper:
                 "available_quantity",
                 "sellable_quantity",
             ),
-            average_purchase_price=cls._number(
+            average_purchase_price=cls._price(
                 row,
                 "pur_pric",
                 "average_purchase_price",
                 "average_price",
             ),
-            current_price=cls._number(
+            current_price=cls._price(
                 row,
                 "cur_prc",
                 "current_price",
@@ -187,6 +219,18 @@ class KiwoomAccountMapper:
             if value not in (None, ""):
                 return str(value).strip()
         return default
+
+    @staticmethod
+    def _price(
+        payload: dict[str, Any],
+        *keys: str,
+    ) -> Decimal:
+        # 현재가·매입단가 등 가격 필드만 +/- 부호 정규화. 손익/등락률은 _number.
+        for key in keys:
+            parsed = normalize_kiwoom_price(payload.get(key))
+            if parsed is not None:
+                return parsed
+        return ZERO
 
     @staticmethod
     def _number(

@@ -130,7 +130,7 @@
 | Candidate/AI STEP11 | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | CONNECTED | VERIFIED_BY_TEST | N/A | N/A | — | ai/candidate_* | — |
 | Strategy Lifecycle STEP12 | PARTIAL | WORKTREE_IMPLEMENTED_UNCOMMITTED | GATED (실행 WRITE 0) | VERIFIED_BY_TEST (워킹트리) | N/A gate | N/A | P0-3, P0-4 | ai/strategy_* | Canonical doc + 커밋 |
 | Backtest | COMPLETE_WITH_LIMITATIONS | COMMITTED + WIP STEP12 | Runtime 미연동 | PARTIALLY_VERIFIED | N/A | N/A | — | backtest/ | — |
-| Risk/Kill | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | CONNECTED | VERIFIED_BY_TEST | OK | OK | — | risk/ | — |
+| Risk/Kill | COMPLETE_WITH_LIMITATIONS | Kiwoom settlement-aware equity V2 (WT→commit) | CONNECTED | VERIFIED_BY_TEST | OK | mid-day V1 legacy | cash-flow GAP | risk/ + kiwoom/equity_policy | next-day V2 baseline |
 | Scoped Runtime | COMPLETE_WITH_LIMITATIONS (UBA1380 17483 RUNNING) | WORKTREE | STEP12와 분리 | VERIFIED_BY_TEST | 수동 | operator START 완료 | P0-3 (KIWOOM/STEP12) | strategy runtime + upbit_24x7_control | [B] 세션 감시 |
 | Order/Outbox | COMPLETE_WITH_LIMITATIONS | WORKTREE | CONNECTED | VERIFIED_BY_TEST | PARTIAL | UBA1380 Worker RUNNING | P0-1 (realtime 기타) | outbox_dispatch_safety, upbit_24x7_control | [B] Worker 감시 |
 | Fill/Position | PARTIAL | COMMITTED_BASELINE | Upbit OK / Kiwoom GAP / Paper GAP | PARTIALLY_VERIFIED | P0-5 | P0-2 | P0-2,P0-5 | fill sync, paper | Fill 파이프라인 |

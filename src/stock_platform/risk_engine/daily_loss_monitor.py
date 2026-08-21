@@ -76,16 +76,24 @@ class DailyLossMonitor:
         )
 
         loss_svc = UbaDailyLossService(self._session)
-        # 당일 Baseline 확보 (누적 평가손익을 일일로 쓰지 않음)
-        equity = snapshot_equity(account)
+        broker_code = str(account.broker_code).upper()
+        # 기존 baseline이 있으면 그 policy로 equity 계산 (mid-day mixing 금지)
+        existing_baseline = loss_svc._get_baseline(uba_id, day)
+        policy = loss_svc.resolve_equity_policy(
+            broker_code=broker_code,
+            baseline=existing_baseline,
+            for_new_baseline=existing_baseline is None,
+        )
+        equity = snapshot_equity(account, policy_version=policy)
         loss_svc.ensure_baseline(
             user_broker_account_id=uba_id,
             opening_equity=equity,
             trading_date=day,
             source_code="FIRST_OBSERVED",
             actor="SYSTEM_DAILY_LOSS_MONITOR",
-            broker_code=str(account.broker_code).upper(),
+            broker_code=broker_code,
             force_replace=False,
+            equity_policy_version=policy,
         )
         breakdown = loss_svc.diagnose(
             user_broker_account_id=uba_id,
@@ -96,7 +104,6 @@ class DailyLossMonitor:
         unrealized = breakdown.unrealized_pnl
         combined = breakdown.current_daily_pnl
         current_loss = breakdown.current_daily_loss
-        broker_code = str(account.broker_code).upper()
         masked = mask_account_number(account.account_number)
         scope = uba_kill_switch_scope(uba_id)
         _ = positions  # lifetime position pnl 미사용 (이중합산 금지)
@@ -138,6 +145,9 @@ class DailyLossMonitor:
                     "combined_profit_loss": str(combined),
                     "current_loss_amount": str(current_loss),
                     "loss_limit_amount": str(self._loss_limit),
+                    "equity_policy_version": breakdown.equity_policy_version,
+                    "equity_source": breakdown.equity_source,
+                    "pending_settlement_cash": breakdown.pending_settlement_cash,
                 }
                 self._events.create(
                     event_type="AUTO_KILL_SWITCH",
