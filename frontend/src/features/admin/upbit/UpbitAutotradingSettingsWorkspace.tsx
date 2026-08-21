@@ -196,6 +196,13 @@ export function UpbitAutotradingSettingsWorkspace({
       candidate_max_age_seconds: Number(
         policy.candidate_max_age_seconds ?? 1800,
       ),
+      candidate_hold_seconds: Number(policy.candidate_hold_seconds ?? 1800),
+      candidate_max_wait_seconds: Number(
+        policy.candidate_max_wait_seconds ?? 10800,
+      ),
+      candidate_switch_min_score_delta: Number(
+        policy.candidate_switch_min_score_delta ?? 8,
+      ),
       portfolio_daily_entry_limit: Number(
         policy.portfolio_daily_entry_limit ?? 10,
       ),
@@ -380,6 +387,12 @@ export function UpbitAutotradingSettingsWorkspace({
         CONSERVATIVE_PORTFOLIO_DEFAULTS.entry_cooldown_seconds,
       candidate_max_age_seconds:
         CONSERVATIVE_PORTFOLIO_DEFAULTS.candidate_max_age_seconds,
+      candidate_hold_seconds:
+        CONSERVATIVE_PORTFOLIO_DEFAULTS.candidate_hold_seconds,
+      candidate_max_wait_seconds:
+        CONSERVATIVE_PORTFOLIO_DEFAULTS.candidate_max_wait_seconds,
+      candidate_switch_min_score_delta:
+        CONSERVATIVE_PORTFOLIO_DEFAULTS.candidate_switch_min_score_delta,
       portfolio_daily_entry_limit:
         CONSERVATIVE_PORTFOLIO_DEFAULTS.portfolio_daily_entry_limit,
       consecutive_loss_limit:
@@ -754,10 +767,24 @@ export function UpbitAutotradingSettingsWorkspace({
               <Descriptions.Item label="후보 최대 연령">
                 {numOrDash(policy.candidate_max_age_seconds)}초
               </Descriptions.Item>
+              <Descriptions.Item label="후보 최소 유지시간">
+                {numOrDash(policy.candidate_hold_seconds)}초
+              </Descriptions.Item>
+              <Descriptions.Item label="후보 최대 매수대기">
+                {numOrDash(policy.candidate_max_wait_seconds)}초
+              </Descriptions.Item>
+              <Descriptions.Item label="교체 최소 점수차">
+                {numOrDash(policy.candidate_switch_min_score_delta)}점
+              </Descriptions.Item>
             </Descriptions>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
               연속 손실 한도 도달 시 ENTRY PAUSE. Warmup 미완료·후보 연령 초과 시
               신규 진입을 건너뜁니다 (서버 SoT).
+              <br />
+              후보 최소 유지시간: WAITING_SIGNAL slot을 이 시간 동안은 점수만으로
+              교체하지 않습니다. 최대 매수대기: 이 시간을 넘기면 더 좋은 신규
+              후보로 교체할 수 있습니다. 교체 점수차: 유지시간 이후 조기 교체에
+              필요한 최소 점수 개선폭입니다.
             </Typography.Paragraph>
             <Form form={entryForm} layout="vertical" initialValues={entryInitial}>
               <Space wrap size={12}>
@@ -772,6 +799,27 @@ export function UpbitAutotradingSettingsWorkspace({
                   label="후보 최대 연령 (초)"
                 >
                   <InputNumber min={60} step={60} />
+                </Form.Item>
+                <Form.Item
+                  name="candidate_hold_seconds"
+                  label="후보 최소 유지시간 (초)"
+                  tooltip="WAITING_SIGNAL 배정 후 이 시간 동안은 점수 개선만으로 교체하지 않습니다."
+                >
+                  <InputNumber min={0} step={60} />
+                </Form.Item>
+                <Form.Item
+                  name="candidate_max_wait_seconds"
+                  label="후보 최대 매수대기 (초)"
+                  tooltip="이 시간을 초과하면 더 좋은 eligible 후보로 교체할 수 있습니다."
+                >
+                  <InputNumber min={60} step={300} />
+                </Form.Item>
+                <Form.Item
+                  name="candidate_switch_min_score_delta"
+                  label="교체 최소 점수차"
+                  tooltip="최소 유지시간 이후 조기 교체에 필요한 점수 개선폭."
+                >
+                  <InputNumber min={0} max={100} step={0.5} />
                 </Form.Item>
                 <Form.Item
                   name="portfolio_daily_entry_limit"

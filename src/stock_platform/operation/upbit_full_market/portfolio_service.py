@@ -202,6 +202,34 @@ class UpbitPortfolioService:
             "entry_signal_policy": entry_policy,
             "risk_group_policy_json": dict(row.risk_group_policy_json or {}),
             "version": int(row.version),
+            **self._replacement_policy_public(
+                risk_group_policy_json=dict(row.risk_group_policy_json or {}),
+                candidate_max_age_seconds=int(row.candidate_max_age_seconds),
+            ),
+        }
+
+    def _replacement_policy_public(
+        self,
+        *,
+        risk_group_policy_json: dict[str, Any],
+        candidate_max_age_seconds: int,
+    ) -> dict[str, Any]:
+        from stock_platform.common.settings import get_settings
+        from stock_platform.operation.upbit_full_market.slot_replacement import (
+            load_replacement_policy,
+        )
+
+        pol = load_replacement_policy(
+            settings=get_settings(),
+            risk_group_policy_json=risk_group_policy_json,
+            candidate_max_age_seconds=candidate_max_age_seconds,
+        )
+        return {
+            "candidate_hold_seconds": int(pol.hold_seconds),
+            "candidate_max_wait_seconds": int(pol.max_wait_seconds),
+            "candidate_switch_min_score_delta": float(
+                pol.switch_min_score_delta
+            ),
         }
 
     def update_policy(
@@ -283,6 +311,25 @@ class UpbitPortfolioService:
 
                 blob = dict(row.risk_group_policy_json or {})
                 blob["entry_signal_policy"] = normalize_entry_policy(str(value))
+                row.risk_group_policy_json = blob
+            elif key in {
+                "candidate_hold_seconds",
+                "candidate_max_wait_seconds",
+                "candidate_switch_min_score_delta",
+            }:
+                blob = dict(row.risk_group_policy_json or {})
+                if value is None:
+                    continue
+                try:
+                    num = float(value)
+                except (TypeError, ValueError):
+                    continue
+                if key == "candidate_hold_seconds":
+                    blob[key] = max(0, int(num))
+                elif key == "candidate_max_wait_seconds":
+                    blob[key] = max(60, int(num))
+                else:
+                    blob[key] = max(0.0, float(num))
                 row.risk_group_policy_json = blob
             elif key == "risk_group_policy_json" and isinstance(value, dict):
                 blob = dict(row.risk_group_policy_json or {})
@@ -767,11 +814,8 @@ class UpbitPortfolioService:
         if int(stale_rec.get("released") or 0) > 0:
             out["stale_entry_recovered"] = stale_rec
 
-        hold = self._candidate_hold_block(uba_id, candidates=candidates)
-        if hold.get("blocked"):
-            out["reason"] = str(hold.get("reason") or "CANDIDATE_HOLD")
-            out["hold"] = hold
-            return out
+        # NOTE: hold/score-delta는 EMPTY fill을 막지 않는다.
+        # WAITING_SIGNAL 교체 경로에서만 사용 (_try_replace_waiting_signal).
 
         if self.pending_entry_count(uba_id) >= int(
             policy.portfolio_max_pending_entries
@@ -811,8 +855,16 @@ class UpbitPortfolioService:
         # max_positions보다 slot_no가 큰 EMPTY는 무시 (축소 정책)
         empty = [s for s in empty if int(s.slot_no) <= int(policy.max_positions)]
         if not empty:
-            out["reason"] = "NO_EMPTY_SLOT"
-            return out
+            # EMPTY 없음 → WAITING_SIGNAL 안전 교체 시도 (OPEN/ENTRY_PENDING 보호)
+            replaced = self._try_replace_waiting_signal(
+                uba_id,
+                candidates=candidates,
+                scanner_run_id=scanner_run_id,
+                scanner_completed_at=scanner_completed_at,
+                dry_run=dry_run,
+                out=out,
+            )
+            return replaced
 
         active_syms = set(self.active_symbols(uba_id))
         sel_policy = load_selection_policy_from_settings(assignment=assignment)
@@ -886,47 +938,16 @@ class UpbitPortfolioService:
                 ]
                 continue
             # 공통 Symbol Ownership gate (MANUAL/AUTO/UNKNOWN 제외)
-            try:
-                from stock_platform.trading.symbol_ownership import (
-                    SymbolOwnershipService,
-                )
-
-                allowed, skip_reason, ownership = SymbolOwnershipService(
-                    self._session
-                ).entry_gate(
-                    broker_code="UPBIT",
-                    user_broker_account_id=uba_id,
-                    symbol=str(cand.symbol),
-                )
-                if not allowed:
-                    skip_all.append(
-                        {
-                            "symbol": cand.symbol,
-                            "ok": False,
-                            "reason": skip_reason
-                            or "SYMBOL_OWNERSHIP_BLOCKED",
-                            "owner": ownership.owner,
-                            "ownership_reasons": ownership.reasons,
-                        }
-                    )
-                    remaining = [
-                        c
-                        for c in remaining
-                        if str(
-                            c.get("symbol")
-                            if isinstance(c, dict)
-                            else getattr(c, "symbol", "")
-                        ).upper()
-                        != str(cand.symbol).upper()
-                    ]
-                    continue
-            except Exception:  # noqa: BLE001
-                # ownership 판정 실패 시 fail-closed (신규 ENTRY 금지)
+            gate = self._ownership_entry_gate(uba_id, cand.symbol)
+            if not gate["allowed"]:
                 skip_all.append(
                     {
                         "symbol": cand.symbol,
                         "ok": False,
-                        "reason": "SYMBOL_OWNERSHIP_UNKNOWN",
+                        "reason": gate.get("reason")
+                        or "SYMBOL_OWNERSHIP_BLOCKED",
+                        "owner": gate.get("owner"),
+                        "ownership_reasons": gate.get("ownership_reasons"),
                     }
                 )
                 remaining = [
@@ -1008,88 +1029,16 @@ class UpbitPortfolioService:
             return out
 
         # persist selection — 자금 reservation 없음 (BUY signal 직전까지)
-        sel = UpbitLiveCandidateSelectionEntity(
-            user_broker_account_id=uba_id,
-            strategy_id=assignment.strategy_id,
-            deployment_id=assignment.deployment_id,
+        return self._assign_candidate_to_empty_slot(
+            uba_id,
+            assignment=assignment,
+            slot=slot,
+            chosen=chosen,
             scanner_run_id=scanner_run_id,
-            symbol=chosen.symbol,
-            rank=chosen.rank,
-            score=chosen.score,
-            market_data_timestamp=chosen.market_data_timestamp or _now(),
-            liquidity=chosen.liquidity,
-            technical_metrics=dict(chosen.technical_metrics or {}),
-            ai_analysis_id=chosen.ai_analysis_id,
-            ai_recommendation=chosen.recommendation,
-            confidence=chosen.confidence,
-            selected_at=_now(),
-            selection_reason=f"PORTFOLIO_SLOT_{slot.slot_no}",
-            status="SELECTED",
-            skip_trace=list(skip_all),
+            skip_all=skip_all,
+            out=out,
+            dry_run=False,
         )
-        self._session.add(sel)
-        self._session.flush()
-
-        slot.status = SLOT_SELECTED
-        slot.symbol = chosen.symbol
-        slot.candidate_selection_id = int(sel.selection_id)
-        slot.scanner_run_id = scanner_run_id
-        slot.ai_analysis_id = chosen.ai_analysis_id
-        # BUY 전: recommended만 기록, reserved/allocated=0
-        slot.recommended_amount_krw = None
-        slot.allocated_amount_krw = None
-        slot.reserved_amount_krw = None
-        slot.clamp_reasons = []
-        slot.entry_order_id = None
-        slot.version = int(slot.version or 1) + 1
-        assignment.last_scanner_run_id = scanner_run_id
-        assignment.current_symbol = chosen.symbol
-        self._session.flush()
-
-        runtime_sync: dict[str, Any] | None = None
-        if not dry_run:
-            try:
-                from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
-                    sync_portfolio_runtime_symbols,
-                )
-
-                runtime_sync = sync_portfolio_runtime_symbols(
-                    self._session,
-                    user_broker_account_id=uba_id,
-                    ensure_quote_feed=True,
-                )
-            except Exception as exc:  # noqa: BLE001
-                runtime_sync = {
-                    "ok": False,
-                    "reason": type(exc).__name__,
-                }
-            if runtime_sync and not bool(runtime_sync.get("ok")):
-                # sync 실패 시 SELECTED/BLOCKED 유지 — ENTRY_PENDING/reserve 금지
-                slot.status = SLOT_BLOCKED
-                slot.version = int(slot.version or 1) + 1
-                self._session.flush()
-                out["ok"] = False
-                out["reason"] = "RUNTIME_SYNC_FAILED"
-                out["runtime_sync"] = runtime_sync
-                out["selection_id"] = int(sel.selection_id)
-                out["slot_id"] = int(slot.slot_id)
-                out["slots"] = self.list_slots(uba_id)
-                return out
-            # sync OK → WAITING_SIGNAL (warmup은 consumer 내부; 외부 상태는 신호 대기)
-            slot.status = SLOT_WAITING_SIGNAL
-            slot.version = int(slot.version or 1) + 1
-            self._session.flush()
-        else:
-            slot.status = SLOT_WAITING_SIGNAL
-
-        out["ok"] = True
-        out["reason"] = "SLOT_WAITING_SIGNAL"
-        out["selection_id"] = int(sel.selection_id)
-        out["slot_id"] = int(slot.slot_id)
-        out["runtime_sync"] = runtime_sync
-        out["reserved"] = []
-        out["slots"] = self.list_slots(uba_id)
-        return out
 
     def preview_allocation(
         self,
@@ -1217,6 +1166,570 @@ class UpbitPortfolioService:
                     }
                 )
         return issues
+
+    def _ownership_entry_gate(
+        self, uba_id: int, symbol: str
+    ) -> dict[str, Any]:
+        try:
+            from stock_platform.trading.symbol_ownership import (
+                SymbolOwnershipService,
+            )
+
+            allowed, skip_reason, ownership = SymbolOwnershipService(
+                self._session
+            ).entry_gate(
+                broker_code="UPBIT",
+                user_broker_account_id=int(uba_id),
+                symbol=str(symbol),
+            )
+            return {
+                "allowed": bool(allowed),
+                "reason": skip_reason,
+                "owner": ownership.owner,
+                "ownership_reasons": ownership.reasons,
+            }
+        except Exception:  # noqa: BLE001
+            return {
+                "allowed": False,
+                "reason": "SYMBOL_OWNERSHIP_UNKNOWN",
+                "owner": None,
+                "ownership_reasons": [],
+            }
+
+    def _slot_has_open_order(self, uba_id: int, symbol: str) -> bool:
+        """로컬 미체결 주문 존재 여부 (교체 보호)."""
+
+        sym = str(symbol or "").upper()
+        if not sym:
+            return False
+        try:
+            from stock_platform.order.entities import TradingOrderEntity
+
+            row = self._session.scalar(
+                select(TradingOrderEntity.order_id)
+                .where(
+                    TradingOrderEntity.user_broker_account_id == int(uba_id),
+                    TradingOrderEntity.symbol == sym,
+                    TradingOrderEntity.status_code.in_(
+                        (
+                            "NEW",
+                            "ACCEPTED",
+                            "PARTIAL",
+                            "PARTIAL_FILLED",
+                            "SUBMITTED",
+                            "OPEN",
+                            "WORKING",
+                        )
+                    ),
+                )
+                .limit(1)
+            )
+            return row is not None
+        except Exception:  # noqa: BLE001
+            # 조회 실패 시 fail-closed (교체 금지)
+            return True
+
+    def _assign_candidate_to_empty_slot(
+        self,
+        uba_id: int,
+        *,
+        assignment: UpbitFullMarketAssignmentEntity,
+        slot: UpbitPositionSlotEntity,
+        chosen: Any,
+        scanner_run_id: str,
+        skip_all: list[dict[str, Any]],
+        out: dict[str, Any],
+        dry_run: bool,
+    ) -> dict[str, Any]:
+        """EMPTY slot에 신규 selection 배정 + runtime sync. 주문 없음."""
+
+        sel = UpbitLiveCandidateSelectionEntity(
+            user_broker_account_id=uba_id,
+            strategy_id=assignment.strategy_id,
+            deployment_id=assignment.deployment_id,
+            scanner_run_id=scanner_run_id,
+            symbol=chosen.symbol,
+            rank=chosen.rank,
+            score=chosen.score,
+            market_data_timestamp=chosen.market_data_timestamp or _now(),
+            liquidity=chosen.liquidity,
+            technical_metrics=dict(chosen.technical_metrics or {}),
+            ai_analysis_id=chosen.ai_analysis_id,
+            ai_recommendation=chosen.recommendation,
+            confidence=chosen.confidence,
+            selected_at=_now(),
+            selection_reason=f"PORTFOLIO_SLOT_{slot.slot_no}",
+            status="SELECTED",
+            skip_trace=list(skip_all),
+        )
+        self._session.add(sel)
+        self._session.flush()
+
+        slot.status = SLOT_SELECTED
+        slot.symbol = chosen.symbol
+        slot.candidate_selection_id = int(sel.selection_id)
+        slot.scanner_run_id = scanner_run_id
+        slot.ai_analysis_id = chosen.ai_analysis_id
+        slot.recommended_amount_krw = None
+        slot.allocated_amount_krw = None
+        slot.reserved_amount_krw = None
+        slot.clamp_reasons = []
+        slot.entry_order_id = None
+        slot.updated_at = _now()
+        slot.version = int(slot.version or 1) + 1
+        assignment.last_scanner_run_id = scanner_run_id
+        assignment.current_symbol = chosen.symbol
+        self._session.flush()
+
+        runtime_sync: dict[str, Any] | None = None
+        if not dry_run:
+            try:
+                from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                    sync_portfolio_runtime_symbols,
+                )
+
+                runtime_sync = sync_portfolio_runtime_symbols(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    ensure_quote_feed=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                runtime_sync = {
+                    "ok": False,
+                    "reason": type(exc).__name__,
+                }
+            if runtime_sync and not bool(runtime_sync.get("ok")):
+                slot.status = SLOT_BLOCKED
+                slot.version = int(slot.version or 1) + 1
+                self._session.flush()
+                out["ok"] = False
+                out["reason"] = "RUNTIME_SYNC_FAILED"
+                out["runtime_sync"] = runtime_sync
+                out["selection_id"] = int(sel.selection_id)
+                out["slot_id"] = int(slot.slot_id)
+                out["slots"] = self.list_slots(uba_id)
+                return out
+            slot.status = SLOT_WAITING_SIGNAL
+            slot.version = int(slot.version or 1) + 1
+            self._session.flush()
+        else:
+            slot.status = SLOT_WAITING_SIGNAL
+
+        out["ok"] = True
+        out["reason"] = "SLOT_WAITING_SIGNAL"
+        out["selection_id"] = int(sel.selection_id)
+        out["slot_id"] = int(slot.slot_id)
+        out["runtime_sync"] = runtime_sync
+        out["reserved"] = []
+        out["orders_created"] = 0
+        out["slots"] = self.list_slots(uba_id)
+        return out
+
+    def _try_replace_waiting_signal(
+        self,
+        uba_id: int,
+        *,
+        candidates: list[dict[str, Any]],
+        scanner_run_id: str,
+        scanner_completed_at: datetime | None,
+        dry_run: bool,
+        out: dict[str, Any],
+    ) -> dict[str, Any]:
+        """WAITING_SIGNAL 만석 시 안전 교체 (cycle당 최대 1건, 주문 없음)."""
+
+        from stock_platform.common.settings import get_settings
+        from stock_platform.operation.upbit_full_market.constants import (
+            SELECTION_STATUS_SUPERSEDED,
+        )
+        from stock_platform.operation.upbit_full_market.slot_replacement import (
+            CandidateScoreView,
+            SlotScoreView,
+            load_replacement_policy,
+            pick_best_replacement,
+            reason_ko,
+        )
+
+        assignment = self._assignment.get_or_create(uba_id)
+        policy = self.get_or_create_policy(uba_id)
+        repl_pol = load_replacement_policy(
+            settings=get_settings(),
+            risk_group_policy_json=dict(policy.risk_group_policy_json or {}),
+            candidate_max_age_seconds=int(policy.candidate_max_age_seconds),
+        )
+        out["replacement_policy"] = {
+            "hold_seconds": repl_pol.hold_seconds,
+            "max_wait_seconds": repl_pol.max_wait_seconds,
+            "switch_min_score_delta": repl_pol.switch_min_score_delta,
+            "candidate_max_age_seconds": repl_pol.candidate_max_age_seconds,
+        }
+
+        waiting = list(
+            self._session.scalars(
+                select(UpbitPositionSlotEntity)
+                .where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+                )
+                .order_by(UpbitPositionSlotEntity.slot_no)
+                .with_for_update()
+            )
+        )
+        if not waiting:
+            out["reason"] = "NO_EMPTY_SLOT"
+            out["orders_created"] = 0
+            return out
+
+        # telemetry (읽기 전용 — tick DB write 금지)
+        telem_map: dict[str, Any] = {}
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+                portfolio_entry_telemetry,
+            )
+
+            snap = portfolio_entry_telemetry.snapshot(uba_id) or {}
+            telem_map = dict(snap) if isinstance(snap, dict) else {}
+        except Exception:  # noqa: BLE001
+            telem_map = {}
+
+        slot_views: list[SlotScoreView] = []
+        protected_symbols: set[str] = set()
+        for slot in waiting:
+            score = 0.0
+            selected_at = None
+            if slot.candidate_selection_id is not None:
+                sel = self._session.get(
+                    UpbitLiveCandidateSelectionEntity,
+                    int(slot.candidate_selection_id),
+                )
+                if sel is not None:
+                    try:
+                        score = float(sel.score or 0)
+                    except (TypeError, ValueError):
+                        score = 0.0
+                    selected_at = sel.selected_at
+            sym = str(slot.symbol or "").upper()
+            telem = telem_map.get(sym) or {}
+            if not isinstance(telem, dict):
+                telem = {}
+            slot_views.append(
+                SlotScoreView(
+                    slot_id=int(slot.slot_id),
+                    slot_no=int(slot.slot_no),
+                    status=str(slot.status),
+                    symbol=sym,
+                    score=score,
+                    updated_at=slot.updated_at,
+                    selected_at=selected_at,
+                    reserved_amount_krw=(
+                        float(slot.reserved_amount_krw)
+                        if slot.reserved_amount_krw is not None
+                        else None
+                    ),
+                    entry_order_id=(
+                        int(slot.entry_order_id)
+                        if slot.entry_order_id is not None
+                        else None
+                    ),
+                    position_binding_id=(
+                        int(slot.position_binding_id)
+                        if slot.position_binding_id is not None
+                        else None
+                    ),
+                    has_open_order=self._slot_has_open_order(uba_id, sym),
+                    last_block_reason=telem.get("last_block_reason")
+                    or telem.get("last_reason_code"),
+                    evaluation_count=int(telem.get("evaluation_count") or 0),
+                    last_decision=telem.get("last_decision"),
+                )
+            )
+
+        # OPEN/ENTRY_PENDING 등 활성 심볼은 신규 후보와 중복 금지
+        # (WAITING 심볼 중복은 pick_best_replacement가 slot별로 처리)
+        for s in self.list_slots(uba_id):
+            st = str(s.get("status") or "")
+            sy = str(s.get("symbol") or "").upper()
+            if sy and st in {
+                SLOT_OPEN,
+                SLOT_ENTRY_PENDING,
+                SLOT_EXIT_PENDING,
+                SLOT_RESERVED,
+                SLOT_SELECTED,
+                SLOT_WARMING_UP,
+            }:
+                protected_symbols.add(sy)
+
+        # 후보 eligibility (scanner + ownership FREE/ALLOW)
+        sel_policy = load_selection_policy_from_settings(assignment=assignment)
+        sel_policy = SelectionPolicy(
+            min_score=sel_policy.min_score,
+            min_liquidity_krw=sel_policy.min_liquidity_krw,
+            min_confidence=sel_policy.min_confidence,
+            max_candidate_age_seconds=float(policy.candidate_max_age_seconds),
+            ai_live_gate_mode=sel_policy.ai_live_gate_mode,
+            excluded_symbols=sel_policy.excluded_symbols,
+            allow_reduce_as_entry=sel_policy.allow_reduce_as_entry,
+        )
+        eligible_views: list[CandidateScoreView] = []
+        skip_all: list[dict[str, Any]] = []
+        remaining = list(candidates)
+        seen: set[str] = set()
+        while remaining:
+            decision = select_best_eligible_candidate(
+                remaining,
+                sel_policy,
+                scanner_run_id=scanner_run_id,
+                now=_now(),
+                scanner_completed_at=scanner_completed_at,
+            )
+            skip_all.extend(decision.skip_trace)
+            if decision.selected is None:
+                break
+            cand = decision.selected
+            sym = str(cand.symbol).upper()
+            remaining = [
+                c
+                for c in remaining
+                if str(
+                    c.get("symbol")
+                    if isinstance(c, dict)
+                    else getattr(c, "symbol", "")
+                ).upper()
+                != sym
+            ]
+            if sym in seen:
+                continue
+            seen.add(sym)
+            if self._assignment._has_preexisting_holding(uba_id, sym):
+                skip_all.append(
+                    {"symbol": sym, "ok": False, "reason": "PREEXISTING_HOLDING"}
+                )
+                continue
+            gate = self._ownership_entry_gate(uba_id, sym)
+            if not gate["allowed"]:
+                skip_all.append(
+                    {
+                        "symbol": sym,
+                        "ok": False,
+                        "reason": gate.get("reason")
+                        or "SYMBOL_OWNERSHIP_BLOCKED",
+                        "owner": gate.get("owner"),
+                    }
+                )
+                continue
+            eligible_views.append(
+                CandidateScoreView(
+                    symbol=sym,
+                    score=float(cand.score or 0),
+                    recommendation=str(cand.recommendation or ""),
+                    rank=int(cand.rank) if cand.rank is not None else None,
+                    confidence=(
+                        float(cand.confidence)
+                        if cand.confidence is not None
+                        else None
+                    ),
+                    raw={
+                        "market_data_timestamp": cand.market_data_timestamp,
+                        "liquidity": cand.liquidity,
+                        "technical_metrics": dict(cand.technical_metrics or {}),
+                        "ai_analysis_id": cand.ai_analysis_id,
+                        "recommendation": cand.recommendation,
+                        "confidence": cand.confidence,
+                        "score": cand.score,
+                        "rank": cand.rank,
+                        "symbol": sym,
+                    },
+                )
+            )
+
+        out["skipped"] = skip_all
+
+        # 교체 대상 slot 심볼은 protected에서 제외 (자기 자신 교체 허용)
+        decision = pick_best_replacement(
+            slots=slot_views,
+            candidates=eligible_views,
+            policy=repl_pol,
+            now=_now(),
+            protected_symbols=protected_symbols,
+        )
+        out["replacement_decision"] = {
+            "replace": decision.replace,
+            "reason": decision.reason,
+            "old_symbol": decision.old_symbol,
+            "new_symbol": decision.new_symbol,
+            "old_score": decision.old_score,
+            "new_score": decision.new_score,
+            "age_seconds": decision.age_seconds,
+            "detail": decision.detail,
+        }
+        if not decision.replace:
+            out["reason"] = str(decision.reason or "NO_EMPTY_SLOT")
+            # 하위 호환: 교체 불가 시 기존 reason 유지
+            if out["reason"] in {
+                "NO_REPLACEABLE_OR_CANDIDATE",
+                "NO_MATCH",
+                "DELTA_OR_WAIT_INSUFFICIENT",
+                "WITHIN_HOLD",
+            }:
+                out["reason"] = "NO_EMPTY_SLOT"
+            out["orders_created"] = 0
+            return out
+
+        # 매칭된 slot / candidate
+        slot = next(
+            (s for s in waiting if int(s.slot_id) == int(decision.slot_id or 0)),
+            None,
+        )
+        cand_view = next(
+            (
+                c
+                for c in eligible_views
+                if c.symbol == str(decision.new_symbol or "").upper()
+            ),
+            None,
+        )
+        if slot is None or cand_view is None:
+            out["reason"] = "NO_EMPTY_SLOT"
+            out["orders_created"] = 0
+            return out
+
+        if dry_run:
+            out["ok"] = True
+            out["reason"] = "DRY_SLOT_REPLACED"
+            out["orders_created"] = 0
+            out["replacement"] = out["replacement_decision"]
+            return out
+
+        # --- atomic supersede ---
+        old_symbol = str(slot.symbol or "").upper()
+        old_sel_id = slot.candidate_selection_id
+        old_score = decision.old_score
+        if old_sel_id is not None:
+            old_sel = self._session.get(
+                UpbitLiveCandidateSelectionEntity, int(old_sel_id)
+            )
+            if old_sel is not None:
+                old_sel.status = SELECTION_STATUS_SUPERSEDED
+                old_sel.selection_reason = (
+                    f"{old_sel.selection_reason or 'PORTFOLIO'}"
+                    f"|SUPERSEDED_BY_{cand_view.symbol}"
+                )[:200]
+
+        raw = dict(cand_view.raw or {})
+        new_sel = UpbitLiveCandidateSelectionEntity(
+            user_broker_account_id=uba_id,
+            strategy_id=assignment.strategy_id,
+            deployment_id=assignment.deployment_id,
+            scanner_run_id=scanner_run_id,
+            symbol=cand_view.symbol,
+            rank=cand_view.rank,
+            score=cand_view.score,
+            market_data_timestamp=raw.get("market_data_timestamp") or _now(),
+            liquidity=raw.get("liquidity"),
+            technical_metrics=dict(raw.get("technical_metrics") or {}),
+            ai_analysis_id=raw.get("ai_analysis_id"),
+            ai_recommendation=cand_view.recommendation,
+            confidence=cand_view.confidence,
+            selected_at=_now(),
+            selection_reason=(
+                f"PORTFOLIO_SLOT_{slot.slot_no}|REPLACE_{decision.reason}"
+            ),
+            status="SELECTED",
+            skip_trace=list(skip_all),
+        )
+        self._session.add(new_sel)
+        self._session.flush()
+
+        slot.status = SLOT_SELECTED
+        slot.symbol = cand_view.symbol
+        slot.candidate_selection_id = int(new_sel.selection_id)
+        slot.scanner_run_id = scanner_run_id
+        slot.ai_analysis_id = raw.get("ai_analysis_id")
+        slot.recommended_amount_krw = None
+        slot.allocated_amount_krw = None
+        slot.reserved_amount_krw = None
+        slot.clamp_reasons = []
+        slot.entry_order_id = None
+        slot.position_binding_id = None
+        slot.updated_at = _now()  # hold timer 재시작 (churn 방지)
+        slot.version = int(slot.version or 1) + 1
+        assignment.last_scanner_run_id = scanner_run_id
+        assignment.current_symbol = cand_view.symbol
+        self._session.flush()
+
+        runtime_sync: dict[str, Any] | None = None
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                sync_portfolio_runtime_symbols,
+            )
+
+            runtime_sync = sync_portfolio_runtime_symbols(
+                self._session,
+                user_broker_account_id=uba_id,
+                ensure_quote_feed=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            runtime_sync = {"ok": False, "reason": type(exc).__name__}
+        if runtime_sync and not bool(runtime_sync.get("ok")):
+            slot.status = SLOT_BLOCKED
+            slot.version = int(slot.version or 1) + 1
+            self._session.flush()
+            out["ok"] = False
+            out["reason"] = "RUNTIME_SYNC_FAILED"
+            out["runtime_sync"] = runtime_sync
+            out["selection_id"] = int(new_sel.selection_id)
+            out["slot_id"] = int(slot.slot_id)
+            out["orders_created"] = 0
+            out["slots"] = self.list_slots(uba_id)
+            return out
+
+        slot.status = SLOT_WAITING_SIGNAL
+        slot.version = int(slot.version or 1) + 1
+        self._session.flush()
+
+        notify: dict[str, Any] | None = None
+        try:
+            from stock_platform.operation.upbit_full_market.replacement_notify import (
+                publish_slot_replacement_alert,
+            )
+
+            notify = publish_slot_replacement_alert(
+                user_broker_account_id=uba_id,
+                old_symbol=old_symbol,
+                new_symbol=cand_view.symbol,
+                old_score=old_score,
+                new_score=cand_view.score,
+                reason=decision.reason,
+                reason_display=reason_ko(decision.reason),
+                slot_no=int(slot.slot_no),
+                scanner_run_id=scanner_run_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            notify = {"ok": False, "reason": type(exc).__name__}
+
+        out["ok"] = True
+        out["reason"] = "SLOT_REPLACED"
+        out["orders_created"] = 0
+        out["selection_id"] = int(new_sel.selection_id)
+        out["slot_id"] = int(slot.slot_id)
+        out["runtime_sync"] = runtime_sync
+        out["notify"] = notify
+        out["replacement"] = {
+            **out["replacement_decision"],
+            "old_selection_id": int(old_sel_id) if old_sel_id else None,
+            "new_selection_id": int(new_sel.selection_id),
+        }
+        out["reserved"] = []
+        out["slots"] = self.list_slots(uba_id)
+        logger.info(
+            "upbit_portfolio_slot_replaced",
+            uba_id=uba_id,
+            slot_id=int(slot.slot_id),
+            old_symbol=old_symbol,
+            new_symbol=cand_view.symbol,
+            reason=decision.reason,
+            orders_created=0,
+        )
+        return out
 
     def _candidate_hold_block(
         self,

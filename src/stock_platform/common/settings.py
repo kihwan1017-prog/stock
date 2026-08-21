@@ -224,6 +224,8 @@ class Settings(BaseSettings):
     # WAITING_SIGNAL 후보 유지 / 교체 임계
     upbit_portfolio_candidate_hold_seconds: float = 1800.0
     upbit_portfolio_candidate_switch_min_score_delta: float = 8.0
+    # WAITING_SIGNAL 최대 대기(초). hold 이후 stale/장기 미진입 교체에 사용
+    upbit_portfolio_candidate_max_wait_seconds: float = 10800.0
     # MA entry policy — CROSS_EVENT(기존 golden cross) | BULLISH_STATE(portfolio)
     # 실제 적용은 FULL_MARKET_PORTFOLIO + DB risk_group_policy_json.entry_signal_policy 우선
     upbit_portfolio_entry_signal_policy: str = "CROSS_EVENT"

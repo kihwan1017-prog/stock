@@ -213,6 +213,11 @@ class PortfolioPolicyPatchBody(BaseModel):
     portfolio_daily_entry_limit: int | None = Field(default=None, ge=1, le=100)
     entry_state: str | None = Field(default=None, max_length=30)
     entry_signal_policy: str | None = Field(default=None, max_length=40)
+    candidate_hold_seconds: int | None = Field(default=None, ge=0, le=86400)
+    candidate_max_wait_seconds: int | None = Field(default=None, ge=60, le=86400)
+    candidate_switch_min_score_delta: float | None = Field(
+        default=None, ge=0, le=100
+    )
 
 
 class PortfolioPreviewBody(BaseModel):

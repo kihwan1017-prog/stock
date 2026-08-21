@@ -547,6 +547,14 @@ def test_consume_top_k_dry_sequential_pending() -> None:
         return_value={"ok": True, "released": 0}
     )
     svc._candidate_hold_block = MagicMock(return_value={"blocked": False})  # type: ignore[method-assign]
+    svc._ownership_entry_gate = MagicMock(  # type: ignore[method-assign]
+        return_value={
+            "allowed": True,
+            "reason": None,
+            "owner": "FREE",
+            "ownership_reasons": [],
+        }
+    )
 
     # empty slots + daily entries (빈)
     def scalars_side_effect(stmt):  # noqa: ANN001

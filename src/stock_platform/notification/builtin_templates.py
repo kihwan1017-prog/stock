@@ -156,6 +156,23 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "short_body_template": "후보 {symbol_display} · AI {ai_recommendation_ko}",
     },
     {
+        "event_type": "UPBIT_PORTFOLIO_CANDIDATE_REPLACED",
+        "category": "PORTFOLIO",
+        "severity": "INFO",
+        "title_template": "🔄 자동매매 후보 교체",
+        "body_template": (
+            "기존 종목: {old_symbol_display}\n"
+            "신규 종목: {symbol_display}\n"
+            "기존 점수: {old_scanner_score}\n"
+            "신규 점수: {scanner_score}\n"
+            "사유: {reason_ko}\n"
+            "슬롯: {slot_no}"
+        ),
+        "short_body_template": (
+            "{old_symbol_display} → {symbol_display} · {reason_ko}"
+        ),
+    },
+    {
         "event_type": "KILL_SWITCH",
         "category": "CRITICAL",
         "severity": "CRITICAL",
