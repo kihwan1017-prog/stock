@@ -436,6 +436,8 @@ class OrderExecutionService:
                 # 서버가 보유·pending으로 EXIT 재분류 — 클라이언트 플래그 미신뢰
                 is_risk_reducing=command.is_risk_reducing,
                 environment=environment,
+                strategy_id=command.strategy_id,
+                strategy_deployment_id=command.strategy_deployment_id,
             )
             if not risk_result.allowed:
                 from stock_platform.trading.failure_code_normalize import (
