@@ -178,8 +178,8 @@ export default function AdminRiskPage() {
 
   return (
     <AdminPageShell
-      title="Risk 관리"
-      description="kill-switch · 시스템/회원 리스크 설정 · daily-loss · risk-policies"
+      title="리스크 관리"
+      description="Kill Switch와 시스템/회원 리스크 설정의 canonical 화면입니다. 거래 운영 현황은 조회 전용 요약입니다."
       extra={
         <Space wrap>
           <Button danger loading={activate.isPending} onClick={() => activate.mutate()}>
@@ -188,10 +188,18 @@ export default function AdminRiskPage() {
           <Button loading={deactivate.isPending} onClick={() => deactivate.mutate()}>
             Kill Switch OFF
           </Button>
+          <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
+          <Link href={adminRoutes.operations}>시스템 운영</Link>
         </Space>
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Alert
+          type="info"
+          showIcon
+          message="Account Safety vs Strategy Autotrading"
+          description="Account Daily Drawdown(계좌 전체 MTM)과 Strategy Daily Loss(자동매매 소유만)는 분리됩니다. ENTRY는 Strategy Daily Loss + Account Hard Safety(Kill 등) 모두 PASS 필요. GET /api/v1/risk/daily-loss/strategy-owned"
+        />
         <AdminJsonCard
           title="GET /risk/kill-switch"
           loading={kill.isLoading}
@@ -205,11 +213,12 @@ export default function AdminRiskPage() {
           data={daily.data}
         />
 
-        <Card title="시스템 기본 리스크 정책" size="small" loading={systemRisk.isLoading}>
+        <Card title="시스템 기본 리스크 정책" size="small">
           <Form
             key={`system-risk-${systemRisk.dataUpdatedAt}`}
             form={systemForm}
             layout="vertical"
+            disabled={systemRisk.isLoading}
             initialValues={systemInitialValues}
             onFinish={(values) => {
               saveSystem.mutate({

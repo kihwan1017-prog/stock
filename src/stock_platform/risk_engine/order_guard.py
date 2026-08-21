@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -69,6 +70,8 @@ class DatabaseBackedRiskOrderGuard:
         is_risk_reducing: bool = False,
         # STEP 8-5-13 — PAPER는 paper_stock_follow_krx_calendar로 게이트
         environment: str = "LIVE",
+        strategy_id: int | None = None,
+        strategy_deployment_id: int | None = None,
     ) -> RiskCheckedOrderResult:
         environment_upper = (environment or "LIVE").upper()
         now = datetime.now(timezone.utc)
@@ -125,6 +128,8 @@ class DatabaseBackedRiskOrderGuard:
                     user_broker_account_id=int(uba_id),
                     exchange_code=exchange_code,
                     symbol=symbol,
+                    strategy_id=strategy_id,
+                    deployment_id=strategy_deployment_id,
                 )
             except LookupError:
                 from stock_platform.risk_engine.models import RiskAccountState
@@ -197,6 +202,37 @@ class DatabaseBackedRiskOrderGuard:
                 exchange_code=exchange_code,
                 symbol=symbol,
             )
+
+        # 서버 EXIT 분류 — 클라이언트 is_risk_reducing 무시
+        from stock_platform.risk_engine.exit_risk import (
+            classify_risk_reducing_exit,
+        )
+
+        side_u = str(side or "").strip().upper()
+        verified_exit = False
+        if side_u == "SELL":
+            exit_clf = classify_risk_reducing_exit(
+                self._session,
+                side=side_u,
+                symbol=symbol,
+                exchange_code=exchange_code,
+                quantity=quantity,
+                user_broker_account_id=uba_id,
+                paper_account_id=paper_account_id,
+                environment=environment_upper,
+                broker_code=self._broker_code,
+            )
+            if not exit_clf.is_risk_reducing_exit:
+                return _reject(
+                    exit_clf.reason_code or "NO_POSITION_TO_SELL"
+                )
+            verified_exit = True
+            account_state = replace(
+                account_state,
+                symbol_position_quantity=exit_clf.held_quantity,
+                symbol_pending_sell_quantity=exit_clf.pending_sell_quantity,
+            )
+        is_risk_reducing = verified_exit
 
         order = RiskOrderRequest(
             exchange_code=exchange_code,

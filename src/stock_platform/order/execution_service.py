@@ -303,13 +303,18 @@ class OrderExecutionService:
                     quantity=quantity,
                     price=price,
                     strategy_id=(
-                        command.strategy_code
-                        or (
-                            str(command.strategy_deployment_id)
-                            if command.strategy_deployment_id
-                            else None
+                        str(command.strategy_id)
+                        if command.strategy_id is not None
+                        else (
+                            command.strategy_code
+                            or (
+                                str(command.strategy_deployment_id)
+                                if command.strategy_deployment_id
+                                else None
+                            )
                         )
                     ),
+                    strategy_deployment_id=command.strategy_deployment_id,
                     run_id=(
                         (command.metadata_payload or {}).get("run_id")
                         if isinstance(command.metadata_payload, dict)

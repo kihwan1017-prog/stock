@@ -31,8 +31,10 @@ class RiskAccountStateService:
         user_broker_account_id: int,
         exchange_code: str,
         symbol: str,
+        strategy_id: int | None = None,
+        deployment_id: int | None = None,
     ) -> RiskAccountState:
-        """ACTIVE Snapshot by UBA."""
+        """ACTIVE Snapshot by UBA. strategy_id 있으면 strategy-owned 일손익."""
 
         from stock_platform.broker.account_repository import (
             BrokerAccountSnapshotRepository,
@@ -50,6 +52,8 @@ class RiskAccountStateService:
             positions=positions,
             exchange_code=exchange_code,
             symbol=symbol,
+            strategy_id=strategy_id,
+            deployment_id=deployment_id,
         )
 
     def load_by_paper_account(
@@ -132,6 +136,8 @@ class RiskAccountStateService:
         positions: list,
         exchange_code: str,
         symbol: str,
+        strategy_id: int | None = None,
+        deployment_id: int | None = None,
     ) -> RiskAccountState:
         positions = [
             item
@@ -162,12 +168,28 @@ class RiskAccountStateService:
             + invested_amount
         )
 
-        # 일일 손익: 누적 total_profit_loss / 포지션 미실현 금지
-        # → UBA daily equity baseline (current_daily_pnl)
         daily_realized = ZERO
         daily_unrealized = ZERO
         uba_id = getattr(account, "user_broker_account_id", None)
-        if uba_id is not None:
+        if uba_id is not None and strategy_id is not None:
+            try:
+                from stock_platform.risk_engine.strategy_owned_risk_service import (
+                    StrategyOwnedRiskService,
+                )
+
+                snap = StrategyOwnedRiskService(self._session).compute_and_persist(
+                    user_broker_account_id=int(uba_id),
+                    broker_code=str(getattr(account, "broker_code", "") or ""),
+                    strategy_id=int(strategy_id),
+                    deployment_id=deployment_id,
+                    loss_limit=None,
+                )
+                daily_realized = Decimal(str(snap.realized_pnl))
+                daily_unrealized = Decimal(str(snap.unrealized_pnl))
+            except Exception:  # noqa: BLE001
+                daily_realized = ZERO
+                daily_unrealized = ZERO
+        elif uba_id is not None:
             try:
                 from stock_platform.risk_engine.uba_daily_loss_service import (
                     UbaDailyLossService,
@@ -177,12 +199,10 @@ class RiskAccountStateService:
                     user_broker_account_id=int(uba_id),
                     loss_limit=Decimal("0"),
                 )
-                # DailyLossRule은 realized+unrealized 합으로 평가
                 daily_pnl = Decimal(str(breakdown.current_daily_pnl))
                 daily_realized = daily_pnl
                 daily_unrealized = ZERO
             except Exception:  # noqa: BLE001
-                # baseline/스냅샷 없으면 당일 손익 0 (누적손익 오용 방지)
                 daily_realized = ZERO
                 daily_unrealized = ZERO
 
