@@ -52,6 +52,7 @@ class SubmitOrderRequest(BaseModel):
     time_in_force: OrderTimeInForce = OrderTimeInForce.DAY
     strategy_code: str | None = None
     strategy_deployment_id: int | None = None
+    strategy_id: int | None = Field(default=None, gt=0)
     portfolio_id: int | None = None
     position_id: int | None = None
     client_order_id: str | None = None
@@ -135,6 +136,17 @@ def submit_order(
                 strategy_code=request.strategy_code,
                 strategy_deployment_id=(
                     request.strategy_deployment_id
+                ),
+                strategy_id=(
+                    int(request.strategy_id)
+                    if request.strategy_id is not None
+                    else (
+                        int(request.metadata_payload["strategy_id"])
+                        if isinstance(request.metadata_payload, dict)
+                        and request.metadata_payload.get("strategy_id")
+                        is not None
+                        else None
+                    )
                 ),
                 portfolio_id=request.portfolio_id,
                 position_id=request.position_id,

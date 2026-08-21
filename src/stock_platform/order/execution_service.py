@@ -86,6 +86,7 @@ class OrderExecutionCommand:
     time_in_force: OrderTimeInForce = OrderTimeInForce.DAY
     strategy_code: str | None = None
     strategy_deployment_id: int | None = None
+    strategy_id: int | None = None
     portfolio_id: int | None = None
     position_id: int | None = None
     client_order_id: str | None = None
