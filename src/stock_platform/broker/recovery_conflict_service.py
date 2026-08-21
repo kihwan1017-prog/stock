@@ -900,6 +900,8 @@ class BrokerRecoveryConflictService:
         return row
 
     def count_active_for_uba(self, uba_id: int) -> int:
+        """계정 pause/resume 차단용 — SAME_SYMBOL ON_HOLD·INFO MANUAL은 제외."""
+
         stmt = select(func.count()).select_from(
             BrokerRecoveryConflictEntity
         ).where(
@@ -908,6 +910,9 @@ class BrokerRecoveryConflictService:
             BrokerRecoveryConflictEntity.review_status.in_(
                 list(ACTIVE_REVIEW_STATUSES)
             ),
+            BrokerRecoveryConflictEntity.conflict_type
+            != "SAME_SYMBOL_MANUAL_AUTO_CONFLICT",
+            BrokerRecoveryConflictEntity.risk_level != "INFO",
         )
         return int(self._session.scalar(stmt) or 0)
 

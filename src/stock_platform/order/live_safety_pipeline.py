@@ -478,6 +478,38 @@ class LiveOrderSafetyPipeline:
                     hard_detail,
                 )
 
+        # 8a2) Symbol Ownership — AUTO ENTRY만 MANUAL/UNKNOWN/hold 차단
+        if (
+            not verified_exit
+            and side_u == "BUY"
+            and strategy_id is not None
+        ):
+            try:
+                from stock_platform.trading.symbol_ownership import (
+                    SymbolOwnershipService,
+                )
+
+                allowed, skip_reason, ownership = SymbolOwnershipService(
+                    self._session
+                ).entry_gate(
+                    broker_code=broker,
+                    user_broker_account_id=uba_id,
+                    symbol=sym,
+                )
+                base_detail["symbol_ownership"] = ownership.to_dict()
+                if not allowed:
+                    return _fail(
+                        skip_reason or "SYMBOL_OWNERSHIP_BLOCKED",
+                        LIVE_REJECTED,
+                        ownership.to_dict(),
+                    )
+            except Exception as exc:  # noqa: BLE001
+                return _fail(
+                    "SYMBOL_OWNERSHIP_UNKNOWN",
+                    LIVE_REJECTED,
+                    {"error": type(exc).__name__},
+                )
+
         # 8b) Strategy Daily Loss — strategy-owned PnL만 (account_daily_loss 미사용)
         loss_hit, loss_detail = self._strategy_or_legacy_daily_loss_breached(
             user_broker_account_id=uba_id,

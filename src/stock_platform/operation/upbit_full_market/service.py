@@ -547,6 +547,34 @@ class UpbitFullMarketAssignmentService:
                     out["reason"] = "PREEXISTING_HOLDING_ALL"
                     return out
 
+            # 공통 ownership gate
+            try:
+                from stock_platform.trading.symbol_ownership import (
+                    SymbolOwnershipService,
+                )
+
+                allowed, skip_reason, ownership = SymbolOwnershipService(
+                    self._session
+                ).entry_gate(
+                    broker_code="UPBIT",
+                    user_broker_account_id=uba_id,
+                    symbol=str(cand.symbol),
+                )
+                if not allowed:
+                    out["reason"] = skip_reason or "SYMBOL_OWNERSHIP_BLOCKED"
+                    out["skip_trace"].append(
+                        {
+                            "symbol": cand.symbol,
+                            "ok": False,
+                            "reason": out["reason"],
+                            "owner": ownership.owner,
+                        }
+                    )
+                    return out
+            except Exception:  # noqa: BLE001
+                out["reason"] = "SYMBOL_OWNERSHIP_UNKNOWN"
+                return out
+
             selected_payload = {
                 "symbol": cand.symbol,
                 "rank": cand.rank,

@@ -311,6 +311,29 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "short_body_template": "모니터링 · {reason_ko}",
     },
     {
+        "event_type": "SAME_SYMBOL_MANUAL_AUTO_CONFLICT",
+        "category": "WARNING",
+        "severity": "WARNING",
+        "title_template": "⚠️ 자동/일반매매 충돌",
+        "body_template": (
+            "종목: {symbol_display}\n"
+            "사유: {reason_ko}\n"
+            "해당 종목 자동매매를 일시 중지합니다."
+        ),
+        "short_body_template": "충돌 · {symbol_display}",
+    },
+    {
+        "event_type": "AUTO_SYMBOL_EXCLUDED_MANUAL_POSITION",
+        "category": "PORTFOLIO",
+        "severity": "INFO",
+        "title_template": "ℹ️ 자동매매 후보 제외",
+        "body_template": (
+            "종목: {symbol_display}\n"
+            "사유: {reason_ko}"
+        ),
+        "short_body_template": "제외 · {symbol_display}",
+    },
+    {
         "event_type": "TEST_NOTIFICATION",
         "category": "DEBUG",
         "severity": "INFO",

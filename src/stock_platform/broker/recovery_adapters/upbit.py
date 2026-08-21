@@ -141,24 +141,87 @@ class UpbitRecoveryAdapter:
                 or 0
             )
             conflicts = 0
+            account_pause_conflicts = 0
             if remote_only and not context.allow_auto_create_external_orders:
                 conflict_svc = BrokerRecoveryConflictService(session)
+                try:
+                    from stock_platform.trading.symbol_ownership import (
+                        SymbolOwnershipService,
+                    )
+                    from stock_platform.trading.symbol_ownership.constants import (
+                        CONFLICT_SAME_SYMBOL_MANUAL_AUTO,
+                    )
+
+                    ownership_svc = SymbolOwnershipService(session)
+                except Exception:  # noqa: BLE001
+                    ownership_svc = None
+                    CONFLICT_SAME_SYMBOL_MANUAL_AUTO = (
+                        "SAME_SYMBOL_MANUAL_AUTO_CONFLICT"
+                    )
+
                 for remote in remote_only_orders:
-                    conflict_svc.upsert_remote_only(
+                    market = str(remote.get("market") or "").strip().upper()
+                    classification = None
+                    if ownership_svc is not None and market and uba_id:
+                        classification = ownership_svc.classify_remote_order(
+                            broker_code="UPBIT",
+                            user_broker_account_id=int(uba_id),
+                            symbol=market,
+                        )
+                    row = conflict_svc.upsert_remote_only(
                         remote=remote,
                         user_id=context.user_id,
                         user_broker_account_id=uba_id,
                         recovery_run_id=None,
                         broker_code="UPBIT",
                     )
-                # 활성 검토 Conflict만 Pause·MANUAL_REVIEW 트리거
+                    if row is not None and classification is not None:
+                        from stock_platform.broker.recovery_conflict_constants import (
+                            RecoveryConflictReviewStatus,
+                            RecoveryConflictResolution,
+                        )
+
+                        row.risk_level = classification.risk_level
+                        if classification.conflict_kind == (
+                            CONFLICT_SAME_SYMBOL_MANUAL_AUTO
+                        ):
+                            row.conflict_type = CONFLICT_SAME_SYMBOL_MANUAL_AUTO
+                            row.review_status = (
+                                RecoveryConflictReviewStatus.ON_HOLD
+                            )
+                            ownership_svc.activate_same_symbol_hold(
+                                broker_code="UPBIT",
+                                user_broker_account_id=int(uba_id),
+                                symbol=market,
+                                reason_code=CONFLICT_SAME_SYMBOL_MANUAL_AUTO,
+                                detail=classification.to_dict(),
+                            )
+                            _notify_same_symbol_conflict(market)
+                        elif not classification.pause_account:
+                            # MANUAL remote activity — 계좌 pause/resume 차단 금지
+                            row.pause_reason = classification.conflict_kind
+                            row.review_status = (
+                                RecoveryConflictReviewStatus.IGNORED
+                            )
+                            row.resolution_type = (
+                                RecoveryConflictResolution.IGNORE_EXTERNAL_ORDER
+                            )
+                            row.resolution_note = (
+                                "REMOTE_MANUAL_ACTIVITY_NO_ACCOUNT_PAUSE"
+                            )
+                        session.flush()
+                        if classification.pause_account:
+                            account_pause_conflicts += 1
+                    elif row is not None:
+                        account_pause_conflicts += 1
+
+                # 활성 검토 Conflict 수 (대시보드용)
                 if uba_id is not None:
-                    conflicts = conflict_svc.count_active_for_uba(
-                        int(uba_id)
-                    )
+                    conflicts = conflict_svc.count_active_for_uba(int(uba_id))
                 else:
                     conflicts = int(remote_only)
-                if conflicts > 0:
+                # 계좌 전체 pause: AUTO provenance mismatch 등만
+                if account_pause_conflicts > 0:
                     conflict_svc.pause_account_for_conflicts(
                         user_broker_account_id=uba_id,
                         user_id=context.user_id,
@@ -167,6 +230,11 @@ class UpbitRecoveryAdapter:
                     result.warnings.append(
                         "External-only Upbit orders require manual_review "
                         "(auto-create disabled)"
+                    )
+                elif conflicts > 0:
+                    result.warnings.append(
+                        "Remote MANUAL orders recorded without account pause "
+                        "(symbol ownership isolation)"
                     )
                 session.commit()
 
@@ -184,8 +252,9 @@ class UpbitRecoveryAdapter:
                 if k in reconcile
             }
             result.detail["remote_only_count"] = remote_only
+            result.detail["account_pause_conflicts"] = account_pause_conflicts
 
-            if conflicts > 0:
+            if account_pause_conflicts > 0:
                 result.status = "MANUAL_REVIEW"
                 result.trading_should_remain_paused = True
             elif result.errors:
@@ -289,3 +358,26 @@ class UpbitRecoveryAdapter:
             session.close()
 
         return result.finish()
+
+
+def _notify_same_symbol_conflict(symbol: str) -> None:
+    """동일 Symbol MANUAL/AUTO 충돌 알림 — 실패해도 Recovery 계속."""
+
+    try:
+        from stock_platform.notification.publisher import notification_publisher
+
+        notification_publisher.publish(
+            event_type="SAME_SYMBOL_MANUAL_AUTO_CONFLICT",
+            title="자동/일반매매 충돌",
+            message=(
+                f"종목 {symbol}: 자동매매 보유 중 수동 주문이 감지되어 "
+                "해당 종목 자동매매를 일시 중지합니다."
+            ),
+            detail={
+                "symbol": symbol,
+                "broker_code": "UPBIT",
+                "reason": "SAME_SYMBOL_MANUAL_AUTO_CONFLICT",
+            },
+        )
+    except Exception:  # noqa: BLE001
+        pass

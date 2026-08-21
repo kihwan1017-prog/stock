@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-21 (KIWOOM TODAY COMPLETION — V2 OPTED-IN / NEXT DAY FILL)
+**최종 갱신:** 2026-08-21 (COMMON Symbol Ownership model)
 
 ---
 
@@ -15,17 +15,14 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | UBA1380 | isolation maintained | KEEP |
-| **K** | ORDER_LIMIT_V2 + DRY completion | **V2 5/1 opted-in; today V1; 2026-08-24 V2** | NEXT_KRX_DAY_FIRST_REAL_FILL_AND_EXIT_PROOF |
-| **SHARED** | risk-limits Decimal fix; KIWOOM exit loader flag | code path ready | — |
+| **SHARED** | Symbol Ownership MANUAL/AUTO/FREE | **CODE_COMPLETE_PENDING_SAFE_RELOAD** | SAFE_RELOAD then verify MANUAL remote no UBA pause |
+| **U** | UBA1380 | RUNNING / waiting BULLISH entry | OBSERVE_NATURAL_PORTFOLIO_ENTRY_AND_EXIT |
+| **K** | ORDER_LIMIT_V2 | V2 opted-in | NEXT_KRX_DAY_FIRST_REAL_FILL_AND_EXIT_PROOF |
 
-UBA1381: `daily_submit_limit=5`, `daily_filled_entry_limit=1`, `daily_order_limit=1` (legacy unchanged).  
-#1798 risk_counted unchanged. REAL ENTRY today 금지.
-
-Runbook: `docs/trading/KIWOOM_UBA1381_20260824_ONE_SHOT_REAL_FILL_RUNBOOK.md`
+DRY ownership: `.run/k_symbol_ownership_dry_audit.json` — UBA1380 MANUAL BTC/ETH/DOGE/SKY, AUTO MET2/PEPE/PUMP (slots).
 
 ---
 
 ## Next Gate
 
-**Exactly one:** NEXT_KRX_DAY_FIRST_REAL_FILL_AND_EXIT_PROOF
+**Exactly one:** SAFE_RELOAD_BACKEND_THEN_VERIFY_OWNERSHIP_AWARE_RECOVERY

@@ -885,6 +885,61 @@ class UpbitPortfolioService:
                     != cand.symbol
                 ]
                 continue
+            # 공통 Symbol Ownership gate (MANUAL/AUTO/UNKNOWN 제외)
+            try:
+                from stock_platform.trading.symbol_ownership import (
+                    SymbolOwnershipService,
+                )
+
+                allowed, skip_reason, ownership = SymbolOwnershipService(
+                    self._session
+                ).entry_gate(
+                    broker_code="UPBIT",
+                    user_broker_account_id=uba_id,
+                    symbol=str(cand.symbol),
+                )
+                if not allowed:
+                    skip_all.append(
+                        {
+                            "symbol": cand.symbol,
+                            "ok": False,
+                            "reason": skip_reason
+                            or "SYMBOL_OWNERSHIP_BLOCKED",
+                            "owner": ownership.owner,
+                            "ownership_reasons": ownership.reasons,
+                        }
+                    )
+                    remaining = [
+                        c
+                        for c in remaining
+                        if str(
+                            c.get("symbol")
+                            if isinstance(c, dict)
+                            else getattr(c, "symbol", "")
+                        ).upper()
+                        != str(cand.symbol).upper()
+                    ]
+                    continue
+            except Exception:  # noqa: BLE001
+                # ownership 판정 실패 시 fail-closed (신규 ENTRY 금지)
+                skip_all.append(
+                    {
+                        "symbol": cand.symbol,
+                        "ok": False,
+                        "reason": "SYMBOL_OWNERSHIP_UNKNOWN",
+                    }
+                )
+                remaining = [
+                    c
+                    for c in remaining
+                    if str(
+                        c.get("symbol")
+                        if isinstance(c, dict)
+                        else getattr(c, "symbol", "")
+                    ).upper()
+                    != str(cand.symbol).upper()
+                ]
+                continue
             chosen = cand
             break
 

@@ -234,6 +234,9 @@ from stock_platform.api.v1.notifications import router as notifications_router
 from stock_platform.api.v1.admin_notification_templates import (
     router as admin_notification_templates_router,
 )
+from stock_platform.api.v1.admin_symbol_ownership import (
+    router as admin_symbol_ownership_router,
+)
 from stock_platform.api.v1.telegram_ops import (
     router as telegram_ops_router,
 )
@@ -600,6 +603,7 @@ _ROUTER_GROUPS = (
     daily_reports_router,
     notifications_router,
     admin_notification_templates_router,
+    admin_symbol_ownership_router,
     telegram_ops_router,
 )
 
