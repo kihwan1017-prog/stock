@@ -227,6 +227,13 @@ def evaluate_uba_autotrading_ready(
         blockers.append("RUNTIME_BLOCKED")
     elif runtime_status == RUNTIME_STOPPED and not approved_active:
         pass  # STRATEGY blockers already cover
+    # LIVE ON + 승인 전략인데 Runtime이 RUNNING이 아니면 READY 금지
+    elif (
+        bool(getattr(uba, "live_order_enabled", False))
+        and approved_active
+        and runtime_status != RUNTIME_RUNNING
+    ):
+        blockers.append("STRATEGY_RUNTIME_NOT_RUNNING")
     # READY/RUNNING are OK for readiness mapping; RUNNING not required for prep
 
     # --- Activation / LIVE / ARM ---
@@ -580,7 +587,11 @@ def evaluate_uba_autotrading_ready(
         if not bool(worker.get("enabled")):
             blockers.append("LIVE_OUTBOX_WORKER_DISABLED")
         elif not bool(worker.get("running")):
-            warnings.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
+            # LIVE ON 계좌는 Worker STOPPED를 warning이 아닌 blocker로 취급
+            if bool(getattr(uba, "live_order_enabled", False)):
+                blockers.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
+            else:
+                warnings.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
     except Exception:  # noqa: BLE001
         checks["live_outbox_worker"] = {"enabled": False}
         blockers.append("LIVE_OUTBOX_WORKER_DISABLED")
@@ -688,10 +699,19 @@ def evaluate_uba_autotrading_ready(
             strategy_id=primary_sid,
         )
         ctrl = checks["upbit_24x7_control"]
-        if str(ctrl.get("strategy_runtime")) == "STOPPED":
-            warnings.append("STRATEGY_RUNTIME_STOPPED")
+        rt_label = str(ctrl.get("strategy_runtime") or "").upper()
+        if rt_label in {"STOPPED", "PAUSED", "ERROR"}:
+            if bool(getattr(uba, "live_order_enabled", False)):
+                if "STRATEGY_RUNTIME_NOT_RUNNING" not in blockers:
+                    blockers.append("STRATEGY_RUNTIME_NOT_RUNNING")
+            else:
+                warnings.append("STRATEGY_RUNTIME_STOPPED")
         if str(ctrl.get("outbox_worker")) == "STOPPED":
-            warnings.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
+            if bool(getattr(uba, "live_order_enabled", False)):
+                if "LIVE_OUTBOX_WORKER_NOT_RUNNING" not in blockers:
+                    blockers.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
+            else:
+                warnings.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
         if str(ctrl.get("exit_monitor")) == "STOPPED":
             warnings.append("EXIT_MONITOR_STOPPED")
     except Exception as exc:  # noqa: BLE001

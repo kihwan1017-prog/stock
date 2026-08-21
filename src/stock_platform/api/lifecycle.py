@@ -218,6 +218,10 @@ class ApplicationLifecycle:
                 "runtime startup policy (phase 2)",
                 self._startup_runtime_policy_phase2,
             )
+            await self._run_optional(
+                "unattended upbit lease/stack restore",
+                self._startup_unattended_upbit_stack_restore,
+            )
             await self._run_phase(
                 "scheduler startup",
                 self._start_schedulers,
@@ -317,6 +321,22 @@ class ApplicationLifecycle:
             raise
         finally:
             session.close()
+
+    async def _startup_unattended_upbit_stack_restore(self) -> None:
+        """ACTIVE 24H lease가 있으면 LIVE/ARM 복구 후 UPBIT Runtime/Worker 복구.
+
+        startup_forced_idle만 남기고 Worker STOPPED로 방치하는 GAP을 막는다.
+        Scheduler 강제 RUN / REAL 주문 생성은 하지 않는다.
+        """
+
+        from stock_platform.trading.upbit_unattended_stack_restore import (
+            restore_all_active_unattended_upbit_leases,
+        )
+
+        result = await restore_all_active_unattended_upbit_leases(
+            actor="SYSTEM_UNATTENDED_STARTUP_RESTORE",
+        )
+        logger.info("unattended_upbit_stack_restore_startup", **result)
 
     async def _startup_release_validation(self) -> None:
         """Release v1.2 — Configuration / Fail-Closed / Lifecycle 검증."""

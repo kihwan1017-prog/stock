@@ -33,6 +33,8 @@ from stock_platform.trading.live_session_expiry import (
 from stock_platform.trading.live_unattended_entities import (
     LiveUnattendedAuthorizationEntity,
 )
+from stock_platform.common.logger import logger
+from stock_platform.database.session import get_session_factory
 
 STATUS_ACTIVE = "ACTIVE"
 STATUS_EXPIRED = "EXPIRED"
@@ -672,11 +674,15 @@ class LiveUnattendedAuthorizationService:
         user_broker_account_id: int,
         *,
         actor: str = "SYSTEM_UNATTENDED_RESTORE",
+        restore_stack: bool = True,
     ) -> dict[str, Any]:
         """ACTIVE unattended lease가 있으면 startup 강제 OFF 이후 LIVE/ARM/Activation 복구.
 
         운영자가 승인한 24H lease 범위 안에서만 동작한다.
         임의 TTL 연장이 아니라 lease horizon 내 세션 재기동이다.
+
+        restore_stack=True 이고 running event loop가 있으면 UPBIT Runtime/Worker
+        복구를 비동기로 스케줄한다 (동기 호출부/startup 전용 경로는 False 가능).
         """
 
         row = self.get_active(int(user_broker_account_id))
@@ -811,7 +817,71 @@ class LiveUnattendedAuthorizationService:
             detail=detail,
             commit=False,
         )
+
+        # UPBIT: Runtime/Worker는 startup_forced_idle로 남을 수 있음 → stack 스케줄
+        if restore_stack and str(uba.broker_code or "").upper() == "UPBIT":
+            detail["stack_restore_schedule"] = (
+                self._schedule_upbit_stack_restore(
+                    int(user_broker_account_id),
+                    actor=f"{actor}_STACK",
+                )
+            )
+        else:
+            detail["stack_restore_schedule"] = {
+                "scheduled": False,
+                "reason": "SKIPPED",
+            }
+
         return {"restored": True, "detail": detail}
+
+    def _schedule_upbit_stack_restore(
+        self,
+        user_broker_account_id: int,
+        *,
+        actor: str,
+    ) -> dict[str, Any]:
+        """running loop가 있으면 stack restore task 생성. 없으면 skip."""
+
+        import asyncio
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return {"scheduled": False, "reason": "NO_RUNNING_LOOP"}
+
+        uba_id = int(user_broker_account_id)
+
+        async def _run() -> None:
+            sf = get_session_factory()
+            session = sf()
+            try:
+                from stock_platform.trading.upbit_unattended_stack_restore import (
+                    restore_upbit_trading_stack,
+                )
+
+                result = await restore_upbit_trading_stack(
+                    session,
+                    user_broker_account_id=uba_id,
+                    actor=actor,
+                )
+                session.commit()
+                logger.info(
+                    "unattended_stack_restore_task_done",
+                    uba_id=uba_id,
+                    restored=result.get("restored"),
+                    reason=result.get("reason"),
+                )
+            except Exception:  # noqa: BLE001
+                session.rollback()
+                logger.exception(
+                    "unattended_stack_restore_task_failed",
+                    uba_id=uba_id,
+                )
+            finally:
+                session.close()
+
+        loop.create_task(_run(), name=f"unattended-stack-{uba_id}")
+        return {"scheduled": True, "uba_id": uba_id}
 
     def renew_due_for_uba(
         self,
