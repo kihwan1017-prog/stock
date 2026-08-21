@@ -12,6 +12,22 @@ class RealtimeSignalAction(StrEnum):
     HOLD = "HOLD"
 
 
+# 일봉 계약으로 취급할 LIVE timeframe 표기
+_DAILY_TIMEFRAMES = frozenset({"1D", "D", "DAY", "DAILY"})
+
+
+def normalize_realtime_timeframe(raw: str | None) -> str:
+    """전략 payload timeframe을 대문자 정규화한다."""
+
+    return str(raw or "").strip().upper()
+
+
+def uses_daily_bars(timeframe: str | None) -> bool:
+    """1D 전략인지 여부. 빈 값/틱 전략은 False."""
+
+    return normalize_realtime_timeframe(timeframe) in _DAILY_TIMEFRAMES
+
+
 @dataclass(frozen=True, slots=True)
 class RealtimeStrategyConfig:
     short_window: int = 5
@@ -20,6 +36,16 @@ class RealtimeStrategyConfig:
     stop_loss_ratio: Decimal = Decimal("0.03")
     take_profit_ratio: Decimal = Decimal("0.06")
     cooldown_seconds: int = 30
+    # 전략 compiled timeframe. 빈 값이면 레거시 raw tick MA.
+    timeframe: str = ""
+    # Paper/Backtest cooldown_bars. LIVE 초 단위 cooldown과 별개 — 이번 STEP에서 변경하지 않음.
+    cooldown_bars: int | None = None
+    # Portfolio entry: CROSS_EVENT(기본) | BULLISH_STATE — FIXED는 항상 CROSS_EVENT
+    entry_signal_policy: str = "CROSS_EVENT"
+    portfolio_mode: bool = False
+
+    def uses_daily_bars(self) -> bool:
+        return uses_daily_bars(self.timeframe)
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,3 +76,5 @@ class RealtimeSignal:
     strategy_version: str | None = None
     broker_code: str | None = None
     market_type: str | None = None
+    user_broker_account_id: int | None = None
+    source_code: str | None = None

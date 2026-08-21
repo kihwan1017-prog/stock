@@ -162,7 +162,22 @@ class UpbitPortfolioService:
         return out
 
     def policy_dict(self, user_broker_account_id: int) -> dict[str, Any]:
+        from stock_platform.common.settings import get_settings
+        from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            resolve_policy_from_row,
+        )
+
         row = self.get_or_create_policy(int(user_broker_account_id))
+        entry_policy = resolve_policy_from_row(
+            risk_group_policy_json=dict(row.risk_group_policy_json or {}),
+            settings_default=str(
+                getattr(
+                    get_settings(),
+                    "upbit_portfolio_entry_signal_policy",
+                    "CROSS_EVENT",
+                )
+            ),
+        )
         return {
             "policy_id": int(row.policy_id),
             "enabled": bool(row.enabled),
@@ -184,6 +199,8 @@ class UpbitPortfolioService:
             "portfolio_daily_entry_limit": int(row.portfolio_daily_entry_limit),
             "entry_state": row.entry_state,
             "consecutive_loss_count": int(row.consecutive_loss_count),
+            "entry_signal_policy": entry_policy,
+            "risk_group_policy_json": dict(row.risk_group_policy_json or {}),
             "version": int(row.version),
         }
 
@@ -259,6 +276,26 @@ class UpbitPortfolioService:
                 setattr(row, key, new_b)
             elif key == "entry_state" and value is not None:
                 setattr(row, key, str(value).upper()[:30])
+            elif key == "entry_signal_policy" and value is not None:
+                from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+                    normalize_entry_policy,
+                )
+
+                blob = dict(row.risk_group_policy_json or {})
+                blob["entry_signal_policy"] = normalize_entry_policy(str(value))
+                row.risk_group_policy_json = blob
+            elif key == "risk_group_policy_json" and isinstance(value, dict):
+                blob = dict(row.risk_group_policy_json or {})
+                blob.update(value)
+                if "entry_signal_policy" in blob:
+                    from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+                        normalize_entry_policy,
+                    )
+
+                    blob["entry_signal_policy"] = normalize_entry_policy(
+                        str(blob["entry_signal_policy"])
+                    )
+                row.risk_group_policy_json = blob
         row.version = int(row.version or 1) + 1
         self._session.flush()
         logger.info(

@@ -164,6 +164,21 @@ def sync_portfolio_runtime_symbols(
         assignment.current_symbol = desired[0]
         session.flush()
 
+    from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+        attach_portfolio_entry_context_to_hub,
+    )
+
+    try:
+        result["entry_context"] = attach_portfolio_entry_context_to_hub(
+            session, uba_id
+        )
+    except Exception as exc:  # noqa: BLE001
+        result["entry_context"] = {
+            "ok": False,
+            "error": type(exc).__name__,
+            "message": str(exc)[:200],
+        }
+
     logger.info(
         "portfolio_runtime_symbols_realigned",
         uba_id=uba_id,

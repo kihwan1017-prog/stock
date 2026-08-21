@@ -212,6 +212,7 @@ class PortfolioPolicyPatchBody(BaseModel):
     portfolio_max_pending_entries: int | None = Field(default=None, ge=1, le=10)
     portfolio_daily_entry_limit: int | None = Field(default=None, ge=1, le=100)
     entry_state: str | None = Field(default=None, max_length=30)
+    entry_signal_policy: str | None = Field(default=None, max_length=40)
 
 
 class PortfolioPreviewBody(BaseModel):
@@ -536,5 +537,26 @@ def admin_portfolio_align_entry_pipeline(
     return {
         **result,
         "confirm_phrase": CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
+        "orders_created": 0,
+    }
+
+
+@router.get("/uba/{user_broker_account_id}/portfolio/entry-evaluations")
+def admin_portfolio_entry_evaluations(
+    user_broker_account_id: int,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """슬롯별 in-memory entry 평가 요약 (고빈도 DB write 없음)."""
+
+    from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+        portfolio_entry_telemetry,
+    )
+
+    return {
+        "ok": True,
+        "user_broker_account_id": int(user_broker_account_id),
+        "evaluations": portfolio_entry_telemetry.snapshot(
+            int(user_broker_account_id)
+        ),
         "orders_created": 0,
     }

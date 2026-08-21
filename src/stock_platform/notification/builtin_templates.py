@@ -21,6 +21,21 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "short_body_template": "{symbol_display} {side_ko} 제출 · {price_display}",
     },
     {
+        "event_type": "PORTFOLIO_BULLISH_STATE_ENTRY",
+        "category": "TRADE",
+        "severity": "INFO",
+        "title_template": "📈 자동매매 매수 조건 충족",
+        "body_template": (
+            "종목: {symbol_display}\n"
+            "Scanner 점수: {scanner_score}\n"
+            "AI: {ai_recommendation}\n"
+            "추세: short MA > long MA\n"
+            "RSI: {rsi14}\n"
+            "주문 예정금액: {approved_amount_krw}"
+        ),
+        "short_body_template": "{symbol_display} 매수조건 충족 · {approved_amount_krw}",
+    },
+    {
         "event_type": "ORDER_FILLED",
         "category": "TRADE",
         "severity": "SUCCESS",

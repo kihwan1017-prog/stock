@@ -224,8 +224,13 @@ class Settings(BaseSettings):
     # WAITING_SIGNAL 후보 유지 / 교체 임계
     upbit_portfolio_candidate_hold_seconds: float = 1800.0
     upbit_portfolio_candidate_switch_min_score_delta: float = 8.0
-    # MA entry policy — CROSS_EVENT(기존) | TREND_STATE(미사용 기본)
+    # MA entry policy — CROSS_EVENT(기존 golden cross) | BULLISH_STATE(portfolio)
+    # 실제 적용은 FULL_MARKET_PORTFOLIO + DB risk_group_policy_json.entry_signal_policy 우선
     upbit_portfolio_entry_signal_policy: str = "CROSS_EVENT"
+    upbit_portfolio_entry_rsi_max: float = 70.0
+    upbit_portfolio_entry_min_volume_surge: float = 0.8
+    upbit_portfolio_entry_min_ma_separation_pct: float = 0.05
+    upbit_portfolio_entry_require_ai_allow: bool = True
     # MA Signal → AI Gate (기본 OFF). LIVE Gate는 별도 플래그(기본 OFF)
     autotrading_ai_signal_gate_enabled: bool = False
     autotrading_ai_signal_gate_live_enabled: bool = False
