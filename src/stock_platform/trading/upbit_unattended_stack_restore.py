@@ -1,4 +1,7 @@
-"""24H unattended lease 복구 후 UPBIT 운영 스택(Runtime/Worker/Exit) 재기동.
+"""24H unattended lease 복구 후 UPBIT 운영 스택 재기동.
+
+복구 대상: Live Outbox Worker · Strategy Runtime · Exit Monitor ·
+LIVE Signal Execution Runner(signal bus → RiskIntegratedOrderExecutor).
 
 LIVE/ARM/Activation은 LiveUnattendedAuthorizationService.restore_from_active_lease
 가 담당한다. 이 모듈은 그 이후의 운영 컴포넌트만 복구한다.
@@ -7,11 +10,12 @@ LIVE/ARM/Activation은 LiveUnattendedAuthorizationService.restore_from_active_le
 - Scheduler 강제 RUN 없음
 - REAL 주문 강제 생성 없음
 - Gate FAIL 시 stack start 금지
-- Worker/Runtime 중복 start는 idempotent
+- Worker/Runtime/ExecutionRunner 중복 start는 idempotent
 """
 
 from __future__ import annotations
 
+import secrets
 from typing import Any
 
 import structlog
@@ -270,12 +274,69 @@ async def restore_upbit_trading_stack(
             "status": exit_before,
         }
 
+    # 4) LIVE Signal Execution Runner — Hub publish 이후 주문 경로의 필수 subscriber
+    # Worker(Outbox)만으로는 StrategySignal이 TradingOrder로 이어지지 않는다.
+    try:
+        from stock_platform.realtime.live_runtime_control import (
+            apply_realtime_live_execution_config,
+        )
+        from stock_platform.realtime.runtime import (
+            realtime_execution_runner_manager,
+        )
+
+        broker = "UPBIT"
+        existing = realtime_execution_runner_manager.get(uba_id, broker)
+        if existing is not None and bool(
+            (existing.status() or {}).get("running")
+        ):
+            detail["execution_runner"] = {
+                "started": True,
+                "reason": "ALREADY_RUNNING",
+                "idempotent": True,
+                "status": existing.status(),
+            }
+        else:
+            applied = apply_realtime_live_execution_config(
+                user_broker_account_id=uba_id,
+                unlock_token=secrets.token_urlsafe(24),
+            )
+            if not applied.get("applied"):
+                detail["execution_runner"] = {
+                    "started": False,
+                    "reason": str(
+                        applied.get("reason") or "LIVE_CONFIG_BLOCKED"
+                    ),
+                    "config": applied,
+                }
+            else:
+                started = await realtime_execution_runner_manager.start_scope(
+                    uba_id,
+                    str(applied.get("broker_code") or broker),
+                )
+                detail["execution_runner"] = {
+                    "started": True,
+                    "reason": "STARTED",
+                    "config": {
+                        "applied": True,
+                        "mode": applied.get("mode"),
+                        "broker_code": applied.get("broker_code") or broker,
+                    },
+                    "status": started,
+                }
+    except Exception as exec_exc:  # noqa: BLE001
+        detail["execution_runner"] = {
+            "started": False,
+            "reason": "EXECUTION_RUNNER_START_FAILED",
+            "error": type(exec_exc).__name__,
+        }
+
     logger.info(
         "upbit_unattended_stack_restored",
         uba_id=uba_id,
         actor=actor,
         worker_reason=(detail.get("worker") or {}).get("reason"),
         runtime_reason=(detail.get("runtime") or {}).get("reason"),
+        execution_reason=(detail.get("execution_runner") or {}).get("reason"),
     )
     return {"restored": True, "detail": detail}
 

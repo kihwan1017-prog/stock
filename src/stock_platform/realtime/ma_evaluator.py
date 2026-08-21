@@ -416,18 +416,21 @@ class MovingAverageStrategyEvaluator:
             snap=snap,
             thresholds=thresholds,
         )
-        if uba_id:
-            portfolio_entry_telemetry.record(
-                uba_id,
-                event.symbol.upper(),
-                decision="BUY" if ok else "BLOCK",
-                block_reason=block,
-                reason_code=REASON_BULLISH if ok else None,
-                snapshot=detail,
-            )
+        # decision=BUY는 StrategySignal 생성(_emit) 성공 후에만 기록.
+        # 기술적 조건만 통과하고 emit이 막히면 TECHNICAL_PASS로 구분해
+        # UI에서 실주문 BUY와 혼동하지 않게 한다.
         if not ok:
+            if uba_id:
+                portfolio_entry_telemetry.record(
+                    uba_id,
+                    event.symbol.upper(),
+                    decision="BLOCK",
+                    block_reason=block,
+                    reason_code=None,
+                    snapshot=detail,
+                )
             return None
-        return self._emit(
+        signal = self._emit(
             event,
             state,
             SignalType.BUY,
@@ -435,6 +438,32 @@ class MovingAverageStrategyEvaluator:
             short_avg,
             long_avg,
         )
+        if uba_id:
+            if signal is None:
+                detail = {
+                    **detail,
+                    "signal_emitted": False,
+                    "technical_pass": True,
+                }
+                portfolio_entry_telemetry.record(
+                    uba_id,
+                    event.symbol.upper(),
+                    decision="TECHNICAL_PASS",
+                    block_reason="SIGNAL_EMIT_SUPPRESSED",
+                    reason_code=None,
+                    snapshot=detail,
+                )
+            else:
+                detail = {**detail, "signal_emitted": True}
+                portfolio_entry_telemetry.record(
+                    uba_id,
+                    event.symbol.upper(),
+                    decision="BUY",
+                    block_reason=None,
+                    reason_code=REASON_BULLISH,
+                    snapshot=detail,
+                )
+        return signal
 
     def reset(self, symbol: str | None = None) -> None:
         if symbol is None:

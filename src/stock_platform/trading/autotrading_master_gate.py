@@ -596,6 +596,44 @@ def evaluate_uba_autotrading_ready(
         checks["live_outbox_worker"] = {"enabled": False}
         blockers.append("LIVE_OUTBOX_WORKER_DISABLED")
 
+    # LIVE Signal Execution Runner (Hub → RiskIntegratedOrderExecutor)
+    # Outbox Worker RUNNING만으로는 BULLISH Signal이 주문으로 이어지지 않음
+    try:
+        from stock_platform.realtime.runtime import (
+            realtime_execution_runner_manager,
+        )
+
+        exec_runner = realtime_execution_runner_manager.get(uba_id, "UPBIT")
+        exec_status = (
+            exec_runner.status()
+            if exec_runner is not None
+            else {
+                "running": False,
+                "reason": "RUNNER_NOT_FOUND",
+            }
+        )
+        checks["live_execution_runner"] = {
+            "running": bool(exec_status.get("running")),
+            "mode": exec_status.get("mode"),
+            "user_broker_account_id": exec_status.get(
+                "user_broker_account_id"
+            ),
+            "broker_code": exec_status.get("broker_code") or "UPBIT",
+            "signal_subscriber_count": exec_status.get(
+                "signal_subscriber_count"
+            ),
+            "processed_count": exec_status.get("processed_count"),
+            "blocked_count": exec_status.get("blocked_count"),
+        }
+        if bool(getattr(uba, "live_order_enabled", False)) and not bool(
+            exec_status.get("running")
+        ):
+            blockers.append("LIVE_EXECUTION_RUNNER_NOT_RUNNING")
+    except Exception:  # noqa: BLE001
+        checks["live_execution_runner"] = {"running": False, "error": True}
+        if bool(getattr(uba, "live_order_enabled", False)):
+            blockers.append("LIVE_EXECUTION_RUNNER_NOT_RUNNING")
+
     pending_live = 0
     try:
         from stock_platform.order.outbox_entities import OrderOutbox

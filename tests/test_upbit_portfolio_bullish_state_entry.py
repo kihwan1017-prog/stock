@@ -294,6 +294,72 @@ def test_portfolio_bullish_emits_reason() -> None:
     assert last.reason_code == "PORTFOLIO_BULLISH_STATE_ENTRY"
 
 
+def test_portfolio_bullish_telemetry_technical_pass_when_emit_suppressed() -> None:
+    """기술적 PASS 후 cooldown으로 emit 실패 시 decision=TECHNICAL_PASS."""
+
+    from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+        portfolio_entry_telemetry,
+    )
+
+    portfolio_entry_telemetry._by_uba.pop(1380, None)
+    ev = MovingAverageStrategyEvaluator(
+        _scope(),
+        RealtimeStrategyConfig(
+            short_window=3,
+            long_window=5,
+            cooldown_seconds=60,
+            portfolio_mode=True,
+            entry_signal_policy=POLICY_BULLISH_STATE,
+        ),
+    )
+    ev.portfolio_entry_ctx = PortfolioEntryContext(
+        user_broker_account_id=1380,
+        policy=POLICY_BULLISH_STATE,
+        thresholds=PortfolioEntryThresholds(
+            min_ma_separation_pct=0.0,
+            rsi_max=70.0,
+            min_volume_surge=0.0,
+            max_candidate_age_seconds=3600,
+            max_feed_age_seconds=60,
+        ),
+        by_symbol={
+            "KRW-Y": SymbolEntrySnapshot(
+                symbol="KRW-Y",
+                selected_at=datetime.now(timezone.utc),
+                ai_recommendation="ALLOW",
+                rsi14=50.0,
+                volume_surge=1.0,
+            )
+        },
+    )
+    seq = 1
+    first = None
+    for p in [Decimal("10")] * 5 + [Decimal("11"), Decimal("12"), Decimal("13")]:
+        sig = ev.evaluate(
+            _event("KRW-Y", p, seq),
+            position=RealtimePositionState(
+                quantity=Decimal("0"), average_entry_price=None
+            ),
+            allow_signal=True,
+        )
+        if sig is not None and first is None:
+            first = sig
+        seq += 1
+    assert first is not None
+    # 동일 bullish 상태에서 즉시 재평가 → cooldown으로 emit 억제
+    second = ev.evaluate(
+        _event("KRW-Y", Decimal("13.5"), seq),
+        position=RealtimePositionState(
+            quantity=Decimal("0"), average_entry_price=None
+        ),
+        allow_signal=True,
+    )
+    assert second is None
+    snap = (portfolio_entry_telemetry.snapshot(1380) or {}).get("KRW-Y") or {}
+    assert snap.get("last_decision") == "TECHNICAL_PASS"
+    assert snap.get("last_block_reason") == "SIGNAL_EMIT_SUPPRESSED"
+
+
 def test_portfolio_bullish_no_entry_when_short_below() -> None:
     ev = MovingAverageStrategyEvaluator(
         _scope(),

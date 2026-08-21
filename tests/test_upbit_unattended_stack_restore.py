@@ -401,6 +401,12 @@ async def test_stack_restore_skips_duplicate_worker() -> None:
             broker_code="UPBIT",
         ),
     )
+    exec_runner = MagicMock()
+    exec_runner.status.return_value = {
+        "running": True,
+        "mode": "LIVE",
+        "user_broker_account_id": 1380,
+    }
     with (
         patch(
             "stock_platform.trading.upbit_unattended_stack_restore.evaluate_stack_restore_gates",
@@ -433,9 +439,13 @@ async def test_stack_restore_skips_duplicate_worker() -> None:
             "stock_platform.trading.upbit_24x7_control.exit_monitor_status",
             return_value={"status": "RUNNING"},
         ),
+        patch(
+            "stock_platform.realtime.runtime.realtime_execution_runner_manager"
+        ) as exec_mgr,
     ):
         worker.status.return_value = {"enabled": True, "running": True}
         mgr.list_entries.return_value = [running]
+        exec_mgr.get.return_value = exec_runner
         out = await restore_upbit_trading_stack(
             session, user_broker_account_id=1380
         )
@@ -443,6 +453,8 @@ async def test_stack_restore_skips_duplicate_worker() -> None:
     worker.start.assert_not_called()
     assert out["detail"]["worker"]["idempotent"] is True
     assert out["detail"]["runtime"]["reason"] == "ALREADY_RUNNING"
+    assert out["detail"]["execution_runner"]["idempotent"] is True
+    exec_mgr.start_scope.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -461,6 +473,169 @@ async def test_stack_restore_no_op_when_gates_fail() -> None:
         )
     assert out["restored"] is False
     assert out["reason"] == "STACK_GATES_FAILED"
+
+
+@pytest.mark.asyncio
+async def test_stack_restore_starts_execution_runner_when_stopped() -> None:
+    """Signal bus subscriber(Execution Runner) 미기동 시 restore가 기동한다."""
+
+    session = MagicMock()
+    running = SimpleNamespace(
+        status=RuntimeLifecycleStatus.RUNNING,
+        scope=SimpleNamespace(
+            scope_key="sk",
+            broker_code="UPBIT",
+        ),
+    )
+    with (
+        patch(
+            "stock_platform.trading.upbit_unattended_stack_restore.evaluate_stack_restore_gates",
+            return_value={
+                "ok": True,
+                "blockers": [],
+                "checks": {
+                    "portfolio": {
+                        "portfolio_enabled": True,
+                        "strategy_id": 17483,
+                    }
+                },
+            },
+        ),
+        patch(
+            "stock_platform.order.live_outbox_worker_runtime.live_outbox_worker_runtime"
+        ) as worker,
+        patch(
+            "stock_platform.strategy_deployment.runtime_manager.dynamic_strategy_runtime_manager"
+        ) as mgr,
+        patch(
+            "stock_platform.trading.upbit_24x7_control.evaluate_runtime_start_gates",
+            return_value={"ok": True, "blockers": []},
+        ),
+        patch(
+            "stock_platform.trading.upbit_24x7_control.runtime_status_for_uba",
+            return_value={"status": "RUNNING"},
+        ),
+        patch(
+            "stock_platform.trading.upbit_24x7_control.exit_monitor_status",
+            return_value={"status": "RUNNING"},
+        ),
+        patch(
+            "stock_platform.realtime.live_runtime_control.apply_realtime_live_execution_config",
+            return_value={
+                "applied": True,
+                "mode": "LIVE",
+                "broker_code": "UPBIT",
+            },
+        ) as apply_cfg,
+        patch(
+            "stock_platform.realtime.runtime.realtime_execution_runner_manager"
+        ) as exec_mgr,
+    ):
+        worker.status.return_value = {"enabled": True, "running": True}
+        mgr.list_entries.return_value = [running]
+        exec_mgr.get.return_value = None
+        exec_mgr.start_scope = AsyncMock(
+            return_value={"running": True, "mode": "LIVE"}
+        )
+        out = await restore_upbit_trading_stack(
+            session, user_broker_account_id=1380
+        )
+    assert out["restored"] is True
+    apply_cfg.assert_called_once()
+    exec_mgr.start_scope.assert_awaited_once()
+    assert out["detail"]["execution_runner"]["started"] is True
+    assert out["detail"]["execution_runner"]["reason"] == "STARTED"
+
+
+def test_readiness_blocks_stopped_execution_runner_when_live_on() -> None:
+    session = MagicMock()
+    _approved_link_session(session)
+
+    with (
+        patch(
+            "stock_platform.trading.strategy_runtime_authorization.evaluate_strategy_runtime_authorization",
+            return_value={"ok": True, "mode": "LIVE_APPROVED"},
+        ),
+        patch(
+            "stock_platform.broker.live_transition_guard.LiveTradingTransitionGuard"
+        ) as act,
+        patch(
+            "stock_platform.trading.upbit_live_pipeline_readiness.UpbitLivePipelineReadinessService"
+        ) as pipe,
+        patch(
+            "stock_platform.order.live_outbox_worker_runtime.live_outbox_worker_runtime"
+        ) as worker,
+        patch(
+            "stock_platform.strategy_deployment.runtime_manager.dynamic_strategy_runtime_manager"
+        ) as mgr,
+        patch(
+            "stock_platform.trading.upbit_24x7_control.combined_control_status",
+            return_value={
+                "strategy_runtime": "RUNNING",
+                "outbox_worker": "RUNNING",
+                "exit_monitor": "RUNNING",
+            },
+        ),
+        patch(
+            "stock_platform.risk_engine.user_risk_service.UserRiskSettingService"
+        ) as risk,
+        patch(
+            "stock_platform.realtime.runtime.realtime_execution_runner_manager"
+        ) as exec_mgr,
+    ):
+        act.return_value.require_active.return_value = SimpleNamespace(
+            live_trading_transition_id=1,
+            activation_status="PENDING",
+            enabled=True,
+            expires_at=datetime.now(timezone.utc) + timedelta(hours=2),
+            scope="ACCOUNT",
+            broker_code="UPBIT",
+        )
+        pipe.return_value.evaluate.return_value = {
+            "ops_ready": True,
+            "blockers": [],
+            "warnings": [],
+            "checks": {
+                "credential": {"ok": True},
+                "quote_ws": {
+                    "ok": True,
+                    "running": True,
+                    "connected": True,
+                    "symbols": ["KRW-MET2"],
+                    "last_received_at": datetime.now(timezone.utc).isoformat(),
+                },
+                "hub_status": {
+                    "hub_status": "CONNECTED",
+                    "ok": True,
+                    "running": True,
+                },
+            },
+        }
+        worker.status.return_value = {"enabled": True, "running": True}
+        mgr.status.return_value = {
+            "runtimes": [
+                {
+                    "status": "RUNNING",
+                    "account_id": 1380,
+                    "account_kind": "USER_BROKER",
+                    "user_broker_account_id": 1380,
+                }
+            ]
+        }
+        risk.return_value.resolve.return_value = SimpleNamespace(
+            daily_order_limit=10,
+            max_order_amount=100000,
+            daily_loss_limit=None,
+            daily_submit_limit=None,
+            daily_filled_entry_limit=None,
+        )
+        exec_mgr.get.return_value = None
+        out = evaluate_uba_autotrading_ready(
+            session, user_broker_account_id=1380
+        )
+
+    assert out["status"] == STATUS_BLOCKED
+    assert "LIVE_EXECUTION_RUNNER_NOT_RUNNING" in out["blockers"]
 
 
 def test_restore_from_active_lease_accepts_restore_stack_flag() -> None:
