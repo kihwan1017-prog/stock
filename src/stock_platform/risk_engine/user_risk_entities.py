@@ -80,6 +80,9 @@ class SystemRiskSetting(Base):
         Numeric(28, 8), nullable=False
     )
     daily_order_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    # ORDER_LIMIT_V2 — nullable (명시 저장 전 V1)
+    daily_submit_limit: Mapped[int | None] = mapped_column(Integer)
+    daily_filled_entry_limit: Mapped[int | None] = mapped_column(Integer)
     duplicate_order_window_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False
     )
@@ -153,6 +156,8 @@ class UserRiskSetting(Base):
     # STEP 8-7
     max_order_quantity: Mapped[Decimal | None] = mapped_column(Numeric(28, 8))
     daily_order_limit: Mapped[int | None] = mapped_column(Integer)
+    daily_submit_limit: Mapped[int | None] = mapped_column(Integer)
+    daily_filled_entry_limit: Mapped[int | None] = mapped_column(Integer)
     duplicate_order_window_seconds: Mapped[int | None] = mapped_column(Integer)
     # STEP 8-8
     max_open_orders: Mapped[int | None] = mapped_column(Integer)
@@ -221,6 +226,8 @@ class UserBrokerAccountRiskSetting(Base):
     # STEP 8-7
     max_order_quantity: Mapped[Decimal | None] = mapped_column(Numeric(28, 8))
     daily_order_limit: Mapped[int | None] = mapped_column(Integer)
+    daily_submit_limit: Mapped[int | None] = mapped_column(Integer)
+    daily_filled_entry_limit: Mapped[int | None] = mapped_column(Integer)
     duplicate_order_window_seconds: Mapped[int | None] = mapped_column(Integer)
     # STEP 8-8
     max_open_orders: Mapped[int | None] = mapped_column(Integer)

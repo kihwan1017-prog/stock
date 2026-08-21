@@ -173,6 +173,67 @@ class OrderExecutionService:
         self._order_repository = TradingOrderRepository(session)
         self._outbox_repository = OrderOutboxRepository(session)
         self._sizing_engine = RiskManagementEngine()
+        # V2 submit reservation — broker 미전송 실패 시 release
+        self._pending_submit_release: dict[str, Any] | None = None
+
+    def _release_pending_submit(self) -> None:
+        detail = self._pending_submit_release
+        self._pending_submit_release = None
+        if not detail or not detail.get("submit_reserved"):
+            return
+        try:
+            from stock_platform.risk_engine.strategy_daily_order_usage_service import (
+                StrategyDailyOrderUsageService,
+            )
+            from stock_platform.order.order_limit_policy_v2 import (
+                trading_date_kst,
+            )
+            from datetime import date as date_cls
+
+            day_raw = detail.get("submit_reserve_trading_date")
+            day = (
+                date_cls.fromisoformat(str(day_raw))
+                if day_raw
+                else trading_date_kst()
+            )
+            StrategyDailyOrderUsageService(self._session).release_submit(
+                user_broker_account_id=int(
+                    detail.get("user_broker_account_id")
+                    or detail.get("uba_id")
+                    or 0
+                ),
+                broker_code=str(detail.get("broker_code") or ""),
+                strategy_id=int(detail["submit_reserve_strategy_id"]),
+                deployment_id=int(
+                    detail.get("submit_reserve_deployment_id") or 0
+                ),
+                trading_date=day,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _blocked(
+        self,
+        reason_code: str,
+        *,
+        message: str | None = None,
+    ) -> OrderExecutionResult:
+        self._release_pending_submit()
+        return OrderExecutionResult(
+            allowed=False,
+            reason_code=reason_code,
+            order_id=None,
+            outbox_id=None,
+            status_code=None,
+            client_order_id=None,
+            quantity=None,
+            price=None,
+            position_plan=(
+                {"message": message}
+                if message
+                else None
+            ),
+        )
 
     def submit(
         self,
@@ -337,6 +398,15 @@ class OrderExecutionService:
                 )
                 if not safety.allowed:
                     return self._blocked(safety.reason_code)
+                # V2 reservation 추적 — 이후 실패 시 release
+                if (safety.detail or {}).get("submit_reserved"):
+                    self._pending_submit_release = {
+                        **dict(safety.detail or {}),
+                        "user_broker_account_id": int(
+                            command.user_broker_account_id
+                        ),
+                        "broker_code": str(command.broker_code),
+                    }
 
                 try:
                     assert_live_orders_allowed(self._session)
@@ -906,6 +976,8 @@ class OrderExecutionService:
             except Exception:  # noqa: BLE001 — isolation 실패가 주문을 롤백하지 않음
                 pass
 
+        # broker submit 경로 진입(Outbox QUEUED) — reservation 유지
+        self._pending_submit_release = None
         return OrderExecutionResult(
             allowed=True,
             reason_code="QUEUED",
@@ -1164,26 +1236,4 @@ class OrderExecutionService:
                 "sanitized_message": sanitized,
                 "application_frame": frame,
             },
-        )
-
-    @staticmethod
-    def _blocked(
-        reason_code: str,
-        *,
-        message: str | None = None,
-    ) -> OrderExecutionResult:
-        return OrderExecutionResult(
-            allowed=False,
-            reason_code=reason_code,
-            order_id=None,
-            outbox_id=None,
-            status_code=None,
-            client_order_id=None,
-            quantity=None,
-            price=None,
-            position_plan=(
-                {"message": message}
-                if message
-                else None
-            ),
         )

@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Identity,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -161,6 +162,65 @@ class StrategyDailyPnlEntity(Base):
     )
     status_code: Mapped[str] = mapped_column(
         String(30), nullable=False, server_default=text("'SAFE'")
+    )
+    meta_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class StrategyDailyOrderUsageEntity(Base):
+    """Strategy-owned 일일 ENTRY submit / filled-entry 사용량 (V2 SoT)."""
+
+    __tablename__ = "strategy_daily_order_usage"
+    __table_args__ = (
+        UniqueConstraint(
+            "trading_date",
+            "broker_code",
+            "user_broker_account_id",
+            "strategy_id",
+            "deployment_id",
+            name="uq_strategy_daily_order_usage_scope",
+        ),
+        {"schema": "operation"},
+    )
+
+    strategy_daily_order_usage_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    trading_date: Mapped[date] = mapped_column(Date, nullable=False)
+    broker_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    user_broker_account_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, index=True
+    )
+    strategy_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    deployment_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text("0")
+    )
+    submit_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    filled_entry_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default=text("0")
+    )
+    # 멱등: 이미 filled-entry로 집계한 entry_order_id 목록
+    filled_entry_order_ids: Mapped[list[Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        server_default=text("'ORDER_LIMIT_V2_SUBMIT_AND_FILLED_ENTRY'"),
     )
     meta_json: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")

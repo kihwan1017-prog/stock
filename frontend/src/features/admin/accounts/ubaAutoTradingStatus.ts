@@ -419,6 +419,15 @@ export function buildUbaAutoTradingViewModel(
       kstDate: str(risk.kst_date),
       dailyOrderCount: str(risk.daily_order_count, "0"),
       dailyOrderLimit: str(risk.daily_order_limit),
+      // V2 (optional): SUBMIT x/y · FILLED ENTRY a/b
+      dailySubmitCount: str(risk.daily_submit_count, "-"),
+      dailySubmitLimit: str(risk.daily_submit_limit, "-"),
+      dailyFilledEntryCount: str(risk.daily_filled_entry_count, "-"),
+      dailyFilledEntryLimit: str(risk.daily_filled_entry_limit, "-"),
+      orderLimitPolicyVersion: str(
+        risk.order_limit_policy_version,
+        "ORDER_LIMIT_V1_SUBMIT_ONLY",
+      ),
       maxOrderAmount: str(risk.max_order_amount),
       dailyMaxOrderAmount: str(risk.daily_max_order_amount),
       riskCountedOrderIds: asArray(risk.risk_counted_order_ids).length

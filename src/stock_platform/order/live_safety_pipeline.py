@@ -364,18 +364,100 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 7) Daily order count — ENTRY 전용
-        daily_count = self._count_orders_today(uba_id)
-        base_detail["daily_order_count"] = daily_count
-        if (not verified_exit) and daily_count >= int(policy.daily_order_limit):
-            return _fail(
-                "DAILY_ORDER_LIMIT_EXCEEDED",
-                DAILY_LIMIT_REJECT,
-                {
-                    "limit": int(policy.daily_order_limit),
-                    "count": daily_count,
-                },
+        # 7) Daily order / submit / filled-entry — ENTRY 전용 (EXIT 제외)
+        # submit reservation은 최종 PASS 직전에서만 수행 (중간 실패 leak 방지)
+        submit_reserve_plan: dict[str, Any] | None = None
+        if not verified_exit:
+            from stock_platform.order.order_limit_policy_v2 import (
+                ORDER_LIMIT_V1,
+                ORDER_LIMIT_V2,
+                REASON_DAILY_FILLED_ENTRY_LIMIT,
+                REASON_DAILY_ORDER_LIMIT,
+                REASON_DAILY_SUBMIT_LIMIT,
+                effective_v2_limits,
+                parse_strategy_id,
+                resolve_order_limit_policy_version,
+                trading_date_kst,
             )
+            from stock_platform.risk_engine.strategy_daily_order_usage_service import (
+                StrategyDailyOrderUsageService,
+            )
+
+            day = trading_date_kst()
+            sid = parse_strategy_id(strategy_id)
+            version = resolve_order_limit_policy_version(
+                trading_date=day,
+                daily_submit_limit=policy.daily_submit_limit,
+                daily_filled_entry_limit=policy.daily_filled_entry_limit,
+            )
+            base_detail["order_limit_policy_version"] = version
+            base_detail["order_limit_trading_date"] = day.isoformat()
+
+            if version == ORDER_LIMIT_V2 and sid is not None:
+                submit_lim, filled_lim = effective_v2_limits(
+                    daily_order_limit=int(policy.daily_order_limit),
+                    daily_submit_limit=policy.daily_submit_limit,
+                    daily_filled_entry_limit=policy.daily_filled_entry_limit,
+                )
+                usage_svc = StrategyDailyOrderUsageService(self._session)
+                snap = usage_svc.snapshot(
+                    user_broker_account_id=uba_id,
+                    broker_code=broker,
+                    strategy_id=sid,
+                    deployment_id=strategy_deployment_id,
+                    trading_date=day,
+                )
+                base_detail["daily_submit_limit"] = submit_lim
+                base_detail["daily_filled_entry_limit"] = filled_lim
+                base_detail["daily_submit_count"] = snap["submit_count"]
+                base_detail["daily_filled_entry_count"] = snap[
+                    "filled_entry_count"
+                ]
+                if snap["filled_entry_count"] >= filled_lim:
+                    return _fail(
+                        REASON_DAILY_FILLED_ENTRY_LIMIT,
+                        DAILY_LIMIT_REJECT,
+                        {
+                            "limit": filled_lim,
+                            "count": snap["filled_entry_count"],
+                            "policy_version": ORDER_LIMIT_V2,
+                        },
+                    )
+                if snap["submit_count"] >= submit_lim:
+                    return _fail(
+                        REASON_DAILY_SUBMIT_LIMIT,
+                        DAILY_LIMIT_REJECT,
+                        {
+                            "limit": submit_lim,
+                            "count": snap["submit_count"],
+                            "policy_version": ORDER_LIMIT_V2,
+                        },
+                    )
+                submit_reserve_plan = {
+                    "user_broker_account_id": uba_id,
+                    "broker_code": broker,
+                    "strategy_id": sid,
+                    "deployment_id": strategy_deployment_id,
+                    "submit_limit": submit_lim,
+                    "trading_date": day,
+                }
+            else:
+                # V1 legacy — UBA-wide CREATE 집계 (오늘 #1798 semantics 보존)
+                daily_count = self._count_orders_today(uba_id)
+                base_detail["daily_order_count"] = daily_count
+                base_detail["daily_order_limit"] = int(policy.daily_order_limit)
+                if daily_count >= int(policy.daily_order_limit):
+                    return _fail(
+                        REASON_DAILY_ORDER_LIMIT,
+                        DAILY_LIMIT_REJECT,
+                        {
+                            "limit": int(policy.daily_order_limit),
+                            "count": daily_count,
+                            "policy_version": ORDER_LIMIT_V1,
+                        },
+                    )
+        else:
+            base_detail["daily_order_count"] = self._count_orders_today(uba_id)
 
         # 8a) Account Hard Safety — Kill/CRITICAL만 (수동 MTM LIMIT_REACHED는 ENTRY 비차단)
         if not verified_exit:
@@ -620,6 +702,43 @@ class LiveOrderSafetyPipeline:
         if emit_side_effects:
             # 성공 경로 — submit 직전 알림은 호출측에서 ORDER_SUBMITTED로도 보냄
             pass
+
+        # V2: 최종 PASS 직전 atomic submit reservation
+        if submit_reserve_plan is not None:
+            from stock_platform.order.order_limit_policy_v2 import (
+                ORDER_LIMIT_V2,
+                REASON_DAILY_SUBMIT_LIMIT,
+            )
+            from stock_platform.risk_engine.strategy_daily_order_usage_service import (
+                StrategyDailyOrderUsageService,
+            )
+
+            ok, reserved = StrategyDailyOrderUsageService(
+                self._session
+            ).try_reserve_submit(**submit_reserve_plan)
+            base_detail["daily_submit_count"] = reserved.get(
+                "submit_count", base_detail.get("daily_submit_count")
+            )
+            if not ok:
+                return _fail(
+                    REASON_DAILY_SUBMIT_LIMIT,
+                    DAILY_LIMIT_REJECT,
+                    {
+                        "limit": submit_reserve_plan["submit_limit"],
+                        "count": reserved.get("submit_count"),
+                        "policy_version": ORDER_LIMIT_V2,
+                    },
+                )
+            base_detail["submit_reserved"] = True
+            base_detail["submit_reserve_strategy_id"] = submit_reserve_plan[
+                "strategy_id"
+            ]
+            base_detail["submit_reserve_deployment_id"] = int(
+                submit_reserve_plan.get("deployment_id") or 0
+            )
+            base_detail["submit_reserve_trading_date"] = (
+                submit_reserve_plan["trading_date"].isoformat()
+            )
 
         return LiveSafetyDecision(
             allowed=True,

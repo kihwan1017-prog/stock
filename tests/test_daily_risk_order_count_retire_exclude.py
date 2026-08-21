@@ -16,6 +16,7 @@ from stock_platform.order.daily_risk_order_count import (
     summarize_daily_risk_orders,
 )
 from stock_platform.order.live_safety_pipeline import LiveOrderSafetyPipeline
+from stock_platform.order.live_open_order_exposure import OpenOrderExposure
 from stock_platform.order.models import OrderStatus
 from stock_platform.risk_engine.resolved_policy import ResolvedRiskPolicy
 
@@ -186,24 +187,51 @@ def test_g_retired_fixture_allows_new_order_when_limit_1() -> None:
             "stock_platform.broker.live_config_gate.evaluate_live_flag_consistency",
             return_value=SimpleNamespace(code="OK", detail={}),
         ),
+        patch(
+            "stock_platform.risk_engine.strategy_owned_risk_service.StrategyOwnedRiskService"
+        ) as strat_cls,
+        patch(
+            "stock_platform.order.live_safety_pipeline.evaluate_live_open_order_exposure",
+            return_value=OpenOrderExposure(
+                canonical_count=0,
+                local_open_count=0,
+                remote_open_count=0,
+                remote_unmapped_count=0,
+                mapped_remote_count=0,
+                remote_state="OK",
+                remote_state_ok=True,
+                source="TEST",
+                reason_code=None,
+            ),
+        ),
     ):
         ks.return_value.require_order_allowed.return_value = None
+        strat_cls.return_value.account_hard_safety_blocks_entry.return_value = (
+            False,
+            {},
+        )
         resolver_cls.return_value.resolve.return_value = _policy(
             daily_order_limit=1
         )
-        decision = LiveOrderSafetyPipeline(session).evaluate(
-            user_id=61,
-            user_broker_account_id=1380,
-            broker_code="UPBIT",
-            exchange_code="UPBIT",
-            symbol="KRW-XRP",
-            side="BUY",
-            quantity=Decimal("3.48"),
-            price=Decimal("1435"),
-            emit_side_effects=False,
-            require_arm=False,
-            skip_market_hours=True,
-        )
+        # strategy loss path uses helper on pipeline — patch return
+        with patch.object(
+            LiveOrderSafetyPipeline,
+            "_strategy_or_legacy_daily_loss_breached",
+            return_value=(False, {}),
+        ):
+            decision = LiveOrderSafetyPipeline(session).evaluate(
+                user_id=61,
+                user_broker_account_id=1380,
+                broker_code="UPBIT",
+                exchange_code="UPBIT",
+                symbol="KRW-XRP",
+                side="BUY",
+                quantity=Decimal("1"),
+                price=Decimal("5000"),
+                emit_side_effects=False,
+                require_arm=False,
+                skip_market_hours=True,
+            )
     assert cnt.called
     assert decision.allowed is True
     assert decision.reason_code != "DAILY_ORDER_LIMIT_EXCEEDED"
@@ -229,8 +257,20 @@ def test_h_real_submitted_today_blocks_when_limit_1() -> None:
             "stock_platform.order.daily_risk_order_count.count_daily_risk_orders",
             return_value=1,
         ),
+        patch.object(
+            LiveOrderSafetyPipeline,
+            "_strategy_or_legacy_daily_loss_breached",
+            return_value=(False, {}),
+        ),
+        patch(
+            "stock_platform.risk_engine.strategy_owned_risk_service.StrategyOwnedRiskService"
+        ) as strat_cls,
     ):
         ks.return_value.require_order_allowed.return_value = None
+        strat_cls.return_value.account_hard_safety_blocks_entry.return_value = (
+            False,
+            {},
+        )
         resolver_cls.return_value.resolve.return_value = _policy(
             daily_order_limit=1
         )
@@ -241,8 +281,8 @@ def test_h_real_submitted_today_blocks_when_limit_1() -> None:
             exchange_code="UPBIT",
             symbol="KRW-XRP",
             side="BUY",
-            quantity=Decimal("3.48"),
-            price=Decimal("1435"),
+            quantity=Decimal("1"),
+            price=Decimal("5000"),
             emit_side_effects=False,
             require_arm=False,
             skip_market_hours=True,

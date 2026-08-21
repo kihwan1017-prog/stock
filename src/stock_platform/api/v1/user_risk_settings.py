@@ -59,6 +59,8 @@ class RiskSettingUpdateRequest(BaseModel):
     account_paused: bool | None = None
     max_order_quantity: Decimal | None = Field(default=None, ge=0)
     daily_order_limit: int | None = Field(default=None, ge=0)
+    daily_submit_limit: int | None = Field(default=None, ge=0)
+    daily_filled_entry_limit: int | None = Field(default=None, ge=0)
     duplicate_order_window_seconds: int | None = Field(
         default=None, ge=0, le=3600
     )

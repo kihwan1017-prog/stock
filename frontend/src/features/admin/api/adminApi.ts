@@ -299,6 +299,8 @@ export type AdminRiskSettingsPayload = {
   account_paused?: boolean | null;
   max_order_quantity?: number | null;
   daily_order_limit?: number | null;
+  daily_submit_limit?: number | null;
+  daily_filled_entry_limit?: number | null;
   duplicate_order_window_seconds?: number | null;
 };
 
@@ -356,6 +358,8 @@ export async function updateAdminLiveRiskLimits(
     max_order_amount?: number | null;
     max_order_quantity?: number | null;
     daily_order_limit?: number | null;
+    daily_submit_limit?: number | null;
+    daily_filled_entry_limit?: number | null;
     daily_max_loss_amount?: number | null;
     duplicate_order_window_seconds?: number | null;
     max_open_orders?: number | null;

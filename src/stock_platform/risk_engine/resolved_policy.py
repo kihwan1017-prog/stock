@@ -42,6 +42,8 @@ _OVERLAY_FIELDS: tuple[str, ...] = (
     "account_paused",
     "max_order_quantity",
     "daily_order_limit",
+    "daily_submit_limit",
+    "daily_filled_entry_limit",
     "duplicate_order_window_seconds",
     "max_open_orders",
     "max_slippage_rate",
@@ -82,6 +84,9 @@ class ResolvedRiskPolicy:
     loop_detect_window_seconds: int
     arm_ttl_seconds: int
     source_layers: tuple[str, ...]
+    # V2 (nullable) — admin 명시 저장 전엔 None → V1 유지
+    daily_submit_limit: int | None = None
+    daily_filled_entry_limit: int | None = None
 
     def to_engine_policy(self) -> RiskPolicy:
         """RealtimeRiskEngine용 RiskPolicy로 변환."""
@@ -161,6 +166,8 @@ def _code_fallback_system() -> dict[str, Any]:
         "account_paused": False,
         "max_order_quantity": Decimal("100"),
         "daily_order_limit": 20,
+        "daily_submit_limit": None,
+        "daily_filled_entry_limit": None,
         "duplicate_order_window_seconds": 5,
         "max_open_orders": 20,
         "max_slippage_rate": Decimal("0.01"),
@@ -279,4 +286,14 @@ class ResolvedRiskPolicyResolver:
             ),
             arm_ttl_seconds=int(base["arm_ttl_seconds"]),
             source_layers=tuple(layers),
+            daily_submit_limit=(
+                None
+                if base.get("daily_submit_limit") is None
+                else int(base["daily_submit_limit"])
+            ),
+            daily_filled_entry_limit=(
+                None
+                if base.get("daily_filled_entry_limit") is None
+                else int(base["daily_filled_entry_limit"])
+            ),
         )

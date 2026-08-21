@@ -53,6 +53,8 @@ _INT_FIELDS = frozenset(
     {
         "max_position_count",
         "daily_order_limit",
+        "daily_submit_limit",
+        "daily_filled_entry_limit",
         "duplicate_order_window_seconds",
         "max_open_orders",
         "anomaly_orders_per_minute",

@@ -474,10 +474,31 @@ export default function AdminRiskPage() {
                   cell(asRecord(row.risk)?.max_order_quantity),
               },
               {
-                title: "daily_orders",
+                title: "daily_orders (legacy)",
                 key: "daily_orders",
                 render: (_: unknown, row: Record<string, unknown>) =>
                   cell(asRecord(row.risk)?.daily_order_limit),
+              },
+              {
+                title: "submit/filled V2",
+                key: "order_limit_v2",
+                render: (_: unknown, row: Record<string, unknown>) => {
+                  const risk = asRecord(row.risk) ?? {};
+                  const submit = risk.daily_submit_limit;
+                  const filled = risk.daily_filled_entry_limit;
+                  if (submit == null && filled == null) {
+                    return (
+                      <span style={{ fontSize: 11, color: "#888" }}>
+                        recommended 5/1 (not applied)
+                      </span>
+                    );
+                  }
+                  return (
+                    <span style={{ fontSize: 12 }}>
+                      submit {cell(submit)} / filled {cell(filled)}
+                    </span>
+                  );
+                },
               },
               {
                 title: "daily_loss",

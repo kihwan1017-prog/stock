@@ -55,6 +55,8 @@ class AccountRiskLimitsRequest(BaseModel):
     max_order_amount: Decimal | None = Field(default=None, ge=0)
     max_order_quantity: Decimal | None = Field(default=None, ge=0)
     daily_order_limit: int | None = Field(default=None, ge=0)
+    daily_submit_limit: int | None = Field(default=None, ge=0)
+    daily_filled_entry_limit: int | None = Field(default=None, ge=0)
     daily_max_loss_amount: Decimal | None = Field(default=None, ge=0)
     duplicate_order_window_seconds: int | None = Field(
         default=None, ge=0, le=3600

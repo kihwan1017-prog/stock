@@ -187,6 +187,7 @@ class StrategyOwnedRiskService:
                     existing.entry_price = Decimal(str(entry_price))
                 existing.updated_at = datetime.now(timezone.utc)
                 self._session.flush()
+                # scale-in / 추가 fill — filled-entry 추가 집계 없음
                 return existing
 
             row = StrategyPositionBindingEntity(
@@ -207,6 +208,24 @@ class StrategyOwnedRiskService:
             )
             self._session.add(row)
             self._session.flush()
+            # 신규 OPEN transition → filled-entry +1 (멱등)
+            if entry_order_id is not None:
+                try:
+                    from stock_platform.risk_engine.strategy_daily_order_usage_service import (
+                        StrategyDailyOrderUsageService,
+                    )
+
+                    StrategyDailyOrderUsageService(
+                        self._session
+                    ).record_filled_entry(
+                        user_broker_account_id=uba,
+                        broker_code=broker,
+                        strategy_id=sid,
+                        deployment_id=dep if dep else None,
+                        entry_order_id=int(entry_order_id),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             return row
 
         if side_u == "SELL":
