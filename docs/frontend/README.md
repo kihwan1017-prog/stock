@@ -10,6 +10,7 @@
 |------|------|
 | [../../frontend/README.md](../../frontend/README.md) | Admin 설치·실행·인증 모드 |
 | [STRATEGY_CANDIDATE_UX_CONSOLIDATION.md](STRATEGY_CANDIDATE_UX_CONSOLIDATION.md) | 전략·후보 사이드바 5 Workspace 통합 |
+| [SINGLE_ADMIN_OPERATOR_UX.md](SINGLE_ADMIN_OPERATOR_UX.md) | 단일 관리자 콘솔 메뉴·Workspace 통합 |
 | [../reference/STEP41_ADMIN_FOUNDATION.md](../reference/STEP41_ADMIN_FOUNDATION.md) | STEP41 스펙 |
 | [../manual/사용자매뉴얼.md](../manual/사용자매뉴얼.md) | Admin 사용 (구현 범위 명시) |
 

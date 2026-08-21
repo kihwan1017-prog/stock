@@ -27,16 +27,23 @@ function readRel(pathFromSrc: string): string {
   return readFileSync(join(srcRoot, pathFromSrc), "utf8");
 }
 
-describe("M4-C AdminUpbitLiveUbaPanel single-mount", () => {
+describe("M4-C AdminAccountLiveControlPanel single-mount", () => {
   it("production mount는 /admin/accounts 1회만", () => {
     const files = walkTsxFiles(srcRoot);
     const mounts: string[] = [];
     for (const file of files) {
       if (file.includes(".test.") || file.includes(".spec.")) continue;
       const text = readFileSync(file, "utf8");
-      if (!text.includes("AdminUpbitLiveUbaPanel")) continue;
-      // JSX mount만 카운트 (import/export 제외)
-      if (/<AdminUpbitLiveUbaPanel\b/.test(text)) {
+      if (
+        !text.includes("AdminAccountLiveControlPanel") &&
+        !text.includes("AdminUpbitLiveUbaPanel")
+      ) {
+        continue;
+      }
+      if (
+        /<AdminAccountLiveControlPanel\b/.test(text) ||
+        /<AdminUpbitLiveUbaPanel\b/.test(text)
+      ) {
         mounts.push(file.replace(/\\/g, "/"));
       }
     }
@@ -86,10 +93,10 @@ describe("M4-C AdminUpbitLiveUbaPanel single-mount", () => {
 
   it("accounts page는 panel을 유지한다", () => {
     const page = readRel("app/(admin)/admin/accounts/page.tsx");
-    expect(page).toMatch(/<AdminUpbitLiveUbaPanel\s*\/>/);
+    expect(page).toMatch(/<AdminAccountLiveControlPanel\s*\/>/);
   });
 
-  it("M3/M4 menu regression: monitoring=1, duplicate=0, strategy visible", () => {
+  it("M3/M4 menu regression: monitoring=1, duplicate=0, strategy Workspace matchPaths", () => {
     const flat = flattenMenuItems(adminMenuItems);
     const paths = flat.map((item) => item.path).filter(Boolean) as string[];
     const seen = new Set<string>();
@@ -102,15 +109,17 @@ describe("M4-C AdminUpbitLiveUbaPanel single-mount", () => {
     expect(
       flat.filter((item) => item.path === adminRoutes.monitoring),
     ).toHaveLength(1);
-    expect(flat.some((item) => item.path === adminRoutes.strategyRequests)).toBe(
-      true,
+    const strategies = flat.find((item) => item.key === "strategies");
+    expect(strategies?.matchPaths).toEqual(
+      expect.arrayContaining([
+        adminRoutes.strategyRequests,
+        adminRoutes.strategyDrafts,
+      ]),
     );
-    expect(flat.some((item) => item.path === adminRoutes.strategyDrafts)).toBe(
-      true,
+    const validation = flat.find((item) => item.key === "strategy-validation");
+    expect(validation?.matchPaths).toEqual(
+      expect.arrayContaining([adminRoutes.portfolioValidations]),
     );
-    expect(
-      flat.some((item) => item.path === adminRoutes.portfolioValidations),
-    ).toBe(true);
   });
 
   it("accounts·upbit·recovery page.tsx 존재", () => {

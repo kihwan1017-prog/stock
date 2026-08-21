@@ -1,4 +1,4 @@
-import { adminRoutes, authRoutes, userRoutes } from "@/config/routes";
+import { adminRoutes, authRoutes } from "@/config/routes";
 import type { AuthUser } from "@/features/auth/types/auth";
 
 /** Backend 시드 역할 — ADMIN / USER 두 개만 */
@@ -56,11 +56,11 @@ export function hasValidAppRole(
   );
 }
 
-/** Role별 홈 대시보드 */
+/** Role별 홈 — Single Admin Operator: admin 콘솔만 */
 export function roleHomePath(roles: string[] | undefined | null): string {
   return canAccessAdminPortal(roles)
     ? adminRoutes.dashboard
-    : userRoutes.dashboard;
+    : authRoutes.forbidden;
 }
 
 /** UI 표시용 */

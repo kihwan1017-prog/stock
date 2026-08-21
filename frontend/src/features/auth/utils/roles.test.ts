@@ -55,10 +55,10 @@ describe("roles RBAC helpers (ADMIN / USER)", () => {
     expect(isAdminRole(["user"])).toBe(false);
   });
 
-  it("Role별 홈은 USER→/user/dashboard, ADMIN→/admin/dashboard", () => {
-    expect(roleHomePath(["user"])).toBe("/user/dashboard");
+  it("Role별 홈은 ADMIN→/admin/dashboard, USER→forbidden (single operator)", () => {
+    expect(roleHomePath(["user"])).toBe("/forbidden");
     expect(roleHomePath(["admin"])).toBe("/admin/dashboard");
-    expect(resolvePostLoginPath({ roles: ["user"] })).toBe("/user/dashboard");
+    expect(resolvePostLoginPath({ roles: ["user"] })).toBe("/forbidden");
     expect(resolvePostLoginPath({ roles: ["admin"] })).toBe(
       "/admin/dashboard",
     );
@@ -85,7 +85,7 @@ describe("roles RBAC helpers (ADMIN / USER)", () => {
         roles: ["user"],
         defaultRoute: "/admin/dashboard",
       }),
-    ).toBe("/user/dashboard");
+    ).toBe("/forbidden");
     expect(
       resolvePostLoginPath({
         roles: ["admin"],
@@ -100,7 +100,7 @@ describe("roles RBAC helpers (ADMIN / USER)", () => {
     expect(resolvePostLoginPath({ roles: [] })).toBe("/forbidden");
     expect(resolvePostLoginPath({ roles: ["guest"] })).toBe("/forbidden");
     expect(resolvePostLoginPath({ roles: ["user"] }, "/login")).toBe(
-      "/user/dashboard",
+      "/forbidden",
     );
   });
 });

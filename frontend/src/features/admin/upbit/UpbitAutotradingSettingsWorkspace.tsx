@@ -32,6 +32,7 @@ import { useEffect, useMemo, useState } from "react";
 import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { snapshotFromOpsStatus } from "@/features/admin/accounts/upbit24x7StackOrchestrator";
+import { UpbitOneClickAutotradingControl } from "@/features/admin/autotrading/UpbitOneClickAutotradingControl";
 import { asRecord } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 
@@ -122,6 +123,24 @@ export function UpbitAutotradingSettingsWorkspace({
   });
 
   const opsSnap = opsQuery.data ? snapshotFromOpsStatus(opsQuery.data) : null;
+  const portfolioRoot = asRecord(portfolioQuery.data);
+  const fmRoot = asRecord(fullMarketQuery.data);
+  const strategyIdNum =
+    Number(
+      portfolioRoot.strategy_id ??
+        fmRoot.strategy_id ??
+        asRecord(opsQuery.data).strategy_id ??
+        0,
+    ) || null;
+
+  const invalidateOps = () => {
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "uba-ops-status", ubaId],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "autotrading-readiness", ubaId],
+    });
+  };
   const opsRoot = asObj(opsQuery.data);
   const fmFromOps = asObj(opsRoot.full_market);
   const scanner = asObj(opsRoot.scanner);
@@ -1147,6 +1166,19 @@ export function UpbitAutotradingSettingsWorkspace({
         showIcon
         title="설정 워크스페이스 — PORTFOLIO 자동 Enable · REAL 주문 · 로드 시 risk mutate 없음"
       />
+
+      <Card size="small" title="원클릭 자동매매">
+        <UpbitOneClickAutotradingControl
+          ubaId={ubaId}
+          strategyId={strategyIdNum}
+          needsReauthorize={Boolean(opsSnap?.needsReauthorize)}
+          autoTradingRunning={
+            String(opsSnap?.autoTradingState ?? "").toUpperCase() === "RUNNING"
+          }
+          onDone={invalidateOps}
+        />
+      </Card>
+
       <Alert
         type="warning"
         showIcon
