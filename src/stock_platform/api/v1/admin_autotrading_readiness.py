@@ -253,6 +253,37 @@ def admin_uba_unattended_enable(
         ) from exc
 
 
+@router.post("/uba/{user_broker_account_id}/unattended/reauthorize")
+def admin_uba_unattended_reauthorize(
+    user_broker_account_id: int,
+    body: UnattendedEnableBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """만료/PROTECTIVE 이후 24H 재승인 + canonical LIVE/ARM/stack 복구."""
+
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+        LiveUnattendedError,
+    )
+
+    try:
+        return LiveUnattendedAuthorizationService(session).reauthorize(
+            int(user_broker_account_id),
+            actor=user.username,
+            confirmation_text=body.confirmation_text,
+            reason=body.reason,
+            source=body.source,
+            horizon_hours=body.horizon_hours,
+            correlation_id=body.correlation_id,
+        )
+    except LiveUnattendedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
 @router.post("/uba/{user_broker_account_id}/unattended/disable")
 def admin_uba_unattended_disable(
     user_broker_account_id: int,

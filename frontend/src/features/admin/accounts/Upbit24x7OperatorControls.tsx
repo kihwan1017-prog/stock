@@ -13,7 +13,6 @@ import {
   Button,
   Collapse,
   Descriptions,
-  List,
   Space,
   Tag,
   Tooltip,
@@ -105,23 +104,19 @@ function StackOutcomeAlert({
               {outcome.snapshot.stackLabel}
             </Typography.Text>
           ) : null}
-          <List
-            size="small"
-            dataSource={outcome.steps}
-            renderItem={(item) => (
-              <List.Item style={{ padding: "4px 0" }}>
-                <Space>
-                  <Tag color={stepTagColor(item.status)}>{item.status}</Tag>
-                  <Typography.Text>{item.id}</Typography.Text>
-                  {item.reason ? (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      {item.reason}
-                    </Typography.Text>
-                  ) : null}
-                </Space>
-              </List.Item>
-            )}
-          />
+          <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+            {outcome.steps.map((item) => (
+              <Space key={item.id} size={8} wrap>
+                <Tag color={stepTagColor(item.status)}>{item.status}</Tag>
+                <Typography.Text>{item.id}</Typography.Text>
+                {item.reason ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {item.reason}
+                  </Typography.Text>
+                ) : null}
+              </Space>
+            ))}
+          </Space>
         </Space>
       }
     />
@@ -182,25 +177,17 @@ export function Upbit24x7OperatorControls({
 
   const runtimeReady = strategyId != null && strategyId > 0;
 
+  // 재승인은 LIVE/ARM OFF 상태에서도 가능 (restore-grade safety만)
   const unattendedStartBlocked = Boolean(
     snap?.blockers.some((b) =>
-      ["KILL_SWITCH_ACTIVE", "LIVE_OFF", "ARM_OFF", "ACTIVATION_INACTIVE"].includes(
-        b,
-      ),
+      ["KILL_SWITCH_ACTIVE"].includes(b),
     ),
   );
   const unattendedStartReason = unattendedStartBlocked
-    ? `${(snap?.blockers ?? [])
-        .filter((b) =>
-          [
-            "KILL_SWITCH_ACTIVE",
-            "LIVE_OFF",
-            "ARM_OFF",
-            "ACTIVATION_INACTIVE",
-          ].includes(b),
-        )
-        .join(", ")} — 해소 후 시작 가능`
-    : null;
+    ? "KILL_SWITCH_ACTIVE — 해소 후 시작 가능"
+    : snap?.needsReauthorize
+      ? "만료/PROTECTIVE lease — 재승인 시 LIVE/ARM/스택을 canonical 복구합니다"
+      : null;
 
   const unattendedDisable = useMutation({
     mutationFn: () =>
@@ -392,7 +379,12 @@ export function Upbit24x7OperatorControls({
                 <Typography.Text type="secondary">
                   · {snap.unattendedRemainingLabel}
                 </Typography.Text>
-              ) : null}
+              ) : (
+                <Typography.Text type="secondary">
+                  · {snap.unattendedStatusCode}
+                  {snap.needsReauthorize ? " · 재승인 필요" : ""}
+                </Typography.Text>
+              )}
             </Space>
           ) : (
             "—"
@@ -511,7 +503,7 @@ export function Upbit24x7OperatorControls({
           운영 스택 중지
         </Button>
         {showUnattendedActions ? (
-          snap?.unattendedEnabled ? (
+          snap?.unattendedEnabled && !snap.needsReauthorize ? (
             <Button
               danger
               loading={unattendedDisable.isPending}
@@ -534,7 +526,9 @@ export function Upbit24x7OperatorControls({
                 disabled={unattendedStartBlocked || !onUnattendedEnable}
                 onClick={() => onUnattendedEnable?.()}
               >
-                24시간 무인운영 시작
+                {snap?.needsReauthorize
+                  ? "24H 무인운영 재승인"
+                  : "24시간 무인운영 시작"}
               </Button>
             </Tooltip>
           )

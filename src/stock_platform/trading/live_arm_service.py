@@ -58,6 +58,8 @@ LIVE_ARM = ARM_ON
 LIVE_DISARM = ARM_OFF
 # LIVE_ARM_EXPIRED 는 live_safety_audit 에서 import
 DEFAULT_ARM_TTL_SECONDS = 300
+# force_renew 시 이 미만 연장은 NOOP (15초 스캔 spam 방지)
+MIN_MEANINGFUL_ARM_EXTENSION_SECONDS = 60
 
 
 class LiveArmError(ValueError):
@@ -403,8 +405,6 @@ class LiveArmService:
             ),
             now=now,
         )
-        token = secrets.token_urlsafe(32)
-        token_hash = self.hash_token(token)
         act_exp = getattr(activation, "expires_at", None)
         clamp_meta = {
             "requested_ttl_seconds": requested,
@@ -417,6 +417,37 @@ class LiveArmService:
                 act_exp.isoformat() if act_exp is not None else None
             ),
         }
+
+        # force_renew여도 의미 있는 TTL 연장이 없으면 NOOP (Telegram spam 방지)
+        if force_renew and before_arm and uba.arm_expires_at is not None:
+            current_exp = uba.arm_expires_at
+            if current_exp.tzinfo is None:
+                current_exp = current_exp.replace(tzinfo=timezone.utc)
+            extension_seconds = (expires - current_exp).total_seconds()
+            if extension_seconds < float(MIN_MEANINGFUL_ARM_EXTENSION_SECONDS):
+                status = self.get_arm_status(int(user_broker_account_id))
+                status.update(
+                    {
+                        "already_armed": True,
+                        "arm_changed": False,
+                        "live_unchanged": True,
+                        "live_order_enabled": before_live,
+                        "previous_arm": True,
+                        "new_arm": True,
+                        "reason": (reason or "")[:2000] or None,
+                        "correlation_id": (
+                            (correlation_id or "").strip()[:128] or None
+                        ),
+                        "actor": actor,
+                        "skipped_reason": "NO_MEANINGFUL_EXTENSION",
+                        "extension_seconds": extension_seconds,
+                        **clamp_meta,
+                    }
+                )
+                return status
+
+        token = secrets.token_urlsafe(32)
+        token_hash = self.hash_token(token)
 
         uba.live_armed = True
         uba.arm_token_hash = token_hash
@@ -474,6 +505,7 @@ class LiveArmService:
             },
             commit=False,
         )
+        # Telegram: 실제 mutation 경로만 (heartbeat/동일 expiry 금지)
         emit_live_order_telegram(
             event_type=LIVE_ARM,
             title="LIVE ARM",
@@ -485,6 +517,8 @@ class LiveArmService:
                 "user_broker_account_id": int(uba.user_broker_account_id),
                 "expires_at": expires.isoformat(),
                 "actor": actor,
+                "previous_arm": before_arm,
+                "arm_changed": True,
             },
         )
         # 원문 토큰은 응답에만 1회 반환 (DB에는 해시만)

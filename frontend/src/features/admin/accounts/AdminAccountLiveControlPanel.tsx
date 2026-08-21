@@ -64,7 +64,7 @@ import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
 import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
 import { buildOpsStatusSummary } from "./opsStatusSummary";
 import { Upbit24x7OperatorControls } from "./Upbit24x7OperatorControls";
-import { runUpbit24x7StackStart } from "./upbit24x7StackOrchestrator";
+import { runUpbit24x7StackStart, snapshotFromOpsStatus } from "./upbit24x7StackOrchestrator";
 
 function newCorrelationId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1832,10 +1832,20 @@ export function AdminAccountLiveControlPanel() {
       </Drawer>
 
       <Modal
-        title="24시간 무인운영 시작"
+        title={
+          detailOpsQuery.data &&
+          snapshotFromOpsStatus(detailOpsQuery.data).needsReauthorize
+            ? "24H 무인운영 재승인"
+            : "24시간 무인운영 시작"
+        }
         open={unattendedEnableOpen}
         confirmLoading={unattendedEnableBusy}
-        okText="24시간 무인운영 시작"
+        okText={
+          detailOpsQuery.data &&
+          snapshotFromOpsStatus(detailOpsQuery.data).needsReauthorize
+            ? "24H 무인운영 재승인"
+            : "24시간 무인운영 시작"
+        }
         cancelText="취소"
         destroyOnHidden
         onCancel={() => {
@@ -1846,14 +1856,32 @@ export function AdminAccountLiveControlPanel() {
           if (detailUbaId == null) return;
           try {
             setUnattendedEnableBusy(true);
-            await adminApi.enableAdminUbaUnattended(Number(detailUbaId), {
+            const opsSnap = detailOpsQuery.data
+              ? snapshotFromOpsStatus(detailOpsQuery.data)
+              : null;
+            const useReauth = Boolean(opsSnap?.needsReauthorize);
+            const body = {
               confirmation_text: "ENABLE 24H UNATTENDED",
-              reason: "admin_ui_24h_unattended",
+              reason: useReauth
+                ? "admin_ui_24h_unattended_reauthorize"
+                : "admin_ui_24h_unattended",
               horizon_hours: 24,
               correlation_id: newCorrelationId("unatt"),
-              source: "ADMIN_UI",
-            });
-            notifySuccess("24H Unattended enabled");
+              source: "ADMIN_UI" as const,
+            };
+            if (useReauth) {
+              await adminApi.reauthorizeAdminUbaUnattended(
+                Number(detailUbaId),
+                body,
+              );
+              notifySuccess("24H Unattended reauthorized + restore started");
+            } else {
+              await adminApi.enableAdminUbaUnattended(
+                Number(detailUbaId),
+                body,
+              );
+              notifySuccess("24H Unattended enabled");
+            }
             setUnattendedEnableOpen(false);
             await queryClient.invalidateQueries({
               queryKey: ["admin", "uba-unattended", detailUbaId],
@@ -1861,7 +1889,11 @@ export function AdminAccountLiveControlPanel() {
             await queryClient.invalidateQueries({
               queryKey: ["admin", "uba-ops-status", detailUbaId],
             });
-            // lease 성공 후 Worker/Exit/Runtime 스택 기동 제안
+            await queryClient.invalidateQueries({
+              queryKey: ["admin", "autotrading-readiness", detailUbaId],
+            });
+            // reauthorize는 backend가 stack restore를 스케줄. enable만 스택 제안.
+            if (!useReauth) {
             const readyVm = autotradingReadyQuery.data
               ? buildUbaAutoTradingViewModel(autotradingReadyQuery.data)
               : null;
@@ -1910,6 +1942,7 @@ export function AdminAccountLiveControlPanel() {
                 },
               });
             }
+            }
           } catch (err) {
             notifyError(err);
             throw err;
@@ -1922,10 +1955,16 @@ export function AdminAccountLiveControlPanel() {
           const opsSum = detailOpsQuery.data
             ? buildOpsStatusSummary(detailOpsQuery.data)
             : null;
+          const opsSnap = detailOpsQuery.data
+            ? snapshotFromOpsStatus(detailOpsQuery.data)
+            : null;
+          const isReauth = Boolean(opsSnap?.needsReauthorize);
           return (
             <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               <Typography.Text strong>
-                24시간 무인운영을 시작하시겠습니까?
+                {isReauth
+                  ? "UPBIT REAL 자동매매를 24시간 동안 허용합니다. 안전 조건 위반 시 자동으로 중지됩니다."
+                  : "24시간 무인운영을 시작하시겠습니까?"}
               </Typography.Text>
               <Descriptions size="small" column={1} bordered>
                 <Descriptions.Item label="UBA">
@@ -1934,8 +1973,16 @@ export function AdminAccountLiveControlPanel() {
                 <Descriptions.Item label="Broker">
                   {detailBroker ?? "—"}
                 </Descriptions.Item>
-                <Descriptions.Item label="REAL">
-                  서버 gate에서 UPBIT REAL 검증 (mock LIVE 금지)
+                <Descriptions.Item label="무인운영">
+                  {isReauth
+                    ? `만료 · ${opsSnap?.unattendedStatusCode ?? "OFF"}`
+                    : (opsSum?.unattendedLabel ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="만료시각">
+                  {opsSnap?.unattendedAuthorizedUntil ?? "—"}
+                </Descriptions.Item>
+                <Descriptions.Item label="자동매매 진입">
+                  {opsSnap?.entryAuthorized ? "허용" : "차단"}
                 </Descriptions.Item>
                 <Descriptions.Item label="LIVE">
                   {opsSum?.liveLabel ?? "—"}
@@ -1955,13 +2002,22 @@ export function AdminAccountLiveControlPanel() {
                 showIcon
                 title="Fail Closed"
                 description={
-                  <>
-                    안전조건(Credential VERIFIED · Connection · Recovery ·
-                    Conflict · Kill Switch · LIVE/ARM/Activation · Risk) 중
-                    하나라도 실패하면 Unattended Enable이 거부됩니다. LIVE ON
-                    문구 입력은 이 화면에서 요구하지 않으며, LIVE 진입 승인과
-                    역할이 분리되어 있습니다.
-                  </>
+                  isReauth ? (
+                    <>
+                      재승인 시 Kill/Credential/Recovery/Conflict 등 safety
+                      gate를 통과한 뒤 새 24H lease를 만들고 Activation·LIVE·ARM
+                      및 Worker/Exit/Runtime/Execution Runner를 canonical
+                      경로로 복구합니다. DB flag 직접 수정은 하지 않습니다.
+                    </>
+                  ) : (
+                    <>
+                      안전조건(Credential VERIFIED · Connection · Recovery ·
+                      Conflict · Kill Switch · LIVE/ARM/Activation · Risk) 중
+                      하나라도 실패하면 Unattended Enable이 거부됩니다. LIVE ON
+                      문구 입력은 이 화면에서 요구하지 않으며, LIVE 진입 승인과
+                      역할이 분리되어 있습니다.
+                    </>
+                  )
                 }
               />
             </Space>

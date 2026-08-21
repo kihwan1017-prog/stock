@@ -49,7 +49,8 @@ describe("snapshotFromOpsStatus", () => {
     );
     expect(snap.live).toBe("ON");
     expect(snap.runtime).toBe("RUNNING");
-    expect(snap.unattendedEnabled).toBe(true);
+    expect(snap.unattendedEnabled).toBe(false);
+    expect(snap.needsReauthorize).toBe(true);
     expect(snap.outboxWorker).toBe("STOPPED");
   });
 
@@ -62,12 +63,19 @@ describe("snapshotFromOpsStatus", () => {
         activation: "ACTIVE",
         activation_remaining_label: "5h 00m",
         ai_state: "ALLOW",
-        unattended: { unattended_enabled: true, remaining_seconds: 7200 },
+        unattended: {
+          unattended_enabled: true,
+          status_code: "ACTIVE",
+          entry_authorized: true,
+          remaining_seconds: 7200,
+          needs_reauthorize: false,
+        },
         runtime_stack: { label: "4/4 RUNNING" },
         primary_blocker: null,
       }),
     );
     expect(snap.unattendedEnabled).toBe(true);
+    expect(snap.needsReauthorize).toBe(false);
     expect(snap.unattendedRemainingLabel).toContain("h");
     expect(snap.armRemainingLabel).toBe("2h 10m");
     expect(snap.activationRemainingLabel).toBe("5h 00m");

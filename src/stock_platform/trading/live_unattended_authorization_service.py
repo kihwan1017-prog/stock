@@ -104,6 +104,8 @@ class LiveUnattendedAuthorizationService:
         if row is None:
             return {
                 "unattended_enabled": False,
+                "entry_lease_active": False,
+                "needs_reauthorize": True,
                 "status_code": "OFF",
                 "broker_code": broker,
                 "authorized_until": None,
@@ -118,8 +120,19 @@ class LiveUnattendedAuthorizationService:
         remaining = (
             max(0, int((until - now).total_seconds())) if until else 0
         )
+        status_u = str(row.status_code or "").upper()
+        entry_lease_active = (
+            bool(row.enabled)
+            and status_u == STATUS_ACTIVE
+            and bool(row.entry_authorized)
+            and remaining > 0
+        )
+        needs_reauthorize = not entry_lease_active
         return {
-            "unattended_enabled": bool(row.enabled),
+            # UI/게이트: PROTECTIVE·만료는 '무인 ENTRY 세션 ON'이 아님
+            "unattended_enabled": entry_lease_active,
+            "entry_lease_active": entry_lease_active,
+            "needs_reauthorize": needs_reauthorize,
             "status_code": row.status_code,
             "broker_code": broker or str(row.broker_code or "").upper(),
             "authorization_id": int(row.live_unattended_authorization_id),
@@ -324,6 +337,214 @@ class LiveUnattendedAuthorizationService:
         self._session.commit()
         self._session.refresh(row)
         return self.status_dict(int(user_broker_account_id))
+
+    def reauthorize(
+        self,
+        user_broker_account_id: int,
+        *,
+        actor: str,
+        confirmation_text: str,
+        reason: str,
+        source: str = SOURCE_ADMIN_API,
+        horizon_hours: int | None = None,
+        correlation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """만료/PROTECTIVE 이후 24H lease 재승인 + LIVE/ARM/Activation 복구.
+
+        enable()과 달리 LIVE/ARM이 꺼진 fail-closed 상태에서도
+        restore-grade safety gate만 PASS하면 새 lease를 만들고
+        restore_from_active_lease로 세션을 복구한다.
+        """
+
+        text_u = (confirmation_text or "").strip().upper()
+        if not secrets.compare_digest(text_u, CONFIRM_ENABLE):
+            raise LiveUnattendedError(
+                "CONFIRMATION_REQUIRED",
+                f"confirmation_text must be exactly '{CONFIRM_ENABLE}'",
+            )
+        source_u = str(source or "").strip().upper()
+        if source_u not in ALLOWED_ENABLE_SOURCES:
+            raise LiveUnattendedError(
+                "INVALID_SOURCE",
+                f"source must be one of {sorted(ALLOWED_ENABLE_SOURCES)}",
+            )
+
+        uba = self._session.get(
+            UserBrokerAccount, int(user_broker_account_id)
+        )
+        if uba is None:
+            raise LiveUnattendedError("UBA_NOT_FOUND", "UBA not found")
+        broker = str(uba.broker_code or "").upper()
+        if broker != "UPBIT":
+            raise LiveUnattendedError(
+                "BROKER_NOT_SUPPORTED",
+                "24H unattended is UPBIT-only in this release",
+            )
+
+        settings = get_settings()
+        default_h = int(
+            getattr(settings, "live_unattended_default_horizon_hours", 24)
+        )
+        max_h = int(
+            getattr(settings, "live_unattended_max_horizon_hours", 168)
+        )
+        hours = int(horizon_hours if horizon_hours is not None else default_h)
+        if hours < 1 or hours > max_h:
+            raise LiveUnattendedError(
+                "INVALID_HORIZON",
+                f"horizon_hours must be 1..{max_h}",
+            )
+
+        # LIVE/ARM/Activation 꺼짐은 허용 — Kill/Credential/Recovery 등만 강제
+        gates = self.evaluate_restore_gates(int(user_broker_account_id))
+        if not gates["ok"]:
+            raise LiveUnattendedError(
+                "SAFETY_GATES_FAILED",
+                f"Cannot reauthorize unattended: {gates['blockers']}",
+            )
+
+        existing = self.get_active(int(user_broker_account_id))
+        now = _now()
+        previous_authorization_id = None
+        source_activation_id = None
+        if existing is not None:
+            previous_authorization_id = int(
+                existing.live_unattended_authorization_id
+            )
+            if existing.source_activation_id is not None:
+                source_activation_id = int(existing.source_activation_id)
+            status_u = str(existing.status_code or "").upper()
+            until = aware_utc(existing.authorized_until)
+            still_active = (
+                status_u == STATUS_ACTIVE
+                and bool(existing.entry_authorized)
+                and until is not None
+                and until > now
+            )
+            if still_active and bool(uba.live_order_enabled) and bool(
+                uba.live_armed
+            ):
+                raise LiveUnattendedError(
+                    "ALREADY_ENABLED",
+                    "Active unattended authorization already exists",
+                )
+            # PROTECTIVE/만료·세션 OFF: 기존 lease supersede (fail-closed 재실행 없음)
+            existing.enabled = False
+            existing.entry_authorized = False
+            existing.status_code = STATUS_EXPIRED
+            existing.revoked_at = now
+            existing.revoked_by = actor[:100]
+            existing.revoke_reason = "SUPERSEDED_BY_REAUTHORIZE"[:200]
+            existing.updated_at = now
+            self._session.flush()
+
+        act = LiveTradingTransitionService(self._session).peek_active(
+            broker_code=broker,
+            user_broker_account_id=int(user_broker_account_id),
+        )
+        if act is not None:
+            source_activation_id = int(act.live_trading_transition_id)
+        elif source_activation_id is None:
+            raise LiveUnattendedError(
+                "NO_SOURCE_ACTIVATION",
+                "No activation available for unattended reauthorize restore",
+            )
+
+        row = LiveUnattendedAuthorizationEntity(
+            user_broker_account_id=int(user_broker_account_id),
+            broker_code=broker,
+            status_code=STATUS_ACTIVE,
+            enabled=True,
+            entry_authorized=True,
+            protective_exit_authorized=True,
+            authorized_until=now + timedelta(hours=hours),
+            renewal_interval_seconds=int(
+                getattr(
+                    settings, "live_unattended_renewal_interval_seconds", 3600
+                )
+            ),
+            renewal_margin_seconds=int(
+                getattr(
+                    settings, "live_unattended_renewal_margin_seconds", 600
+                )
+            ),
+            arm_lease_ttl_seconds=int(
+                getattr(
+                    settings, "live_unattended_arm_lease_ttl_seconds", 3600
+                )
+            ),
+            activation_renew_hours=int(
+                getattr(
+                    settings, "live_unattended_activation_renew_hours", 8
+                )
+            ),
+            max_authorization_horizon_hours=max_h,
+            approved_by=actor[:100],
+            approved_at=now,
+            approval_reason=(reason or "")[:2000],
+            approval_phrase_hash=_hash_phrase(
+                f"{APPROVAL_MODEL_UNATTENDED_LEASE}:{CONFIRM_ENABLE}"
+            ),
+            source_activation_id=source_activation_id,
+            last_renewal_detail={
+                "correlation_id": (correlation_id or "")[:128],
+                "source": source_u,
+                "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
+                "mode": "REAUTHORIZE",
+                "previous_authorization_id": previous_authorization_id,
+                "gates": gates,
+            },
+        )
+        self._session.add(row)
+        self._session.flush()
+        emit_live_safety_audit(
+            self._session,
+            event_type="UNATTENDED_AUTHORIZATION_REAUTHORIZED",
+            actor=actor,
+            run_id=None,
+            user_id=int(uba.user_id),
+            account_id=int(user_broker_account_id),
+            strategy_id=None,
+            detail={
+                "actor": actor,
+                "user_broker_account_id": int(user_broker_account_id),
+                "broker": broker,
+                "authorization_horizon_hours": hours,
+                "authorized_until": row.authorized_until.isoformat(),
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "previous_authorization_id": previous_authorization_id,
+                "source_activation_id": source_activation_id,
+                "reason": (reason or "")[:500],
+                "source": source_u,
+                "mode": "REAUTHORIZE",
+            },
+            commit=False,
+        )
+        emit_live_order_telegram(
+            event_type="UNATTENDED_AUTHORIZATION_REAUTHORIZED",
+            title="24H Unattended REAUTH",
+            message=(
+                f"UBA {user_broker_account_id} reauthorized until "
+                f"{row.authorized_until.isoformat()}"
+            ),
+            detail={
+                "authorization_id": int(row.live_unattended_authorization_id)
+            },
+        )
+        self._session.commit()
+        self._session.refresh(row)
+
+        # LIVE/ARM/Activation + UPBIT stack 복구
+        restore = self.restore_from_active_lease(
+            int(user_broker_account_id),
+            actor=f"{actor}_REAUTHORIZE_RESTORE",
+            restore_stack=True,
+        )
+        self._session.commit()
+        status = self.status_dict(int(user_broker_account_id))
+        status["reauthorized"] = True
+        status["restore"] = restore
+        return status
 
     def disable(
         self,
@@ -719,15 +940,21 @@ class LiveUnattendedAuthorizationService:
             "horizon_until": until.isoformat(),
         }
 
-        # 1) Activation 확보 (만료/부재 시 successor)
+        # 1) Activation 확보 (만료/부재/ARM TTL보다 짧으면 successor)
         act = LiveTradingTransitionService(self._session).peek_active(
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=int(user_broker_account_id),
         )
         act_remaining = activation_remaining_seconds(act, now=now)
-        if act is None or act_remaining <= 0:
-            previous = None
-            if row.source_activation_id is not None:
+        arm_ttl_cap = int(row.arm_lease_ttl_seconds)
+        need_activation_successor = (
+            act is None
+            or act_remaining <= 0
+            or act_remaining < arm_ttl_cap
+        )
+        if need_activation_successor:
+            previous = act
+            if previous is None and row.source_activation_id is not None:
                 previous = self._session.get(
                     LiveTradingTransitionEntity,
                     int(row.source_activation_id),
@@ -840,14 +1067,10 @@ class LiveUnattendedAuthorizationService:
         *,
         actor: str,
     ) -> dict[str, Any]:
-        """running loop가 있으면 stack restore task 생성. 없으면 skip."""
+        """running loop가 있으면 create_task, 없으면 백그라운드 스레드로 복구."""
 
         import asyncio
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return {"scheduled": False, "reason": "NO_RUNNING_LOOP"}
+        import threading
 
         uba_id = int(user_broker_account_id)
 
@@ -880,8 +1103,26 @@ class LiveUnattendedAuthorizationService:
             finally:
                 session.close()
 
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # sync FastAPI 핸들러 등 — 전용 스레드에서 stack 복구
+            def _thread_main() -> None:
+                asyncio.run(_run())
+
+            threading.Thread(
+                target=_thread_main,
+                name=f"unattended-stack-{uba_id}",
+                daemon=True,
+            ).start()
+            return {
+                "scheduled": True,
+                "uba_id": uba_id,
+                "mode": "BACKGROUND_THREAD",
+            }
+
         loop.create_task(_run(), name=f"unattended-stack-{uba_id}")
-        return {"scheduled": True, "uba_id": uba_id}
+        return {"scheduled": True, "uba_id": uba_id, "mode": "EVENT_LOOP_TASK"}
 
     def renew_due_for_uba(
         self,
@@ -987,26 +1228,55 @@ class LiveUnattendedAuthorizationService:
             )
             did = True
 
-        # ARM renew (만료 임박)
+        # ARM renew (만료 임박) — lease ceiling 대비 의미 있는 연장만
         if arm_remaining <= margin:
-            from stock_platform.trading.live_arm_service import LiveArmService
+            from stock_platform.trading.live_arm_service import (
+                MIN_MEANINGFUL_ARM_EXTENSION_SECONDS,
+                LiveArmService,
+            )
 
-            arm_ttl = min(
-                int(row.arm_lease_ttl_seconds),
-                max(60, int((until - now).total_seconds())),
+            lease_remaining = max(60, int((until - now).total_seconds()))
+            arm_ttl = min(int(row.arm_lease_ttl_seconds), lease_remaining)
+            intended_expires = now + timedelta(seconds=arm_ttl)
+            if intended_expires > until:
+                intended_expires = until
+            extension_seconds = (
+                (intended_expires - arm_exp).total_seconds()
+                if arm_exp is not None
+                else float(arm_ttl)
             )
-            LiveArmService(self._session).arm(
-                int(user_broker_account_id),
-                actor=actor,
-                ttl_seconds=arm_ttl,
-                reason="UNATTENDED_ARM_RENEWAL",
-                correlation_id=f"unatt-{row.live_unattended_authorization_id}",
-                enforce_gates=True,
-                force_renew=True,
-            )
-            detail["arm_renewed"] = True
-            detail["arm_ttl_seconds"] = arm_ttl
-            did = True
+            if extension_seconds < float(MIN_MEANINGFUL_ARM_EXTENSION_SECONDS):
+                detail["arm_renew_skipped"] = "NO_MEANINGFUL_EXTENSION"
+                detail["arm_extension_seconds"] = extension_seconds
+                detail["intended_arm_expires_at"] = (
+                    intended_expires.isoformat()
+                )
+            else:
+                arm_result = LiveArmService(self._session).arm(
+                    int(user_broker_account_id),
+                    actor=actor,
+                    ttl_seconds=arm_ttl,
+                    reason="UNATTENDED_ARM_RENEWAL",
+                    correlation_id=(
+                        f"unatt-{row.live_unattended_authorization_id}"
+                    ),
+                    enforce_gates=True,
+                    force_renew=True,
+                )
+                if arm_result.get("arm_changed"):
+                    detail["arm_renewed"] = True
+                    detail["arm_ttl_seconds"] = arm_ttl
+                    detail["arm_expires_at"] = arm_result.get(
+                        "arm_expires_at"
+                    )
+                    did = True
+                else:
+                    detail["arm_renew_skipped"] = arm_result.get(
+                        "skipped_reason", "ARM_UNCHANGED"
+                    )
+                    detail["arm_extension_seconds"] = arm_result.get(
+                        "extension_seconds"
+                    )
 
         if not did:
             return {"renewed": False, "reason": "NOT_DUE", "detail": detail}

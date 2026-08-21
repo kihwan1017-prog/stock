@@ -56,6 +56,10 @@ export type StackStartSnapshot = {
   autoTradingState: string;
   unattendedEnabled: boolean;
   unattendedRemainingLabel: string;
+  unattendedStatusCode: string;
+  needsReauthorize: boolean;
+  unattendedAuthorizedUntil: string | null;
+  entryAuthorized: boolean;
   stackLabel: string;
   aiState: string;
   blockers: string[];
@@ -103,7 +107,21 @@ export function snapshotFromOpsStatus(payload: unknown): StackStartSnapshot {
   const stack = asRecord(root.runtime_stack);
   const unattended = asRecord(root.unattended);
   const remUnatt = Number(unattended.remaining_seconds ?? 0);
-  const unattOn = Boolean(unattended.unattended_enabled);
+  const statusCode = String(unattended.status_code ?? "OFF").toUpperCase();
+  const entryAuthorized = Boolean(unattended.entry_authorized);
+  const needsReauthorize =
+    unattended.needs_reauthorize != null
+      ? Boolean(unattended.needs_reauthorize)
+      : !(
+          Boolean(unattended.unattended_enabled) &&
+          statusCode === "ACTIVE" &&
+          entryAuthorized &&
+          remUnatt > 0
+        );
+  const unattOn =
+    Boolean(unattended.unattended_enabled) &&
+    !needsReauthorize &&
+    statusCode === "ACTIVE";
   return {
     live: String(root.live ?? "OFF").toUpperCase(),
     arm: String(root.arm ?? "OFF").toUpperCase(),
@@ -129,6 +147,13 @@ export function snapshotFromOpsStatus(payload: unknown): StackStartSnapshot {
     unattendedRemainingLabel: unattOn
       ? formatRemainingSeconds(remUnatt)
       : "—",
+    unattendedStatusCode: statusCode || "OFF",
+    needsReauthorize,
+    unattendedAuthorizedUntil:
+      unattended.authorized_until != null
+        ? String(unattended.authorized_until)
+        : null,
+    entryAuthorized,
     stackLabel: String(stack.label ?? "0/4"),
     aiState: String(root.ai_state ?? "HOLD").toUpperCase(),
     blockers: Array.isArray(root.blockers)
