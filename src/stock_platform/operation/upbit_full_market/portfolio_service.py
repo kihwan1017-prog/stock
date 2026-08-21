@@ -1344,6 +1344,92 @@ class UpbitPortfolioService:
         if slot is None:
             return {"ok": False, "reason": "NO_WAITING_SIGNAL_SLOT"}
 
+        # WAITING_SIGNAL + 수동 보유(바인딩 없음) → ENTRY 금지 + slot 안전 해제
+        if self._assignment._has_preexisting_holding(uba_id, sym):
+            reserve = float(slot.reserved_amount_krw or 0)
+            released = False
+            if slot.entry_order_id is None and reserve <= 0:
+                slot.status = SLOT_EMPTY
+                slot.symbol = None
+                slot.candidate_selection_id = None
+                slot.scanner_run_id = None
+                slot.reserved_amount_krw = None
+                slot.allocated_amount_krw = None
+                slot.recommended_amount_krw = None
+                slot.clamp_reasons = []
+                slot.entry_order_id = None
+                slot.version = int(slot.version or 1) + 1
+                self._session.flush()
+                released = True
+            return {
+                "ok": False,
+                "reason": "MANUAL_SYMBOL_EXCLUDED",
+                "slot_released": released,
+                "detail": "WAITING_SIGNAL_PREEXISTING_HOLDING",
+            }
+
+        # Symbol Ownership — exclusion/hold/unknown (AUTO_ALREADY_MANAGED는 이 slot 자체)
+        try:
+            from stock_platform.trading.symbol_ownership import (
+                SymbolOwnershipService,
+            )
+            from stock_platform.trading.symbol_ownership.constants import (
+                OWNER_FREE,
+                SKIP_MANUAL_SYMBOL_EXCLUDED,
+                SKIP_OWNERSHIP_UNKNOWN,
+                SKIP_AUTO_EXCLUDED,
+                SKIP_SYMBOL_HOLD,
+            )
+
+            allowed, skip_reason, ownership = SymbolOwnershipService(
+                self._session
+            ).entry_gate(
+                broker_code="UPBIT",
+                user_broker_account_id=uba_id,
+                symbol=sym,
+            )
+            if not allowed and skip_reason != "AUTO_SYMBOL_ALREADY_MANAGED":
+                reserve = float(slot.reserved_amount_krw or 0)
+                can_release = (
+                    slot.entry_order_id is None
+                    and reserve <= 0
+                    and skip_reason
+                    in {
+                        SKIP_MANUAL_SYMBOL_EXCLUDED,
+                        SKIP_OWNERSHIP_UNKNOWN,
+                        SKIP_AUTO_EXCLUDED,
+                        SKIP_SYMBOL_HOLD,
+                    }
+                )
+                released = False
+                if can_release:
+                    slot.status = SLOT_EMPTY
+                    slot.symbol = None
+                    slot.candidate_selection_id = None
+                    slot.scanner_run_id = None
+                    slot.reserved_amount_krw = None
+                    slot.allocated_amount_krw = None
+                    slot.recommended_amount_krw = None
+                    slot.clamp_reasons = []
+                    slot.entry_order_id = None
+                    slot.version = int(slot.version or 1) + 1
+                    self._session.flush()
+                    released = True
+                return {
+                    "ok": False,
+                    "reason": skip_reason or "SYMBOL_OWNERSHIP_BLOCKED",
+                    "owner": ownership.owner,
+                    "ownership_reasons": ownership.reasons,
+                    "slot_released": released,
+                    "expected_owner_for_entry": OWNER_FREE,
+                }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "ok": False,
+                "reason": "SYMBOL_OWNERSHIP_UNKNOWN",
+                "error": type(exc).__name__,
+            }
+
         policy = self.get_or_create_policy(uba_id)
         if not policy.enabled:
             return {"ok": False, "reason": "POLICY_DISABLED"}

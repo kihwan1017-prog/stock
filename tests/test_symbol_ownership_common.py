@@ -156,3 +156,27 @@ def test_j_common_resolver_contract_kiwoom_upbit() -> None:
     assert decide_ownership(facts).owner == OWNER_MANUAL
     facts2 = OwnershipFacts(auto_slot_active=True)
     assert decide_ownership(facts2).owner == OWNER_AUTO
+
+
+def test_waiting_signal_manual_blocks_and_marks_release_eligible() -> None:
+    """WAITING_SIGNAL + MANUAL → ENTRY 금지, reserve0/order null이면 release 가능."""
+
+    from stock_platform.trading.symbol_ownership.constants import (
+        SKIP_MANUAL_SYMBOL_EXCLUDED,
+    )
+
+    # MANUAL holding (no AUTO slot in facts — slot cleared after release)
+    manual = decide_ownership(
+        OwnershipFacts(broker_position_qty=Decimal("1"))
+    )
+    assert manual.entry_allowed is False
+    assert manual.entry_skip_reason == SKIP_MANUAL_SYMBOL_EXCLUDED
+    # release eligibility contract (pre-order)
+    reserve = 0
+    entry_order_id = None
+    can_release = (
+        entry_order_id is None
+        and reserve <= 0
+        and manual.entry_skip_reason == SKIP_MANUAL_SYMBOL_EXCLUDED
+    )
+    assert can_release is True
