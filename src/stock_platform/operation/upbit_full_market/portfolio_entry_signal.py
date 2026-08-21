@@ -66,6 +66,8 @@ class SymbolEntrySnapshot:
     rsi14: float | None = None
     volume_surge: float | None = None
     technical_metrics: dict[str, Any] = field(default_factory=dict)
+    # WAITING_SIGNAL/ENTRY_PENDING 슬롯에 이미 배정된 후보 — scanner 신선도 만료로 BUY 영구 차단 금지
+    bound_to_waiting_slot: bool = False
 
 
 @dataclass
@@ -318,6 +320,7 @@ def build_portfolio_entry_context(
             rsi14=rsi_f,
             volume_surge=surge_f,
             technical_metrics=tech,
+            bound_to_waiting_slot=True,
         )
 
     return PortfolioEntryContext(
@@ -333,7 +336,9 @@ def attach_portfolio_entry_context_to_hub(
     session: Any,
     user_broker_account_id: int,
 ) -> dict[str, Any]:
-    """Hub consumer evaluator에 portfolio entry context 부착."""
+    """Hub consumer evaluator에 portfolio entry context 부착 + BULLISH config 보강."""
+
+    from dataclasses import replace
 
     from stock_platform.realtime.market_data_hub import (
         get_realtime_market_data_hub,
@@ -342,6 +347,7 @@ def attach_portfolio_entry_context_to_hub(
     ctx = build_portfolio_entry_context(session, user_broker_account_id)
     hub = get_realtime_market_data_hub()
     attached = 0
+    config_patched = 0
     with hub.registry._lock:  # noqa: SLF001
         for consumer in hub.registry._by_scope.values():  # noqa: SLF001
             scope = consumer.scope
@@ -353,15 +359,77 @@ def attach_portfolio_entry_context_to_hub(
                 continue
             consumer.evaluator.portfolio_entry_ctx = ctx
             attached += 1
+            # bridge 기본 CROSS_EVENT 방어: ctx 정책으로 portfolio_mode 강제
+            old_cfg = consumer.evaluator.config
+            new_policy = normalize_entry_policy(ctx.policy)
+            if (
+                not bool(old_cfg.portfolio_mode)
+                or normalize_entry_policy(old_cfg.entry_signal_policy)
+                != new_policy
+            ):
+                consumer.evaluator.config = replace(
+                    old_cfg,
+                    portfolio_mode=True,
+                    entry_signal_policy=new_policy,
+                )
+                config_patched += 1
     return {
         "ok": True,
         "attached": attached,
+        "config_patched": config_patched,
         "policy": ctx.policy,
         "symbols": sorted(ctx.by_symbol.keys()),
         "refreshed_at": (
             ctx.refreshed_at.isoformat() if ctx.refreshed_at else None
         ),
     }
+
+
+def ensure_portfolio_entry_evaluator_for_uba(
+    user_broker_account_id: int,
+) -> dict[str, Any]:
+    """Runtime sync/restore 후 portfolio entry ctx를 항상 재부착 (세션 단명)."""
+
+    from stock_platform.database.session import get_session_factory
+    from stock_platform.operation.upbit_full_market.constants import (
+        is_full_market_portfolio,
+    )
+    from stock_platform.operation.upbit_full_market.entities import (
+        UpbitFullMarketAssignmentEntity,
+        UpbitPortfolioPolicyEntity,
+    )
+    from sqlalchemy import select
+
+    uba_id = int(user_broker_account_id)
+    sf = get_session_factory()
+    with sf() as session:
+        assignment = session.scalar(
+            select(UpbitFullMarketAssignmentEntity).where(
+                UpbitFullMarketAssignmentEntity.user_broker_account_id == uba_id
+            )
+        )
+        if assignment is None or not is_full_market_portfolio(
+            getattr(assignment, "mode", None)
+        ):
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "NOT_FULL_MARKET_PORTFOLIO",
+            }
+        policy = session.scalar(
+            select(UpbitPortfolioPolicyEntity).where(
+                UpbitPortfolioPolicyEntity.user_broker_account_id == uba_id
+            )
+        )
+        if policy is not None and not bool(policy.enabled):
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "PORTFOLIO_DISABLED",
+            }
+        result = attach_portfolio_entry_context_to_hub(session, uba_id)
+        result["skipped"] = False
+        return result
 
 
 def load_thresholds_from_settings(settings: Any) -> PortfolioEntryThresholds:
@@ -480,7 +548,9 @@ def evaluate_bullish_state_entry(
     if snap is None:
         return False, "NO_CANDIDATE_SNAPSHOT", detail
 
-    if snap.selected_at is not None:
+    # 슬롯에 이미 배정된 후보는 scanner age로 영구 BLOCK하지 않음
+    # (BULLISH_STATE는 배정 후 MA/RSI 조건을 기다리는 모델)
+    if snap.selected_at is not None and not bool(snap.bound_to_waiting_slot):
         sel = snap.selected_at
         if sel.tzinfo is None:
             sel = sel.replace(tzinfo=timezone.utc)
@@ -488,6 +558,12 @@ def evaluate_bullish_state_entry(
         detail["candidate_age_seconds"] = cand_age
         if cand_age > float(thresholds.max_candidate_age_seconds):
             return False, "CANDIDATE_STALE", detail
+    elif snap.selected_at is not None:
+        sel = snap.selected_at
+        if sel.tzinfo is None:
+            sel = sel.replace(tzinfo=timezone.utc)
+        detail["candidate_age_seconds"] = (now - sel).total_seconds()
+        detail["candidate_age_gate"] = "SKIPPED_SLOT_BOUND"
 
     if thresholds.require_ai_allow:
         rec = str(snap.ai_recommendation or "").upper()

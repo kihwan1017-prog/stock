@@ -233,6 +233,20 @@ async def restore_upbit_trading_stack(
                 user_broker_account_id=uba_id,
                 strategy_id=int(strategy_id),
             )
+            # resume/already-running 모두 portfolio entry ctx 재부착
+            try:
+                from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+                    ensure_portfolio_entry_evaluator_for_uba,
+                )
+
+                detail["portfolio_entry_context"] = (
+                    ensure_portfolio_entry_evaluator_for_uba(uba_id)
+                )
+            except Exception as ctx_exc:  # noqa: BLE001
+                detail["portfolio_entry_context"] = {
+                    "ok": False,
+                    "error": type(ctx_exc).__name__,
+                }
 
     # 3) Exit Monitor — STOPPED일 때만 (플래그 변경 없음)
     from stock_platform.trading.upbit_24x7_control import exit_monitor_status

@@ -717,6 +717,129 @@ def evaluate_uba_autotrading_ready(
     except Exception as exc:  # noqa: BLE001
         checks["upbit_24x7_control"] = {"error": type(exc).__name__}
 
+    # Portfolio WAITING_SIGNAL + feed/runtime OK 인데 entry eval이 stale면 blocker
+    try:
+        from stock_platform.operation.upbit_full_market.constants import (
+            SLOT_WAITING_SIGNAL,
+            is_full_market_portfolio,
+        )
+        from stock_platform.operation.upbit_full_market.entities import (
+            UpbitFullMarketAssignmentEntity,
+            UpbitPortfolioPolicyEntity,
+            UpbitPositionSlotEntity,
+        )
+        from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            portfolio_entry_telemetry,
+        )
+
+        assignment = session.scalar(
+            select(UpbitFullMarketAssignmentEntity).where(
+                UpbitFullMarketAssignmentEntity.user_broker_account_id == uba_id
+            )
+        )
+        policy = session.scalar(
+            select(UpbitPortfolioPolicyEntity).where(
+                UpbitPortfolioPolicyEntity.user_broker_account_id == uba_id
+            )
+        )
+        waiting_slots = list(
+            session.scalars(
+                select(UpbitPositionSlotEntity).where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+                    UpbitPositionSlotEntity.symbol.is_not(None),
+                )
+            )
+        )
+        feed_ok = True
+        feed = checks.get("market_feed") or {}
+        if isinstance(feed, dict) and feed.get("ok") is False:
+            feed_ok = False
+        rt_ok = str(runtime_status or "").upper() == "RUNNING"
+        if not rt_ok:
+            ctrl2 = checks.get("upbit_24x7_control") or {}
+            rt_ok = str(ctrl2.get("strategy_runtime") or "").upper() == "RUNNING"
+
+        entry_eval_check: dict[str, Any] = {
+            "portfolio_mode": bool(
+                assignment is not None
+                and is_full_market_portfolio(getattr(assignment, "mode", None))
+            ),
+            "policy_enabled": bool(policy.enabled) if policy is not None else False,
+            "waiting_slot_count": len(waiting_slots),
+            "stale_threshold_seconds": 300,
+        }
+        if (
+            assignment is not None
+            and is_full_market_portfolio(getattr(assignment, "mode", None))
+            and policy is not None
+            and bool(policy.enabled)
+            and waiting_slots
+            and feed_ok
+            and rt_ok
+            and bool(getattr(uba, "live_order_enabled", False))
+        ):
+            evals = portfolio_entry_telemetry.snapshot(uba_id)
+            now_utc = datetime.now(timezone.utc)
+            per_slot: list[dict[str, Any]] = []
+            any_fresh = False
+            for slot in waiting_slots:
+                sym = str(slot.symbol or "").upper()
+                row = evals.get(sym) if isinstance(evals, dict) else None
+                age = None
+                if isinstance(row, dict) and row.get("last_evaluated_at"):
+                    try:
+                        dt = datetime.fromisoformat(
+                            str(row["last_evaluated_at"]).replace("Z", "+00:00")
+                        )
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        age = max(
+                            0.0,
+                            (now_utc - dt.astimezone(timezone.utc)).total_seconds(),
+                        )
+                    except Exception:  # noqa: BLE001
+                        age = None
+                fresh = age is not None and age <= 300
+                if fresh:
+                    any_fresh = True
+                per_slot.append(
+                    {
+                        "slot_no": int(slot.slot_no),
+                        "symbol": sym,
+                        "last_evaluated_at": (
+                            row.get("last_evaluated_at")
+                            if isinstance(row, dict)
+                            else None
+                        ),
+                        "age_seconds": age,
+                        "last_decision": (
+                            row.get("last_decision")
+                            if isinstance(row, dict)
+                            else None
+                        ),
+                        "last_block_reason": (
+                            row.get("last_block_reason")
+                            if isinstance(row, dict)
+                            else None
+                        ),
+                        "fresh": fresh,
+                    }
+                )
+            entry_eval_check["slots"] = per_slot
+            entry_eval_check["any_fresh"] = any_fresh
+            if not any_fresh:
+                blockers.append("ENTRY_EVALUATOR_STALE")
+                entry_eval_check["stale"] = True
+            else:
+                entry_eval_check["stale"] = False
+        else:
+            entry_eval_check["skipped"] = True
+        checks["entry_evaluator"] = entry_eval_check
+    except Exception as exc:  # noqa: BLE001
+        checks["entry_evaluator"] = {"error": type(exc).__name__}
+        warnings.append("ENTRY_EVALUATOR_STATUS_UNAVAILABLE")
+
     # Candle / News / Provider 상태 (조회 전용)
     checks["market_context"] = _snapshot_market_context_for_ai(
         session,

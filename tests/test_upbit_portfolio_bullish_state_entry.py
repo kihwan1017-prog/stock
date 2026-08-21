@@ -165,11 +165,37 @@ def test_bullish_state_candidate_stale_blocks() -> None:
             ai_recommendation="ALLOW",
             rsi14=55.0,
             volume_surge=1.2,
+            bound_to_waiting_slot=False,
         ),
         thresholds=PortfolioEntryThresholds(max_candidate_age_seconds=1800),
     )
     assert ok is False
     assert reason == "CANDIDATE_STALE"
+
+
+def test_bullish_slot_bound_skips_candidate_stale() -> None:
+    """WAITING_SIGNAL에 배정된 후보는 selected_at age로 영구 BLOCK하지 않음."""
+
+    ok, reason, detail = evaluate_bullish_state_entry(
+        short_ma=Decimal("101"),
+        long_ma=Decimal("100"),
+        event_time=datetime.now(timezone.utc),
+        snap=SymbolEntrySnapshot(
+            symbol="KRW-AAA",
+            selected_at=datetime.now(timezone.utc) - timedelta(hours=2),
+            ai_recommendation="ALLOW",
+            rsi14=55.0,
+            volume_surge=1.2,
+            bound_to_waiting_slot=True,
+        ),
+        thresholds=PortfolioEntryThresholds(
+            max_candidate_age_seconds=1800,
+            min_ma_separation_pct=0.05,
+        ),
+    )
+    assert ok is True
+    assert reason is None
+    assert detail.get("candidate_age_gate") == "SKIPPED_SLOT_BOUND"
 
 
 def test_bullish_state_feed_stale_blocks() -> None:

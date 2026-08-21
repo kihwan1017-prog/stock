@@ -71,6 +71,49 @@ class MovingAverageStrategyEvaluator:
         )
         # Portfolio BULLISH_STATE 전용 — FIXED/SINGLE 은 None 유지
         self.portfolio_entry_ctx = None
+        # 진단용 메모리 카운터 (DB write 없음)
+        self.path_counters: dict[str, int] = {}
+
+    def _bump(self, key: str) -> None:
+        self.path_counters[key] = int(self.path_counters.get(key, 0)) + 1
+
+    def _record_gate_telemetry(
+        self,
+        symbol: str,
+        *,
+        decision: str,
+        block_reason: str,
+        snapshot: dict | None = None,
+    ) -> None:
+        """BULLISH 경로 진입 전 gate도 운영 가시성용으로 기록 (throttle는 telemetry 내부)."""
+
+        ctx = self.portfolio_entry_ctx
+        uba_id = int(
+            getattr(ctx, "user_broker_account_id", None)
+            or getattr(self.scope, "account_id", 0)
+            or 0
+        )
+        if not uba_id:
+            return
+        if not (
+            bool(self.config.portfolio_mode) or ctx is not None
+        ):
+            return
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+                portfolio_entry_telemetry,
+            )
+
+            portfolio_entry_telemetry.record(
+                uba_id,
+                symbol.upper(),
+                decision=decision,
+                block_reason=block_reason,
+                reason_code=None,
+                snapshot=dict(snapshot or {}),
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def _validate(self) -> None:
         if self.config.short_window <= 0:
@@ -160,7 +203,9 @@ class MovingAverageStrategyEvaluator:
     ) -> StrategySignal | None:
         """신호 없으면 None. HOLD/NO_ACTION은 발행하지 않음."""
 
+        self._bump("tick_received")
         if event.price is None:
+            self._bump("price_none_return")
             return None
         symbol = event.symbol.upper()
         state = self.get_state(symbol)
@@ -170,11 +215,15 @@ class MovingAverageStrategyEvaluator:
 
         # 중복·역순·오래된 Event — stale tick은 일봉도 갱신하지 않음
         if not self._accept_event(state, event):
+            self._bump("stale_event_return")
             return None
+
+        self._bump("ma_evaluator_called")
 
         if self.config.uses_daily_bars():
             update = self._bars.ingest(event)
             if update is None:
+                self._bump("daily_ingest_none_return")
                 return None
             self._apply_daily_close(
                 state, update.trade_date, update.close, update.replaced_last
@@ -206,16 +255,35 @@ class MovingAverageStrategyEvaluator:
                     event, state, SignalType.SELL, "TAKE_PROFIT", short_avg, long_avg
                 )
 
-        if len(state.prices) < self.config.long_window + 1:
+        needed = self.config.long_window + 1
+        if len(state.prices) < needed:
             state.warmup_status = ConsumerWarmupStatus.WARMING_UP
             state.previous_short = short_avg
             state.previous_long = long_avg
+            self._bump("warmup_return")
+            self._record_gate_telemetry(
+                symbol,
+                decision="BLOCK",
+                block_reason="WARMING_UP",
+                snapshot={
+                    "buffer_len": len(state.prices),
+                    "needed": needed,
+                    "short_window": self.config.short_window,
+                    "long_window": self.config.long_window,
+                },
+            )
             return None
 
         state.warmup_status = ConsumerWarmupStatus.READY
         if not allow_signal:
             state.previous_short = short_avg
             state.previous_long = long_avg
+            self._bump("signals_not_allowed_return")
+            self._record_gate_telemetry(
+                symbol,
+                decision="BLOCK",
+                block_reason="SIGNALS_NOT_ALLOWED",
+            )
             return None
 
         prev_s = state.previous_short
@@ -229,23 +297,56 @@ class MovingAverageStrategyEvaluator:
             or prev_s is None
             or prev_l is None
         ):
+            self._bump("prev_ma_none_return")
+            self._record_gate_telemetry(
+                symbol,
+                decision="BLOCK",
+                block_reason="PREV_MA_NOT_READY",
+            )
             return None
 
         # Portfolio BULLISH_STATE — CROSS_EVENT와 분리 (FIXED는 영향 없음)
+        wants_portfolio = bool(self.config.portfolio_mode) or (
+            self.portfolio_entry_ctx is not None
+        )
         if (
             position.quantity <= ZERO
-            and (
-                bool(self.config.portfolio_mode)
-                or self.portfolio_entry_ctx is not None
-            )
+            and wants_portfolio
             and self._uses_bullish_state_policy()
         ):
-            return self._evaluate_portfolio_bullish_buy(
+            self._bump("portfolio_eval_called")
+            signal = self._evaluate_portfolio_bullish_buy(
                 event,
                 state,
                 short_avg=short_avg,
                 long_avg=long_avg,
             )
+            if signal is None:
+                self._bump("portfolio_eval_block")
+            else:
+                self._bump("portfolio_eval_pass")
+            return signal
+
+        if position.quantity <= ZERO and wants_portfolio:
+            if self.portfolio_entry_ctx is None and not bool(
+                self.config.portfolio_mode
+            ):
+                self._bump("ctx_missing_return")
+                self._record_gate_telemetry(
+                    symbol,
+                    decision="BLOCK",
+                    block_reason="PORTFOLIO_ENTRY_CTX_MISSING",
+                )
+            elif not self._uses_bullish_state_policy():
+                self._bump("policy_not_bullish_return")
+                self._record_gate_telemetry(
+                    symbol,
+                    decision="BLOCK",
+                    block_reason="ENTRY_POLICY_NOT_BULLISH_STATE",
+                    snapshot={
+                        "entry_signal_policy": self.config.entry_signal_policy,
+                    },
+                )
 
         # Golden / Dead Cross — 1D면 previous/current daily-bar MA
         if (
@@ -352,6 +453,10 @@ class MovingAverageStrategyEvaluator:
             "ma_input_unit": (
                 "DAY" if self.config.uses_daily_bars() else "TICK"
             ),
+            "portfolio_mode": bool(self.config.portfolio_mode),
+            "entry_signal_policy": self.config.entry_signal_policy,
+            "portfolio_entry_ctx": self.portfolio_entry_ctx is not None,
+            "path_counters": dict(self.path_counters),
             "symbols": {
                 sym: {
                     "warmup_status": st.warmup_status.value,
