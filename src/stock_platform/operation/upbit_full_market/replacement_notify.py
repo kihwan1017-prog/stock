@@ -80,3 +80,67 @@ def publish_slot_replacement_alert(
             error=type(exc).__name__,
         )
         return {"ok": False, "reason": type(exc).__name__}
+
+
+def publish_slot_assigned_alert(
+    *,
+    user_broker_account_id: int,
+    symbol: str,
+    slot_no: int,
+    scanner_score: float | None,
+    recommendation: str | None,
+    confidence: float | None,
+    selection_id: int | None,
+    scanner_run_id: str,
+) -> dict[str, Any]:
+    """🎯 실제 Portfolio 슬롯 등록 — ownership FREE 통과 후만 호출."""
+
+    event_type = str(
+        getattr(
+            NotificationEventType,
+            "UPBIT_PORTFOLIO_SLOT_ASSIGNED",
+            "UPBIT_PORTFOLIO_SLOT_ASSIGNED",
+        )
+    )
+    score_s = (
+        f"{float(scanner_score):.2f}" if scanner_score is not None else "-"
+    )
+    title = "🎯 자동매매 슬롯 등록"
+    message = (
+        f"종목: {symbol}\n"
+        f"슬롯: {slot_no}\n"
+        f"점수: {score_s}\n"
+        f"AI: {recommendation or '-'}\n"
+        f"상태: 매수조건 감시 중"
+    )
+    detail = {
+        "source": "upbit_portfolio_slot_assigned_v1",
+        "user_broker_account_id": int(user_broker_account_id),
+        "symbol": symbol,
+        "symbol_display": symbol,
+        "slot_no": int(slot_no),
+        "scanner_score": scanner_score,
+        "recommendation": recommendation,
+        "ai_recommendation": recommendation,
+        "confidence": confidence,
+        "selection_id": selection_id,
+        "scanner_run_id": scanner_run_id,
+        "live_order": False,
+        "orders_created": 0,
+        "real_portfolio_candidate": True,
+        "status": "WAITING_SIGNAL",
+    }
+    try:
+        notification_publisher.publish(
+            event_type=event_type,
+            title=title,
+            message=message,
+            detail=detail,
+        )
+        return {"ok": True, "event_type": event_type, "emitted": 1}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "portfolio_slot_assigned_notify_failed",
+            error=type(exc).__name__,
+        )
+        return {"ok": False, "reason": type(exc).__name__}

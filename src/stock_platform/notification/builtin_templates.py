@@ -144,7 +144,7 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "event_type": "UPBIT_SCANNER_CANDIDATE",
         "category": "PORTFOLIO",
         "severity": "INFO",
-        "title_template": "🔎 자동매매 후보 선정",
+        "title_template": "🧪 시장 후보 분석",
         "body_template": (
             "종목: {symbol_display}\n"
             "순위: {rank}\n"
@@ -152,9 +152,29 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
             "AI: {ai_recommendation_ko}\n"
             "신뢰도: {confidence_pct}\n"
             "포지션 슬롯: {slot_no}\n"
-            "{candidates_summary}"
+            "{candidates_summary}\n"
+            "※ 분석용 후보이며 실제 자동매매 후보가 아닙니다."
         ),
-        "short_body_template": "후보 {symbol_display} · AI {ai_recommendation_ko}",
+        "short_body_template": (
+            "시장분석 {symbol_display} · AI {ai_recommendation_ko}"
+        ),
+    },
+    {
+        "event_type": "UPBIT_PORTFOLIO_SLOT_ASSIGNED",
+        "category": "PORTFOLIO",
+        "severity": "INFO",
+        "title_template": "🎯 자동매매 슬롯 등록",
+        "body_template": (
+            "종목: {symbol_display}\n"
+            "슬롯: {slot_no}\n"
+            "Scanner 점수: {scanner_score}\n"
+            "AI: {ai_recommendation_ko}\n"
+            "신뢰도: {confidence_pct}\n"
+            "상태: 매수조건 감시 중"
+        ),
+        "short_body_template": (
+            "슬롯{slot_no} {symbol_display} · 매수조건 감시"
+        ),
     },
     {
         "event_type": "UPBIT_PORTFOLIO_CANDIDATE_REPLACED",
@@ -177,7 +197,7 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "event_type": "UPBIT_SCANNER_SHADOW_OPENED",
         "category": "PORTFOLIO",
         "severity": "INFO",
-        "title_template": "🧪 Shadow 후보 추적 시작",
+        "title_template": "🧪 Shadow 후보 분석",
         "body_template": (
             "종목: {symbol_display}\n"
             "순위: {rank}\n"
@@ -186,7 +206,7 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
             "신뢰도: {confidence_pct}\n"
             "기준가격: {price_display}\n"
             "가상금액: {amount_krw}\n"
-            "※ 실제 주문이 아닙니다."
+            "※ 분석용 Shadow이며 실제 자동매매 후보가 아닙니다."
         ),
         "short_body_template": "Shadow {symbol_display} · AI {ai_recommendation_ko}",
     },

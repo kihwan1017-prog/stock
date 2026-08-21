@@ -1385,6 +1385,31 @@ class UpbitPortfolioService:
         out["reserved"] = []
         out["orders_created"] = 0
         out["slots"] = self.list_slots(uba_id)
+        if not dry_run:
+            try:
+                from stock_platform.operation.upbit_full_market.replacement_notify import (
+                    publish_slot_assigned_alert,
+                )
+
+                out["notify"] = publish_slot_assigned_alert(
+                    user_broker_account_id=uba_id,
+                    symbol=str(chosen.symbol),
+                    slot_no=int(slot.slot_no),
+                    scanner_score=float(chosen.score)
+                    if chosen.score is not None
+                    else None,
+                    recommendation=str(chosen.recommendation or "") or None,
+                    confidence=float(chosen.confidence)
+                    if chosen.confidence is not None
+                    else None,
+                    selection_id=int(sel.selection_id),
+                    scanner_run_id=scanner_run_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                out["notify"] = {
+                    "ok": False,
+                    "reason": type(exc).__name__,
+                }
         return out
 
     def _try_replace_waiting_signal(

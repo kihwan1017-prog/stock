@@ -47,6 +47,7 @@ EVENT_CATEGORY: dict[str, str] = {
     "UPBIT_SCANNER_CANDIDATE": "PORTFOLIO",
     "UPBIT_SCANNER_SHADOW_OPENED": "PORTFOLIO",
     "UPBIT_SCANNER_SHADOW_RESULT": "PORTFOLIO",
+    "UPBIT_PORTFOLIO_SLOT_ASSIGNED": "PORTFOLIO",
     "UPBIT_PORTFOLIO_CANDIDATE_REPLACED": "PORTFOLIO",
     "UPBIT_SCANNER_FAILURE": "WARNING",
     "UPBIT_SHADOW_EVALUATION_MISMATCH": "WARNING",
@@ -76,6 +77,7 @@ EVENT_CATEGORY: dict[str, str] = {
 # event별 필수 표시 필드(없으면 fallback + diagnostic)
 REQUIRED_FIELDS: dict[str, frozenset[str]] = {
     "UPBIT_SCANNER_CANDIDATE": frozenset({"symbol_display"}),
+    "UPBIT_PORTFOLIO_SLOT_ASSIGNED": frozenset({"symbol_display"}),
     "UPBIT_PORTFOLIO_CANDIDATE_REPLACED": frozenset(
         {"old_symbol_display", "new_symbol_display"}
     ),

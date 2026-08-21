@@ -21,8 +21,11 @@ def _ensure_event(name: str) -> str:
 
 def publish_shadow_opened(shadow: dict[str, Any]) -> None:
     symbol = shadow.get("symbol")
-    title = "Shadow 후보 추적 시작"
-    message = f"종목 {symbol} Shadow 추적 시작 (실주문 아님)"
+    title = "Shadow 후보 분석"
+    message = (
+        f"종목 {symbol} Shadow 분석 시작 "
+        f"(분석용 · 실제 자동매매 후보 아님)"
+    )
     notification_publisher.publish(
         event_type=_ensure_event("UPBIT_SCANNER_SHADOW_OPENED"),
         title=title,

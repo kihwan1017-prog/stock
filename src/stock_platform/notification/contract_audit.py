@@ -97,6 +97,14 @@ SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
         },
         "slot_no": 3,
     },
+    "UPBIT_PORTFOLIO_SLOT_ASSIGNED": {
+        "symbol": "KRW-XRP",
+        "slot_no": 1,
+        "scanner_score": 72.5,
+        "recommendation": "ALLOW",
+        "confidence": 0.9,
+        "user_broker_account_id": 1380,
+    },
     "UPBIT_PORTFOLIO_CANDIDATE_REPLACED": {
         "old_symbol": "KRW-PUMP",
         "new_symbol": "KRW-TREE",
@@ -291,6 +299,7 @@ def summarize_contract_audit(
         "ORDER_REJECTED",
         "ORDER_CANCELLED",
         "UPBIT_PORTFOLIO_CANDIDATE_REPLACED",
+        "UPBIT_PORTFOLIO_SLOT_ASSIGNED",
         "UPBIT_SCANNER_CANDIDATE",
         "UPBIT_SCANNER_SHADOW_OPENED",
         "PORTFOLIO_BULLISH_STATE_ENTRY",

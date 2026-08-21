@@ -371,9 +371,9 @@ def test_portfolio_replacement_and_shadow_korean() -> None:
             }
         },
     )
-    assert "Shadow" in shadow.title or "추적" in shadow.title
+    assert "Shadow" in shadow.title or "분석" in shadow.title
     assert "TREE" in shadow.body
-    assert "실제 주문" in shadow.body
+    assert "실제 자동매매 후보가 아닙니다" in shadow.body
     assert "json" not in shadow.body.lower()
 
 

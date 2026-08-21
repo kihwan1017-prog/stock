@@ -127,29 +127,64 @@ def seed_default_templates(
     actor: str = "SYSTEM_SEED",
     channels: tuple[str, ...] = ("TELEGRAM", "TOSS", "COMMON"),
 ) -> dict[str, int]:
-    """builtin → DB upsert (version=1, is_default)."""
+    """builtin → DB upsert.
+
+    - 없으면 version=1 생성
+    - 최신 version 내용이 builtin과 다르면 version+1 삽입
+    """
 
     created = 0
+    updated = 0
     skipped = 0
     for channel in channels:
         for row in BUILTIN_TEMPLATES:
             if row["event_type"] == "GENERIC" and channel != "COMMON":
                 continue
-            exists = session.scalar(
-                select(MessageTemplateEntity).where(
-                    MessageTemplateEntity.event_type == row["event_type"],
-                    MessageTemplateEntity.channel == channel,
-                    MessageTemplateEntity.locale == "ko-KR",
-                    MessageTemplateEntity.version == 1,
-                )
-            )
-            if exists is not None:
-                skipped += 1
-                continue
             body = row["body_template"]
             short = row.get("short_body_template")
             if channel == "TOSS":
                 body = str(short or body)
+            title = str(row["title_template"])
+            latest = session.scalar(
+                select(MessageTemplateEntity)
+                .where(
+                    MessageTemplateEntity.event_type == row["event_type"],
+                    MessageTemplateEntity.channel == channel,
+                    MessageTemplateEntity.locale == "ko-KR",
+                )
+                .order_by(MessageTemplateEntity.version.desc())
+                .limit(1)
+            )
+            if latest is None:
+                session.add(
+                    MessageTemplateEntity(
+                        event_type=row["event_type"],
+                        channel=channel,
+                        locale="ko-KR",
+                        severity=str(row.get("severity") or "INFO"),
+                        category=str(row.get("category") or "INFO"),
+                        audience="BOTH",
+                        title_template=title,
+                        body_template=body,
+                        short_body_template=short,
+                        enabled=True,
+                        is_default=True,
+                        version=1,
+                        variables_json=[],
+                        created_by=actor,
+                        updated_by=actor,
+                    )
+                )
+                created += 1
+                continue
+            same = (
+                str(latest.title_template or "") == title
+                and str(latest.body_template or "") == str(body)
+                and str(latest.short_body_template or "") == str(short or "")
+            )
+            if same:
+                skipped += 1
+                continue
             session.add(
                 MessageTemplateEntity(
                     event_type=row["event_type"],
@@ -158,18 +193,18 @@ def seed_default_templates(
                     severity=str(row.get("severity") or "INFO"),
                     category=str(row.get("category") or "INFO"),
                     audience="BOTH",
-                    title_template=row["title_template"],
+                    title_template=title,
                     body_template=body,
                     short_body_template=short,
                     enabled=True,
                     is_default=True,
-                    version=1,
+                    version=int(latest.version or 1) + 1,
                     variables_json=[],
                     created_by=actor,
                     updated_by=actor,
                 )
             )
-            created += 1
+            updated += 1
 
     code_created = 0
     for group, mapping in BUILTIN_KO.items():
@@ -195,9 +230,12 @@ def seed_default_templates(
             code_created += 1
 
     session.flush()
-    load_template_cache(session)
+    invalidate_template_cache()
+    cached = load_template_cache(session)
     return {
         "templates_created": created,
+        "templates_updated": updated,
         "templates_skipped": skipped,
         "codes_created": code_created,
+        "cached": cached,
     }
