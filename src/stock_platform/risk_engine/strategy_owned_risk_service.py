@@ -520,6 +520,9 @@ class StrategyOwnedRiskService:
                 AccountDailyLossEntity.trading_date == today,
             )
         )
+        # mock/비객체 scalar 방어 — AccountDailyLossEntity 만 상태 판정
+        if row is not None and not hasattr(row, "status_code"):
+            row = None
         if row is not None and str(row.status_code).upper() in {
             "KILL_SWITCH_ACTIVE",
             "KILL",

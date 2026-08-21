@@ -197,6 +197,14 @@ class PositionExitMonitorLoader:
         positions.extend(live_positions)
         skipped.extend(live_skipped)
 
+        kiwoom_positions, kiwoom_skipped = (
+            self._load_kiwoom_strategy_owned_live_positions(
+                threshold_by_user=threshold_by_user,
+            )
+        )
+        positions.extend(kiwoom_positions)
+        skipped.extend(kiwoom_skipped)
+
         daily_loss_triggered = False
         for account_id, unrealized_sum in (
             account_unrealized.items()
@@ -516,6 +524,117 @@ class PositionExitMonitorLoader:
                     snapshot_synchronized_at=getattr(
                         row, "synchronized_at", None
                     ),
+                )
+            )
+        return positions, skipped
+
+    def _load_kiwoom_strategy_owned_live_positions(
+        self,
+        *,
+        threshold_by_user: dict[int | None, ExitThresholds],
+    ) -> tuple[list[ManagedPosition], list[str]]:
+        """KIWOOM LIVE — OPEN strategy binding 만. 수동 보유 제외.
+
+        플래그 OFF면 빈 목록. 시세는 QuoteSnapshot/price repo (REST 금지).
+        """
+
+        settings = get_settings()
+        if not bool(
+            getattr(
+                settings,
+                "position_exit_monitor_live_kiwoom_enabled",
+                False,
+            )
+        ):
+            return [], []
+
+        from stock_platform.broker.recovery_lock import (
+            RecoveryAccountLockService,
+        )
+        from stock_platform.risk_engine.strategy_owned_entities import (
+            BINDING_STATUS_OPEN,
+            OWNERSHIP_STRATEGY,
+            StrategyPositionBindingEntity,
+        )
+
+        lock = RecoveryAccountLockService(self._session)
+        positions: list[ManagedPosition] = []
+        skipped: list[str] = []
+        threshold_by_uba: dict[int, ExitThresholds] = {}
+
+        bindings = list(
+            self._session.scalars(
+                select(StrategyPositionBindingEntity).where(
+                    StrategyPositionBindingEntity.broker_code == "KIWOOM",
+                    StrategyPositionBindingEntity.status
+                    == BINDING_STATUS_OPEN,
+                    StrategyPositionBindingEntity.ownership_code
+                    == OWNERSHIP_STRATEGY,
+                )
+            )
+        )
+        for binding in bindings:
+            uba_id = int(binding.user_broker_account_id)
+            symbol = str(binding.symbol or "").upper()
+            qty = Decimal(str(binding.owned_quantity or 0))
+            if uba_id <= 0 or not symbol or qty <= ZERO:
+                continue
+            if lock.is_trading_paused(
+                user_broker_account_id=uba_id,
+                broker_code="KIWOOM",
+            ):
+                skipped.append(f"paused:LIVE:{uba_id}/{symbol}")
+                continue
+
+            entry = Decimal(str(binding.entry_price or 0))
+            if entry <= ZERO:
+                skipped.append(f"no_entry:LIVE:{uba_id}/{symbol}")
+                continue
+
+            current_price = self._resolve_current_price(
+                exchange_code="KRX",
+                symbol=symbol,
+                fallback=entry,
+            )
+            if current_price is None:
+                skipped.append(
+                    f"stale_or_missing:LIVE:{uba_id}/{symbol}"
+                )
+                continue
+
+            # owner_user_id — UBA row 조회 없이 threshold만 계좌 단위 resolve
+            if uba_id not in threshold_by_uba:
+                threshold_by_uba[uba_id] = self._resolve_thresholds(
+                    user_broker_account_id=uba_id,
+                )
+            thresholds = threshold_by_uba[uba_id]
+            stop_loss_price = (
+                entry * (ONE - thresholds.stop_loss_ratio)
+            ).quantize(Decimal("1"), rounding=ROUND_DOWN)
+            take_profit_price = (
+                entry * (ONE + thresholds.take_profit_ratio)
+            ).quantize(Decimal("1"), rounding=ROUND_DOWN)
+            trailing_ratio = thresholds.trailing_stop_ratio
+            highest = max(entry, current_price)
+
+            positions.append(
+                ManagedPosition(
+                    account_id=0,
+                    exchange_code="KRX",
+                    symbol=symbol,
+                    quantity=qty,
+                    entry_price=entry,
+                    current_price=current_price,
+                    highest_price=highest,
+                    stop_loss_price=stop_loss_price,
+                    take_profit_price=take_profit_price,
+                    trailing_stop_ratio=trailing_ratio,
+                    relative_loss_ratio=thresholds.relative_loss_ratio,
+                    broker_code="KIWOOM",
+                    user_broker_account_id=uba_id,
+                    owner_user_id=None,
+                    environment="LIVE",
+                    snapshot_synchronized_at=None,
                 )
             )
         return positions, skipped

@@ -91,6 +91,7 @@ class LiveOrderApprovalService:
             "risk": {
                 "max_order_amount": str(policy.max_order_amount),
                 "max_order_quantity": str(policy.max_order_quantity),
+                # Legacy V1 — UBA-wide CREATE count gate
                 "daily_order_limit": int(policy.daily_order_limit),
                 "daily_max_loss_amount": str(policy.daily_max_loss_amount),
                 "duplicate_order_window_seconds": int(
@@ -102,7 +103,82 @@ class LiveOrderApprovalService:
                     policy.anomaly_orders_per_minute
                 ),
                 "arm_ttl_seconds": int(policy.arm_ttl_seconds),
+                # ORDER_LIMIT_V2 — 계좌 저장값(NULL=미옵트인). resolved와 분리.
+                **self._order_limit_v2_risk_fields(
+                    user_broker_account_id=int(user_broker_account_id),
+                    policy=policy,
+                ),
             },
+        }
+
+    def _order_limit_v2_risk_fields(
+        self,
+        *,
+        user_broker_account_id: int,
+        policy: Any,
+    ) -> dict[str, Any]:
+        """Account stored V2 limits + recommended + effective version hint."""
+
+        from stock_platform.order.order_limit_policy_v2 import (
+            ORDER_LIMIT_V2_MIN_TRADING_DATE,
+            RECOMMENDED_DAILY_FILLED_ENTRY_LIMIT,
+            RECOMMENDED_DAILY_SUBMIT_LIMIT,
+            resolve_order_limit_policy_version,
+            trading_date_kst,
+        )
+        from stock_platform.risk_engine.user_risk_service import (
+            UserRiskSettingService,
+        )
+
+        stored = UserRiskSettingService(self._session).snapshot_account(
+            int(user_broker_account_id)
+        )
+        submit_stored = stored.get("daily_submit_limit")
+        filled_stored = stored.get("daily_filled_entry_limit")
+        today = trading_date_kst()
+        version_today = resolve_order_limit_policy_version(
+            trading_date=today,
+            daily_submit_limit=(
+                int(submit_stored) if submit_stored is not None else None
+            ),
+            daily_filled_entry_limit=(
+                int(filled_stored) if filled_stored is not None else None
+            ),
+        )
+        # 다음 가능일(또는 이미 지났으면 오늘) 기준 — 옵트인 시 V2 선택 여부
+        eligible_day = max(today, ORDER_LIMIT_V2_MIN_TRADING_DATE)
+        version_if_eligible = resolve_order_limit_policy_version(
+            trading_date=eligible_day,
+            daily_submit_limit=(
+                int(submit_stored) if submit_stored is not None else None
+            ),
+            daily_filled_entry_limit=(
+                int(filled_stored) if filled_stored is not None else None
+            ),
+        )
+        return {
+            "daily_submit_limit": submit_stored,
+            "daily_filled_entry_limit": filled_stored,
+            "daily_submit_limit_resolved": getattr(
+                policy, "daily_submit_limit", None
+            ),
+            "daily_filled_entry_limit_resolved": getattr(
+                policy, "daily_filled_entry_limit", None
+            ),
+            "order_limit_v2_recommended": {
+                "daily_submit_limit": RECOMMENDED_DAILY_SUBMIT_LIMIT,
+                "daily_filled_entry_limit": RECOMMENDED_DAILY_FILLED_ENTRY_LIMIT,
+            },
+            "order_limit_v2_min_trading_date": (
+                ORDER_LIMIT_V2_MIN_TRADING_DATE.isoformat()
+            ),
+            "order_limit_policy_version_today": version_today,
+            "order_limit_policy_version_on_or_after_min_date": (
+                version_if_eligible
+            ),
+            "order_limit_v2_opted_in": (
+                submit_stored is not None or filled_stored is not None
+            ),
         }
 
     def list_for_user(self, user_id: int) -> list[dict[str, Any]]:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from stock_platform.common.settings import LIVE_ACTIVATION_TTL_HOURS_MAX
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status

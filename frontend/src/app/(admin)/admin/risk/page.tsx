@@ -161,10 +161,38 @@ export default function AdminRiskPage() {
         max_order_quantity?: number;
         daily_order_limit?: number;
         daily_max_loss_amount?: number;
+        daily_submit_limit?: number | null;
+        daily_filled_entry_limit?: number | null;
       };
     }) => adminApi.updateAdminLiveRiskLimits(args.ubaId, args.body),
     onSuccess: () => {
       message.success("계좌 LIVE 한도 저장");
+      void qc.invalidateQueries({
+        queryKey: queryKeys.admin.liveOrderAccounts(targetUserId),
+      });
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  // Order Limit V2 draft — 저장 버튼 누르기 전까지 DB 미반영 (recommended 5/1 자동적용 금지)
+  const [v2Drafts, setV2Drafts] = useState<
+    Record<number, { submit?: number | null; filled?: number | null }>
+  >({});
+
+  const saveOrderLimitV2 = useMutation({
+    mutationFn: (args: {
+      ubaId: number;
+      daily_submit_limit: number;
+      daily_filled_entry_limit: number;
+    }) =>
+      adminApi.updateAdminLiveRiskLimits(args.ubaId, {
+        daily_submit_limit: args.daily_submit_limit,
+        daily_filled_entry_limit: args.daily_filled_entry_limit,
+      }),
+    onSuccess: (_data, vars) => {
+      message.success(
+        `UBA ${vars.ubaId} Order Limit V2 저장 (submit=${vars.daily_submit_limit}, filled=${vars.daily_filled_entry_limit})`,
+      );
       void qc.invalidateQueries({
         queryKey: queryKeys.admin.liveOrderAccounts(targetUserId),
       });
@@ -197,7 +225,7 @@ export default function AdminRiskPage() {
         <Alert
           type="info"
           showIcon
-          message="Account Safety vs Strategy Autotrading"
+          title="Account Safety vs Strategy Autotrading"
           description="Account Daily Drawdown(계좌 전체 MTM)과 Strategy Daily Loss(자동매매 소유만)는 분리됩니다. ENTRY는 Strategy Daily Loss + Account Hard Safety(Kill 등) 모두 PASS 필요. GET /api/v1/risk/daily-loss/strategy-owned"
         />
         <AdminJsonCard
@@ -389,6 +417,19 @@ export default function AdminRiskPage() {
             title="LIVE/ARM 및 Trading Scheduler 제어는 계좌 관리에서 수행합니다."
             description="이 화면은 상태 조회와 LIVE 리스크 한도 재적용만 제공합니다. Kill Switch는 위쪽 Risk 제어를 사용하세요."
           />
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 12 }}
+            title="Order Limit: Legacy V1 vs V2"
+            description={
+              "Legacy daily_order_limit = 당일 CREATE 건수(제출 후 취소 포함). " +
+              "V2 daily_submit_limit / daily_filled_entry_limit = strategy-owned 제출·체결진입 분리. " +
+              "권장 5/1은 표시만 하며 자동 저장하지 않습니다. " +
+              "V2는 계좌에 값을 명시한 뒤 2026-08-22(다음 KRX 가능일)부터 선택됩니다. " +
+              "UBA1381 확인 시 user_id=61로 조회하세요."
+            }
+          />
           <AdminDataTable
             title={`GET /admin/live-order/users/${targetUserId}/accounts`}
             loading={liveAccounts.isLoading}
@@ -428,7 +469,7 @@ export default function AdminRiskPage() {
                 },
               },
               {
-                title: "한도",
+                title: "한도(레거시 재적용)",
                 key: "limits",
                 render: (_: unknown, row: Record<string, unknown>) => {
                   const risk = asRecord(row.risk) ?? {};
@@ -456,7 +497,7 @@ export default function AdminRiskPage() {
                         })
                       }
                     >
-                      한도 재적용
+                      레거시 한도 재적용
                     </Button>
                   );
                 },
@@ -474,29 +515,133 @@ export default function AdminRiskPage() {
                   cell(asRecord(row.risk)?.max_order_quantity),
               },
               {
-                title: "daily_orders (legacy)",
+                title: "daily_order_limit (V1 legacy)",
                 key: "daily_orders",
                 render: (_: unknown, row: Record<string, unknown>) =>
                   cell(asRecord(row.risk)?.daily_order_limit),
               },
               {
-                title: "submit/filled V2",
+                title: "Order Limit V2 (submit / filled-entry)",
                 key: "order_limit_v2",
+                width: 320,
                 render: (_: unknown, row: Record<string, unknown>) => {
+                  const ubaId = Number(row.user_broker_account_id);
                   const risk = asRecord(row.risk) ?? {};
-                  const submit = risk.daily_submit_limit;
-                  const filled = risk.daily_filled_entry_limit;
-                  if (submit == null && filled == null) {
-                    return (
-                      <span style={{ fontSize: 11, color: "#888" }}>
-                        recommended 5/1 (not applied)
-                      </span>
-                    );
-                  }
+                  const storedSubmit = risk.daily_submit_limit;
+                  const storedFilled = risk.daily_filled_entry_limit;
+                  const recommended = asRecord(risk.order_limit_v2_recommended);
+                  const recSubmit = Number(
+                    recommended?.daily_submit_limit ?? 5,
+                  );
+                  const recFilled = Number(
+                    recommended?.daily_filled_entry_limit ?? 1,
+                  );
+                  const draft = v2Drafts[ubaId] ?? {};
+                  const submitValue =
+                    draft.submit !== undefined
+                      ? draft.submit
+                      : storedSubmit == null
+                        ? null
+                        : Number(storedSubmit);
+                  const filledValue =
+                    draft.filled !== undefined
+                      ? draft.filled
+                      : storedFilled == null
+                        ? null
+                        : Number(storedFilled);
+                  const optedIn = Boolean(risk.order_limit_v2_opted_in);
                   return (
-                    <span style={{ fontSize: 12 }}>
-                      submit {cell(submit)} / filled {cell(filled)}
-                    </span>
+                    <Space orientation="vertical" size={4} style={{ width: "100%" }}>
+                      <span style={{ fontSize: 11 }}>
+                        stored:{" "}
+                        {storedSubmit == null ? "NULL" : String(storedSubmit)} /{" "}
+                        {storedFilled == null ? "NULL" : String(storedFilled)}
+                        {optedIn ? " (opted-in)" : " (not opted-in → V1)"}
+                      </span>
+                      <span style={{ fontSize: 11, color: "#888" }}>
+                        recommended {recSubmit}/{recFilled} — 자동적용 없음
+                      </span>
+                      <span style={{ fontSize: 11, color: "#666" }}>
+                        today: {cell(risk.order_limit_policy_version_today)} ·
+                        eligible:{" "}
+                        {cell(
+                          risk.order_limit_policy_version_on_or_after_min_date,
+                        )}
+                      </span>
+                      <Space wrap size={4}>
+                        <InputNumber
+                          size="small"
+                          min={0}
+                          placeholder={`submit(${recSubmit})`}
+                          value={submitValue ?? undefined}
+                          onChange={(v) =>
+                            setV2Drafts((prev) => ({
+                              ...prev,
+                              [ubaId]: {
+                                ...prev[ubaId],
+                                submit: v == null ? null : Number(v),
+                              },
+                            }))
+                          }
+                          style={{ width: 90 }}
+                        />
+                        <InputNumber
+                          size="small"
+                          min={0}
+                          placeholder={`filled(${recFilled})`}
+                          value={filledValue ?? undefined}
+                          onChange={(v) =>
+                            setV2Drafts((prev) => ({
+                              ...prev,
+                              [ubaId]: {
+                                ...prev[ubaId],
+                                filled: v == null ? null : Number(v),
+                              },
+                            }))
+                          }
+                          style={{ width: 90 }}
+                        />
+                        <Button
+                          size="small"
+                          type="primary"
+                          loading={saveOrderLimitV2.isPending}
+                          disabled={
+                            submitValue == null ||
+                            filledValue == null ||
+                            Number.isNaN(Number(submitValue)) ||
+                            Number.isNaN(Number(filledValue))
+                          }
+                          onClick={() => {
+                            // placeholder만 채운 경우: 입력값 없으면 recommended로 저장하지 않음
+                            // 명시 Input 값이 있을 때만 저장
+                            const submit =
+                              submitValue != null
+                                ? Number(submitValue)
+                                : NaN;
+                            const filled =
+                              filledValue != null
+                                ? Number(filledValue)
+                                : NaN;
+                            if (
+                              Number.isNaN(submit) ||
+                              Number.isNaN(filled)
+                            ) {
+                              message.warning(
+                                "V2 저장은 submit/filled 값을 모두 입력해야 합니다 (권장 5/1은 자동 미적용).",
+                              );
+                              return;
+                            }
+                            saveOrderLimitV2.mutate({
+                              ubaId,
+                              daily_submit_limit: submit,
+                              daily_filled_entry_limit: filled,
+                            });
+                          }}
+                        >
+                          V2 저장
+                        </Button>
+                      </Space>
+                    </Space>
                   );
                 },
               },

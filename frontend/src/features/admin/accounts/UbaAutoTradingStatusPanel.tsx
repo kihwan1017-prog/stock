@@ -15,6 +15,7 @@ import {
   Tag,
   Typography,
 } from "antd";
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 import {
@@ -320,8 +321,22 @@ export function UbaAutoTradingStatusPanel({
           <Descriptions.Item label="KST date">
             {vm.dailyRisk.kstDate}
           </Descriptions.Item>
-          <Descriptions.Item label="Daily Orders">
+          <Descriptions.Item label="Daily Orders (V1 legacy)">
             {vm.dailyRisk.dailyOrderCount} / {vm.dailyRisk.dailyOrderLimit}
+          </Descriptions.Item>
+          <Descriptions.Item label="Order Limit V2 SUBMIT">
+            {vm.dailyRisk.dailySubmitCount} / {vm.dailyRisk.dailySubmitLimit}
+          </Descriptions.Item>
+          <Descriptions.Item label="Order Limit V2 FILLED ENTRY">
+            {vm.dailyRisk.dailyFilledEntryCount} /{" "}
+            {vm.dailyRisk.dailyFilledEntryLimit}
+          </Descriptions.Item>
+          <Descriptions.Item label="Order Limit policy (today)">
+            {vm.dailyRisk.orderLimitPolicyVersion}
+          </Descriptions.Item>
+          <Descriptions.Item label="Order Limit policy (next KRX)">
+            {vm.dailyRisk.orderLimitPolicyVersionNextKrx}
+            {vm.dailyRisk.orderLimitV2OptedIn ? " · opted-in" : " · not opted-in"}
           </Descriptions.Item>
           <Descriptions.Item label="Max Order">
             {vm.dailyRisk.maxOrderAmount} KRW
@@ -333,6 +348,17 @@ export function UbaAutoTradingStatusPanel({
             {vm.dailyRisk.riskCountedOrderIds}
           </Descriptions.Item>
         </Descriptions>
+        <div style={{ marginTop: 8, fontSize: 12 }}>
+          <Link href="/admin/risk">리스크 관리 (V1/V2 한도·저장)</Link>
+          {" · "}
+          <span>
+            Strategy PnL API: GET /api/v1/risk/daily-loss/strategy-owned
+          </span>
+          {" · "}
+          <span>
+            Runbook: docs/trading/KIWOOM_UBA1381_20260824_ONE_SHOT_REAL_FILL_RUNBOOK.md
+          </span>
+        </div>
       </Section>
 
       <Section title="Activation / LIVE / ARM / Worker">

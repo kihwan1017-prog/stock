@@ -79,6 +79,13 @@ export interface UbaAutoTradingViewModel {
     kstDate: string;
     dailyOrderCount: string;
     dailyOrderLimit: string;
+    dailySubmitCount: string;
+    dailySubmitLimit: string;
+    dailyFilledEntryCount: string;
+    dailyFilledEntryLimit: string;
+    orderLimitPolicyVersion: string;
+    orderLimitPolicyVersionNextKrx: string;
+    orderLimitV2OptedIn: boolean;
     maxOrderAmount: string;
     dailyMaxOrderAmount: string;
     riskCountedOrderIds: string;
@@ -428,6 +435,11 @@ export function buildUbaAutoTradingViewModel(
         risk.order_limit_policy_version,
         "ORDER_LIMIT_V1_SUBMIT_ONLY",
       ),
+      orderLimitPolicyVersionNextKrx: str(
+        risk.order_limit_policy_version_next_krx,
+        "-",
+      ),
+      orderLimitV2OptedIn: Boolean(risk.order_limit_v2_opted_in),
       maxOrderAmount: str(risk.max_order_amount),
       dailyMaxOrderAmount: str(risk.daily_max_order_amount),
       riskCountedOrderIds: asArray(risk.risk_counted_order_ids).length

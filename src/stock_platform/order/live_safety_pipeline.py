@@ -964,7 +964,7 @@ class LiveOrderSafetyPipeline:
                     AccountDailyLossEntity.trading_date == today,
                 )
             )
-            if row is None:
+            if row is None or not hasattr(row, "status_code"):
                 return False, {"mode": "LEGACY_ACCOUNT", "row": None}
             status = str(row.status_code).upper()
             current_loss = Decimal(str(row.current_loss_amount or 0))

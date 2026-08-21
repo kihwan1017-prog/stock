@@ -678,6 +678,8 @@ class Settings(BaseSettings):
     position_exit_relative_loss_ratio: float | None = 0.08
     # UPBIT LIVE 확장 — 기본 OFF (실 운영 START는 후속 controlled step)
     position_exit_monitor_live_upbit_enabled: bool = False
+    # KIWOOM LIVE — strategy-owned OPEN binding 만. 기본 OFF (runbook에서 ON)
+    position_exit_monitor_live_kiwoom_enabled: bool = False
 
     # 백업 디렉터리 (머신 고정 경로 제거 — env로 주입)
     backup_dir: str = Field(default="backups")

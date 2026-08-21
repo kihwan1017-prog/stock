@@ -292,7 +292,7 @@ class PositionExitMonitorService:
         trigger_price: Decimal | None,
         skip_risk_checks: bool,
     ) -> PositionExitAction:
-        """UPBIT LIVE EXIT — OES만 사용. adapter 직접 호출 금지."""
+        """LIVE EXIT (UPBIT/KIWOOM) — OES만 사용. adapter 직접 호출 금지."""
 
         uba_id = position.user_broker_account_id
         if uba_id is None:
@@ -407,11 +407,16 @@ class PositionExitMonitorService:
             )
 
         try:
+            broker = str(position.broker_code or "UPBIT").upper()
+            exchange = str(
+                position.exchange_code
+                or ("KRX" if broker == "KIWOOM" else "UPBIT")
+            ).upper()
             result = self._execution.submit(
                 OrderExecutionCommand(
                     account_id=None,
-                    broker_code="UPBIT",
-                    exchange_code=position.exchange_code or "UPBIT",
+                    broker_code=broker,
+                    exchange_code=exchange,
                     symbol=position.symbol,
                     side=OrderSide.SELL,
                     order_type=OrderType.LIMIT,
@@ -433,7 +438,7 @@ class PositionExitMonitorService:
                     reference_price=position.current_price,
                     idempotency_key=(
                         f"EXIT:LIVE:{int(uba_id)}:"
-                        f"{position.exchange_code}:"
+                        f"{exchange}:"
                         f"{position.symbol}"
                     ),
                 )

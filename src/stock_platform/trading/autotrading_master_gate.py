@@ -82,14 +82,18 @@ def evaluate_uba_autotrading_ready(
         strategy = session.get(
             StrategyDefinitionEntity, int(link.strategy_id)
         )
-        approved = bool(
-            strategy is not None
-            and (
-                strategy.approved_at is not None
-                or str(getattr(strategy, "owner_type", "") or "").upper()
-                == "SYSTEM"
-            )
+        from stock_platform.trading.strategy_runtime_authorization import (
+            evaluate_strategy_runtime_authorization,
         )
+
+        auth = (
+            evaluate_strategy_runtime_authorization(
+                session, strategy_id=int(link.strategy_id)
+            )
+            if strategy is not None
+            else {"ok": False, "mode": None}
+        )
+        approved = bool(auth.get("ok"))
         market = str(getattr(strategy, "market_type", "") or "").upper()
         upbit_ok = market in {"CRYPTO", "UPBIT", "MULTI", ""}
         payload = getattr(strategy, "parameter_payload", None) or {}
@@ -108,6 +112,8 @@ def evaluate_uba_autotrading_ready(
                 getattr(strategy, "is_active", False)
             ),
             "approved": approved,
+            "authorization_mode": auth.get("mode"),
+            "authorization_code": auth.get("code"),
             "approved_at": (
                 strategy.approved_at.isoformat()
                 if strategy is not None and strategy.approved_at
@@ -419,6 +425,106 @@ def evaluate_uba_autotrading_ready(
         }
         if risk is None:
             blockers.append("RISK_POLICY_MISSING")
+        # Order Limit V2 — 계좌 저장값 + 당일/다음가능일 policy 힌트
+        try:
+            from datetime import date as date_cls
+
+            from stock_platform.order.order_limit_policy_v2 import (
+                ORDER_LIMIT_V2_MIN_TRADING_DATE,
+                resolve_order_limit_policy_version,
+                trading_date_kst,
+            )
+
+            stored = UserRiskSettingService(session).snapshot_account(
+                uba_id
+            )
+            submit_stored = stored.get("daily_submit_limit")
+            filled_stored = stored.get("daily_filled_entry_limit")
+            today = trading_date_kst()
+            eligible = max(today, ORDER_LIMIT_V2_MIN_TRADING_DATE)
+            # 다음 KRX(월) 힌트 — 주말이면 min date 이후 첫 평일 근사로 24일 고정 표기 가능
+            next_krx_hint = date_cls(2026, 8, 24)
+            risk_payload.update(
+                {
+                    "daily_submit_limit": submit_stored,
+                    "daily_filled_entry_limit": filled_stored,
+                    "order_limit_v2_opted_in": (
+                        submit_stored is not None
+                        or filled_stored is not None
+                    ),
+                    "order_limit_policy_version": (
+                        resolve_order_limit_policy_version(
+                            trading_date=today,
+                            daily_submit_limit=(
+                                int(submit_stored)
+                                if submit_stored is not None
+                                else None
+                            ),
+                            daily_filled_entry_limit=(
+                                int(filled_stored)
+                                if filled_stored is not None
+                                else None
+                            ),
+                        )
+                    ),
+                    "order_limit_policy_version_next_krx": (
+                        resolve_order_limit_policy_version(
+                            trading_date=max(eligible, next_krx_hint),
+                            daily_submit_limit=(
+                                int(submit_stored)
+                                if submit_stored is not None
+                                else None
+                            ),
+                            daily_filled_entry_limit=(
+                                int(filled_stored)
+                                if filled_stored is not None
+                                else None
+                            ),
+                        )
+                    ),
+                    "order_limit_v2_min_trading_date": (
+                        ORDER_LIMIT_V2_MIN_TRADING_DATE.isoformat()
+                    ),
+                }
+            )
+            # V2 usage snapshot (strategy-owned) — 없으면 0
+            try:
+                from stock_platform.risk_engine.strategy_daily_order_usage_service import (
+                    StrategyDailyOrderUsageService,
+                )
+
+                # 활성 strategy_id는 아래 strategy 체크에서 보강될 수 있음
+                sid = None
+                dep = None
+                strat = checks.get("strategy") or {}
+                if isinstance(strat, dict):
+                    sid = strat.get("strategy_id")
+                    dep = strat.get("deployment_id")
+                if sid:
+                    usage = StrategyDailyOrderUsageService(
+                        session
+                    ).snapshot(
+                        user_broker_account_id=uba_id,
+                        broker_code=str(
+                            getattr(uba, "broker_code", "") or ""
+                        ).upper()
+                        or "KIWOOM",
+                        strategy_id=int(sid),
+                        deployment_id=(
+                            int(dep) if dep is not None else None
+                        ),
+                        trading_date=today,
+                    )
+                    risk_payload["daily_submit_count"] = usage.get(
+                        "submit_count", 0
+                    )
+                    risk_payload["daily_filled_entry_count"] = usage.get(
+                        "filled_entry_count", 0
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001
+            warnings.append("ORDER_LIMIT_V2_STATUS_UNAVAILABLE")
         # 일일 건수 보강 (실패해도 Risk resolve 결과는 유지)
         try:
             from zoneinfo import ZoneInfo
@@ -567,6 +673,29 @@ def evaluate_uba_autotrading_ready(
     except Exception as exc:  # noqa: BLE001
         checks["ai_signal_gate"] = {"error": type(exc).__name__}
         warnings.append("AI_SIGNAL_GATE_STATUS_UNAVAILABLE")
+
+    try:
+        from stock_platform.trading.upbit_24x7_control import (
+            combined_control_status,
+        )
+
+        primary_sid = None
+        if approved_active:
+            primary_sid = int(approved_active[0]["strategy_id"])
+        checks["upbit_24x7_control"] = combined_control_status(
+            session,
+            user_broker_account_id=uba_id,
+            strategy_id=primary_sid,
+        )
+        ctrl = checks["upbit_24x7_control"]
+        if str(ctrl.get("strategy_runtime")) == "STOPPED":
+            warnings.append("STRATEGY_RUNTIME_STOPPED")
+        if str(ctrl.get("outbox_worker")) == "STOPPED":
+            warnings.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
+        if str(ctrl.get("exit_monitor")) == "STOPPED":
+            warnings.append("EXIT_MONITOR_STOPPED")
+    except Exception as exc:  # noqa: BLE001
+        checks["upbit_24x7_control"] = {"error": type(exc).__name__}
 
     # Candle / News / Provider 상태 (조회 전용)
     checks["market_context"] = _snapshot_market_context_for_ai(
@@ -790,11 +919,15 @@ def admin_set_uba_strategy_link_active(
     if is_active:
         if not bool(strategy.is_active):
             raise ValueError("STRATEGY_INACTIVE")
-        approved = strategy.approved_at is not None or str(
-            getattr(strategy, "owner_type", "") or ""
-        ).upper() == "SYSTEM"
-        if not approved:
-            raise ValueError("STRATEGY_NOT_APPROVED")
+        from stock_platform.trading.strategy_runtime_authorization import (
+            evaluate_strategy_runtime_authorization,
+        )
+
+        auth = evaluate_strategy_runtime_authorization(
+            session, strategy_id=int(strategy_id)
+        )
+        if not auth.get("ok"):
+            raise ValueError(str(auth.get("code") or "STRATEGY_NOT_APPROVED"))
         if getattr(uba, "live_approved_at", None) is None:
             raise ValueError("LIVE_NOT_APPROVED")
         market = str(strategy.market_type or "").upper()
