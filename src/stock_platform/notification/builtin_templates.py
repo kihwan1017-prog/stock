@@ -28,7 +28,7 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "body_template": (
             "종목: {symbol_display}\n"
             "Scanner 점수: {scanner_score}\n"
-            "AI: {ai_recommendation}\n"
+            "AI: {ai_recommendation_ko}\n"
             "추세: short MA > long MA\n"
             "RSI: {rsi14}\n"
             "주문 예정금액: {approved_amount_krw}"
@@ -147,9 +147,11 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "body_template": (
             "종목: {symbol_display}\n"
             "순위: {rank}\n"
-            "Scanner 점수: {score}\n"
+            "Scanner 점수: {scanner_score}\n"
             "AI: {ai_recommendation_ko}\n"
-            "신뢰도: {confidence_pct}"
+            "신뢰도: {confidence_pct}\n"
+            "포지션 슬롯: {slot_no}\n"
+            "{candidates_summary}"
         ),
         "short_body_template": "후보 {symbol_display} · AI {ai_recommendation_ko}",
     },

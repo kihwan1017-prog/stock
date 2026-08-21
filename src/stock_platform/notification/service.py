@@ -274,7 +274,19 @@ class NotificationService:
                             error_message=(
                                 item.message
                                 if item.status.value == "FAILED"
-                                else None
+                                else (
+                                    (
+                                        f"{rendered.diagnostic_code}:"
+                                        f"{','.join(rendered.required_missing)}"
+                                    )
+                                    if rendered
+                                    and getattr(
+                                        rendered,
+                                        "diagnostic_code",
+                                        None,
+                                    )
+                                    else None
+                                )
                             ),
                             template_id=(
                                 rendered.template_id if rendered else None
@@ -288,7 +300,24 @@ class NotificationService:
                                 rendered.locale if rendered else "ko-KR"
                             ),
                             missing_variables_json=(
-                                list(rendered.missing_variables)
+                                {
+                                    "missing": list(
+                                        rendered.missing_variables or []
+                                    ),
+                                    "required_missing": list(
+                                        getattr(
+                                            rendered,
+                                            "required_missing",
+                                            [],
+                                        )
+                                        or []
+                                    ),
+                                    "diagnostic_code": getattr(
+                                        rendered,
+                                        "diagnostic_code",
+                                        None,
+                                    ),
+                                }
                                 if rendered
                                 else None
                             ),

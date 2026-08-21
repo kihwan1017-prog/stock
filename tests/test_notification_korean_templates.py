@@ -233,3 +233,102 @@ def test_llm_not_imported_in_pipeline() -> None:
     assert "openai" not in src
     assert "ollama" not in src
     assert "chatcompletion" not in src
+
+
+def test_nested_candidate_payload_displays_fields() -> None:
+    rendered = render_notification(
+        event_type="UPBIT_SCANNER_CANDIDATE",
+        title="raw",
+        message="raw",
+        detail={
+            "source": "upbit_opportunity_scanner_v0",
+            "candidate": {
+                "symbol": "KRW-PEPE",
+                "rank": 1,
+                "score": 76.97345,
+                "recommendation": "ALLOW",
+                "confidence": 0.95,
+            },
+            "slot_no": 3,
+        },
+    )
+    assert "PEPE" in rendered.body
+    assert "76.97" in rendered.body
+    assert "매수 허용" in rendered.body
+    assert "95%" in rendered.body
+    assert "포지션 슬롯: 3" in rendered.body
+    assert rendered.original_payload["candidate"]["symbol"] == "KRW-PEPE"
+    assert "json" not in rendered.body.lower()
+
+
+def test_summary_candidates_list_and_optional_rank_suppress() -> None:
+    rendered = render_notification(
+        event_type="UPBIT_SCANNER_CANDIDATE",
+        title="raw",
+        message="raw",
+        detail={
+            "source": "upbit_opportunity_scanner_v0_summary",
+            "candidates": [
+                {
+                    "symbol": "KRW-GRVT",
+                    "rank": 1,
+                    "score": 80.26,
+                    "recommendation": "HOLD",
+                    "confidence": 0.95,
+                },
+                {
+                    "symbol": "KRW-DOS",
+                    "score": 61.01,
+                    "recommendation": "HOLD",
+                    "confidence": 0.85,
+                },
+            ],
+        },
+    )
+    assert "GRVT" in rendered.body
+    assert "후보 목록" in rendered.body
+    assert "대기" in rendered.body
+    # rank 없는 두 번째 후보도 목록에 포함
+    assert "DOS" in rendered.body
+
+
+def test_optional_rank_missing_line_suppressed() -> None:
+    rendered = render_notification(
+        event_type="UPBIT_SCANNER_CANDIDATE",
+        title="t",
+        message="m",
+        detail={
+            "candidate": {
+                "symbol": "KRW-XRP",
+                "score": 55.5,
+                "recommendation": "ALLOW",
+                "confidence": 0.8,
+            }
+        },
+    )
+    assert "종목: XRP" in rendered.body
+    assert "순위:" not in rendered.body
+    assert "포지션 슬롯:" not in rendered.body
+
+
+def test_required_symbol_missing_diagnostic() -> None:
+    rendered = render_notification(
+        event_type="UPBIT_SCANNER_CANDIDATE",
+        title="t",
+        message="m",
+        detail={"source": "broken"},
+    )
+    assert rendered.diagnostic_code == "TEMPLATE_REQUIRED_FIELD_MISSING"
+    assert "symbol_display" in rendered.required_missing
+    assert "불러오지 못했습니다" in rendered.body
+    assert rendered.body.count("종목: -") == 0
+
+
+def test_contract_audit_no_high_priority_fail() -> None:
+    from stock_platform.notification.contract_audit import (
+        summarize_contract_audit,
+    )
+
+    summary = summarize_contract_audit()
+    assert summary["by_status"].get("INVALID_TEMPLATE_VARIABLE", 0) == 0
+    assert summary["high_priority_fail"] == []

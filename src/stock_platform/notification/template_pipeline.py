@@ -13,10 +13,12 @@ from stock_platform.notification.masking import mask_sensitive
 from stock_platform.notification.normalizer import (
     event_category,
     normalize_variables,
+    required_fields_for,
 )
 from stock_platform.notification.template_renderer import (
     extract_placeholders,
     render_template,
+    render_template_with_optional_lines,
 )
 
 # AI HOLD 무변경 등 spam 억제용 in-process dedupe
@@ -38,9 +40,11 @@ class RenderedNotification:
     template_id: int | None = None
     template_version: int | None = None
     missing_variables: list[str] = field(default_factory=list)
+    required_missing: list[str] = field(default_factory=list)
     suppressed: bool = False
     suppress_reason: str | None = None
-    source: str = "builtin"  # builtin | db
+    source: str = "builtin"  # builtin | db | fallback
+    diagnostic_code: str | None = None
 
 
 def should_suppress_state_event(
@@ -54,7 +58,6 @@ def should_suppress_state_event(
     import time
 
     et = event_type.upper()
-    # tick/heartbeat 성격은 알림 금지 키워드
     if str(detail.get("kind") or "").upper() in {"TICK", "HEARTBEAT"}:
         return True, "TICK_OR_HEARTBEAT"
 
@@ -75,12 +78,20 @@ def should_suppress_state_event(
         return False, None
 
     if et in {"UPBIT_SCANNER_CANDIDATE", "UPBIT_SCANNER_SHADOW_RESULT"}:
+        nested = detail.get("candidate")
+        nested_rec = (
+            nested.get("recommendation")
+            if isinstance(nested, dict)
+            else None
+        )
         rec = str(
             detail.get("ai_recommendation")
             or detail.get("recommendation")
+            or nested_rec
             or ""
         ).upper()
-        if rec == "HOLD":
+        # summary(candidates[])는 HOLD-only여도 운영 가시성 유지
+        if rec == "HOLD" and not detail.get("candidates"):
             key = (
                 f"SCAN_HOLD|{variables.get('symbol')}|"
                 f"{variables.get('uba_id')}"
@@ -91,6 +102,15 @@ def should_suppress_state_event(
                 return True, "SCANNER_HOLD_SUPPRESS"
             _state_dedupe[key] = now
     return False, None
+
+
+def _fallback_body(event_type: str, missing: list[str]) -> str:
+    return (
+        f"⚠️ 자동매매 이벤트\n"
+        f"유형: {str(event_type).upper()}\n"
+        f"상세 정보 일부를 불러오지 못했습니다.\n"
+        f"누락: {', '.join(missing) if missing else 'unknown'}"
+    )
 
 
 def render_notification(
@@ -158,11 +178,30 @@ def render_notification(
         template_version = 1
         category = str(builtin.get("category") or event_category(event_type))
 
-    # Toss는 short 우선
+    required = required_fields_for(event_type)
     use_body = short_tpl if channel.upper() == "TOSS" else body_tpl
     rendered_title, miss_t = render_template(title_tpl, variables)
-    rendered_body, miss_b = render_template(use_body, variables)
-    missing = list(dict.fromkeys([*miss_t, *miss_b]))
+    rendered_body, miss_b, required_missing = render_template_with_optional_lines(
+        use_body,
+        variables,
+        required_fields=required,
+    )
+    short_body, miss_s, _ = render_template_with_optional_lines(
+        short_tpl,
+        variables,
+        required_fields=required,
+    )
+    missing = list(dict.fromkeys([*miss_t, *miss_b, *miss_s]))
+
+    diagnostic = None
+    if required_missing:
+        diagnostic = "TEMPLATE_REQUIRED_FIELD_MISSING"
+        source = "fallback"
+        rendered_body = _fallback_body(event_type, required_missing)
+        short_body = rendered_body
+        # title은 템플릿 유지하되 비어 있으면 안전 타이틀
+        if not rendered_title or rendered_title.strip() in {"-", ""}:
+            rendered_title = f"⚠️ {str(event_type).upper()}"
 
     return RenderedNotification(
         event_type=str(event_type).upper(),
@@ -171,7 +210,7 @@ def render_notification(
         locale=locale,
         title=rendered_title,
         body=rendered_body,
-        short_body=render_template(short_tpl, variables)[0],
+        short_body=short_body,
         variables=variables,
         original_payload=payload,
         template_id=int(template_id) if template_id is not None else None,
@@ -179,7 +218,9 @@ def render_notification(
         if template_version is not None
         else None,
         missing_variables=missing,
+        required_missing=required_missing,
         source=source,
+        diagnostic_code=diagnostic,
     )
 
 
@@ -205,21 +246,29 @@ def preview_template(
         "new_recommendation": "ALLOW",
         "confidence": 0.95,
     }
-    variables = normalize_variables(
+    rendered = render_notification(
         event_type=event_type,
         title="",
         message="",
         detail=sample,
+        channel="TELEGRAM",
+        db_template={
+            "enabled": True,
+            "title_template": title_template,
+            "body_template": body_template,
+            "short_body_template": body_template,
+            "severity": "INFO",
+        },
     )
-    title, miss_t = render_template(title_template, variables)
-    body, miss_b = render_template(body_template, variables)
     return {
-        "title": title,
-        "body": body,
-        "variables": variables,
+        "title": rendered.title,
+        "body": rendered.body,
+        "variables": rendered.variables,
         "placeholders": extract_placeholders(
             f"{title_template}\n{body_template}"
         ),
-        "missing_variables": list(dict.fromkeys([*miss_t, *miss_b])),
+        "missing_variables": rendered.missing_variables,
+        "required_missing": rendered.required_missing,
+        "diagnostic_code": rendered.diagnostic_code,
         "original_payload": mask_sensitive(sample),
     }

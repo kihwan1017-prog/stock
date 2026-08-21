@@ -1,4 +1,8 @@
-"""이벤트 detail → 템플릿 변수 정규화 (구조화 이벤트, LLM 없음)."""
+"""이벤트 detail → 템플릿 변수 정규화 (구조화 이벤트, LLM 없음).
+
+nested candidate/order/slot 등을 canonical field로 평탄화한다.
+값이 없으면 '-'를 미리 넣지 않고 None을 두어 optional line 억제를 가능하게 한다.
+"""
 
 from __future__ import annotations
 
@@ -34,6 +38,7 @@ EVENT_CATEGORY: dict[str, str] = {
     "TAKE_PROFIT": "TRADE",
     "TRAILING_STOP": "TRADE",
     "RELATIVE_LOSS": "TRADE",
+    "PORTFOLIO_BULLISH_STATE_ENTRY": "TRADE",
     "KILL_SWITCH": "CRITICAL",
     "DAILY_LOSS": "RISK",
     "AI_ANALYSIS_COMPLETE": "AI",
@@ -64,11 +69,136 @@ EVENT_CATEGORY: dict[str, str] = {
     "TELEGRAM_FAILURE": "WARNING",
     "MONITORING_ALERT": "WARNING",
     "TEST_NOTIFICATION": "DEBUG",
+    "GENERIC": "INFO",
+}
+
+# event별 필수 표시 필드(없으면 fallback + diagnostic)
+REQUIRED_FIELDS: dict[str, frozenset[str]] = {
+    "UPBIT_SCANNER_CANDIDATE": frozenset({"symbol_display"}),
+    "ORDER_SUBMITTED": frozenset({"symbol_display"}),
+    "ORDER_FILLED": frozenset({"symbol_display"}),
+    "ORDER_PARTIAL_FILLED": frozenset({"symbol_display"}),
+    "ORDER_CANCELLED": frozenset({"symbol_display"}),
+    "ORDER_REJECTED": frozenset({"symbol_display"}),
+    "TAKE_PROFIT": frozenset({"symbol_display"}),
+    "STOP_LOSS": frozenset({"symbol_display"}),
+    "TRAILING_STOP": frozenset({"symbol_display"}),
+    "PORTFOLIO_BULLISH_STATE_ENTRY": frozenset({"symbol_display"}),
+    "AI_GATE_RECOMMENDATION_CHANGED": frozenset({"symbol_display"}),
+    "KILL_SWITCH": frozenset({"account_display"}),
 }
 
 
 def event_category(event_type: str) -> str:
     return EVENT_CATEGORY.get(str(event_type or "").upper(), "INFO")
+
+
+def required_fields_for(event_type: str) -> frozenset[str]:
+    return REQUIRED_FIELDS.get(str(event_type or "").upper(), frozenset())
+
+
+def _first(*values: Any) -> Any:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def flatten_event_detail(detail: dict[str, Any] | None) -> dict[str, Any]:
+    """nested candidate/order/slot/ai → top-level canonical keys (setdefault)."""
+
+    raw = dict(detail or {})
+    flat = dict(raw)
+
+    for nest_key in (
+        "candidate",
+        "selection",
+        "slot",
+        "order",
+        "signal",
+        "position",
+        "ai",
+        "analysis",
+        "payload",
+    ):
+        blob = raw.get(nest_key)
+        if isinstance(blob, dict):
+            for key, value in blob.items():
+                flat.setdefault(key, value)
+
+    candidates = raw.get("candidates")
+    if isinstance(candidates, list) and candidates:
+        first = candidates[0]
+        if isinstance(first, dict):
+            for key, value in first.items():
+                flat.setdefault(key, value)
+
+    # 별칭 정규화
+    if flat.get("symbol") is None:
+        flat["symbol"] = _first(
+            flat.get("market"),
+            flat.get("symbol_code"),
+            flat.get("ticker"),
+        )
+    if flat.get("score") is None:
+        flat["score"] = _first(
+            flat.get("scanner_score"),
+            flat.get("opportunity_score"),
+        )
+    if flat.get("scanner_score") is None and flat.get("score") is not None:
+        flat["scanner_score"] = flat.get("score")
+    if flat.get("ai_recommendation") is None:
+        flat["ai_recommendation"] = _first(
+            flat.get("recommendation"),
+            flat.get("new_recommendation"),
+            flat.get("gate_recommendation"),
+        )
+    if flat.get("confidence") is None:
+        flat["confidence"] = _first(
+            flat.get("ai_confidence"),
+            flat.get("confidence_pct"),
+        )
+    if flat.get("rank") is None:
+        flat["rank"] = _first(flat.get("candidate_rank"), flat.get("slot_no"))
+    if flat.get("slot_no") is None:
+        flat["slot_no"] = _first(flat.get("slot"), flat.get("position_slot"))
+    return flat
+
+
+def _candidates_summary(detail: dict[str, Any]) -> str | None:
+    rows = detail.get("candidates")
+    if not isinstance(rows, list) or not rows:
+        return None
+    lines: list[str] = []
+    for item in rows[:5]:
+        if not isinstance(item, dict):
+            continue
+        sym = format_symbol(item.get("symbol") or item.get("market"))
+        rank = item.get("rank")
+        score = item.get("score") or item.get("scanner_score")
+        rec = recommendation_ko(
+            item.get("recommendation") or item.get("ai_recommendation") or ""
+        )
+        score_txt = (
+            format_number(score, digits=2) if score is not None else None
+        )
+        parts = []
+        if rank is not None:
+            parts.append(f"#{rank}")
+        if sym and sym != "-":
+            parts.append(sym)
+        if score_txt and score_txt != "-":
+            parts.append(score_txt)
+        if rec and rec != "-":
+            parts.append(rec)
+        if parts:
+            lines.append(" · ".join(parts))
+    if not lines:
+        return None
+    return "후보 목록:\n" + "\n".join(lines)
 
 
 def normalize_variables(
@@ -82,131 +212,189 @@ def normalize_variables(
 
     raw = dict(detail or {})
     safe = mask_sensitive(raw)
-    broker = (
-        safe.get("broker_code")
-        or safe.get("broker")
-        or safe.get("exchange_code")
-        or ""
+    flat = flatten_event_detail(safe)
+
+    broker = _first(
+        flat.get("broker_code"),
+        flat.get("broker"),
+        flat.get("exchange_code"),
     )
-    side = safe.get("side") or safe.get("signal_action") or safe.get("action") or ""
-    symbol = safe.get("symbol") or safe.get("market") or ""
-    status = safe.get("status") or safe.get("order_status") or ""
-    prev = (
-        safe.get("previous_recommendation")
-        or safe.get("prev_recommendation")
-        or safe.get("from")
-        or ""
+    side = _first(
+        flat.get("side"),
+        flat.get("side_code"),
+        flat.get("signal_action"),
+        flat.get("action"),
     )
-    new = (
-        safe.get("new_recommendation")
-        or safe.get("recommendation")
-        or safe.get("to")
-        or ""
+    symbol = _first(flat.get("symbol"), flat.get("market"), flat.get("ticker"))
+    status = _first(flat.get("status"), flat.get("order_status"), flat.get("status_code"))
+    prev = _first(
+        flat.get("previous_recommendation"),
+        flat.get("prev_recommendation"),
+        flat.get("from"),
     )
-    amount = (
-        safe.get("amount_krw")
-        or safe.get("filled_amount")
-        or safe.get("notional")
-        or safe.get("order_amount")
+    new = _first(
+        flat.get("new_recommendation"),
+        flat.get("ai_recommendation"),
+        flat.get("recommendation"),
+        flat.get("to"),
     )
-    price = (
-        safe.get("avg_price")
-        or safe.get("fill_price")
-        or safe.get("price")
-        or safe.get("signal_price")
+    amount = _first(
+        flat.get("amount_krw"),
+        flat.get("filled_amount"),
+        flat.get("notional"),
+        flat.get("order_amount"),
+        flat.get("approved_amount_krw"),
+        flat.get("recommended_amount_krw"),
     )
-    qty = (
-        safe.get("filled_qty")
-        or safe.get("quantity")
-        or safe.get("qty")
-        or safe.get("executed_qty")
+    price = _first(
+        flat.get("avg_price"),
+        flat.get("fill_price"),
+        flat.get("price"),
+        flat.get("signal_price"),
+        flat.get("order_price"),
     )
-    confidence = safe.get("confidence") or safe.get("confidence_pct")
-    reason = (
-        safe.get("reason_ko")
-        or safe.get("reason")
-        or safe.get("reason_code")
-        or safe.get("block_reason")
-        or ""
+    qty = _first(
+        flat.get("filled_qty"),
+        flat.get("quantity"),
+        flat.get("qty"),
+        flat.get("executed_qty"),
+        flat.get("order_quantity"),
     )
-    strategy = (
-        safe.get("strategy_name")
-        or safe.get("strategy_code")
-        or safe.get("strategy")
-        or ""
+    confidence = _first(flat.get("confidence"), flat.get("ai_confidence"))
+    reason = _first(
+        flat.get("reason_ko"),
+        flat.get("reason"),
+        flat.get("reason_code"),
+        flat.get("block_reason"),
+        flat.get("error"),
     )
-    account = (
-        safe.get("account_display")
-        or safe.get("uba_label")
-        or (
-            f"UBA{safe['user_broker_account_id']}"
-            if safe.get("user_broker_account_id")
-            else ""
-        )
-        or broker_ko(broker)
+    strategy = _first(
+        flat.get("strategy_name"),
+        flat.get("strategy_code"),
+        flat.get("strategy"),
     )
-    position_status = (
-        safe.get("position_status")
-        or safe.get("slot_status")
-        or ""
+    account = _first(
+        flat.get("account_display"),
+        flat.get("uba_label"),
+        (
+            f"UBA{flat['user_broker_account_id']}"
+            if flat.get("user_broker_account_id") is not None
+            else None
+        ),
+        broker_ko(broker) if broker else None,
     )
-    created = (
-        safe.get("created_at")
-        or safe.get("sent_at")
-        or safe.get("generated_at")
-        or safe.get("filled_at")
+    position_status = _first(flat.get("position_status"), flat.get("slot_status"))
+    created = _first(
+        flat.get("created_at"),
+        flat.get("sent_at"),
+        flat.get("generated_at"),
+        flat.get("filled_at"),
+        flat.get("selected_at"),
+        flat.get("analyzed_at"),
     )
+    score = _first(flat.get("scanner_score"), flat.get("score"))
+    rank = flat.get("rank")
+    slot_no = _first(flat.get("slot_no"), flat.get("slot"))
+    ai_rec = _first(flat.get("ai_recommendation"), new)
+    candidates_summary = _candidates_summary(safe)
+
+    symbol_display = (
+        format_symbol(symbol, name=flat.get("symbol_name") or flat.get("name"))
+        if symbol
+        else None
+    )
+    if symbol_display == "-":
+        symbol_display = None
+
+    ai_ko = recommendation_ko(ai_rec) if ai_rec else None
+    if ai_ko == "-":
+        ai_ko = None
 
     vars_: dict[str, Any] = {
         "event_type": str(event_type or "").upper(),
-        "title": title or "",
-        "message": message or "",
-        "broker": str(broker).upper() if broker else "-",
-        "broker_ko": broker_ko(broker) if broker else "-",
-        "side": str(side).upper() if side else "-",
-        "side_ko": side_ko(side) if side else "-",
-        "symbol": str(symbol).upper() if symbol else "-",
-        "symbol_display": format_symbol(
-            symbol, name=safe.get("symbol_name") or safe.get("name")
+        "title": title or None,
+        "message": message or None,
+        "broker": str(broker).upper() if broker else None,
+        "broker_ko": broker_ko(broker) if broker else None,
+        "side": str(side).upper() if side else None,
+        "side_ko": side_ko(side) if side else None,
+        "symbol": str(symbol).upper() if symbol else None,
+        "symbol_display": symbol_display,
+        "status": str(status).upper() if status else None,
+        "status_ko": translate(status, group="order_status") if status else None,
+        "position_status_ko": (
+            translate(position_status, group="slot_status")
+            if position_status
+            else None
         ),
-        "status": str(status).upper() if status else "-",
-        "status_ko": translate(status, group="order_status") if status else "-",
-        "position_status_ko": translate(position_status, group="slot_status")
-        if position_status
-        else translate("OPEN", group="slot_status"),
-        "price_display": format_krw(price) if price is not None else "-",
-        "avg_price": format_krw(price) if price is not None else "-",
-        "amount_krw": format_krw(amount) if amount is not None else "-",
-        "quantity": format_quantity(qty) if qty is not None else "-",
-        "filled_qty": format_quantity(qty) if qty is not None else "-",
-        "reason": str(reason) if reason else "-",
-        "reason_ko": str(reason) if reason else "-",
-        "strategy_name": str(strategy) if strategy else "-",
-        "account_display": str(account) if account else "-",
-        "previous_recommendation_ko": recommendation_ko(prev) if prev else "-",
-        "new_recommendation_ko": recommendation_ko(new) if new else "-",
-        "confidence_pct": format_percent(confidence)
-        if confidence is not None
-        else "-",
-        "rank": format_number(safe.get("rank")) if safe.get("rank") is not None else "-",
-        "score": format_number(safe.get("score"))
-        if safe.get("score") is not None
-        else "-",
-        "ai_recommendation_ko": recommendation_ko(
-            safe.get("ai_recommendation") or new or ""
+        "price_display": format_krw(price) if price is not None else None,
+        "avg_price": format_krw(price) if price is not None else None,
+        "amount_krw": format_krw(amount) if amount is not None else None,
+        "quantity": format_quantity(qty) if qty is not None else None,
+        "filled_qty": format_quantity(qty) if qty is not None else None,
+        "reason": str(reason) if reason else None,
+        "reason_ko": str(reason) if reason else None,
+        "strategy_name": str(strategy) if strategy else None,
+        "account_display": str(account) if account else None,
+        "previous_recommendation_ko": (
+            recommendation_ko(prev) if prev else None
         ),
-        "current_value": str(safe.get("current_value") or safe.get("current") or "-"),
-        "limit_value": str(safe.get("limit_value") or safe.get("limit") or "-"),
-        "created_at_kst": format_datetime_kst(created),
+        "new_recommendation_ko": recommendation_ko(new) if new else None,
+        "confidence_pct": (
+            format_percent(confidence) if confidence is not None else None
+        ),
+        "rank": format_number(rank) if rank is not None else None,
+        "score": format_number(score, digits=2) if score is not None else None,
+        "scanner_score": (
+            format_number(score, digits=2) if score is not None else None
+        ),
+        "ai_recommendation": ai_ko,
+        "ai_recommendation_ko": ai_ko,
+        "slot_no": str(slot_no) if slot_no is not None else None,
+        "candidates_summary": candidates_summary,
+        "current_value": (
+            str(flat.get("current_value") or flat.get("current"))
+            if (flat.get("current_value") or flat.get("current")) is not None
+            else None
+        ),
+        "limit_value": (
+            str(flat.get("limit_value") or flat.get("limit"))
+            if (flat.get("limit_value") or flat.get("limit")) is not None
+            else None
+        ),
+        "created_at_kst": format_datetime_kst(created)
+        if created is not None
+        else None,
         "expires_at_kst": format_datetime_kst(
-            safe.get("expires_at") or safe.get("arm_expires_at")
+            flat.get("expires_at") or flat.get("arm_expires_at")
+        )
+        if (flat.get("expires_at") or flat.get("arm_expires_at"))
+        else None,
+        "uba_id": (
+            str(flat.get("user_broker_account_id") or flat.get("uba_id"))
+            if (flat.get("user_broker_account_id") or flat.get("uba_id"))
+            is not None
+            else None
         ),
-        "uba_id": str(safe.get("user_broker_account_id") or safe.get("uba_id") or "-"),
-        "order_id": str(safe.get("order_id") or "-"),
-        "strategy_id": str(safe.get("strategy_id") or "-"),
+        "order_id": str(flat.get("order_id"))
+        if flat.get("order_id") is not None
+        else None,
+        "strategy_id": str(flat.get("strategy_id"))
+        if flat.get("strategy_id") is not None
+        else None,
         "runtime_status_ko": translate(
-            safe.get("runtime_status") or safe.get("status"),
+            flat.get("runtime_status") or flat.get("status"),
             group="runtime",
+        )
+        if (flat.get("runtime_status") or flat.get("status"))
+        else None,
+        "approved_amount_krw": (
+            format_krw(flat.get("approved_amount_krw"))
+            if flat.get("approved_amount_krw") is not None
+            else None
         ),
+        "rsi14": format_number(flat.get("rsi14"), digits=2)
+        if flat.get("rsi14") is not None
+        else None,
     }
     return vars_

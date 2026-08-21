@@ -140,7 +140,7 @@ class ChannelDeliveryLogEntity(Base):
     template_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     template_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     locale: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    missing_variables_json: Mapped[list[Any] | None] = mapped_column(
+    missing_variables_json: Mapped[Any | None] = mapped_column(
         JSONB, nullable=True
     )
     sent_at: Mapped[datetime | None] = mapped_column(
