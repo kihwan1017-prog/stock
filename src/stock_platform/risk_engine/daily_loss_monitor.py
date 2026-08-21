@@ -114,58 +114,60 @@ class DailyLossMonitor:
         activated = False
 
         if current_loss >= self._loss_limit:
+            # Account MTM telemetry — Strategy ENTRY는 strategy-owned PnL 게이트 사용.
+            # 계좌 전체 MTM만으로 Kill을 자동 켜지 않는다 (2-layer Risk).
             status = (
                 DailyLossMonitorStatus.KILL_SWITCH_ACTIVE
                 if kill_switch_was_active
                 else DailyLossMonitorStatus.LIMIT_REACHED
             )
-            if not kill_switch_was_active:
-                # 원문 계좌번호 금지 — UBA + 마스킹만
-                reason = (
-                    "Daily loss limit reached: "
+            detail = {
+                "event_type": "ACCOUNT_DAILY_DRAWDOWN",
+                "broker_code": broker_code,
+                "user_broker_account_id": uba_id,
+                "masked_account_ref": masked,
+                "trading_date": day.isoformat(),
+                "currency": currency.upper(),
+                "realized_profit_loss": str(realized),
+                "unrealized_profit_loss": str(unrealized),
+                "combined_profit_loss": str(combined),
+                "current_loss_amount": str(current_loss),
+                "loss_limit_amount": str(self._loss_limit),
+                "equity_policy_version": breakdown.equity_policy_version,
+                "equity_source": breakdown.equity_source,
+                "pending_settlement_cash": breakdown.pending_settlement_cash,
+                "auto_kill": False,
+                "note": (
+                    "Account drawdown telemetry only; "
+                    "Kill not auto-activated"
+                ),
+            }
+            self._events.create(
+                event_type="ACCOUNT_DAILY_DRAWDOWN",
+                event_level="WARNING",
+                broker_code=broker_code,
+                user_broker_account_id=uba_id,
+                masked_account_ref=masked,
+                correlation_id=f"account-drawdown-uba-{uba_id}-{day.isoformat()}",
+                current_loss_amount=current_loss,
+                loss_limit_amount=self._loss_limit,
+                message=(
+                    "Account daily drawdown telemetry: "
                     f"{current_loss} >= {self._loss_limit}, "
                     f"BROKER={broker_code}, UBA={uba_id}, "
                     f"ACCOUNT={masked}"
-                )
-                self._kill_switch.activate_scope(
-                    scope_code=scope,
-                    actor="SYSTEM_DAILY_LOSS_MONITOR",
-                    reason=reason,
-                )
-                activated = True
-                detail = {
-                    "event_type": "DAILY_LOSS",
-                    "broker_code": broker_code,
-                    "user_broker_account_id": uba_id,
-                    "masked_account_ref": masked,
-                    "trading_date": day.isoformat(),
-                    "currency": currency.upper(),
-                    "realized_profit_loss": str(realized),
-                    "unrealized_profit_loss": str(unrealized),
-                    "combined_profit_loss": str(combined),
-                    "current_loss_amount": str(current_loss),
-                    "loss_limit_amount": str(self._loss_limit),
-                    "equity_policy_version": breakdown.equity_policy_version,
-                    "equity_source": breakdown.equity_source,
-                    "pending_settlement_cash": breakdown.pending_settlement_cash,
-                }
-                self._events.create(
-                    event_type="AUTO_KILL_SWITCH",
-                    event_level="CRITICAL",
-                    broker_code=broker_code,
-                    user_broker_account_id=uba_id,
-                    masked_account_ref=masked,
-                    correlation_id=f"daily-loss-uba-{uba_id}-{day.isoformat()}",
-                    current_loss_amount=current_loss,
-                    loss_limit_amount=self._loss_limit,
-                    message=reason,
-                    detail_payload=detail,
-                )
-                await self._notifier.send(
-                    title="자동매매 긴급정지",
-                    message=reason,
-                    detail=detail,
-                )
+                ),
+                detail_payload=detail,
+            )
+            await self._notifier.send(
+                title="계좌 Daily Drawdown (telemetry)",
+                message=(
+                    "Account MTM drawdown exceeded telemetry threshold; "
+                    "Kill not auto-activated. Strategy ENTRY uses "
+                    "strategy-owned PnL."
+                ),
+                detail=detail,
+            )
         else:
             status = DailyLossMonitorStatus.SAFE
 
