@@ -259,6 +259,14 @@ describe("UPBIT autotrading settings workspace", () => {
     expect(ws).toContain("const policy = asObj(portfolio.policy)");
   });
 
+  it("UpbitOpsStatusPanel은 ops-status live/arm 문자열 SoT를 사용한다", () => {
+    const panel = readRel("features/admin/upbit/UpbitOpsStatusPanel.tsx");
+    expect(panel).toContain("parseOpsLiveArm");
+    expect(panel).not.toMatch(/ops\.live_on/);
+    expect(panel).not.toMatch(/ops\.arm_on/);
+    expect(panel).toContain("buildUpbitAutotradingAggregateStatus");
+  });
+
   it("탭 Form은 forceRender/destroyOnHidden=false로 useForm 연결을 유지한다", () => {
     const ws = workspace();
     expect(ws).toContain("destroyOnHidden={false}");

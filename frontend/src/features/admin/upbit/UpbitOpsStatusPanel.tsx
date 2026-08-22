@@ -41,6 +41,10 @@ import {
   toneToAntdColor,
   type StatusTone,
 } from "@/features/admin/autotrading/statusTone";
+import {
+  buildUpbitAutotradingAggregateStatus,
+  parseOpsLiveArm,
+} from "@/features/admin/upbit/upbitAutotradingCanonicalStatus";
 import { UPBIT_AUTOTRADING_EMPTY_LABELS } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
 import { asRecord } from "@/shared/utils/dataHelpers";
 
@@ -94,22 +98,43 @@ export function UpbitOpsStatusPanel({
   const unattended = rec(ops.unattended);
   const control = rec(ops.control);
   const feed = rec(ops.market_feed);
+  const stack = rec(ops.runtime_stack);
+  const { liveOn, armOn } = parseOpsLiveArm(ops);
 
   const lease = String(
     unattended.lease_status ??
       unattended.status ??
       (unattended.unattended_enabled ? "ACTIVE" : "OFF"),
   );
-  const liveOn = Boolean(ops.live_on ?? ops.live_order_enabled);
-  const armOn = Boolean(ops.arm_on ?? ops.live_armed);
   const runtime = String(
-    ops.strategy_runtime ?? control.strategy_runtime ?? "—",
-  );
-  const worker = String(ops.outbox_worker ?? control.outbox_worker ?? "—");
-  const exitM = String(ops.exit_monitor ?? control.exit_monitor ?? "—");
-  const ready = String(
-    readiness?.readiness ?? readiness?.status ?? ops.auto_trading_state ?? "—",
-  );
+    ops.runtime ?? ops.strategy_runtime ?? control.strategy_runtime ?? "—",
+  ).toUpperCase();
+  const worker = String(
+    ops.outbox_worker ?? control.outbox_worker ?? "—",
+  ).toUpperCase();
+  const runner = String(
+    ops.runner ?? stack.runner ?? control.runner ?? "—",
+  ).toUpperCase();
+  const exitM = String(
+    ops.exit_monitor ?? control.exit_monitor ?? "—",
+  ).toUpperCase();
+  const entryEvaluatorState = String(summary.entry_state ?? "—").toUpperCase();
+  const readinessRaw = String(
+    readiness?.status ?? readiness?.readiness ?? ops.auto_trading_state ?? "—",
+  ).toUpperCase();
+  const aggregate = buildUpbitAutotradingAggregateStatus({
+    ops,
+    readiness,
+    entryEvaluatorState,
+  });
+  const readyDisplay =
+    aggregate.tier === "blocked" &&
+    readinessRaw === "READY_FOR_AUTO_TRADING"
+      ? "BLOCKED"
+      : readinessRaw;
+  const armDisplay = armOn
+    ? `무장 · ${String(ops.arm_remaining_label ?? "ON")}`
+    : "해제";
 
   const openSlots = slots
     .map((s) => rec(s))
@@ -134,6 +159,35 @@ export function UpbitOpsStatusPanel({
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert
+        type={aggregate.tier === "blocked" ? "error" : "success"}
+        showIcon
+        title={aggregate.headline}
+        description={
+          <>
+            {aggregate.description}
+            {aggregate.blockers.length > 0 ? (
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginBottom: 0, marginTop: 8 }}
+              >
+                Blockers: {aggregate.blockers.join(" · ")}
+              </Typography.Paragraph>
+            ) : null}
+            {!aggregate.entryOrdersPermitted &&
+            entryEvaluatorState === "RUNNING" ? (
+              <Typography.Paragraph
+                type="warning"
+                style={{ marginBottom: 0, marginTop: 8 }}
+              >
+                Entry Evaluator RUNNING — 평가만 수행 중이며 LIVE/ARM/Readiness
+                미충족 시 실제 ENTRY 주문은 차단됩니다.
+              </Typography.Paragraph>
+            ) : null}
+          </>
+        }
+      />
+
+      <Alert
         type="info"
         showIcon
         title={`UBA ${ubaId} 현황`}
@@ -153,18 +207,24 @@ export function UpbitOpsStatusPanel({
           [
             ["24H", unattendedLeaseLabelKo(lease), toneFromRuntime(lease === "ACTIVE" ? "RUNNING" : lease === "PROTECTIVE_EXIT_ONLY" ? "WARNING" : "OFF")],
             ["LIVE", liveOn ? "켜짐" : "꺼짐", toneFromBoolOnOff(liveOn)],
-            ["ARM", armOn ? "무장" : "해제", toneFromBoolOnOff(armOn)],
+            ["ARM", armDisplay, toneFromBoolOnOff(armOn)],
             ["Runtime", runtime, toneFromRuntime(runtime)],
             ["Worker", worker, toneFromRuntime(worker)],
-            ["Execution Runner", runtime, toneFromRuntime(runtime)],
+            [
+              "Execution Runner",
+              runner,
+              toneFromRuntime(runner),
+            ],
             ["Exit Monitor", exitM, toneFromRuntime(exitM)],
             ["Feed", String(feed.status ?? "—"), toneFromRuntime(String(feed.status))],
             [
               "Entry Evaluator",
-              String(summary.entry_state ?? "—"),
-              toneFromRuntime(String(summary.entry_state)),
+              entryEvaluatorState,
+              aggregate.entryOrdersPermitted
+                ? toneFromRuntime(entryEvaluatorState)
+                : "yellow",
             ],
-            ["Readiness", ready, toneFromReadiness(ready)],
+            ["Readiness", readyDisplay, toneFromReadiness(readyDisplay)],
           ] as [string, string, StatusTone][]
         ).map(([label, value, tone]) => (
           <Col xs={12} sm={8} md={6} lg={4} key={label}>
