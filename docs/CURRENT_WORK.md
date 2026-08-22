@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-22 (Production backend + orchestrator)
+**최종 갱신:** 2026-08-22 (Production backend + orchestrator COMPLETE)
 
 ---
 
@@ -15,8 +15,8 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **SHARED** | Prod backend + canonical orchestrator | **in progress → COMPLETE after planned restart** | OBSERVE_FIRST_NATURAL_BUY_FILL_AND_EXIT_LIFECYCLE |
-| **U** | Portfolio WAITING_SIGNAL | complete | observe natural entry |
+| **SHARED** | Prod backend + canonical orchestrator | **PRODUCTION_BACKEND_AND_CANONICAL_AUTOTRADING_ORCHESTRATOR_COMPLETE** | OBSERVE_FIRST_NATURAL_BUY_FILL_AND_EXIT_LIFECYCLE |
+| **U** | Portfolio WAITING_SIGNAL | complete | natural buy/fill/exit observe |
 | **K** | ORDER_LIMIT_V2 | unchanged | NEXT_KRX_DAY… |
 
 ---
