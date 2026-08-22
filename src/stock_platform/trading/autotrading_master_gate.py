@@ -891,6 +891,26 @@ def evaluate_uba_autotrading_ready(
         checks["entry_evaluator"] = {"error": type(exc).__name__}
         warnings.append("ENTRY_EVALUATOR_STATUS_UNAVAILABLE")
 
+    # Portfolio desired allocation vs Risk max_order (구조적 주문 불가 감지)
+    try:
+        from stock_platform.operation.upbit_full_market.portfolio_entry_sizing import (
+            portfolio_sizing_readiness_hint,
+        )
+
+        sizing_hint = portfolio_sizing_readiness_hint(
+            session,
+            user_broker_account_id=uba_id,
+            user_id=getattr(uba, "user_id", None),
+        )
+        checks["portfolio_sizing"] = sizing_hint
+        if not sizing_hint.get("ok"):
+            warnings.append(
+                str(sizing_hint.get("warning") or "SIZING_NO_EXECUTABLE_AMOUNT")
+            )
+    except Exception as exc:  # noqa: BLE001
+        checks["portfolio_sizing"] = {"error": type(exc).__name__}
+        warnings.append("PORTFOLIO_SIZING_CHECK_UNAVAILABLE")
+
     # Candle / News / Provider 상태 (조회 전용)
     checks["market_context"] = _snapshot_market_context_for_ai(
         session,

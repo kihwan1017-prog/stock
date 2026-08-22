@@ -296,9 +296,6 @@ class RiskIntegratedRealtimeOrderExecutor:
                         int(user_broker_account_id),
                         symbol=str(getattr(signal, "symbol", "") or ""),
                         available_krw=None,
-                        account_max_order_amount=Decimal(
-                            str(self._execution_config.order_amount)
-                        ),
                     )
                     if not begin.get("ok") and not begin.get("already"):
                         return self._skipped(

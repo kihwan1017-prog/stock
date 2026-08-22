@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from stock_platform.operation.upbit_full_market.constants import (
     CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
@@ -49,15 +49,12 @@ def _slot(
 
 def test_begin_entry_from_signal_reserves() -> None:
     session = MagicMock()
-    slot = _slot(status=SLOT_WAITING_SIGNAL, reserved=None)
-    session.scalar = MagicMock(
-        side_effect=[
-            0,  # pending_entry_count path via method override
-            slot,  # waiting slot
-        ]
-    )
+    slot = _slot(status=SLOT_WAITING_SIGNAL, reserved=None, selection_id=None)
+    session.scalar = MagicMock(return_value=slot)
+    session.get = MagicMock(return_value=SimpleNamespace(user_id=61))
     svc = UpbitPortfolioService(session)
     svc.pending_entry_count = MagicMock(return_value=0)  # type: ignore[method-assign]
+    svc._assignment._has_preexisting_holding = MagicMock(return_value=False)  # type: ignore[method-assign]
     policy = SimpleNamespace(
         enabled=True,
         entry_state="RUNNING",
@@ -70,21 +67,39 @@ def test_begin_entry_from_signal_reserves() -> None:
     svc.get_or_create_policy = MagicMock(return_value=policy)  # type: ignore[method-assign]
     svc.strategy_exposure_total = MagicMock(return_value=Decimal("0"))  # type: ignore[method-assign]
     svc.reserved_amount_total = MagicMock(return_value=Decimal("0"))  # type: ignore[method-assign]
-    session.get = MagicMock(
-        return_value=SimpleNamespace(score=90.0, confidence=0.9)
-    )
-    # with_for_update chain: scalar returns slot
-    session.scalar = MagicMock(return_value=slot)
 
-    out = svc.begin_entry_from_signal(
-        1380,
-        symbol="KRW-WLD",
-        available_krw=Decimal("500000"),
-        account_max_order_amount=Decimal("10000"),
+    risk_limits = SimpleNamespace(
+        max_order_amount=Decimal("10000"),
+        max_position_amount=Decimal("1000000"),
+        source_layers=("uba",),
     )
+
+    with (
+        patch(
+            "stock_platform.operation.upbit_full_market.portfolio_service.resolve_portfolio_entry_risk_limits",
+            return_value=risk_limits,
+        ),
+        patch(
+            "stock_platform.trading.symbol_ownership.SymbolOwnershipService"
+        ) as ownership_cls,
+    ):
+        ownership = MagicMock()
+        ownership.entry_gate.return_value = (
+            True,
+            None,
+            SimpleNamespace(owner="FREE", reasons=[]),
+        )
+        ownership_cls.return_value = ownership
+        out = svc.begin_entry_from_signal(
+            1380,
+            symbol="KRW-WLD",
+            available_krw=Decimal("500000"),
+        )
+
     assert out["ok"] is True
     assert out["status"] == SLOT_ENTRY_PENDING
     assert float(out["reserved_amount_krw"]) > 0
+    assert float(out["final_order_amount_krw"]) <= 10000.0
     assert slot.status == SLOT_ENTRY_PENDING
     assert float(slot.reserved_amount_krw or 0) > 0
 

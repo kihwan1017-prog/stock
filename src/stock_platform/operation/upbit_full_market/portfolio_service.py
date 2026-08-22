@@ -12,7 +12,14 @@ from sqlalchemy.orm import Session
 
 from stock_platform.operation.upbit_full_market.capital_allocator import (
     AllocationInput,
-    allocate_entry_amount,
+    AllocationResult,
+)
+from stock_platform.operation.upbit_full_market.portfolio_entry_sizing import (
+    PortfolioEntryRiskLimits,
+    allocate_portfolio_entry_amount,
+    build_sizing_telemetry,
+    effective_max_order_cap,
+    resolve_portfolio_entry_risk_limits,
 )
 from stock_platform.operation.upbit_full_market.constants import (
     CONFIRM_ALIGN_PORTFOLIO_ENTRY_PIPELINE,
@@ -78,12 +85,76 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _resolve_uba_user_id(session: Session, uba_id: int) -> int | None:
+    from stock_platform.trading.account_models import UserBrokerAccount
+
+    uba = session.get(UserBrokerAccount, int(uba_id))
+    if uba is None or getattr(uba, "user_id", None) is None:
+        return None
+    return int(uba.user_id)
+
+
 class UpbitPortfolioService:
     """Portfolio policy/slots/Top-K. Broker CREATE 없음."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
         self._assignment = UpbitFullMarketAssignmentService(session)
+
+    def _allocate_entry_with_risk_limits(
+        self,
+        uba_id: int,
+        *,
+        capital: Decimal,
+        available_krw: Decimal,
+        policy: UpbitPortfolioPolicyEntity,
+        score: float,
+        conf: float,
+        volatility: str | None = None,
+        activation_max_order_amount: Decimal | None = None,
+        legacy_explicit_cap: Decimal | None = None,
+    ) -> tuple[AllocationResult, PortfolioEntryRiskLimits, Decimal, dict[str, Any]]:
+        """Portfolio desired → Risk-compatible executable amount (SoT: ResolvedRiskPolicy)."""
+
+        user_id = _resolve_uba_user_id(self._session, uba_id)
+        risk_limits = resolve_portfolio_entry_risk_limits(
+            self._session,
+            user_broker_account_id=int(uba_id),
+            user_id=user_id,
+        )
+        effective_cap = effective_max_order_cap(
+            risk_limits,
+            activation_max_order_amount=activation_max_order_amount,
+            legacy_explicit_cap=legacy_explicit_cap,
+        )
+        alloc = allocate_portfolio_entry_amount(
+            AllocationInput(
+                portfolio_capital_limit_krw=capital,
+                available_krw=available_krw,
+                min_cash_reserve_pct=float(policy.min_cash_reserve_pct),
+                per_position_target_pct=float(policy.per_position_target_pct),
+                max_symbol_exposure_pct=float(policy.max_symbol_exposure_pct),
+                max_total_exposure_pct=float(policy.max_total_exposure_pct),
+                current_strategy_exposure_krw=self.strategy_exposure_total(
+                    uba_id
+                ),
+                pending_reserved_krw=self.reserved_amount_total(uba_id),
+                current_symbol_exposure_krw=Decimal("0"),
+                account_max_order_amount=effective_cap,
+                scanner_score=score,
+                ai_confidence=conf,
+                volatility=volatility,
+            ),
+            risk_limits=risk_limits,
+            activation_max_order_amount=activation_max_order_amount,
+            legacy_explicit_cap=legacy_explicit_cap,
+        )
+        sizing = build_sizing_telemetry(
+            alloc,
+            risk_limits=risk_limits,
+            effective_cap=effective_cap,
+        )
+        return alloc, risk_limits, effective_cap, sizing
 
     def get_or_create_policy(
         self, user_broker_account_id: int
@@ -1211,25 +1282,16 @@ class UpbitPortfolioService:
             capital = Decimal(str(available_krw)) * Decimal("0.40")
 
         max_order = account_max_order_amount or Decimal("10000")
-        alloc = allocate_entry_amount(
-            AllocationInput(
-                portfolio_capital_limit_krw=capital,
-                available_krw=Decimal(str(available_krw or capital)),
-                min_cash_reserve_pct=float(policy.min_cash_reserve_pct),
-                per_position_target_pct=float(policy.per_position_target_pct),
-                max_symbol_exposure_pct=float(policy.max_symbol_exposure_pct),
-                max_total_exposure_pct=float(policy.max_total_exposure_pct),
-                current_strategy_exposure_krw=self.strategy_exposure_total(
-                    uba_id
-                ),
-                pending_reserved_krw=self.reserved_amount_total(uba_id),
-                current_symbol_exposure_krw=Decimal("0"),
-                account_max_order_amount=max_order,
-                activation_max_order_amount=activation_max_order_amount,
-                scanner_score=chosen.score,
-                ai_confidence=chosen.confidence,
-                volatility=(chosen.technical_metrics or {}).get("volatility"),
-            )
+        alloc, _risk_limits, _cap, sizing = self._allocate_entry_with_risk_limits(
+            uba_id,
+            capital=capital,
+            available_krw=Decimal(str(available_krw or capital)),
+            policy=policy,
+            score=float(chosen.score or 80.0),
+            conf=float(chosen.confidence or 0.8),
+            volatility=(chosen.technical_metrics or {}).get("volatility"),
+            activation_max_order_amount=activation_max_order_amount,
+            legacy_explicit_cap=max_order if account_max_order_amount else None,
         )
         if alloc.skipped:
             out["reason"] = alloc.skip_reason
@@ -1286,29 +1348,20 @@ class UpbitPortfolioService:
         capital = Decimal(
             str(policy.portfolio_capital_limit_krw or float(avail) * 0.4)
         )
-        max_order = Decimal(
-            str(account_max_order_amount if account_max_order_amount is not None else 10000)
+        legacy_cap = (
+            Decimal(str(account_max_order_amount))
+            if account_max_order_amount is not None
+            else None
         )
-        alloc = allocate_entry_amount(
-            AllocationInput(
-                portfolio_capital_limit_krw=capital,
-                available_krw=avail,
-                min_cash_reserve_pct=float(policy.min_cash_reserve_pct),
-                per_position_target_pct=float(policy.per_position_target_pct),
-                max_symbol_exposure_pct=float(policy.max_symbol_exposure_pct),
-                max_total_exposure_pct=float(policy.max_total_exposure_pct),
-                current_strategy_exposure_krw=self.strategy_exposure_total(
-                    int(user_broker_account_id)
-                ),
-                pending_reserved_krw=self.reserved_amount_total(
-                    int(user_broker_account_id)
-                ),
-                current_symbol_exposure_krw=Decimal("0"),
-                account_max_order_amount=max_order,
-                scanner_score=scanner_score,
-                ai_confidence=ai_confidence,
-                volatility=volatility,
-            )
+        alloc, _risk_limits, _cap, sizing = self._allocate_entry_with_risk_limits(
+            int(user_broker_account_id),
+            capital=capital,
+            available_krw=avail,
+            policy=policy,
+            score=float(scanner_score),
+            conf=float(ai_confidence),
+            volatility=volatility,
+            legacy_explicit_cap=legacy_cap,
         )
         return {
             "symbol": symbol,
@@ -1319,6 +1372,7 @@ class UpbitPortfolioService:
             "skipped": alloc.skipped,
             "skip_reason": alloc.skip_reason,
             "clamp_reasons": alloc.clamp_reasons,
+            "sizing": sizing,
             "quality_multiplier": alloc.quality_multiplier,
             "detail": alloc.detail,
             "orders_created": 0,
@@ -2220,26 +2274,20 @@ class UpbitPortfolioService:
         )
         if capital <= 0 and available_krw is not None:
             capital = Decimal(str(available_krw)) * Decimal("0.40")
-        max_order = account_max_order_amount or Decimal("10000")
-        alloc = allocate_entry_amount(
-            AllocationInput(
-                portfolio_capital_limit_krw=capital,
-                available_krw=Decimal(str(available_krw or capital)),
-                min_cash_reserve_pct=float(policy.min_cash_reserve_pct),
-                per_position_target_pct=float(policy.per_position_target_pct),
-                max_symbol_exposure_pct=float(policy.max_symbol_exposure_pct),
-                max_total_exposure_pct=float(policy.max_total_exposure_pct),
-                current_strategy_exposure_krw=self.strategy_exposure_total(
-                    uba_id
-                ),
-                pending_reserved_krw=self.reserved_amount_total(uba_id),
-                current_symbol_exposure_krw=Decimal("0"),
-                account_max_order_amount=max_order,
-                activation_max_order_amount=activation_max_order_amount,
-                scanner_score=score,
-                ai_confidence=conf,
-                volatility="MEDIUM",
-            )
+        alloc, _risk_limits, _cap, sizing = self._allocate_entry_with_risk_limits(
+            uba_id,
+            capital=capital,
+            available_krw=Decimal(str(available_krw or capital)),
+            policy=policy,
+            score=score,
+            conf=conf,
+            volatility="MEDIUM",
+            activation_max_order_amount=activation_max_order_amount,
+            legacy_explicit_cap=(
+                account_max_order_amount
+                if account_max_order_amount is not None
+                else None
+            ),
         )
         if alloc.skipped or float(alloc.approved_amount_krw) <= 0:
             return {
@@ -2250,6 +2298,7 @@ class UpbitPortfolioService:
                     "approved": str(alloc.approved_amount_krw),
                     "clamp_reasons": alloc.clamp_reasons,
                 },
+                "sizing": sizing,
             }
 
         slot.status = SLOT_ENTRY_PENDING
@@ -2265,7 +2314,14 @@ class UpbitPortfolioService:
             "status": SLOT_ENTRY_PENDING,
             "reserved_amount_krw": float(alloc.approved_amount_krw),
             "approved_amount_krw": float(alloc.approved_amount_krw),
+            "requested_amount_krw": sizing.get("requested_amount_krw"),
+            "final_order_amount_krw": sizing.get("final_order_amount_krw"),
+            "effective_max_order_amount_krw": sizing.get(
+                "effective_max_order_amount_krw"
+            ),
+            "clamped_by": sizing.get("clamped_by"),
             "clamp_reasons": list(alloc.clamp_reasons),
+            "sizing": sizing,
             "orders_created": 0,
         }
 
