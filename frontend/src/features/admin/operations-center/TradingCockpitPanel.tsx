@@ -308,6 +308,21 @@ export function TradingCockpitPanel({
     autoPositions: Number(summary.positions_open ?? 0),
     todayOrders: orderStats.autoOrders,
     autoPnlLabel: "시계열 API 없음",
+    manualOpenOrders: (() => {
+      const oo = rec(upbitOps.open_orders);
+      const n = Number(oo.manual_open_orders);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    autoOpenOrders: (() => {
+      const oo = rec(upbitOps.open_orders);
+      const n = Number(oo.auto_open_orders);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    autoOpenOrderLimit: (() => {
+      const oo = rec(upbitOps.open_orders);
+      const n = Number(oo.auto_open_order_limit);
+      return Number.isFinite(n) ? n : null;
+    })(),
     blocker: String(
       upbitOps.primary_blocker ??
         (Array.isArray(upbitOps.blockers) ? upbitOps.blockers[0] : null) ??
@@ -341,6 +356,21 @@ export function TradingCockpitPanel({
     autoPositions: null,
     todayOrders: null,
     autoPnlLabel: "시계열 API 없음",
+    manualOpenOrders: (() => {
+      const oo = rec(kiwoomOps.open_orders);
+      const n = Number(oo.manual_open_orders);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    autoOpenOrders: (() => {
+      const oo = rec(kiwoomOps.open_orders);
+      const n = Number(oo.auto_open_orders);
+      return Number.isFinite(n) ? n : null;
+    })(),
+    autoOpenOrderLimit: (() => {
+      const oo = rec(kiwoomOps.open_orders);
+      const n = Number(oo.auto_open_order_limit);
+      return Number.isFinite(n) ? n : null;
+    })(),
     blocker: String(
       kiwoomOps.primary_blocker ??
         (Array.isArray(kiwoomOps.blockers) ? kiwoomOps.blockers[0] : null) ??
@@ -386,14 +416,14 @@ export function TradingCockpitPanel({
             <Statistic
               title="키움 자동매매"
               value={String(kiwoomCard.readiness ?? "—")}
-              valueStyle={{ fontSize: 14 }}
+              styles={{ content: { fontSize: 14 } }}
             />
           </Col>
           <Col xs={12} sm={8} md={6} lg={4}>
             <Statistic
               title="업비트 자동매매"
               value={String(upbitCard.readiness ?? "—")}
-              valueStyle={{ fontSize: 14 }}
+              styles={{ content: { fontSize: 14 } }}
             />
           </Col>
           <Col xs={12} sm={8} md={6} lg={4}>
@@ -434,7 +464,11 @@ export function TradingCockpitPanel({
             <Statistic
               title="Kill Switch"
               value={killActive ? "활성" : "정상"}
-              valueStyle={{ color: killActive ? "#cf1322" : undefined }}
+              styles={{
+                content: {
+                  color: killActive ? "#cf1322" : undefined,
+                },
+              }}
             />
           </Col>
           <Col xs={12} sm={8} md={6} lg={4}>

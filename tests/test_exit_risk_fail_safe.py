@@ -573,6 +573,10 @@ def test_pipeline_open_order_limit_blocks_buy_allows_exit() -> None:
     policy = _policy(max_open_orders=20, daily_order_limit=100)
     remote_block = SimpleNamespace(
         canonical_count=20,
+        auto_open_count=20,
+        manual_open_count=0,
+        unknown_open_count=0,
+        total_open_count=20,
         local_open_count=20,
         remote_open_count=0,
         remote_unmapped_count=0,
@@ -583,6 +587,9 @@ def test_pipeline_open_order_limit_blocks_buy_allows_exit() -> None:
         reason_code=None,
         as_detail=lambda: {
             "open_order_count": 20,
+            "auto_open_orders": 20,
+            "manual_open_orders": 0,
+            "unknown_open_orders": 0,
             "local_open_order_count": 20,
             "remote_open_order_count": 0,
             "remote_unmapped_open_order_count": 0,

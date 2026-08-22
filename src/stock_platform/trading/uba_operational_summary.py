@@ -273,6 +273,42 @@ def build_uba_operational_summary(
     except Exception:  # noqa: BLE001
         pass
 
+    open_orders: dict[str, Any] | None = None
+    try:
+        from stock_platform.order.live_open_order_exposure import (
+            evaluate_live_open_order_exposure,
+        )
+        from stock_platform.risk_engine.resolved_policy import (
+            ResolvedRiskPolicyResolver,
+        )
+
+        broker = str(uba.broker_code or "").upper() if uba else "UPBIT"
+        if broker in {"UPBIT", "KIWOOM"}:
+            exp = evaluate_live_open_order_exposure(
+                session,
+                uba_id=uba_id,
+                broker_code=broker,
+                environment="LIVE",
+            )
+            max_open = 1
+            if uba is not None:
+                pol = ResolvedRiskPolicyResolver(session).resolve(
+                    user_id=int(uba.user_id),
+                    user_broker_account_id=uba_id,
+                )
+                max_open = int(pol.max_open_orders)
+            open_orders = {
+                "total_open_orders": exp.total_open_count,
+                "manual_open_orders": exp.manual_open_count,
+                "auto_open_orders": exp.auto_open_count,
+                "unknown_open_orders": exp.unknown_open_count,
+                "auto_open_order_limit": max_open,
+                "remote_open_state": exp.remote_state,
+                "source": exp.source,
+            }
+    except Exception:  # noqa: BLE001
+        open_orders = None
+
     return {
         "user_broker_account_id": uba_id,
         "broker_code": (
@@ -313,5 +349,6 @@ def build_uba_operational_summary(
         "control": ctrl,
         "full_market": full_market,
         "scanner": scanner_summary,
+        "open_orders": open_orders,
         "as_of": now.isoformat(),
     }

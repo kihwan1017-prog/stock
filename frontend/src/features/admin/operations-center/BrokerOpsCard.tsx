@@ -38,6 +38,10 @@ export type BrokerCardModel = {
   exitMonitor?: string | null;
   feed?: string | null;
   evaluator?: string | null;
+  /** open-order ownership (AUTO risk isolation) */
+  manualOpenOrders?: number | null;
+  autoOpenOrders?: number | null;
+  autoOpenOrderLimit?: number | null;
 };
 
 function StatusLine({
@@ -118,6 +122,30 @@ export function BrokerOpsCard({ model }: { model: BrokerCardModel }) {
           value={model.runtime ?? "—"}
           tone={toneFromRuntime(model.runtime)}
         />
+        <StatusLine
+          label="일반매매 미체결"
+          value={
+            model.manualOpenOrders == null
+              ? "—"
+              : String(model.manualOpenOrders)
+          }
+          tone="gray"
+        />
+        <StatusLine
+          label="자동매매 미체결"
+          value={
+            model.autoOpenOrders == null
+              ? "—"
+              : `${model.autoOpenOrders} / 한도 ${model.autoOpenOrderLimit ?? "—"}`
+          }
+          tone={
+            model.autoOpenOrders != null &&
+            model.autoOpenOrderLimit != null &&
+            model.autoOpenOrders >= model.autoOpenOrderLimit
+              ? "red"
+              : "green"
+          }
+        />
         {model.broker === "UPBIT" ? (
           <>
             <StatusLine
@@ -165,21 +193,21 @@ export function BrokerOpsCard({ model }: { model: BrokerCardModel }) {
             <Statistic
               title="AUTO 보유"
               value={model.autoPositions ?? "—"}
-              valueStyle={{ fontSize: 18 }}
+              styles={{ content: { fontSize: 18 } }}
             />
           </Col>
           <Col span={8}>
             <Statistic
               title="오늘 주문"
               value={model.todayOrders ?? "—"}
-              valueStyle={{ fontSize: 18 }}
+              styles={{ content: { fontSize: 18 } }}
             />
           </Col>
           <Col span={8}>
             <Statistic
               title="AUTO PnL"
               value={model.autoPnlLabel}
-              valueStyle={{ fontSize: 14 }}
+              styles={{ content: { fontSize: 14 } }}
             />
           </Col>
         </Row>

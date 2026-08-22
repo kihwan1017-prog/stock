@@ -497,20 +497,8 @@ class UpbitLivePreflightService:
             )
 
         open_count = self._open_order_count(int(uba.user_broker_account_id))
-        _add(
-            "OPEN_ORDERS",
-            "미체결 0",
-            "PASS" if open_count == 0 else "FAIL",
-            f"count={open_count}",
-        )
-
+        remote_open_state = getattr(self, "_remote_open_state", "FRESH")
         daily_count = self._daily_order_count(int(uba.user_broker_account_id))
-        _add(
-            "DAILY_ORDERS",
-            "오늘 LIVE 주문수",
-            "PASS",
-            f"count={daily_count}",
-        )
 
         policy = ResolvedRiskPolicyResolver(self._session).resolve(
             user_id=int(uba.user_id),
@@ -562,16 +550,11 @@ class UpbitLivePreflightService:
         except Exception:  # noqa: BLE001
             daily_loss_ok = True
             current_daily_loss = current_daily_loss or "unavailable"
-        _add(
-            "DAILY_LOSS",
-            "일일 손실 제한 (UBA)",
-            "PASS" if daily_loss_ok else "FAIL",
-            (
-                f"current={current_daily_loss} "
-                f"limit={max_daily_loss_limit} "
-                f"remaining={remaining_daily_loss} "
-                f"scope={daily_loss_scope}"
-            ),
+        daily_loss_message = (
+            f"current={current_daily_loss} "
+            f"limit={max_daily_loss_limit} "
+            f"remaining={remaining_daily_loss} "
+            f"scope={daily_loss_scope}"
         )
 
         # Market allowlist
@@ -601,12 +584,162 @@ class UpbitLivePreflightService:
         else:
             _add("SIDE", "Side", "PASS", side_u)
 
-        # Amount limits
+        # Amount / qty — EXIT는 max_order_amount·smoke cap 스킵 (min notional 유지)
         effective_max = min(
             MAX_SMOKE_AMOUNT,
             Decimal(str(policy.max_order_amount)),
         )
-        if amount_d > effective_max:
+        qty = None
+        verified_exit = False
+        if price_d <= ZERO:
+            _add("LIMIT_PRICE", "지정가", "FAIL", "price <= 0")
+        else:
+            if side_u == "BUY":
+                qty = volume_from_krw_buy_amount(
+                    amount=amount_d, price=price_d
+                )
+            else:
+                qty = round_upbit_volume(amount_d / price_d)
+            est = qty * price_d if qty is not None else ZERO
+            _add(
+                "LIMIT_PRICE",
+                "지정가",
+                "PASS",
+                f"price={price_d} qty={qty} est={est}",
+            )
+            if qty is None or qty <= ZERO:
+                _add("QUANTITY", "수량", "FAIL", "qty <= 0")
+            elif qty > Decimal(str(policy.max_order_quantity)):
+                _add(
+                    "QUANTITY",
+                    "수량",
+                    "FAIL",
+                    f"{qty} > max_order_quantity",
+                )
+            else:
+                _add("QUANTITY", "수량", "PASS", str(qty))
+
+        if side_u == "SELL" and qty is not None and qty > ZERO:
+            from stock_platform.risk_engine.exit_risk import (
+                classify_risk_reducing_exit,
+            )
+
+            exit_clf = classify_risk_reducing_exit(
+                self._session,
+                side="SELL",
+                symbol=market_u,
+                exchange_code="UPBIT",
+                quantity=qty,
+                user_broker_account_id=int(uba.user_broker_account_id),
+                paper_account_id=None,
+                environment="LIVE",
+            )
+            verified_exit = bool(exit_clf.is_risk_reducing_exit)
+            if verified_exit:
+                _add(
+                    "POSITION_EXIT",
+                    "보유 축소 EXIT",
+                    "PASS",
+                    (
+                        f"held={exit_clf.held_quantity} "
+                        f"pending_sell={exit_clf.pending_sell_quantity} "
+                        f"sellable={exit_clf.sellable_quantity} qty={qty}"
+                    ),
+                )
+            else:
+                _add(
+                    "POSITION_EXIT",
+                    "보유 축소 EXIT",
+                    "FAIL",
+                    (
+                        f"{exit_clf.reason_code or 'NO_POSITION_TO_SELL'} "
+                        f"held={exit_clf.held_quantity} "
+                        f"pending_sell={exit_clf.pending_sell_quantity} "
+                        f"sellable={exit_clf.sellable_quantity} qty={qty}"
+                    ),
+                )
+
+        if verified_exit:
+            _add(
+                "OPEN_ORDERS",
+                "미체결 (EXIT는 pending SELL을 수량에서 차감)",
+                "PASS",
+                f"count={open_count}",
+            )
+            _add(
+                "DAILY_ORDERS",
+                "오늘 LIVE 주문수 (EXIT는 daily_order_limit 미적용)",
+                "PASS",
+                f"count={daily_count} limit={int(policy.daily_order_limit)}",
+            )
+            _add(
+                "DAILY_LOSS",
+                "일일 손실 제한 (UBA, EXIT 스킵)",
+                "PASS",
+                daily_loss_message,
+            )
+        else:
+            max_open = int(policy.max_open_orders)
+            if remote_open_state in {"UNKNOWN", "STALE", "UNAVAILABLE"}:
+                open_orders_ok = False
+                open_detail = (
+                    f"count={open_count} limit={max_open} "
+                    f"remote_state={remote_open_state} "
+                    "reason=REMOTE_OPEN_CHECK_FAILED"
+                )
+            else:
+                open_orders_ok = open_count < max_open
+                exp = getattr(self, "_open_order_exposure", None)
+                manual_n = int(getattr(exp, "manual_open_count", 0) or 0)
+                unknown_n = int(getattr(exp, "unknown_open_count", 0) or 0)
+                total_n = int(getattr(exp, "total_open_count", open_count) or 0)
+                if unknown_n > 0:
+                    open_orders_ok = False
+                open_detail = (
+                    f"auto={open_count} manual={manual_n} unknown={unknown_n} "
+                    f"total={total_n} limit={max_open} "
+                    f"remote_state={remote_open_state}"
+                )
+            _add(
+                "OPEN_ORDERS",
+                "자동매매 미체결 (AUTO only; MANUAL 제외)",
+                "PASS" if open_orders_ok else "FAIL",
+                open_detail,
+            )
+            daily_limit = int(policy.daily_order_limit)
+            daily_ok = not (
+                side_u == "BUY" and daily_count >= daily_limit
+            )
+            _add(
+                "DAILY_ORDERS",
+                "오늘 LIVE 주문수",
+                "PASS" if daily_ok else "FAIL",
+                f"count={daily_count} limit={daily_limit}",
+            )
+            _add(
+                "DAILY_LOSS",
+                "일일 손실 제한 (UBA)",
+                "PASS" if daily_loss_ok else "FAIL",
+                daily_loss_message,
+            )
+
+        if verified_exit:
+            if amount_d < UPBIT_MIN_NOTIONAL_KRW:
+                _add(
+                    "UPBIT_MIN_NOTIONAL",
+                    "업비트 최소 주문금액",
+                    "FAIL",
+                    f"{amount_d} < min={UPBIT_MIN_NOTIONAL_KRW} "
+                    "reason=UPBIT_MIN_NOTIONAL_NOT_MET",
+                )
+            else:
+                _add(
+                    "AMOUNT_LIMIT",
+                    "주문금액 한도",
+                    "PASS",
+                    f"amount={amount_d} EXIT skips max_order_amount",
+                )
+        elif amount_d > effective_max:
             _add(
                 "AMOUNT_LIMIT",
                 "주문금액 한도",
@@ -627,43 +760,21 @@ class UpbitLivePreflightService:
                 "PASS",
                 f"amount={amount_d} max={effective_max}",
             )
-
-        if price_d <= ZERO:
-            _add("LIMIT_PRICE", "지정가", "FAIL", "price <= 0")
-            qty = None
-        else:
-            if side_u == "BUY":
-                qty = volume_from_krw_buy_amount(
-                    amount=amount_d, price=price_d
-                )
-            else:
-                qty = round_upbit_volume(amount_d / price_d)
-            est = qty * price_d if qty is not None else ZERO
-            # 보정 후 max 초과 시 Risk 우회 금지 — 수량 축소로 숨기지 않음
-            if qty is not None and est > effective_max:
+            if (
+                (not verified_exit)
+                and qty is not None
+                and price_d > ZERO
+                and (qty * price_d) > effective_max
+            ):
                 _add(
                     "AMOUNT_LIMIT",
                     "주문금액 한도",
                     "FAIL",
-                    f"adjusted_notional={est} > effective_max={effective_max}",
+                    (
+                        f"adjusted_notional={qty * price_d} "
+                        f"> effective_max={effective_max}"
+                    ),
                 )
-            _add(
-                "LIMIT_PRICE",
-                "지정가",
-                "PASS",
-                f"price={price_d} qty={qty} est={est}",
-            )
-            if qty is None or qty <= ZERO:
-                _add("QUANTITY", "수량", "FAIL", "qty <= 0")
-            elif qty > Decimal(str(policy.max_order_quantity)):
-                _add(
-                    "QUANTITY",
-                    "수량",
-                    "FAIL",
-                    f"{qty} > max_order_quantity",
-                )
-            else:
-                _add("QUANTITY", "수량", "PASS", str(qty))
 
         # Ticker / orderbook — 통일 DTO (async coroutine 직접 호출 금지)
         quote = self._fetch_price_book(
@@ -1022,27 +1133,19 @@ class UpbitLivePreflightService:
         )
 
     def _open_order_count(self, uba_id: int) -> int:
-        open_statuses = (
-            "CREATED",
-            "PENDING",
-            "SENT",
-            "ACCEPTED",
-            "PARTIALLY_FILLED",
-            "CANCEL_REQUESTED",
-            "REPLACE_REQUESTED",
+        from stock_platform.order.live_open_order_exposure import (
+            evaluate_live_open_order_exposure,
         )
-        return int(
-            self._session.scalar(
-                select(func.count())
-                .select_from(TradingOrderEntity)
-                .where(
-                    TradingOrderEntity.user_broker_account_id == uba_id,
-                    TradingOrderEntity.status_code.in_(open_statuses),
-                    TradingOrderEntity.broker_code == "UPBIT",
-                )
-            )
-            or 0
+
+        exposure = evaluate_live_open_order_exposure(
+            self._session,
+            uba_id=int(uba_id),
+            broker_code="UPBIT",
+            environment="LIVE",
         )
+        self._remote_open_state = exposure.remote_state
+        self._open_order_exposure = exposure
+        return int(exposure.auto_open_count)
 
     def _daily_order_count(self, uba_id: int) -> int:
         # LIVE Risk daily_order_limit 과 동일 집계 (미전송 retire 제외)

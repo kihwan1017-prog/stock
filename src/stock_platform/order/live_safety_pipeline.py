@@ -85,6 +85,7 @@ class LiveOrderSafetyPipeline:
         reference_price: Decimal | None = None,
         require_arm: bool = True,
         order_type: str | None = None,
+        order_amount: Decimal | None = None,
     ) -> LiveSafetyDecision:
         env = (environment or "LIVE").upper()
         if env != "LIVE":
@@ -101,7 +102,17 @@ class LiveOrderSafetyPipeline:
         side_u = (side or "").strip().upper()
         qty = Decimal(str(quantity))
         px = Decimal(str(price))
-        amount = (qty * px).quantize(Decimal("0.01"))
+        order_type_u = str(order_type or "").strip().upper()
+        # UPBIT MARKET BUY: 노셔널은 KRW order_amount (qty*ref_price 아님)
+        if (
+            order_type_u == "MARKET"
+            and side_u == "BUY"
+            and order_amount is not None
+            and Decimal(str(order_amount)) > ZERO
+        ):
+            amount = Decimal(str(order_amount)).quantize(Decimal("0.01"))
+        else:
+            amount = (qty * px).quantize(Decimal("0.01"))
         base_detail: dict[str, Any] = {
             "user_id": user_id,
             "account_id": uba_id,
@@ -218,7 +229,6 @@ class LiveOrderSafetyPipeline:
                 pass
 
         # 2c) KIWOOM LIMIT — 로컬 KRX tick (shared market quote 불필요)
-        order_type_u = str(order_type or "").strip().upper()
         if broker == "KIWOOM" and order_type_u == "LIMIT":
             if qty <= ZERO:
                 return _fail("INVALID_ORDER_QUANTITY", ORDER_QTY_REJECT)
@@ -331,6 +341,11 @@ class LiveOrderSafetyPipeline:
             order_type=str(order_type or "LIMIT"),
             quantity=qty,
             price=px if px > ZERO else None,
+            market_krw_amount=(
+                amount
+                if order_type_u == "MARKET" and side_u == "BUY"
+                else None
+            ),
         )
         if min_notional_reason:
             return _fail(
@@ -553,8 +568,8 @@ class LiveOrderSafetyPipeline:
             SLIPPAGE_REJECT,
         )
 
-        if broker == "UPBIT" and not verified_exit:
-            # UPBIT ENTRY: local + unmapped remote. 상태 불명이면 fail-closed.
+        if broker in {"UPBIT", "KIWOOM"} and not verified_exit:
+            # ENTRY: AUTO open만 한도. MANUAL remote/pending 제외. UNKNOWN fail-closed.
             exposure = evaluate_live_open_order_exposure(
                 self._session,
                 uba_id=uba_id,
@@ -562,17 +577,33 @@ class LiveOrderSafetyPipeline:
                 environment=env,
             )
             base_detail.update(exposure.as_detail())
+            base_detail["auto_open_order_limit"] = int(policy.max_open_orders)
             if not exposure.remote_state_ok:
                 return _fail(
                     str(exposure.reason_code or "REMOTE_OPEN_CHECK_FAILED"),
                     OPEN_ORDER_LIMIT,
                     {
                         "limit": int(policy.max_open_orders),
-                        "count": exposure.canonical_count,
+                        "auto_open_orders": exposure.auto_open_count,
+                        "manual_open_orders": exposure.manual_open_count,
+                        "unknown_open_orders": exposure.unknown_open_count,
                         "remote_open_state": exposure.remote_state,
                     },
                 )
-            open_count = int(exposure.canonical_count)
+            if int(exposure.unknown_open_count) > 0 or (
+                exposure.reason_code == "ORDER_OWNERSHIP_UNKNOWN"
+            ):
+                return _fail(
+                    "ORDER_OWNERSHIP_UNKNOWN",
+                    OPEN_ORDER_LIMIT,
+                    {
+                        "limit": int(policy.max_open_orders),
+                        "auto_open_orders": exposure.auto_open_count,
+                        "manual_open_orders": exposure.manual_open_count,
+                        "unknown_open_orders": exposure.unknown_open_count,
+                    },
+                )
+            open_count = int(exposure.auto_open_count)
         else:
             open_count = self._count_open_orders(uba_id)
             base_detail["open_order_count"] = open_count
@@ -583,6 +614,7 @@ class LiveOrderSafetyPipeline:
                 {
                     "limit": int(policy.max_open_orders),
                     "count": open_count,
+                    "auto_open_orders": open_count,
                 },
             )
 

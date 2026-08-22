@@ -193,10 +193,16 @@ def test_g_retired_fixture_allows_new_order_when_limit_1() -> None:
         patch(
             "stock_platform.order.live_safety_pipeline.evaluate_live_open_order_exposure",
             return_value=OpenOrderExposure(
-                canonical_count=0,
+                auto_open_count=0,
+                manual_open_count=0,
+                unknown_open_count=0,
+                total_open_count=0,
                 local_open_count=0,
+                local_auto_count=0,
+                local_manual_count=0,
                 remote_open_count=0,
                 remote_unmapped_count=0,
+                remote_unmapped_manual_count=0,
                 mapped_remote_count=0,
                 remote_state="OK",
                 remote_state_ok=True,

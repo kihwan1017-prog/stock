@@ -321,6 +321,21 @@ class OrderExecutionService:
             if hasattr(command.order_type, "value")
             else str(command.order_type or "")
         )
+        # UPBIT MARKET BUY: price 인자는 호가 참조가, 노셔널은 order_amount
+        market_krw_amount = None
+        if (
+            str(order_type_text or "").upper() == "MARKET"
+            and str(
+                command.side.value
+                if hasattr(command.side, "value")
+                else command.side
+                or ""
+            ).upper()
+            == "BUY"
+            and command.order_amount is not None
+        ):
+            market_krw_amount = Decimal(str(command.order_amount))
+
         pre_persist_block = evaluate_pre_persist_exit_gate(
             self._session,
             side=command.side.value
@@ -335,6 +350,7 @@ class OrderExecutionService:
             environment=environment,
             user_broker_account_id=uba_id,
             paper_account_id=paper_account_id,
+            market_krw_amount=market_krw_amount,
         )
         if pre_persist_block:
             return self._blocked(pre_persist_block)
@@ -395,6 +411,7 @@ class OrderExecutionService:
                         if hasattr(command.order_type, "value")
                         else str(command.order_type or "")
                     ),
+                    order_amount=command.order_amount,
                 )
                 if not safety.allowed:
                     return self._blocked(safety.reason_code)
