@@ -1101,7 +1101,8 @@ export async function getOperationsCenterSummary(params?: {
 /** AUTO trading performance aggregate (strategy-owned only) */
 export async function getAdminAutotradingPerformance(params?: {
   broker?: "ALL" | "UPBIT" | "KIWOOM";
-  period?: "TODAY" | "7D" | "30D" | "ALL";
+  period?: "TODAY" | "7D" | "30D" | "90D" | "ALL";
+  include_ops?: boolean;
 }): Promise<JsonValue> {
   return getJson("/admin/dashboard/autotrading-performance", params);
 }

@@ -50,6 +50,7 @@ export const queryKeys = {
     autotradingPerformance: (params?: {
       broker?: string;
       period?: string;
+      includeOps?: boolean;
     }) =>
       ["admin", "autotrading-performance", params ?? {}] as const,
     runtimePreflight: () => ["admin", "runtime", "preflight"] as const,

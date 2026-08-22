@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import {
   Alert,
   Button,
@@ -15,62 +14,59 @@ import {
   Table,
   Typography,
 } from "antd";
-import { useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useState } from "react";
 
-import * as adminApi from "@/features/admin/api/adminApi";
 import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
-import { queryKeys } from "@/lib/query/queryKeys";
 
 import {
-  BROKER_FILTER_OPTIONS,
   formatKrw,
   formatPct,
   parsePerformanceSummary,
-  PERIOD_FILTER_OPTIONS,
   pnlColor,
+  durationLabel,
   type BrokerFilter,
   type PeriodFilter,
 } from "./autoTradingPerformanceHelpers";
+import { DashboardPerformanceChart } from "./dashboardCharts";
 import {
-  CHART_SEGMENTS,
+  CHART_OPTIONS,
+  PERIOD_OPTIONS,
   type PerformanceChartType,
 } from "./dashboardTabState";
+import { useAutotradingPerformanceQuery } from "./useAutotradingPerformanceQuery";
 
 function rec(v: unknown): Record<string, unknown> {
   return asRecord(v) ?? {};
 }
+
+const CHART_TITLES: Record<PerformanceChartType, string> = {
+  cumulative_pnl: "누적 실현손익",
+  daily_pnl: "일별 실현손익",
+  cumulative_return: "누적 수익률",
+  symbol_pnl: "종목별 실현손익",
+  symbol_return: "종목별 수익률",
+  win_loss: "승 / 패 비율",
+  exit_reason: "Exit Reason 분포",
+  trade_pnl: "거래별 손익",
+  holding_return: "보유시간 vs 수익률",
+  broker_compare: "거래소 비교",
+};
 
 type Props = {
   enabled: boolean;
   broker: BrokerFilter;
   period: PeriodFilter;
   chart: PerformanceChartType;
-  onBrokerChange: (v: BrokerFilter) => void;
   onPeriodChange: (v: PeriodFilter) => void;
   onChartChange: (v: PerformanceChartType) => void;
   refreshMs?: number;
 };
-
-const CHART_HEIGHT = 280;
 
 export function DashboardPerformanceTab({
   enabled,
   broker,
   period,
   chart,
-  onBrokerChange,
   onPeriodChange,
   onChartChange,
   refreshMs = 60_000,
@@ -78,163 +74,21 @@ export function DashboardPerformanceTab({
   const screens = Grid.useBreakpoint();
   const [detailOpen, setDetailOpen] = useState(false);
 
-  const perfQ = useQuery({
-    queryKey: queryKeys.admin.autotradingPerformance({ broker, period }),
-    queryFn: () =>
-      adminApi.getAdminAutotradingPerformance({ broker, period }),
+  const perfQ = useAutotradingPerformanceQuery({
+    broker,
+    period,
     enabled,
-    refetchInterval: enabled && refreshMs > 0 ? refreshMs : false,
-    staleTime: 45_000,
-    placeholderData: (prev) => prev,
+    refreshMs,
   });
 
   const data = rec(perfQ.data);
   const summary = parsePerformanceSummary(data.summary);
-  const hasClosed = summary.closedTradeCount > 0;
-
-  const dailyChart = useMemo(
-    () =>
-      extractRows(data.daily_returns).map((r) => {
-        const row = rec(r);
-        return {
-          label: String(row.trading_date ?? "").slice(5),
-          value: Number(row.daily_return_pct ?? 0),
-          pnl: Number(row.realized_pnl ?? 0),
-        };
-      }),
-    [data.daily_returns],
-  );
-
-  const cumulativeChart = useMemo(
-    () =>
-      extractRows(data.cumulative_returns).map((r) => {
-        const row = rec(r);
-        return {
-          label: String(row.trading_date ?? "").slice(5),
-          value: Number(row.cumulative_return_pct ?? 0),
-        };
-      }),
-    [data.cumulative_returns],
-  );
-
-  const symbolChart = useMemo(
-    () =>
-      extractRows(data.symbol_performance).map((r) => {
-        const row = rec(r);
-        return {
-          label: String(row.symbol ?? "").replace("KRW-", ""),
-          value: Number(row.return_pct ?? 0),
-          pnl: Number(row.realized_pnl ?? 0),
-        };
-      }),
-    [data.symbol_performance],
-  );
-
-  const exitChart = useMemo(
-    () =>
-      extractRows(data.exit_reason_performance).map((r) => {
-        const row = rec(r);
-        return {
-          label: String(row.exit_reason_label_ko ?? row.exit_reason_category),
-          value: Number(row.avg_return_pct ?? 0),
-          pnl: Number(row.total_realized_pnl ?? 0),
-        };
-      }),
-    [data.exit_reason_performance],
-  );
-
-  const distChart = useMemo(
-    () =>
-      extractRows(data.return_distribution).map((r) => {
-        const row = rec(r);
-        return { label: String(row.bucket), value: Number(row.count ?? 0) };
-      }),
-    [data.return_distribution],
-  );
-
-  const chartTitle: Record<PerformanceChartType, string> = {
-    daily: "일별 자동매매 수익률",
-    cumulative: "누적 자동매매 수익률",
-    symbol: "종목별 자동매매 성과",
-    exit_reason: "청산 유형별 성과",
-    distribution: "수익률 구간 분포",
-  };
-
-  const renderMainChart = () => {
-    if (!hasClosed) {
-      return (
-        <Typography.Text type="secondary">거래 데이터 없음</Typography.Text>
-      );
-    }
-
-    if (chart === "daily") {
-      return (
-        <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-          <BarChart data={dailyChart}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" />
-            <YAxis unit="%" />
-            <Tooltip />
-            <Bar dataKey="value" name="수익률(%)">
-              {dailyChart.map((entry, i) => (
-                <Cell
-                  key={i}
-                  fill={entry.value >= 0 ? "#3f8600" : "#cf1322"}
-                />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      );
-    }
-
-    if (chart === "cumulative") {
-      return (
-        <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-          <LineChart data={cumulativeChart}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="label" />
-            <YAxis unit="%" />
-            <Tooltip />
-            <Line
-              type="monotone"
-              dataKey="value"
-              name="누적 수익률(%)"
-              stroke="#1677ff"
-              dot
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      );
-    }
-
-    const barData =
-      chart === "symbol"
-        ? symbolChart
-        : chart === "exit_reason"
-          ? exitChart
-          : distChart;
-
-    return (
-      <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
-        <BarChart data={barData}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="label" />
-          <YAxis />
-          <Tooltip />
-          <Bar
-            dataKey="value"
-            name={chart === "distribution" ? "거래수" : "수익률(%)"}
-            fill="#1677ff"
-          />
-        </BarChart>
-      </ResponsiveContainer>
-    );
-  };
+  const lowSample = data.low_sample_warning === true;
+  const lowSampleMessage = String(data.low_sample_message ?? "");
 
   const chartSelector = screens.md ? (
     <Segmented
-      options={CHART_SEGMENTS.map((c) => ({
+      options={CHART_OPTIONS.map((c) => ({
         label: c.label,
         value: c.value,
       }))}
@@ -243,13 +97,10 @@ export function DashboardPerformanceTab({
     />
   ) : (
     <Select
-      style={{ minWidth: 140 }}
+      style={{ minWidth: 160 }}
       value={chart}
       onChange={(v) => onChartChange(v as PerformanceChartType)}
-      options={CHART_SEGMENTS.map((c) => ({
-        label: c.label,
-        value: c.value,
-      }))}
+      options={CHART_OPTIONS}
     />
   );
 
@@ -258,7 +109,7 @@ export function DashboardPerformanceTab({
       <Alert
         type="info"
         showIcon
-        title="AUTO 전용 성과"
+        title="AUTO 전용 성과 분석"
         description="일반매매(MANUAL) 및 계좌 전체 손익은 포함하지 않습니다."
       />
 
@@ -266,15 +117,9 @@ export function DashboardPerformanceTab({
         <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
           <Space wrap>
             <Select
-              value={broker}
-              onChange={onBrokerChange}
-              options={BROKER_FILTER_OPTIONS}
-              style={{ width: 110 }}
-            />
-            <Select
               value={period}
               onChange={onPeriodChange}
-              options={PERIOD_FILTER_OPTIONS}
+              options={PERIOD_OPTIONS}
               style={{ width: 100 }}
             />
             {chartSelector}
@@ -284,6 +129,18 @@ export function DashboardPerformanceTab({
           </Button>
         </Space>
       </Card>
+
+      {lowSample ? (
+        <Alert
+          type="warning"
+          showIcon
+          title="표본 부족"
+          description={
+            lowSampleMessage ||
+            "완료된 자동매매 거래가 적습니다. 거래 데이터가 더 쌓인 후 성과를 판단하세요."
+          }
+        />
+      ) : null}
 
       <Card size="small" loading={perfQ.isLoading && !perfQ.data}>
         <Row gutter={[12, 12]}>
@@ -299,10 +156,7 @@ export function DashboardPerformanceTab({
             />
           </Col>
           <Col xs={12} sm={6}>
-            <Statistic
-              title="수익률"
-              value={formatPct(summary.periodReturnPct)}
-            />
+            <Statistic title="수익률" value={formatPct(summary.periodReturnPct)} />
           </Col>
           <Col xs={12} sm={6}>
             <Statistic
@@ -320,33 +174,72 @@ export function DashboardPerformanceTab({
         </Row>
       </Card>
 
-      <Card size="small" title={chartTitle[chart]}>
+      <Card
+        size="small"
+        title={CHART_TITLES[chart]}
+        loading={perfQ.isLoading && !perfQ.data}
+      >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           {String(data.return_formula_note ?? "")}
         </Typography.Paragraph>
-        {renderMainChart()}
+        {perfQ.isError ? (
+          <Alert type="error" title="차트 데이터 로드 실패" />
+        ) : (
+          <DashboardPerformanceChart
+            chart={chart}
+            data={data}
+            broker={broker}
+          />
+        )}
       </Card>
 
       <Card size="small">
         <Button type="link" onClick={() => setDetailOpen((o) => !o)}>
-          {detailOpen ? "상세 거래 접기 ▲" : "상세 거래 보기 ▼"}
+          {detailOpen ? "상세 AUTO 거래 접기 ▲" : "상세 AUTO 거래 보기 ▼"}
         </Button>
         {detailOpen ? (
           <Table
             size="small"
             pagination={{ pageSize: 10 }}
-            scroll={{ x: 800 }}
+            scroll={{ x: 1100 }}
             rowKey={(r) => String(rec(r).binding_id)}
-            dataSource={extractRows(data.recent_closed_trades).map((r) =>
-              rec(r),
+            dataSource={extractRows(data.round_trips ?? data.recent_closed_trades).map(
+              (r) => rec(r),
             )}
             columns={[
-              { title: "거래소", dataIndex: "broker_code" },
-              { title: "종목", dataIndex: "symbol" },
-              { title: "순손익", dataIndex: "net_pnl", render: (v) => formatKrw(Number(v), 2) },
-              { title: "수익률", dataIndex: "return_pct", render: (v) => formatPct(Number(v)) },
-              { title: "청산", dataIndex: "exit_reason_label_ko" },
-              { title: "시간", dataIndex: "closed_at", render: (v) => new Date(String(v)).toLocaleString("ko-KR") },
+              { title: "Broker", dataIndex: "broker_code", width: 72 },
+              { title: "Symbol", dataIndex: "symbol" },
+              { title: "Entry", dataIndex: "entry_price", width: 72 },
+              { title: "Exit", dataIndex: "exit_price", width: 72 },
+              { title: "Qty", dataIndex: "quantity", width: 64 },
+              {
+                title: "Gross",
+                dataIndex: "gross_pnl",
+                render: (v) => formatKrw(Number(v), 2),
+              },
+              {
+                title: "Fee",
+                dataIndex: "fees",
+                render: (v) => formatKrw(Number(v), 2),
+              },
+              {
+                title: "Net",
+                dataIndex: "net_pnl",
+                render: (v) => formatKrw(Number(v), 2),
+              },
+              {
+                title: "Return",
+                dataIndex: "return_pct",
+                render: (v) => formatPct(Number(v)),
+              },
+              {
+                title: "Holding",
+                dataIndex: "duration_sec",
+                render: (v) => durationLabel(Number(v)),
+              },
+              { title: "Exit", dataIndex: "exit_reason_label_ko" },
+              { title: "Opened", dataIndex: "opened_at", ellipsis: true },
+              { title: "Closed", dataIndex: "closed_at", ellipsis: true },
             ]}
           />
         ) : null}

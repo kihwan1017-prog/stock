@@ -30,7 +30,7 @@ _PCT_QUANT = Decimal("0.0001")
 _KST = ZoneInfo("Asia/Seoul")
 
 BrokerFilter = Literal["ALL", "UPBIT", "KIWOOM"]
-PeriodFilter = Literal["TODAY", "7D", "30D", "ALL"]
+PeriodFilter = Literal["TODAY", "7D", "30D", "90D", "ALL"]
 
 RETURN_FORMULA_NOTE = (
     "거래 수익률 = (실현손익 - 수수료) / 진입원가 × 100. "
@@ -201,7 +201,7 @@ def _period_start(period: PeriodFilter, *, today: date) -> datetime | None:
     day_start = datetime(today.year, today.month, today.day, tzinfo=_KST)
     if period == "TODAY":
         return day_start.astimezone(timezone.utc)
-    days = 7 if period == "7D" else 30
+    days = {"7D": 7, "30D": 30, "90D": 90}.get(period, 30)
     return (day_start - timedelta(days=days - 1)).astimezone(timezone.utc)
 
 
@@ -222,6 +222,7 @@ class AutotradingPerformanceService:
         *,
         broker: BrokerFilter = "ALL",
         period: PeriodFilter = "30D",
+        include_ops: bool = False,
         uba_ids: frozenset[int] | None = None,
     ) -> dict[str, Any]:
         scope_ubas = uba_ids or DEFAULT_PROTECTED_UBA_IDS
@@ -326,12 +327,32 @@ class AutotradingPerformanceService:
         )
         daily_returns = self._build_daily_returns(period_closed)
         cumulative_returns = self._build_cumulative_returns(daily_returns)
+        daily_by_broker = (
+            self._build_daily_returns_by_broker(period_closed)
+            if broker == "ALL"
+            else []
+        )
+        cumulative_by_broker = (
+            self._build_cumulative_pnl_by_broker(daily_by_broker)
+            if broker == "ALL"
+            else []
+        )
         symbol_performance = self._build_symbol_performance(period_closed)
         exit_reason_performance = self._build_exit_reason_performance(period_closed)
         win_loss = self._build_win_loss(period_closed)
         return_distribution = self._build_return_distribution(period_closed)
         broker_comparison = self._build_broker_comparison(period_closed, closed_trades)
         recent_closed = period_closed[:10]
+        round_trips = list(period_closed)
+        holding_return = self._build_holding_return(period_closed)
+
+        ops_insight: dict[str, Any] | None = None
+        if include_ops:
+            ops_insight = self._build_ops_insight(
+                broker=broker,
+                scope_ubas=scope_ubas,
+                today_start=today_start,
+            )
 
         closed_count = len(period_closed)
         low_sample = closed_count < 5
@@ -351,12 +372,17 @@ class AutotradingPerformanceService:
             "summary": summary,
             "daily_returns": daily_returns,
             "cumulative_returns": cumulative_returns,
+            "daily_by_broker": daily_by_broker,
+            "cumulative_by_broker": cumulative_by_broker,
             "symbol_performance": symbol_performance,
             "exit_reason_performance": exit_reason_performance,
             "win_loss": win_loss,
             "return_distribution": return_distribution,
             "broker_comparison": broker_comparison,
             "recent_closed_trades": recent_closed,
+            "round_trips": round_trips,
+            "holding_return": holding_return,
+            "ops_insight": ops_insight,
             "open_positions": open_positions,
             "closed_trade_count": closed_count,
             "low_sample_warning": low_sample,
@@ -673,6 +699,16 @@ class AutotradingPerformanceService:
                 1 for x in period_trades if Decimal(str(x["net_pnl"])) > ZERO
             )
             n = len(period_trades)
+            rets = [Decimal(str(x["return_pct"])) for x in period_trades]
+            avg_ret = (
+                (sum(rets, ZERO) / Decimal(n)).quantize(_PCT_QUANT) if n > 0 else None
+            )
+            losses_pnl = [
+                Decimal(str(x["net_pnl"]))
+                for x in period_trades
+                if Decimal(str(x["net_pnl"])) < ZERO
+            ]
+            max_loss = min(losses_pnl) if losses_pnl else None
             rows.append(
                 {
                     "broker_code": code,
@@ -690,8 +726,198 @@ class AutotradingPerformanceService:
                         if n > 0
                         else None
                     ),
+                    "avg_return_pct": str(avg_ret) if avg_ret is not None else None,
+                    "max_loss_pnl": str(max_loss.quantize(QUANT))
+                    if max_loss is not None
+                    else None,
                     "trade_count": n,
                     "label": None,
                 }
             )
         return rows
+
+    def _build_daily_returns_by_broker(
+        self, period_closed: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        by_day_broker: dict[tuple[date, str], list[dict[str, Any]]] = defaultdict(
+            list
+        )
+        for t in period_closed:
+            closed_at = t.get("closed_at")
+            if not closed_at:
+                continue
+            day = _kst_trading_date(datetime.fromisoformat(str(closed_at)))
+            if not day:
+                continue
+            code = str(t.get("broker_code") or "").upper()
+            by_day_broker[(day, code)].append(t)
+
+        rows: list[dict[str, Any]] = []
+        for (day, code), trades in sorted(by_day_broker.items()):
+            net = sum((Decimal(str(x["net_pnl"])) for x in trades), ZERO)
+            rows.append(
+                {
+                    "trading_date": day.isoformat(),
+                    "broker_code": code,
+                    "realized_pnl": str(net.quantize(QUANT)),
+                    "trade_count": len(trades),
+                }
+            )
+        return rows
+
+    def _build_cumulative_pnl_by_broker(
+        self, daily_by_broker: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        cum: dict[str, Decimal] = {}
+        rows: list[dict[str, Any]] = []
+        for row in sorted(daily_by_broker, key=lambda r: (r["trading_date"], r["broker_code"])):
+            code = str(row["broker_code"])
+            cum[code] = cum.get(code, ZERO) + Decimal(str(row["realized_pnl"]))
+            rows.append(
+                {
+                    "trading_date": row["trading_date"],
+                    "broker_code": code,
+                    "cumulative_realized_pnl": str(cum[code].quantize(QUANT)),
+                }
+            )
+        return rows
+
+    def _build_holding_return(
+        self, period_closed: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            {
+                "binding_id": t.get("binding_id"),
+                "broker_code": t.get("broker_code"),
+                "symbol": t.get("symbol"),
+                "duration_sec": t.get("duration_sec"),
+                "return_pct": t.get("return_pct"),
+                "net_pnl": t.get("net_pnl"),
+            }
+            for t in period_closed
+            if t.get("duration_sec") is not None
+        ]
+
+    def _build_ops_insight(
+        self,
+        *,
+        broker: BrokerFilter,
+        scope_ubas: frozenset[int],
+        today_start: datetime,
+    ) -> dict[str, Any]:
+        from stock_platform.operation.upbit_full_market.constants import (
+            SLOT_WAITING_SIGNAL,
+        )
+        from stock_platform.operation.upbit_full_market.entities import (
+            UpbitPortfolioPolicyEntity,
+            UpbitPositionSlotEntity,
+        )
+        from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            portfolio_entry_telemetry,
+        )
+
+        pipeline: dict[str, Any] = {}
+        blockers: list[dict[str, Any]] = []
+
+        if broker in ("ALL", "UPBIT") and 1380 in scope_ubas:
+            uba = 1380
+            telem = portfolio_entry_telemetry.snapshot(uba) or {}
+            policy = self.session.scalar(
+                select(UpbitPortfolioPolicyEntity).where(
+                    UpbitPortfolioPolicyEntity.user_broker_account_id == uba
+                )
+            )
+            slots = list(
+                self.session.scalars(
+                    select(UpbitPositionSlotEntity).where(
+                        UpbitPositionSlotEntity.user_broker_account_id == uba
+                    )
+                )
+            )
+            waiting = [
+                s
+                for s in slots
+                if str(s.status).upper() == SLOT_WAITING_SIGNAL
+                and str(s.symbol or "").strip()
+            ]
+            capacity = int(getattr(policy, "max_positions", 0) or 0) if policy else 0
+
+            total_eval = 0
+            blocked_eval = 0
+            reason_counts: dict[str, int] = defaultdict(int)
+            for row in telem.values():
+                if not isinstance(row, dict):
+                    continue
+                cnt = int(row.get("evaluation_count") or 0)
+                total_eval += cnt
+                if str(row.get("last_decision") or "").upper() == "BLOCK":
+                    blocked_eval += cnt
+                reason = str(row.get("last_block_reason") or "UNKNOWN")
+                reason_counts[reason] += cnt
+
+            auto_orders_today = 0
+            auto_fills_today = 0
+            for order in self.session.scalars(
+                select(TradingOrderEntity).where(
+                    TradingOrderEntity.user_broker_account_id == uba,
+                    TradingOrderEntity.created_at >= today_start,
+                    TradingOrderEntity.strategy_id.isnot(None),
+                )
+            ):
+                auto_orders_today += 1
+                st = str(getattr(order, "status_code", "") or "").upper()
+                if st in {"FILLED", "DONE", "COMPLETED"}:
+                    auto_fills_today += 1
+
+            open_auto = len(
+                list(
+                    self.session.scalars(
+                        select(StrategyPositionBindingEntity).where(
+                            StrategyPositionBindingEntity.user_broker_account_id
+                            == uba,
+                            StrategyPositionBindingEntity.broker_code == "UPBIT",
+                            StrategyPositionBindingEntity.status == BINDING_STATUS_OPEN,
+                            StrategyPositionBindingEntity.ownership_code
+                            == OWNERSHIP_STRATEGY,
+                        )
+                    )
+                )
+            )
+
+            pipeline = {
+                "broker_code": "UPBIT",
+                "slots_occupied": len(waiting),
+                "slots_capacity": capacity,
+                "entry_evaluations": total_eval,
+                "entry_blocked": blocked_eval,
+                "auto_open_positions": open_auto,
+                "orders_today_auto": auto_orders_today,
+                "fills_today_auto": auto_fills_today,
+            }
+
+            if total_eval > 0:
+                for reason, cnt in sorted(
+                    reason_counts.items(), key=lambda x: x[1], reverse=True
+                ):
+                    blockers.append(
+                        {
+                            "reason_code": reason,
+                            "count": cnt,
+                            "pct": str(
+                                (
+                                    Decimal(cnt)
+                                    / Decimal(total_eval)
+                                    * Decimal("100")
+                                ).quantize(_PCT_QUANT)
+                            ),
+                        }
+                    )
+
+        return {
+            "pipeline": pipeline,
+            "entry_blockers": blockers,
+            "blocker_note": (
+                "telemetry evaluation_count를 last_block_reason별 집계 "
+                "(.run/uba_*_entry_eval_latest.json + in-memory)"
+            ),
+        }

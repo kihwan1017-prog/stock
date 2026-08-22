@@ -21,7 +21,8 @@ router = APIRouter(
 @router.get("/autotrading-performance")
 def get_autotrading_performance(
     broker: str = Query(default="ALL", pattern="^(ALL|UPBIT|KIWOOM)$"),
-    period: str = Query(default="30D", pattern="^(TODAY|7D|30D|ALL)$"),
+    period: str = Query(default="30D", pattern="^(TODAY|7D|30D|90D|ALL)$"),
+    include_ops: bool = Query(default=False),
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
@@ -34,6 +35,7 @@ def get_autotrading_performance(
     return AutotradingPerformanceService(session).build(
         broker=broker,  # type: ignore[arg-type]
         period=period,  # type: ignore[arg-type]
+        include_ops=include_ops,
     )
 
 

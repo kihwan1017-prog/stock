@@ -1,32 +1,55 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Alert, Card, Col, Row, Space, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Card, Col, Row, Segmented, Space, Statistic, Table, Tag, Typography } from "antd";
 
-import * as adminApi from "@/features/admin/api/adminApi";
 import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
-import { queryKeys } from "@/lib/query/queryKeys";
 
 import {
   formatKrw,
   formatPct,
   parsePerformanceSummary,
   pnlColor,
+  type BrokerFilter,
 } from "./autoTradingPerformanceHelpers";
+import {
+  ChartEmpty,
+  SummaryCumulativeChart,
+  SummaryDailyChart,
+} from "./dashboardCharts";
+import { SUMMARY_PERIOD_OPTIONS, type SummaryPeriodFilter } from "./dashboardTabState";
+import { useAutotradingPerformanceQuery } from "./useAutotradingPerformanceQuery";
 import { useDashboardBrokerOps } from "./useDashboardBrokerOps";
 
 function rec(v: unknown): Record<string, unknown> {
   return asRecord(v) ?? {};
 }
 
+function brokerStatusLabel(card: {
+  blocker: string | null;
+  readiness?: string | null;
+  liveOn: boolean | null;
+}): string {
+  if (card.blocker) return "차단";
+  if (card.liveOn === false) return "중지";
+  const r = String(card.readiness ?? "").toUpperCase();
+  if (r.includes("READY") || r.includes("RUNNING")) return "자동매매 가능";
+  return "준비안됨";
+}
+
 type Props = {
   enabled: boolean;
+  broker: BrokerFilter;
+  summaryPeriod: SummaryPeriodFilter;
+  onSummaryPeriodChange: (v: SummaryPeriodFilter) => void;
   refreshMs?: number;
   killActive?: boolean;
 };
 
 export function DashboardSummaryTab({
   enabled,
+  broker,
+  summaryPeriod,
+  onSummaryPeriodChange,
   refreshMs = 20_000,
   killActive = false,
 }: Props) {
@@ -36,53 +59,47 @@ export function DashboardSummaryTab({
     refreshMs,
   });
 
-  const perfQ = useQuery({
-    queryKey: queryKeys.admin.autotradingPerformance({
-      broker: "ALL",
-      period: "30D",
-    }),
-    queryFn: () =>
-      adminApi.getAdminAutotradingPerformance({
-        broker: "ALL",
-        period: "30D",
-      }),
+  const perfQ = useAutotradingPerformanceQuery({
+    broker,
+    period: summaryPeriod,
     enabled,
-    refetchInterval: enabled && refreshMs > 0 ? refreshMs : false,
-    staleTime: 45_000,
-    placeholderData: (prev) => prev,
+    refreshMs,
   });
 
-  const summary = parsePerformanceSummary(rec(perfQ.data).summary);
-  const recent = extractRows(rec(perfQ.data).recent_closed_trades).slice(0, 5);
-  const lowSample = rec(perfQ.data).low_sample_warning === true;
+  const data = rec(perfQ.data);
+  const summary = parsePerformanceSummary(data.summary);
+  const recent = extractRows(data.recent_closed_trades).slice(0, 5);
+  const lowSample = data.low_sample_warning === true;
+  const hasTrades = summary.closedTradeCount > 0;
 
-  const statusLabel =
-    killActive
-      ? "운영 중지"
-      : brokerOps.overallStatus === "ok"
-        ? "전체 정상"
-        : brokerOps.overallStatus === "partial"
-          ? "일부 차단"
-          : "운영 중지";
-
-  const statusColor =
-    statusLabel === "전체 정상"
-      ? "success"
-      : statusLabel === "일부 차단"
-        ? "warning"
-        : "error";
+  const showUpbit = broker === "ALL" || broker === "UPBIT";
+  const showKiwoom = broker === "ALL" || broker === "KIWOOM";
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-      <Card size="small" title="자동매매 종합 상태">
+      <Card size="small" title="종합 상태">
         <Space wrap>
-          <Tag color={statusColor}>{statusLabel}</Tag>
-          <Tag color={brokerOps.upbitCard.blocker ? "warning" : "success"}>
-            UPBIT: {brokerOps.upbitCard.blocker ? "차단" : "정상"}
-          </Tag>
-          <Tag color={brokerOps.kiwoomCard.blocker ? "warning" : "success"}>
-            KIWOOM: {brokerOps.kiwoomCard.blocker ? "차단" : "정상"}
-          </Tag>
+          {killActive ? (
+            <Tag color="error">운영 중지 (Kill Switch)</Tag>
+          ) : null}
+          {showUpbit ? (
+            <Tag
+              color={
+                brokerOps.upbitCard.blocker ? "warning" : "success"
+              }
+            >
+              UPBIT · {brokerStatusLabel(brokerOps.upbitCard)}
+            </Tag>
+          ) : null}
+          {showKiwoom ? (
+            <Tag
+              color={
+                brokerOps.kiwoomCard.blocker ? "warning" : "default"
+              }
+            >
+              KIWOOM · {brokerStatusLabel(brokerOps.kiwoomCard)}
+            </Tag>
+          ) : null}
         </Space>
         {brokerOps.blockers.length > 0 ? (
           <Alert
@@ -107,29 +124,23 @@ export function DashboardSummaryTab({
         <Row gutter={[12, 12]}>
           <Col xs={12} sm={8} md={4}>
             <Statistic
-              title="오늘 AUTO 수익률"
-              value={formatPct(summary.todayReturnPct)}
-            />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="오늘 AUTO 실현손익"
-              value={summary.todayRealizedPnl ?? 0}
-              precision={0}
-              suffix="원"
-              styles={{ content: { color: pnlColor(summary.todayRealizedPnl) } }}
-            />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="현재 AUTO 평가손익"
-              value={summary.currentUnrealizedPnl ?? 0}
+              title="AUTO 누적 실현손익"
+              value={summary.cumulativeRealizedPnl ?? 0}
               precision={0}
               suffix="원"
               styles={{
-                content: { color: pnlColor(summary.currentUnrealizedPnl) },
+                content: { color: pnlColor(summary.cumulativeRealizedPnl) },
               }}
             />
+          </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Statistic
+              title="AUTO 수익률"
+              value={formatPct(summary.periodReturnPct)}
+            />
+          </Col>
+          <Col xs={12} sm={8} md={4}>
+            <Statistic title="AUTO 거래 횟수" value={summary.closedTradeCount} />
           </Col>
           <Col xs={12} sm={8} md={4}>
             <Statistic
@@ -142,37 +153,53 @@ export function DashboardSummaryTab({
             />
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <Statistic title="완료 거래" value={summary.closedTradeCount} />
+            <Statistic title="AUTO 보유종목" value={summary.openPositionCount} />
           </Col>
           <Col xs={12} sm={8} md={4}>
-            <Statistic title="AUTO 보유" value={summary.openPositionCount} />
+            <Statistic
+              title="오늘 AUTO 손익"
+              value={summary.todayRealizedPnl ?? 0}
+              precision={0}
+              suffix="원"
+              styles={{ content: { color: pnlColor(summary.todayRealizedPnl) } }}
+            />
           </Col>
         </Row>
       </Card>
 
-      <Card size="small" title="계좌 전체 손익 (Safety)">
-        <Typography.Text type="secondary">
-          MANUAL 보유 평가손익 — AUTO 성과와 분리. 상세는 계좌·자산 화면.
-        </Typography.Text>
-        <div style={{ marginTop: 8 }}>
-          <Statistic
-            title="MANUAL 평가손익 (참고)"
-            value="—"
-            suffix={
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                운영 탭에서 조회
-              </Typography.Text>
-            }
+      <Card
+        size="small"
+        title="핵심 차트"
+        extra={
+          <Segmented
+            size="small"
+            value={summaryPeriod}
+            onChange={(v) => onSummaryPeriodChange(v as SummaryPeriodFilter)}
+            options={SUMMARY_PERIOD_OPTIONS}
           />
-        </div>
+        }
+        loading={perfQ.isLoading && !perfQ.data}
+      >
+        {perfQ.isError ? (
+          <Alert type="error" title="성과 데이터를 불러오지 못했습니다." />
+        ) : !hasTrades ? (
+          <ChartEmpty />
+        ) : (
+          <Row gutter={[16, 16]}>
+            <Col xs={24} lg={12}>
+              <Typography.Text type="secondary">AUTO 누적손익</Typography.Text>
+              <SummaryCumulativeChart data={data} broker={broker} />
+            </Col>
+            <Col xs={24} lg={12}>
+              <Typography.Text type="secondary">AUTO 일별손익</Typography.Text>
+              <SummaryDailyChart data={data} />
+            </Col>
+          </Row>
+        )}
       </Card>
 
-      {lowSample && rec(perfQ.data).low_sample_message ? (
-        <Alert
-          type="info"
-          showIcon
-          title={String(rec(perfQ.data).low_sample_message)}
-        />
+      {lowSample && data.low_sample_message ? (
+        <Alert type="info" showIcon title={String(data.low_sample_message)} />
       ) : null}
 
       <Card size="small" title="최근 AUTO 거래 (5건)">
@@ -180,35 +207,35 @@ export function DashboardSummaryTab({
           <Table
             size="small"
             pagination={false}
-            scroll={{ x: 720 }}
+            scroll={{ x: 800 }}
             rowKey={(r) => String(rec(r).binding_id ?? rec(r).symbol)}
             dataSource={recent.map((r) => rec(r))}
             columns={[
-              { title: "거래소", dataIndex: "broker_code", width: 80 },
+              { title: "거래소", dataIndex: "broker_code", width: 72 },
               { title: "종목", dataIndex: "symbol" },
-              { title: "진입가", dataIndex: "entry_price", width: 80 },
-              { title: "청산가", dataIndex: "exit_price", width: 80 },
-              {
-                title: "수익률",
-                dataIndex: "return_pct",
-                width: 80,
-                render: (v) => formatPct(Number(v)),
-              },
+              { title: "진입", dataIndex: "entry_price", width: 72 },
+              { title: "청산", dataIndex: "exit_price", width: 72 },
               {
                 title: "실현손익",
                 dataIndex: "net_pnl",
-                width: 100,
+                width: 96,
                 render: (v) => formatKrw(Number(v), 2),
               },
               {
-                title: "청산사유",
+                title: "수익률",
+                dataIndex: "return_pct",
+                width: 72,
+                render: (v) => formatPct(Number(v)),
+              },
+              {
+                title: "Exit",
                 dataIndex: "exit_reason_label_ko",
                 ellipsis: true,
               },
               {
-                title: "시간",
+                title: "체결시각",
                 dataIndex: "closed_at",
-                width: 160,
+                width: 150,
                 render: (v) =>
                   v ? new Date(String(v)).toLocaleString("ko-KR") : "—",
               },

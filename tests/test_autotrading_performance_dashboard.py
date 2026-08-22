@@ -175,3 +175,155 @@ def test_open_position_included() -> None:
     out = AutotradingPerformanceService(session).build(period="ALL")
     assert len(out["open_positions"]) == 1
     assert out["summary"]["open_position_count"] == 1
+
+
+def test_period_90d_filters_old_trades() -> None:
+    recent = _geod_closed_binding()
+    old = StrategyPositionBindingEntity(
+        binding_id=9,
+        user_broker_account_id=1380,
+        broker_code="UPBIT",
+        strategy_id=100,
+        symbol="KRW-OLD",
+        status=BINDING_STATUS_CLOSED,
+        ownership_code=OWNERSHIP_STRATEGY,
+        owned_quantity=Decimal("0"),
+        entry_price=Decimal("100"),
+        realized_pnl=Decimal("5"),
+        fees=Decimal("0"),
+        opened_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        closed_at=datetime(2025, 1, 2, tzinfo=timezone.utc),
+        meta_json={"exit_fill_price": "105", "closed_quantity": "1"},
+    )
+    session = _mock_session(closed=[recent, old])
+    out = AutotradingPerformanceService(session).build(period="90D")
+    assert out["period"] == "90D"
+    assert out["closed_trade_count"] == 1
+    assert out["recent_closed_trades"][0]["symbol"] == "KRW-GEOD"
+
+
+def test_broker_upbit_filters_kiwoom() -> None:
+    """broker 필터는 DB 쿼리 단계 — mock은 UPBIT 행만 반환한다고 가정."""
+    upbit = _geod_closed_binding()
+    session = _mock_session(closed=[upbit])
+    out = AutotradingPerformanceService(session).build(broker="UPBIT", period="ALL")
+    assert out["broker"] == "UPBIT"
+    assert out["closed_trade_count"] == 1
+    assert out["recent_closed_trades"][0]["broker_code"] == "UPBIT"
+    assert out["daily_by_broker"] == []
+    assert out["cumulative_by_broker"] == []
+
+
+def test_broker_kiwoom_only() -> None:
+    kiwoom = StrategyPositionBindingEntity(
+        binding_id=11,
+        user_broker_account_id=1381,
+        broker_code="KIWOOM",
+        strategy_id=100,
+        symbol="005930",
+        status=BINDING_STATUS_CLOSED,
+        ownership_code=OWNERSHIP_STRATEGY,
+        owned_quantity=Decimal("0"),
+        entry_price=Decimal("70000"),
+        realized_pnl=Decimal("500"),
+        fees=Decimal("50"),
+        closed_at=datetime(2026, 8, 21, tzinfo=timezone.utc),
+        meta_json={"exit_fill_price": "70500", "closed_quantity": "1"},
+    )
+    session = _mock_session(closed=[kiwoom])
+    out = AutotradingPerformanceService(session).build(broker="KIWOOM", period="ALL")
+    assert out["broker"] == "KIWOOM"
+    assert out["closed_trade_count"] == 1
+    assert out["recent_closed_trades"][0]["broker_code"] == "KIWOOM"
+
+
+def test_broker_all_includes_broker_series() -> None:
+    upbit = _geod_closed_binding()
+    session = _mock_session(closed=[upbit])
+    out = AutotradingPerformanceService(session).build(broker="ALL", period="30D")
+    assert out["broker"] == "ALL"
+    assert isinstance(out["daily_by_broker"], list)
+    assert isinstance(out["cumulative_by_broker"], list)
+    assert len(out["broker_comparison"]) == 2
+
+
+def test_holding_return_shape() -> None:
+    binding = _geod_closed_binding()
+    exit_order = TradingOrderEntity(
+        order_id=1801,
+        client_order_id="c-exit",
+        symbol="KRW-GEOD",
+        side_code="SELL",
+        status_code="FILLED",
+        metadata_payload={"signal_reason": "MA_DEAD_CROSS"},
+    )
+    session = _mock_session(closed=[binding], exit_orders=[exit_order])
+    out = AutotradingPerformanceService(session).build(period="ALL")
+    assert len(out["holding_return"]) == 1
+    row = out["holding_return"][0]
+    assert row["symbol"] == "KRW-GEOD"
+    assert row["duration_sec"] is not None
+    assert Decimal(str(row["return_pct"])) > Decimal("0")
+
+
+def test_single_trade_low_sample_message() -> None:
+    binding = _geod_closed_binding()
+    session = _mock_session(closed=[binding])
+    out = AutotradingPerformanceService(session).build(period="30D")
+    assert out["closed_trade_count"] == 1
+    assert out["low_sample_warning"] is True
+    assert out["low_sample_message"] is not None
+    assert "1건" in out["low_sample_message"]
+
+
+def test_include_ops_returns_ops_insight(monkeypatch) -> None:
+    from stock_platform.operation.upbit_full_market import portfolio_entry_signal
+
+    monkeypatch.setattr(
+        portfolio_entry_signal.portfolio_entry_telemetry,
+        "snapshot",
+        lambda _uba: {
+            "KRW-TEST": {
+                "evaluation_count": 10,
+                "last_decision": "BLOCK",
+                "last_block_reason": "RSI_TOO_HIGH",
+            }
+        },
+    )
+
+    class _Policy:
+        max_positions = 5
+
+    session = MagicMock()
+
+    def _scalar(_stmt):  # noqa: ANN001
+        return _Policy()
+
+    closed = _geod_closed_binding()
+    session.scalar = MagicMock(side_effect=_scalar)
+    queues = [
+        iter([closed]),
+        iter([]),
+        iter([]),
+        iter([]),
+        iter([]),
+        iter([]),
+        iter([]),
+    ]
+
+    def _scalars(_stmt):  # noqa: ANN001
+        if queues:
+            return queues.pop(0)
+        return iter([])
+
+    session.scalars = MagicMock(side_effect=_scalars)
+
+    out = AutotradingPerformanceService(session).build(
+        broker="UPBIT", period="7D", include_ops=True
+    )
+    assert out["ops_insight"] is not None
+    pipeline = out["ops_insight"]["pipeline"]
+    assert pipeline.get("slots_capacity") == 5
+    blockers = out["ops_insight"]["entry_blockers"]
+    assert len(blockers) >= 1
+    assert blockers[0]["reason_code"] == "RSI_TOO_HIGH"

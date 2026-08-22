@@ -3,14 +3,15 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 
+import type { BrokerFilter, PeriodFilter } from "./autoTradingPerformanceHelpers";
 import {
   buildDashboardSearchParams,
   parseDashboardUrlState,
   type DashboardTab,
   type DashboardUrlState,
   type PerformanceChartType,
+  type SummaryPeriodFilter,
 } from "./dashboardTabState";
-import type { BrokerFilter, PeriodFilter } from "./autoTradingPerformanceHelpers";
 
 export function useDashboardUrlState() {
   const searchParams = useSearchParams();
@@ -33,8 +34,11 @@ export function useDashboardUrlState() {
   return {
     ...state,
     setTab: (tab: DashboardTab) => patch({ tab }),
-    setBroker: (broker: BrokerFilter) => patch({ broker, tab: "performance" }),
+    setBroker: (broker: BrokerFilter) => patch({ broker }),
     setPeriod: (period: PeriodFilter) => patch({ period, tab: "performance" }),
-    setChart: (chart: PerformanceChartType) => patch({ chart, tab: "performance" }),
+    setSummaryPeriod: (summaryPeriod: SummaryPeriodFilter) =>
+      patch({ summaryPeriod, tab: "summary" }),
+    setChart: (chart: PerformanceChartType) =>
+      patch({ chart, tab: "performance" }),
   };
 }

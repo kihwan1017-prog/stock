@@ -1,8 +1,9 @@
 "use client";
 
-import { Card, Tabs, Typography } from "antd";
+import { Card, Space, Tabs, Typography } from "antd";
 
 import { DASHBOARD_TABS } from "./dashboardTabState";
+import { DashboardBrokerFilter } from "./DashboardBrokerFilter";
 import { DashboardOperationsTab } from "./DashboardOperationsTab";
 import { DashboardPerformanceTab } from "./DashboardPerformanceTab";
 import { DashboardSummaryTab } from "./DashboardSummaryTab";
@@ -23,58 +24,65 @@ export function CompactAdminDashboard({
   const activeTab = url.tab;
 
   return (
-    <Card
-      size="small"
-      styles={{ body: { paddingTop: 8 } }}
-    >
-      <Tabs
-        activeKey={activeTab}
-        onChange={(key) =>
-          url.setTab(key as typeof url.tab)
-        }
-        items={DASHBOARD_TABS.map((t) => ({
-          key: t.key,
-          label: t.label,
-          children: null,
-        }))}
-      />
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+        <Space wrap style={{ justifyContent: "space-between", width: "100%" }}>
+          <Typography.Text strong>거래소</Typography.Text>
+          <DashboardBrokerFilter value={url.broker} onChange={url.setBroker} />
+        </Space>
+      </Card>
 
-      {activeTab === "summary" ? (
-        <DashboardSummaryTab
-          enabled
-          refreshMs={refreshMs}
-          killActive={killActive}
+      <Card size="small" styles={{ body: { paddingTop: 8 } }}>
+        <Tabs
+          activeKey={activeTab}
+          onChange={(key) => url.setTab(key as typeof url.tab)}
+          items={DASHBOARD_TABS.map((t) => ({
+            key: t.key,
+            label: t.label,
+            children: null,
+          }))}
         />
-      ) : null}
 
-      {activeTab === "performance" ? (
-        <DashboardPerformanceTab
-          enabled
-          broker={url.broker}
-          period={url.period}
-          chart={url.chart}
-          onBrokerChange={url.setBroker}
-          onPeriodChange={url.setPeriod}
-          onChartChange={url.setChart}
-          refreshMs={60_000}
-        />
-      ) : null}
+        {activeTab === "summary" ? (
+          <DashboardSummaryTab
+            enabled
+            broker={url.broker}
+            summaryPeriod={url.summaryPeriod}
+            onSummaryPeriodChange={url.setSummaryPeriod}
+            refreshMs={refreshMs}
+            killActive={killActive}
+          />
+        ) : null}
 
-      {activeTab === "operations" ? (
-        <DashboardOperationsTab
-          enabled
-          refreshMs={Math.min(refreshMs, 15_000)}
-          killActive={killActive}
-          systemInfra={systemInfra}
-        />
-      ) : null}
+        {activeTab === "performance" ? (
+          <DashboardPerformanceTab
+            enabled
+            broker={url.broker}
+            period={url.period}
+            chart={url.chart}
+            onPeriodChange={url.setPeriod}
+            onChartChange={url.setChart}
+            refreshMs={60_000}
+          />
+        ) : null}
 
-      <Typography.Text
-        type="secondary"
-        style={{ display: "block", marginTop: 12, fontSize: 12 }}
-      >
-        Read-only · 탭별 lazy load · 비활성 탭 API 호출 없음
-      </Typography.Text>
-    </Card>
+        {activeTab === "operations" ? (
+          <DashboardOperationsTab
+            enabled
+            broker={url.broker}
+            refreshMs={Math.min(refreshMs, 15_000)}
+            killActive={killActive}
+            systemInfra={systemInfra}
+          />
+        ) : null}
+
+        <Typography.Text
+          type="secondary"
+          style={{ display: "block", marginTop: 12, fontSize: 12 }}
+        >
+          Read-only · 탭별 lazy load · 공통 거래소 필터
+        </Typography.Text>
+      </Card>
+    </Space>
   );
 }
