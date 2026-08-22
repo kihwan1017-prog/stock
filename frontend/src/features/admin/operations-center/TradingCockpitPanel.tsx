@@ -34,7 +34,7 @@ import {
 import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
 import { resolveOrderTradingKind } from "@/features/admin/autotrading/orderOwnership";
 
-import { AutoPnlCharts } from "./AutoPnlCharts";
+import { AutoTradingPerformancePanel } from "./AutoTradingPerformancePanel";
 import { BrokerOpsCard, type BrokerCardModel } from "./BrokerOpsCard";
 
 const DEFAULT_UPBIT_UBA = Number(
@@ -334,7 +334,7 @@ export function TradingCockpitPanel({
     ),
     autoPositions: Number(summary.positions_open ?? 0),
     todayOrders: orderStats.autoOrders,
-    autoPnlLabel: "시계열 API 없음",
+    autoPnlLabel: "성과 API",
     manualOpenOrders: (() => {
       const oo = rec(upbitOps.open_orders);
       const n = Number(oo.manual_open_orders);
@@ -382,7 +382,7 @@ export function TradingCockpitPanel({
     strategy: String(kiwoomOps.strategy_id ?? "—"),
     autoPositions: null,
     todayOrders: null,
-    autoPnlLabel: "시계열 API 없음",
+    autoPnlLabel: "성과 API",
     manualOpenOrders: (() => {
       const oo = rec(kiwoomOps.open_orders);
       const n = Number(oo.manual_open_orders);
@@ -412,7 +412,8 @@ export function TradingCockpitPanel({
   };
 
   const activityItems = useMemo(() => {
-    const items: { color?: string; children: ReactNode }[] = [];
+    // antd Timeline: items.children 폐기 → items.content
+    const items: { color?: string; content: ReactNode }[] = [];
     for (const raw of slots) {
       const s = rec(raw);
       const sym = String(s.symbol ?? "—");
@@ -420,7 +421,7 @@ export function TradingCockpitPanel({
       const block = s.last_entry_block_reason ?? s.entry_block_reason;
       items.push({
         color: status === "OPEN" ? "green" : status === "WAITING_SIGNAL" ? "blue" : "gray",
-        children: (
+        content: (
           <span>
             <strong>{sym}</strong> · {slotStatusLabelKo(status)}
             {block
@@ -526,7 +527,7 @@ export function TradingCockpitPanel({
         </Col>
       </Row>
 
-      <AutoPnlCharts series={null} />
+      <AutoTradingPerformancePanel refreshMs={60_000} />
 
       <Card
         size="small"

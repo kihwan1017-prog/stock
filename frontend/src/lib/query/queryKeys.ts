@@ -47,6 +47,11 @@ export const queryKeys = {
     liveOpsDashboard: () => ["admin", "live-ops-dashboard"] as const,
     operationsCenterSummary: () =>
       ["admin", "operations-center", "summary"] as const,
+    autotradingPerformance: (params?: {
+      broker?: string;
+      period?: string;
+    }) =>
+      ["admin", "autotrading-performance", params ?? {}] as const,
     runtimePreflight: () => ["admin", "runtime", "preflight"] as const,
     aiProviderConfigurations: () =>
       ["admin", "ai-provider-configurations"] as const,
@@ -214,6 +219,7 @@ export const queryKeys = {
     marketQuality: () => ["admin", "market-quality"] as const,
     orderOutbox: () => ["admin", "order-outbox"] as const,
     liveTransitionHistory: () => ["admin", "live-transition-history"] as const,
+    liveTransitionActive: () => ["admin", "live-transition-active"] as const,
     members: (params?: object) => ["admin", "members", params ?? {}] as const,
     memberDetail: (id: string) => ["admin", "member", id] as const,
     roles: () => ["admin", "roles"] as const,

@@ -18,6 +18,24 @@ router = APIRouter(
     dependencies=[Depends(require_admin)],
 )
 
+@router.get("/autotrading-performance")
+def get_autotrading_performance(
+    broker: str = Query(default="ALL", pattern="^(ALL|UPBIT|KIWOOM)$"),
+    period: str = Query(default="30D", pattern="^(TODAY|7D|30D|ALL)$"),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """AUTO strategy-owned 성과 집계 — Read-only, MANUAL/계좌전체 PnL 제외."""
+
+    from stock_platform.operation.autotrading_performance_service import (
+        AutotradingPerformanceService,
+    )
+
+    return AutotradingPerformanceService(session).build(
+        broker=broker,  # type: ignore[arg-type]
+        period=period,  # type: ignore[arg-type]
+    )
+
 
 @router.get("/summary")
 def get_operations_center_summary(
@@ -30,3 +48,4 @@ def get_operations_center_summary(
     return OperationsCenterDashboardService(session).summary(
         cache_ttl_sec=cache_ttl_sec
     )
+

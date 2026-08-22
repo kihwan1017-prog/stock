@@ -1098,6 +1098,14 @@ export async function getOperationsCenterSummary(params?: {
   return getJson("/admin/dashboard/summary", params);
 }
 
+/** AUTO trading performance aggregate (strategy-owned only) */
+export async function getAdminAutotradingPerformance(params?: {
+  broker?: "ALL" | "UPBIT" | "KIWOOM";
+  period?: "TODAY" | "7D" | "30D" | "ALL";
+}): Promise<JsonValue> {
+  return getJson("/admin/dashboard/autotrading-performance", params);
+}
+
 /** STEP 11-3 — AI Provider Configuration / Vault */
 export async function listAiProviderConfigurations(): Promise<JsonValue> {
   return getJson("/admin/ai/provider-configurations");
