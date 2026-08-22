@@ -101,27 +101,47 @@ class RealtimeMarketDataManager:
         client_id = "UPBIT"
         existing_task = self._tasks.get(client_id)
         existing_client = self._clients.get(client_id)
+        requested = [
+            str(s).strip().upper() for s in (symbols or []) if str(s).strip()
+        ]
 
-        # 이미 살아있는 task면 재사용 (reload 후 중복 start 안전)
+        # 이미 살아있는 task — 심볼 누락 시 union restart (OPEN position 보호)
         if existing_task is not None and not existing_task.done():
             if existing_client is None:
                 await self._discard_client(client_id)
             else:
-                connected = await self._wait_until_connected(
-                    client=existing_client,
-                    task=existing_task,
-                    timeout_seconds=connect_timeout_seconds,
-                )
-                return {
-                    **existing_client.status(),
-                    "already_running": True,
-                    "task_running": True,
-                    "connected_waited": connected,
-                }
+                current = [
+                    str(x).upper()
+                    for x in (existing_client.status().get("symbols") or [])
+                    if x
+                ]
+                missing = [s for s in requested if s not in current]
+                if not missing:
+                    connected = await self._wait_until_connected(
+                        client=existing_client,
+                        task=existing_task,
+                        timeout_seconds=connect_timeout_seconds,
+                    )
+                    return {
+                        **existing_client.status(),
+                        "already_running": True,
+                        "already_covering": True,
+                        "task_running": True,
+                        "connected_waited": connected,
+                    }
+                # expand: stop 후 union으로 재기동
+                symbols = list(dict.fromkeys([*current, *requested]))
+                await self._discard_client(client_id)
 
         # 종료된 stale task/client 정리 후 재시작
-        if existing_task is not None or existing_client is not None:
+        if (
+            self._tasks.get(client_id) is not None
+            or self._clients.get(client_id) is not None
+        ):
             await self._discard_client(client_id)
+
+        if not symbols:
+            raise ValueError("symbols must not be empty")
 
         client = UpbitRealtimeClient(
             symbols=symbols,
@@ -148,6 +168,7 @@ class RealtimeMarketDataManager:
         )
         return {
             **client.status(),
+            "expanded": True,
             "already_running": False,
             "task_running": not task.done(),
             "connected_waited": connected,

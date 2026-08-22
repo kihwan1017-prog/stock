@@ -27,6 +27,10 @@ class PositionExitMonitorManager:
         self._last_actions: list[PositionExitAction] = []
         self._last_error: str | None = None
         self._scan_count = 0
+        self._last_skipped: list[str] = []
+        self._last_managed_symbols: list[str] = []
+        self._last_evaluated_at: str | None = None
+        self._symbol_eval: dict[str, dict] = {}
 
     async def check_now(
         self,
@@ -62,6 +66,64 @@ class PositionExitMonitorManager:
             self._last_actions = actions
             self._last_error = None
             self._scan_count += 1
+            self._last_skipped = list(context.skipped_symbols or [])
+            self._last_managed_symbols = [
+                str(p.symbol).upper() for p in context.positions
+            ]
+            from datetime import datetime, timezone
+
+            now_iso = datetime.now(timezone.utc).isoformat()
+            self._last_evaluated_at = now_iso
+            for pos in context.positions:
+                sym = str(pos.symbol).upper()
+                prev = self._symbol_eval.get(sym) or {}
+                count = int(prev.get("evaluation_count") or 0) + 1
+                act = next(
+                    (
+                        a
+                        for a in actions
+                        if str(a.symbol).upper() == sym
+                    ),
+                    None,
+                )
+                self._symbol_eval[sym] = {
+                    "symbol": sym,
+                    "managed": True,
+                    "last_evaluated_at": now_iso,
+                    "evaluation_count": count,
+                    "decision": (
+                        act.reason if act is not None else "HOLD"
+                    ),
+                    "reason": (
+                        act.reason if act is not None else "HOLD"
+                    ),
+                    "current_price": str(pos.current_price),
+                    "sl_trigger": str(pos.stop_loss_price),
+                    "tp_trigger": str(pos.take_profit_price),
+                    "highest": str(pos.highest_price),
+                    "trailing_ratio": (
+                        str(pos.trailing_stop_ratio)
+                        if pos.trailing_stop_ratio is not None
+                        else None
+                    ),
+                    "submitted": bool(
+                        act.submitted if act is not None else False
+                    ),
+                }
+            for skip in self._last_skipped:
+                # stale_or_missing:LIVE:1380/KRW-GEOD
+                if "stale_or_missing" in skip and "/" in skip:
+                    sym = skip.rsplit("/", 1)[-1].upper()
+                    prev = self._symbol_eval.get(sym) or {}
+                    self._symbol_eval[sym] = {
+                        **prev,
+                        "symbol": sym,
+                        "managed": False,
+                        "decision": "EXIT_QUOTE_STALE",
+                        "reason": "EXIT_QUOTE_STALE",
+                        "skip": skip,
+                        "last_skipped_at": now_iso,
+                    }
             return actions
         except Exception as exc:
             session.rollback()
@@ -83,8 +145,19 @@ class PositionExitMonitorManager:
             "interval_seconds": (
                 settings.position_exit_monitor_interval_seconds
             ),
+            "live_upbit_enabled": bool(
+                getattr(
+                    settings,
+                    "position_exit_monitor_live_upbit_enabled",
+                    False,
+                )
+            ),
             "scan_count": self._scan_count,
             "last_error": self._last_error,
+            "last_evaluated_at": self._last_evaluated_at,
+            "last_managed_symbols": list(self._last_managed_symbols),
+            "last_skipped": list(self._last_skipped),
+            "symbol_telemetry": dict(self._symbol_eval),
             "last_exit_count": sum(
                 1
                 for item in self._last_actions

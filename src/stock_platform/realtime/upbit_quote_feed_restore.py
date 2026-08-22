@@ -52,22 +52,53 @@ async def ensure_upbit_quote_feed_from_hub(
     channels: list[str] | None = None,
     connect_timeout_seconds: float = 5.0,
     source: str = "HUB_SUBSCRIPTION_RESTORE",
+    session: Any | None = None,
 ) -> dict[str, Any]:
-    """Hub UPBIT subscription 기준으로 Quote WS 복구 (idempotent).
+    """Hub ∪ OPEN AUTO position 심볼 기준 Quote WS 복구 (idempotent).
 
     - LIVE/ARM/Runtime RUN 하지 않음
-    - duplicate task 생성 안 함 (start_upbit already_running)
-    - subscription 없으면 no-op
+    - missing 심볼이면 expand restart
+    - Hub·OPEN binding 모두 없으면 no-op
     """
 
     symbols = collect_upbit_symbols_from_hub()
+    open_auto: list[str] = []
+    if session is not None:
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                collect_upbit_open_auto_position_symbols,
+            )
+
+            open_auto = collect_upbit_open_auto_position_symbols(session)
+        except Exception:  # noqa: BLE001
+            open_auto = []
+    else:
+        # restart path — short-lived session
+        try:
+            from stock_platform.database.session import get_session_factory
+            from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                collect_upbit_open_auto_position_symbols,
+            )
+
+            sf = get_session_factory()
+            with sf() as db:
+                open_auto = collect_upbit_open_auto_position_symbols(db)
+        except Exception:  # noqa: BLE001
+            open_auto = []
+
+    for sym in open_auto:
+        if sym not in symbols:
+            symbols.append(sym)
+
     result: dict[str, Any] = {
         "source": source,
         "symbols": symbols,
+        "hub_symbols": collect_upbit_symbols_from_hub(),
+        "open_auto_symbols": open_auto,
         "started": False,
     }
     if not symbols:
-        result["reason"] = "NO_UPBIT_HUB_SUBSCRIPTIONS"
+        result["reason"] = "NO_UPBIT_HUB_OR_OPEN_AUTO_SYMBOLS"
         return result
 
     try:
@@ -78,22 +109,18 @@ async def ensure_upbit_quote_feed_from_hub(
             channels=channels or ["ticker", "trade"],
             connect_timeout_seconds=connect_timeout_seconds,
         )
-        result["started"] = not bool(status.get("already_running"))
+        result["started"] = True
+        result["status"] = status
         result["already_running"] = bool(status.get("already_running"))
-        result["status"] = {
-            "connected": status.get("connected"),
-            "running": status.get("running"),
-            "task_running": status.get("task_running"),
-            "symbols": status.get("symbols"),
-            "received_count": status.get("received_count"),
-            "last_error": status.get("last_error"),
-        }
+        result["expanded"] = bool(status.get("expanded"))
         logger.info(
             "upbit_quote_feed_ensure",
             source=source,
             symbols=symbols,
+            open_auto=open_auto,
             started=result["started"],
             already_running=result.get("already_running"),
+            expanded=result.get("expanded"),
             connected=status.get("connected"),
         )
         return result
@@ -104,6 +131,7 @@ async def ensure_upbit_quote_feed_from_hub(
             error=type(exc).__name__,
             detail=str(exc)[:200],
         )
+        result["ok"] = False
         result["reason"] = type(exc).__name__
         result["error"] = type(exc).__name__
         return result

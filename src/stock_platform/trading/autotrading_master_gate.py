@@ -375,6 +375,19 @@ def evaluate_uba_autotrading_ready(
         warnings.append("PIPELINE_READINESS_UNAVAILABLE")
         blockers.append("MARKET_FEED_UNHEALTHY")
 
+    # OPEN AUTO position protective exit quote freshness
+    try:
+        exit_quote = _evaluate_auto_exit_quote_freshness(
+            session, user_broker_account_id=uba_id
+        )
+        checks["auto_exit_quote"] = exit_quote
+        if not bool(exit_quote.get("ok")):
+            blockers.append("AUTO_EXIT_QUOTE_STALE")
+            warnings.append("EXIT_MONITOR_POSITION_STALE")
+    except Exception as exc:  # noqa: BLE001
+        checks["auto_exit_quote"] = {"ok": False, "error": type(exc).__name__}
+        warnings.append("AUTO_EXIT_QUOTE_CHECK_UNAVAILABLE")
+
     # Conflict count
     try:
         from stock_platform.broker.recovery_conflict_entities import (
@@ -938,6 +951,97 @@ def _parse_iso_utc(value: Any) -> datetime | None:
         return dt.astimezone(timezone.utc)
     except ValueError:
         return None
+
+
+def _evaluate_auto_exit_quote_freshness(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+) -> dict[str, Any]:
+    """OPEN AUTO position의 Exit Monitor QuoteSnapshot freshness.
+
+    OPEN position이 없으면 ok=True (해당 게이트 N/A).
+    하나라도 stale이면 신규 ENTRY Fail Closed.
+    """
+
+    from decimal import Decimal
+
+    from stock_platform.common.settings import get_settings
+    from stock_platform.markets.repository import (
+        InstrumentRepository,
+        QuoteSnapshotRepository,
+    )
+    from stock_platform.markets.service import (
+        InstrumentService,
+        QuoteSnapshotService,
+    )
+    from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+        collect_upbit_open_auto_position_symbols,
+    )
+    from stock_platform.position.exit_monitor_live import quote_is_fresh
+
+    settings = get_settings()
+    stale_limit = float(
+        getattr(settings, "autotrading_market_feed_stale_seconds", 30.0)
+        or 30.0
+    )
+    symbols = collect_upbit_open_auto_position_symbols(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+    if not symbols:
+        return {
+            "ok": True,
+            "applicable": False,
+            "reason": "NO_OPEN_AUTO_POSITION",
+            "symbols": [],
+            "stale_limit_seconds": stale_limit,
+        }
+
+    quote_svc = QuoteSnapshotService(
+        QuoteSnapshotRepository(session),
+        InstrumentService(InstrumentRepository(session)),
+    )
+    now = datetime.now(timezone.utc)
+    details: list[dict[str, Any]] = []
+    stale_symbols: list[str] = []
+    for sym in symbols:
+        try:
+            snap = quote_svc.get("UPBIT", sym)
+        except Exception:  # noqa: BLE001
+            snap = None
+        quoted_at = getattr(snap, "quoted_at", None) if snap else None
+        price = getattr(snap, "trade_price", None) if snap else None
+        age = None
+        if quoted_at is not None:
+            qa = quoted_at
+            if qa.tzinfo is None:
+                qa = qa.replace(tzinfo=timezone.utc)
+            age = max(0.0, (now - qa).total_seconds())
+        fresh = quote_is_fresh(quoted_at, stale_seconds=stale_limit)
+        row = {
+            "symbol": sym,
+            "price": str(price) if price is not None else None,
+            "quoted_at": (
+                quoted_at.isoformat() if quoted_at is not None else None
+            ),
+            "age_seconds": age,
+            "fresh": fresh,
+        }
+        details.append(row)
+        if not fresh:
+            stale_symbols.append(sym)
+
+    ok = len(stale_symbols) == 0
+    return {
+        "ok": ok,
+        "applicable": True,
+        "reason": "OK" if ok else "AUTO_EXIT_QUOTE_STALE",
+        "stale_limit_seconds": stale_limit,
+        "symbols": symbols,
+        "stale_symbols": stale_symbols,
+        "details": details,
+        "policy": "BLOCK_NEW_ENTRY_IF_PROTECTIVE_EXIT_QUOTE_STALE",
+    }
 
 
 def _evaluate_market_feed_for_auto_live(

@@ -749,10 +749,31 @@ class UpbitFullMarketAssignmentService:
             assignment.state = STATE_POSITION_OPEN
             assignment.current_symbol = sym
         self._session.flush()
+        # OPEN binding → protective quote feed (slot 없어도 GEOD 등 구독)
+        feed: dict[str, Any] = {}
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                ensure_protective_quote_feed,
+                sync_portfolio_runtime_symbols,
+            )
+
+            if is_full_market_portfolio(assignment.mode):
+                feed = sync_portfolio_runtime_symbols(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    ensure_quote_feed=True,
+                )
+            else:
+                feed = ensure_protective_quote_feed(
+                    self._session, user_broker_account_id=uba_id
+                )
+        except Exception as exc:  # noqa: BLE001
+            feed = {"ok": False, "error": type(exc).__name__}
         return {
             "ok": True,
             "binding_id": int(binding.binding_id),
             "slot_id": binding.slot_id,
+            "protective_quote_feed": feed,
         }
 
     def mark_position_closed(

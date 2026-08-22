@@ -227,6 +227,30 @@ class LiveOrderSafetyPipeline:
                     )
             except Exception:  # noqa: BLE001
                 pass
+            # 기존 OPEN AUTO protective exit quote stale → 신규 ENTRY 차단
+            if broker == "UPBIT":
+                try:
+                    from stock_platform.trading.autotrading_master_gate import (
+                        _evaluate_auto_exit_quote_freshness,
+                    )
+
+                    exit_q = _evaluate_auto_exit_quote_freshness(
+                        self._session,
+                        user_broker_account_id=uba_id,
+                    )
+                    if exit_q.get("applicable") and not exit_q.get("ok"):
+                        return _fail(
+                            "AUTO_EXIT_QUOTE_STALE",
+                            LIVE_REJECTED,
+                            {
+                                "stale_symbols": exit_q.get(
+                                    "stale_symbols"
+                                ),
+                                "policy": exit_q.get("policy"),
+                            },
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
 
         # 2c) KIWOOM LIMIT — 로컬 KRX tick (shared market quote 불필요)
         if broker == "KIWOOM" and order_type_u == "LIMIT":

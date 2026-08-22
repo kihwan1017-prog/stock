@@ -35,7 +35,23 @@ def _now() -> datetime:
 
 
 def desired_portfolio_symbols(session: Session, uba_id: int) -> list[str]:
+    """Portfolio Hub/WS desired = slot runtime ∪ OPEN AUTO positions.
+
+    Slot에서 빠져도 OPEN binding이면 feed/runtime에서 제거하지 않는다.
+    """
+
     from sqlalchemy import select
+
+    from stock_platform.operation.upbit_full_market.constants import (
+        BINDING_STATUS_EXIT_PENDING,
+        BINDING_STATUS_OPEN,
+    )
+    from stock_platform.operation.upbit_full_market.entities import (
+        UpbitStrategyPositionBindingEntity,
+    )
+    from stock_platform.risk_engine.strategy_owned_entities import (
+        StrategyPositionBindingEntity,
+    )
 
     rows = list(
         session.scalars(
@@ -52,7 +68,198 @@ def desired_portfolio_symbols(session: Session, uba_id: int) -> list[str]:
         sym = str(row.symbol or "").strip().upper()
         if sym and sym not in out:
             out.append(sym)
+
+    # OPEN / EXIT_PENDING AUTO bindings — slot 유무와 무관하게 feed 필수
+    for entity, status_field in (
+        (StrategyPositionBindingEntity, "status"),
+        (UpbitStrategyPositionBindingEntity, "status"),
+    ):
+        bind_rows = list(
+            session.scalars(
+                select(entity).where(
+                    entity.user_broker_account_id == int(uba_id),
+                    getattr(entity, status_field).in_(
+                        [BINDING_STATUS_OPEN, BINDING_STATUS_EXIT_PENDING]
+                    ),
+                )
+            )
+        )
+        for row in bind_rows:
+            if str(getattr(row, "broker_code", "UPBIT") or "UPBIT").upper() not in {
+                "UPBIT",
+                "",
+            }:
+                continue
+            qty = getattr(row, "owned_quantity", None)
+            if qty is not None:
+                try:
+                    from decimal import Decimal
+
+                    if Decimal(str(qty)) <= 0:
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass
+            sym = str(row.symbol or "").strip().upper()
+            if sym and sym not in out:
+                out.append(sym)
     return out
+
+
+def collect_upbit_open_auto_position_symbols(
+    session: Session,
+    *,
+    user_broker_account_id: int | None = None,
+) -> list[str]:
+    """UPBIT OPEN AUTO position symbols (UBA 필터 optional, global WS용)."""
+
+    from sqlalchemy import select
+
+    from stock_platform.operation.upbit_full_market.constants import (
+        BINDING_STATUS_EXIT_PENDING,
+        BINDING_STATUS_OPEN,
+    )
+    from stock_platform.operation.upbit_full_market.entities import (
+        UpbitStrategyPositionBindingEntity,
+    )
+    from stock_platform.risk_engine.strategy_owned_entities import (
+        StrategyPositionBindingEntity,
+    )
+    from stock_platform.trading.account_models import UserBrokerAccount
+
+    out: list[str] = []
+    statuses = [BINDING_STATUS_OPEN, BINDING_STATUS_EXIT_PENDING]
+
+    def _append(sym: str) -> None:
+        s = str(sym or "").strip().upper()
+        if s and s not in out:
+            out.append(s)
+
+    q1 = select(StrategyPositionBindingEntity).where(
+        StrategyPositionBindingEntity.status.in_(statuses),
+        StrategyPositionBindingEntity.broker_code == "UPBIT",
+    )
+    if user_broker_account_id is not None:
+        q1 = q1.where(
+            StrategyPositionBindingEntity.user_broker_account_id
+            == int(user_broker_account_id)
+        )
+    for row in session.scalars(q1):
+        try:
+            from decimal import Decimal
+
+            if Decimal(str(row.owned_quantity or 0)) <= 0:
+                continue
+        except Exception:  # noqa: BLE001
+            continue
+        _append(row.symbol)
+
+    q2 = select(UpbitStrategyPositionBindingEntity).where(
+        UpbitStrategyPositionBindingEntity.status.in_(statuses),
+    )
+    if user_broker_account_id is not None:
+        q2 = q2.where(
+            UpbitStrategyPositionBindingEntity.user_broker_account_id
+            == int(user_broker_account_id)
+        )
+    else:
+        # UPBIT UBA만
+        upbit_ubas = {
+            int(x)
+            for x in session.scalars(
+                select(UserBrokerAccount.user_broker_account_id).where(
+                    UserBrokerAccount.broker_code == "UPBIT",
+                    UserBrokerAccount.is_active.is_(True),
+                )
+            )
+        }
+        if upbit_ubas:
+            q2 = q2.where(
+                UpbitStrategyPositionBindingEntity.user_broker_account_id.in_(
+                    list(upbit_ubas)
+                )
+            )
+    for row in session.scalars(q2):
+        _append(row.symbol)
+    return out
+
+
+def ensure_protective_quote_feed(
+    session: Session,
+    *,
+    user_broker_account_id: int | None = None,
+) -> dict[str, Any]:
+    """OPEN AUTO ∪ (portfolio면 slot) 심볼을 Upbit WS에 포함.
+
+    포트폴리오 sync와 독립 — FIXED/SINGLE·슬롯 없는 controlled BUY 후 보호용.
+    """
+
+    symbols: list[str] = []
+    if user_broker_account_id is not None:
+        uba_id = int(user_broker_account_id)
+        try:
+            from stock_platform.operation.upbit_full_market.service import (
+                UpbitFullMarketAssignmentService,
+            )
+
+            assignment = UpbitFullMarketAssignmentService(
+                session
+            ).get_or_create(uba_id)
+            if is_full_market_portfolio(assignment.mode):
+                symbols.extend(desired_portfolio_symbols(session, uba_id))
+            else:
+                symbols.extend(
+                    collect_upbit_open_auto_position_symbols(
+                        session, user_broker_account_id=uba_id
+                    )
+                )
+                cur = str(assignment.current_symbol or "").strip().upper()
+                if cur and cur not in symbols:
+                    symbols.append(cur)
+                tmpl = str(assignment.template_symbol or "").strip().upper()
+                if tmpl and tmpl not in symbols:
+                    symbols.append(tmpl)
+        except Exception:  # noqa: BLE001
+            symbols.extend(
+                collect_upbit_open_auto_position_symbols(
+                    session, user_broker_account_id=uba_id
+                )
+            )
+    else:
+        symbols.extend(collect_upbit_open_auto_position_symbols(session))
+        # 모든 portfolio UBA slot도 포함
+        try:
+            from sqlalchemy import select
+
+            from stock_platform.operation.upbit_full_market.entities import (
+                UpbitFullMarketAssignmentEntity,
+            )
+            from stock_platform.operation.upbit_full_market.constants import (
+                MODE_FULL_MARKET_PORTFOLIO,
+            )
+
+            uba_ids = list(
+                session.scalars(
+                    select(
+                        UpbitFullMarketAssignmentEntity.user_broker_account_id
+                    ).where(
+                        UpbitFullMarketAssignmentEntity.mode
+                        == MODE_FULL_MARKET_PORTFOLIO
+                    )
+                )
+            )
+            for uid in uba_ids:
+                for sym in desired_portfolio_symbols(session, int(uid)):
+                    if sym not in symbols:
+                        symbols.append(sym)
+        except Exception:  # noqa: BLE001
+            pass
+
+    feed = _ensure_upbit_quote_symbols(symbols)
+    return {
+        "ok": bool(feed.get("ok", True)),
+        "symbols": symbols,
+        "quote_feed": feed,
+    }
 
 
 def sync_portfolio_runtime_symbols(

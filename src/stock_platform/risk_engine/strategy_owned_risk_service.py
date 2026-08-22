@@ -188,6 +188,17 @@ class StrategyOwnedRiskService:
                 existing.updated_at = datetime.now(timezone.utc)
                 self._session.flush()
                 # scale-in / 추가 fill — filled-entry 추가 집계 없음
+                if broker == "UPBIT":
+                    try:
+                        from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                            ensure_protective_quote_feed,
+                        )
+
+                        ensure_protective_quote_feed(
+                            self._session, user_broker_account_id=uba
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                 return existing
 
             row = StrategyPositionBindingEntity(
@@ -223,6 +234,18 @@ class StrategyOwnedRiskService:
                         strategy_id=sid,
                         deployment_id=dep if dep else None,
                         entry_order_id=int(entry_order_id),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            # OPEN binding → protective WS feed (slot 없어도)
+            if broker == "UPBIT":
+                try:
+                    from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+                        ensure_protective_quote_feed,
+                    )
+
+                    ensure_protective_quote_feed(
+                        self._session, user_broker_account_id=uba
                     )
                 except Exception:  # noqa: BLE001
                     pass
