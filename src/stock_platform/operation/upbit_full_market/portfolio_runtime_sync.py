@@ -100,7 +100,34 @@ def desired_portfolio_symbols(session: Session, uba_id: int) -> list[str]:
                 except Exception:  # noqa: BLE001
                     pass
             sym = str(row.symbol or "").strip().upper()
-            if sym and sym not in out:
+            if not sym:
+                continue
+            # portfolio binding만 OPEN이고 strategy-owned는 CLOSED면 feed 의무 제외
+            if entity is UpbitStrategyPositionBindingEntity:
+                owned = session.scalar(
+                    select(StrategyPositionBindingEntity)
+                    .where(
+                        StrategyPositionBindingEntity.user_broker_account_id
+                        == int(uba_id),
+                        StrategyPositionBindingEntity.broker_code == "UPBIT",
+                        StrategyPositionBindingEntity.symbol == sym,
+                    )
+                    .order_by(
+                        StrategyPositionBindingEntity.binding_id.desc()
+                    )
+                    .limit(1)
+                )
+                if owned is not None:
+                    ost = str(owned.status or "").upper()
+                    from decimal import Decimal as _Dec
+
+                    try:
+                        oqty = _Dec(str(owned.owned_quantity or 0))
+                    except Exception:  # noqa: BLE001
+                        oqty = _Dec("0")
+                    if ost in {"CLOSED", "SUPERSEDED", "EXITED"} or oqty <= 0:
+                        continue
+            if sym not in out:
                 out.append(sym)
     return out
 
@@ -153,6 +180,9 @@ def collect_upbit_open_auto_position_symbols(
             continue
         _append(row.symbol)
 
+    # strategy-owned SoT: CLOSED/qty=0 인데 portfolio binding만 OPEN인 orphan 제외
+    owned_open_syms = set(out)
+
     q2 = select(UpbitStrategyPositionBindingEntity).where(
         UpbitStrategyPositionBindingEntity.status.in_(statuses),
     )
@@ -179,7 +209,39 @@ def collect_upbit_open_auto_position_symbols(
                 )
             )
     for row in session.scalars(q2):
-        _append(row.symbol)
+        sym = str(row.symbol or "").strip().upper()
+        if not sym:
+            continue
+        # 이미 strategy-owned OPEN이면 포함됨. orphan OPEN portfolio binding은
+        # 동일 uba+symbol의 strategy-owned가 CLOSED/없음(qty0)이면 제외.
+        if sym in owned_open_syms:
+            continue
+        uba_for_row = int(row.user_broker_account_id)
+        owned_row = session.scalar(
+            select(StrategyPositionBindingEntity)
+            .where(
+                StrategyPositionBindingEntity.user_broker_account_id
+                == uba_for_row,
+                StrategyPositionBindingEntity.broker_code == "UPBIT",
+                StrategyPositionBindingEntity.symbol == sym,
+            )
+            .order_by(StrategyPositionBindingEntity.binding_id.desc())
+            .limit(1)
+        )
+        if owned_row is not None:
+            st = str(owned_row.status or "").upper()
+            try:
+                from decimal import Decimal
+
+                qty = Decimal(str(owned_row.owned_quantity or 0))
+            except Exception:  # noqa: BLE001
+                qty = Decimal("0")
+            if st in {"CLOSED", "SUPERSEDED", "EXITED"} or qty <= 0:
+                continue
+            if st not in {BINDING_STATUS_OPEN, BINDING_STATUS_EXIT_PENDING}:
+                continue
+        # strategy-owned 레코드가 전혀 없으면 portfolio OPEN을 그대로 신뢰
+        _append(sym)
     return out
 
 

@@ -37,6 +37,38 @@ def _remaining_label(seconds: int) -> str:
     return f"{s}s"
 
 
+def _map_market_feed_status(feed: dict[str, Any]) -> str:
+    """master_gate market_feed → Admin Feed 라벨.
+
+    gate는 ok/reason을 쓰고 healthy 키는 없을 수 있다.
+    """
+
+    healthy = feed.get("healthy")
+    if healthy is None:
+        healthy = feed.get("ok")
+    stale = feed.get("stale")
+    if stale is None:
+        reason = str(feed.get("reason") or "").upper()
+        stale = reason in {"QUOTE_STALE", "NO_RECENT_QUOTE"}
+    quote_ws = (
+        feed.get("quote_ws") if isinstance(feed.get("quote_ws"), dict) else {}
+    )
+    connected = feed.get("connected")
+    if connected is None and "connected" in quote_ws:
+        connected = quote_ws.get("connected")
+    if connected is None and "running" in quote_ws:
+        connected = quote_ws.get("running")
+    if connected is False:
+        return "DISCONNECTED"
+    if stale is True:
+        return "REAL_STALE"
+    if healthy is True and stale is not True:
+        return "REAL_FRESH"
+    if healthy is False:
+        return "UNHEALTHY"
+    return "UNKNOWN"
+
+
 def build_uba_operational_summary(
     session: Session,
     *,
@@ -158,32 +190,11 @@ def build_uba_operational_summary(
             session, user_broker_account_id=uba_id
         )
         feed = (ready.get("checks") or {}).get("market_feed") or {}
-        stale = feed.get("stale")
-        healthy = feed.get("healthy")
-        if healthy is True and stale is not True:
-            market_feed = {
-                "status": "REAL_FRESH",
-                "source": market_feed["source"],
-                "detail": feed,
-            }
-        elif stale is True:
-            market_feed = {
-                "status": "REAL_STALE",
-                "source": market_feed["source"],
-                "detail": feed,
-            }
-        elif feed.get("connected") is False:
-            market_feed = {
-                "status": "DISCONNECTED",
-                "source": market_feed["source"],
-                "detail": feed,
-            }
-        else:
-            market_feed = {
-                "status": "UNKNOWN",
-                "source": market_feed["source"],
-                "detail": feed,
-            }
+        market_feed = {
+            "status": _map_market_feed_status(feed),
+            "source": market_feed["source"],
+            "detail": feed,
+        }
     except Exception:  # noqa: BLE001
         pass
 

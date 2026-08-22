@@ -299,6 +299,20 @@ class StrategyOwnedRiskService:
                     if sell_px is not None:
                         meta["exit_fill_price"] = str(sell_px)
                     row.meta_json = meta
+                    # portfolio UpbitStrategyPositionBinding도 동기 CLOSED
+                    if broker == "UPBIT":
+                        try:
+                            from stock_platform.operation.upbit_full_market.service import (
+                                UpbitFullMarketAssignmentService,
+                            )
+
+                            UpbitFullMarketAssignmentService(
+                                self._session
+                            ).mark_position_closed(
+                                uba, symbol=sym
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
                 remain -= take
                 last = row
             self._session.flush()

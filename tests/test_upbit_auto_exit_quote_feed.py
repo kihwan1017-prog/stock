@@ -103,6 +103,51 @@ def test_manual_holding_not_required_for_open_auto_collector() -> None:
     assert out == []
 
 
+def test_collector_excludes_orphan_upbit_binding_when_strategy_owned_closed() -> None:
+    """strategy-owned CLOSED + portfolio binding OPEN → exit-quote 대상 아님."""
+    from stock_platform.operation.upbit_full_market.constants import (
+        BINDING_STATUS_CLOSED,
+    )
+
+    session = MagicMock()
+    closed_owned = SimpleNamespace(
+        symbol="KRW-GEOD",
+        owned_quantity=Decimal("0"),
+        status=BINDING_STATUS_CLOSED,
+        broker_code="UPBIT",
+        binding_id=1,
+    )
+    orphan_upbit = SimpleNamespace(
+        symbol="KRW-GEOD",
+        status=BINDING_STATUS_OPEN,
+        user_broker_account_id=1380,
+    )
+    session.scalars.side_effect = [
+        iter([]),  # strategy-owned OPEN query → empty
+        iter([orphan_upbit]),  # upbit portfolio OPEN
+    ]
+    session.scalar.return_value = closed_owned
+    out = collect_upbit_open_auto_position_symbols(
+        session, user_broker_account_id=1380
+    )
+    assert out == []
+
+
+def test_exit_quote_na_when_no_open_auto_positions() -> None:
+    session = MagicMock()
+    with patch(
+        "stock_platform.operation.upbit_full_market.portfolio_runtime_sync."
+        "collect_upbit_open_auto_position_symbols",
+        return_value=[],
+    ):
+        result = _evaluate_auto_exit_quote_freshness(
+            session, user_broker_account_id=1380
+        )
+    assert result["ok"] is True
+    assert result["applicable"] is False
+    assert result["reason"] == "NO_OPEN_AUTO_POSITION"
+
+
 def test_quote_fresh_threshold() -> None:
     now = datetime.now(timezone.utc)
     assert quote_is_fresh(now, stale_seconds=30) is True
