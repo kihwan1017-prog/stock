@@ -25,7 +25,7 @@ export function ownershipLabelKo(owner: string | null | undefined): string {
 }
 
 export function ownershipExcludeReasonKo(
-  reasons: string[] | null | undefined
+  reasons: string[] | null | undefined,
 ): string | null {
   const set = new Set((reasons || []).map((r) => r.toUpperCase()));
   if (set.has("MANUAL_POSITION")) return "일반매매 보유 중";
@@ -36,4 +36,38 @@ export function ownershipExcludeReasonKo(
   if (set.has("AUTO_BINDING") || set.has("AUTO_SLOT"))
     return "자동매매 관리 중";
   return null;
+}
+
+/** Ant Design Tag color */
+export function ownershipBadgeColor(
+  owner: string | null | undefined,
+): string {
+  switch ((owner || "").toUpperCase()) {
+    case "MANUAL":
+      return "default";
+    case "AUTO":
+      return "processing";
+    case "AUTO_EXCLUDED":
+      return "warning";
+    case "FREE":
+      return "cyan";
+    case "UNKNOWN":
+      return "error";
+    default:
+      return "default";
+  }
+}
+
+/** 보유자산 목록 필터 — FREE는 수량 0 후보라 기본 숨김 */
+export type HoldingsOwnerFilter = "ALL" | "MANUAL" | "AUTO";
+
+export function ownershipMatchesHoldingsFilter(
+  owner: string | null | undefined,
+  filter: HoldingsOwnerFilter,
+): boolean {
+  const o = (owner || "").toUpperCase();
+  if (filter === "ALL") {
+    return o !== "FREE";
+  }
+  return o === filter;
 }

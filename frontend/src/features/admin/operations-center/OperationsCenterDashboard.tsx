@@ -23,6 +23,8 @@ import * as adminApi from "@/features/admin/api/adminApi";
 import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { queryKeys } from "@/lib/query/queryKeys";
 
+import { TradingCockpitPanel } from "./TradingCockpitPanel";
+
 function rec(value: unknown): Record<string, unknown> {
   return asRecord(value) ?? {};
 }
@@ -136,6 +138,13 @@ export function OperationsCenterDashboard({ refreshMs = 5000 }: Props) {
           </Typography.Text>
         </Space>
       </Space>
+
+      <TradingCockpitPanel
+        refreshMs={typeof interval === "number" ? interval : 0}
+        systemHealth={system.health}
+        killActive={Boolean(kill.active)}
+        criticalConflict={Number(safety.pending_conflict ?? 0)}
+      />
 
       {/* ① System */}
       <Card title="① System" size="small" loading={summaryQuery.isLoading}>

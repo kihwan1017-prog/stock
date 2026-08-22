@@ -28,7 +28,7 @@ export const UPBIT_AUTOTRADING_TAB_LABELS: Record<
   UpbitAutotradingTabKey,
   string
 > = {
-  market: "전체시장 자동선정",
+  market: "현황",
   capital: "자금 · 포지션",
   entry: "진입 규칙",
   exit: "청산 규칙",

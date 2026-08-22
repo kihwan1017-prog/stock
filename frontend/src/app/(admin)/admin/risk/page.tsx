@@ -207,7 +207,7 @@ export default function AdminRiskPage() {
   return (
     <AdminPageShell
       title="리스크 관리"
-      description="Kill Switch와 시스템/회원 리스크 설정의 canonical 화면입니다. 거래 운영 현황은 조회 전용 요약입니다."
+      description="Kill Switch · 시스템/회원 리스크 WRITE의 유일한 canonical 화면. 다른 Workspace는 READ summary + 이 페이지 링크만."
       extra={
         <Space wrap>
           <Button danger loading={activate.isPending} onClick={() => activate.mutate()}>
@@ -216,8 +216,8 @@ export default function AdminRiskPage() {
           <Button loading={deactivate.isPending} onClick={() => deactivate.mutate()}>
             Kill Switch OFF
           </Button>
+          <Link href={adminRoutes.liveValidationUpbit}>안전 제어</Link>
           <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
-          <Link href={adminRoutes.operations}>시스템 운영</Link>
         </Space>
       }
     >

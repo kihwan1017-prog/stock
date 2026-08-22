@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-21 (WAITING_SIGNAL slot replacement policy)
+**최종 갱신:** 2026-08-22 (Single Admin Trading Cockpit FE)
 
 ---
 
@@ -15,12 +15,12 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | Portfolio WAITING_SIGNAL replacement | **UPBIT_PORTFOLIO_WAITING_SIGNAL_REPLACEMENT_POLICY_COMPLETE** | OBSERVE_DYNAMIC_SLOT_REPLACEMENT_AND_NATURAL_BULLISH_ENTRY |
-| **SHARED** | Symbol Ownership LIVE | VERIFIED | coexist observe |
-| **K** | ORDER_LIMIT_V2 | unchanged | NEXT_KRX_DAY_FIRST_REAL_FILL_AND_EXIT_PROOF |
+| **SHARED** | Single Admin Trading Cockpit FE | **SINGLE_ADMIN_TRADING_COCKPIT_FRONTEND_COMPLETE** | SWITCH_LIVE_BACKEND_TO_PRODUCTION_MODE_AND_ADD_CANONICAL_START_STOP_ORCHESTRATOR |
+| **U** | Portfolio WAITING_SIGNAL replacement | UPBIT_PORTFOLIO_WAITING_SIGNAL_REPLACEMENT_POLICY_COMPLETE | OBSERVE (deferred behind production mode) |
+| **K** | ORDER_LIMIT_V2 | unchanged | NEXT_KRX_DAY… |
 
 ---
 
 ## Next Gate
 
-**Exactly one:** OBSERVE_DYNAMIC_SLOT_REPLACEMENT_AND_NATURAL_BULLISH_ENTRY
+**Exactly one:** SWITCH_LIVE_BACKEND_TO_PRODUCTION_MODE_AND_ADD_CANONICAL_START_STOP_ORCHESTRATOR

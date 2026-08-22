@@ -701,6 +701,27 @@ export async function getAdminUbaAutotradingReadiness(
   return getJson(`/admin/autotrading/uba/${ubaId}/readiness`);
 }
 
+/** Symbol ownership list — READ only (주문·Risk mutate 없음) */
+export async function listAdminSymbolOwnership(
+  ubaId: number,
+  brokerCode = "UPBIT",
+): Promise<JsonValue> {
+  return getJson(`/admin/symbol-ownership/${ubaId}`, {
+    broker_code: brokerCode,
+  });
+}
+
+export async function getAdminSymbolOwnership(
+  ubaId: number,
+  symbol: string,
+  brokerCode = "UPBIT",
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/symbol-ownership/${ubaId}/${encodeURIComponent(symbol)}`,
+    { broker_code: brokerCode },
+  );
+}
+
 export async function getAdminUbaOpsStatus(
   ubaId: number,
   strategyId?: number,

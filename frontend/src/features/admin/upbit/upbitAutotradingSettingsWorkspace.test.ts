@@ -35,7 +35,7 @@ describe("UPBIT autotrading settings workspace", () => {
 
   it("6개 탭 키·라벨이 존재한다", () => {
     expect(UPBIT_AUTOTRADING_TAB_ORDER).toHaveLength(6);
-    expect(UPBIT_AUTOTRADING_TAB_LABELS.market).toBe("전체시장 자동선정");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.market).toBe("현황");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.capital).toBe("자금 · 포지션");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.entry).toBe("진입 규칙");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.exit).toBe("청산 규칙");
@@ -88,11 +88,12 @@ describe("UPBIT autotrading settings workspace", () => {
 
   it("route·menu leaf·permission", () => {
     expect(adminRoutes.upbitAutotrading).toBe("/admin/upbit/autotrading");
+    expect(adminRoutes.autotradingUpbit).toBe("/admin/autotrading/upbit");
     const flat = flattenMenuItems(adminMenuItems);
     const item = flat.find(
-      (i) => i.path === adminRoutes.upbitAutotrading,
+      (i) => i.path === adminRoutes.autotradingUpbit,
     );
-    expect(item?.label).toBe("업비트 자동매매 설정");
+    expect(item?.label).toBe("업비트 자동매매");
     expect(item?.permission).toBe("menu:upbit");
   });
 

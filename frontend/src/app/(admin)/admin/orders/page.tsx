@@ -13,18 +13,25 @@ import {
   Modal,
   Select,
   Space,
+  Tabs,
   Tag,
   Typography,
 } from "antd";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
+import { resolveOrderTradingKind } from "@/features/admin/autotrading/orderOwnership";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import {
   canShowResolveNotSubmittedButton,
   outboxStatusForOrder,
 } from "@/features/admin/orders/resolveNotSubmittedGate";
+import {
+  ORDER_LIST_TAB_LABELS,
+  orderMatchesTab,
+  type OrderListTab,
+} from "@/features/admin/orders/orderListTabs";
 import { canShowUnsubmittedRetireButton } from "@/features/admin/orders/unsubmittedRetireGate";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
@@ -49,6 +56,10 @@ const RESOLVE_WARNING =
 export default function AdminOrdersPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
+  const [listTab, setListTab] = useState<OrderListTab>("all");
+  const [ownershipFilter, setOwnershipFilter] = useState<
+    "ALL" | "AUTO" | "MANUAL" | "UNKNOWN"
+  >("ALL");
   const [filters, setFilters] = useState<{
     account_id?: number;
     symbol?: string;
@@ -57,6 +68,17 @@ export default function AdminOrdersPage() {
     limit: number;
     offset: number;
   }>({ limit: 50, offset: 0 });
+
+  useEffect(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      if (t === "open" || t === "fills" || t === "rejected" || t === "all") {
+        setListTab(t);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [retireRow, setRetireRow] = useState<OrderRow | null>(null);
   const [retireReason, setRetireReason] = useState("");
@@ -211,6 +233,22 @@ export default function AdminOrdersPage() {
   });
 
   const rows = useMemo(() => extractRows(list.data) as OrderRow[], [list.data]);
+  const filteredRows = useMemo(() => {
+    return rows.filter((row) => {
+      if (
+        !orderMatchesTab(
+          String(row.status_code ?? ""),
+          row.filled_quantity,
+          listTab,
+        )
+      ) {
+        return false;
+      }
+      const hint = resolveOrderTradingKind(row);
+      if (ownershipFilter === "ALL") return true;
+      return hint.kind === ownershipFilter;
+    });
+  }, [rows, listTab, ownershipFilter]);
   const outboxRows = useMemo(
     () => extractRows(outbox.data) as OrderRow[],
     [outbox.data],
@@ -228,20 +266,30 @@ export default function AdminOrdersPage() {
 
   return (
     <AdminPageShell
-      title="주문관리"
-      description="order-execution/submit(Risk+Kill Switch) · 취소 · Paper Trading"
+      title="주문·체결"
+      description="진행/체결/취소·거부 통합 · AUTO/MANUAL provenance 표시 (strategy_id 미노출 시 strategy_code 휴리스틱)"
       extra={
         <Space wrap>
           <Tag color={killActive ? "error" : "success"}>
             Kill Switch {killActive ? "ACTIVE" : "OFF"}
           </Tag>
           <Typography.Text type="secondary">
-            실거래는 KIWOOM_LIVE_ORDER_ENABLED + transition 승인 시에만
+            실거래는 LIVE Gate + 명시 승인 시에만
           </Typography.Text>
         </Space>
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Tabs
+          activeKey={listTab}
+          onChange={(k) => setListTab(k as OrderListTab)}
+          items={(
+            Object.keys(ORDER_LIST_TAB_LABELS) as OrderListTab[]
+          ).map((key) => ({
+            key,
+            label: ORDER_LIST_TAB_LABELS[key],
+          }))}
+        />
         <Card title="주문 등록 (POST /order-execution/submit)" size="small">
           <Form
             layout="inline"
@@ -384,6 +432,19 @@ export default function AdminOrdersPage() {
           <Form.Item name="symbol" label="symbol">
             <Input allowClear placeholder="005930 / KRW-BTC" style={{ width: 140 }} />
           </Form.Item>
+          <Form.Item label="AUTO/MANUAL">
+            <Select
+              value={ownershipFilter}
+              onChange={(v) => setOwnershipFilter(v)}
+              options={[
+                { value: "ALL", label: "전체" },
+                { value: "AUTO", label: "자동매매" },
+                { value: "MANUAL", label: "일반매매" },
+                { value: "UNKNOWN", label: "확인 필요" },
+              ]}
+              style={{ width: 120 }}
+            />
+          </Form.Item>
           <Form.Item name="limit" label="limit">
             <InputNumber min={1} max={500} />
           </Form.Item>
@@ -396,7 +457,7 @@ export default function AdminOrdersPage() {
         </Form>
 
         <AdminDataTable
-          title="GET /orders"
+          title={`주문 목록 (${ORDER_LIST_TAB_LABELS[listTab]})`}
           loading={list.isLoading}
           error={list.error ? toApiError(list.error) : null}
           rowKey={(r) => cell(r.order_id ?? r.id ?? JSON.stringify(r))}
@@ -407,10 +468,53 @@ export default function AdminOrdersPage() {
               sorters: { order_id: true },
             }),
             { title: "broker", dataIndex: "broker_code" },
+            {
+              title: "AUTO/MANUAL",
+              key: "ownership",
+              width: 110,
+              render: (_: unknown, row: OrderRow) => {
+                const hint = resolveOrderTradingKind(row);
+                return (
+                  <Tag
+                    color={
+                      hint.kind === "AUTO"
+                        ? "processing"
+                        : hint.kind === "MANUAL"
+                          ? "default"
+                          : "warning"
+                    }
+                    title={hint.reason}
+                  >
+                    {hint.labelKo}
+                    {hint.confidence === "low" ? "*" : ""}
+                  </Tag>
+                );
+              },
+            },
             ...buildOrderReadColumns(ADMIN_ORDER_READ_SUFFIX, {
               titles: ADMIN_ORDER_READ_TITLES,
               sorters: { symbol: true },
             }),
+            {
+              title: "filled",
+              dataIndex: "filled_quantity",
+              render: (v: unknown) => cell(v),
+            },
+            {
+              title: "strategy",
+              dataIndex: "strategy_code",
+              render: (v: unknown) => cell(v),
+            },
+            {
+              title: "broker UUID",
+              dataIndex: "broker_order_id",
+              render: (v: unknown) => cell(v),
+            },
+            {
+              title: "created",
+              dataIndex: "created_at",
+              render: (v: unknown) => cell(v),
+            },
             {
               title: "취소",
               render: (_, row) => (
@@ -476,7 +580,7 @@ export default function AdminOrdersPage() {
               ),
             },
           ]}
-          dataSource={rows}
+          dataSource={filteredRows}
           pagination={{
             pageSize: filters.limit,
             current: Math.floor(filters.offset / filters.limit) + 1,

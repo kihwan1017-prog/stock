@@ -47,6 +47,9 @@ import {
   UPBIT_AUTOTRADING_TAB_LABELS,
   UPBIT_AUTOTRADING_TAB_ORDER,
 } from "./upbitAutotradingSettingsConfig";
+import { UpbitOpsStatusPanel } from "./UpbitOpsStatusPanel";
+import { entryBlockReasonKo } from "@/features/admin/autotrading/entryBlockReasonKo";
+import { slotStatusLabelKo } from "@/features/admin/autotrading/slotStatusLabels";
 
 type Props = {
   ubaId: number;
@@ -121,6 +124,32 @@ export function UpbitAutotradingSettingsWorkspace({
     enabled: ubaId > 0,
     refetchInterval: 20_000,
   });
+
+  const readinessQuery = useQuery({
+    queryKey: ["admin", "autotrading-readiness", ubaId],
+    queryFn: () => adminApi.getAdminUbaAutotradingReadiness(ubaId),
+    enabled: ubaId > 0,
+    refetchInterval: 20_000,
+  });
+
+  const ownershipQuery = useQuery({
+    queryKey: ["admin", "symbol-ownership", ubaId, "UPBIT"],
+    queryFn: () => adminApi.listAdminSymbolOwnership(ubaId, "UPBIT"),
+    enabled: ubaId > 0,
+    refetchInterval: 30_000,
+  });
+
+  const ownershipBySymbol = useMemo(() => {
+    const map = new Map<string, string>();
+    const root = asObj(ownershipQuery.data);
+    const items = Array.isArray(root.items) ? root.items : [];
+    for (const raw of items) {
+      const r = asObj(raw);
+      const sym = String(r.symbol ?? "").toUpperCase();
+      if (sym) map.set(sym, String(r.owner ?? "").toUpperCase());
+    }
+    return map;
+  }, [ownershipQuery.data]);
 
   const opsSnap = opsQuery.data ? snapshotFromOpsStatus(opsQuery.data) : null;
   const portfolioRoot = asRecord(portfolioQuery.data);
@@ -464,6 +493,13 @@ export function UpbitAutotradingSettingsWorkspace({
         forceRender: false,
         children: (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <UpbitOpsStatusPanel
+              ubaId={ubaId}
+              ops={opsRoot}
+              portfolio={portfolio}
+              readiness={asObj(readinessQuery.data)}
+              ownershipBySymbol={ownershipBySymbol}
+            />
             <Alert
               type="info"
               showIcon
@@ -722,7 +758,11 @@ export function UpbitAutotradingSettingsWorkspace({
                 {
                   title: "State",
                   dataIndex: "status",
-                  render: (v) => <Tag>{String(v)}</Tag>,
+                  render: (v) => (
+                    <Tooltip title={String(v)}>
+                      <Tag>{slotStatusLabelKo(String(v))}</Tag>
+                    </Tooltip>
+                  ),
                 },
                 {
                   title: "Score",
@@ -758,7 +798,15 @@ export function UpbitAutotradingSettingsWorkspace({
                     const o = asObj(row);
                     const v =
                       o.last_entry_block_reason ?? o.entry_block_reason;
-                    return v == null ? "—" : String(v);
+                    const mapped = entryBlockReasonKo(
+                      v == null ? null : String(v),
+                    );
+                    if (!mapped.rawCode) return "—";
+                    return (
+                      <Tooltip title={`${mapped.detail} (${mapped.rawCode})`}>
+                        <span>{mapped.label}</span>
+                      </Tooltip>
+                    );
                   },
                 },
                 {
