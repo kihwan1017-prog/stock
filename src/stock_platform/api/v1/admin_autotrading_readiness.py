@@ -1,6 +1,8 @@
 """Admin UPBIT Autotrading readiness / 24x7 Runtime·Worker 제어.
 
-START ALL 없음. Activation/LIVE/ARM은 이 라우터에서 변경하지 않는다.
+Canonical START/STOP: POST .../uba/{id}/start|stop (AutotradingOrchestrator).
+개별 Runtime/Worker/Exit API는 backward compatible 유지.
+Activation/LIVE/ARM 자동 토글은 Orchestrator에서도 금지(재승인 경로 제외).
 """
 
 from __future__ import annotations
@@ -481,3 +483,78 @@ def admin_uba_strategy_link_set_active(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+class OrchestratorStartBody(BaseModel):
+    """Canonical autotrading START — REAL 주문 강제 생성 없음."""
+
+    reauthorize_unattended: bool = False
+    strategy_id: int | None = Field(default=None, ge=1)
+    correlation_id: str | None = Field(default=None, max_length=120)
+
+
+class OrchestratorStopBody(BaseModel):
+    """ENTRY_ONLY(기본)=신규진입 중지·보호유지 / FULL=스택 종료(OPEN 있으면 차단)."""
+
+    mode: str = Field(default="ENTRY_ONLY", max_length=32)
+    strategy_id: int | None = Field(default=None, ge=1)
+
+
+@router.get("/uba/{user_broker_account_id}/status")
+async def admin_uba_orchestrator_status(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Orchestrator status SoT (readiness + ops)."""
+
+    from stock_platform.trading.autotrading_orchestrator import (
+        AutotradingOrchestrator,
+    )
+
+    return await AutotradingOrchestrator(session).status(
+        int(user_broker_account_id)
+    )
+
+
+@router.post("/uba/{user_broker_account_id}/start")
+async def admin_uba_orchestrator_start(
+    user_broker_account_id: int,
+    body: OrchestratorStartBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """Canonical START — UBA single-flight · fail-closed · idempotent."""
+
+    from stock_platform.trading.autotrading_orchestrator import (
+        AutotradingOrchestrator,
+    )
+
+    return await AutotradingOrchestrator(session).start(
+        int(user_broker_account_id),
+        actor=user.username,
+        reauthorize_unattended=bool(body.reauthorize_unattended),
+        strategy_id=body.strategy_id,
+        correlation_id=body.correlation_id,
+    )
+
+
+@router.post("/uba/{user_broker_account_id}/stop")
+async def admin_uba_orchestrator_stop(
+    user_broker_account_id: int,
+    body: OrchestratorStopBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """Canonical STOP — default ENTRY_ONLY (Exit/LIVE/ARM 유지)."""
+
+    from stock_platform.trading.autotrading_orchestrator import (
+        AutotradingOrchestrator,
+    )
+
+    return await AutotradingOrchestrator(session).stop(
+        int(user_broker_account_id),
+        actor=user.username,
+        mode=str(body.mode or "ENTRY_ONLY"),
+        strategy_id=body.strategy_id,
+    )

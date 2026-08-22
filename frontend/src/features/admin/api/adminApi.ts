@@ -701,6 +701,37 @@ export async function getAdminUbaAutotradingReadiness(
   return getJson(`/admin/autotrading/uba/${ubaId}/readiness`);
 }
 
+/** Canonical orchestrator status / start / stop */
+export async function getAdminUbaOrchestratorStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/status`);
+}
+
+export async function startAdminUbaAutotrading(
+  ubaId: number,
+  body: {
+    reauthorize_unattended?: boolean;
+    strategy_id?: number;
+    correlation_id?: string;
+  } = {},
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/start`, body);
+}
+
+export async function stopAdminUbaAutotrading(
+  ubaId: number,
+  body: {
+    mode?: "ENTRY_ONLY" | "FULL";
+    strategy_id?: number;
+  } = {},
+): Promise<JsonValue> {
+  return postJson(`/admin/autotrading/uba/${ubaId}/stop`, {
+    mode: body.mode ?? "ENTRY_ONLY",
+    strategy_id: body.strategy_id,
+  });
+}
+
 /** Symbol ownership list — READ only (주문·Risk mutate 없음) */
 export async function listAdminSymbolOwnership(
   ubaId: number,

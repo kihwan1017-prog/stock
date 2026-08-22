@@ -1,106 +1,127 @@
 "use client";
 
 /**
- * UPBIT one-click autotrading — FE orchestration over existing safety APIs.
- * Backend POST /start|/stop 는 LIVE --reload 위험으로 SAFE_RELOAD_REQUIRED.
+ * UPBIT one-click — Backend canonical orchestrator 단일 호출.
+ * FE multi-call reauthorize→stack 제거.
  */
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import {
-  runUpbit24x7StackStart,
-  runUpbit24x7StackStop,
-  snapshotFromOpsStatus,
-  type StackStartOutcome,
-} from "@/features/admin/accounts/upbit24x7StackOrchestrator";
-import {
-  CONFIRM_ENABLE_24H_UNATTENDED,
-  CONFIRM_START_EXIT_MONITOR,
-  CONFIRM_START_RUNTIME,
-  CONFIRM_START_WORKER,
-  CONFIRM_STOP_EXIT_MONITOR,
-  CONFIRM_STOP_RUNTIME,
-  CONFIRM_STOP_WORKER,
-} from "@/features/admin/accounts/upbit24x7Confirmations";
+import { asRecord } from "@/shared/utils/dataHelpers";
+
+export type OrchestratorStep = {
+  name: string;
+  status: string;
+  message_ko?: string | null;
+  detail?: Record<string, unknown>;
+};
 
 export type OneClickOutcome = {
   ok: boolean;
-  mode: "START" | "STOP" | "REAUTHORIZE_START";
+  mode: "START" | "STOP" | "REAUTHORIZE_START" | "STOP_FULL";
   reauthorized: boolean;
-  stack: StackStartOutcome | null;
+  status: string;
+  steps: OrchestratorStep[];
+  failedStep: string | null;
+  reasonCode: string | null;
   message: string;
+  readiness: string | null;
+  raw: Record<string, unknown>;
 };
 
-function newCorrelationId(prefix: string): string {
-  return `${prefix}-${Date.now().toString(36)}`;
+function parseOutcome(
+  raw: unknown,
+  mode: OneClickOutcome["mode"],
+  reauthorized: boolean,
+): OneClickOutcome {
+  const r = asRecord(raw) ?? {};
+  const status = String(r.status ?? "");
+  const ok =
+    status === "READY" ||
+    status === "ALREADY_RUNNING" ||
+    status === "STOPPED";
+  const stepsRaw = Array.isArray(r.steps) ? r.steps : [];
+  const steps: OrchestratorStep[] = stepsRaw.map((s) => {
+    const row = asRecord(s) ?? {};
+    return {
+      name: String(row.name ?? ""),
+      status: String(row.status ?? ""),
+      message_ko:
+        row.message_ko == null ? null : String(row.message_ko),
+      detail: asRecord(row.detail) ?? undefined,
+    };
+  });
+  const failedStep =
+    r.failed_step == null ? null : String(r.failed_step);
+  const reasonCode =
+    r.reason_code == null ? null : String(r.reason_code);
+  const readiness =
+    r.readiness == null ? null : String(r.readiness);
+  let message = "";
+  if (ok && mode.startsWith("STOP")) {
+    message =
+      mode === "STOP_FULL"
+        ? "완전 종료(스택) 완료 — LIVE/ARM은 계좌 화면에서 별도"
+        : "신규 매수 중지 · 기존 포지션 보호(Exit) 유지";
+  } else if (ok) {
+    message =
+      status === "ALREADY_RUNNING"
+        ? "이미 자동매매 가동 중"
+        : reauthorized
+          ? "24H 재승인 후 자동매매 준비 완료"
+          : "자동매매 준비 완료";
+  } else {
+    message = `실패 @ ${failedStep ?? "?"}: ${reasonCode ?? ""}`;
+  }
+  return {
+    ok,
+    mode,
+    reauthorized,
+    status,
+    steps,
+    failedStep,
+    reasonCode,
+    message,
+    readiness,
+    raw: r,
+  };
 }
 
 export async function runUpbitOneClickStart(
   ubaId: number,
   strategyId: number,
+  options?: { reauthorizeUnattended?: boolean },
 ): Promise<OneClickOutcome> {
-  const ops = await adminApi.getAdminUbaOpsStatus(ubaId, strategyId);
-  const snap = snapshotFromOpsStatus(ops);
-  let reauthorized = false;
-
-  if (snap.needsReauthorize) {
-    await adminApi.reauthorizeAdminUbaUnattended(ubaId, {
-      confirmation_text: CONFIRM_ENABLE_24H_UNATTENDED,
-      reason: "one_click_autotrading_start",
-      horizon_hours: 24,
-      correlation_id: newCorrelationId("oneclick"),
-      source: "ADMIN_UI",
-    });
-    reauthorized = true;
-  }
-
-  const stack = await runUpbit24x7StackStart({
-    fetchOpsStatus: () => adminApi.getAdminUbaOpsStatus(ubaId, strategyId),
-    startWorker: (phrase) => adminApi.startAdminLiveOutboxWorker(phrase),
-    startExitMonitor: (phrase) => adminApi.startAdminExitMonitor(phrase),
-    startRuntime: (phrase) =>
-      adminApi.startAdminUbaStrategyRuntime(ubaId, strategyId, phrase),
+  const reauth = Boolean(options?.reauthorizeUnattended);
+  const raw = await adminApi.startAdminUbaAutotrading(ubaId, {
+    reauthorize_unattended: reauth,
+    strategy_id: strategyId,
+    correlation_id: `fe-oneclick-${Date.now().toString(36)}`,
   });
-
-  return {
-    ok: stack.ok,
-    mode: reauthorized ? "REAUTHORIZE_START" : "START",
-    reauthorized,
-    stack,
-    message: stack.ok
-      ? reauthorized
-        ? "24H 재승인 후 자동매매 스택 시작 완료"
-        : "자동매매 스택 시작 완료"
-      : `시작 실패 @ ${stack.failedStep}: ${stack.failedReason ?? ""}`,
-  };
+  return parseOutcome(
+    raw,
+    reauth ? "REAUTHORIZE_START" : "START",
+    reauth,
+  );
 }
 
 export async function runUpbitOneClickStop(
   ubaId: number,
   strategyId: number,
+  options?: { mode?: "ENTRY_ONLY" | "FULL" },
 ): Promise<OneClickOutcome> {
-  const stack = await runUpbit24x7StackStop({
-    fetchOpsStatus: () => adminApi.getAdminUbaOpsStatus(ubaId, strategyId),
-    stopWorker: (phrase) => adminApi.stopAdminLiveOutboxWorker(phrase),
-    stopExitMonitor: (phrase) => adminApi.stopAdminExitMonitor(phrase),
-    stopRuntime: (phrase) =>
-      adminApi.stopAdminUbaStrategyRuntime(ubaId, strategyId, phrase),
+  const mode = options?.mode ?? "ENTRY_ONLY";
+  const raw = await adminApi.stopAdminUbaAutotrading(ubaId, {
+    mode,
+    strategy_id: strategyId,
   });
-
-  return {
-    ok: stack.ok,
-    mode: "STOP",
-    reauthorized: false,
-    stack,
-    message: stack.ok
-      ? "자동매매 스택 중지 완료 (LIVE/ARM/24H 유지)"
-      : `중지 실패 @ ${stack.failedStep}: ${stack.failedReason ?? ""}`,
-  };
+  return parseOutcome(
+    raw,
+    mode === "FULL" ? "STOP_FULL" : "STOP",
+    false,
+  );
 }
 
-/** confirmation phrase 상수 노출 (테스트/문서) */
+/** @deprecated 개별 confirm phrase는 backend orchestrator 내부에서만 사용 */
 export const ONE_CLICK_PHRASES = {
-  CONFIRM_ENABLE_24H_UNATTENDED,
-  CONFIRM_START_WORKER,
-  CONFIRM_START_EXIT_MONITOR,
-  CONFIRM_START_RUNTIME,
+  NOTE: "canonical_backend_orchestrator",
 } as const;
