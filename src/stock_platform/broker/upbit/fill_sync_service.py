@@ -150,6 +150,13 @@ class UpbitFillSyncService:
             self._sync_live_validation_run(
                 order=order, summary=summary, remote=remote, actor=actor
             )
+            # 과거 Upbit 경로 binding 누락 복구 (멱등)
+            if target == OrderStatus.FILLED and getattr(
+                order, "user_broker_account_id", None
+            ):
+                self._apply_strategy_owned_binding(
+                    order=order, remote=remote, actor=actor
+                )
             post_fill = False
             if target in {
                 OrderStatus.FILLED,
@@ -235,6 +242,15 @@ class UpbitFillSyncService:
                 remote=remote,
                 new_execution_ids=new_ids,
                 actor=actor,
+            )
+        elif (
+            target in {OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED}
+            and executed > ZERO
+            and getattr(order, "user_broker_account_id", None)
+        ):
+            # execution 이미 있거나 synthetic 없이 상태만 승격된 경우에도 binding 반영
+            self._apply_strategy_owned_binding(
+                order=order, remote=remote, actor=actor
             )
 
         post_fill = False
@@ -670,7 +686,7 @@ class UpbitFillSyncService:
         new_execution_ids: list[int],
         actor: str,
     ) -> None:
-        """신규 Upbit 체결 → LiveFillLedgerService (Position/Cash)."""
+        """신규 Upbit 체결 → LiveFillLedger + StrategyOwned binding."""
 
         try:
             from stock_platform.broker.kiwoom.execution_models import (
@@ -717,6 +733,296 @@ class UpbitFillSyncService:
             self._session.flush()
         except Exception:  # noqa: BLE001
             # 원장 실패가 fill sync 성공을 롤백하지 않음
+            pass
+
+        # Kiwoom과 동일 — strategy-owned binding OPEN/CLOSED
+        self._apply_strategy_owned_binding(
+            order=order, remote=remote, actor=actor
+        )
+
+    def _apply_strategy_owned_binding(
+        self,
+        *,
+        order: Any,
+        remote: dict[str, Any],
+        actor: str,
+    ) -> None:
+        """Upbit fill → StrategyOwnedRiskService binding (BUY OPEN / SELL CLOSE)."""
+
+        uba_id = getattr(order, "user_broker_account_id", None)
+        strategy_id = getattr(order, "strategy_id", None)
+        if uba_id is None or strategy_id is None:
+            meta = getattr(order, "metadata_payload", None) or {}
+            if strategy_id is None and meta.get("strategy_id") is not None:
+                try:
+                    strategy_id = int(meta["strategy_id"])
+                except (TypeError, ValueError):
+                    strategy_id = None
+        if uba_id is None or strategy_id is None:
+            return
+
+        try:
+            from stock_platform.broker.upbit.order_status import (
+                upbit_fill_summary,
+            )
+            from stock_platform.risk_engine.strategy_owned_risk_service import (
+                StrategyOwnedRiskService,
+            )
+
+            summary = upbit_fill_summary(remote)
+            qty = Decimal(str(summary.get("executed_volume") or 0))
+            if qty <= ZERO:
+                qty = Decimal(str(order.filled_quantity or 0))
+            px = Decimal(str(summary.get("avg_price") or 0))
+            if px <= ZERO:
+                px = Decimal(str(order.average_fill_price or 0))
+            fees = Decimal(str(summary.get("paid_fee") or 0))
+            side = str(order.side_code or "").upper()
+            # SELL 청산 시 entry fee가 binding에 없으면 BUY meta에서 보강
+            if side == "SELL":
+                try:
+                    from stock_platform.order.entities import TradingOrderEntity
+                    from stock_platform.risk_engine.strategy_owned_entities import (
+                        BINDING_STATUS_OPEN,
+                        StrategyPositionBindingEntity,
+                    )
+                    from sqlalchemy import select
+
+                    opens = list(
+                        self._session.scalars(
+                            select(StrategyPositionBindingEntity).where(
+                                StrategyPositionBindingEntity.user_broker_account_id
+                                == int(uba_id),
+                                StrategyPositionBindingEntity.broker_code
+                                == BROKER_CODE,
+                                StrategyPositionBindingEntity.strategy_id
+                                == int(strategy_id),
+                                StrategyPositionBindingEntity.symbol
+                                == str(order.symbol or "").upper(),
+                                StrategyPositionBindingEntity.status
+                                == BINDING_STATUS_OPEN,
+                            )
+                        )
+                    )
+                    for row in opens:
+                        if Decimal(str(row.fees or 0)) > ZERO:
+                            continue
+                        eid = getattr(row, "entry_order_id", None)
+                        if eid is None:
+                            continue
+                        buy = self._session.get(TradingOrderEntity, int(eid))
+                        if buy is None:
+                            continue
+                        buy_meta = dict(
+                            getattr(buy, "metadata_payload", None) or {}
+                        )
+                        entry_fee = Decimal(
+                            str(buy_meta.get("upbit_paid_fee") or 0)
+                        )
+                        if entry_fee > ZERO:
+                            row.fees = entry_fee
+                except Exception:  # noqa: BLE001
+                    pass
+            filled_at = getattr(order, "filled_at", None)
+            if filled_at is None:
+                trades = remote.get("trades") if isinstance(remote, dict) else None
+                if isinstance(trades, list) and trades:
+                    filled_at = _parse_dt(trades[-1].get("created_at"))
+            # broker trade 시각 우선 (reconcile 시각으로 덮어쓰지 않음)
+            trades = remote.get("trades") if isinstance(remote, dict) else None
+            if isinstance(trades, list) and trades:
+                trade_ts = _parse_dt(trades[-1].get("created_at"))
+                if trade_ts is not None:
+                    filled_at = trade_ts
+                    if getattr(order, "filled_at", None) is None or (
+                        order.filled_at is not None
+                        and abs(
+                            (order.filled_at - trade_ts).total_seconds()
+                        )
+                        > 60
+                    ):
+                        # ACCEPTED 후 지연 체결 — broker SoT timestamp 반영
+                        order.filled_at = trade_ts
+
+            svc = StrategyOwnedRiskService(self._session)
+            binding = svc.ensure_binding_from_fill(
+                user_broker_account_id=int(uba_id),
+                broker_code=BROKER_CODE,
+                strategy_id=int(strategy_id),
+                deployment_id=getattr(order, "strategy_deployment_id", None),
+                symbol=str(order.symbol or ""),
+                entry_order_id=(
+                    int(order.order_id) if side == "BUY" else None
+                ),
+                broker_order_id=str(order.broker_order_id or "") or None,
+                quantity=qty,
+                entry_price=px if side == "BUY" else None,
+                side=side,
+                fees=fees,
+                fill_price=px if side == "SELL" else None,
+                exit_order_id=(
+                    int(order.order_id) if side == "SELL" else None
+                ),
+                filled_at=filled_at,
+            )
+            svc.compute_and_persist(
+                user_broker_account_id=int(uba_id),
+                broker_code=BROKER_CODE,
+                strategy_id=int(strategy_id),
+                deployment_id=getattr(order, "strategy_deployment_id", None),
+            )
+            self._session.flush()
+            self._emit_fill_lifecycle_notifications(
+                order=order,
+                remote=remote,
+                binding=binding,
+                actor=actor,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _emit_fill_lifecycle_notifications(
+        self,
+        *,
+        order: Any,
+        remote: dict[str, Any],
+        binding: Any,
+        actor: str,
+    ) -> None:
+        """ORDER_FILLED (+ SELL 시 POSITION_CLOSED / REALIZED_PNL). 멱등 dedupe_key."""
+
+        status = str(getattr(order, "status_code", "") or "").upper()
+        if status not in {OrderStatus.FILLED.value, "FILLED"}:
+            return
+        try:
+            from stock_platform.broker.upbit.order_status import (
+                upbit_fill_summary,
+            )
+            from stock_platform.order.live_safety_audit import (
+                emit_live_order_telegram,
+            )
+            from sqlalchemy.orm.attributes import flag_modified
+
+            meta = dict(getattr(order, "metadata_payload", None) or {})
+            if meta.get("fill_lifecycle_notified"):
+                return
+
+            summary = upbit_fill_summary(remote)
+            qty = _dec_str(summary.get("executed_volume") or order.filled_quantity)
+            avg = _dec_str(
+                summary.get("avg_price") or order.average_fill_price or 0
+            )
+            fee = _dec_str(summary.get("paid_fee") or 0)
+            symbol = str(order.symbol or "")
+            side = str(order.side_code or "").upper()
+            oid = int(order.order_id)
+            signal_reason = str(
+                meta.get("signal_reason")
+                or meta.get("exit_reason")
+                or ""
+            ).upper()
+
+            emit_live_order_telegram(
+                event_type="ORDER_FILLED",
+                title="✅ 자동매매 체결 완료",
+                message=(
+                    f"거래소: 업비트\n종목: {symbol.replace('KRW-', '')}\n"
+                    f"구분: {'매도' if side == 'SELL' else '매수'}\n"
+                    f"수량: {qty}\n체결가: {avg}원\n수수료: {fee}원"
+                ),
+                detail={
+                    "order_id": oid,
+                    "symbol": symbol,
+                    "side": side,
+                    "filled_qty": qty,
+                    "avg_fill_price": avg,
+                    "fee": fee,
+                    "broker_order_id": order.broker_order_id,
+                    "actor": actor,
+                    "dedupe_key": f"ORDER_FILLED:{oid}",
+                },
+            )
+
+            if side == "SELL" and binding is not None:
+                if str(getattr(binding, "status", "")).upper() == "CLOSED":
+                    realized = Decimal(
+                        str(getattr(binding, "realized_pnl", 0) or 0)
+                    )
+                    fees_b = Decimal(str(getattr(binding, "fees", 0) or 0))
+                    net = realized - fees_b
+                    entry = Decimal(
+                        str(getattr(binding, "entry_price", 0) or 0)
+                    )
+                    sold = Decimal(
+                        str(summary.get("executed_volume") or 0)
+                    )
+                    entry_cost = (
+                        entry * sold if entry > ZERO and sold > ZERO else ZERO
+                    )
+                    pct = (
+                        (net / entry_cost * Decimal("100"))
+                        if entry_cost > ZERO
+                        else ZERO
+                    )
+                    reason_ko = "전략 신호"
+                    if (
+                        "DEAD_CROSS" in signal_reason
+                        or "MA_DEAD" in signal_reason
+                    ):
+                        reason_ko = "MA 데드크로스"
+                    elif "STOP" in signal_reason:
+                        reason_ko = "손절"
+                    elif "TAKE" in signal_reason or "PROFIT" in signal_reason:
+                        reason_ko = "익절"
+                    elif "TRAIL" in signal_reason:
+                        reason_ko = "트레일링 스탑"
+
+                    emit_live_order_telegram(
+                        event_type="POSITION_CLOSED",
+                        title="📦 자동매매 포지션 청산",
+                        message=(
+                            f"거래소: 업비트\n"
+                            f"종목: {symbol.replace('KRW-', '')}\n"
+                            f"청산사유: {reason_ko}\n"
+                            f"수량: {qty}\n체결가: {avg}원"
+                        ),
+                        detail={
+                            "order_id": oid,
+                            "binding_id": getattr(
+                                binding, "binding_id", None
+                            ),
+                            "symbol": symbol,
+                            "exit_reason": signal_reason
+                            or "STRATEGY_SIGNAL",
+                            "dedupe_key": f"POSITION_CLOSED:{oid}",
+                        },
+                    )
+                    sign = "+" if net >= ZERO else ""
+                    emit_live_order_telegram(
+                        event_type="REALIZED_PNL",
+                        title="💰 자동매매 실현손익",
+                        message=(
+                            f"거래소: 업비트\n"
+                            f"종목: {symbol.replace('KRW-', '')}\n"
+                            f"실현손익: {sign}{net:.2f}원 "
+                            f"({sign}{pct:.2f}%)\n"
+                            f"청산사유: {reason_ko}"
+                        ),
+                        detail={
+                            "order_id": oid,
+                            "binding_id": getattr(
+                                binding, "binding_id", None
+                            ),
+                            "realized_pnl": str(net),
+                            "realized_pnl_pct": str(pct),
+                            "dedupe_key": f"REALIZED_PNL:{oid}",
+                        },
+                    )
+
+            meta["fill_lifecycle_notified"] = True
+            order.metadata_payload = meta
+            flag_modified(order, "metadata_payload")
+        except Exception:  # noqa: BLE001
             pass
 
     def _resolve_client(self, order: Any) -> Any:

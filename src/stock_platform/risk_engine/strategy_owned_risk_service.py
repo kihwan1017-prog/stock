@@ -150,6 +150,9 @@ class StrategyOwnedRiskService:
         entry_price: Decimal | None,
         side: str,
         fees: Decimal = ZERO,
+        fill_price: Decimal | None = None,
+        exit_order_id: int | None = None,
+        filled_at: datetime | None = None,
     ) -> StrategyPositionBindingEntity | None:
         """BUY fill → OPEN binding. SELL fill → qty 감소 / CLOSED."""
 
@@ -269,19 +272,33 @@ class StrategyOwnedRiskService:
             )
             remain = qty
             last: StrategyPositionBindingEntity | None = None
+            sell_px = (
+                Decimal(str(fill_price)) if fill_price is not None else None
+            )
+            close_ts = filled_at or datetime.now(timezone.utc)
             for row in opens:
                 if remain <= ZERO:
                     break
                 owned = Decimal(str(row.owned_quantity or 0))
                 take = min(owned, remain)
                 entry = Decimal(str(row.entry_price or 0))
-                # 실현손익은 호출측이 가격을 meta에 넣을 수 있음 — 여기선 qty 감소만
                 row.owned_quantity = owned - take
                 row.fees = Decimal(str(row.fees or 0)) + Decimal(str(fees or 0))
+                if sell_px is not None and entry > ZERO and take > ZERO:
+                    # 실현 차익(수수료는 fees 컬럼에 별도 누적)
+                    row.realized_pnl = Decimal(str(row.realized_pnl or 0)) + (
+                        (sell_px - entry) * take
+                    )
                 if row.owned_quantity <= ZERO:
                     row.owned_quantity = ZERO
                     row.status = BINDING_STATUS_CLOSED
-                    row.closed_at = datetime.now(timezone.utc)
+                    row.closed_at = close_ts
+                    meta = dict(row.meta_json or {})
+                    if exit_order_id is not None:
+                        meta["exit_order_id"] = int(exit_order_id)
+                    if sell_px is not None:
+                        meta["exit_fill_price"] = str(sell_px)
+                    row.meta_json = meta
                 remain -= take
                 last = row
             self._session.flush()

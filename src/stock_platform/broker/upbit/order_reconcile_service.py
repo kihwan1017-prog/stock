@@ -177,8 +177,22 @@ class UpbitOrderReconcileService:
             UpbitFillSyncService,
         )
 
+        # UBA scope면 vault 클라이언트 우선 — env 기본키로 오조회 방지
+        scoped_client = self._client
+        if user_broker_account_id is not None:
+            try:
+                from stock_platform.broker.credential_adapter_factory import (
+                    build_upbit_adapter_for_uba,
+                )
+
+                scoped_client = build_upbit_adapter_for_uba(
+                    self._session, int(user_broker_account_id)
+                )._client  # noqa: SLF001
+            except Exception:  # noqa: BLE001
+                scoped_client = self._client
+
         fill_sync = UpbitFillSyncService(
-            self._session, order_client=self._client
+            self._session, order_client=scoped_client
         )
         fill_results: list[dict[str, Any]] = []
 
@@ -188,17 +202,16 @@ class UpbitOrderReconcileService:
             if not broker_id:
                 continue
             remote = by_uuid.get(str(broker_id))
-            if remote is None:
-                try:
-                    remote = self._client.get_order(uuid=str(broker_id))
-                except Exception:
-                    continue
             before = entity.status_code
-            result = fill_sync.apply_remote(
-                order=entity,
-                remote=remote,
-                actor="UPBIT_RECONCILE",
-            )
+            try:
+                # list에 없어도 UBA vault GET으로 terminal sync (재주문 없음)
+                result = fill_sync.sync_by_order_id(
+                    int(entity.order_id),
+                    actor="UPBIT_RECONCILE",
+                    remote=remote,
+                )
+            except Exception:
+                continue
             if result.order_status != before or result.new_executions:
                 updated += 1
             fill_results.append(

@@ -178,6 +178,19 @@ def emit_live_order_telegram(
             # 실제 주문 제출만 ORDER_SUBMITTED — ARM/LIVE ON 은 모니터링 알림
             mapped = NotificationEventType.ORDER_SUBMITTED.value
         elif event_type in {
+            "ORDER_FILLED",
+            NotificationEventType.ORDER_FILLED.value,
+        }:
+            mapped = NotificationEventType.ORDER_FILLED.value
+        elif event_type in {
+            "ORDER_PARTIAL_FILLED",
+            NotificationEventType.ORDER_PARTIAL_FILLED.value,
+        }:
+            mapped = NotificationEventType.ORDER_PARTIAL_FILLED.value
+        elif event_type in {"POSITION_CLOSED", "REALIZED_PNL"}:
+            # 템플릿 미등록 시에도 TRADE 계열로 전달
+            mapped = event_type
+        elif event_type in {
             LIVE_ON,
             LIVE_ARM,
             ARM_ON,
