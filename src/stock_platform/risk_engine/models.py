@@ -70,9 +70,13 @@ class RiskOrderRequest:
     is_risk_reducing: bool = False
     daily_ordered_amount: Decimal = Decimal("0")
     symbol_invested_amount: Decimal = Decimal("0")
+    # UPBIT MARKET BUY: 총 KRW (qty*unit_price 대체). None이면 qty*price.
+    quote_amount: Decimal | None = None
 
     @property
     def order_amount(self) -> Decimal:
+        if self.quote_amount is not None:
+            return Decimal(str(self.quote_amount))
         return self.quantity * self.price
 
     @property
@@ -103,6 +107,8 @@ class RiskAccountState:
     daily_unrealized_profit_loss: Decimal
     open_position_count: int
     symbol_position_quantity: Decimal = Decimal("0")
+    # 동일 계좌·종목 미체결 SELL (TradingOrder). 신규 position source 아님.
+    symbol_pending_sell_quantity: Decimal = Decimal("0")
 
 
 @dataclass(frozen=True, slots=True)

@@ -72,9 +72,23 @@ class DatabaseBackedRiskOrderGuard:
         environment: str = "LIVE",
         strategy_id: int | None = None,
         strategy_deployment_id: int | None = None,
+        # UPBIT MARKET BUY KRW notional — qty*price 대체
+        quote_amount: Decimal | None = None,
+        # unit reference (사이징/포지션 추정). quote_amount 있을 때 price에 넣을 값
+        reference_unit_price: Decimal | None = None,
     ) -> RiskCheckedOrderResult:
         environment_upper = (environment or "LIVE").upper()
         now = datetime.now(timezone.utc)
+        unit_price = (
+            Decimal(str(reference_unit_price))
+            if reference_unit_price is not None
+            else Decimal(str(price))
+        )
+        notional = (
+            Decimal(str(quote_amount))
+            if quote_amount is not None
+            else (quantity * unit_price)
+        )
 
         def _reject(code: str) -> RiskCheckedOrderResult:
             return RiskCheckedOrderResult(
@@ -84,7 +98,7 @@ class DatabaseBackedRiskOrderGuard:
                     decision=RiskDecisionLevel.BLOCK,
                     allowed=False,
                     evaluated_at=now,
-                    order_amount=quantity * price,
+                    order_amount=notional,
                     results=[],
                 ),
             )
@@ -239,7 +253,7 @@ class DatabaseBackedRiskOrderGuard:
             symbol=symbol,
             side=RiskOrderSide(side.upper()),
             quantity=quantity,
-            price=price,
+            price=unit_price,
             requested_at=datetime.now(timezone.utc),
             account_id=paper_account_id,
             user_broker_account_id=uba_id,
@@ -251,6 +265,9 @@ class DatabaseBackedRiskOrderGuard:
                 user_broker_account_id=uba_id,
             ),
             symbol_invested_amount=symbol_invested,
+            quote_amount=(
+                None if quote_amount is None else Decimal(str(quote_amount))
+            ),
         )
 
         # STEP 8-5-7/8-5-13 — KRX LIVE: Calendar Fail Closed (Upbit 제외)

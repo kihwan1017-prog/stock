@@ -232,7 +232,27 @@ def test_outbox_roundtrip_preserves_quote_amount_krw() -> None:
     # ticker가 broker price로 쓰이지 않음
     assert body["price"] != "3710"
 
-def test_mock_e2e_ticker_not_used_as_broker_price() -> None:
+def test_risk_order_amount_uses_quote_not_qty_times_notional() -> None:
+    """MARKET BUY: price=KRW notional이면 qty*price로 한도 계산하면 안 됨."""
+    from datetime import datetime, timezone
+
+    from stock_platform.risk_engine.models import RiskOrderRequest, RiskOrderSide
+
+    req = RiskOrderRequest(
+        exchange_code="UPBIT",
+        symbol="KRW-GEOD",
+        side=RiskOrderSide.BUY,
+        quantity=Decimal("14.28571429"),
+        price=Decimal("350"),  # unit
+        requested_at=datetime.now(timezone.utc),
+        quote_amount=Decimal("5000"),
+    )
+    assert req.order_amount == Decimal("5000")
+    # 잘못된 계산(qty * KRW notional)이 아님을 보장
+    assert req.order_amount != (
+        Decimal("14.28571429") * Decimal("5000")
+    )
+
     """Sizing → mapper: ticker=3710 이어도 broker price=5000."""
     service = OrderExecutionService.__new__(OrderExecutionService)
     _qty, krw_price, meta = service._resolve_size(

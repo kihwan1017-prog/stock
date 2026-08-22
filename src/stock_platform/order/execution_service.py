@@ -522,6 +522,30 @@ class OrderExecutionService:
                         message=exc.message,
                     )
 
+            risk_quote = None
+            risk_unit_price = None
+            if (
+                str(command.broker_code or "").upper() == "UPBIT"
+                and str(order_type_text or "").upper() == "MARKET"
+                and side_text == "BUY"
+            ):
+                risk_quote = (
+                    Decimal(str(command.order_amount))
+                    if command.order_amount is not None
+                    else (
+                        Decimal(str(price))
+                        if price is not None
+                        else None
+                    )
+                )
+                if isinstance(plan_payload, dict) and plan_payload.get(
+                    "reference_price"
+                ):
+                    risk_unit_price = Decimal(
+                        str(plan_payload["reference_price"])
+                    )
+                elif command.reference_price is not None:
+                    risk_unit_price = Decimal(str(command.reference_price))
             risk_result = DatabaseBackedRiskOrderGuard(
                 self._session,
                 broker_code=command.broker_code,
@@ -532,7 +556,7 @@ class OrderExecutionService:
                 symbol=command.symbol,
                 side=command.side.value,
                 quantity=quantity,
-                price=price,
+                price=price if price is not None else Decimal("0"),
                 user_id=command.user_id or command.owner_user_id,
                 user_broker_account_id=uba_id,
                 order_source=command.order_source,
@@ -541,6 +565,8 @@ class OrderExecutionService:
                 environment=environment,
                 strategy_id=command.strategy_id,
                 strategy_deployment_id=command.strategy_deployment_id,
+                quote_amount=risk_quote,
+                reference_unit_price=risk_unit_price,
             )
             if not risk_result.allowed:
                 from stock_platform.trading.failure_code_normalize import (
