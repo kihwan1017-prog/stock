@@ -43,6 +43,8 @@ import {
   DEFAULT_UPBIT_AUTOTRADING_UBA_ID,
   formatUpbitAutotradingModeLabel,
   resolvePortfolioEnableControl,
+  resolveStrategyIdFromSources,
+  UPBIT_AUTOTRADING_EMPTY_LABELS,
   UPBIT_AUTOTRADING_TAB_KEYS,
   UPBIT_AUTOTRADING_TAB_LABELS,
   UPBIT_AUTOTRADING_TAB_ORDER,
@@ -169,16 +171,11 @@ export function UpbitAutotradingSettingsWorkspace({
   }, [ownershipQuery.data]);
 
   const opsSnap = opsQuery.data ? snapshotFromOpsStatus(opsQuery.data) : null;
-  const portfolioRoot = asRecord(portfolioQuery.data);
-  const fmRoot = asRecord(fullMarketQuery.data);
-  const strategyIdNum =
-    Number(
-      portfolioRoot.strategy_id ??
-        fmRoot.strategy_id ??
-        asRecord(opsQuery.data).strategy_id ??
-        0,
-    ) || null;
-
+  const strategyIdNum = resolveStrategyIdFromSources({
+    portfolio: portfolioQuery.data,
+    fullMarket: fullMarketQuery.data,
+    ops: opsQuery.data,
+  });
   const invalidateOps = () => {
     void queryClient.invalidateQueries({
       queryKey: ["admin", "uba-ops-status", ubaId],
@@ -194,7 +191,10 @@ export function UpbitAutotradingSettingsWorkspace({
   const portfolio = asObj(portfolioQuery.data);
   const policy = asObj(portfolio.policy);
   const summary = asObj(portfolio.summary);
-  const slots = Array.isArray(portfolio.slots) ? portfolio.slots : [];
+  const slots = (Array.isArray(portfolio.slots) ? portfolio.slots : []).filter(
+    (row): row is Record<string, unknown> =>
+      row != null && typeof row === "object" && !Array.isArray(row),
+  );
   const modeRaw = String(
     portfolio.mode ?? fm.mode ?? "FIXED_SYMBOL",
   ).toUpperCase();
@@ -1233,6 +1233,15 @@ export function UpbitAutotradingSettingsWorkspace({
       />
 
       <Card size="small" title="원클릭 자동매매">
+        {strategyIdNum == null ? (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            title={UPBIT_AUTOTRADING_EMPTY_LABELS.noStrategy}
+            description="portfolio/full-market 상태에 strategy_id가 없어도 정상일 수 있습니다. LIVE 전략 링크·PORTFOLIO Enable 후 다시 확인하세요."
+          />
+        ) : null}
         <UpbitOneClickAutotradingControl
           ubaId={ubaId}
           strategyId={strategyIdNum}

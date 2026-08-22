@@ -41,6 +41,7 @@ import {
   toneToAntdColor,
   type StatusTone,
 } from "@/features/admin/autotrading/statusTone";
+import { UPBIT_AUTOTRADING_EMPTY_LABELS } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
 import { asRecord } from "@/shared/utils/dataHelpers";
 
 function rec(v: unknown): Record<string, unknown> {
@@ -86,7 +87,10 @@ export function UpbitOpsStatusPanel({
   ownershipBySymbol,
 }: Props) {
   const summary = rec(portfolio.summary);
-  const slots = Array.isArray(portfolio.slots) ? portfolio.slots : [];
+  const slots = (Array.isArray(portfolio.slots) ? portfolio.slots : []).filter(
+    (row): row is unknown =>
+      row != null && typeof row === "object" && !Array.isArray(row),
+  );
   const unattended = rec(ops.unattended);
   const control = rec(ops.control);
   const feed = rec(ops.market_feed);
@@ -320,7 +324,7 @@ export function UpbitOpsStatusPanel({
 
       <Card size="small" title="AUTO 보유 포지션">
         {openSlots.length === 0 ? (
-          <Empty description="현재 자동매매 보유 종목이 없습니다." />
+          <Empty description={UPBIT_AUTOTRADING_EMPTY_LABELS.noAutoPositions} />
         ) : (
           <Alert
             type="warning"

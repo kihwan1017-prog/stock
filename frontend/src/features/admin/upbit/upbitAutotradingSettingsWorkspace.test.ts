@@ -11,6 +11,7 @@ import {
   isFullMarketSingleMode,
   isPortfolioMode,
   resolvePortfolioEnableControl,
+  resolveStrategyIdFromSources,
   UPBIT_AUTOTRADING_TAB_KEYS,
   UPBIT_AUTOTRADING_TAB_LABELS,
   UPBIT_AUTOTRADING_TAB_ORDER,
@@ -165,11 +166,96 @@ describe("UPBIT autotrading settings workspace", () => {
     expect(UPBIT_AUTOTRADING_TAB_KEYS.safety).toBe("safety");
   });
 
+  it("쿼리 로딩 시 strategy_id는 resolveStrategyIdFromSources로 null-safe 추출", () => {
+    const ws = workspace();
+    expect(ws).toContain("resolveStrategyIdFromSources");
+    expect(ws).not.toMatch(/portfolioRoot\.strategy_id/);
+    expect(ws).not.toMatch(/fmRoot\.strategy_id/);
+    expect(ws).toContain("function asObj");
+    expect(ws).toContain("const portfolio = asObj(portfolioQuery.data)");
+  });
+
+  it("resolveStrategyIdFromSources — nullable AUTO/전략 상태(A–F)에서 crash 없이 null 또는 유효 id", () => {
+    // A: AUTO positions = [] (strategy_id 없음)
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: { auto_positions: [], positions: [] },
+        fullMarket: null,
+        ops: null,
+      }),
+    ).toBeNull();
+
+    // B: strategy = null
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: { strategy: null },
+      }),
+    ).toBeNull();
+
+    // C: strategy_id = null
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: { strategy_id: null },
+        fullMarket: { strategy_id: null },
+        ops: { strategy_id: null },
+      }),
+    ).toBeNull();
+
+    // D: binding = null (strategy_id는 portfolio에 존재)
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: { binding: null, strategy_id: 42 },
+      }),
+    ).toBe(42);
+
+    // E: slot = null (slots 배열에 null — strategy_id는 ops fallback)
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: { slots: [null] },
+        ops: { strategy_id: 1380 },
+      }),
+    ).toBe(1380);
+
+    // F: latest order/entry = null
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: {
+          latest_entry: null,
+          latest_order: null,
+        },
+        fullMarket: { strategy_id: 99 },
+      }),
+    ).toBe(99);
+
+    // 전체 소스 null (쿼리 로딩 직후)
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: null,
+        fullMarket: null,
+        ops: null,
+      }),
+    ).toBeNull();
+
+    // 정상 데이터 유지
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: { strategy_id: 1 },
+        fullMarket: { strategy_id: 2 },
+        ops: { strategy_id: 3 },
+      }),
+    ).toBe(1);
+    expect(
+      resolveStrategyIdFromSources({
+        portfolio: {},
+        fullMarket: { strategy_id: 2 },
+        ops: { strategy_id: 3 },
+      }),
+    ).toBe(2);
+  });
+
   it("쿼리 로딩 시 asRecord null 중첩 접근을 asObj로 방어한다", () => {
     const ws = workspace();
-    expect(ws).toContain("function asObj");
     expect(ws).toContain("asRecord(value) ?? {}");
-    expect(ws).toContain("const portfolio = asObj(portfolioQuery.data)");
     expect(ws).toContain("const policy = asObj(portfolio.policy)");
   });
 

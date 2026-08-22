@@ -3,6 +3,8 @@
  * PORTFOLIO Enable / REAL 주문은 여기서 수행하지 않음.
  */
 
+import { asRecord } from "@/shared/utils/dataHelpers";
+
 export const UPBIT_AUTOTRADING_TAB_KEYS = {
   market: "market",
   capital: "capital",
@@ -85,6 +87,29 @@ export function isFullMarketSingleMode(mode: unknown): boolean {
 }
 
 export const DEFAULT_UPBIT_AUTOTRADING_UBA_ID = 1380;
+
+/** portfolio / full-market / ops 응답이 null·로딩 중이어도 crash 없이 strategy_id 추출 */
+export function resolveStrategyIdFromSources(sources: {
+  portfolio?: unknown;
+  fullMarket?: unknown;
+  ops?: unknown;
+}): number | null {
+  const portfolio = asRecord(sources.portfolio) ?? {};
+  const fullMarket = asRecord(sources.fullMarket) ?? {};
+  const ops = asRecord(sources.ops) ?? {};
+  const raw = portfolio.strategy_id ?? fullMarket.strategy_id ?? ops.strategy_id;
+  if (raw == null || raw === "") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
+}
+
+/** UI Empty State 라벨 (AUTO 보유 0·전략 미연결 등 정상 운영) */
+export const UPBIT_AUTOTRADING_EMPTY_LABELS = {
+  noStrategy: "연결된 전략 없음",
+  noAutoPositions: "현재 AUTO 보유 종목 없음",
+  noSlots: "대기 슬롯 없음",
+  noLatestEntry: "최근 진입 없음",
+} as const;
 
 /** Backend confirmation phrases (audit gate) */
 export const CONFIRM_ENABLE_PORTFOLIO = "전체시장 포트폴리오 모드 시작";
