@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from stock_platform.api.deps_admin import require_admin
@@ -218,6 +218,43 @@ class PortfolioPolicyPatchBody(BaseModel):
     candidate_switch_min_score_delta: float | None = Field(
         default=None, ge=0, le=100
     )
+    rsi_max: float | None = Field(default=None, gt=0, le=100)
+    min_ma_separation_pct: float | None = Field(default=None, ge=0, le=50)
+    min_volume_surge: float | None = Field(default=None, gt=0, le=100)
+    require_ai_allow: bool | None = None
+    short_ma_window: int | None = Field(default=None, ge=1, le=200)
+    long_ma_window: int | None = Field(default=None, ge=2, le=500)
+
+    @model_validator(mode="after")
+    def _validate_ma_windows(self) -> PortfolioPolicyPatchBody:
+        short = self.short_ma_window
+        long = self.long_ma_window
+        if short is not None and long is not None and short >= long:
+            raise ValueError("short_ma_window must be less than long_ma_window")
+        return self
+
+
+@router.get("/uba/{user_broker_account_id}/portfolio/policy")
+def admin_portfolio_policy_get(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Canonical portfolio + entry policy (READ)."""
+
+    from stock_platform.operation.upbit_full_market.portfolio_service import (
+        UpbitPortfolioService,
+    )
+
+    pf = UpbitPortfolioService(session)
+    pf.get_or_create_policy(int(user_broker_account_id))
+    session.commit()
+    return {
+        "ok": True,
+        "user_broker_account_id": int(user_broker_account_id),
+        "policy": pf.policy_dict(int(user_broker_account_id)),
+        "orders_created": 0,
+    }
 
 
 class PortfolioPreviewBody(BaseModel):
@@ -335,11 +372,17 @@ def admin_portfolio_policy_patch(
     )
 
     patches = body.model_dump(exclude_none=True)
-    result = UpbitPortfolioService(session).update_policy(
-        int(user_broker_account_id),
-        patches=patches,
-        actor=str(getattr(admin, "username", None) or admin.user_id),
-    )
+    try:
+        result = UpbitPortfolioService(session).update_policy(
+            int(user_broker_account_id),
+            patches=patches,
+            actor=str(getattr(admin, "username", None) or admin.user_id),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"ok": False, "error": str(exc)},
+        ) from exc
     session.commit()
     return result
 

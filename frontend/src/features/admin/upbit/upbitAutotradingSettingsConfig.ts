@@ -32,7 +32,7 @@ export const UPBIT_AUTOTRADING_TAB_LABELS: Record<
 > = {
   market: "현황",
   capital: "자금 · 포지션",
-  entry: "진입 규칙",
+  entry: "진입 · 후보 정책",
   exit: "청산 규칙",
   ai: "AI",
   safety: "안전 · 손실 제한",

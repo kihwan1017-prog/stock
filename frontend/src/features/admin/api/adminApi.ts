@@ -830,6 +830,12 @@ export async function disableAdminUbaPortfolio(
   return postJson(`/admin/autotrading/uba/${ubaId}/portfolio/disable`, body);
 }
 
+export async function getAdminUbaPortfolioPolicy(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/portfolio/policy`);
+}
+
 export async function patchAdminUbaPortfolioPolicy(
   ubaId: number,
   body: Record<string, unknown>,

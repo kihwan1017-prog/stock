@@ -235,17 +235,19 @@ def build_portfolio_entry_context(
             getattr(settings, "upbit_portfolio_entry_signal_policy", POLICY_CROSS_EVENT)
         ),
     )
-    # candidate_max_age는 policy 행 우선
-    thresholds = load_thresholds_from_settings(settings)
-    if policy_row is not None and policy_row.candidate_max_age_seconds:
-        thresholds = PortfolioEntryThresholds(
-            rsi_max=thresholds.rsi_max,
-            min_volume_surge=thresholds.min_volume_surge,
-            min_ma_separation_pct=thresholds.min_ma_separation_pct,
-            max_feed_age_seconds=thresholds.max_feed_age_seconds,
-            max_candidate_age_seconds=float(policy_row.candidate_max_age_seconds),
-            require_ai_allow=thresholds.require_ai_allow,
-        )
+    # candidate_max_age는 policy 행 우선 — UBA JSON이 entry 임계값 SoT
+    cand_age = (
+        int(policy_row.candidate_max_age_seconds)
+        if policy_row is not None and policy_row.candidate_max_age_seconds
+        else None
+    )
+    thresholds = load_thresholds_from_policy(
+        settings=settings,
+        risk_group_policy_json=dict(
+            (policy_row.risk_group_policy_json if policy_row else None) or {}
+        ),
+        candidate_max_age_seconds=cand_age,
+    )
 
     slots = list(
         session.scalars(
@@ -483,6 +485,75 @@ def load_thresholds_from_settings(settings: Any) -> PortfolioEntryThresholds:
             getattr(settings, "upbit_portfolio_entry_require_ai_allow", True)
         ),
     )
+
+
+def load_thresholds_from_policy(
+    *,
+    settings: Any,
+    risk_group_policy_json: dict[str, Any] | None,
+    candidate_max_age_seconds: int | None = None,
+) -> PortfolioEntryThresholds:
+    """settings 기본 + operation.upbit_portfolio_policy.risk_group_policy_json 우선."""
+
+    base = load_thresholds_from_settings(settings)
+    blob = dict(risk_group_policy_json or {})
+
+    def _float(key: str, default: float) -> float:
+        raw = blob.get(key)
+        if raw is None:
+            return default
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return default
+
+    cand_age = candidate_max_age_seconds
+    if cand_age is None and blob.get("candidate_max_age_seconds") is not None:
+        try:
+            cand_age = int(blob["candidate_max_age_seconds"])
+        except (TypeError, ValueError):
+            cand_age = None
+
+    require_ai = blob.get("require_ai_allow")
+    if require_ai is None:
+        require_ai = base.require_ai_allow
+    else:
+        require_ai = bool(require_ai)
+
+    return PortfolioEntryThresholds(
+        rsi_max=_float("rsi_max", base.rsi_max),
+        min_volume_surge=_float("min_volume_surge", base.min_volume_surge),
+        min_ma_separation_pct=_float(
+            "min_ma_separation_pct", base.min_ma_separation_pct
+        ),
+        max_feed_age_seconds=base.max_feed_age_seconds,
+        max_candidate_age_seconds=float(
+            cand_age if cand_age is not None else base.max_candidate_age_seconds
+        ),
+        require_ai_allow=require_ai,
+    )
+
+
+def resolve_ma_windows_from_policy(
+    *,
+    risk_group_policy_json: dict[str, Any] | None,
+    strategy_parameter_payload: dict[str, Any] | None = None,
+) -> dict[str, int]:
+    """UBA policy JSON > strategy parameter_payload > default 5/20."""
+
+    blob = dict(risk_group_policy_json or {})
+    payload = dict(strategy_parameter_payload or {})
+    try:
+        short = int(blob.get("short_ma_window") or payload.get("short_window") or 5)
+    except (TypeError, ValueError):
+        short = 5
+    try:
+        long = int(blob.get("long_ma_window") or payload.get("long_window") or 20)
+    except (TypeError, ValueError):
+        long = 20
+    short = max(1, short)
+    long = max(short + 1, long)
+    return {"short_ma_window": short, "long_ma_window": long}
 
 
 def resolve_policy_from_row(

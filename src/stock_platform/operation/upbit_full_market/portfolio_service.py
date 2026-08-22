@@ -164,24 +164,68 @@ class UpbitPortfolioService:
     def policy_dict(self, user_broker_account_id: int) -> dict[str, Any]:
         from stock_platform.common.settings import get_settings
         from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            load_thresholds_from_policy,
+            resolve_ma_windows_from_policy,
             resolve_policy_from_row,
         )
 
         row = self.get_or_create_policy(int(user_broker_account_id))
+        settings = get_settings()
+        blob = dict(row.risk_group_policy_json or {})
         entry_policy = resolve_policy_from_row(
-            risk_group_policy_json=dict(row.risk_group_policy_json or {}),
+            risk_group_policy_json=blob,
             settings_default=str(
                 getattr(
-                    get_settings(),
+                    settings,
                     "upbit_portfolio_entry_signal_policy",
                     "CROSS_EVENT",
                 )
             ),
         )
+        thresholds = load_thresholds_from_policy(
+            settings=settings,
+            risk_group_policy_json=blob,
+            candidate_max_age_seconds=int(row.candidate_max_age_seconds),
+        )
+        ma_windows = resolve_ma_windows_from_policy(
+            risk_group_policy_json=blob,
+            strategy_parameter_payload=self._strategy_parameter_payload(
+                int(user_broker_account_id)
+            ),
+        )
+        slots = self.list_slots(int(user_broker_account_id))
+        capacity = int(row.max_positions)
+        in_cap = [
+            s for s in slots if int(s.get("slot_no") or 0) <= capacity
+        ]
+        occupied = sum(
+            1
+            for s in in_cap
+            if str(s.get("status") or "").upper() != SLOT_EMPTY
+        )
+        empty_n = sum(
+            1
+            for s in in_cap
+            if str(s.get("status") or "").upper() == SLOT_EMPTY
+        )
+        waiting = sum(
+            1
+            for s in in_cap
+            if str(s.get("status") or "").upper()
+            in {
+                SLOT_SELECTED,
+                SLOT_WARMING_UP,
+                SLOT_WAITING_SIGNAL,
+            }
+        )
         return {
             "policy_id": int(row.policy_id),
             "enabled": bool(row.enabled),
-            "max_positions": int(row.max_positions),
+            "max_positions": capacity,
+            "slot_capacity": capacity,
+            "slots_occupied": occupied,
+            "slots_waiting": waiting,
+            "slots_empty": empty_n,
             "portfolio_capital_limit_krw": row.portfolio_capital_limit_krw,
             "per_position_target_pct": float(row.per_position_target_pct),
             "max_symbol_exposure_pct": float(row.max_symbol_exposure_pct),
@@ -200,13 +244,57 @@ class UpbitPortfolioService:
             "entry_state": row.entry_state,
             "consecutive_loss_count": int(row.consecutive_loss_count),
             "entry_signal_policy": entry_policy,
-            "risk_group_policy_json": dict(row.risk_group_policy_json or {}),
+            "risk_group_policy_json": blob,
             "version": int(row.version),
+            "rsi_max": float(thresholds.rsi_max),
+            "min_ma_separation_pct": float(thresholds.min_ma_separation_pct),
+            "min_volume_surge": float(thresholds.min_volume_surge),
+            "require_ai_allow": bool(thresholds.require_ai_allow),
+            "short_ma_window": int(ma_windows["short_ma_window"]),
+            "long_ma_window": int(ma_windows["long_ma_window"]),
+            "ownership_requirement": "FREE",
+            "ai_requirement_label": (
+                "ALLOW" if thresholds.require_ai_allow else "ANY"
+            ),
             **self._replacement_policy_public(
-                risk_group_policy_json=dict(row.risk_group_policy_json or {}),
+                risk_group_policy_json=blob,
                 candidate_max_age_seconds=int(row.candidate_max_age_seconds),
             ),
         }
+
+    def _strategy_parameter_payload(
+        self, user_broker_account_id: int
+    ) -> dict[str, Any] | None:
+        """Active link strategy parameter_payload — MA window 표시용."""
+
+        try:
+            from sqlalchemy import select
+
+            from stock_platform.strategy_deployment.definition_entities import (
+                AccountStrategyLinkEntity,
+                StrategyDefinitionEntity,
+            )
+
+            link = self._session.scalar(
+                select(AccountStrategyLinkEntity)
+                .where(
+                    AccountStrategyLinkEntity.user_broker_account_id
+                    == int(user_broker_account_id),
+                    AccountStrategyLinkEntity.is_active.is_(True),
+                )
+                .limit(1)
+            )
+            if link is None or link.strategy_id is None:
+                return None
+            defn = self._session.get(
+                StrategyDefinitionEntity, int(link.strategy_id)
+            )
+            if defn is None:
+                return None
+            payload = getattr(defn, "parameter_payload", None)
+            return dict(payload) if isinstance(payload, dict) else None
+        except Exception:  # noqa: BLE001
+            return None
 
     def _replacement_policy_public(
         self,
@@ -331,6 +419,55 @@ class UpbitPortfolioService:
                 else:
                     blob[key] = max(0.0, float(num))
                 row.risk_group_policy_json = blob
+            elif key in {
+                "rsi_max",
+                "min_ma_separation_pct",
+                "min_volume_surge",
+                "require_ai_allow",
+                "short_ma_window",
+                "long_ma_window",
+            }:
+                blob = dict(row.risk_group_policy_json or {})
+                if value is None:
+                    continue
+                if key == "require_ai_allow":
+                    blob[key] = bool(value)
+                elif key == "rsi_max":
+                    v = float(value)
+                    if not (0 < v <= 100):
+                        raise ValueError("RSI_MAX_OUT_OF_RANGE")
+                    blob[key] = v
+                elif key == "min_ma_separation_pct":
+                    v = float(value)
+                    if v < 0:
+                        raise ValueError("MA_SEPARATION_NEGATIVE")
+                    blob[key] = v
+                elif key == "min_volume_surge":
+                    v = float(value)
+                    if v <= 0:
+                        raise ValueError("VOLUME_SURGE_INVALID")
+                    blob[key] = v
+                elif key == "short_ma_window":
+                    v = max(1, int(value))
+                    long_v = blob.get("long_ma_window")
+                    if long_v is not None:
+                        try:
+                            if v >= int(long_v):
+                                raise ValueError("MA_WINDOW_ORDER_INVALID")
+                        except (TypeError, ValueError):
+                            pass
+                    blob[key] = v
+                elif key == "long_ma_window":
+                    v = max(2, int(value))
+                    short_v = blob.get("short_ma_window")
+                    if short_v is not None:
+                        try:
+                            if int(short_v) >= v:
+                                raise ValueError("MA_WINDOW_ORDER_INVALID")
+                        except (TypeError, ValueError):
+                            pass
+                    blob[key] = v
+                row.risk_group_policy_json = blob
             elif key == "risk_group_policy_json" and isinstance(value, dict):
                 blob = dict(row.risk_group_policy_json or {})
                 blob.update(value)
@@ -343,6 +480,17 @@ class UpbitPortfolioService:
                         str(blob["entry_signal_policy"])
                     )
                 row.risk_group_policy_json = blob
+        # MA window 최종 교차 검증
+        blob = dict(row.risk_group_policy_json or {})
+        short_v = blob.get("short_ma_window")
+        long_v = blob.get("long_ma_window")
+        if short_v is not None and long_v is not None:
+            try:
+                if int(short_v) >= int(long_v):
+                    raise ValueError("MA_WINDOW_ORDER_INVALID")
+            except (TypeError, ValueError) as exc:
+                if str(exc) == "MA_WINDOW_ORDER_INVALID":
+                    raise
         row.version = int(row.version or 1) + 1
         self._session.flush()
         logger.info(
@@ -535,6 +683,14 @@ class UpbitPortfolioService:
             ):
                 sel_by_id[int(sel.selection_id)] = sel
         evals = portfolio_entry_telemetry.snapshot(int(user_broker_account_id))
+        policy_row = self.get_or_create_policy(int(user_broker_account_id))
+        repl = self._replacement_policy_public(
+            risk_group_policy_json=dict(policy_row.risk_group_policy_json or {}),
+            candidate_max_age_seconds=int(policy_row.candidate_max_age_seconds),
+        )
+        max_wait_s = float(repl.get("candidate_max_wait_seconds") or 10800)
+        hold_s = float(repl.get("candidate_hold_seconds") or 1800)
+        switch_delta = float(repl.get("candidate_switch_min_score_delta") or 8)
         out: list[dict[str, Any]] = []
         for s in rows:
             sel = (
@@ -558,6 +714,17 @@ class UpbitPortfolioService:
                     )
                 except Exception:  # noqa: BLE001
                     waiting_age_seconds = None
+            slot_score = (
+                float(sel.score) if sel is not None and sel.score is not None else None
+            )
+            max_wait_exceeded = (
+                waiting_age_seconds is not None
+                and float(waiting_age_seconds) >= max_wait_s
+            )
+            within_hold = (
+                waiting_age_seconds is not None
+                and float(waiting_age_seconds) < hold_s
+            )
             out.append(
                 {
                     "slot_id": int(s.slot_id),
@@ -578,12 +745,8 @@ class UpbitPortfolioService:
                         else None
                     ),
                     "version": int(s.version),
-                    "scanner_score": (
-                        float(sel.score) if sel is not None and sel.score is not None else None
-                    ),
-                    "score": (
-                        float(sel.score) if sel is not None and sel.score is not None else None
-                    ),
+                    "scanner_score": slot_score,
+                    "score": slot_score,
                     "ai_recommendation": (
                         sel.ai_recommendation if sel is not None else None
                     ),
@@ -597,6 +760,11 @@ class UpbitPortfolioService:
                     "last_entry_block_reason": ev.get("last_block_reason"),
                     "last_entry_evaluated_at": ev.get("last_evaluated_at"),
                     "entry_evaluation_count": ev.get("evaluation_count"),
+                    "replacement_max_wait_seconds": int(max_wait_s),
+                    "replacement_max_wait_exceeded": max_wait_exceeded,
+                    "replacement_within_hold": within_hold,
+                    "replacement_min_score_to_beat": slot_score,
+                    "replacement_switch_min_score_delta": switch_delta,
                 }
             )
         return out

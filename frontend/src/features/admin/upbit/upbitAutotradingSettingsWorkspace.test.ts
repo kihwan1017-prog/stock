@@ -38,7 +38,7 @@ describe("UPBIT autotrading settings workspace", () => {
     expect(UPBIT_AUTOTRADING_TAB_ORDER).toHaveLength(6);
     expect(UPBIT_AUTOTRADING_TAB_LABELS.market).toBe("현황");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.capital).toBe("자금 · 포지션");
-    expect(UPBIT_AUTOTRADING_TAB_LABELS.entry).toBe("진입 규칙");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.entry).toBe("진입 · 후보 정책");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.exit).toBe("청산 규칙");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.ai).toBe("AI");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.safety).toBe("안전 · 손실 제한");

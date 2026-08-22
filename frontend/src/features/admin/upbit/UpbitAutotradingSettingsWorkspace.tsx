@@ -32,6 +32,11 @@ import { useEffect, useMemo, useState } from "react";
 import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { snapshotFromOpsStatus } from "@/features/admin/accounts/upbit24x7StackOrchestrator";
+import { UpbitPortfolioPolicyPanel } from "@/features/admin/upbit/UpbitPortfolioPolicyPanel";
+import {
+  PORTFOLIO_POLICY_CONFIRM_TEXT,
+  validatePolicyFormValues,
+} from "@/features/admin/upbit/upbitPortfolioPolicyHelpers";
 import { UpbitOneClickAutotradingControl } from "@/features/admin/autotrading/UpbitOneClickAutotradingControl";
 import { asRecord } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
@@ -237,7 +242,6 @@ export function UpbitAutotradingSettingsWorkspace({
 
   const capitalInitial = useMemo(
     () => ({
-      max_positions: Number(policy.max_positions ?? 3),
       portfolio_capital_limit_krw:
         policy.portfolio_capital_limit_krw != null
           ? Number(policy.portfolio_capital_limit_krw)
@@ -257,6 +261,16 @@ export function UpbitAutotradingSettingsWorkspace({
 
   const entryInitial = useMemo(
     () => ({
+      max_positions: Number(policy.max_positions ?? 3),
+      entry_signal_policy: String(
+        policy.entry_signal_policy ?? "BULLISH_STATE",
+      ).toUpperCase(),
+      short_ma_window: Number(policy.short_ma_window ?? 5),
+      long_ma_window: Number(policy.long_ma_window ?? 20),
+      min_ma_separation_pct: Number(policy.min_ma_separation_pct ?? 0.05),
+      rsi_max: Number(policy.rsi_max ?? 70),
+      min_volume_surge: Number(policy.min_volume_surge ?? 0.8),
+      require_ai_allow: Boolean(policy.require_ai_allow ?? true),
       entry_cooldown_seconds: Number(policy.entry_cooldown_seconds ?? 300),
       candidate_max_age_seconds: Number(
         policy.candidate_max_age_seconds ?? 1800,
@@ -334,11 +348,15 @@ export function UpbitAutotradingSettingsWorkspace({
   });
 
   const confirmSavePolicy = (values: Record<string, unknown>) => {
+    const validationError = validatePolicyFormValues(values);
+    if (validationError) {
+      message.error(validationError);
+      return;
+    }
     modal.confirm({
-      title: "포트폴리오 정책 저장",
-      content:
-        "Risk를 완화하면 경고가 표시됩니다. Enable/주문은 실행되지 않습니다. 계속할까요?",
-      okText: "저장",
+      title: "설정 저장",
+      content: PORTFOLIO_POLICY_CONFIRM_TEXT,
+      okText: "설정 저장",
       onOk: () => savePolicyMut.mutateAsync(values),
     });
   };
@@ -690,9 +708,6 @@ export function UpbitAutotradingSettingsWorkspace({
             />
             <Form form={capitalForm} layout="vertical" initialValues={capitalInitial}>
               <Space wrap size={12}>
-                <Form.Item name="max_positions" label="최대 포지션">
-                  <InputNumber min={1} max={10} />
-                </Form.Item>
                 <Form.Item
                   name="portfolio_capital_limit_krw"
                   label="자금 한도 (KRW)"
@@ -855,107 +870,12 @@ export function UpbitAutotradingSettingsWorkspace({
         forceRender,
         children: (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
-            <Alert
-              type="info"
-              showIcon
-              title="score/confidence/warmup은 assignment·scanner 표시. 편집 가능 필드는 portfolio policy에 매핑됩니다."
+            <UpbitPortfolioPolicyPanel
+              policy={policy}
+              slots={slots as Record<string, unknown>[]}
+              entryForm={entryForm}
+              entryInitial={entryInitial}
             />
-            <Descriptions size="small" bordered column={2}>
-              <Descriptions.Item label="Min Score (표시)">
-                {numOrDash(fm.min_score ?? asObj(fm.selection_policy).min_score)}
-              </Descriptions.Item>
-              <Descriptions.Item label="Min Confidence (표시)">
-                {numOrDash(
-                  fm.min_confidence ??
-                    asObj(fm.selection_policy).min_confidence,
-                )}
-              </Descriptions.Item>
-              <Descriptions.Item label="Warmup">
-                {fm.warmup_ready == null
-                  ? "—"
-                  : fm.warmup_ready
-                    ? "READY"
-                    : "NOT READY"}
-              </Descriptions.Item>
-              <Descriptions.Item label="ENTRY STATE">
-                {String(
-                  summary.entry_state ?? policy.entry_state ?? "—",
-                )}
-              </Descriptions.Item>
-              <Descriptions.Item label="연속 손실 카운트">
-                {numOrDash(policy.consecutive_loss_count)}
-              </Descriptions.Item>
-              <Descriptions.Item label="후보 최대 연령">
-                {numOrDash(policy.candidate_max_age_seconds)}초
-              </Descriptions.Item>
-              <Descriptions.Item label="후보 최소 유지시간">
-                {numOrDash(policy.candidate_hold_seconds)}초
-              </Descriptions.Item>
-              <Descriptions.Item label="후보 최대 매수대기">
-                {numOrDash(policy.candidate_max_wait_seconds)}초
-              </Descriptions.Item>
-              <Descriptions.Item label="교체 최소 점수차">
-                {numOrDash(policy.candidate_switch_min_score_delta)}점
-              </Descriptions.Item>
-            </Descriptions>
-            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              연속 손실 한도 도달 시 ENTRY PAUSE. Warmup 미완료·후보 연령 초과 시
-              신규 진입을 건너뜁니다 (서버 SoT).
-              <br />
-              후보 최소 유지시간: WAITING_SIGNAL slot을 이 시간 동안은 점수만으로
-              교체하지 않습니다. 최대 매수대기: 이 시간을 넘기면 더 좋은 신규
-              후보로 교체할 수 있습니다. 교체 점수차: 유지시간 이후 조기 교체에
-              필요한 최소 점수 개선폭입니다.
-            </Typography.Paragraph>
-            <Form form={entryForm} layout="vertical" initialValues={entryInitial}>
-              <Space wrap size={12}>
-                <Form.Item
-                  name="entry_cooldown_seconds"
-                  label="진입 쿨다운 (초)"
-                >
-                  <InputNumber min={0} step={30} />
-                </Form.Item>
-                <Form.Item
-                  name="candidate_max_age_seconds"
-                  label="후보 최대 연령 (초)"
-                >
-                  <InputNumber min={60} step={60} />
-                </Form.Item>
-                <Form.Item
-                  name="candidate_hold_seconds"
-                  label="후보 최소 유지시간 (초)"
-                  tooltip="WAITING_SIGNAL 배정 후 이 시간 동안은 점수 개선만으로 교체하지 않습니다."
-                >
-                  <InputNumber min={0} step={60} />
-                </Form.Item>
-                <Form.Item
-                  name="candidate_max_wait_seconds"
-                  label="후보 최대 매수대기 (초)"
-                  tooltip="이 시간을 초과하면 더 좋은 eligible 후보로 교체할 수 있습니다."
-                >
-                  <InputNumber min={60} step={300} />
-                </Form.Item>
-                <Form.Item
-                  name="candidate_switch_min_score_delta"
-                  label="교체 최소 점수차"
-                  tooltip="최소 유지시간 이후 조기 교체에 필요한 점수 개선폭."
-                >
-                  <InputNumber min={0} max={100} step={0.5} />
-                </Form.Item>
-                <Form.Item
-                  name="portfolio_daily_entry_limit"
-                  label="일일 진입 한도"
-                >
-                  <InputNumber min={1} max={100} />
-                </Form.Item>
-                <Form.Item
-                  name="consecutive_loss_limit"
-                  label="연속 손실 한도 (진입 pause)"
-                >
-                  <InputNumber min={1} max={50} />
-                </Form.Item>
-              </Space>
-            </Form>
             <Button
               type="primary"
               loading={savePolicyMut.isPending}
@@ -964,7 +884,7 @@ export function UpbitAutotradingSettingsWorkspace({
                 confirmSavePolicy(values);
               }}
             >
-              진입 규칙 저장
+              설정 저장
             </Button>
           </Space>
         ),
