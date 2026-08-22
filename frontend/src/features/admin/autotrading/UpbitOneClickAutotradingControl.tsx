@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, App, Button, List, Modal, Space, Tag, Typography } from "antd";
+import { Alert, App, Button, Space, Tag, Timeline, Typography } from "antd";
 import { useState } from "react";
 
 import {
@@ -20,28 +20,27 @@ type Props = {
 function StepProgress({ outcome }: { outcome: OneClickOutcome | null }) {
   if (!outcome?.steps?.length) return null;
   return (
-    <List
-      size="small"
-      bordered
+    <Timeline
       style={{ marginTop: 12 }}
-      dataSource={outcome.steps}
-      renderItem={(s) => {
+      items={outcome.steps.map((s, index) => {
         const pass =
           s.status === "PASS" ||
           s.status === "ALREADY" ||
           s.status === "SKIP";
         const fail = s.status === "FAIL";
-        return (
-          <List.Item>
+        return {
+          key: `${s.name}-${index}`,
+          color: fail ? "red" : pass ? "green" : "gray",
+          content: (
             <Space>
               <Tag color={fail ? "error" : pass ? "success" : "default"}>
                 {fail ? "✕" : pass ? "✓" : "·"} {s.status}
               </Tag>
               <span>{s.message_ko || s.name}</span>
             </Space>
-          </List.Item>
-        );
-      }}
+          ),
+        };
+      })}
     />
   );
 }
@@ -56,7 +55,7 @@ export function UpbitOneClickAutotradingControl({
   autoTradingRunning,
   onDone,
 }: Props) {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const [busy, setBusy] = useState(false);
   const [last, setLast] = useState<OneClickOutcome | null>(null);
 
@@ -64,7 +63,7 @@ export function UpbitOneClickAutotradingControl({
 
   const runStart = () => {
     if (!ready || strategyId == null) return;
-    Modal.confirm({
+    modal.confirm({
       title: needsReauthorize
         ? "24H 재승인 후 자동매매 시작"
         : "자동매매 시작",
@@ -94,7 +93,7 @@ export function UpbitOneClickAutotradingControl({
 
   const runStop = () => {
     if (!ready || strategyId == null) return;
-    Modal.confirm({
+    modal.confirm({
       title: "자동매매 중지",
       content:
         "신규 매수를 중지합니다. 기존 자동매매 보유 종목의 보호/청산 감시(Exit)·LIVE/ARM은 유지됩니다.",
@@ -122,7 +121,7 @@ export function UpbitOneClickAutotradingControl({
 
   const runFullStop = () => {
     if (!ready || strategyId == null) return;
-    Modal.confirm({
+    modal.confirm({
       title: "완전 종료 (고급)",
       content:
         "Runtime/Exit/Worker를 종료합니다. OPEN 자동매매 포지션이 있으면 차단됩니다. LIVE/ARM OFF는 계좌 화면에서 별도 수행하세요. Kill Switch와 다릅니다.",
