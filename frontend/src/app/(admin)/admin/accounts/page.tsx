@@ -19,7 +19,7 @@ import {
   canShowPaperAccountDeleteButton,
 } from "@/features/admin/accounts/paperAccountDelete";
 import { AdminBrokerCredentialCard } from "@/features/admin/accounts/AdminBrokerCredentialCard";
-import { AdminUpbitLiveUbaPanel } from "@/features/admin/accounts/AdminUpbitLiveUbaPanel";
+import { AdminAccountLiveControlPanel } from "@/features/admin/accounts/AdminAccountLiveControlPanel";
 import {
   buildPaperAccountUpdatePayload,
   canShowPaperAccountEditButton,
@@ -50,6 +50,8 @@ export default function AdminAccountsPage() {
   const [paperAccountId, setPaperAccountId] = useState<number | null>(null);
   const [editTargetId, setEditTargetId] = useState<number | null>(null);
   const [kiwoomUbaId, setKiwoomUbaId] = useState<number | null>(null);
+  // PAPER/테스트 섹션 — 운영 기본 숨김
+  const [showTestAccounts, setShowTestAccounts] = useState(false);
   const [editForm] = Form.useForm<{
     account_name: string;
     is_active: boolean;
@@ -60,20 +62,23 @@ export default function AdminAccountsPage() {
   const broker = useQuery({
     queryKey: queryKeys.admin.brokerAccount(),
     queryFn: adminApi.getBrokerAccount,
+    enabled: showTestAccounts,
   });
   const paperAccounts = useQuery({
     queryKey: queryKeys.admin.paperAccounts(),
     queryFn: () => adminApi.listPaperAccounts({ limit: 100 }),
+    enabled: showTestAccounts,
   });
   const selectedId = paperAccountId ?? 0;
   const positions = useQuery({
     queryKey: queryKeys.admin.paperPositions(selectedId),
     queryFn: () => adminApi.getPaperPositions(selectedId),
-    enabled: selectedId > 0,
+    enabled: showTestAccounts && selectedId > 0,
   });
   const liveHistory = useQuery({
     queryKey: queryKeys.admin.liveTransitionHistory(),
     queryFn: adminApi.getLiveTransitionHistory,
+    enabled: showTestAccounts,
   });
   const editDetail = useQuery({
     queryKey: queryKeys.admin.paperAccount(editTargetId ?? 0),
@@ -222,6 +227,16 @@ export default function AdminAccountsPage() {
       description="Paper CRUD + UPBIT LIVE UBA CRUD / Credential (실주문·ARM 없음)"
       extra={
         <Space wrap>
+          <Space size={4}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              테스트 계좌 표시
+            </Typography.Text>
+            <Switch
+              size="small"
+              checked={showTestAccounts}
+              onChange={setShowTestAccounts}
+            />
+          </Space>
           <InputNumber
             placeholder="키움 UBA ID"
             min={1}
@@ -238,18 +253,22 @@ export default function AdminAccountsPage() {
           >
             키움 계좌 동기화
           </PermissionButton>
-          <Button onClick={() => void broker.refetch()}>브로커 새로고침</Button>
+          {showTestAccounts ? (
+            <Button onClick={() => void broker.refetch()}>브로커 새로고침</Button>
+          ) : null}
         </Space>
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          Soft Delete는 관리자만 가능합니다. 수정은 trading:write (관리자 포함).
-          초기 자산은 거래 이력이 없을 때만 변경할 수 있습니다.
+          운영 기본: REAL 계좌만 LIVE 제어에 표시. PAPER/테스트 섹션은 「테스트
+          계좌 표시」ON 시에만 로드합니다.
         </Typography.Paragraph>
 
-        <AdminUpbitLiveUbaPanel />
+        <AdminAccountLiveControlPanel />
 
+        {showTestAccounts ? (
+          <>
         <AdminJsonCard
           title="GET /broker/account (Paper 스냅샷)"
           loading={broker.isLoading}
@@ -366,8 +385,31 @@ export default function AdminAccountsPage() {
           data={liveHistory.data}
         />
         <AdminBrokerCredentialCard />
+          </>
+        ) : null}
       </Space>
 
+      <Form
+        key={
+          editAccount
+            ? `edit-${editAccount.account_id}-${editAccount.updated_at ?? ""}`
+            : "edit-empty"
+        }
+        form={editForm}
+        component={false}
+        layout="vertical"
+        disabled={updatePaper.isPending || !editAccount}
+        initialValues={
+          editAccount
+            ? {
+                account_name: editAccount.account_name,
+                is_active: Boolean(editAccount.is_active),
+                is_default: Boolean(editAccount.is_default),
+                initial_cash: Number(editAccount.initial_cash),
+              }
+            : undefined
+        }
+      >
       <Modal
         title={`모의계좌 수정 #${editTargetId ?? ""}`}
         open={editTargetId !== null}
@@ -377,7 +419,6 @@ export default function AdminAccountsPage() {
         confirmLoading={updatePaper.isPending}
         okButtonProps={{ disabled: updatePaper.isPending || editDetail.isLoading }}
         onOk={() => void submitEdit()}
-        // destroyOnHidden 없이 forceRender — Form·useForm 항상 연결
         forceRender
       >
         {editDetail.isLoading ? (
@@ -388,27 +429,7 @@ export default function AdminAccountsPage() {
             {toApiError(editDetail.error).message}
           </Typography.Text>
         ) : null}
-        <Form
-          key={
-            editAccount
-              ? `edit-${editAccount.account_id}-${editAccount.updated_at ?? ""}`
-              : "edit-empty"
-          }
-          form={editForm}
-          layout="vertical"
-          disabled={updatePaper.isPending || !editAccount}
-          style={{ display: editAccount ? undefined : "none" }}
-          initialValues={
-            editAccount
-              ? {
-                  account_name: editAccount.account_name,
-                  is_active: Boolean(editAccount.is_active),
-                  is_default: Boolean(editAccount.is_default),
-                  initial_cash: Number(editAccount.initial_cash),
-                }
-              : undefined
-          }
-        >
+        <div style={{ display: editAccount ? undefined : "none" }}>
             <Form.Item label="계좌 ID">
               <Input
                 value={editAccount ? String(editAccount.account_id) : ""}
@@ -467,8 +488,9 @@ export default function AdminAccountsPage() {
             >
               <Switch checkedChildren="기본" unCheckedChildren="일반" />
             </Form.Item>
-          </Form>
+        </div>
       </Modal>
+      </Form>
     </AdminPageShell>
   );
 }

@@ -74,7 +74,7 @@ type Props = {
   refreshMs?: number;
 };
 
-export function OperationsCenterDashboard({ refreshMs = 5000 }: Props) {
+export function OperationsCenterDashboard({ refreshMs = 15000 }: Props) {
   const pageVisible = usePageVisible();
   const interval =
     pageVisible && refreshMs > 0 ? refreshMs : false;

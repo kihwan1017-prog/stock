@@ -87,6 +87,8 @@ export function AdminAccountLiveControlPanel() {
   const [resumeCheck, setResumeCheck] = useState<Record<string, unknown> | null>(null);
   const [brokerFilter, setBrokerFilter] =
     useState<LiveControlBrokerFilter>("ALL");
+  // 운영 기본 OFF — TEST/PAPER/MOCK/UNKNOWN 숨김
+  const [showTestAccounts, setShowTestAccounts] = useState(false);
   const [activationUbaId, setActivationUbaId] = useState<number | null>(null);
   const [armReveal, setArmReveal] = useState<ArmTokenOnceReveal | null>(null);
   const [unattendedEnableOpen, setUnattendedEnableOpen] = useState(false);
@@ -109,11 +111,20 @@ export function AdminAccountLiveControlPanel() {
 
   const listQueries = useQueries({
     queries: LIVE_CONTROL_BROKERS.map((brokerCode) => ({
-      queryKey: ["admin", "broker-accounts", "live-control", brokerCode],
+      queryKey: [
+        "admin",
+        "broker-accounts",
+        "live-control",
+        brokerCode,
+        showTestAccounts,
+      ],
       queryFn: () =>
         adminApi.listAdminBrokerAccounts({
           broker_code: brokerCode,
           include_inactive: true,
+          include_test_accounts: showTestAccounts,
+          // 목록은 경량 — detail drawer에서 full ops-status
+          enrich: false,
           limit: 100,
         }),
     })),
@@ -144,7 +155,7 @@ export function AdminAccountLiveControlPanel() {
     queryKey: ["admin", "uba-ops-status", detailUbaId],
     queryFn: () => adminApi.getAdminUbaOpsStatus(Number(detailUbaId)),
     enabled: detailUbaId != null,
-    refetchInterval: 20_000,
+    refetchInterval: 30_000,
   });
 
   const detailBroker = useMemo(() => {
@@ -158,7 +169,7 @@ export function AdminAccountLiveControlPanel() {
   const tradingSchedulerQuery = useQuery({
     queryKey: ["admin", "trading-scheduler", "status"],
     queryFn: adminApi.getTradingSchedulerStatus,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 
   const kiwoomConfigQuery = useQuery({
@@ -169,17 +180,19 @@ export function AdminAccountLiveControlPanel() {
   const activationHistoryQuery = useQuery({
     queryKey: queryKeys.admin.liveTransitionHistory(),
     queryFn: adminApi.getLiveTransitionHistory,
-    refetchInterval: 15_000,
+    // 이력은 드로어/액션 후 invalidate — 상시 폴링 제거
+    enabled: detailUbaId != null || activationUbaId != null,
   });
 
   const activationActiveQuery = useQuery({
     queryKey: queryKeys.admin.liveTransitionActive(),
     queryFn: adminApi.getLiveTransitionActive,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 
+  // preflight: 표시 중인 REAL 행만 (보통 1~2). 15s×40 폭증 제거.
   const preflightQueries = useQueries({
-    queries: rows.slice(0, 40).map((row) => {
+    queries: rows.slice(0, 8).map((row) => {
       const ubaId = rowUbaId(row);
       return {
         queryKey: queryKeys.admin.runtimePreflight(ubaId),
@@ -189,24 +202,25 @@ export function AdminAccountLiveControlPanel() {
             user_broker_account_id: ubaId,
           }),
         enabled: ubaId > 0,
-        refetchInterval: 15_000,
+        refetchInterval: 60_000,
+        staleTime: 45_000,
       };
     }),
   });
 
-  // UPBIT 행 ops-status (서버 SoT). 과도한 polling 방지.
+  // UPBIT ops-status: 목록 상위 소수만 + 간격 완화 (REAL만 표시되면 보통 1행)
   const opsStatusQueries = useQueries({
     queries: rows
       .filter((row) => rowBrokerCode(row) === "UPBIT")
-      .slice(0, 20)
+      .slice(0, 4)
       .map((row) => {
         const ubaId = rowUbaId(row);
         return {
           queryKey: ["admin", "uba-ops-status", ubaId],
           queryFn: () => adminApi.getAdminUbaOpsStatus(ubaId),
           enabled: ubaId > 0,
-          refetchInterval: 20_000,
-          staleTime: 15_000,
+          refetchInterval: 30_000,
+          staleTime: 20_000,
         };
       }),
   });
@@ -512,7 +526,7 @@ export function AdminAccountLiveControlPanel() {
 
   const preflightByUbaId = useMemo(() => {
     const map = new Map<number, adminApi.RuntimePreflightResponse>();
-    rows.slice(0, 40).forEach((row, index) => {
+    rows.slice(0, 8).forEach((row, index) => {
       const ubaId = rowUbaId(row);
       const data = preflightQueries[index]?.data;
       if (ubaId > 0 && data) map.set(ubaId, data);
@@ -724,6 +738,18 @@ export function AdminAccountLiveControlPanel() {
               setBrokerFilter(v as LiveControlBrokerFilter)
             }
           />
+          <Tooltip title="TEST/PAPER/MOCK/UNKNOWN 계좌 표시 (기본 OFF)">
+            <Space size={4}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                테스트 계좌
+              </Typography.Text>
+              <Switch
+                size="small"
+                checked={showTestAccounts}
+                onChange={setShowTestAccounts}
+              />
+            </Space>
+          </Tooltip>
           <Button
             onClick={() => {
               for (const q of listQueries) void q.refetch();

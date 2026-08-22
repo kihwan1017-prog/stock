@@ -100,6 +100,8 @@ export function UpbitAutotradingSettingsWorkspace({
       adminApi.listAdminBrokerAccounts({
         broker_code: "UPBIT",
         include_inactive: false,
+        include_test_accounts: false,
+        enrich: false,
         limit: 100,
       }),
   });
@@ -108,35 +110,50 @@ export function UpbitAutotradingSettingsWorkspace({
     queryKey: ["admin", "uba-ops-status", ubaId],
     queryFn: () => adminApi.getAdminUbaOpsStatus(ubaId),
     enabled: ubaId > 0,
-    refetchInterval: 20_000,
+    refetchInterval: 30_000,
+    staleTime: 20_000,
   });
 
+  // 현황/자금 탭에서만 폴링 — 숨은 탭 eager fetch 제거
   const fullMarketQuery = useQuery({
     queryKey: ["admin", "uba-full-market", ubaId],
     queryFn: () => adminApi.getAdminUbaFullMarketStatus(ubaId),
-    enabled: ubaId > 0,
-    refetchInterval: 20_000,
+    enabled:
+      ubaId > 0 &&
+      (activeTab === UPBIT_AUTOTRADING_TAB_KEYS.market ||
+        activeTab === UPBIT_AUTOTRADING_TAB_KEYS.capital),
+    refetchInterval: 30_000,
   });
 
   const portfolioQuery = useQuery({
     queryKey: ["admin", "uba-portfolio", ubaId],
     queryFn: () => adminApi.getAdminUbaPortfolioStatus(ubaId),
-    enabled: ubaId > 0,
-    refetchInterval: 20_000,
+    enabled:
+      ubaId > 0 &&
+      (activeTab === UPBIT_AUTOTRADING_TAB_KEYS.market ||
+        activeTab === UPBIT_AUTOTRADING_TAB_KEYS.capital ||
+        activeTab === UPBIT_AUTOTRADING_TAB_KEYS.entry),
+    refetchInterval: 30_000,
   });
 
   const readinessQuery = useQuery({
     queryKey: ["admin", "autotrading-readiness", ubaId],
     queryFn: () => adminApi.getAdminUbaAutotradingReadiness(ubaId),
-    enabled: ubaId > 0,
-    refetchInterval: 20_000,
+    enabled:
+      ubaId > 0 &&
+      (activeTab === UPBIT_AUTOTRADING_TAB_KEYS.market ||
+        activeTab === UPBIT_AUTOTRADING_TAB_KEYS.safety),
+    refetchInterval: 30_000,
   });
 
   const ownershipQuery = useQuery({
     queryKey: ["admin", "symbol-ownership", ubaId, "UPBIT"],
     queryFn: () => adminApi.listAdminSymbolOwnership(ubaId, "UPBIT"),
-    enabled: ubaId > 0,
-    refetchInterval: 30_000,
+    enabled:
+      ubaId > 0 &&
+      (activeTab === UPBIT_AUTOTRADING_TAB_KEYS.market ||
+        activeTab === UPBIT_AUTOTRADING_TAB_KEYS.capital),
+    refetchInterval: 60_000,
   });
 
   const ownershipBySymbol = useMemo(() => {

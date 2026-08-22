@@ -20,6 +20,10 @@ from stock_platform.risk_engine.user_risk_service import (
 )
 from stock_platform.trading.account_masking import hash_account_ref
 from stock_platform.trading.account_models import UserBrokerAccount
+from stock_platform.trading.ops_account_classification import (
+    classify_uba_ops_class,
+    is_ops_visible,
+)
 from stock_platform.trading.upbit_live_ops_constants import (
     upbit_live_recommended_risk_payload,
 )
@@ -45,6 +49,8 @@ class AdminBrokerAccountService:
         owner_user_id: int | None = None,
         include_inactive: bool = True,
         include_deleted: bool = False,
+        include_test_accounts: bool = False,
+        enrich: bool = True,
         limit: int = 100,
         offset: int = 0,
     ) -> dict[str, Any]:
@@ -66,27 +72,71 @@ class AdminBrokerAccountService:
         # include_deleted=True를 명시했을 때만 포함한다.
         if not include_deleted:
             stmt = stmt.where(UserBrokerAccount.deleted_at.is_(None))
-        total = int(
-            self._session.scalar(
-                select(func.count()).select_from(stmt.subquery())
-            )
-            or 0
-        )
-        rows = list(
+
+        # 운영 기본: REAL_OPERATION만. 테스트 계좌는 옵션으로만 노출.
+        all_rows = list(
             self._session.scalars(
                 stmt.order_by(UserBrokerAccount.user_broker_account_id)
-                .offset(max(0, offset))
-                .limit(min(max(limit, 1), 500))
             ).all()
         )
-        items = [self._enrich(broker_to_view(r).as_dict(), r) for r in rows]
-        return {"items": items, "total": total}
+        usernames = self._usernames_for_rows(all_rows)
+        classified: list[tuple[UserBrokerAccount, str]] = []
+        for row in all_rows:
+            ops_class = classify_uba_ops_class(
+                uba_id=int(row.user_broker_account_id),
+                broker_code=str(row.broker_code),
+                account_alias=row.account_alias,
+                username=usernames.get(int(row.user_id)),
+                live_order_enabled=bool(row.live_order_enabled),
+                last_synced_at=row.last_synced_at,
+                deleted_at=row.deleted_at,
+            )
+            if is_ops_visible(
+                ops_class, include_test_accounts=include_test_accounts
+            ):
+                classified.append((row, ops_class))
+
+        total = len(classified)
+        page = classified[
+            max(0, offset) : max(0, offset) + min(max(limit, 1), 500)
+        ]
+        items: list[dict[str, Any]] = []
+        for row, ops_class in page:
+            base = broker_to_view(row).as_dict()
+            if enrich:
+                item = self._enrich(base, row)
+            else:
+                item = self._enrich_light(base, row)
+            item["ops_class"] = ops_class
+            items.append(item)
+        # connection_status 치유 flush 반영 (enrich 경로만)
+        if enrich:
+            try:
+                self._session.commit()
+            except Exception:  # noqa: BLE001
+                self._session.rollback()
+        return {
+            "items": items,
+            "total": total,
+            "include_test_accounts": bool(include_test_accounts),
+        }
 
     def get_account(self, uba_id: int) -> dict[str, Any]:
         row = self._session.get(UserBrokerAccount, int(uba_id))
         if row is None:
             raise UserAccountError("User broker account not found")
-        return self._enrich(broker_to_view(row).as_dict(), row)
+        out = self._enrich(broker_to_view(row).as_dict(), row)
+        usernames = self._usernames_for_rows([row])
+        out["ops_class"] = classify_uba_ops_class(
+            uba_id=int(row.user_broker_account_id),
+            broker_code=str(row.broker_code),
+            account_alias=row.account_alias,
+            username=usernames.get(int(row.user_id)),
+            live_order_enabled=bool(row.live_order_enabled),
+            last_synced_at=row.last_synced_at,
+            deleted_at=row.deleted_at,
+        )
+        return out
 
     def create_account(
         self,
@@ -235,12 +285,26 @@ class AdminBrokerAccountService:
         self._session.commit()
         return self.get_account(int(uba_id))
 
-    def _enrich(
+    def _usernames_for_rows(
+        self, rows: list[UserBrokerAccount]
+    ) -> dict[int, str]:
+        user_ids = {int(r.user_id) for r in rows}
+        if not user_ids:
+            return {}
+        out: dict[int, str] = {}
+        for uid in user_ids:
+            user = AuthRepository(self._session).get_by_id(uid)
+            if user is not None:
+                out[uid] = str(getattr(user, "username", "") or "")
+        return out
+
+    def _enrich_light(
         self, base: dict[str, Any], row: UserBrokerAccount
     ) -> dict[str, Any]:
+        """목록 경량 필드 — risk/vault sync/recovery N+1 생략."""
+
         out = dict(base)
         out["user_broker_account_id"] = int(row.user_broker_account_id)
-        # STEP 2-5-1 — 관리자 조회 전용 필드(순수 추가, 기존 필드 무변경)
         out["deleted_at"] = (
             row.deleted_at.isoformat() if row.deleted_at else None
         )
@@ -249,6 +313,24 @@ class AdminBrokerAccountService:
         out["arm_expires_at"] = (
             row.arm_expires_at.isoformat() if row.arm_expires_at else None
         )
+        out["connection_status"] = row.connection_status
+        out["risk"] = None
+        out["credential"] = {
+            "registered": None,
+            "verification_status": None,
+            "masked_identifier": None,
+            "vault_available": None,
+        }
+        out["trading_paused"] = None
+        out["recovery_status"] = None
+        out["paused_reason"] = None
+        out["active_conflict_count"] = None
+        return out
+
+    def _enrich(
+        self, base: dict[str, Any], row: UserBrokerAccount
+    ) -> dict[str, Any]:
+        out = self._enrich_light(base, row)
         try:
             policy = ResolvedRiskPolicyResolver(self._session).resolve(
                 user_id=int(row.user_id),
@@ -267,7 +349,12 @@ class AdminBrokerAccountService:
                 BrokerCredentialVaultService,
             )
 
-            cred = BrokerCredentialVaultService(self._session).status(
+            vault = BrokerCredentialVaultService(self._session)
+            # VERIFIED↔PENDING 불일치 치유 후 목록에 반영
+            vault.sync_uba_connection_status(
+                int(row.user_broker_account_id)
+            )
+            cred = vault.status(
                 int(row.user_broker_account_id),
                 broker_code=str(row.broker_code).upper(),
             )
@@ -277,6 +364,7 @@ class AdminBrokerAccountService:
                 "masked_identifier": cred.masked_identifier,
                 "vault_available": bool(cred.vault_available),
             }
+            out["connection_status"] = row.connection_status
         except Exception:  # noqa: BLE001
             out["credential"] = {
                 "registered": False,
@@ -284,4 +372,199 @@ class AdminBrokerAccountService:
                 "masked_identifier": None,
                 "vault_available": False,
             }
+        # Recovery / Pause 요약 (목록용)
+        try:
+            from stock_platform.broker.recovery_account_state import (
+                BrokerRecoveryAccountStateEntity,
+            )
+            from stock_platform.broker.recovery_conflict_constants import (
+                ACTIVE_REVIEW_STATUSES,
+            )
+            from stock_platform.broker.recovery_conflict_entities import (
+                BrokerRecoveryConflictEntity,
+            )
+
+            broker = str(row.broker_code).upper()
+            uba_id = int(row.user_broker_account_id)
+            state = self._session.scalar(
+                select(BrokerRecoveryAccountStateEntity)
+                .where(
+                    BrokerRecoveryAccountStateEntity.user_broker_account_id
+                    == uba_id,
+                    BrokerRecoveryAccountStateEntity.broker_code == broker,
+                )
+                .limit(1)
+            )
+            active_conflicts = int(
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(BrokerRecoveryConflictEntity)
+                    .where(
+                        BrokerRecoveryConflictEntity.user_broker_account_id
+                        == uba_id,
+                        BrokerRecoveryConflictEntity.review_status.in_(
+                            list(ACTIVE_REVIEW_STATUSES)
+                        ),
+                    )
+                )
+                or 0
+            )
+            out["trading_paused"] = (
+                bool(state.trading_paused) if state else False
+            )
+            out["recovery_status"] = (
+                state.recovery_status if state else None
+            )
+            out["paused_reason"] = (
+                state.last_error_summary if state else None
+            )
+            out["active_conflict_count"] = active_conflicts
+        except Exception:  # noqa: BLE001
+            out["trading_paused"] = None
+            out["recovery_status"] = None
+            out["paused_reason"] = None
+            out["active_conflict_count"] = None
         return out
+
+    def get_ops_status(self, uba_id: int) -> dict[str, Any]:
+        """관리자 상세 — Conflict/Pause/Recovery/Runtime/Scheduler/Credential."""
+
+        row = self._session.get(UserBrokerAccount, int(uba_id))
+        if row is None:
+            raise UserAccountError("User broker account not found")
+        broker = str(row.broker_code).upper()
+        base = self._enrich(broker_to_view(row).as_dict(), row)
+
+        from stock_platform.broker.credential_vault_service import (
+            BrokerCredentialVaultService,
+        )
+        from stock_platform.broker.recovery_account_state import (
+            BrokerRecoveryAccountStateEntity,
+        )
+        from stock_platform.broker.recovery_conflict_service import (
+            BrokerRecoveryConflictService,
+        )
+        from stock_platform.risk_engine.user_risk_service import (
+            UserRiskSettingService,
+        )
+
+        vault = BrokerCredentialVaultService(self._session)
+        vault.sync_uba_connection_status(int(uba_id))
+        self._session.flush()
+        cred = vault.status(int(uba_id), broker_code=broker)
+
+        state = self._session.scalar(
+            select(BrokerRecoveryAccountStateEntity)
+            .where(
+                BrokerRecoveryAccountStateEntity.user_broker_account_id
+                == int(uba_id),
+                BrokerRecoveryAccountStateEntity.broker_code == broker,
+            )
+            .limit(1)
+        )
+        conflicts = BrokerRecoveryConflictService(
+            self._session
+        ).list_conflicts(
+            user_broker_account_id=int(uba_id),
+            resolved=False,
+            limit=20,
+            offset=0,
+        )
+        conflict_items = []
+        for c in conflicts:
+            conflict_items.append(
+                {
+                    "conflict_id": int(c.broker_recovery_conflict_id),
+                    "conflict_code": c.conflict_type,
+                    "conflict_reason": c.pause_reason,
+                    "review_status": c.review_status,
+                    "risk_level": c.risk_level,
+                    "external_order_id_masked": c.external_order_id_masked,
+                }
+            )
+
+        risk = UserRiskSettingService(self._session).snapshot_account(
+            int(uba_id)
+        )
+        scheduler_status = None
+        try:
+            from stock_platform.broker.recovery_scheduler import (
+                broker_recovery_scheduler,
+            )
+
+            scheduler_status = broker_recovery_scheduler.status()
+        except Exception:  # noqa: BLE001
+            scheduler_status = {"available": False}
+
+        runtime_status = {
+            "live_order_enabled": bool(row.live_order_enabled),
+            "live_armed": bool(row.live_armed),
+            "uba_active": bool(row.is_active),
+            "connection_status": row.connection_status,
+        }
+
+        try:
+            self._session.commit()
+        except Exception:  # noqa: BLE001
+            self._session.rollback()
+
+        return {
+            **base,
+            "credential_status": cred.verification_status,
+            "credential": {
+                "registered": bool(cred.connected),
+                "verification_status": cred.verification_status,
+                "masked_identifier": cred.masked_identifier,
+                "last_verified_at": (
+                    cred.last_verified_at.isoformat()
+                    if cred.last_verified_at
+                    else None
+                ),
+                "vault_available": bool(cred.vault_available),
+            },
+            "connection_status": row.connection_status,
+            "trading_paused": (
+                bool(state.trading_paused) if state else False
+            ),
+            "paused_reason": (
+                state.last_error_summary if state else None
+            ),
+            "paused_error_code": (
+                state.last_error_code if state else None
+            ),
+            "recovery_status": (
+                state.recovery_status if state else None
+            ),
+            "auto_retry_enabled": (
+                bool(state.auto_retry_enabled) if state else None
+            ),
+            "next_retry_at": (
+                state.next_retry_at.isoformat()
+                if state and state.next_retry_at
+                else None
+            ),
+            "next_retry_reason": (
+                state.next_retry_reason if state else None
+            ),
+            "active_conflict_count": len(conflict_items),
+            "conflicts": conflict_items,
+            "conflict_code": (
+                conflict_items[0]["conflict_code"]
+                if conflict_items
+                else None
+            ),
+            "conflict_reason": (
+                conflict_items[0]["conflict_reason"]
+                if conflict_items
+                else None
+            ),
+            "account_paused": bool(
+                (risk or {}).get("account_paused")
+                if isinstance(risk, dict)
+                else False
+            ),
+            "runtime_status": runtime_status,
+            "scheduler_status": scheduler_status,
+            "live_order_enabled": bool(row.live_order_enabled),
+            "live_armed": bool(row.live_armed),
+        }

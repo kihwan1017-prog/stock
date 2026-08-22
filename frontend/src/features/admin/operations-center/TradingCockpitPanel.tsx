@@ -78,25 +78,48 @@ type Props = {
 };
 
 export function TradingCockpitPanel({
-  refreshMs = 5000,
+  refreshMs = 15000,
   systemHealth,
   killActive,
   criticalConflict,
 }: Props) {
-  const accountsQ = useQuery({
-    queryKey: ["admin", "broker-accounts", "cockpit"],
-    queryFn: () =>
-      adminApi.listAdminBrokerAccounts({ include_inactive: false, limit: 100 }),
-    refetchInterval: refreshMs,
+  const accountsQ = useQueries({
+    queries: [
+      {
+        queryKey: ["admin", "broker-accounts", "cockpit", "UPBIT"],
+        queryFn: () =>
+          adminApi.listAdminBrokerAccounts({
+            broker_code: "UPBIT",
+            include_inactive: false,
+            include_test_accounts: false,
+            enrich: false,
+            limit: 20,
+          }),
+        refetchInterval: refreshMs > 0 ? refreshMs : false,
+        staleTime: 20_000,
+      },
+      {
+        queryKey: ["admin", "broker-accounts", "cockpit", "KIWOOM"],
+        queryFn: () =>
+          adminApi.listAdminBrokerAccounts({
+            broker_code: "KIWOOM",
+            include_inactive: false,
+            include_test_accounts: false,
+            enrich: false,
+            limit: 20,
+          }),
+        refetchInterval: refreshMs > 0 ? refreshMs : false,
+        staleTime: 20_000,
+      },
+    ],
   });
 
   const ubaIds = useMemo(() => {
-    const root = rec(accountsQ.data);
-    const items = Array.isArray(root.items)
-      ? root.items
-      : Array.isArray(accountsQ.data)
-        ? (accountsQ.data as unknown[])
-        : [];
+    const items: unknown[] = [];
+    for (const q of accountsQ) {
+      const root = rec(q.data);
+      if (Array.isArray(root.items)) items.push(...root.items);
+    }
     let upbit = DEFAULT_UPBIT_UBA;
     let kiwoom = DEFAULT_KIWOOM_UBA;
     for (const row of items) {
@@ -115,21 +138,23 @@ export function TradingCockpitPanel({
       }
     }
     return { upbit, kiwoom };
-  }, [accountsQ.data]);
+  }, [accountsQ]);
 
   const opsQueries = useQueries({
     queries: [
       {
-        queryKey: ["admin", "uba-ops-status", ubaIds.upbit, "cockpit"],
+        queryKey: ["admin", "uba-ops-status", ubaIds.upbit],
         queryFn: () => adminApi.getAdminUbaOpsStatus(ubaIds.upbit),
-        refetchInterval: refreshMs,
+        refetchInterval: refreshMs > 0 ? refreshMs : false,
         enabled: ubaIds.upbit > 0,
+        staleTime: 10_000,
       },
       {
-        queryKey: ["admin", "uba-ops-status", ubaIds.kiwoom, "cockpit"],
+        queryKey: ["admin", "uba-ops-status", ubaIds.kiwoom],
         queryFn: () => adminApi.getAdminUbaOpsStatus(ubaIds.kiwoom),
-        refetchInterval: refreshMs,
+        refetchInterval: refreshMs > 0 ? refreshMs : false,
         enabled: ubaIds.kiwoom > 0,
+        staleTime: 10_000,
       },
     ],
   });
@@ -139,22 +164,22 @@ export function TradingCockpitPanel({
       {
         queryKey: ["admin", "autotrading-readiness", ubaIds.upbit],
         queryFn: () => adminApi.getAdminUbaAutotradingReadiness(ubaIds.upbit),
-        refetchInterval: refreshMs * 2,
+        refetchInterval: refreshMs > 0 ? Math.max(refreshMs * 2, 30_000) : false,
         enabled: ubaIds.upbit > 0,
       },
       {
         queryKey: ["admin", "autotrading-readiness", ubaIds.kiwoom],
         queryFn: () => adminApi.getAdminUbaAutotradingReadiness(ubaIds.kiwoom),
-        refetchInterval: refreshMs * 2,
+        refetchInterval: refreshMs > 0 ? Math.max(refreshMs * 2, 30_000) : false,
         enabled: ubaIds.kiwoom > 0,
       },
     ],
   });
 
   const portfolioQ = useQuery({
-    queryKey: ["admin", "uba-portfolio", ubaIds.upbit, "cockpit"],
+    queryKey: ["admin", "uba-portfolio", ubaIds.upbit],
     queryFn: () => adminApi.getAdminUbaPortfolioStatus(ubaIds.upbit),
-    refetchInterval: refreshMs,
+    refetchInterval: refreshMs > 0 ? refreshMs : false,
     enabled: ubaIds.upbit > 0,
   });
 
@@ -164,14 +189,14 @@ export function TradingCockpitPanel({
         queryKey: ["admin", "symbol-ownership", ubaIds.upbit, "UPBIT"],
         queryFn: () =>
           adminApi.listAdminSymbolOwnership(ubaIds.upbit, "UPBIT"),
-        refetchInterval: refreshMs * 2,
+        refetchInterval: refreshMs > 0 ? Math.max(refreshMs * 2, 30_000) : false,
         enabled: ubaIds.upbit > 0,
       },
       {
         queryKey: ["admin", "symbol-ownership", ubaIds.kiwoom, "KIWOOM"],
         queryFn: () =>
           adminApi.listAdminSymbolOwnership(ubaIds.kiwoom, "KIWOOM"),
-        refetchInterval: refreshMs * 2,
+        refetchInterval: refreshMs > 0 ? Math.max(refreshMs * 2, 30_000) : false,
         enabled: ubaIds.kiwoom > 0,
       },
     ],
@@ -180,13 +205,15 @@ export function TradingCockpitPanel({
   const positionsQ = useQuery({
     queryKey: ["admin", "ops-positions", "cockpit"],
     queryFn: () => adminApi.getOpsDashboardPositions(),
-    refetchInterval: refreshMs * 2,
+    refetchInterval: refreshMs > 0 ? Math.max(refreshMs * 2, 30_000) : false,
   });
 
+  // 오늘 AUTO 주문 요약 — limit 축소 + 폴링 완화
   const ordersQ = useQuery({
     queryKey: ["admin", "orders", "cockpit-today"],
-    queryFn: () => adminApi.listOrders({ limit: 200 }),
-    refetchInterval: refreshMs * 2,
+    queryFn: () => adminApi.listOrders({ limit: 50 }),
+    refetchInterval: refreshMs > 0 ? 60_000 : false,
+    staleTime: 45_000,
   });
 
   const krxQ = useQuery({

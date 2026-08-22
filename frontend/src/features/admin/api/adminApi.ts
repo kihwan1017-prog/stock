@@ -648,6 +648,11 @@ export async function listAdminBrokerAccounts(params?: {
   broker_code?: string;
   owner_user_id?: number;
   include_inactive?: boolean;
+  include_deleted?: boolean;
+  /** 기본 false — REAL_OPERATION만 */
+  include_test_accounts?: boolean;
+  /** false면 risk/vault/recovery N+1 생략 */
+  enrich?: boolean;
   limit?: number;
   offset?: number;
 }): Promise<JsonValue> {

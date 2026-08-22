@@ -85,6 +85,10 @@ def admin_list_broker_accounts(
     # STEP 2-5-1 — 기본값 False: 관리자 목록도 삭제 계좌는 기본 제외,
     # 명시적으로 true를 줘야만 삭제 계좌를 포함한다.
     include_deleted: bool = Query(default=False),
+    # 운영 UI 기본: REAL_OPERATION만. 테스트/PAPER/MOCK/UNKNOWN 숨김.
+    include_test_accounts: bool = Query(default=False),
+    # 목록 N+1 완화 — detail drawer에서 full enrich.
+    enrich: bool = Query(default=True),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     session: Session = Depends(get_db_session),
@@ -96,6 +100,8 @@ def admin_list_broker_accounts(
             owner_user_id=owner_user_id,
             include_inactive=include_inactive,
             include_deleted=include_deleted,
+            include_test_accounts=include_test_accounts,
+            enrich=enrich,
             limit=limit,
             offset=offset,
         )
@@ -245,3 +251,16 @@ def admin_apply_recommended_risk(
     )
     session.commit()
     return result
+
+
+@router.get("/{uba_id}/ops-status")
+def admin_get_broker_account_ops_status(
+    uba_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """관리자 전용 운영 상세 — Conflict/Pause/Recovery/Runtime/Scheduler/Credential."""
+    try:
+        return AdminBrokerAccountService(session).get_ops_status(uba_id)
+    except UserAccountError as exc:
+        raise _http(exc) from exc
