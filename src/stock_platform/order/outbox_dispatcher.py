@@ -38,6 +38,7 @@ class OrderOutboxDispatcher:
         payload: dict[str, Any],
         idempotency_key: str,
         session: Session | None = None,
+        outbox_id: int | None = None,
     ) -> dict[str, Any]:
         event = OutboxEventType(event_type)
         active_session = session or self._session
@@ -95,6 +96,18 @@ class OrderOutboxDispatcher:
             if env == "LIVE" and active_session is None:
                 raise PermissionError(
                     "LIVE outbox SUBMIT requires DB session"
+                )
+            # broker CREATE 직전 — 계좌 안전상태 재검증 (shared LIVE path)
+            if env == "LIVE" and active_session is not None:
+                from stock_platform.order.outbox_dispatch_safety import (
+                    assert_live_outbox_dispatch_safety,
+                )
+
+                assert_live_outbox_dispatch_safety(
+                    active_session,
+                    payload,
+                    outbox_id=outbox_id,
+                    outbox_idempotency_key=idempotency_key,
                 )
             request = self._to_order_request(payload)
             # STEP 8-5-12 — Upbit Identifier를 전송 전 DB에 확정
@@ -224,6 +237,16 @@ class OrderOutboxDispatcher:
                 if payload.get("upbit_client_identifier") in (None, "")
                 else str(payload.get("upbit_client_identifier"))
             ),
+            quote_amount_krw=(
+                None
+                if payload.get("quote_amount_krw") in (None, "")
+                else Decimal(str(payload.get("quote_amount_krw")))
+            ),
+            reference_price=(
+                None
+                if payload.get("reference_price") in (None, "")
+                else Decimal(str(payload.get("reference_price")))
+            ),
         )
 
     def _ensure_upbit_identifier(
@@ -270,6 +293,8 @@ class OrderOutboxDispatcher:
                 request.uses_system_shared_credential
             ),
             upbit_client_identifier=identifier,
+            quote_amount_krw=request.quote_amount_krw,
+            reference_price=request.reference_price,
         )
 
 

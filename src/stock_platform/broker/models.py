@@ -54,6 +54,10 @@ class BrokerOrderRequest:
     uses_system_shared_credential: bool = False
     # STEP 8-5-12 — Upbit identifier (client_order_id와 분리)
     upbit_client_identifier: str | None = None
+    # UPBIT MARKET BUY 전용 — 총 매수 KRW (ticker/unit price 와 분리)
+    quote_amount_krw: Decimal | None = None
+    # 참고가 (사이징/슬리피지 telemetry). broker MARKET BUY price 로 쓰지 않음.
+    reference_price: Decimal | None = None
 
 
 

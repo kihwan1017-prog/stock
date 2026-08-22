@@ -172,28 +172,35 @@ def test_resolve_outbox_adapter_upbit_paper() -> None:
     assert isinstance(adapter, UpbitBrokerAdapter)
 
 
-def test_outbox_dispatch_routes_upbit_mock() -> None:
-    result = OrderOutboxDispatcher(
-        PaperBrokerAdapter()
-    ).dispatch(
-        event_type="SUBMIT_ORDER",
-        idempotency_key="UPBIT-1",
-        payload={
-            "client_order_id": "CLIENT-U1",
-            "account_id": 1,
-            "broker_code": "UPBIT",
-            "environment": "PAPER",
-            "exchange_code": "UPBIT",
-            "symbol": "KRW-BTC",
-            "side": "BUY",
-            "order_type": "LIMIT",
-            "quantity": "0.01",
-            "price": "100000000",
-            "time_in_force": "DAY",
-        },
-    )
-    assert result["accepted"] is True
-    assert str(result["broker_order_id"]).startswith("UPBIT-MOCK-")
+def test_outbox_dispatch_routes_upbit_mock(monkeypatch) -> None:
+    monkeypatch.setenv("UPBIT_USE_MOCK", "true")
+    from stock_platform.common.settings import get_settings
+
+    get_settings.cache_clear()
+    try:
+        result = OrderOutboxDispatcher(
+            PaperBrokerAdapter()
+        ).dispatch(
+            event_type="SUBMIT_ORDER",
+            idempotency_key="UPBIT-1",
+            payload={
+                "client_order_id": "CLIENT-U1",
+                "account_id": 1,
+                "broker_code": "UPBIT",
+                "environment": "PAPER",
+                "exchange_code": "UPBIT",
+                "symbol": "KRW-BTC",
+                "side": "BUY",
+                "order_type": "LIMIT",
+                "quantity": "0.01",
+                "price": "100000000",
+                "time_in_force": "DAY",
+            },
+        )
+        assert result["accepted"] is True
+        assert str(result["broker_order_id"]).startswith("UPBIT-MOCK-")
+    finally:
+        get_settings.cache_clear()
 
 
 def test_lot_rounding_upbit() -> None:

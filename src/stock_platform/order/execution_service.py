@@ -321,20 +321,24 @@ class OrderExecutionService:
             if hasattr(command.order_type, "value")
             else str(command.order_type or "")
         )
-        # UPBIT MARKET BUY: price 인자는 호가 참조가, 노셔널은 order_amount
+        # UPBIT MARKET BUY: order_price / price = 총 KRW (ticker 아님)
         market_krw_amount = None
+        side_text = str(
+            command.side.value
+            if hasattr(command.side, "value")
+            else command.side
+            or ""
+        ).upper()
+        broker_u = str(command.broker_code or "").upper()
         if (
-            str(order_type_text or "").upper() == "MARKET"
-            and str(
-                command.side.value
-                if hasattr(command.side, "value")
-                else command.side
-                or ""
-            ).upper()
-            == "BUY"
-            and command.order_amount is not None
+            broker_u == "UPBIT"
+            and str(order_type_text or "").upper() == "MARKET"
+            and side_text == "BUY"
         ):
-            market_krw_amount = Decimal(str(command.order_amount))
+            if command.order_amount is not None:
+                market_krw_amount = Decimal(str(command.order_amount))
+            elif price is not None:
+                market_krw_amount = Decimal(str(price))
 
         pre_persist_block = evaluate_pre_persist_exit_gate(
             self._session,
@@ -403,7 +407,18 @@ class OrderExecutionService:
                     environment=environment,
                     is_risk_reducing=command.is_risk_reducing,
                     arm_token=command.arm_token,
-                    reference_price=command.reference_price,
+                    # MARKET BUY: unit ticker만 슬리피지 기준 (KRW notional 금지)
+                    reference_price=(
+                        None
+                        if (
+                            str(command.broker_code or "").upper()
+                            == "UPBIT"
+                            and str(order_type_text or "").upper()
+                            == "MARKET"
+                            and side_text == "BUY"
+                        )
+                        else command.reference_price
+                    ),
                     require_arm=True,
                     # KIWOOM LIMIT tick 검증 — 주문 유형을 파이프라인에 전달
                     order_type=(
@@ -416,9 +431,10 @@ class OrderExecutionService:
                 if not safety.allowed:
                     return self._blocked(safety.reason_code)
                 # V2 reservation 추적 — 이후 실패 시 release
-                if (safety.detail or {}).get("submit_reserved"):
+                safety_detail = getattr(safety, "detail", None) or {}
+                if safety_detail.get("submit_reserved"):
                     self._pending_submit_release = {
-                        **dict(safety.detail or {}),
+                        **dict(safety_detail),
                         "user_broker_account_id": int(
                             command.user_broker_account_id
                         ),
@@ -863,6 +879,21 @@ class OrderExecutionService:
             )
 
             persist_stage = PERSIST_ENQUEUE_OUTBOX
+            quote_krw = None
+            ref_px = None
+            if isinstance(plan_payload, dict):
+                quote_krw = plan_payload.get("quote_amount_krw")
+                ref_px = plan_payload.get("reference_price")
+            if (
+                quote_krw is None
+                and str(order.broker_code or "").upper() == "UPBIT"
+                and str(order.order_type_code or "").upper() == "MARKET"
+                and str(order.side_code or "").upper() == "BUY"
+                and order.order_price is not None
+            ):
+                quote_krw = str(order.order_price)
+            if ref_px is None and command.reference_price is not None:
+                ref_px = str(command.reference_price)
             outbox = self._outbox_repository.enqueue(
                 order_id=order.order_id,
                 event_type=OutboxEventType.SUBMIT_ORDER,
@@ -903,6 +934,9 @@ class OrderExecutionService:
                         if order.order_price is None
                         else str(order.order_price)
                     ),
+                    # MARKET BUY: price=KRW notional; ticker는 reference_price
+                    "quote_amount_krw": quote_krw,
+                    "reference_price": ref_px,
                     "time_in_force": order.time_in_force_code,
                 },
             )
@@ -926,6 +960,22 @@ class OrderExecutionService:
                     LiveOrderSafetyPipeline,
                 )
 
+                # UPBIT MARKET BUY: amount = KRW notional (qty*price 금지)
+                if (
+                    str(order.broker_code or "").upper() == "UPBIT"
+                    and str(order.order_type_code or "").upper()
+                    == "MARKET"
+                    and str(order.side_code or "").upper() == "BUY"
+                    and order.order_price is not None
+                ):
+                    submitted_amount = Decimal(
+                        str(order.order_price)
+                    ).quantize(Decimal("0.01"))
+                else:
+                    submitted_amount = (
+                        Decimal(str(order.order_quantity))
+                        * Decimal(str(order.order_price or 0))
+                    ).quantize(Decimal("0.01"))
                 LiveOrderSafetyPipeline(self._session).notify_submitted(
                     decision_detail={
                         "broker_code": order.broker_code,
@@ -938,12 +988,7 @@ class OrderExecutionService:
                             if order.order_price is None
                             else str(order.order_price)
                         ),
-                        "amount": str(
-                            (
-                                Decimal(str(order.order_quantity))
-                                * Decimal(str(order.order_price or 0))
-                            ).quantize(Decimal("0.01"))
-                        ),
+                        "amount": str(submitted_amount),
                         "strategy_id": order.strategy_code,
                         "operator": command.actor,
                     },
@@ -1078,35 +1123,146 @@ class OrderExecutionService:
     def _resolve_size(
         self,
         command: OrderExecutionCommand,
-    ) -> tuple[Decimal, Decimal, dict[str, Any] | None]:
-        if command.order_type == OrderType.LIMIT:
+    ) -> tuple[Decimal, Decimal | None, dict[str, Any] | None]:
+        """수량·브로커 price 해석.
+
+        LIMIT: price = unit price
+        UPBIT MARKET BUY: price = quote_amount_krw (총 KRW). ticker는 reference 만.
+        MARKET SELL: price = None, quantity = volume
+        그 외 MARKET(KIWOOM 등): 기존 unit reference price + qty/amount
+        """
+
+        side_u = (
+            command.side.value
+            if hasattr(command.side, "value")
+            else str(command.side or "")
+        ).upper()
+        type_u = (
+            command.order_type.value
+            if hasattr(command.order_type, "value")
+            else str(command.order_type or "")
+        ).upper()
+        broker_u = str(command.broker_code or "").upper()
+
+        if type_u == "LIMIT":
             if command.price is None or command.price <= 0:
                 raise ValueError("LIMIT order requires price > 0")
             price = command.price
-        else:
-            if command.price is None or command.price <= 0:
-                raise ValueError(
-                    "MARKET order requires reference price for sizing"
-                )
-            price = command.price
+            if command.quantity is not None:
+                if command.quantity <= 0:
+                    raise ValueError("quantity must be greater than zero")
+                return command.quantity, price, None
+            if command.order_amount is None or command.order_amount <= 0:
+                raise ValueError("quantity or order_amount is required")
+            # LIMIT + amount → qty from unit price
+            plan_payload = self._fixed_amount_plan(
+                command, current_price=price
+            )
+            return (
+                plan_payload["qty"],
+                price,
+                plan_payload["meta"],
+            )
 
+        # MARKET — UPBIT BUY만 KRW notional semantics
+        if broker_u == "UPBIT" and side_u == "BUY":
+            from stock_platform.broker.upbit.rules import (
+                UPBIT_MIN_NOTIONAL_KRW,
+                round_upbit_krw_notional,
+                volume_from_krw_buy_amount,
+            )
+
+            reference = command.reference_price or command.price
+            krw = command.order_amount
+            if krw is None or krw <= 0:
+                if (
+                    command.quantity is not None
+                    and command.quantity > 0
+                    and reference is not None
+                    and reference > 0
+                ):
+                    krw = (
+                        Decimal(str(command.quantity))
+                        * Decimal(str(reference))
+                    )
+                else:
+                    raise ValueError(
+                        "MARKET BUY requires order_amount (KRW notional)"
+                    )
+            krw = round_upbit_krw_notional(Decimal(str(krw)))
+            if krw < UPBIT_MIN_NOTIONAL_KRW:
+                raise ValueError(
+                    f"Upbit minimum order amount is "
+                    f"{UPBIT_MIN_NOTIONAL_KRW} KRW (got {krw})"
+                )
+            if command.quantity is not None and command.quantity > 0:
+                qty = command.quantity
+            else:
+                if reference is None or reference <= 0:
+                    raise ValueError(
+                        "MARKET BUY requires reference_price "
+                        "(or price) for quantity sizing"
+                    )
+                qty = volume_from_krw_buy_amount(
+                    amount=krw, price=Decimal(str(reference))
+                )
+            meta = {
+                "quote_amount_krw": str(krw),
+                "reference_price": (
+                    None if reference is None else str(reference)
+                ),
+                "broker_price_semantics": "UPBIT_MARKET_BUY_KRW_NOTIONAL",
+            }
+            # TradingOrder.order_price / Outbox price = KRW notional
+            return qty, krw, meta
+
+        if broker_u == "UPBIT" and side_u == "SELL":
+            reference = command.reference_price or command.price
+            if command.quantity is None or command.quantity <= 0:
+                raise ValueError("MARKET SELL requires quantity > 0")
+            return (
+                command.quantity,
+                None,
+                {
+                    "reference_price": (
+                        None if reference is None else str(reference)
+                    ),
+                    "broker_price_semantics": "UPBIT_MARKET_SELL_VOLUME_ONLY",
+                },
+            )
+
+        # KIWOOM 등 — 기존 unit reference + qty/amount
+        if command.price is None or command.price <= 0:
+            raise ValueError(
+                "MARKET order requires reference price for sizing"
+            )
+        price = command.price
         if command.quantity is not None:
             if command.quantity <= 0:
                 raise ValueError("quantity must be greater than zero")
             return command.quantity, price, None
-
         if command.order_amount is None or command.order_amount <= 0:
-            raise ValueError(
-                "quantity or order_amount is required"
-            )
+            raise ValueError("quantity or order_amount is required")
+        plan_payload = self._fixed_amount_plan(
+            command, current_price=price
+        )
+        return (
+            plan_payload["qty"],
+            price,
+            plan_payload["meta"],
+        )
 
+    def _fixed_amount_plan(
+        self,
+        command: OrderExecutionCommand,
+        *,
+        current_price: Decimal,
+    ) -> dict[str, Any]:
         portfolio_value = (
-            command.portfolio_value
-            or command.order_amount
+            command.portfolio_value or command.order_amount
         )
         available_cash = (
-            command.available_cash
-            or command.order_amount
+            command.available_cash or command.order_amount
         )
         policy = RiskPolicy(
             position_sizing_mode=PositionSizingMode.FIXED_AMOUNT,
@@ -1122,7 +1278,7 @@ class OrderExecutionService:
             PositionSizingRequest(
                 portfolio_value=portfolio_value,
                 available_cash=available_cash,
-                current_price=price,
+                current_price=current_price,
                 current_position_count=(
                     command.current_position_count
                 ),
@@ -1131,21 +1287,17 @@ class OrderExecutionService:
         )
         if not plan.approved:
             raise ValueError(plan.reason)
-
-        return (
-            plan.quantity,
-            price,
-            {
+        return {
+            "qty": plan.quantity,
+            "meta": {
                 "approved": plan.approved,
                 "reason": plan.reason,
                 "quantity": str(plan.quantity),
                 "order_amount": str(plan.order_amount),
                 "stop_loss_price": str(plan.stop_loss_price),
-                "take_profit_price": str(
-                    plan.take_profit_price
-                ),
+                "take_profit_price": str(plan.take_profit_price),
             },
-        )
+        }
 
     @staticmethod
     def _resolve_account_ownership(

@@ -618,8 +618,13 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 9c) Slippage (reference_price 있을 때만)
-        if reference_price is not None and reference_price > ZERO:
+        # 9c) Slippage — MARKET BUY는 unit price가 없어 스킵
+        # (UPBIT MARKET BUY price = KRW notional; ticker와 비교 금지)
+        if (
+            reference_price is not None
+            and reference_price > ZERO
+            and not (order_type_u == "MARKET" and side_u == "BUY")
+        ):
             slip = self._slippage_ratio(
                 side=side_u,
                 order_price=px,

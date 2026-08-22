@@ -9,6 +9,7 @@ from stock_platform.broker.models import (
     BrokerOrderType,
 )
 from stock_platform.broker.upbit.rules import (
+    round_upbit_krw_notional,
     round_upbit_price,
     round_upbit_volume,
     validate_upbit_notional,
@@ -46,32 +47,34 @@ class UpbitOrderMapper:
         ).upper()
 
         qty = round_upbit_volume(Decimal(str(request.quantity)))
-        price = (
-            None
-            if request.price is None
-            else round_upbit_price(Decimal(str(request.price)))
-        )
-
-        validate_upbit_notional(
-            side=side_code,
-            order_type=order_type,
-            quantity=qty,
-            price=price,
-        )
 
         if order_type == BrokerOrderType.MARKET.value or order_type == "MARKET":
             if side_code == BrokerOrderSide.BUY.value or side_code == "BUY":
-                # 시장가 매수: ord_type=price, price=KRW 금액
-                if price is None or price <= 0:
+                # MARKET BUY: price = TOTAL KRW NOTIONAL (ticker 금지)
+                krw_raw = (
+                    request.quote_amount_krw
+                    if request.quote_amount_krw is not None
+                    else request.price
+                )
+                if krw_raw is None or Decimal(str(krw_raw)) <= 0:
                     raise ValueError(
-                        "Upbit market BUY requires KRW amount in price"
+                        "Upbit market BUY requires KRW amount "
+                        "(quote_amount_krw or price as notional)"
                     )
+                krw = round_upbit_krw_notional(Decimal(str(krw_raw)))
+                validate_upbit_notional(
+                    side=side_code,
+                    order_type=order_type,
+                    quantity=qty,
+                    price=krw,
+                    market_krw_amount=krw,
+                )
                 return cls._with_identifier(
                     {
                         "market": market,
                         "side": side,
                         "ord_type": "price",
-                        "price": str(price),
+                        "price": str(krw),
                     },
                     request.client_order_id,
                     upbit_identifier=getattr(
@@ -83,6 +86,12 @@ class UpbitOrderMapper:
                 raise ValueError(
                     "Upbit market SELL requires volume"
                 )
+            validate_upbit_notional(
+                side=side_code,
+                order_type=order_type,
+                quantity=qty,
+                price=None,
+            )
             return cls._with_identifier(
                 {
                     "market": market,
@@ -96,7 +105,18 @@ class UpbitOrderMapper:
                 ),
             )
 
-        # 지정가
+        # 지정가 — unit price + volume
+        price = (
+            None
+            if request.price is None
+            else round_upbit_price(Decimal(str(request.price)))
+        )
+        validate_upbit_notional(
+            side=side_code,
+            order_type=order_type,
+            quantity=qty,
+            price=price,
+        )
         if price is None or price <= 0:
             raise ValueError("Upbit limit order requires price")
         if qty <= 0:
