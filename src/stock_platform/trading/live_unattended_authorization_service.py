@@ -1497,6 +1497,7 @@ class LiveUnattendedAuthorizationService:
                 f"unatt-restore-{row.live_unattended_authorization_id}"
             ),
             enforce_enable_gates=True,
+            allow_auto_protective_open_orders=True,
         )
         detail["live_restored"] = True
         detail["live_already_enabled"] = bool(
@@ -1520,6 +1521,7 @@ class LiveUnattendedAuthorizationService:
             ),
             enforce_gates=True,
             force_renew=True,
+            allow_auto_protective_open_orders=True,
         )
         detail["arm_restored"] = True
         detail["arm_ttl_seconds"] = arm_ttl
@@ -1759,17 +1761,23 @@ class LiveUnattendedAuthorizationService:
                     intended_expires.isoformat()
                 )
             else:
-                arm_result = LiveArmService(self._session).arm(
-                    int(user_broker_account_id),
-                    actor=actor,
-                    ttl_seconds=arm_ttl,
-                    reason="UNATTENDED_ARM_RENEWAL",
-                    correlation_id=(
-                        f"unatt-{row.live_unattended_authorization_id}"
-                    ),
-                    enforce_gates=True,
-                    force_renew=True,
-                )
+                try:
+                    arm_result = LiveArmService(self._session).arm(
+                        int(user_broker_account_id),
+                        actor=actor,
+                        ttl_seconds=arm_ttl,
+                        reason="UNATTENDED_ARM_RENEWAL",
+                        correlation_id=(
+                            f"unatt-{row.live_unattended_authorization_id}"
+                        ),
+                        enforce_gates=True,
+                        force_renew=True,
+                        allow_auto_protective_open_orders=True,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    detail["arm_renew_skipped"] = type(exc).__name__
+                    detail["arm_renew_error"] = str(exc)[:200]
+                    arm_result = {"arm_changed": False}
                 if arm_result.get("arm_changed"):
                     detail["arm_renewed"] = True
                     detail["arm_ttl_seconds"] = arm_ttl
@@ -1777,7 +1785,7 @@ class LiveUnattendedAuthorizationService:
                         "arm_expires_at"
                     )
                     did = True
-                else:
+                elif "arm_renew_skipped" not in detail:
                     detail["arm_renew_skipped"] = arm_result.get(
                         "skipped_reason", "ARM_UNCHANGED"
                     )
@@ -1835,6 +1843,7 @@ class LiveUnattendedAuthorizationService:
         expired = 0
         renewed = 0
         skipped = 0
+        errors: list[dict[str, Any]] = []
         for row in rows:
             until = aware_utc(row.authorized_until)
             if until is None or until <= now:
@@ -1843,9 +1852,21 @@ class LiveUnattendedAuthorizationService:
                 )
                 expired += 1
                 continue
-            result = self.renew_due_for_uba(
-                int(row.user_broker_account_id), actor=actor
-            )
+            try:
+                result = self.renew_due_for_uba(
+                    int(row.user_broker_account_id), actor=actor
+                )
+            except Exception as exc:  # noqa: BLE001
+                # 한 UBA 실패가 전체 스캔/expire를 막지 않음
+                errors.append(
+                    {
+                        "uba_id": int(row.user_broker_account_id),
+                        "error": type(exc).__name__,
+                        "message": str(exc)[:200],
+                    }
+                )
+                skipped += 1
+                continue
             if result.get("renewed"):
                 renewed += 1
             else:
@@ -1855,6 +1876,7 @@ class LiveUnattendedAuthorizationService:
             "renewed": renewed,
             "skipped": skipped,
             "scanned": len(rows),
+            "errors": errors,
         }
 
     def is_entry_authorized(self, user_broker_account_id: int) -> bool:

@@ -916,8 +916,19 @@ class BrokerRecoveryConflictService:
         )
         return int(self._session.scalar(stmt) or 0)
 
-    def count_blocking_orders_for_uba(self, uba_id: int) -> dict[str, int]:
-        """Resume 사전조건 — DB Open / 미확정 / cancel·replace pending 건수."""
+    def count_blocking_orders_for_uba(
+        self,
+        uba_id: int,
+        *,
+        exclude_auto_protective_exits: bool = False,
+    ) -> dict[str, int]:
+        """Resume 사전조건 — DB Open / 미확정 / cancel·replace pending 건수.
+
+        exclude_auto_protective_exits:
+          Unattended ARM renew / lease restore 전용.
+          AUTO SELL open(보호 청산)은 db_open에서 제외한다.
+          UNKNOWN/AMBIGUOUS·cancel/replace·MANUAL open은 계속 fail-closed.
+        """
         from stock_platform.order.entities import TradingOrderEntity
 
         open_statuses = {
@@ -950,11 +961,37 @@ class BrokerRecoveryConflictService:
                 or 0
             )
 
+        db_open = _count(open_statuses)
+        auto_protective_open = 0
+        if exclude_auto_protective_exits and db_open > 0:
+            open_rows = list(
+                self._session.scalars(
+                    select(TradingOrderEntity).where(
+                        TradingOrderEntity.user_broker_account_id
+                        == int(uba_id),
+                        TradingOrderEntity.status_code.in_(
+                            list(open_statuses)
+                        ),
+                    )
+                )
+            )
+            for order in open_rows:
+                if str(getattr(order, "side_code", "") or "").upper() != "SELL":
+                    continue
+                meta = getattr(order, "metadata_payload", None) or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                src = str(meta.get("order_source") or "").strip().upper()
+                if src == "AUTO":
+                    auto_protective_open += 1
+            db_open = max(0, db_open - auto_protective_open)
+
         return {
-            "db_open": _count(open_statuses),
+            "db_open": db_open,
             "submission_unknown": _count(submission_unknown),
             "cancel_pending": _count(cancel_pending),
             "replace_pending": _count(replace_pending),
+            "auto_protective_open_excluded": auto_protective_open,
         }
 
     def resume_account(

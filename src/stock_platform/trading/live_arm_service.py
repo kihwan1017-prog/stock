@@ -111,9 +111,16 @@ class LiveArmService:
         }
 
     def assert_arm_enable_preconditions(
-        self, user_broker_account_id: int
+        self,
+        user_broker_account_id: int,
+        *,
+        allow_auto_protective_open_orders: bool = False,
     ) -> dict[str, Any]:
-        """ARM ON 사전조건 — LIVE/Scheduler/Runtime은 변경하지 않음."""
+        """ARM ON 사전조건 — LIVE/Scheduler/Runtime은 변경하지 않음.
+
+        allow_auto_protective_open_orders:
+          Unattended renew/restore — AUTO SELL open은 허용, UNKNOWN는 fail-closed.
+        """
         uba_id = int(user_broker_account_id)
         uba = self._require_uba(uba_id)
         if not bool(uba.is_active):
@@ -179,7 +186,12 @@ class LiveArmService:
 
         blocking = BrokerRecoveryConflictService(
             self._session
-        ).count_blocking_orders_for_uba(uba_id)
+        ).count_blocking_orders_for_uba(
+            uba_id,
+            exclude_auto_protective_exits=bool(
+                allow_auto_protective_open_orders
+            ),
+        )
         for key, code in (
             ("db_open", "db_open_orders"),
             ("submission_unknown", "submission_unknown"),
@@ -326,10 +338,12 @@ class LiveArmService:
         correlation_id: str | None = None,
         enforce_gates: bool = False,
         force_renew: bool = False,
+        allow_auto_protective_open_orders: bool = False,
     ) -> dict[str, Any]:
         """ARM만 ON. LIVE·Scheduler·Runtime은 변경하지 않는다.
 
         force_renew: unattended renewal 전용 — 이미 ARM이어도 TTL/토큰 재발급.
+        allow_auto_protective_open_orders: unattended — AUTO SELL open 허용.
         """
         uba = self._require_uba(user_broker_account_id)
         before_live = bool(uba.live_order_enabled)
@@ -370,7 +384,12 @@ class LiveArmService:
                     )
                     # 원문 토큰은 재발급하지 않음
                     return status
-            self.assert_arm_enable_preconditions(int(user_broker_account_id))
+            self.assert_arm_enable_preconditions(
+                int(user_broker_account_id),
+                allow_auto_protective_open_orders=bool(
+                    allow_auto_protective_open_orders
+                ),
+            )
         else:
             # 레거시 경로 (내부/테스트)
             if not bool(uba.live_order_enabled):

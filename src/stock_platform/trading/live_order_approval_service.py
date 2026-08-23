@@ -194,9 +194,16 @@ class LiveOrderApprovalService:
         ]
 
     def assert_live_enable_preconditions(
-        self, user_broker_account_id: int
+        self,
+        user_broker_account_id: int,
+        *,
+        allow_auto_protective_open_orders: bool = False,
     ) -> dict[str, Any]:
-        """LIVE ON 사전조건 — ARM/Scheduler는 변경하지 않음."""
+        """LIVE ON 사전조건 — ARM/Scheduler는 변경하지 않음.
+
+        allow_auto_protective_open_orders:
+          Unattended lease restore — AUTO SELL open 허용, UNKNOWN fail-closed.
+        """
         uba_id = int(user_broker_account_id)
         uba = self._session.get(UserBrokerAccount, uba_id)
         if uba is None or not uba.is_active:
@@ -243,7 +250,12 @@ class LiveOrderApprovalService:
             )
         blocking = BrokerRecoveryConflictService(
             self._session
-        ).count_blocking_orders_for_uba(uba_id)
+        ).count_blocking_orders_for_uba(
+            uba_id,
+            exclude_auto_protective_exits=bool(
+                allow_auto_protective_open_orders
+            ),
+        )
         for key, code in (
             ("db_open", "db_open_orders"),
             ("submission_unknown", "submission_unknown"),
@@ -322,11 +334,13 @@ class LiveOrderApprovalService:
         correlation_id: str | None = None,
         run_id: str | None = None,
         enforce_enable_gates: bool = True,
+        allow_auto_protective_open_orders: bool = False,
     ) -> dict[str, Any]:
         """LIVE 플래그 변경.
 
         LIVE OFF 시 Scheduler가 RUN이면 Fail Closed로 자동 PAUSE한다.
         ARM은 변경하지 않으며, LIVE OFF 전 ARM OFF는 계속 강제한다.
+        allow_auto_protective_open_orders: unattended restore — AUTO SELL open 허용.
         """
         uba = self._session.get(
             UserBrokerAccount, int(user_broker_account_id)
@@ -374,7 +388,10 @@ class LiveOrderApprovalService:
                     self._session
                 ).assert_ready_for_live_on(int(user_broker_account_id))
                 self.assert_live_enable_preconditions(
-                    int(user_broker_account_id)
+                    int(user_broker_account_id),
+                    allow_auto_protective_open_orders=bool(
+                        allow_auto_protective_open_orders
+                    ),
                 )
         else:
             # LIVE OFF — ARM OFF 필수, Scheduler RUN이면 자동 PAUSE (Fail Closed)
