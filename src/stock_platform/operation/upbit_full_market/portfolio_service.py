@@ -629,6 +629,48 @@ class UpbitPortfolioService:
             "orphans": self.detect_orphans(int(user_broker_account_id)),
         }
 
+    def link_entry_order_to_pending_slot(
+        self,
+        user_broker_account_id: int,
+        *,
+        order_id: int,
+        symbol: str,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        """BUY 주문 생성 직후 ENTRY_PENDING slot.entry_order_id 연결."""
+
+        from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+            link_entry_order_to_pending_slot,
+        )
+
+        return link_entry_order_to_pending_slot(
+            self._session,
+            user_broker_account_id=int(user_broker_account_id),
+            order_id=int(order_id),
+            symbol=str(symbol),
+            actor=actor,
+        )
+
+    def reconcile_portfolio_slot_lifecycle(
+        self,
+        user_broker_account_id: int,
+        *,
+        symbol: str | None = None,
+        actor: str = "system",
+    ) -> dict[str, Any]:
+        """Local AUTO order 기준 slot/binding lifecycle 복원 (멱등)."""
+
+        from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+            reconcile_portfolio_slot_lifecycle,
+        )
+
+        return reconcile_portfolio_slot_lifecycle(
+            self._session,
+            user_broker_account_id=int(user_broker_account_id),
+            symbol=symbol,
+            actor=actor,
+        )
+
     def begin_exit_pending(
         self,
         user_broker_account_id: int,
@@ -1110,6 +1152,20 @@ class UpbitPortfolioService:
             strategy_id=assignment.strategy_id,
             deployment_id=assignment.deployment_id,
         )
+        # 주문/체결과 slot 불일치 복구 (멱등) — stale recovery 전에 실행
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+                reconcile_portfolio_slot_lifecycle,
+            )
+
+            lifecycle_rec = reconcile_portfolio_slot_lifecycle(
+                self._session, user_broker_account_id=uba_id, actor="consume_top_k"
+            )
+            if lifecycle_rec.get("changed"):
+                out["lifecycle_reconciled"] = lifecycle_rec
+        except Exception as exc:  # noqa: BLE001
+            out["lifecycle_reconcile_error"] = type(exc).__name__
+
         # ENTRY_PENDING(실제 주문 단계) 고착만 timeout 복구 — WAITING_SIGNAL 제외
         stale_rec = self.recover_stale_entry_pending_without_order(uba_id)
         if int(stale_rec.get("released") or 0) > 0:
@@ -2493,6 +2549,29 @@ class UpbitPortfolioService:
             if not sym:
                 blocked.append({**row_info, "reason": "SYMBOL_MISSING"})
                 continue
+            # FILLED BUY / open SELL 등 실제 lifecycle이 있으면 복구 시도
+            try:
+                from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+                    reconcile_portfolio_slot_lifecycle,
+                )
+
+                rec = reconcile_portfolio_slot_lifecycle(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    symbol=sym,
+                    actor=str(actor or "stale_recovery"),
+                )
+                if rec.get("changed"):
+                    blocked.append(
+                        {
+                            **row_info,
+                            "reason": "LIFECYCLE_RECONCILED",
+                            "reconcile": rec,
+                        }
+                    )
+                    continue
+            except Exception as exc:  # noqa: BLE001
+                row_info["reconcile_error"] = type(exc).__name__
             if self._has_local_open_order(uba_id, symbol=sym):
                 blocked.append({**row_info, "reason": "LOCAL_OPEN_ORDER"})
                 continue

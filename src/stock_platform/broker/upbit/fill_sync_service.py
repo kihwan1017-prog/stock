@@ -739,6 +739,42 @@ class UpbitFillSyncService:
         self._apply_strategy_owned_binding(
             order=order, remote=remote, actor=actor
         )
+        self._reconcile_portfolio_slot_after_fill(order=order, actor=actor)
+
+    def _reconcile_portfolio_slot_after_fill(
+        self, *, order: Any, actor: str
+    ) -> None:
+        """UPBIT portfolio mode — slot/binding lifecycle 동기화 (멱등)."""
+
+        uba_id = getattr(order, "user_broker_account_id", None)
+        if uba_id is None:
+            return
+        if str(getattr(order, "broker_code", "") or "").upper() != "UPBIT":
+            return
+        try:
+            from stock_platform.operation.upbit_full_market.constants import (
+                is_full_market_portfolio,
+            )
+            from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+                reconcile_portfolio_slot_lifecycle,
+            )
+            from stock_platform.operation.upbit_full_market.service import (
+                UpbitFullMarketAssignmentService,
+            )
+
+            assignment = UpbitFullMarketAssignmentService(
+                self._session
+            ).get_or_create(int(uba_id))
+            if not is_full_market_portfolio(assignment.mode):
+                return
+            reconcile_portfolio_slot_lifecycle(
+                self._session,
+                user_broker_account_id=int(uba_id),
+                symbol=str(getattr(order, "symbol", "") or ""),
+                actor=actor,
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def _apply_strategy_owned_binding(
         self,

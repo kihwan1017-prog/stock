@@ -605,6 +605,35 @@ class RiskIntegratedRealtimeOrderExecutor:
                 result.reason_code,
             )
 
+        # Portfolio BUY: 주문 생성 직후 ENTRY_PENDING slot에 entry_order_id 연결
+        if (
+            str(signal.action.value).upper() == "BUY"
+            and environment == "LIVE"
+            and user_broker_account_id is not None
+            and str(broker_code).upper() == "UPBIT"
+            and result.order_id is not None
+        ):
+            try:
+                from stock_platform.operation.upbit_full_market.constants import (
+                    is_full_market_portfolio,
+                )
+                from stock_platform.operation.upbit_full_market.portfolio_service import (
+                    UpbitPortfolioService,
+                )
+
+                fm_status = UpbitFullMarketAssignmentService(
+                    self._session
+                ).status_dict(int(user_broker_account_id))
+                if is_full_market_portfolio(fm_status.get("mode")):
+                    UpbitPortfolioService(self._session).link_entry_order_to_pending_slot(
+                        int(user_broker_account_id),
+                        order_id=int(result.order_id),
+                        symbol=str(signal.symbol or ""),
+                        actor="REALTIME_EXECUTION",
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
         self._safety_guard.mark_order_executed(signal)
 
         return RealtimeExecutionResult(
