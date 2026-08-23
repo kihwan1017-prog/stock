@@ -181,16 +181,23 @@ class StrategyOwnedRiskService:
                     )
                 )
             if existing is not None:
-                existing.owned_quantity = (
-                    Decimal(str(existing.owned_quantity or 0)) + qty
-                )
+                # 이미 CLOSED면 동일 entry fill 재동기화가 재OPEN하지 않음
+                if str(existing.status or "").upper() == BINDING_STATUS_CLOSED:
+                    return existing
+                # 동일 entry_order fill 재동기화는 누적 금지 — filled qty SoT로 SET
+                # (ADD 하면 owned_quantity 인플레 → SELL 후 OPEN 잔존)
+                existing.owned_quantity = qty
+                if fees is not None and Decimal(str(fees)) > ZERO:
+                    existing.fees = max(
+                        Decimal(str(existing.fees or 0)),
+                        Decimal(str(fees)),
+                    )
                 existing.status = BINDING_STATUS_OPEN
                 existing.closed_at = None
                 if entry_price is not None:
                     existing.entry_price = Decimal(str(entry_price))
                 existing.updated_at = datetime.now(timezone.utc)
                 self._session.flush()
-                # scale-in / 추가 fill — filled-entry 추가 집계 없음
                 if broker == "UPBIT":
                     try:
                         from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
@@ -255,6 +262,24 @@ class StrategyOwnedRiskService:
             return row
 
         if side_u == "SELL":
+            # 동일 exit_order 재동기화 멱등 — 이미 CLOSED면 재차감/재수수료 금지
+            if exit_order_id is not None:
+                prior = list(
+                    self._session.scalars(
+                        select(StrategyPositionBindingEntity).where(
+                            StrategyPositionBindingEntity.user_broker_account_id
+                            == uba,
+                            StrategyPositionBindingEntity.broker_code == broker,
+                            StrategyPositionBindingEntity.strategy_id == sid,
+                            StrategyPositionBindingEntity.symbol == sym,
+                        )
+                    )
+                )
+                for cand in prior:
+                    meta_c = dict(cand.meta_json or {})
+                    if int(meta_c.get("exit_order_id") or 0) == int(exit_order_id):
+                        return cand
+
             opens = list(
                 self._session.scalars(
                     select(StrategyPositionBindingEntity)
@@ -280,15 +305,42 @@ class StrategyOwnedRiskService:
                 if remain <= ZERO:
                     break
                 owned = Decimal(str(row.owned_quantity or 0))
+                # BUY fill 재동기화 인플레 self-heal — entry order filled qty가 SoT
+                if row.entry_order_id is not None:
+                    try:
+                        from stock_platform.order.entities import (
+                            TradingOrderEntity,
+                        )
+
+                        buy = self._session.get(
+                            TradingOrderEntity, int(row.entry_order_id)
+                        )
+                        if buy is not None:
+                            canon = Decimal(str(buy.filled_quantity or 0))
+                            if canon > ZERO and owned > canon:
+                                owned = canon
+                                row.owned_quantity = canon
+                    except Exception:  # noqa: BLE001
+                        pass
                 take = min(owned, remain)
                 entry = Decimal(str(row.entry_price or 0))
                 row.owned_quantity = owned - take
-                row.fees = Decimal(str(row.fees or 0)) + Decimal(str(fees or 0))
+                fee_add = Decimal(str(fees or 0))
+                # 이미 동일 lot PnL이 반영된 OPEN 잔존(인플레 버그 잔여) 시 재가산 금지
+                lot_pnl = ZERO
                 if sell_px is not None and entry > ZERO and take > ZERO:
-                    # 실현 차익(수수료는 fees 컬럼에 별도 누적)
-                    row.realized_pnl = Decimal(str(row.realized_pnl or 0)) + (
-                        (sell_px - entry) * take
-                    )
+                    lot_pnl = (sell_px - entry) * take
+                current_pnl = Decimal(str(row.realized_pnl or 0))
+                full_lot_close = take > ZERO and take == owned
+                already_stamped = (
+                    full_lot_close
+                    and lot_pnl > ZERO
+                    and abs(current_pnl - lot_pnl) <= Decimal("0.05")
+                )
+                if lot_pnl > ZERO and not already_stamped:
+                    row.realized_pnl = current_pnl + lot_pnl
+                if fee_add > ZERO and not already_stamped:
+                    row.fees = Decimal(str(row.fees or 0)) + fee_add
                 if row.owned_quantity <= ZERO:
                     row.owned_quantity = ZERO
                     row.status = BINDING_STATUS_CLOSED
@@ -299,6 +351,47 @@ class StrategyOwnedRiskService:
                     if sell_px is not None:
                         meta["exit_fill_price"] = str(sell_px)
                     row.meta_json = meta
+                    # full close 시 fees를 entry+exit order meta로 정규화(가능하면)
+                    try:
+                        from stock_platform.order.entities import (
+                            TradingOrderEntity,
+                        )
+
+                        buy_fee = ZERO
+                        sell_fee = fee_add
+                        if row.entry_order_id is not None:
+                            buy_o = self._session.get(
+                                TradingOrderEntity, int(row.entry_order_id)
+                            )
+                            if buy_o is not None:
+                                bm = dict(
+                                    getattr(buy_o, "metadata_payload", None)
+                                    or {}
+                                )
+                                buy_fee = Decimal(
+                                    str(bm.get("upbit_paid_fee") or 0)
+                                )
+                        if exit_order_id is not None:
+                            sell_o = self._session.get(
+                                TradingOrderEntity, int(exit_order_id)
+                            )
+                            if sell_o is not None:
+                                sm = dict(
+                                    getattr(sell_o, "metadata_payload", None)
+                                    or {}
+                                )
+                                sell_fee = Decimal(
+                                    str(
+                                        sm.get("upbit_paid_fee")
+                                        or fee_add
+                                        or 0
+                                    )
+                                )
+                        canon_fees = buy_fee + sell_fee
+                        if buy_fee > ZERO and sell_fee > ZERO:
+                            row.fees = canon_fees
+                    except Exception:  # noqa: BLE001
+                        pass
                     # portfolio UpbitStrategyPositionBinding도 동기 CLOSED
                     if broker == "UPBIT":
                         try:
