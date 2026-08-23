@@ -299,6 +299,65 @@ export function UpbitOpportunityScannerPanel() {
           </>
         );
       })()}
+      {(() => {
+        const fv = asRecord(shadowStats.entry_b1_forward_validation) ?? {};
+        const progress = asRecord(fv.progress) ?? {};
+        const base = asRecord(fv.baseline) ?? {};
+        const b1 = asRecord(fv.b1) ?? {};
+        const filt = asRecord(fv.filter_attribution) ?? {};
+        const early = asRecord(fv.early_dump) ?? {};
+        if (fv.combined_sample_count == null && fv.combined_sample_count !== 0) {
+          return null;
+        }
+        const promo = String(fv.PROMOTION_STATUS ?? "NOT READY");
+        return (
+          <>
+            <Typography.Title level={5} style={{ marginBottom: 0 }}>
+              Entry Forward Validation
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Candidate B1 RSI65 / VOL0.8 · LEGACY+NEW 분리 · REAL 정책 미변경 ·
+              자동 승격 없음
+            </Typography.Paragraph>
+            <Space wrap>
+              <Tag>Candidate: RSI65 / VOL0.8</Tag>
+              <Tag>
+                Progress Combined {cell(progress.combined)}
+              </Tag>
+              <Tag>
+                New {cell(progress.new)}
+              </Tag>
+              <Tag>
+                Baseline net={cell(base.net_pnl)} PF={cell(base.profit_factor)} WR=
+                {cell(base.win_rate)}
+              </Tag>
+              <Tag color="blue">
+                B1 net={cell(b1.net_pnl)} PF={cell(b1.profit_factor)} WR=
+                {cell(b1.win_rate)}
+              </Tag>
+              <Tag>
+                Filter benefit={cell(filt.net_filter_benefit)}
+              </Tag>
+              <Tag>
+                Early dump B/B1={cell(early.baseline_early_dump_rate)}/
+                {cell(early.b1_early_dump_rate)}
+              </Tag>
+              <Tag color={promo === "REVIEW READY" ? "green" : "default"}>
+                Promotion: {promo}
+              </Tag>
+            </Space>
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer" }}>B1 detail (accordion)</summary>
+              <AdminJsonCard
+                title="Entry B1 Forward Validation"
+                loading={false}
+                error={null}
+                data={fv}
+              />
+            </details>
+          </>
+        );
+      })()}
       <AdminJsonCard
         title="Shadow Stats / Cohort"
         loading={status.isLoading}

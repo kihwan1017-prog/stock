@@ -13,6 +13,9 @@ from stock_platform.operation.upbit_opportunity_shadow.exit_policy_ab import (
 from stock_platform.operation.upbit_opportunity_shadow.entry_policy_ab import (
     summarize_entry_ab_from_shadows,
 )
+from stock_platform.operation.upbit_opportunity_shadow.entry_b1_forward_validation import (
+    summarize_b1_forward_from_shadows,
+)
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     SHADOW_STATUS_COMPLETED,
 )
@@ -132,6 +135,10 @@ def compute_shadow_stats(session: Session) -> dict[str, Any]:
         "auto_threshold_tuning": False,
         "exit_policy_ab": summarize_exit_ab_from_shadows(completed),
         "entry_policy_ab": summarize_entry_ab_from_shadows(completed),
+        # B1 forward validation — research fail-open (REAL 미차단)
+        "entry_b1_forward_validation": summarize_b1_forward_from_shadows(
+            completed
+        ),
     }
 
 

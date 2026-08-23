@@ -159,3 +159,42 @@ def publish_shadow_cohort_milestone(snapshot: dict[str, Any]) -> None:
             "snapshot": snapshot,
         },
     )
+
+
+def publish_b1_forward_daily_summary(summary: dict[str, Any]) -> None:
+    """Entry B1 Forward Validation — KST 1일 1회 연구 summary."""
+
+    progress = summary.get("progress") or {}
+    base = summary.get("baseline") or {}
+    b1 = summary.get("b1") or {}
+    title = "UPBIT Entry B1 Forward Validation Daily"
+    message = (
+        f"[Entry B1 Forward Validation]\n"
+        f"Day(KST): {summary.get('day_kst')}\n"
+        f"Today new opp: {summary.get('today_new_opportunities')}\n"
+        f"Progress combined: {progress.get('combined')}\n"
+        f"Progress new: {progress.get('new')}\n"
+        f"Baseline: entries={base.get('entries')} "
+        f"W/L={base.get('wins')}/{base.get('losses')} "
+        f"net={base.get('net')} PF={base.get('pf')}\n"
+        f"B1: entries={b1.get('entries')} "
+        f"W/L={b1.get('wins')}/{b1.get('losses')} "
+        f"net={b1.get('net')} PF={b1.get('pf')}\n"
+        f"Promotion: {summary.get('PROMOTION_STATUS')}\n"
+        f"REAL policy changed: NO\n"
+        f"SHADOW RESEARCH ONLY\n"
+        f"LIVE ORDER: NO"
+    )
+    notification_publisher.publish(
+        event_type=_ensure_event("UPBIT_ENTRY_B1_FORWARD_DAILY"),
+        title=title,
+        message=message,
+        detail={
+            "source": "entry_b1_forward_daily_watch",
+            "live_order": False,
+            "orders_created": 0,
+            "shadow_only": True,
+            "REAL_policy_changed": "NO",
+            "summary": summary,
+        },
+    )

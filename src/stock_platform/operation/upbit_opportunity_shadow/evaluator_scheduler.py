@@ -256,6 +256,23 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                         notify=notify
                     )
 
+                    # B1 forward daily research summary — fail-open
+                    b1_daily: dict[str, Any] = {"ok": True, "skipped": True}
+                    try:
+                        from stock_platform.operation.upbit_opportunity_shadow.entry_b1_daily_watch import (
+                            EntryB1ForwardDailyWatch,
+                        )
+
+                        b1_daily = EntryB1ForwardDailyWatch(session).observe(
+                            notify=notify
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        b1_daily = {
+                            "ok": False,
+                            "research_failed_open": True,
+                            "error": type(exc).__name__,
+                        }
+
                     self._last_duration_ms = int(
                         (time.perf_counter() - started) * 1000
                     )
@@ -272,6 +289,12 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                                 "already_notified"
                             ),
                             "snapshot": milestone_out.get("snapshot"),
+                        },
+                        "entry_b1_daily": {
+                            "ok": b1_daily.get("ok"),
+                            "skipped": b1_daily.get("skipped"),
+                            "notified": b1_daily.get("notified"),
+                            "day_kst": b1_daily.get("day_kst"),
                         },
                         "duration_ms": self._last_duration_ms,
                         "orders_created": 0,

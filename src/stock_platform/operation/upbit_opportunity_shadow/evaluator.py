@@ -31,6 +31,9 @@ from stock_platform.operation.upbit_opportunity_shadow.exit_policy_ab import (
 from stock_platform.operation.upbit_opportunity_shadow.entry_policy_ab import (
     compare_entry_on_opportunity,
 )
+from stock_platform.operation.upbit_opportunity_shadow.pre_entry_features import (
+    compute_pre_entry_features,
+)
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     EVALUATION_WINDOWS_MINUTES,
     SHADOW_STATUS_ACTIVE,
@@ -403,6 +406,10 @@ class UpbitOpportunityShadowEvaluator:
                 detail["exit_ab"] = computed.get("exit_ab")
             if computed.get("entry_ab") is not None:
                 detail["entry_ab"] = computed.get("entry_ab")
+            if computed.get("entry_forward_features") is not None:
+                detail["entry_forward_features"] = computed.get(
+                    "entry_forward_features"
+                )
             # PASS 시 path_defer 정리(남아 있으면 해소 표시)
             if detail.get("path_defer"):
                 cleared = dict(detail["path_defer"])
@@ -615,6 +622,13 @@ class UpbitOpportunityShadowEvaluator:
             mae_pct=_round6(mae),
         )
         entry_ab = compare_entry_on_opportunity(entry_probe)
+        # B1 forward research feature stamp — REAL과 무관, 실패 시 무시
+        try:
+            fwd_feat = compute_pre_entry_features(
+                ab_bars, entry_at=detected, entry_price=entry
+            )
+        except Exception:  # noqa: BLE001
+            fwd_feat = {"ok": False, "reason": "PRE_ENTRY_FEATURE_FAILED"}
 
         return {
             "ok": True,
@@ -646,6 +660,7 @@ class UpbitOpportunityShadowEvaluator:
             "sl_pct": sl_pct,
             "exit_ab": exit_ab,
             "entry_ab": entry_ab,
+            "entry_forward_features": fwd_feat,
             "distinct_window_prices": distinct_prices,
             "max_prior_lag_seconds": DEFAULT_MAX_PRIOR_LAG_SECONDS,
             "path_quality": path_quality,
