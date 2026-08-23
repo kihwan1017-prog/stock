@@ -129,13 +129,23 @@ class UpbitOpportunityShadowEvaluator:
                 )
             )
         )
+        backfill_out: dict[str, Any] | None = None
         if not rows:
+            # ACTIVE 없어도 COMPLETED research stamp 누락분 backfill
+            from stock_platform.operation.upbit_opportunity_shadow.research_stamp_backfill import (
+                backfill_missing_research_stamps,
+            )
+
+            backfill_out = await backfill_missing_research_stamps(
+                self._session, now=self._now
+            )
             return {
                 "evaluated": 0,
                 "completed": 0,
                 "orders_created": 0,
                 "shadows": [],
                 "mode": "historical_candles",
+                "research_stamp_backfill": backfill_out,
             }
 
         evaluated = 0
@@ -148,6 +158,14 @@ class UpbitOpportunityShadowEvaluator:
                 completed_rows.append(row)
 
         self._session.commit()
+
+        from stock_platform.operation.upbit_opportunity_shadow.research_stamp_backfill import (
+            backfill_missing_research_stamps,
+        )
+
+        backfill_out = await backfill_missing_research_stamps(
+            self._session, now=self._now
+        )
 
         if notify:
             for row in completed_rows:
@@ -167,6 +185,7 @@ class UpbitOpportunityShadowEvaluator:
             "completed": len(completed_rows),
             "orders_created": 0,
             "mode": "historical_candles",
+            "research_stamp_backfill": backfill_out,
             "shadows": [
                 UpbitOpportunityShadowService.to_public(r) for r in rows
             ],

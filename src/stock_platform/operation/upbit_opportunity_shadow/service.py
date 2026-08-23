@@ -19,6 +19,9 @@ from stock_platform.operation.upbit_opportunity_shadow.constants import (
 from stock_platform.operation.upbit_opportunity_shadow.entities import (
     UpbitOpportunityShadowEntity,
 )
+from stock_platform.operation.upbit_opportunity_shadow.entry_price_resolver import (
+    resolve_canonical_entry_price,
+)
 from stock_platform.operation.upbit_opportunity_shadow.notify import (
     publish_shadow_opened,
 )
@@ -100,10 +103,30 @@ class UpbitOpportunityShadowService:
                 skipped.append({"symbol": symbol, "reason": "ALERT_COOLDOWN"})
                 continue
 
-            entry_price = _dec(cand.get("price"))
-            if entry_price is None or entry_price <= 0:
+            # 동일 scanner_run + symbol 중복 sample 방지 (AI flip 재호출 포함)
+            if self._has_scanner_run_shadow(symbol, scanner_run_id):
+                skipped.append(
+                    {"symbol": symbol, "reason": "DUPLICATE_SCANNER_RUN"}
+                )
+                continue
+
+            candidate_price = _dec(cand.get("price"))
+            if candidate_price is None or candidate_price <= 0:
                 skipped.append({"symbol": symbol, "reason": "NO_ENTRY_PRICE"})
                 continue
+
+            # canonical entry: DB 1m candle @ detected_at (scanner API 가격 불일치 방지)
+            detected_at = self._now
+            price_resolution = resolve_canonical_entry_price(
+                self._session,
+                symbol=symbol,
+                detected_at=detected_at,
+                candidate_price=candidate_price,
+            )
+            if not price_resolution.ok or price_resolution.price <= 0:
+                skipped.append({"symbol": symbol, "reason": "NO_ENTRY_PRICE"})
+                continue
+            entry_price = price_resolution.price
 
             if self._has_active_shadow(symbol):
                 skipped.append({"symbol": symbol, "reason": "ACTIVE_EXISTS"})
@@ -148,11 +171,13 @@ class UpbitOpportunityShadowService:
                     else None
                 ),
                 live_auto_start=False,
-                detected_at=self._now,
+                detected_at=detected_at,
                 entry_snapshot={
                     "source": "upbit_opportunity_scanner_paper_shadow_v1",
                     "live_auto_start": False,
                     "paper_shadow": True,
+                    "entry_price_provenance": price_resolution.to_provenance_dict(),
+                    "scanner_run_id": str(scanner_run_id)[:64],
                     "candidate": {
                         k: cand.get(k)
                         for k in (
@@ -203,6 +228,16 @@ class UpbitOpportunityShadowService:
             select(UpbitOpportunityShadowEntity).where(
                 UpbitOpportunityShadowEntity.symbol == symbol,
                 UpbitOpportunityShadowEntity.status == SHADOW_STATUS_ACTIVE,
+                UpbitOpportunityShadowEntity.deleted_at.is_(None),
+            )
+        )
+        return row is not None
+
+    def _has_scanner_run_shadow(self, symbol: str, scanner_run_id: str) -> bool:
+        row = self._session.scalar(
+            select(UpbitOpportunityShadowEntity).where(
+                UpbitOpportunityShadowEntity.symbol == symbol,
+                UpbitOpportunityShadowEntity.scanner_run_id == str(scanner_run_id)[:64],
                 UpbitOpportunityShadowEntity.deleted_at.is_(None),
             )
         )
