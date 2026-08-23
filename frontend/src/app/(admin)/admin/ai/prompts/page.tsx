@@ -107,7 +107,7 @@ export default function AdminAiPromptsPage() {
               { title: "Name", dataIndex: "name" },
               { title: "Task", dataIndex: "task_type" },
               {
-                title: "Status",
+                title: "상태",
                 dataIndex: "status",
                 render: (v) => <Tag>{String(v)}</Tag>,
               },
@@ -130,7 +130,7 @@ export default function AdminAiPromptsPage() {
               pagination={false}
               columns={[
                 { title: "Ver", dataIndex: "version", width: 60 },
-                { title: "Status", dataIndex: "status", width: 90 },
+                { title: "상태", dataIndex: "status", width: 90 },
                 {
                   title: "Checksum",
                   dataIndex: "checksum",

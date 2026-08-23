@@ -225,7 +225,7 @@ export default function AdminAiReviewsPage() {
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "Source", dataIndex: "analysis_source_type", width: 100 },
             { title: "Analysis ID", dataIndex: "source_analysis_id", width: 110 },
-            { title: "Status", dataIndex: "status", width: 120 },
+            { title: "상태", dataIndex: "status", width: 120 },
             { title: "Priority", dataIndex: "priority", width: 90 },
             { title: "Reviewer", dataIndex: "assigned_reviewer_id", ellipsis: true },
             {
@@ -330,7 +330,7 @@ export default function AdminAiReviewsPage() {
                   size="small"
                   columns={[
                     { title: "ID", dataIndex: "id", width: 60 },
-                    { title: "Status", dataIndex: "review_status", width: 100 },
+                    { title: "상태", dataIndex: "review_status", width: 100 },
                     {
                       title: "Decision",
                       dataIndex: "decision",

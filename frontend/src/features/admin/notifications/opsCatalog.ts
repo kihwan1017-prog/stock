@@ -76,7 +76,7 @@ export const NOTIFICATION_EVENT_CATALOG: NotificationEventSpec[] = [
   },
   {
     id: "KILL_SWITCH",
-    label: "Kill Switch",
+    label: "긴급 중지(Kill Switch)",
     description: "일손실·Telegram /kill · ExitMonitor",
     support: "live",
     related: ["POST /risk/kill-switch", "Telegram /kill"],

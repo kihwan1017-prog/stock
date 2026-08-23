@@ -207,8 +207,8 @@ export function DashboardPerformanceTab({
               (r) => rec(r),
             )}
             columns={[
-              { title: "Broker", dataIndex: "broker_code", width: 72 },
-              { title: "Symbol", dataIndex: "symbol" },
+              { title: "거래소/증권사", dataIndex: "broker_code", width: 72 },
+              { title: "종목", dataIndex: "symbol" },
               { title: "Entry", dataIndex: "entry_price", width: 72 },
               { title: "Exit", dataIndex: "exit_price", width: 72 },
               { title: "Qty", dataIndex: "quantity", width: 64 },

@@ -70,19 +70,6 @@ function pnlColor(value: unknown): string | undefined {
   return num < 0 ? "#cf1322" : "#3f8600";
 }
 
-function tableRowKey(row: Record<string, unknown>, fields: string[]): string {
-  for (const field of fields) {
-    const value = row[field];
-    if (value !== null && value !== undefined && value !== "") {
-      return String(value);
-    }
-  }
-  try {
-    return JSON.stringify(row);
-  } catch {
-    return "unknown-row";
-  }
-}
 
 function toNumber(value: unknown): number {
   const num = Number(value);
@@ -358,7 +345,8 @@ export default function UserPortfolioPage() {
 
   const tradeRows =
     paperOrderRows.length > 0
-      ? paperOrderRows.slice(0, 30).map((row) => ({
+      ? paperOrderRows.slice(0, 30).map((row, index) => ({
+          key: `paper:${String(row.paper_order_id ?? row.order_id ?? index)}:${String(row.created_at ?? row.updated_at ?? index)}`,
           source: "paper",
           id: row.paper_order_id ?? row.order_id,
           symbol: row.symbol,
@@ -369,7 +357,8 @@ export default function UserPortfolioPage() {
           at: row.created_at ?? row.updated_at,
         }))
       : [
-          ...orderRows.slice(0, 15).map((row) => ({
+          ...orderRows.slice(0, 15).map((row, index) => ({
+            key: `order:${String(row.order_id ?? index)}:${String(row.created_at ?? index)}`,
             source: "order",
             id: row.order_id,
             symbol: row.symbol,
@@ -379,7 +368,8 @@ export default function UserPortfolioPage() {
             status: row.status_code,
             at: row.created_at,
           })),
-          ...executionRows.slice(0, 15).map((row) => ({
+          ...executionRows.slice(0, 15).map((row, index) => ({
+            key: `execution:${String(row.execution_id ?? row.trading_execution_id ?? index)}:${String(row.executed_at ?? row.created_at ?? index)}`,
             source: "execution",
             id: row.execution_id ?? row.trading_execution_id,
             symbol: row.symbol,
@@ -650,12 +640,7 @@ export default function UserPortfolioPage() {
             <Table
               size="small"
               pagination={{ pageSize: 10 }}
-              rowKey={(row) =>
-                tableRowKey(
-                  row as unknown as Record<string, unknown>,
-                  ["source", "id", "symbol", "at"],
-                )
-              }
+              rowKey="key"
               dataSource={tradeRows}
               locale={{ emptyText: "거래내역 없음" }}
               columns={[

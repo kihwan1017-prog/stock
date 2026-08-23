@@ -1,0 +1,122 @@
+{
+  "task": "USER_FACING_KOREAN_LOCALIZATION_COMPLETE",
+  "previous_commit": "a953632",
+  "final_verdict": "USER_FACING_KOREAN_LOCALIZATION_PARTIAL",
+  "timestamp_kst": "2026-08-24T00:55:00+09:00",
+  "scope": {
+    "display_only": true,
+    "api_contract_changed": false,
+    "db_changed": false,
+    "enum_changed": false,
+    "trading_logic_changed": false
+  },
+  "mutations": {
+    "REAL_ORDER_MUTATION": 0,
+    "CANCEL_AMEND_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "24H_MUTATION": 0,
+    "RISK_MUTATION": 0,
+    "SLOT_POLICY_MUTATION": 0,
+    "UBA1381_MUTATION": 0
+  },
+  "shared_formatters": {
+    "displayUiLabelsKo": "frontend/src/features/shared/display/displayUiLabelsKo.ts",
+    "tradingDisplayLabelsKo": "frontend/src/features/shared/display/tradingDisplayLabelsKo.ts",
+    "added": [
+      "sideLabelKo",
+      "tradingKindLabelKo",
+      "expanded UI_LABEL_KO risk/order/pnl keys",
+      "runtimeValueLabelKo unknown fallback 확인 필요 (CODE)"
+    ]
+  },
+  "coverage": {
+    "admin": [
+      "upbit autotrading (phase1 + settings labels)",
+      "kiwoom autotrading runtime cards",
+      "orders columns + paper orders",
+      "risk/safety kill switch + live limits table",
+      "operations dashboard",
+      "settlement / realtime / recovery tables",
+      "dashboard cockpit kill/conflict labels",
+      "AI table common titles (Symbol/Status/Score...)"
+    ],
+    "user": [
+      "auto-trading kill switch card title",
+      "orders via shared orderReadColumns",
+      "reports/strategies/portfolio/risk/settings title columns where matched"
+    ]
+  },
+  "browser_verify": {
+    "status": "PARTIAL_LOGIN_GATED",
+    "method": "playwright chromium channel=chrome",
+    "routes_attempted": [
+      "/admin/upbit/autotrading",
+      "/admin/kiwoom/autotrading",
+      "/admin/dashboard",
+      "/admin/orders",
+      "/admin/risk",
+      "/admin/operations-dashboard",
+      "/user/accounts",
+      "/user/orders",
+      "/user/auto-trading"
+    ],
+    "result": "All routes HTTP 200 but redirected to /login (no authenticated session injection permitted without token approval). Login shell Korean OK. Console errors: none on login shell.",
+    "authenticated_render": "NOT_VERIFIED",
+    "source_markers_verified": {
+      "자동매매 후보 슬롯": true,
+      "자동매매 런타임": true,
+      "긴급 중지(Kill Switch)": true,
+      "주문번호": true,
+      "매수 허용": true
+    }
+  },
+  "tests": {
+    "vitest": [
+      "src/features/admin/autotrading/tradingCockpitUx.test.ts",
+      "src/shared/orders/orderReadColumns.test.ts",
+      "src/features/admin/accounts/UnattendedControlCard.test.ts"
+    ],
+    "result": "PASS (22 tests across related files; 19 in core localization suites)"
+  },
+  "bug_found": [
+    {
+      "id": "OPEN_SLOT_PNL_SL_API_GAP",
+      "status": "RECORDED_NOT_FIXED",
+      "note": "OPEN slot PnL/SL API gap from phase1 — not fixed in localization work"
+    }
+  ],
+  "remaining_user_visible_english": [
+    {
+      "text": "LIVE / ARM / Paper / Shadow / REAL / PnL / RSI / MA / MFE / MAE / AI / API",
+      "where": "multiple trading screens",
+      "reason": "intentional bilingual or standard finance/tech abbreviations"
+    },
+    {
+      "text": "B1 / Candidate A",
+      "where": "Forward Validation",
+      "reason": "research candidate code names"
+    },
+    {
+      "text": "Select option values BUY/SELL/LIMIT/MARKET",
+      "where": "admin orders forms",
+      "reason": "API enum values kept as value; display labels Korean elsewhere"
+    },
+    {
+      "text": "Some AI research admin table field names / raw JSON card titles",
+      "where": "/admin/ai/*",
+      "reason": "developer/research ops surfaces; partial title localization only"
+    },
+    {
+      "text": "Authenticated browser content (Portfolio slot table live render)",
+      "where": "/admin/upbit/autotrading",
+      "reason": "login-gated; session token inject blocked in this run"
+    }
+  ],
+  "unknown_translation": [],
+  "limitations": [
+    "Authenticated Playwright verify blocked (admin token read requires approval).",
+    "USER AccountsView LIVE/ARM column localization deferred to avoid mixing unrelated WIP.",
+    "Some AI/live-validation debug field labels remain English intentionally."
+  ],
+  "next_action": "COMPLETE_REMAINING_USER_VISIBLE_LOCALIZATION"
+}

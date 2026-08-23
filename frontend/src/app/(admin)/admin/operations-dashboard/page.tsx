@@ -336,7 +336,7 @@ export default function AdminOperationsDashboardPage() {
             key: "schedulers",
             label: L.tabSchedulers,
             children: (
-              <Space direction="vertical" style={{ width: "100%" }} size="middle">
+              <Space orientation="vertical" style={{ width: "100%" }} size="middle">
                 <SchedulersTab
                   data={schedulersQuery.data}
                   loading={schedulersQuery.isLoading}
@@ -537,9 +537,9 @@ function OrdersTab({
       columns={[
         { title: "Time", dataIndex: "created_at", width: 170 },
         { title: "UBA", dataIndex: "user_broker_account_id", width: 70 },
-        { title: "Broker", dataIndex: "broker_code", width: 90 },
+        { title: "거래소/증권사", dataIndex: "broker_code", width: 90 },
         { title: "Market", dataIndex: "market" },
-        { title: "Side", dataIndex: "side", width: 70 },
+        { title: "매수/매도", dataIndex: "side", width: 70 },
         { title: "Limit", dataIndex: "requested_price" },
         {
           title: "Internal",
@@ -606,11 +606,11 @@ function RiskTab({
           dataIndex: "risk_status",
           render: (v) => <StatusTag label="Risk" status={v} />,
         },
-        { title: "Max Order", dataIndex: "max_order_amount" },
+        { title: "최대 주문금액", dataIndex: "max_order_amount" },
         { title: "Open", dataIndex: "current_open_orders" },
         { title: "Today", dataIndex: "today_orders" },
         {
-          title: "Kill",
+          title: "긴급중지",
           dataIndex: "kill_switch_active",
           render: (v) => (
             <Tag color={v ? "error" : "success"}>{v ? "ACTIVE" : "OFF"}</Tag>
@@ -689,8 +689,8 @@ function RuntimesTab({
         columns={[
           { title: "Scope", dataIndex: "scope" },
           { title: "UBA", dataIndex: "account_id" },
-          { title: "Broker", dataIndex: "broker_code" },
-          { title: "Strategy", dataIndex: "strategy_id" },
+          { title: "거래소/증권사", dataIndex: "broker_code" },
+          { title: "전략", dataIndex: "strategy_id" },
           {
             title: "State",
             dataIndex: "state",
@@ -731,7 +731,7 @@ function PositionsTab({
       dataSource={rows}
       columns={[
         { title: "UBA", dataIndex: "user_broker_account_id", width: 70 },
-        { title: "Broker", dataIndex: "broker_code" },
+        { title: "거래소/증권사", dataIndex: "broker_code" },
         { title: "Market", dataIndex: "market" },
         { title: "Qty", dataIndex: "quantity" },
         { title: "Avg", dataIndex: "average_price" },
@@ -759,7 +759,7 @@ function AlertsTab({
 }) {
   const rows = extractRows(rec(data).alerts);
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
+    <Space orientation="vertical" style={{ width: "100%" }}>
       <Link href={adminRoutes.recovery}>Open Recovery</Link>
       <Table
         size="small"
@@ -842,7 +842,7 @@ function NotificationsTab({
   const rows = extractRows(root.notifications);
   const telegram = rec(root.telegram);
   return (
-    <Space direction="vertical" style={{ width: "100%" }}>
+    <Space orientation="vertical" style={{ width: "100%" }}>
       <StatusTag label="Telegram" status={telegram.status} />
       <Table
         size="small"
@@ -863,7 +863,7 @@ function NotificationsTab({
           { title: "Event", dataIndex: "event_type" },
           { title: "Title", dataIndex: "title" },
           { title: "Delivery", dataIndex: "delivery_status" },
-          { title: "Preview", dataIndex: "message_preview" },
+          { title: "미리보기", dataIndex: "message_preview" },
         ]}
       />
     </Space>

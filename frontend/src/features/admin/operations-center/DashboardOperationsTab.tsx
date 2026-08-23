@@ -156,7 +156,7 @@ export function DashboardOperationsTab({
           scroll={{ x: 1100 }}
           dataSource={statusRows}
           columns={[
-            { title: "Broker", dataIndex: "broker", width: 72 },
+            { title: "거래소/증권사", dataIndex: "broker", width: 72 },
             {
               title: "실거래(LIVE)",
               dataIndex: "live",
@@ -237,8 +237,8 @@ export function DashboardOperationsTab({
             rowKey={(r) => `${rec(r).broker_code}-${rec(r).symbol}`}
             dataSource={openPositions.map((r) => rec(r))}
             columns={[
-              { title: "Broker", dataIndex: "broker_code" },
-              { title: "Symbol", dataIndex: "symbol" },
+              { title: "거래소/증권사", dataIndex: "broker_code" },
+              { title: "종목", dataIndex: "symbol" },
               { title: "Qty", dataIndex: "quantity" },
               { title: "Avg", dataIndex: "average_price" },
               {

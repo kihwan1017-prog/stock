@@ -46,7 +46,7 @@ export default function AdminAiSchemasPage() {
               { title: "Task", dataIndex: "task_type" },
               { title: "Version", dataIndex: "schema_version" },
               {
-                title: "Status",
+                title: "상태",
                 dataIndex: "status",
                 render: (v) => <Tag>{String(v)}</Tag>,
               },

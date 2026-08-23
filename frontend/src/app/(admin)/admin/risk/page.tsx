@@ -100,7 +100,7 @@ export default function AdminRiskPage() {
   const activate = useMutation({
     mutationFn: () => adminApi.activateKillSwitch(),
     onSuccess: () => {
-      message.success("Kill Switch 활성화");
+      message.success("긴급 중지(Kill Switch) 활성화");
       void qc.invalidateQueries({ queryKey: queryKeys.admin.killSwitch() });
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -108,7 +108,7 @@ export default function AdminRiskPage() {
   const deactivate = useMutation({
     mutationFn: () => adminApi.deactivateKillSwitch(),
     onSuccess: () => {
-      message.success("Kill Switch 해제");
+      message.success("긴급 중지(Kill Switch) 해제");
       void qc.invalidateQueries({ queryKey: queryKeys.admin.killSwitch() });
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -207,14 +207,14 @@ export default function AdminRiskPage() {
   return (
     <AdminPageShell
       title="리스크 관리"
-      description="Kill Switch · 시스템/회원 리스크 WRITE의 유일한 canonical 화면. 다른 Workspace는 READ summary + 이 페이지 링크만."
+      description="긴급 중지(Kill Switch) · 시스템/회원 리스크 설정의 유일한 변경 화면. 다른 화면은 조회 요약과 이 페이지 링크만 제공합니다."
       extra={
         <Space wrap>
           <Button danger loading={activate.isPending} onClick={() => activate.mutate()}>
-            Kill Switch ON
+            긴급 중지(Kill Switch) ON
           </Button>
           <Button loading={deactivate.isPending} onClick={() => deactivate.mutate()}>
-            Kill Switch OFF
+            긴급 중지(Kill Switch) OFF
           </Button>
           <Link href={adminRoutes.liveValidationUpbit}>안전 제어</Link>
           <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
@@ -225,11 +225,11 @@ export default function AdminRiskPage() {
         <Alert
           type="info"
           showIcon
-          title="Account Safety vs Strategy Autotrading"
-          description="Account Daily Drawdown(계좌 전체 MTM)과 Strategy Daily Loss(자동매매 소유만)는 분리됩니다. ENTRY는 Strategy Daily Loss + Account Hard Safety(Kill 등) 모두 PASS 필요. GET /api/v1/risk/daily-loss/strategy-owned"
+          title="계좌 안전 vs 전략 자동매매"
+          description="계좌 일일 최대 손실(계좌 전체 평가)과 전략 일일 손실(자동매매 소유만)은 분리됩니다. 신규 매수(ENTRY)는 전략 일일 손실 + 계좌 하드 안전(긴급 중지 등) 모두 통과해야 합니다."
         />
         <AdminJsonCard
-          title="GET /risk/kill-switch"
+          title="긴급 중지(Kill Switch) 상태"
           loading={kill.isLoading}
           error={kill.error ? toApiError(kill.error) : null}
           data={kill.data}
@@ -414,24 +414,24 @@ export default function AdminRiskPage() {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            title="LIVE/ARM 및 Trading Scheduler 제어는 계좌 관리에서 수행합니다."
-            description="이 화면은 상태 조회와 LIVE 리스크 한도 재적용만 제공합니다. Kill Switch는 위쪽 Risk 제어를 사용하세요."
+            title="LIVE/ARM 및 거래 스케줄러 제어는 계좌 관리에서 수행합니다."
+            description="이 화면은 상태 조회와 실거래 리스크 한도 재적용만 제공합니다. 긴급 중지(Kill Switch)는 위쪽 리스크 제어를 사용하세요."
           />
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            title="Order Limit: Legacy V1 vs V2"
+            title="주문 한도: 레거시 V1 vs V2"
             description={
-              "Legacy daily_order_limit = 당일 CREATE 건수(제출 후 취소 포함). " +
-              "V2 daily_submit_limit / daily_filled_entry_limit = strategy-owned 제출·체결진입 분리. " +
+              "레거시 일일 주문 한도 = 당일 생성 건수(제출 후 취소 포함). " +
+              "V2 제출/체결진입 한도 = 전략 소유 제출·체결진입 분리. " +
               "권장 5/1은 표시만 하며 자동 저장하지 않습니다. " +
-              "V2는 계좌에 값을 명시한 뒤 2026-08-22(다음 KRX 가능일)부터 선택됩니다. " +
+              "V2는 계좌에 값을 명시한 뒤 다음 KRX 가능일부터 선택됩니다. " +
               "UBA1381 확인 시 user_id=61로 조회하세요."
             }
           />
           <AdminDataTable
-            title={`GET /admin/live-order/users/${targetUserId}/accounts`}
+            title="계좌 LIVE/ARM · 한도 현황"
             loading={liveAccounts.isLoading}
             error={
               liveAccounts.error ? toApiError(liveAccounts.error) : null
@@ -441,29 +441,29 @@ export default function AdminRiskPage() {
             }
             columns={[
               {
-                title: "UBA",
+                title: "계좌(UBA)",
                 dataIndex: "user_broker_account_id",
               },
-              { title: "broker", dataIndex: "broker_code" },
-              { title: "alias", dataIndex: "account_alias" },
+              { title: "거래소/증권사", dataIndex: "broker_code" },
+              { title: "별칭", dataIndex: "account_alias" },
               {
-                title: "LIVE",
+                title: "실거래(LIVE)",
                 key: "live",
                 render: (_: unknown, row: Record<string, unknown>) => (
                   <Tag color={row.live_order_enabled ? "green" : "default"}>
-                    {row.live_order_enabled ? "ON" : "OFF"}
+                    {row.live_order_enabled ? "켜짐" : "꺼짐"}
                   </Tag>
                 ),
               },
               {
-                title: "ARM",
+                title: "자동주문 승인(ARM)",
                 key: "arm",
                 render: (_: unknown, row: Record<string, unknown>) => {
                   const armed = Boolean(row.live_armed);
                   const expires = cell(row.arm_expires_at);
                   return (
                     <span style={{ fontSize: 12 }}>
-                      {armed ? `ARMED (~${expires})` : "DISARMED"}
+                      {armed ? `승인됨 (~${expires})` : "해제"}
                     </span>
                   );
                 },
@@ -503,25 +503,25 @@ export default function AdminRiskPage() {
                 },
               },
               {
-                title: "max_amount",
+                title: "최대 주문금액",
                 key: "max_amount",
                 render: (_: unknown, row: Record<string, unknown>) =>
                   cell(asRecord(row.risk)?.max_order_amount),
               },
               {
-                title: "max_qty",
+                title: "최대 주문수량",
                 key: "max_qty",
                 render: (_: unknown, row: Record<string, unknown>) =>
                   cell(asRecord(row.risk)?.max_order_quantity),
               },
               {
-                title: "daily_order_limit (V1 legacy)",
+                title: "일일 주문 한도 (V1 레거시)",
                 key: "daily_orders",
                 render: (_: unknown, row: Record<string, unknown>) =>
                   cell(asRecord(row.risk)?.daily_order_limit),
               },
               {
-                title: "Order Limit V2 (submit / filled-entry)",
+                title: "주문 한도 V2 (제출 / 체결진입)",
                 key: "order_limit_v2",
                 width: 320,
                 render: (_: unknown, row: Record<string, unknown>) => {
@@ -646,7 +646,7 @@ export default function AdminRiskPage() {
                 },
               },
               {
-                title: "daily_loss",
+                title: "일일 최대 손실",
                 key: "daily_loss",
                 render: (_: unknown, row: Record<string, unknown>) =>
                   cell(asRecord(row.risk)?.daily_max_loss_amount),
@@ -657,20 +657,20 @@ export default function AdminRiskPage() {
         </Card>
 
         <AdminDataTable
-          title="GET /risk-policies"
+          title="리스크 정책 목록"
           loading={policies.isLoading}
           error={policies.error ? toApiError(policies.error) : null}
           rowKey={(r) => cell(r.policy_id ?? r.policy_name ?? JSON.stringify(r))}
           columns={[
-            { title: "policy_id", dataIndex: "policy_id", sorter: true },
-            { title: "name", dataIndex: "policy_name" },
-            { title: "mode", dataIndex: "position_sizing_mode" },
-            { title: "stop_loss", dataIndex: "stop_loss_ratio" },
+            { title: "정책번호", dataIndex: "policy_id", sorter: true },
+            { title: "정책명", dataIndex: "policy_name" },
+            { title: "포지션 산정 방식", dataIndex: "position_sizing_mode" },
+            { title: "손절 비율", dataIndex: "stop_loss_ratio" },
           ]}
           dataSource={extractRows(policies.data)}
         />
         <AdminJsonCard
-          title="GET /dashboard/risk"
+          title="대시보드 리스크 요약"
           loading={dash.isLoading}
           error={dash.error ? toApiError(dash.error) : null}
           data={dash.data}

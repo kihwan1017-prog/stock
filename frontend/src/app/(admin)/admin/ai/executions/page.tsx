@@ -169,7 +169,7 @@ export default function AdminAiExecutionsPage() {
               { title: "Task", dataIndex: "task_type", width: 110 },
               { title: "Mode", dataIndex: "execution_mode", width: 90 },
               {
-                title: "Status",
+                title: "상태",
                 dataIndex: "status",
                 render: (v) => <Tag>{String(v)}</Tag>,
               },
@@ -283,7 +283,7 @@ export default function AdminAiExecutionsPage() {
               columns={[
                 { title: "#", dataIndex: "attempt_no", width: 50 },
                 { title: "Provider", dataIndex: "provider_code" },
-                { title: "Status", dataIndex: "status" },
+                { title: "상태", dataIndex: "status" },
                 { title: "Tokens", dataIndex: "total_tokens" },
                 { title: "Cost", dataIndex: "estimated_cost" },
                 { title: "Latency", dataIndex: "latency_ms" },

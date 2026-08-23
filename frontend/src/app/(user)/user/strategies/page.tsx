@@ -753,7 +753,7 @@ export default function UserStrategiesPage() {
             locale={{ emptyText: "연결된 Scope Runtime이 없습니다." }}
             columns={[
               {
-                title: "Broker",
+                title: "거래소/증권사",
                 dataIndex: "broker_code",
                 width: 80,
               },
@@ -763,7 +763,7 @@ export default function UserStrategiesPage() {
                 width: 80,
               },
               {
-                title: "Strategy",
+                title: "전략",
                 dataIndex: "strategy_id",
                 width: 90,
               },

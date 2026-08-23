@@ -390,12 +390,12 @@ export default function AdminAiCandidateAssessmentsPage() {
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "Market", dataIndex: "market_type", width: 90 },
             { title: "Exchange", dataIndex: "exchange_code", width: 90 },
-            { title: "Symbol", dataIndex: "symbol", width: 100 },
-            { title: "Status", dataIndex: "assessment_status", width: 160 },
+            { title: "종목", dataIndex: "symbol", width: 100 },
+            { title: "상태", dataIndex: "assessment_status", width: 160 },
             { title: "Analytical", dataIndex: "analytical_score", width: 90 },
-            { title: "Risk", dataIndex: "risk_score", width: 70 },
-            { title: "Confidence", dataIndex: "confidence", width: 100 },
-            { title: "Conflict", dataIndex: "conflict_status", width: 130 },
+            { title: "리스크", dataIndex: "risk_score", width: 70 },
+            { title: "신뢰도", dataIndex: "confidence", width: 100 },
+            { title: "불일치", dataIndex: "conflict_status", width: 130 },
             { title: "Mode", dataIndex: "execution_mode", width: 90 },
           ]}
         />

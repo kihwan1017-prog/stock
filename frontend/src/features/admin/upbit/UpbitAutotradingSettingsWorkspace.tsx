@@ -926,14 +926,14 @@ export function UpbitAutotradingSettingsWorkspace({
                     accountRisk.take_profit_pct,
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label="Trailing">
+              <Descriptions.Item label="트레일링">
                 {numOrDash(
                   exitFromOps.trailing_pct ??
                     exitFromOps.trailing_stop_pct ??
                     riskFromOps.trailing_pct,
                 )}
               </Descriptions.Item>
-              <Descriptions.Item label="Exit Monitor">
+              <Descriptions.Item label="청산 감시">
                 {opsSnap?.exitMonitor ?? "—"}
               </Descriptions.Item>
               <Descriptions.Item label="청산 후 쿨다운">
@@ -1391,16 +1391,16 @@ export function UpbitAutotradingSettingsWorkspace({
         </Space>
         {previewResult ? (
           <Descriptions size="small" bordered column={2}>
-            <Descriptions.Item label="Symbol">
+            <Descriptions.Item label="종목">
               {String(previewResult.symbol ?? previewSymbol)}
             </Descriptions.Item>
-            <Descriptions.Item label="Recommended">
+            <Descriptions.Item label="권장 금액">
               {numOrDash(previewResult.recommended_amount_krw)}
             </Descriptions.Item>
-            <Descriptions.Item label="Approved">
+            <Descriptions.Item label="승인 금액">
               {numOrDash(previewResult.approved_amount_krw)}
             </Descriptions.Item>
-            <Descriptions.Item label="Reasons">
+            <Descriptions.Item label="사유">
               {(Array.isArray(previewResult.clamp_reasons)
                 ? previewResult.clamp_reasons
                 : []

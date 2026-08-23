@@ -27,7 +27,7 @@ export const OPS_DASHBOARD_LABELS = {
   postFillScheduler: 'Post-fill 스케줄러',
   recoveryScheduler: '복구 스케줄러',
   runtime: '런타임',
-  killSwitch: 'Kill Switch',
+  killSwitch: '긴급 중지(Kill Switch)',
   criticalAlerts: '긴급 경고',
   manualReview: '수동 검토',
   orderableKrw: '주문 가능 원화',
@@ -40,6 +40,6 @@ export const OPS_DASHBOARD_LABELS = {
   status: '상태',
   noAccounts: '계좌 없음',
   owner: '소유자',
-  broker: '브로커',
+  broker: '거래소/증권사',
   credential: '자격증명',
 } as const;

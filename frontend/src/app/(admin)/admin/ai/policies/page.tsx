@@ -80,7 +80,7 @@ export default function AdminAiPoliciesPage() {
               { title: "Type", dataIndex: "policy_type" },
               { title: "Ver", dataIndex: "version", width: 60 },
               {
-                title: "Status",
+                title: "상태",
                 dataIndex: "status",
                 render: (v) => <Tag>{String(v)}</Tag>,
               },

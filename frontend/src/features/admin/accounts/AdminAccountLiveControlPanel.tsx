@@ -1015,7 +1015,7 @@ export function AdminAccountLiveControlPanel() {
             },
           },
           {
-            title: "Activation",
+            title: "계좌 활성화",
             key: "activation",
             width: 120,
             render: (_: unknown, row) => {
@@ -1024,13 +1024,13 @@ export function AdminAccountLiveControlPanel() {
               return (
                 <Space orientation="vertical" size={2}>
                   <Tag color={active ? "green" : "default"}>
-                    {active ? "ACTIVE" : "INACTIVE"}
+                    {active ? "활성" : "비활성"}
                   </Tag>
                   <Button
                     size="small"
                     onClick={() => setActivationUbaId(ubaId)}
                   >
-                    Activation
+                    활성화
                   </Button>
                 </Space>
               );
@@ -1065,7 +1065,7 @@ export function AdminAccountLiveControlPanel() {
             },
           },
           {
-            title: "LIVE",
+            title: "실거래(LIVE)",
             key: "live_control",
             width: 150,
             render: (_: unknown, row) => {
@@ -1146,7 +1146,7 @@ export function AdminAccountLiveControlPanel() {
             },
           },
           {
-            title: "ARM",
+            title: "자동주문 승인(ARM)",
             key: "arm_control",
             width: 160,
             render: (_: unknown, row) => {

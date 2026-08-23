@@ -449,7 +449,7 @@ export default function AdminAiCandidateLifecyclePage() {
                       rowKey={(r) => String(asRecord(r)?.revalidation_id)}
                       pagination={false}
                       columns={[
-                        { title: "Status", dataIndex: "revalidation_status", render: cell },
+                        { title: "상태", dataIndex: "revalidation_status", render: cell },
                         { title: "Match", dataIndex: "fingerprint_match", render: cell },
                         { title: "At", dataIndex: "completed_at", render: cell },
                       ]}
@@ -473,7 +473,7 @@ export default function AdminAiCandidateLifecyclePage() {
                       })}
                       columns={[
                         { title: "ID", dataIndex: "revocation_id", width: 70, render: cell },
-                        { title: "Status", dataIndex: "revocation_status", render: cell },
+                        { title: "상태", dataIndex: "revocation_status", render: cell },
                         { title: "Reason", dataIndex: "reason", render: cell },
                         { title: "At", dataIndex: "requested_at", render: cell },
                       ]}

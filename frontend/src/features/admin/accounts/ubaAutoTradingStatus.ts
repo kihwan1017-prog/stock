@@ -293,22 +293,23 @@ export function buildUbaAutoTradingViewModel(
     boolOrNull(worker.running) === true;
   const outboxOk = Number(checks.pending_live_outbox ?? 0) === 0;
 
+  // 표시용 라벨만 한글 — 내부 checklist 키/판정 로직은 그대로
   const checklist: Array<{ label: string; result: PassBlock }> = [
-    { label: "Strategy", result: passBlock(strategyOk) },
-    { label: "Runtime", result: passBlock(runtimeOk) },
-    { label: "Daily Risk", result: passBlock(riskOk) },
-    { label: "Activation", result: passBlock(activationOk) },
-    { label: "Market Feed", result: passBlock(feedOk) },
+    { label: "전략", result: passBlock(strategyOk) },
+    { label: "자동매매 런타임", result: passBlock(runtimeOk) },
+    { label: "일일 리스크", result: passBlock(riskOk) },
+    { label: "계좌 활성화", result: passBlock(activationOk) },
+    { label: "실시간 시세", result: passBlock(feedOk) },
     {
-      label: "AI Analysis",
+      label: "AI 분석",
       result: passBlock(aiFreshOk && recommendation !== "UNKNOWN"),
     },
-    { label: "AI Gate", result: passBlock(aiGateOk) },
-    { label: "Account Safety", result: passBlock(Boolean(accountSafetyOk)) },
-    { label: "LIVE", result: passBlock(liveOk) },
-    { label: "ARM", result: passBlock(armOk) },
-    { label: "Worker", result: passBlock(workerOk) },
-    { label: "Outbox", result: passBlock(outboxOk) },
+    { label: "AI 게이트", result: passBlock(aiGateOk) },
+    { label: "계좌 안전", result: passBlock(Boolean(accountSafetyOk)) },
+    { label: "실거래(LIVE)", result: passBlock(liveOk) },
+    { label: "자동주문 승인(ARM)", result: passBlock(armOk) },
+    { label: "주문 처리", result: passBlock(workerOk) },
+    { label: "주문 대기열", result: passBlock(outboxOk) },
   ];
 
   const reasons = asArray(

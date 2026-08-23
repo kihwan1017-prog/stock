@@ -149,7 +149,7 @@ export function RecoverySchedulerPanel() {
         scroll={{ x: 1100 }}
         columns={[
           {
-            title: "Job",
+            title: "작업",
             dataIndex: "display_name",
             render: (name: string, row) => (
               <Space orientation="vertical" size={0}>
@@ -161,13 +161,13 @@ export function RecoverySchedulerPanel() {
             ),
           },
           {
-            title: "Broker",
+            title: "거래소/증권사",
             dataIndex: "broker_code",
             width: 90,
             render: (v: string) => <Tag>{v}</Tag>,
           },
           {
-            title: "Trigger",
+            title: "트리거",
             width: 160,
             render: (_: unknown, row) =>
               row.trigger_type === "CRON"
@@ -265,12 +265,12 @@ export function RecoverySchedulerPanel() {
         pagination={false}
         columns={[
           {
-            title: "ID",
+            title: "번호",
             dataIndex: "job_run_id",
             width: 70,
           },
-          { title: "Job", dataIndex: "job_name" },
-          { title: "Trigger", dataIndex: "trigger_type", width: 110 },
+          { title: "작업", dataIndex: "job_name" },
+          { title: "트리거", dataIndex: "trigger_type", width: 110 },
           { title: "상태", dataIndex: "status_code", width: 90 },
           {
             title: "시작",
@@ -289,6 +289,33 @@ export function RecoverySchedulerPanel() {
         ]}
       />
 
+      <Form
+        form={editForm}
+        component={false}
+        layout="vertical"
+        onFinish={(values) => {
+          if (!editJob) return;
+          if (
+            editJob.trigger_type === "INTERVAL" &&
+            values.interval_minutes != null &&
+            values.interval_minutes < 5
+          ) {
+            messageApi.error("Interval 최소 5분입니다.");
+            return;
+          }
+          if (
+            values.timeout_seconds != null &&
+            values.timeout_seconds <= 0
+          ) {
+            messageApi.error("Timeout은 양수여야 합니다.");
+            return;
+          }
+          updateMutation.mutate({
+            job_id: editJob.job_id,
+            ...values,
+          });
+        }}
+      >
       <Modal
         title={editJob ? `설정 — ${editJob.display_name}` : "설정"}
         open={editJob !== null}
@@ -296,42 +323,17 @@ export function RecoverySchedulerPanel() {
         onOk={() => editForm.submit()}
         confirmLoading={updateMutation.isPending}
         forceRender
+        afterOpenChange={(opened) => {
+          if (!opened || !editJob) return;
+          editForm.setFieldsValue({
+            cron_expression: editJob.cron_expression ?? undefined,
+            interval_minutes: editJob.interval_minutes ?? undefined,
+            timeout_seconds: editJob.timeout_seconds,
+            max_retries: editJob.max_retries,
+            concurrency: editJob.concurrency,
+          });
+        }}
       >
-        {editJob ? (
-          <Form
-            key={editJob.job_id}
-            form={editForm}
-            layout="vertical"
-            initialValues={{
-              cron_expression: editJob.cron_expression ?? undefined,
-              interval_minutes: editJob.interval_minutes ?? undefined,
-              timeout_seconds: editJob.timeout_seconds,
-              max_retries: editJob.max_retries,
-              concurrency: editJob.concurrency,
-            }}
-            onFinish={(values) => {
-            if (!editJob) return;
-            if (
-              editJob.trigger_type === "INTERVAL" &&
-              values.interval_minutes != null &&
-              values.interval_minutes < 5
-            ) {
-              messageApi.error("Interval 최소 5분입니다.");
-              return;
-            }
-            if (
-              values.timeout_seconds != null &&
-              values.timeout_seconds <= 0
-            ) {
-              messageApi.error("Timeout은 양수여야 합니다.");
-              return;
-            }
-            updateMutation.mutate({
-              job_id: editJob.job_id,
-              ...values,
-            });
-          }}
-        >
           {editJob?.trigger_type === "CRON" ? (
             <Form.Item
               name="cron_expression"
@@ -358,9 +360,8 @@ export function RecoverySchedulerPanel() {
           <Form.Item name="concurrency" label="동시 실행 수">
             <InputNumber min={1} max={10} style={{ width: "100%" }} />
           </Form.Item>
-        </Form>
-        ) : null}
       </Modal>
+      </Form>
     </Card>
   );
 }

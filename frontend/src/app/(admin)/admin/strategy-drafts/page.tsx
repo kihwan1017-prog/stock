@@ -1655,7 +1655,7 @@ export default function AdminStrategyDraftsPage() {
         />
 
         <Space wrap align="start">
-          <Space direction="vertical" size={4}>
+          <Space orientation="vertical" size={4}>
             <Typography.Text type="secondary">필터</Typography.Text>
             <Space>
               <InputNumber
@@ -1675,7 +1675,7 @@ export default function AdminStrategyDraftsPage() {
             </Space>
           </Space>
 
-          <Space direction="vertical" size={4}>
+          <Space orientation="vertical" size={4}>
             <Typography.Text type="secondary">새 Draft(새 Version) 생성</Typography.Text>
             <Space wrap>
               <InputNumber
@@ -1720,7 +1720,7 @@ export default function AdminStrategyDraftsPage() {
           </Space>
         </Space>
 
-        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+        <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Alert
             type="info"
             showIcon
@@ -2553,7 +2553,7 @@ export default function AdminStrategyDraftsPage() {
                   </Typography.Text>
                 )}
                 {backtestIndicatorReqs.length > 0 && (
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     <Typography.Text type="secondary">필요 Indicator</Typography.Text>
                     <Space wrap>
                       {backtestIndicatorReqs.map((r, idx) => {
@@ -2568,7 +2568,7 @@ export default function AdminStrategyDraftsPage() {
                   </Space>
                 )}
                 {backtestRuntimeInputs.length > 0 && (
-                  <Space direction="vertical" size={2}>
+                  <Space orientation="vertical" size={2}>
                     <Typography.Text type="secondary">
                       실행 시 필요한 Runtime 입력(Definition에는 없음 — 실행 요청 시
                       주입 필요)
@@ -3573,7 +3573,7 @@ export default function AdminStrategyDraftsPage() {
                           { title: "Type", dataIndex: "evidence_type" },
                           { title: "Field", dataIndex: "source_field" },
                           { title: "Value", dataIndex: "source_value", render: cell },
-                          { title: "Status", dataIndex: "source_status" },
+                          { title: "상태", dataIndex: "source_status" },
                         ]}
                       />
 
@@ -4221,14 +4221,14 @@ export default function AdminStrategyDraftsPage() {
                       columns={[
                         { title: "User", dataIndex: "target_user_id", render: cell },
                         {
-                          title: "Account",
+                          title: "계좌",
                           render: (_: unknown, r: unknown) => {
                             const rec = asRecord(r);
                             return cell(rec?.target_user_broker_account_id ?? rec?.target_paper_account_id);
                           },
                         },
                         { title: "Market", dataIndex: "market_type", render: cell },
-                        { title: "Broker", dataIndex: "broker_code", render: cell },
+                        { title: "거래소/증권사", dataIndex: "broker_code", render: cell },
                         { title: "Execution Mode", dataIndex: "execution_mode", render: cell },
                         { title: "Strategy Version", dataIndex: "strategy_version", render: cell },
                         { title: "Registration Status", dataIndex: "registration_status", render: cell },
@@ -4546,14 +4546,14 @@ export default function AdminStrategyDraftsPage() {
                   columns={[
                     { title: "User", dataIndex: "target_user_id", render: cell },
                     {
-                      title: "Account",
+                      title: "계좌",
                       render: (_: unknown, r: unknown) => {
                         const rec = asRecord(r);
                         return cell(rec?.target_user_broker_account_id ?? rec?.target_paper_account_id);
                       },
                     },
                     { title: "Market", dataIndex: "market_type", render: cell },
-                    { title: "Broker", dataIndex: "broker_code", render: cell },
+                    { title: "거래소/증권사", dataIndex: "broker_code", render: cell },
                     { title: "Execution Mode", dataIndex: "execution_mode", render: cell },
                     { title: "Strategy Version", dataIndex: "strategy_version", render: cell },
                     {

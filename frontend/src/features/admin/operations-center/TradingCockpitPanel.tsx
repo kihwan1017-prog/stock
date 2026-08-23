@@ -490,7 +490,7 @@ export function TradingCockpitPanel({
           </Col>
           <Col xs={12} sm={8} md={6} lg={4}>
             <Statistic
-              title="Kill Switch"
+              title="긴급 중지(Kill Switch)"
               value={killActive ? "활성" : "정상"}
               styles={{
                 content: {
@@ -501,13 +501,13 @@ export function TradingCockpitPanel({
           </Col>
           <Col xs={12} sm={8} md={6} lg={4}>
             <Statistic
-              title="Critical Conflict"
+              title="중요 불일치"
               value={criticalConflict ?? "—"}
             />
           </Col>
           <Col xs={12} sm={8} md={6} lg={4}>
             <div>
-              <Typography.Text type="secondary">System Health</Typography.Text>
+              <Typography.Text type="secondary">시스템 상태</Typography.Text>
               <div>
                 <Tag color={toneToAntdColor(healthTone)}>
                   {String(systemHealth ?? "—")}

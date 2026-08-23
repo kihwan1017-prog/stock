@@ -282,9 +282,9 @@ export default function AdminAiCandidatePromotionsPage() {
           columns={[
             { title: "ID", dataIndex: "id", width: 80, render: cell },
             { title: "Queue", dataIndex: "queue_id", width: 90, render: cell },
-            { title: "Symbol", dataIndex: "symbol", width: 100, render: cell },
+            { title: "종목", dataIndex: "symbol", width: 100, render: cell },
             { title: "Exchange", dataIndex: "exchange_code", width: 90, render: cell },
-            { title: "Status", dataIndex: "promotion_status", render: cell },
+            { title: "상태", dataIndex: "promotion_status", render: cell },
             { title: "Decision", dataIndex: "queue_decision_snapshot", render: cell },
           ]}
         />

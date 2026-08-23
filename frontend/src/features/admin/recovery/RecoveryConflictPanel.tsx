@@ -109,7 +109,7 @@ export function RecoveryConflictPanel() {
       }),
     onSuccess: async () => {
       messageApi.success("내부 주문·체결 기록을 가져왔습니다.");
-      // Drawer destroyOnHidden — 닫기 전 미연결 reset 호출 금지
+      // Drawer forceRender — Form 연결 유지. 닫을 때 미연결 reset 불필요
       setDetailId(null);
       await invalidate();
     },
@@ -265,15 +265,15 @@ export function RecoveryConflictPanel() {
           style: { cursor: "pointer" },
         })}
         columns={[
-          { title: "ID", dataIndex: "conflict_id", width: 70 },
-          { title: "User", dataIndex: "user_id", width: 70 },
+          { title: "번호", dataIndex: "conflict_id", width: 70 },
+          { title: "사용자", dataIndex: "user_id", width: 70 },
           {
             title: "계좌",
             dataIndex: "masked_account",
             render: (v: string | null) => v ?? "-",
           },
-          { title: "Market", dataIndex: "market_code", width: 100 },
-          { title: "Side", dataIndex: "side_code", width: 70 },
+          { title: "시장", dataIndex: "market_code", width: 100 },
+          { title: "매수/매도", dataIndex: "side_code", width: 70 },
           {
             title: "UUID",
             dataIndex: "external_order_id_masked",
@@ -289,7 +289,7 @@ export function RecoveryConflictPanel() {
             ),
           },
           {
-            title: "Pause",
+            title: "일시정지",
             dataIndex: "account_paused",
             width: 70,
             render: (v: boolean) =>
@@ -303,12 +303,13 @@ export function RecoveryConflictPanel() {
         ]}
       />
 
+      <Form form={noteForm} component={false} layout="vertical">
       <Drawer
         title={`Conflict #${detailId ?? ""}`}
         open={detailId != null}
         size={560}
         onClose={() => setDetailId(null)}
-        destroyOnHidden
+        forceRender
         afterOpenChange={(open) => {
           if (open) {
             noteForm.resetFields();
@@ -364,11 +365,9 @@ export function RecoveryConflictPanel() {
               </Descriptions.Item>
             </Descriptions>
 
-            <Form form={noteForm} layout="vertical">
-              <Form.Item name="note" label="처리 메모 (선택·Ignore/Hold 시 필수)">
+            <Form.Item name="note" label="처리 메모 (선택·Ignore/Hold 시 필수)">
                 <Input.TextArea rows={2} maxLength={2000} />
               </Form.Item>
-            </Form>
 
             <Space wrap>
               <Button
@@ -455,6 +454,7 @@ export function RecoveryConflictPanel() {
           </Space>
         ) : null}
       </Drawer>
+      </Form>
     </Card>
   );
 }

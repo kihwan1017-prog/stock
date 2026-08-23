@@ -467,9 +467,9 @@ export default function AdminOrdersPage() {
               titles: ADMIN_ORDER_READ_TITLES,
               sorters: { order_id: true },
             }),
-            { title: "broker", dataIndex: "broker_code" },
+            { title: "거래소/증권사", dataIndex: "broker_code" },
             {
-              title: "AUTO/MANUAL",
+              title: "자동/수동",
               key: "ownership",
               width: 110,
               render: (_: unknown, row: OrderRow) => {
@@ -496,22 +496,22 @@ export default function AdminOrdersPage() {
               sorters: { symbol: true },
             }),
             {
-              title: "filled",
+              title: "체결수량",
               dataIndex: "filled_quantity",
               render: (v: unknown) => cell(v),
             },
             {
-              title: "strategy",
+              title: "전략",
               dataIndex: "strategy_code",
               render: (v: unknown) => cell(v),
             },
             {
-              title: "broker UUID",
+              title: "거래소 UUID",
               dataIndex: "broker_order_id",
               render: (v: unknown) => cell(v),
             },
             {
-              title: "created",
+              title: "주문시각",
               dataIndex: "created_at",
               render: (v: unknown) => cell(v),
             },
@@ -667,16 +667,16 @@ export default function AdminOrdersPage() {
         </Card>
 
         <AdminDataTable
-          title="GET /paper-orders"
+          title="모의거래 주문"
           loading={paperOrders.isLoading}
           error={paperOrders.error ? toApiError(paperOrders.error) : null}
           rowKey={(r) => cell(r.order_id ?? JSON.stringify(r))}
           columns={[
-            { title: "order_id", dataIndex: "order_id" },
-            { title: "symbol", dataIndex: "symbol" },
-            { title: "side", dataIndex: "side" },
-            { title: "status", dataIndex: "status_code" },
-            { title: "qty", dataIndex: "requested_quantity" },
+            { title: "주문번호", dataIndex: "order_id" },
+            { title: "종목", dataIndex: "symbol" },
+            { title: "매수/매도", dataIndex: "side" },
+            { title: "상태", dataIndex: "status_code" },
+            { title: "수량", dataIndex: "requested_quantity" },
             {
               title: "취소",
               render: (_, row) => (
@@ -696,7 +696,7 @@ export default function AdminOrdersPage() {
         />
 
         <AdminJsonCard
-          title="GET /order-outbox"
+          title="주문 대기열(Outbox)"
           loading={outbox.isLoading}
           error={outbox.error ? toApiError(outbox.error) : null}
           data={outbox.data}

@@ -198,7 +198,7 @@ export function BrokerSnapshotsPanel() {
 
       <Card
         type="inner"
-        title="ORPHAN Queue"
+        title="고아(ORPHAN) 대기열"
         size="small"
         style={{ marginBottom: 12 }}
       >
@@ -209,23 +209,23 @@ export function BrokerSnapshotsPanel() {
           dataSource={orphans}
           pagination={false}
           columns={[
-            { title: "ID", dataIndex: "broker_account_snapshot_id", width: 70 },
-            { title: "Broker", dataIndex: "broker_code", width: 90 },
+            { title: "번호", dataIndex: "broker_account_snapshot_id", width: 70 },
+            { title: "거래소/증권사", dataIndex: "broker_code", width: 90 },
             {
-              title: "Masked",
+              title: "계좌(마스킹)",
               dataIndex: "masked_account_number",
               ellipsis: true,
             },
             {
-              title: "Status",
+              title: "상태",
               dataIndex: "snapshot_status",
               render: (v: string) => (
                 <Tag color={SNAPSHOT_STATUS_COLOR[v] ?? "default"}>{v}</Tag>
               ),
             },
-            { title: "Age(s)", dataIndex: "age_seconds", width: 80 },
+            { title: "경과(초)", dataIndex: "age_seconds", width: 80 },
             {
-              title: "Actions",
+              title: "작업",
               key: "actions",
               render: (_: unknown, row) => (
                 <Space>
@@ -270,21 +270,21 @@ export function BrokerSnapshotsPanel() {
           dataSource={items}
           pagination={{ pageSize: 10 }}
           columns={[
-            { title: "ID", dataIndex: "broker_account_snapshot_id", width: 70 },
-            { title: "UBA", dataIndex: "user_broker_account_id", width: 80 },
-            { title: "Broker", dataIndex: "broker_code", width: 90 },
+            { title: "번호", dataIndex: "broker_account_snapshot_id", width: 70 },
+            { title: "계좌", dataIndex: "user_broker_account_id", width: 80 },
+            { title: "거래소/증권사", dataIndex: "broker_code", width: 90 },
             {
-              title: "Status",
+              title: "상태",
               dataIndex: "snapshot_status",
               render: (v: string) => (
                 <Tag color={SNAPSHOT_STATUS_COLOR[v] ?? "default"}>{v}</Tag>
               ),
             },
-            { title: "Gen", dataIndex: "snapshot_generation", width: 60 },
-            { title: "Age(s)", dataIndex: "age_seconds" },
-            { title: "Hash", dataIndex: "snapshot_hash", ellipsis: true },
+            { title: "세대", dataIndex: "snapshot_generation", width: 60 },
+            { title: "경과(초)", dataIndex: "age_seconds" },
+            { title: "해시", dataIndex: "snapshot_hash", ellipsis: true },
             {
-              title: "Verify",
+              title: "검증",
               key: "verify",
               render: (_: unknown, row) => (
                 <Button
@@ -297,7 +297,7 @@ export function BrokerSnapshotsPanel() {
                     setReasonOpen(true);
                   }}
                 >
-                  Verify
+                  검증
                 </Button>
               ),
             },

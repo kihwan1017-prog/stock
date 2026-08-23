@@ -246,7 +246,7 @@ export default function AdminRecoveryPage() {
             dataSource={accountStates}
             locale={{ emptyText: "상태 없음" }}
             columns={[
-              { title: "Broker", dataIndex: "broker_code", render: cell },
+              { title: "거래소/증권사", dataIndex: "broker_code", render: cell },
               { title: "User", dataIndex: "user_id", width: 80, render: cell },
               {
                 title: "Paper",
@@ -317,7 +317,7 @@ export default function AdminRecoveryPage() {
                 width: 70,
                 render: cell,
               },
-              { title: "Broker", dataIndex: "broker_code", render: cell },
+              { title: "거래소/증권사", dataIndex: "broker_code", render: cell },
               { title: "Trigger", dataIndex: "trigger_type", render: cell },
               {
                 title: "상태",
@@ -337,7 +337,7 @@ export default function AdminRecoveryPage() {
                 render: cell,
               },
               {
-                title: "Conflict",
+                title: "불일치",
                 dataIndex: "conflicts_found",
                 width: 90,
                 render: cell,

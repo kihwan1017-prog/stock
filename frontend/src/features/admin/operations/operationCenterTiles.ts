@@ -50,7 +50,7 @@ export const OPERATION_CENTER_TILES: OperationCenterTile[] = [
   },
   {
     id: "broker",
-    title: "Broker",
+    title: "거래소/증권사",
     description: "키움 · 업비트 · 계좌 연동",
     href: adminRoutes.kiwoom,
     support: "live",

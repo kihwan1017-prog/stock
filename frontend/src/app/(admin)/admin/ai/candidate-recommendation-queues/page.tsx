@@ -503,12 +503,12 @@ export default function AdminAiCandidateRecommendationQueuesPage() {
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "Source", dataIndex: "source_type", width: 160 },
             { title: "Market", dataIndex: "market_type", width: 90 },
-            { title: "Symbol", dataIndex: "symbol", width: 100 },
-            { title: "Status", dataIndex: "queue_status", width: 200 },
+            { title: "종목", dataIndex: "symbol", width: 100 },
+            { title: "상태", dataIndex: "queue_status", width: 200 },
             { title: "Priority", dataIndex: "priority", width: 90 },
             { title: "Assigned", dataIndex: "assigned_to", width: 120 },
             { title: "Analytical", dataIndex: "analytical_score", width: 90 },
-            { title: "Risk", dataIndex: "risk_score", width: 70 },
+            { title: "리스크", dataIndex: "risk_score", width: 70 },
           ]}
         />
 
@@ -540,7 +540,7 @@ export default function AdminAiCandidateRecommendationQueuesPage() {
               columns={[
                 { title: "ID", dataIndex: "id", width: 60 },
                 { title: "Ver", dataIndex: "review_version", width: 50 },
-                { title: "Status", dataIndex: "review_status", width: 100 },
+                { title: "상태", dataIndex: "review_status", width: 100 },
                 { title: "Overall", dataIndex: "overall_score", width: 80 },
                 { title: "Safety", dataIndex: "safety_score", width: 70 },
                 { title: "Scope", dataIndex: "recommendation_scope", width: 140 },

@@ -126,7 +126,7 @@ export function DashboardSystemInfra({ data, loading }: Props) {
           rowKey="broker"
           dataSource={brokerRows}
           columns={[
-            { title: "Broker", dataIndex: "broker" },
+            { title: "거래소/증권사", dataIndex: "broker" },
             {
               title: "Health",
               dataIndex: "health",
@@ -151,7 +151,7 @@ export function DashboardSystemInfra({ data, loading }: Props) {
           dataSource={accountRows}
           columns={[
             { title: "UBA", dataIndex: "user_broker_account_id" },
-            { title: "Broker", dataIndex: "broker_code" },
+            { title: "거래소/증권사", dataIndex: "broker_code" },
           ]}
         />
         <Table
@@ -161,8 +161,8 @@ export function DashboardSystemInfra({ data, loading }: Props) {
           rowKey={(r) => String(r.symbol)}
           dataSource={positionRows}
           columns={[
-            { title: "Symbol", dataIndex: "symbol" },
-            { title: "PnL", dataIndex: "unrealized_pnl" },
+            { title: "종목", dataIndex: "symbol" },
+            { title: "손익(PnL)", dataIndex: "unrealized_pnl" },
           ]}
         />
       </Card>
@@ -188,7 +188,7 @@ export function DashboardSystemInfra({ data, loading }: Props) {
           dataSource={aiProviderRows}
           columns={[
             { title: "Provider", dataIndex: "id" },
-            { title: "Status", dataIndex: "status" },
+            { title: "상태", dataIndex: "status" },
           ]}
         />
       </Card>

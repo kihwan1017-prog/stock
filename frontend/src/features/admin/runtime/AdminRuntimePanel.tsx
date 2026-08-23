@@ -83,7 +83,7 @@ export function AdminRuntimePanel() {
         pagination={{ pageSize: 10 }}
         columns={[
           { title: "User", dataIndex: "user_id", width: 70 },
-          { title: "Broker", dataIndex: "broker_code", width: 80 },
+          { title: "거래소/증권사", dataIndex: "broker_code", width: 80 },
           { title: "Market", dataIndex: "market_type", width: 80 },
           {
             title: "계좌",
@@ -93,7 +93,7 @@ export function AdminRuntimePanel() {
                 ? `paper:${r.account_id}`
                 : `uba:${r.account_id}`,
           },
-          { title: "Strategy", dataIndex: "strategy_id", width: 90 },
+          { title: "전략", dataIndex: "strategy_id", width: 90 },
           {
             title: "상태",
             dataIndex: "status",

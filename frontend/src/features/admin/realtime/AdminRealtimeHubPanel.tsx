@@ -74,22 +74,22 @@ export function AdminRealtimeHubPanel() {
         }
       />
       <AdminDataTable
-        title="Realtime Scopes"
+        title="실시간 실행 범위"
         loading={scopes.isLoading}
         error={scopes.error ? toApiError(scopes.error) : null}
         rowKey={(r) => cell(r.scope_key ?? JSON.stringify(r))}
         columns={[
-          { title: "User", dataIndex: "user_id", width: 70 },
+          { title: "사용자", dataIndex: "user_id", width: 70 },
           { title: "계좌", dataIndex: "account_masked", width: 100 },
-          { title: "Broker", dataIndex: "broker_code", width: 80 },
-          { title: "Strategy", dataIndex: "strategy_id", width: 80 },
-          { title: "Ver", dataIndex: "strategy_version", width: 70 },
-          { title: "Status", dataIndex: "runtime_status", width: 100 },
-          { title: "Warm-up", dataIndex: "warmup_status", width: 110 },
-          { title: "Last Signal", dataIndex: "last_signal_at" },
-          { title: "Error", dataIndex: "last_error" },
+          { title: "거래소/증권사", dataIndex: "broker_code", width: 80 },
+          { title: "전략", dataIndex: "strategy_id", width: 80 },
+          { title: "버전", dataIndex: "strategy_version", width: 70 },
+          { title: "상태", dataIndex: "runtime_status", width: 100 },
+          { title: "예열", dataIndex: "warmup_status", width: 110 },
+          { title: "최근 신호", dataIndex: "last_signal_at" },
+          { title: "오류", dataIndex: "last_error" },
           {
-            title: "Actions",
+            title: "작업",
             key: "actions",
             width: 180,
             render: (_: unknown, row: Record<string, unknown>) => {
@@ -102,7 +102,7 @@ export function AdminRealtimeHubPanel() {
                     loading={reconnect.isPending}
                     onClick={() => reconnect.mutate(key)}
                   >
-                    Reconnect
+                    재연결
                   </Button>
                   <Button
                     size="small"

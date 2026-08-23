@@ -265,7 +265,6 @@ export default function UserRiskPage() {
         <Card
           title="사용자 기본 리스크 설정"
           size="small"
-          loading={riskQuery.isLoading}
           extra={
             <span style={{ fontSize: 12, color: "rgba(0,0,0,0.45)" }}>
               layers: {String(resolved?.source_layers ?? "-")}
@@ -284,6 +283,7 @@ export default function UserRiskPage() {
             key={`user-risk-${riskQuery.dataUpdatedAt}`}
             form={form}
             layout="vertical"
+            disabled={riskQuery.isLoading}
             initialValues={userInitialValues}
             onFinish={(values) => {
               saveUser.mutate({
@@ -394,14 +394,17 @@ export default function UserRiskPage() {
 
         <Card title="계좌별 리스크 설정 (키움·업비트)" size="small">
           {brokerAccounts.length === 0 ? (
-            <Alert
-              type="warning"
-              showIcon
-              title="연결된 실계좌가 없습니다."
-              description={
-                <Link href={userRoutes.accounts}>내 계좌에서 키움/업비트 계좌를 연결하세요.</Link>
-              }
-            />
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                title="연결된 실계좌가 없습니다."
+                description={
+                  <Link href={userRoutes.accounts}>내 계좌에서 키움/업비트 계좌를 연결하세요.</Link>
+                }
+              />
+              <Form form={accountForm} style={{ display: "none" }} preserve={false} />
+            </>
           ) : (
             <>
               <Select

@@ -105,8 +105,10 @@ export default function AdminUpbitLiveValidationPage() {
 
   const ready = Boolean(preflight?.ready);
   const blockers = (preflight?.blockers as string[] | undefined) ?? [];
+  // render 중 getFieldValue 호출은 useForm 미연결 경고를 유발할 수 있음
+  const watchedAmount = Form.useWatch("amount", form);
   const liveEnabled = useMemo(() => {
-    const amount = Number(form.getFieldValue("amount") ?? 0);
+    const amount = Number(watchedAmount ?? 0);
     return (
       ready &&
       blockers.length === 0 &&
@@ -122,7 +124,7 @@ export default function AdminUpbitLiveValidationPage() {
     confirmText,
     locked,
     executeMut.isPending,
-    form,
+    watchedAmount,
   ]);
 
   const checkRows = (

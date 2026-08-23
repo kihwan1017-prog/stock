@@ -327,12 +327,12 @@ export default function UserAutoTradingPage() {
           {/* Kill Switch */}
           <Col xs={24} lg={12}>
             <Card
-              title="Kill Switch"
+              title="긴급 중지(Kill Switch)"
               size="small"
               loading={killQuery.isLoading}
               extra={
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  GET /risk/kill-switch
+                  상태 조회
                 </Typography.Text>
               }
             >

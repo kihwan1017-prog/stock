@@ -318,33 +318,33 @@ export function UbaAutoTradingStatusPanel({
 
       <Section title="Daily Risk">
         <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label="KST date">
+          <Descriptions.Item label="기준일(KST)">
             {vm.dailyRisk.kstDate}
           </Descriptions.Item>
-          <Descriptions.Item label="Daily Orders (V1 legacy)">
+          <Descriptions.Item label="일일 주문 수 (V1 레거시)">
             {vm.dailyRisk.dailyOrderCount} / {vm.dailyRisk.dailyOrderLimit}
           </Descriptions.Item>
-          <Descriptions.Item label="Order Limit V2 SUBMIT">
+          <Descriptions.Item label="주문 한도 V2 · 제출">
             {vm.dailyRisk.dailySubmitCount} / {vm.dailyRisk.dailySubmitLimit}
           </Descriptions.Item>
-          <Descriptions.Item label="Order Limit V2 FILLED ENTRY">
+          <Descriptions.Item label="주문 한도 V2 · 체결 진입">
             {vm.dailyRisk.dailyFilledEntryCount} /{" "}
             {vm.dailyRisk.dailyFilledEntryLimit}
           </Descriptions.Item>
-          <Descriptions.Item label="Order Limit policy (today)">
+          <Descriptions.Item label="주문 한도 정책 (오늘)">
             {vm.dailyRisk.orderLimitPolicyVersion}
           </Descriptions.Item>
-          <Descriptions.Item label="Order Limit policy (next KRX)">
+          <Descriptions.Item label="주문 한도 정책 (다음 KRX)">
             {vm.dailyRisk.orderLimitPolicyVersionNextKrx}
-            {vm.dailyRisk.orderLimitV2OptedIn ? " · opted-in" : " · not opted-in"}
+            {vm.dailyRisk.orderLimitV2OptedIn ? " · 적용" : " · 미적용"}
           </Descriptions.Item>
-          <Descriptions.Item label="Max Order">
-            {vm.dailyRisk.maxOrderAmount} KRW
+          <Descriptions.Item label="최대 주문금액">
+            {vm.dailyRisk.maxOrderAmount}원
           </Descriptions.Item>
-          <Descriptions.Item label="Daily Max Order">
-            {vm.dailyRisk.dailyMaxOrderAmount} KRW
+          <Descriptions.Item label="일일 최대 주문금액">
+            {vm.dailyRisk.dailyMaxOrderAmount}원
           </Descriptions.Item>
-          <Descriptions.Item label="risk_counted_order_ids">
+          <Descriptions.Item label="리스크 집계 주문번호">
             {vm.dailyRisk.riskCountedOrderIds}
           </Descriptions.Item>
         </Descriptions>
@@ -361,42 +361,42 @@ export function UbaAutoTradingStatusPanel({
         </div>
       </Section>
 
-      <Section title="Activation / LIVE / ARM / Worker">
+      <Section title="계좌 활성화 / 실거래(LIVE) / 자동주문 승인(ARM) / 주문 처리">
         <Descriptions column={1} size="small" bordered>
-          <Descriptions.Item label="Activation">
+          <Descriptions.Item label="계좌 활성화">
             <Tag color={vm.ops.activationLabel === "ACTIVE" ? "green" : "red"}>
               {vm.ops.activationLabel}
             </Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="transition_id">
+          <Descriptions.Item label="전환 ID">
             {vm.ops.transitionId}
           </Descriptions.Item>
-          <Descriptions.Item label="Activation expires_at">
+          <Descriptions.Item label="활성화 만료 시각">
             {vm.ops.expiresAt}
           </Descriptions.Item>
-          <Descriptions.Item label="Activation remaining">
+          <Descriptions.Item label="활성화 남은 시간">
             {vm.ops.remainingTtl}
           </Descriptions.Item>
-          <Descriptions.Item label="LIVE">
+          <Descriptions.Item label="실거래(LIVE)">
             <Tag color={vm.ops.liveOn ? "green" : "default"}>
               {onOff(vm.ops.liveOn)}
             </Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="ARM">
+          <Descriptions.Item label="자동주문 승인(ARM)">
             <Tag color={vm.ops.armOn ? "green" : "default"}>
               {onOff(vm.ops.armOn)}
             </Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="ARM expires">
+          <Descriptions.Item label="ARM 만료">
             {vm.ops.armExpires}
           </Descriptions.Item>
-          <Descriptions.Item label="Worker enabled/running">
+          <Descriptions.Item label="주문 처리 활성/실행">
             {onOff(vm.ops.workerEnabled)} / {onOff(vm.ops.workerRunning)}
           </Descriptions.Item>
-          <Descriptions.Item label="pending LIVE outbox">
+          <Descriptions.Item label="대기 중인 실주문 큐">
             {vm.ops.pendingOutbox}
           </Descriptions.Item>
-          <Descriptions.Item label="Strategy Runtime">
+          <Descriptions.Item label="전략 런타임">
             <Tag
               color={
                 vm.ops.runtimeLifecycle === "RUNNING"

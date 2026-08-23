@@ -68,7 +68,7 @@ export function runtimeValueLabelKo(raw: string | null | undefined): string {
     case "":
       return "—";
     default:
-      return s ? s : "—";
+      return s ? `확인 필요 (${s})` : "—";
   }
 }
 
@@ -93,7 +93,36 @@ export function orderStatusLabelKo(raw: string | null | undefined): string {
     case "EXPIRED":
       return "만료";
     case "PENDING":
-      return "대기";
+      return "처리 중";
+    case "PENDING_SUBMIT":
+    case "SUBMITTING":
+      return "제출 중";
+    default:
+      return s ? `확인 필요 (${s})` : "—";
+  }
+}
+
+export function sideLabelKo(raw: string | null | undefined): string {
+  const s = String(raw ?? "").trim().toUpperCase();
+  switch (s) {
+    case "BUY":
+    case "BID":
+      return "매수";
+    case "SELL":
+    case "ASK":
+      return "매도";
+    default:
+      return s ? `확인 필요 (${s})` : "—";
+  }
+}
+
+export function tradingKindLabelKo(raw: string | null | undefined): string {
+  const s = String(raw ?? "").trim().toUpperCase();
+  switch (s) {
+    case "AUTO":
+      return "자동매매";
+    case "MANUAL":
+      return "수동매매";
     default:
       return s ? `확인 필요 (${s})` : "—";
   }

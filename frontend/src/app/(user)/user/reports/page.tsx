@@ -142,7 +142,7 @@ export default function UserReportsPage() {
               dataSource={settlementItems}
               columns={[
                 { title: "날짜", dataIndex: "market_date", render: cell },
-                { title: "Broker", dataIndex: "broker_code", render: cell },
+                { title: "거래소/증권사", dataIndex: "broker_code", render: cell },
                 {
                   title: "상태",
                   dataIndex: "status_code",

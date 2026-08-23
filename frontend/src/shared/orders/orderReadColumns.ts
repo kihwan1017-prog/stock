@@ -5,6 +5,10 @@
 import type { ColumnsType } from "antd/es/table";
 
 import { cell } from "@/shared/utils/dataHelpers";
+import {
+  orderStatusLabelKo,
+  sideLabelKo,
+} from "@/features/shared/display/tradingDisplayLabelsKo";
 
 /** shared column이 읽는 최소 row shape — Admin Record / User TradeOrder 호환 */
 export type OrderReadRow = {
@@ -31,20 +35,20 @@ export const ORDER_READ_COLUMN_KEYS = [
 
 export type OrderReadColumnKey = (typeof ORDER_READ_COLUMN_KEYS)[number];
 
-/** Admin 기존 라벨 (EN) */
+/** Admin 주문 목록 표시 라벨 (API dataIndex는 영문 유지) */
 export const ADMIN_ORDER_READ_TITLES: Record<OrderReadColumnKey, string> = {
-  order_id: "order_id",
-  exchange_code: "exchange",
-  symbol: "symbol",
-  side_code: "side",
-  status_code: "status",
-  order_quantity: "qty",
-  order_price: "price",
+  order_id: "주문번호",
+  exchange_code: "시장",
+  symbol: "종목",
+  side_code: "매수/매도",
+  status_code: "상태",
+  order_quantity: "수량",
+  order_price: "가격",
 };
 
-/** User paper/broker 기존 라벨 (KO) */
+/** User paper/broker 표시 라벨 */
 export const USER_ORDER_READ_TITLES: Record<OrderReadColumnKey, string> = {
-  order_id: "ID",
+  order_id: "주문번호",
   exchange_code: "시장",
   symbol: "종목",
   side_code: "구분",
@@ -88,13 +92,29 @@ export function createOrderReadColumn<T extends OrderReadRow = OrderReadRow>(
   key: OrderReadColumnKey,
   options?: BuildOrderReadColumnOptions,
 ): ColumnsType<T>[number] {
-  return {
+  const base = {
     title: options?.title ?? ADMIN_ORDER_READ_TITLES[key],
     dataIndex: key,
     key,
     width: options?.width,
     sorter: options?.sorter ? true : undefined,
-    // nullish → "-" (M6-A cell 재사용)
+  };
+  // 표시만 한글화 — API 원본 code는 그대로 유지
+  if (key === "side_code") {
+    return {
+      ...base,
+      render: (value: unknown) => sideLabelKo(value == null ? null : String(value)),
+    };
+  }
+  if (key === "status_code") {
+    return {
+      ...base,
+      render: (value: unknown) =>
+        orderStatusLabelKo(value == null ? null : String(value)),
+    };
+  }
+  return {
+    ...base,
     render: (value: unknown) => cell(value),
   };
 }

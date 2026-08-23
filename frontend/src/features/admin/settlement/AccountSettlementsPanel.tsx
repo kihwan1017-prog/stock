@@ -182,9 +182,9 @@ export function AccountSettlementsPanel() {
             onClick: () => setDetailId(Number(row.settlement_id)),
           })}
           columns={[
-            { title: "ID", dataIndex: "settlement_id", width: 70 },
+            { title: "번호", dataIndex: "settlement_id", width: 70 },
             { title: "날짜", dataIndex: "market_date", width: 110 },
-            { title: "Broker", dataIndex: "broker_code", width: 90 },
+            { title: "거래소/증권사", dataIndex: "broker_code", width: 90 },
             {
               title: "상태",
               dataIndex: "status_code",
@@ -192,19 +192,19 @@ export function AccountSettlementsPanel() {
                 <Tag color={SETTLEMENT_STATUS_COLOR[v] ?? "default"}>{v}</Tag>
               ),
             },
-            { title: "Internal", dataIndex: "internal_equity" },
-            { title: "External", dataIndex: "external_equity" },
-            { title: "Diff", dataIndex: "equity_difference" },
-            { title: "Net PnL", dataIndex: "net_pnl" },
+            { title: "내부 자산", dataIndex: "internal_equity" },
+            { title: "외부 자산", dataIndex: "external_equity" },
+            { title: "차이", dataIndex: "equity_difference" },
+            { title: "순손익", dataIndex: "net_pnl" },
             {
-              title: "Issues",
+              title: "이슈",
               key: "issues",
               render: (_: unknown, row) =>
                 Number(row.position_mismatch_count ?? 0) +
                 Number(row.unresolved_order_count ?? 0),
             },
             {
-              title: "액션",
+              title: "작업",
               key: "actions",
               render: (_: unknown, row) => (
                 <Space>
@@ -277,7 +277,7 @@ export function AccountSettlementsPanel() {
             </Descriptions>
           ) : null}
           <Typography.Title level={5} style={{ marginTop: 12 }}>
-            Issues
+            이슈
           </Typography.Title>
           <Table
             size="small"
@@ -286,16 +286,16 @@ export function AccountSettlementsPanel() {
             dataSource={issuesQuery.data?.items ?? []}
             pagination={false}
             columns={[
-              { title: "Type", dataIndex: "issue_type" },
-              { title: "Severity", dataIndex: "severity" },
-              { title: "Symbol", dataIndex: "symbol" },
-              { title: "Local", dataIndex: "local_value" },
-              { title: "External", dataIndex: "external_value" },
-              { title: "Diff", dataIndex: "difference" },
+              { title: "유형", dataIndex: "issue_type" },
+              { title: "심각도", dataIndex: "severity" },
+              { title: "종목", dataIndex: "symbol" },
+              { title: "내부 값", dataIndex: "local_value" },
+              { title: "외부 값", dataIndex: "external_value" },
+              { title: "차이", dataIndex: "difference" },
               {
-                title: "Resolved",
+                title: "해결",
                 dataIndex: "resolved",
-                render: (v: boolean) => (v ? "Y" : "N"),
+                render: (v: boolean) => (v ? "예" : "아니오"),
               },
             ]}
           />

@@ -460,12 +460,12 @@ export default function AdminAiCandidateConsensusesPage() {
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "Market", dataIndex: "market_type", width: 90 },
             { title: "Exchange", dataIndex: "exchange_code", width: 90 },
-            { title: "Symbol", dataIndex: "symbol", width: 100 },
-            { title: "Status", dataIndex: "consensus_status", width: 160 },
+            { title: "종목", dataIndex: "symbol", width: 100 },
+            { title: "상태", dataIndex: "consensus_status", width: 160 },
             { title: "Agreement", dataIndex: "agreement_level", width: 150 },
             { title: "Analytical", dataIndex: "analytical_score", width: 90 },
-            { title: "Risk", dataIndex: "risk_score", width: 70 },
-            { title: "Confidence", dataIndex: "confidence", width: 100 },
+            { title: "리스크", dataIndex: "risk_score", width: 70 },
+            { title: "신뢰도", dataIndex: "confidence", width: 100 },
             { title: "Members", dataIndex: "included_count", width: 80 },
             { title: "Mode", dataIndex: "calculation_mode", width: 200 },
           ]}
@@ -526,8 +526,8 @@ export default function AdminAiCandidateConsensusesPage() {
                 { title: "Independence", dataIndex: "independence_status", width: 140 },
                 { title: "Weight", dataIndex: "final_weight", width: 80 },
                 { title: "Analytical", dataIndex: "analytical_score", width: 90 },
-                { title: "Risk", dataIndex: "risk_score", width: 70 },
-                { title: "Confidence", dataIndex: "confidence", width: 90 },
+                { title: "리스크", dataIndex: "risk_score", width: 70 },
+                { title: "신뢰도", dataIndex: "confidence", width: 90 },
                 { title: "Review", dataIndex: "review_decision", width: 120 },
               ]}
             />
@@ -542,7 +542,7 @@ export default function AdminAiCandidateConsensusesPage() {
                 { title: "Severity", dataIndex: "severity", width: 90 },
                 { title: "Field", dataIndex: "field_path", width: 120 },
                 { title: "Assessments", dataIndex: "assessment_ids", width: 120 },
-                { title: "Status", dataIndex: "resolution_status", width: 110 },
+                { title: "상태", dataIndex: "resolution_status", width: 110 },
                 { title: "Description", dataIndex: "description", ellipsis: true },
               ]}
             />

@@ -295,7 +295,7 @@ export function GuidedUpbitLiveSmokePanel() {
     { title: "계좌" },
     { title: "Pre-flight" },
     { title: "종목" },
-    { title: "Preview" },
+    { title: "미리보기" },
     { title: "Order Test" },
     { title: "확인" },
     { title: "결과" },

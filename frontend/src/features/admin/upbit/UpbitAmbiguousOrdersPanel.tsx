@@ -32,7 +32,7 @@ function formatTs(value: unknown): string {
   }
 }
 
-/** STEP 8-5-12 ??Upbit Ambiguous ?? ??? */
+/** STEP 8-5-12 — Upbit Ambiguous 주문 패널 */
 export function UpbitAmbiguousOrdersPanel() {
   const { message } = App.useApp();
   const qc = useQueryClient();
@@ -47,7 +47,7 @@ export function UpbitAmbiguousOrdersPanel() {
     queryFn: () => adminApi.getUpbitAmbiguousHealth(),
   });
 
-  // STEP 8-5-14 ??Resolver Scheduler ??? / ??? ???
+  // STEP 8-5-14 — Resolver Scheduler 상태 / 실행 이력
   const resolverStatusQuery = useQuery({
     queryKey: ["admin", "upbit-ambiguous-resolver-status"],
     queryFn: () => adminApi.getUpbitAmbiguousResolverStatus(),
@@ -79,7 +79,7 @@ export function UpbitAmbiguousOrdersPanel() {
     onSuccess: (result) => {
       const r = asRecord(result);
       message.success(
-        `Resolver ?? ???: ${String(r?.status ?? "OK")} (claimed=${cell(r?.claimed_count)})`,
+        `Resolver 즉시 실행: ${String(r?.status ?? "OK")} (claimed=${cell(r?.claimed_count)})`,
       );
       invalidateAll();
     },
@@ -90,7 +90,7 @@ export function UpbitAmbiguousOrdersPanel() {
     mutationFn: (orderId: number) =>
       adminApi.retryUpbitAmbiguousLookup(orderId),
     onSuccess: () => {
-      message.success("Claim ????????????");
+      message.success("Claim 경로로 재조회 완료");
       invalidateAll();
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -100,7 +100,7 @@ export function UpbitAmbiguousOrdersPanel() {
     mutationFn: (orderId: number) =>
       adminApi.releaseUpbitAmbiguousStaleClaim(orderId),
     onSuccess: () => {
-      message.success("????Claim???????????");
+      message.success("만료된 Claim을 해제했습니다");
       invalidateAll();
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -110,7 +110,7 @@ export function UpbitAmbiguousOrdersPanel() {
     mutationFn: (orderId: number) =>
       adminApi.lookupUpbitAmbiguousOrder(orderId),
     onSuccess: () => {
-      message.success("??? ?? ???");
+      message.success("원격 조회 완료");
       void qc.invalidateQueries({
         queryKey: ["admin", "upbit-ambiguous-orders"],
       });
@@ -128,7 +128,7 @@ export function UpbitAmbiguousOrdersPanel() {
         "admin marked manual review",
       ),
     onSuccess: () => {
-      message.success("Manual Review?????");
+      message.success("Manual Review로 전환");
       void qc.invalidateQueries({
         queryKey: ["admin", "upbit-ambiguous-orders"],
       });
@@ -143,7 +143,7 @@ export function UpbitAmbiguousOrdersPanel() {
         "admin approved resubmit prep",
       ),
     onSuccess: () => {
-      message.success("??????????Identifier) ????? ??? ???");
+      message.success("재제출 준비(새 Identifier) — 자동 전송 없음");
       void qc.invalidateQueries({
         queryKey: ["admin", "upbit-ambiguous-orders"],
       });
@@ -158,7 +158,7 @@ export function UpbitAmbiguousOrdersPanel() {
         "admin rejected resubmit",
       ),
     onSuccess: () => {
-      message.success("???????");
+      message.success("재제출 거절");
       void qc.invalidateQueries({
         queryKey: ["admin", "upbit-ambiguous-orders"],
       });
@@ -192,7 +192,7 @@ export function UpbitAmbiguousOrdersPanel() {
 
       <Card
         size="small"
-        title="Resolver Scheduler (??? ?? ??? ????? ????????)"
+        title="Resolver Scheduler (원격 조회 전용 — 자동 재제출 없음)"
         extra={
           <Space>
             <Tag color={scheduler?.running ? "green" : "default"}>
@@ -204,21 +204,21 @@ export function UpbitAmbiguousOrdersPanel() {
               loading={runNowMut.isPending}
               onClick={() => runNowMut.mutate()}
             >
-              ??????
+              지금 실행
             </Button>
           </Space>
         }
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-          DB Claim + ?? ??? ?? Lock ??. Poll=
+          DB Claim + 계좌 단위 분산 Lock 기반. Poll=
           {cell(resolverStatus?.poll_seconds)}s / Batch=
           {cell(resolverStatus?.batch_size)} / Claim=
-          {cell(resolverStatus?.claim_seconds)}s / ???????=
-          {cell(resolverStatus?.max_orders_per_account_per_run)} / ??? ???=
+          {cell(resolverStatus?.claim_seconds)}s / 계좌당 최대=
+          {cell(resolverStatus?.max_orders_per_account_per_run)} / 다음 실행=
           {formatTs(scheduler?.next_run_at)}
         </Typography.Paragraph>
         <Typography.Text type="secondary">
-          ?? ???: {cell(lastRun?.status_code)} (claimed=
+          최근 실행: {cell(lastRun?.status_code)} (claimed=
           {cell(lastRun?.claimed_count)}, found={cell(lastRun?.found_count)},
           not_found={cell(lastRun?.not_found_count)}, manual=
           {cell(lastRun?.manual_review_count)}, error=
@@ -234,7 +234,7 @@ export function UpbitAmbiguousOrdersPanel() {
         pagination={{ pageSize: 10 }}
         columns={[
           {
-            title: "Order",
+            title: "주문",
             dataIndex: "order_id",
             width: 80,
             render: (v) => cell(v),
@@ -245,19 +245,19 @@ export function UpbitAmbiguousOrdersPanel() {
             render: (v) => cell(v),
           },
           {
-            title: "Symbol",
+            title: "종목",
             dataIndex: "symbol",
             width: 100,
             render: (v) => cell(v),
           },
           {
-            title: "Side",
+            title: "매수/매도",
             dataIndex: "side_code",
             width: 70,
             render: (v) => cell(v),
           },
           {
-            title: "???",
+            title: "상태",
             dataIndex: "status_code",
             render: (v) => (
               <Tag color={STATUS_COLOR[String(v)] ?? "default"}>
@@ -296,13 +296,13 @@ export function UpbitAmbiguousOrdersPanel() {
                 <Typography.Text style={{ fontSize: 12 }}>
                   {cell(r.resolver_claimed_by)}
                   <br />
-                  ??: {formatTs(r.resolver_claim_expires_at)}
+                  만료: {formatTs(r.resolver_claim_expires_at)}
                 </Typography.Text>
               );
             },
           },
           {
-            title: "???",
+            title: "작업",
             key: "actions",
             render: (_, row) => {
               const r = asRecord(row);
@@ -323,7 +323,7 @@ export function UpbitAmbiguousOrdersPanel() {
                     loading={retryLookupMut.isPending}
                     onClick={() => retryLookupMut.mutate(id)}
                   >
-                    ?????Claim)
+                    재조회(Claim)
                   </Button>
                   {r?.resolver_claimed_by ? (
                     <Button
@@ -332,14 +332,14 @@ export function UpbitAmbiguousOrdersPanel() {
                       loading={releaseStaleClaimMut.isPending}
                       onClick={() =>
                         Modal.confirm({
-                          title: "????Claim ?? ???",
+                          title: "만료된 Claim 강제 해제",
                           content:
-                            "?????Claim?? ???????? ????????? ????????",
+                            "유효한 Claim은 거부됩니다. 만료된 경우에만 해제됩니다.",
                           onOk: () => releaseStaleClaimMut.mutateAsync(id),
                         })
                       }
                     >
-                      Claim ???
+                      Claim 해제
                     </Button>
                   ) : null}
                   <Button
@@ -347,7 +347,7 @@ export function UpbitAmbiguousOrdersPanel() {
                     disabled={busy}
                     onClick={() =>
                       Modal.confirm({
-                        title: "Manual Review ???",
+                        title: "Manual Review 전환",
                         onOk: () => manualMut.mutateAsync(id),
                       })
                     }
@@ -360,27 +360,27 @@ export function UpbitAmbiguousOrdersPanel() {
                     disabled={busy}
                     onClick={() =>
                       Modal.confirm({
-                        title: "???????? (??Identifier)",
+                        title: "재제출 승인 (새 Identifier)",
                         content:
-                          "??? ??????? ??????. ??Generation/Identifier????????.",
+                          "자동 전송하지 않습니다. 새 Generation/Identifier만 준비합니다.",
                         okType: "danger",
                         onOk: () => approveMut.mutateAsync(id),
                       })
                     }
                   >
-                    ????????
+                    재제출 승인
                   </Button>
                   <Button
                     size="small"
                     disabled={busy}
                     onClick={() =>
                       Modal.confirm({
-                        title: "???????",
+                        title: "재제출 거절",
                         onOk: () => rejectMut.mutateAsync(id),
                       })
                     }
                   >
-                    ??
+                    거절
                   </Button>
                 </Space>
               );
@@ -390,7 +390,7 @@ export function UpbitAmbiguousOrdersPanel() {
       />
 
       <Typography.Title level={5} style={{ marginTop: 8 }}>
-        Resolver ??? ???
+        Resolver 실행 이력
       </Typography.Title>
       <Table
         size="small"
@@ -412,7 +412,7 @@ export function UpbitAmbiguousOrdersPanel() {
             render: (v) => cell(v),
           },
           {
-            title: "???",
+            title: "상태",
             dataIndex: "status_code",
             width: 90,
             render: (v) => (
@@ -474,12 +474,12 @@ export function UpbitAmbiguousOrdersPanel() {
             render: (v) => cell(v),
           },
           {
-            title: "???",
+            title: "시작",
             dataIndex: "started_at",
             render: (v) => formatTs(v),
           },
           {
-            title: "???(ms)",
+            title: "소요(ms)",
             dataIndex: "duration_ms",
             width: 90,
             render: (v) => cell(v),

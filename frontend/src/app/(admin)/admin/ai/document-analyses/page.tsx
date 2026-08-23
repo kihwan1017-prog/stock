@@ -279,11 +279,11 @@ export default function AdminAiDocumentAnalysesPage() {
             { title: "ID", dataIndex: "id", width: 70 },
             { title: "Type", dataIndex: "document_type", width: 110 },
             { title: "Source", dataIndex: "source_document_key", ellipsis: true },
-            { title: "Status", dataIndex: "analysis_status", width: 160 },
+            { title: "상태", dataIndex: "analysis_status", width: 160 },
             { title: "Mode", dataIndex: "execution_mode", width: 90 },
             { title: "Provider", dataIndex: "provider_code", width: 90 },
-            { title: "Confidence", dataIndex: "confidence", width: 100 },
-            { title: "Symbol", dataIndex: "symbol", width: 90 },
+            { title: "신뢰도", dataIndex: "confidence", width: 100 },
+            { title: "종목", dataIndex: "symbol", width: 90 },
           ]}
         />
 

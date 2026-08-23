@@ -83,7 +83,7 @@ export function RecoveryDistributedLockPanel({
         pagination={{ pageSize: 10 }}
         columns={[
           {
-            title: "Broker",
+            title: "거래소/증권사",
             dataIndex: "broker_code",
             width: 90,
             render: (v) => cell(v),
@@ -118,13 +118,13 @@ export function RecoveryDistributedLockPanel({
             },
           },
           {
-            title: "Owner",
+            title: "소유자",
             dataIndex: "owner_instance_masked",
             ellipsis: true,
             render: (v) => cell(v),
           },
           {
-            title: "Fence",
+            title: "펜스",
             dataIndex: "fencing_token",
             width: 70,
             render: (v) => cell(v),
@@ -135,7 +135,7 @@ export function RecoveryDistributedLockPanel({
             render: (v) => formatTs(typeof v === "string" ? v : null),
           },
           {
-            title: "Heartbeat",
+            title: "하트비트",
             dataIndex: "heartbeat_at",
             render: (v) => formatTs(typeof v === "string" ? v : null),
           },
@@ -145,7 +145,7 @@ export function RecoveryDistributedLockPanel({
             render: (v) => formatTs(typeof v === "string" ? v : null),
           },
           {
-            title: "Run",
+            title: "실행",
             dataIndex: "recovery_run_id",
             width: 90,
             render: (v) => {

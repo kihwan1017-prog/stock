@@ -83,6 +83,10 @@ export default function UserSettingsPage() {
   });
 
   const onSave = async () => {
+    if (!settingsQuery.data) {
+      message.warning("설정을 불러온 뒤 저장할 수 있습니다.");
+      return;
+    }
     const values = await form.validateFields();
     saveMutation.mutate(values);
   };
@@ -117,6 +121,7 @@ export default function UserSettingsPage() {
             type="primary"
             onClick={() => void onSave()}
             loading={saveMutation.isPending}
+            disabled={!settingsQuery.data}
           >
             저장
           </Button>
@@ -341,7 +346,9 @@ export default function UserSettingsPage() {
             </Col>
           </Row>
         </Form>
-      ) : null}
+      ) : (
+        <Form form={form} style={{ display: "none" }} preserve={false} />
+      )}
     </UserPageShell>
   );
 }

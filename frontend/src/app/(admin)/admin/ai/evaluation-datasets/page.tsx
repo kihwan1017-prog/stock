@@ -211,7 +211,7 @@ export default function AdminAiEvaluationDatasetsPage() {
             { title: "Name", dataIndex: "name", ellipsis: true },
             { title: "Task", dataIndex: "task_type", width: 140 },
             {
-              title: "Status",
+              title: "상태",
               dataIndex: "status",
               width: 110,
               render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag>,

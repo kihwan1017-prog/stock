@@ -302,12 +302,12 @@ export default function AdminAiBenchmarksPage() {
             { title: "Provider", dataIndex: "provider_code", width: 90 },
             { title: "Model", dataIndex: "model", width: 100 },
             {
-              title: "Status",
+              title: "상태",
               dataIndex: "benchmark_status",
               width: 120,
               render: (v: string) => <Tag color={statusColor(v)}>{v}</Tag>,
             },
-            { title: "Score", dataIndex: "overall_score", width: 80 },
+            { title: "점수", dataIndex: "overall_score", width: 80 },
           ]}
         />
 

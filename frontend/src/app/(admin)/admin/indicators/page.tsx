@@ -26,6 +26,8 @@ import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
 const JOB_NAME = "indicator_daily_batch";
+// JSX 속성 안에 '{...}' 문자열이 있으면 SWC가 닫는 중괄호로 오인함
+const DEFAULT_CREATE_PARAMETER_PAYLOAD = JSON.stringify({ period: 14 }, null, 2);
 
 interface JobHistoryRow {
   job_run_id: number;
@@ -60,8 +62,8 @@ export default function AdminIndicatorsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [previewResult, setPreviewResult] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [form] = Form.useForm();
-  const [createForm] = Form.useForm();
+  // Modal forceRender — Form·useForm 항상 연결 (destroyOnHidden 미연결 경고 방지)
+  const [modalForm] = Form.useForm();
 
   const paramsQuery = useQuery({
     queryKey: queryKeys.admin.indicatorParameters(),
@@ -98,7 +100,6 @@ export default function AdminIndicatorsPage() {
     onSuccess: () => {
       message.success("지표 파라미터가 등록되었습니다.");
       setCreateOpen(false);
-      createForm.resetFields();
       setPreviewResult(null);
       setValidationError(null);
       invalidateParams();
@@ -156,14 +157,14 @@ export default function AdminIndicatorsPage() {
   });
 
   const openEdit = (row: IndicatorParameterRecord) => {
+    // setFieldsValue는 Modal afterOpenChange에서 수행 (Form 연결 후)
     setEditTarget(row);
+    setCreateOpen(false);
     setPreviewResult(null);
     setValidationError(null);
-    form.setFieldsValue({
-      parameter_payload: JSON.stringify(row.parameter_payload, null, 2),
-      is_active: row.is_active,
-    });
   };
+
+  const modalOpen = createOpen || editTarget != null;
 
   const buildPayloadFromForm = (
     values: Record<string, unknown>,
@@ -175,6 +176,46 @@ export default function AdminIndicatorsPage() {
       return null;
     }
     return parsed;
+  };
+
+  const fillModalForm = (opened: boolean) => {
+    if (!opened) return;
+    if (editTarget) {
+      modalForm.setFieldsValue({
+        parameter_payload: JSON.stringify(editTarget.parameter_payload, null, 2),
+        is_active: editTarget.is_active,
+      });
+      return;
+    }
+    modalForm.setFieldsValue({
+      market_type: "STOCK",
+      timeframe: "1D",
+      activate: true,
+      indicator_code: "RSI",
+      parameter_payload: DEFAULT_CREATE_PARAMETER_PAYLOAD,
+    });
+  };
+
+  const submitModalForm = (values: Record<string, unknown>) => {
+    const payload = buildPayloadFromForm(values);
+    if (!payload) return;
+    if (editTarget) {
+      updateMut.mutate({
+        id: editTarget.indicator_parameter_config_id,
+        body: {
+          parameter_payload: payload,
+          is_active: values.is_active as boolean,
+        },
+      });
+      return;
+    }
+    createMut.mutate({
+      indicator_code: values.indicator_code as string,
+      market_type: values.market_type as string,
+      timeframe: values.timeframe as string,
+      parameter_payload: payload,
+      activate: values.activate as boolean,
+    });
   };
 
   return (
@@ -194,7 +235,13 @@ export default function AdminIndicatorsPage() {
             >
               시스템 기본값 복원
             </Button>
-            <Button type="primary" onClick={() => setCreateOpen(true)}>
+            <Button
+              type="primary"
+              onClick={() => {
+                setEditTarget(null);
+                setCreateOpen(true);
+              }}
+            >
               파라미터 등록
             </Button>
           </Space>
@@ -343,13 +390,19 @@ export default function AdminIndicatorsPage() {
         ]}
       />
 
+      <Form
+        form={modalForm}
+        component={false}
+        layout="vertical"
+        onFinish={submitModalForm}
+      >
       <Modal
         title={
           editTarget
             ? `파라미터 수정 — ${editTarget.indicator_code} v${editTarget.version}`
             : "파라미터 등록"
         }
-        open={createOpen || editTarget != null}
+        open={modalOpen}
         onCancel={() => {
           setCreateOpen(false);
           setEditTarget(null);
@@ -357,45 +410,10 @@ export default function AdminIndicatorsPage() {
           setValidationError(null);
         }}
         footer={null}
-        destroyOnHidden
+        forceRender
+        afterOpenChange={fillModalForm}
         width={640}
       >
-        <Form
-          form={editTarget ? form : createForm}
-          layout="vertical"
-          initialValues={
-            editTarget
-              ? undefined
-              : {
-                  market_type: "STOCK",
-                  timeframe: "1D",
-                  activate: true,
-                  indicator_code: "RSI",
-                  parameter_payload: '{\n  "period": 14\n}',
-                }
-          }
-          onFinish={(values) => {
-            const payload = buildPayloadFromForm(values);
-            if (!payload) return;
-            if (editTarget) {
-              updateMut.mutate({
-                id: editTarget.indicator_parameter_config_id,
-                body: {
-                  parameter_payload: payload,
-                  is_active: values.is_active as boolean,
-                },
-              });
-            } else {
-              createMut.mutate({
-                indicator_code: values.indicator_code as string,
-                market_type: values.market_type as string,
-                timeframe: values.timeframe as string,
-                parameter_payload: payload,
-                activate: values.activate as boolean,
-              });
-            }
-          }}
-        >
           {!editTarget ? (
             <>
               <Form.Item
@@ -468,7 +486,7 @@ export default function AdminIndicatorsPage() {
           <Space wrap>
             <Button
               onClick={() => {
-                const values = (editTarget ? form : createForm).getFieldsValue();
+                const values = modalForm.getFieldsValue();
                 const payload = buildPayloadFromForm(values);
                 if (!payload) return;
                 previewMut.mutate({
@@ -489,12 +507,13 @@ export default function AdminIndicatorsPage() {
               type="primary"
               htmlType="submit"
               loading={createMut.isPending || updateMut.isPending}
+              onClick={() => modalForm.submit()}
             >
               저장
             </Button>
           </Space>
-        </Form>
       </Modal>
+      </Form>
     </AdminPageShell>
   );
 }

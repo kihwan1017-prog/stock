@@ -30,6 +30,10 @@ import { toApiError } from "@/lib/api/apiError";
 const CONFIRM_ENABLE = "전체시장 포트폴리오 모드 시작";
 const CONFIRM_DISABLE = "전체시장 포트폴리오 모드 중지";
 
+function asObj(value: unknown): Record<string, unknown> {
+  return asRecord(value) ?? {};
+}
+
 type Props = {
   ubaId: number;
   strategyId?: number;
@@ -54,9 +58,9 @@ export function UpbitPortfolioControls({
     refetchInterval: 20_000,
   });
 
-  const data = asRecord(statusQuery.data);
-  const policy = asRecord(data.policy);
-  const summary = asRecord(data.summary);
+  const data = asObj(statusQuery.data);
+  const policy = asObj(data.policy);
+  const summary = asObj(data.summary);
   const mode = String(data.mode ?? "FIXED_SYMBOL").toUpperCase();
   const modeLabel = formatUpbitAutotradingModeLabel(mode);
   const portfolioOn = modeLabel === "PORTFOLIO";
@@ -196,7 +200,7 @@ export function UpbitPortfolioControls({
         </Typography.Paragraph>
         <ul>
           <li>UBA {ubaId} · UPBIT</li>
-          <li>Max Positions {String(policy.max_positions ?? 3)}</li>
+          <li>최대 보유 종목 수 {String(policy.max_positions ?? 3)}</li>
           <li>
             설정:{" "}
             <Link href={settingsHref}>/admin/upbit/autotrading?ubaId={ubaId}</Link>

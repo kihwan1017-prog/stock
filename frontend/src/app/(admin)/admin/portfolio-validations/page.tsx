@@ -169,7 +169,7 @@ export default function AdminPortfolioValidationsPage() {
       description="이미 승인된 복수 Strategy Definition의 기존 Backtest 결과만 조합해 상관관계·집중도·분산효과·위험기여도·중복노출을 검증합니다. 새 Backtest 실행이나 실제 자금 배분은 발생하지 않습니다."
     >
       <Card title="Strategy 구성 (2~10개)" style={{ marginBottom: 16 }}>
-        <Space direction="vertical" style={{ width: "100%" }} size="middle">
+        <Space orientation="vertical" style={{ width: "100%" }} size="middle">
           {rows.map((row, idx) => (
             <Space key={row.key} wrap>
               <Text type="secondary">#{idx + 1}</Text>
@@ -208,7 +208,7 @@ export default function AdminPortfolioValidationsPage() {
           <Divider style={{ margin: "8px 0" }} />
 
           <Space wrap size="middle">
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Text type="secondary">Weighting Method</Text>
               <Select
                 value={weightingMethod}
@@ -220,7 +220,7 @@ export default function AdminPortfolioValidationsPage() {
                 ]}
               />
             </Space>
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Text type="secondary">Alignment Policy</Text>
               <Select
                 value={alignmentPolicy}
@@ -235,7 +235,7 @@ export default function AdminPortfolioValidationsPage() {
                 ]}
               />
             </Space>
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Text type="secondary">최소 공통기간(일)</Text>
               <InputNumber
                 value={minimumOverlapDays}
@@ -243,7 +243,7 @@ export default function AdminPortfolioValidationsPage() {
                 onChange={(v) => setMinimumOverlapDays(v ?? 60)}
               />
             </Space>
-            <Space direction="vertical" size={0}>
+            <Space orientation="vertical" size={0}>
               <Text type="secondary">Initial Capital</Text>
               <InputNumber
                 value={initialCapital}
@@ -288,8 +288,8 @@ export default function AdminPortfolioValidationsPage() {
               dataIndex: "strategy_definition_id",
               render: cell,
             },
-            { title: "Symbol", dataIndex: "symbol", render: cell },
-            { title: "Status", dataIndex: "status_code", render: cell },
+            { title: "종목", dataIndex: "symbol", render: cell },
+            { title: "상태", dataIndex: "status_code", render: cell },
             { title: "시작일", dataIndex: "start_date", render: cell },
             { title: "종료일", dataIndex: "end_date", render: cell },
           ]}
@@ -304,7 +304,7 @@ export default function AdminPortfolioValidationsPage() {
           {report == null ? (
             <Empty description="결과 없음" />
           ) : (
-            <Space direction="vertical" style={{ width: "100%" }} size="large">
+            <Space orientation="vertical" style={{ width: "100%" }} size="large">
               <Space wrap>
                 <Tag color={STATUS_COLOR[cell(report.validation_status)] ?? "default"}>
                   {cell(report.validation_status)}
@@ -365,7 +365,7 @@ export default function AdminPortfolioValidationsPage() {
                     ),
                   }))}
                   columns={[
-                    { title: "Strategy", dataIndex: "id", render: cell },
+                    { title: "전략", dataIndex: "id", render: cell },
                     ...strategyIds.map((b) => ({
                       title: `#${b}`,
                       dataIndex: String(b),
@@ -417,7 +417,7 @@ export default function AdminPortfolioValidationsPage() {
                   dataSource={riskContributions}
                   pagination={false}
                   columns={[
-                    { title: "Strategy", dataIndex: "strategy_definition_id", render: cell },
+                    { title: "전략", dataIndex: "strategy_definition_id", render: cell },
                     { title: "Weight", dataIndex: "weight", render: cell },
                     { title: "Volatility", dataIndex: "volatility", render: cell },
                     {
