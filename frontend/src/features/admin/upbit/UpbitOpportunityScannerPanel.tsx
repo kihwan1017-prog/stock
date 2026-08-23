@@ -59,17 +59,17 @@ export function UpbitOpportunityScannerPanel() {
   const shadowStats = asRecord(shadows.stats) ?? {};
 
   const shadowColumns = [
-    { title: "Symbol", dataIndex: "symbol" },
-    { title: "AI", dataIndex: "recommendation", width: 80 },
-    { title: "Entry", dataIndex: "entry_price" },
-    { title: "Started", dataIndex: "detected_at" },
-    { title: "5m", dataIndex: "return_5m_pct", width: 70 },
-    { title: "15m", dataIndex: "return_15m_pct", width: 70 },
-    { title: "30m", dataIndex: "return_30m_pct", width: 70 },
-    { title: "60m", dataIndex: "return_60m_pct", width: 70 },
-    { title: "MFE", dataIndex: "mfe_pct", width: 70 },
-    { title: "MAE", dataIndex: "mae_pct", width: 70 },
-    { title: "Status", dataIndex: "status", width: 100 },
+    { title: "종목", dataIndex: "symbol" },
+    { title: "AI 판단", dataIndex: "recommendation", width: 88 },
+    { title: "진입가", dataIndex: "entry_price" },
+    { title: "시작", dataIndex: "detected_at" },
+    { title: "5분", dataIndex: "return_5m_pct", width: 70 },
+    { title: "15분", dataIndex: "return_15m_pct", width: 70 },
+    { title: "30분", dataIndex: "return_30m_pct", width: 70 },
+    { title: "60분", dataIndex: "return_60m_pct", width: 70 },
+    { title: "최대유리폭(MFE)", dataIndex: "mfe_pct", width: 110 },
+    { title: "최대불리폭(MAE)", dataIndex: "mae_pct", width: 110 },
+    { title: "상태", dataIndex: "status", width: 100 },
   ];
 
   return (
@@ -276,23 +276,23 @@ export function UpbitOpportunityScannerPanel() {
         return (
           <>
             <Typography.Title level={5} style={{ marginBottom: 0 }}>
-              Entry Policy A/B
+              진입 정책 A/B (Shadow)
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              Shadow entry-only 비교 (Exit=TP10/Trail3 고정, REAL 미변경). Baseline
-              vs Candidate B (RSI65 / VOL1.0).
+              Shadow 진입만 비교합니다 (청산=TP10/Trail3 고정, REAL 미변경). 기준
+              전략 vs 후보 B (RSI65 / VOL1.0).
             </Typography.Paragraph>
             <Space wrap>
               <Tag>
-                n={cell(ab.sample_count)}/{cell(ab.final_verdict)}
+                표본={cell(ab.sample_count)} / {cell(ab.final_verdict)}
               </Tag>
               <Tag>
-                Baseline entries={cell(ab.baseline_entries)} net=
-                {cell(base.net_pnl)} wr={cell(base.win_rate)}
+                기준 전략 진입={cell(ab.baseline_entries)} 손익=
+                {cell(base.net_pnl)} 승률={cell(base.win_rate)}
               </Tag>
               <Tag color="blue">
-                Candidate B entries={cell(ab.candidate_entries)} net=
-                {cell(cand.net_pnl)} wr={cell(cand.win_rate)} filtered=
+                후보 B 진입={cell(ab.candidate_entries)} 손익=
+                {cell(cand.net_pnl)} 승률={cell(cand.win_rate)} 필터=
                 {cell(ab.candidate_filtered_count)}
               </Tag>
             </Space>
@@ -309,47 +309,48 @@ export function UpbitOpportunityScannerPanel() {
         if (fv.combined_sample_count == null && fv.combined_sample_count !== 0) {
           return null;
         }
-        const promo = String(fv.PROMOTION_STATUS ?? "NOT READY");
+        const promoRaw = String(fv.PROMOTION_STATUS ?? "NOT READY");
+        const promo =
+          promoRaw === "REVIEW READY"
+            ? "적용 검토 가능"
+            : promoRaw === "NOT READY"
+              ? "표본 수집 중"
+              : promoRaw;
         return (
           <>
             <Typography.Title level={5} style={{ marginBottom: 0 }}>
-              Entry Forward Validation
+              진입 전략 Forward 검증
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              Candidate B1 RSI65 / VOL0.8 · LEGACY+NEW 분리 · REAL 정책 미변경 ·
-              자동 승격 없음
+              검증 후보 B1 (RSI65 / VOL0.8) · LEGACY+신규 표본 분리 · REAL 정책
+              미변경 · 자동 승격 없음
             </Typography.Paragraph>
             <Space wrap>
-              <Tag>Candidate: RSI65 / VOL0.8</Tag>
+              <Tag>검증 후보: RSI65 / VOL0.8</Tag>
+              <Tag>전체 표본 {cell(progress.combined)}</Tag>
+              <Tag>신규 미사용 표본 {cell(progress.new)}</Tag>
               <Tag>
-                Progress Combined {cell(progress.combined)}
-              </Tag>
-              <Tag>
-                New {cell(progress.new)}
-              </Tag>
-              <Tag>
-                Baseline net={cell(base.net_pnl)} PF={cell(base.profit_factor)} WR=
-                {cell(base.win_rate)}
+                기준 전략 손익={cell(base.net_pnl)} PF=
+                {cell(base.profit_factor)} 승률={cell(base.win_rate)}
               </Tag>
               <Tag color="blue">
-                B1 net={cell(b1.net_pnl)} PF={cell(b1.profit_factor)} WR=
+                후보 B1 손익={cell(b1.net_pnl)} PF={cell(b1.profit_factor)} 승률=
                 {cell(b1.win_rate)}
               </Tag>
+              <Tag>필터 개선 효과={cell(filt.net_filter_benefit)}</Tag>
               <Tag>
-                Filter benefit={cell(filt.net_filter_benefit)}
-              </Tag>
-              <Tag>
-                Early dump B/B1={cell(early.baseline_early_dump_rate)}/
+                진입 직후 하락 기준/B1=
+                {cell(early.baseline_early_dump_rate)}/
                 {cell(early.b1_early_dump_rate)}
               </Tag>
-              <Tag color={promo === "REVIEW READY" ? "green" : "default"}>
-                Promotion: {promo}
+              <Tag color={promoRaw === "REVIEW READY" ? "green" : "default"}>
+                REAL 적용 검토: {promo}
               </Tag>
             </Space>
             <details style={{ marginTop: 4 }}>
-              <summary style={{ cursor: "pointer" }}>B1 detail (accordion)</summary>
+              <summary style={{ cursor: "pointer" }}>B1 상세 (펼치기)</summary>
               <AdminJsonCard
-                title="Entry B1 Forward Validation"
+                title="진입 전략 B1 Forward 검증 상세"
                 loading={false}
                 error={null}
                 data={fv}
@@ -359,7 +360,7 @@ export function UpbitOpportunityScannerPanel() {
         );
       })()}
       <AdminJsonCard
-        title="Shadow Stats / Cohort"
+        title="Shadow 통계 / 코호트"
         loading={status.isLoading}
         error={null}
         data={shadowStats}

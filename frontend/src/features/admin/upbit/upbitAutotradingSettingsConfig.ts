@@ -105,10 +105,10 @@ export function resolveStrategyIdFromSources(sources: {
 
 /** UI Empty State 라벨 (AUTO 보유 0·전략 미연결 등 정상 운영) */
 export const UPBIT_AUTOTRADING_EMPTY_LABELS = {
-  noStrategy: "연결된 전략 없음",
-  noAutoPositions: "현재 AUTO 보유 종목 없음",
-  noSlots: "대기 슬롯 없음",
-  noLatestEntry: "최근 진입 없음",
+  noStrategy: "연결된 전략이 없습니다.",
+  noAutoPositions: "현재 보유 중인 자동매매 종목이 없습니다.",
+  noSlots: "대기 중인 슬롯이 없습니다.",
+  noLatestEntry: "최근 진입이 없습니다.",
 } as const;
 
 /** Backend confirmation phrases (audit gate) */

@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Alert, Card, Empty, Select, Space, Table, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import dayjs from "dayjs";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 import { userRoutes } from "@/config/routes";
@@ -136,8 +135,13 @@ export function BrokerOrdersView({ title, brokerCode }: BrokerOrdersViewProps) {
           SENT: "거래소 주문 확인 완료",
           MANUAL_REVIEW_REQUIRED: "관리자 확인 필요",
           IDENTITY_CONFLICT: "관리자 확인 필요",
+          FILLED: "체결 완료",
+          CANCELED: "취소",
+          CANCELLED: "취소",
+          REJECTED: "거부",
+          PARTIALLY_FILLED: "부분 체결",
         };
-        const label = labelMap[code] ?? code;
+        const label = labelMap[code] ?? (code ? `확인 필요 (${code})` : "—");
         // STEP 8-5-14 — 재확인 진행 상황 안내 (Claim/Lock 비노출)
         const isAmbiguousLike =
           code === "AMBIGUOUS_SUBMISSION" ||
@@ -255,9 +259,9 @@ export function BrokerOrdersView({ title, brokerCode }: BrokerOrdersViewProps) {
                     setPage(1);
                   }}
                 />
-                <Link href={userRoutes.orders}>
-                  <Typography.Link>전체 주문·체결 보기</Typography.Link>
-                </Link>
+                <Typography.Link href={userRoutes.orders}>
+                  전체 주문·체결 보기
+                </Typography.Link>
               </Space>
             </Card>
 

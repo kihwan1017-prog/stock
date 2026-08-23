@@ -32,11 +32,11 @@ describe("entryBlockReasonKo", () => {
     expect(Object.keys(ENTRY_BLOCK_REASON_KO).length).toBeGreaterThanOrEqual(11);
   });
 
-  it("unknown keeps raw in tooltip fields", () => {
+  it("unknown keeps raw code visible", () => {
     const r = entryBlockReasonKo("SOME_NEW_CODE");
     expect(r.known).toBe(false);
     expect(r.rawCode).toBe("SOME_NEW_CODE");
-    expect(r.label).toContain("확인할 수 없습니다");
+    expect(r.label).toBe("확인 필요 (SOME_NEW_CODE)");
   });
 });
 
@@ -46,7 +46,35 @@ describe("slotStatusLabelKo", () => {
     expect(slotStatusLabelKo("ENTRY_PENDING")).toContain("매수 주문");
     expect(slotStatusLabelKo("OPEN")).toContain("보유");
     expect(slotStatusLabelKo("EMPTY")).toContain("후보");
+    expect(slotStatusLabelKo("COOLDOWN")).toContain("재진입");
     expect(unattendedLeaseLabelKo("PROTECTIVE_EXIT_ONLY")).toContain("보호");
+  });
+});
+
+describe("tradingDisplayLabelsKo", () => {
+  it("maps decisions and runtime values", async () => {
+    const {
+      decisionLabelKo,
+      runtimeValueLabelKo,
+      orderStatusLabelKo,
+      formatKrwKo,
+      brokerLabelKo,
+    } = await import("@/features/shared/display/tradingDisplayLabelsKo");
+    expect(decisionLabelKo("ALLOW")).toBe("매수 허용");
+    expect(decisionLabelKo("BLOCK")).toBe("차단");
+    expect(runtimeValueLabelKo("RUNNING")).toBe("실행 중");
+    expect(runtimeValueLabelKo("READY_FOR_AUTO_TRADING")).toContain("준비");
+    expect(orderStatusLabelKo("FILLED")).toBe("체결 완료");
+    expect(formatKrwKo(10000)).toBe("10,000원");
+    expect(brokerLabelKo("UPBIT")).toBe("업비트");
+  });
+
+  it("ui labels include portfolio slots korean", async () => {
+    const { UI_LABEL_KO } = await import(
+      "@/features/shared/display/displayUiLabelsKo"
+    );
+    expect(UI_LABEL_KO.portfolioSlots).toBe("자동매매 후보 슬롯");
+    expect(UI_LABEL_KO.entryForwardValidation).toContain("Forward");
   });
 });
 

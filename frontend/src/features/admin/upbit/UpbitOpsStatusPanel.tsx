@@ -46,6 +46,15 @@ import {
   parseOpsLiveArm,
 } from "@/features/admin/upbit/upbitAutotradingCanonicalStatus";
 import { UPBIT_AUTOTRADING_EMPTY_LABELS } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
+import {
+  UI_LABEL_KO,
+  UI_TOOLTIP_KO,
+} from "@/features/shared/display/displayUiLabelsKo";
+import {
+  decisionLabelKo,
+  formatKrwKo,
+  runtimeValueLabelKo,
+} from "@/features/shared/display/tradingDisplayLabelsKo";
 import { asRecord } from "@/shared/utils/dataHelpers";
 
 function rec(v: unknown): Record<string, unknown> {
@@ -56,20 +65,31 @@ function StatusCard({
   label,
   value,
   tone,
+  tip,
+  raw,
 }: {
   label: string;
   value: string;
   tone: StatusTone;
+  tip?: string;
+  raw?: string;
 }) {
+  const tipText = [tip, raw && raw !== value ? `원본: ${raw}` : null]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <Card size="small" styles={{ body: { padding: 10 } }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        {label}
-      </Typography.Text>
+      <Tooltip title={tip || undefined}>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {label}
+        </Typography.Text>
+      </Tooltip>
       <div>
-        <Tag color={toneToAntdColor(tone)} style={{ marginTop: 4 }}>
-          {value}
-        </Tag>
+        <Tooltip title={tipText || undefined}>
+          <Tag color={toneToAntdColor(tone)} style={{ marginTop: 4 }}>
+            {value}
+          </Tag>
+        </Tooltip>
       </div>
     </Card>
   );
@@ -170,7 +190,7 @@ export function UpbitOpsStatusPanel({
                 type="secondary"
                 style={{ marginBottom: 0, marginTop: 8 }}
               >
-                Blockers: {aggregate.blockers.join(" · ")}
+                차단 요인: {aggregate.blockers.join(" · ")}
               </Typography.Paragraph>
             ) : null}
             {!aggregate.entryOrdersPermitted &&
@@ -179,8 +199,9 @@ export function UpbitOpsStatusPanel({
                 type="warning"
                 style={{ marginBottom: 0, marginTop: 8 }}
               >
-                Entry Evaluator RUNNING — 평가만 수행 중이며 LIVE/ARM/Readiness
-                미충족 시 실제 ENTRY 주문은 차단됩니다.
+                매수조건 평가기는 실행 중이지만, 실거래(LIVE)·자동주문
+                승인(ARM)·준비상태가 충족되지 않으면 실제 매수 주문은
+                차단됩니다.
               </Typography.Paragraph>
             ) : null}
           </>
@@ -205,35 +226,99 @@ export function UpbitOpsStatusPanel({
       <Row gutter={[8, 8]}>
         {(
           [
-            ["24H", unattendedLeaseLabelKo(lease), toneFromRuntime(lease === "ACTIVE" ? "RUNNING" : lease === "PROTECTIVE_EXIT_ONLY" ? "WARNING" : "OFF")],
-            ["LIVE", liveOn ? "켜짐" : "꺼짐", toneFromBoolOnOff(liveOn)],
-            ["ARM", armDisplay, toneFromBoolOnOff(armOn)],
-            ["Runtime", runtime, toneFromRuntime(runtime)],
-            ["Worker", worker, toneFromRuntime(worker)],
             [
-              "Execution Runner",
-              runner,
-              toneFromRuntime(runner),
+              UI_LABEL_KO.h24,
+              unattendedLeaseLabelKo(lease),
+              toneFromRuntime(
+                lease === "ACTIVE"
+                  ? "RUNNING"
+                  : lease === "PROTECTIVE_EXIT_ONLY"
+                    ? "WARNING"
+                    : "OFF",
+              ),
+              undefined,
+              lease,
             ],
-            ["Exit Monitor", exitM, toneFromRuntime(exitM)],
-            ["Feed", String(feed.status ?? "—"), toneFromRuntime(String(feed.status))],
             [
-              "Entry Evaluator",
-              entryEvaluatorState,
+              UI_LABEL_KO.live,
+              liveOn ? "켜짐" : "꺼짐",
+              toneFromBoolOnOff(liveOn),
+              UI_TOOLTIP_KO.live,
+              liveOn ? "LIVE ON" : "LIVE OFF",
+            ],
+            [
+              UI_LABEL_KO.arm,
+              armDisplay,
+              toneFromBoolOnOff(armOn),
+              UI_TOOLTIP_KO.arm,
+              armOn ? "ARM ON" : "ARM OFF",
+            ],
+            [
+              UI_LABEL_KO.runtime,
+              runtimeValueLabelKo(runtime),
+              toneFromRuntime(runtime),
+              undefined,
+              runtime,
+            ],
+            [
+              UI_LABEL_KO.worker,
+              runtimeValueLabelKo(worker),
+              toneFromRuntime(worker),
+              undefined,
+              worker,
+            ],
+            [
+              UI_LABEL_KO.executionRunner,
+              runtimeValueLabelKo(runner),
+              toneFromRuntime(runner),
+              undefined,
+              runner,
+            ],
+            [
+              UI_LABEL_KO.exitMonitor,
+              runtimeValueLabelKo(exitM),
+              toneFromRuntime(exitM),
+              undefined,
+              exitM,
+            ],
+            [
+              UI_LABEL_KO.feed,
+              runtimeValueLabelKo(String(feed.status ?? "—")),
+              toneFromRuntime(String(feed.status)),
+              undefined,
+              String(feed.status ?? "—"),
+            ],
+            [
+              UI_LABEL_KO.entryEvaluator,
+              runtimeValueLabelKo(entryEvaluatorState),
               aggregate.entryOrdersPermitted
                 ? toneFromRuntime(entryEvaluatorState)
                 : "yellow",
+              undefined,
+              entryEvaluatorState,
             ],
-            ["Readiness", readyDisplay, toneFromReadiness(readyDisplay)],
-          ] as [string, string, StatusTone][]
-        ).map(([label, value, tone]) => (
+            [
+              UI_LABEL_KO.readiness,
+              runtimeValueLabelKo(readyDisplay),
+              toneFromReadiness(readyDisplay),
+              UI_TOOLTIP_KO.readiness,
+              readyDisplay,
+            ],
+          ] as [string, string, StatusTone, string | undefined, string][]
+        ).map(([label, value, tone, tip, raw]) => (
           <Col xs={12} sm={8} md={6} lg={4} key={label}>
-            <StatusCard label={label} value={value} tone={tone} />
+            <StatusCard
+              label={label}
+              value={value}
+              tone={tone}
+              tip={tip}
+              raw={raw}
+            />
           </Col>
         ))}
       </Row>
 
-      <Card size="small" title="Portfolio Slots">
+      <Card size="small" title={UI_LABEL_KO.portfolioSlots}>
         <div style={{ overflowX: "auto" }}>
           <Table
             size="small"
@@ -241,14 +326,14 @@ export function UpbitOpsStatusPanel({
             rowKey={(r) => String(rec(r).slot_id ?? rec(r).slot_no)}
             dataSource={slots as Record<string, unknown>[]}
             columns={[
-              { title: "Slot", dataIndex: "slot_no", width: 56 },
+              { title: UI_LABEL_KO.slot, dataIndex: "slot_no", width: 56 },
               {
-                title: "Symbol",
+                title: UI_LABEL_KO.symbol,
                 dataIndex: "symbol",
                 render: (v) => v ?? "—",
               },
               {
-                title: "Score",
+                title: UI_LABEL_KO.score,
                 key: "score",
                 width: 72,
                 render: (_: unknown, row) => {
@@ -257,20 +342,21 @@ export function UpbitOpsStatusPanel({
                 },
               },
               {
-                title: "AI",
+                title: UI_LABEL_KO.ai,
                 dataIndex: "ai_recommendation",
-                width: 88,
-                render: (v) => (v == null ? "—" : String(v)),
+                width: 96,
+                render: (v) =>
+                  v == null ? "—" : decisionLabelKo(String(v)),
               },
               {
-                title: "Confidence",
+                title: UI_LABEL_KO.confidence,
                 dataIndex: "ai_confidence",
                 width: 88,
                 render: (v) =>
                   v == null ? "—" : `${(Number(v) * 100).toFixed(0)}%`,
               },
               {
-                title: "Ownership",
+                title: UI_LABEL_KO.ownership,
                 key: "own",
                 width: 100,
                 render: (_: unknown, row) => {
@@ -289,21 +375,21 @@ export function UpbitOpsStatusPanel({
                 },
               },
               {
-                title: "Status",
+                title: UI_LABEL_KO.status,
                 dataIndex: "status",
                 render: (v) => (
-                  <Tooltip title={String(v)}>
+                  <Tooltip title={`원본: ${String(v)}`}>
                     <Tag>{slotStatusLabelKo(String(v))}</Tag>
                   </Tooltip>
                 ),
               },
               {
-                title: "Waiting age",
+                title: UI_LABEL_KO.waitingAge,
                 dataIndex: "waiting_age_seconds",
                 render: (v) => formatAgeKo(v as number),
               },
               {
-                title: "Last evaluated",
+                title: UI_LABEL_KO.lastEvaluated,
                 key: "last_eval",
                 render: (_: unknown, row) =>
                   formatIsoAgeKo(
@@ -311,17 +397,23 @@ export function UpbitOpsStatusPanel({
                   ),
               },
               {
-                title: "Entry decision",
+                title: UI_LABEL_KO.entryDecision,
                 key: "dec",
-                render: (_: unknown, row) =>
-                  String(
+                render: (_: unknown, row) => {
+                  const raw = String(
                     rec(row).last_entry_decision ??
                       rec(row).entry_decision ??
                       "—",
-                  ),
+                  );
+                  return (
+                    <Tooltip title={`원본: ${raw}`}>
+                      <span>{decisionLabelKo(raw)}</span>
+                    </Tooltip>
+                  );
+                },
               },
               {
-                title: "Block reason",
+                title: UI_LABEL_KO.blockReason,
                 key: "block",
                 ellipsis: true,
                 render: (_: unknown, row) => {
@@ -340,12 +432,16 @@ export function UpbitOpsStatusPanel({
                 },
               },
               {
-                title: "Reserved KRW",
+                title: (
+                  <Tooltip title={UI_TOOLTIP_KO.reservedKrw}>
+                    <span>{UI_LABEL_KO.reservedKrw}</span>
+                  </Tooltip>
+                ),
                 dataIndex: "reserved_amount_krw",
-                render: (v) => (v == null ? "—" : String(v)),
+                render: (v) => formatKrwKo(v),
               },
               {
-                title: "Order id",
+                title: UI_LABEL_KO.orderId,
                 dataIndex: "entry_order_id",
                 render: (v) => (v == null ? "—" : String(v)),
               },
@@ -354,11 +450,11 @@ export function UpbitOpsStatusPanel({
         </div>
       </Card>
 
-      <Card size="small" title="최근 Entry 평가 차단 요약">
+      <Card size="small" title={UI_LABEL_KO.entryBlockSummary}>
         {reasonTotal === 0 ? (
           <Typography.Text type="secondary">
-            현재 슬롯의 latest block reason만 표시합니다. 이력 집계 API는
-            BACKEND_READ_API_GAP 입니다 (가짜 % 없음).
+            현재 슬롯의 최근 차단 사유만 표시합니다. 이력 집계 API가 없어
+            비율은 현재 슬롯 기준입니다.
           </Typography.Text>
         ) : (
           <Space orientation="vertical" style={{ width: "100%" }}>
@@ -382,16 +478,21 @@ export function UpbitOpsStatusPanel({
         )}
       </Card>
 
-      <Card size="small" title="AUTO 보유 포지션">
+      <Card size="small" title={UI_LABEL_KO.autoPositions}>
         {openSlots.length === 0 ? (
-          <Empty description={UPBIT_AUTOTRADING_EMPTY_LABELS.noAutoPositions} />
+          <Empty
+            description={
+              UPBIT_AUTOTRADING_EMPTY_LABELS.noAutoPositions ||
+              "현재 보유 중인 자동매매 종목이 없습니다."
+            }
+          />
         ) : (
           <Alert
             type="warning"
             showIcon
             style={{ marginBottom: 12 }}
-            title="상세 PnL/SL/TP"
-            description="OPEN slot의 qty·entry·current·SL·TP·Trailing은 portfolio READ에 없음 (BACKEND_READ_API_GAP). 가용 필드만 표시합니다."
+            title="상세 손익(PnL)/손절/익절"
+            description="OPEN 슬롯의 수량·진입가·현재가·손절·익절·트레일링은 포트폴리오 READ API에 없어 가용 필드만 표시합니다."
           />
         )}
         {openSlots.length > 0 ? (
@@ -401,48 +502,49 @@ export function UpbitOpsStatusPanel({
             rowKey={(r) => String(r.slot_id ?? r.symbol)}
             dataSource={openSlots}
             columns={[
-              { title: "Symbol", dataIndex: "symbol" },
+              { title: UI_LABEL_KO.symbol, dataIndex: "symbol" },
               {
-                title: "Qty",
+                title: UI_LABEL_KO.qty,
                 key: "qty",
                 render: () => "—",
               },
               {
-                title: "Entry",
+                title: UI_LABEL_KO.entry,
                 key: "entry",
                 render: () => "—",
               },
               {
-                title: "Current",
+                title: UI_LABEL_KO.current,
                 key: "cur",
                 render: () => "—",
               },
               {
-                title: "PnL",
+                title: UI_LABEL_KO.pnl,
                 key: "pnl",
                 render: () => "—",
               },
               {
-                title: "Allocated",
+                title: UI_LABEL_KO.allocated,
                 dataIndex: "allocated_amount_krw",
+                render: (v) => formatKrwKo(v),
               },
               {
-                title: "SL / TP / Trailing",
+                title: UI_LABEL_KO.slTpTrailing,
                 key: "sl",
-                render: () => "API gap",
+                render: () => "API 미제공",
               },
               {
-                title: "Highest",
+                title: UI_LABEL_KO.highest,
                 key: "hi",
                 render: () => "—",
               },
               {
-                title: "Exit Monitor",
+                title: UI_LABEL_KO.exitMonitor,
                 key: "ex",
-                render: () => exitM,
+                render: () => runtimeValueLabelKo(exitM),
               },
               {
-                title: "Binding",
+                title: UI_LABEL_KO.binding,
                 dataIndex: "position_binding_id",
                 render: (v) => (v == null ? "—" : String(v)),
               },

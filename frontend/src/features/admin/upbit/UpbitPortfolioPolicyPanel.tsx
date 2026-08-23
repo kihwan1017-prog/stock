@@ -237,7 +237,7 @@ export function UpbitPortfolioPolicyPanel({
         </Form>
       </Card>
 
-      <Card size="small" title="Slot별 Entry 관측 (최대 5)">
+      <Card size="small" title="슬롯별 매수 관측 (최대 5)">
         <Table
           size="small"
           pagination={false}
@@ -245,17 +245,17 @@ export function UpbitPortfolioPolicyPanel({
           dataSource={slotRows}
           columns={[
             {
-              title: "Slot",
+              title: "슬롯",
               dataIndex: "slot_no",
               width: 52,
             },
             {
-              title: "Symbol",
+              title: "종목",
               dataIndex: "symbol",
               render: (v) => (v ? String(v) : "— 빈 슬롯 —"),
             },
             {
-              title: "Score",
+              title: "점수",
               key: "score",
               width: 72,
               render: (_: unknown, row) => {
@@ -265,13 +265,13 @@ export function UpbitPortfolioPolicyPanel({
               },
             },
             {
-              title: "AI",
+              title: "AI 판단",
               dataIndex: "ai_recommendation",
-              width: 72,
+              width: 88,
               render: (v) => (v == null ? "—" : String(v)),
             },
             {
-              title: "대기",
+              title: "대기 시간",
               key: "wait",
               width: 88,
               render: (_: unknown, row) =>

@@ -158,32 +158,32 @@ export function DashboardOperationsTab({
           columns={[
             { title: "Broker", dataIndex: "broker", width: 72 },
             {
-              title: "LIVE",
+              title: "실거래(LIVE)",
               dataIndex: "live",
               render: (v) => (
                 <Tag color={toneToAntdColor(toneFromBoolOnOff(v === "ON"))}>
-                  {v}
+                  {v === "ON" ? "켜짐" : v === "OFF" ? "꺼짐" : v}
                 </Tag>
               ),
             },
             {
-              title: "ARM",
+              title: "자동주문 승인(ARM)",
               dataIndex: "arm",
               render: (v) => (
                 <Tag color={toneToAntdColor(toneFromBoolOnOff(v === "ON"))}>
-                  {v}
+                  {v === "ON" ? "켜짐" : v === "OFF" ? "꺼짐" : v}
                 </Tag>
               ),
             },
-            { title: "24H", dataIndex: "unattended", width: 80 },
-            { title: "Runtime", dataIndex: "runtime" },
-            { title: "Worker", dataIndex: "worker" },
-            { title: "Runner", dataIndex: "runner" },
-            { title: "Exit", dataIndex: "exit" },
-            { title: "Feed", dataIndex: "feed" },
-            { title: "Evaluator", dataIndex: "evaluator" },
+            { title: "24시간", dataIndex: "unattended", width: 80 },
+            { title: "런타임", dataIndex: "runtime" },
+            { title: "워커", dataIndex: "worker" },
+            { title: "실행기", dataIndex: "runner" },
+            { title: "청산", dataIndex: "exit" },
+            { title: "시세", dataIndex: "feed" },
+            { title: "평가기", dataIndex: "evaluator" },
             {
-              title: "Readiness",
+              title: "준비상태",
               dataIndex: "readiness",
               render: (v) => (
                 <Tag color={toneToAntdColor(toneFromReadiness(String(v)))}>
@@ -192,7 +192,7 @@ export function DashboardOperationsTab({
               ),
             },
             {
-              title: "Blocker",
+              title: "차단 요인",
               dataIndex: "blocker",
               ellipsis: true,
               render: (v) =>
@@ -203,10 +203,10 @@ export function DashboardOperationsTab({
       </Card>
 
       {(broker === "ALL" || broker === "UPBIT") && Object.keys(pipeline).length > 0 ? (
-        <Card size="small" title="자동매매 Pipeline (UPBIT)">
+        <Card size="small" title="자동매매 처리 현황 (업비트)">
           <PipelineFlow pipeline={pipeline} />
           <Typography.Text type="secondary" style={{ display: "block", marginTop: 8, fontSize: 12 }}>
-            Scanner → Candidate → Slot → Entry Evaluation → Order → Fill → Position → Exit → PnL
+            스캐너 → 후보 → 슬롯 → 매수 평가 → 주문 → 체결 → 포지션 → 청산 → 손익(PnL)
           </Typography.Text>
         </Card>
       ) : null}
@@ -271,10 +271,10 @@ export function DashboardOperationsTab({
                     rowKey={(r) => String(rec(r).slot_no)}
                     dataSource={ops.slots.map((s) => rec(s))}
                     columns={[
-                      { title: "Slot", dataIndex: "slot_no", width: 48 },
-                      { title: "Symbol", dataIndex: "symbol" },
-                      { title: "Score", dataIndex: "score" },
-                      { title: "AI", dataIndex: "ai_recommendation" },
+                      { title: "슬롯", dataIndex: "slot_no", width: 48 },
+                      { title: "종목", dataIndex: "symbol" },
+                      { title: "점수", dataIndex: "score" },
+                      { title: "AI 판단", dataIndex: "ai_recommendation" },
                       {
                         title: "상태",
                         dataIndex: "status",

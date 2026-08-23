@@ -104,7 +104,7 @@ export function buildUpbitAutotradingAggregateStatus(input: {
       tier: "blocked",
       headline: "자동매매 차단",
       description:
-        "LIVE 또는 ARM이 비활성입니다. Entry Evaluator·Runtime이 RUNNING이어도 실제 매수 주문은 발생하지 않습니다.",
+        "실거래(LIVE) 또는 자동주문 승인(ARM)이 꺼져 있습니다. 매수조건 평가기·런타임이 실행 중이어도 실제 매수 주문은 발생하지 않습니다.",
       blockers: gateBlockers.length ? gateBlockers : blockers,
       liveOn,
       armOn,
@@ -135,7 +135,7 @@ export function buildUpbitAutotradingAggregateStatus(input: {
 
   const evaluatorNote =
     entryEvaluatorState === "RUNNING"
-      ? "Entry Evaluator가 후보를 평가 중입니다. 슬롯별 진입 조건 미충족 시 주문은 발생하지 않습니다."
+      ? "매수조건 평가기가 후보를 평가 중입니다. 슬롯별 진입 조건 미충족 시 주문은 발생하지 않습니다."
       : "스택 가동 중 — 매수 조건 충족 시 주문이 실행됩니다.";
 
   return {

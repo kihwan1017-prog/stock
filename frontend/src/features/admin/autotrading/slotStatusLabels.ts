@@ -8,19 +8,19 @@ export function slotStatusLabelKo(status: string | null | undefined): string {
     case "WAITING_SIGNAL":
       return "매수조건 감시 중";
     case "ENTRY_PENDING":
-      return "매수 주문 준비/제출 중";
+      return "매수 주문 처리 중";
     case "OPEN":
-      return "자동매매 보유 중";
+      return "보유 중";
     case "EXIT_PENDING":
-      return "청산 진행 중";
+      return "매도 주문 처리 중";
     case "COOLDOWN":
-      return "쿨다운";
+      return "재진입 대기";
     case "EMPTY":
       return "후보 대기";
     case "ERROR":
       return "오류";
     default:
-      return s ? s : "—";
+      return s ? `확인 필요 (${s})` : "—";
   }
 }
 

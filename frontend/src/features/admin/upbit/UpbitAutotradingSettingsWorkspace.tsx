@@ -779,7 +779,7 @@ export function UpbitAutotradingSettingsWorkspace({
                 자금 · 포지션 저장
               </Button>
             </Space>
-            <Typography.Text strong>Position Slots</Typography.Text>
+            <Typography.Text strong>자동매매 후보 슬롯</Typography.Text>
             <Table
               size="small"
               pagination={false}
@@ -788,14 +788,14 @@ export function UpbitAutotradingSettingsWorkspace({
               }
               dataSource={slots as Record<string, unknown>[]}
               columns={[
-                { title: "Slot", dataIndex: "slot_no", width: 56 },
+                { title: "슬롯", dataIndex: "slot_no", width: 56 },
                 {
-                  title: "Symbol",
+                  title: "종목",
                   dataIndex: "symbol",
                   render: (v) => v ?? "—",
                 },
                 {
-                  title: "State",
+                  title: "상태",
                   dataIndex: "status",
                   render: (v) => (
                     <Tooltip title={String(v)}>
@@ -804,7 +804,7 @@ export function UpbitAutotradingSettingsWorkspace({
                   ),
                 },
                 {
-                  title: "Score",
+                  title: "점수",
                   dataIndex: "scanner_score",
                   width: 72,
                   render: (_: unknown, row) => {
@@ -814,13 +814,13 @@ export function UpbitAutotradingSettingsWorkspace({
                   },
                 },
                 {
-                  title: "AI",
+                  title: "AI 판단",
                   dataIndex: "ai_recommendation",
                   width: 88,
                   render: (v) => (v == null ? "—" : String(v)),
                 },
                 {
-                  title: "Entry 판정",
+                  title: "매수 판단",
                   key: "entry_eval",
                   width: 120,
                   render: (_: unknown, row) => {
@@ -849,12 +849,12 @@ export function UpbitAutotradingSettingsWorkspace({
                   },
                 },
                 {
-                  title: "Allocated",
+                  title: "배정 금액",
                   dataIndex: "allocated_amount_krw",
                   render: (v) => (v == null ? "—" : String(v)),
                 },
                 {
-                  title: "Reserved",
+                  title: "예약 금액",
                   dataIndex: "reserved_amount_krw",
                   render: (v) => (v == null ? "—" : String(v)),
                 },
@@ -1060,27 +1060,27 @@ export function UpbitAutotradingSettingsWorkspace({
               locale={{ emptyText: "추천 없음" }}
               columns={[
                 {
-                  title: "Symbol",
+                  title: "종목",
                   dataIndex: "symbol",
                   render: (v) => v ?? "—",
                 },
                 {
-                  title: "Rec",
+                  title: "AI 판단",
                   dataIndex: "recommendation",
                   render: (v) => <Tag>{String(v ?? "—")}</Tag>,
                 },
                 {
-                  title: "Score",
+                  title: "점수",
                   dataIndex: "score",
                   render: (v) => numOrDash(v),
                 },
                 {
-                  title: "Confidence",
+                  title: "신뢰도",
                   dataIndex: "confidence",
                   render: (v) => numOrDash(v),
                 },
                 {
-                  title: "Rank",
+                  title: "순위",
                   dataIndex: "rank",
                   render: (v) => numOrDash(v),
                 },
@@ -1345,7 +1345,7 @@ export function UpbitAutotradingSettingsWorkspace({
         <Descriptions.Item label="Pending Orders">
           {numOrDash(summary.pending_orders ?? 0)}
         </Descriptions.Item>
-        <Descriptions.Item label="Reserved KRW">
+        <Descriptions.Item label="예약 금액">
           {numOrDash(summary.reserved_krw ?? 0)}
         </Descriptions.Item>
       </Descriptions>
