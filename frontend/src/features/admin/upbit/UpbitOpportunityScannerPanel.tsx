@@ -268,6 +268,37 @@ export function UpbitOpportunityScannerPanel() {
           </>
         );
       })()}
+      {(() => {
+        const ab = asRecord(shadowStats.entry_policy_ab) ?? {};
+        const base = asRecord(ab.baseline) ?? {};
+        const cand = asRecord(ab.candidate_b) ?? {};
+        if (!ab.sample_count && ab.sample_count !== 0) return null;
+        return (
+          <>
+            <Typography.Title level={5} style={{ marginBottom: 0 }}>
+              Entry Policy A/B
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Shadow entry-only 비교 (Exit=TP10/Trail3 고정, REAL 미변경). Baseline
+              vs Candidate B (RSI65 / VOL1.0).
+            </Typography.Paragraph>
+            <Space wrap>
+              <Tag>
+                n={cell(ab.sample_count)}/{cell(ab.final_verdict)}
+              </Tag>
+              <Tag>
+                Baseline entries={cell(ab.baseline_entries)} net=
+                {cell(base.net_pnl)} wr={cell(base.win_rate)}
+              </Tag>
+              <Tag color="blue">
+                Candidate B entries={cell(ab.candidate_entries)} net=
+                {cell(cand.net_pnl)} wr={cell(cand.win_rate)} filtered=
+                {cell(ab.candidate_filtered_count)}
+              </Tag>
+            </Space>
+          </>
+        );
+      })()}
       <AdminJsonCard
         title="Shadow Stats / Cohort"
         loading={status.isLoading}

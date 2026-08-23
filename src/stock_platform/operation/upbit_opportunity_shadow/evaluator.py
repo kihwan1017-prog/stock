@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import structlog
@@ -26,6 +27,9 @@ from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
 )
 from stock_platform.operation.upbit_opportunity_shadow.exit_policy_ab import (
     compare_exit_policies_ab,
+)
+from stock_platform.operation.upbit_opportunity_shadow.entry_policy_ab import (
+    compare_entry_on_opportunity,
 )
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     EVALUATION_WINDOWS_MINUTES,
@@ -397,6 +401,8 @@ class UpbitOpportunityShadowEvaluator:
             # Exit Policy A/B — REAL 주문/정책과 분리, detail만 갱신
             if computed.get("exit_ab") is not None:
                 detail["exit_ab"] = computed.get("exit_ab")
+            if computed.get("entry_ab") is not None:
+                detail["entry_ab"] = computed.get("entry_ab")
             # PASS 시 path_defer 정리(남아 있으면 해소 표시)
             if detail.get("path_defer"):
                 cleared = dict(detail["path_defer"])
@@ -592,6 +598,23 @@ class UpbitOpportunityShadowEvaluator:
             now=now_utc,
             horizon_minutes=60,
         )
+        # Entry A/B: 동일 row 지표 + 방금 계산한 baseline exit (row mutate 금지)
+        entry_probe = SimpleNamespace(
+            shadow_id=getattr(row, "shadow_id", 0),
+            symbol=row.symbol,
+            scanner_score=row.scanner_score,
+            recommendation=row.recommendation,
+            ma5=row.ma5,
+            ma20=row.ma20,
+            rsi14=row.rsi14,
+            volume_surge=row.volume_surge,
+            entry_snapshot=row.entry_snapshot,
+            evaluation_detail={"exit_ab": exit_ab},
+            return_5m_pct=getattr(row, "return_5m_pct", None),
+            mfe_pct=_round6(mfe),
+            mae_pct=_round6(mae),
+        )
+        entry_ab = compare_entry_on_opportunity(entry_probe)
 
         return {
             "ok": True,
@@ -622,6 +645,7 @@ class UpbitOpportunityShadowEvaluator:
             "tp_pct": tp_pct,
             "sl_pct": sl_pct,
             "exit_ab": exit_ab,
+            "entry_ab": entry_ab,
             "distinct_window_prices": distinct_prices,
             "max_prior_lag_seconds": DEFAULT_MAX_PRIOR_LAG_SECONDS,
             "path_quality": path_quality,

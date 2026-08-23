@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-23 (Upbit Exit Policy Candidate A Shadow A/B)
+**최종 갱신:** 2026-08-23 (Upbit Entry Candidate B Shadow A/B)
 
 ---
 
@@ -15,23 +15,25 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | Exit Policy Candidate #1 Shadow A/B | **TP_TRAIL_CANDIDATE_A_REJECTED** | KEEP_BASELINE_EXIT_POLICY |
-| **SHARED** | Dynamic FREE symbol first AUTO BUY | **BROKER_REJECTED** (PROM / order 1799) | FIX_UPBIT_MARKET_BUY_KRW_AMOUNT_MAPPING… |
+| **U** | Entry Candidate B Shadow A/B | **ENTRY_CANDIDATE_B_FORWARD_VALIDATED** | REVIEW_ENTRY_CANDIDATE_B_FOR_REAL_PROMOTION |
+| **U** | Exit Candidate A Shadow A/B | **TP_TRAIL_CANDIDATE_A_REJECTED** | KEEP_BASELINE_EXIT_POLICY |
+| **SHARED** | Dynamic FREE first AUTO BUY | **BROKER_REJECTED** | FIX_UPBIT_MARKET_BUY… |
 | **K** | ORDER_LIMIT_V2 | unchanged | NEXT_KRX_DAY… |
 
 ---
 
-## U — Exit A/B (Shadow/Paper only)
+## U — Entry A/B (Shadow only)
 
-- Baseline TP10/Trail3 vs Candidate A TP1 / trail act+0.5 / dist 0.3
-- REAL policy/order/LIVE/ARM/Risk/Slot/UBA1381 mutation: **0**
-- Forward sample: **459** completed shadows (`exit_ab` backfill)
-- Candidate: higher win rate / lower fee-only churn, but **worse net** → rejected for REAL promotion
+- Baseline RSI≤70 / VOL≥0.8 vs Candidate B RSI≤65 / VOL≥1.0
+- Exit 고정: TP10 / trail3 (Candidate A exit **unused**)
+- Forward: 459 opportunities · Baseline entries 192 · Candidate B 116
+- Net / PF / filter-benefit 개선 → **forward validated** (REAL 미적용 — review only)
+- Mutations: REAL/LIVE/ARM/Risk/Slot/UBA1381 = **0**
 
-Evidence: `.run/k_upbit_tp_trailing_candidate_a_shadow_ab.json`
+Evidence: `.run/k_upbit_entry_candidate_b_shadow_ab.json`
 
 ---
 
 ## Next Gate
 
-**Exactly one (U exit):** KEEP_BASELINE_EXIT_POLICY
+**Exactly one (U entry):** REVIEW_ENTRY_CANDIDATE_B_FOR_REAL_PROMOTION
