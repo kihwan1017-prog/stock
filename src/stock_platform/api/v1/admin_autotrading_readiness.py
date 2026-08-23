@@ -313,6 +313,54 @@ def admin_uba_unattended_disable(
         ) from exc
 
 
+class UnattendedAutoRenewBody(BaseModel):
+    enabled: bool
+
+
+@router.post("/uba/{user_broker_account_id}/unattended/auto-renew")
+def admin_uba_unattended_auto_renew_toggle(
+    user_broker_account_id: int,
+    body: UnattendedAutoRenewBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """24H lease 자동 갱신 opt-in/out — ACTIVE lease 필수."""
+
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+        LiveUnattendedError,
+    )
+
+    try:
+        return LiveUnattendedAuthorizationService(session).set_auto_renew_enabled(
+            int(user_broker_account_id),
+            enabled=bool(body.enabled),
+            actor=user.username,
+        )
+    except LiveUnattendedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.get("/uba/{user_broker_account_id}/unattended/horizon-auto-renew/preview")
+def admin_uba_unattended_horizon_auto_renew_preview(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """READ-ONLY dry evaluation — would_renew / projected expiry."""
+
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+    )
+
+    return LiveUnattendedAuthorizationService(
+        session
+    ).dry_horizon_auto_renew_evaluation(int(user_broker_account_id))
+
+
 @router.post("/uba/{user_broker_account_id}/strategy-runtime/start")
 async def admin_uba_strategy_runtime_start(
     user_broker_account_id: int,

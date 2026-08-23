@@ -59,6 +59,12 @@ export type StackStartSnapshot = {
   unattendedStatusCode: string;
   needsReauthorize: boolean;
   unattendedAuthorizedUntil: string | null;
+  /** 24H horizon 자동 갱신 opt-in */
+  unattendedAutoRenewEnabled: boolean;
+  nextHorizonRenewCheckAt: string | null;
+  lastHorizonAutoRenewStatus: string | null;
+  lastHorizonAutoRenewReason: string | null;
+  horizonRenewMarginSeconds: number;
   entryAuthorized: boolean;
   stackLabel: string;
   aiState: string;
@@ -153,6 +159,23 @@ export function snapshotFromOpsStatus(payload: unknown): StackStartSnapshot {
       unattended.authorized_until != null
         ? String(unattended.authorized_until)
         : null,
+    unattendedAutoRenewEnabled: Boolean(unattended.auto_renew_enabled),
+    nextHorizonRenewCheckAt:
+      unattended.next_horizon_renew_check_at != null
+        ? String(unattended.next_horizon_renew_check_at)
+        : null,
+    lastHorizonAutoRenewStatus: (() => {
+      const hz = asRecord(unattended.last_horizon_auto_renew);
+      const st = hz.status != null ? String(hz.status) : null;
+      return st && st !== "NONE" ? st : null;
+    })(),
+    lastHorizonAutoRenewReason: (() => {
+      const hz = asRecord(unattended.last_horizon_auto_renew);
+      return hz.reason != null ? String(hz.reason) : null;
+    })(),
+    horizonRenewMarginSeconds: Number(
+      unattended.horizon_renew_margin_seconds ?? 3600,
+    ),
     entryAuthorized,
     stackLabel: String(stack.label ?? "0/4"),
     aiState: String(root.ai_state ?? "HOLD").toUpperCase(),

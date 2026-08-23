@@ -55,6 +55,7 @@ import {
   UPBIT_AUTOTRADING_TAB_ORDER,
 } from "./upbitAutotradingSettingsConfig";
 import { UpbitOpsStatusPanel } from "./UpbitOpsStatusPanel";
+import { UpbitUnattendedAutoRenewPanel } from "./UpbitUnattendedAutoRenewPanel";
 import { entryBlockReasonKo } from "@/features/admin/autotrading/entryBlockReasonKo";
 import { slotStatusLabelKo } from "@/features/admin/autotrading/slotStatusLabels";
 
@@ -1078,6 +1079,7 @@ export function UpbitAutotradingSettingsWorkspace({
               {opsSnap?.unattendedEnabled
                 ? `ON · ${opsSnap.unattendedRemainingLabel}`
                 : "OFF"}
+              {opsSnap?.unattendedAutoRenewEnabled ? " · 자동갱신 ON" : ""}
             </Descriptions.Item>
             <Descriptions.Item label="LIVE / ARM">
               LIVE {opsSnap?.live ?? "—"} · ARM {opsSnap?.arm ?? "—"}
@@ -1173,6 +1175,13 @@ export function UpbitAutotradingSettingsWorkspace({
         />
       </Card>
 
+      <UpbitUnattendedAutoRenewPanel
+        ubaId={ubaId}
+        opsSnap={opsSnap}
+        unattendedPayload={unattended}
+        onChanged={invalidateOps}
+      />
+
       <Alert
         type="warning"
         showIcon
@@ -1210,6 +1219,11 @@ export function UpbitAutotradingSettingsWorkspace({
               <Tag color={opsSnap?.unattendedEnabled ? "green" : "default"}>
                 {opsSnap?.unattendedEnabled ? "ON" : "OFF"}
               </Tag>
+              {opsSnap?.unattendedAutoRenewEnabled ? (
+                <Tag color="blue" style={{ marginInlineStart: 4 }}>
+                  Auto
+                </Tag>
+              ) : null}
             </div>
           </Card>
         </Col>

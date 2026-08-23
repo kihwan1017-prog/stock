@@ -905,6 +905,26 @@ export async function disableAdminUbaUnattended(
   return postJson(`/admin/autotrading/uba/${ubaId}/unattended/disable`, body);
 }
 
+/** 24H lease 자동 갱신 opt-in/out — ACTIVE lease 필수 */
+export async function setAdminUbaUnattendedAutoRenew(
+  ubaId: number,
+  body: { enabled: boolean },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/unattended/auto-renew`,
+    body,
+  );
+}
+
+/** READ-ONLY — would_renew / projected expiry (시간 조작 없음) */
+export async function getAdminUbaHorizonAutoRenewPreview(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/autotrading/uba/${ubaId}/unattended/horizon-auto-renew/preview`,
+  );
+}
+
 export async function getAdminLiveOutboxWorkerStatus(): Promise<JsonValue> {
   return getJson("/admin/autotrading/live-outbox-worker/status");
 }

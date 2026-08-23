@@ -33,6 +33,9 @@ export type BrokerCardModel = {
   readiness?: string | null;
   /** UPBIT extras */
   unattended?: string | null;
+  unattendedAutoRenew?: boolean | null;
+  unattendedRemainingSeconds?: number | null;
+  unattendedRenewWarning?: boolean;
   worker?: string | null;
   runner?: string | null;
   exitMonitor?: string | null;
@@ -96,10 +99,21 @@ export function BrokerOpsCard({ model }: { model: BrokerCardModel }) {
         ) : (
           <StatusLine
             label="24H"
-            value={unattendedLeaseLabelKo(model.unattended)}
+            value={(() => {
+              const base = unattendedLeaseLabelKo(model.unattended);
+              if (
+                String(model.unattended).toUpperCase() === "ACTIVE" &&
+                model.unattendedAutoRenew
+              ) {
+                return `${base} · Auto Renew ON`;
+              }
+              return base;
+            })()}
             tone={
               String(model.unattended).toUpperCase() === "ACTIVE"
-                ? "green"
+                ? model.unattendedRenewWarning
+                  ? "yellow"
+                  : "green"
                 : String(model.unattended).toUpperCase() ===
                     "PROTECTIVE_EXIT_ONLY"
                   ? "yellow"

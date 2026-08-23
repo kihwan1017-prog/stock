@@ -183,6 +183,21 @@ export function useDashboardBrokerOps({
     return list;
   }, [kiwoomOps, upbitOps]);
 
+  const upbitUnattended = rec(upbitOps.unattended);
+  const upbitUnattendedStatus = String(
+    upbitUnattended.lease_status ??
+      upbitUnattended.status ??
+      (upbitUnattended.unattended_enabled ? "ACTIVE" : "OFF"),
+  );
+  const upbitAutoRenew = Boolean(upbitUnattended.auto_renew_enabled);
+  const upbitUnattRem = Number(upbitUnattended.remaining_seconds ?? 0);
+  const upbitLastHz = rec(upbitUnattended.last_horizon_auto_renew);
+  const upbitRenewWarning =
+    upbitAutoRenew &&
+    upbitUnattendedStatus === "ACTIVE" &&
+    (upbitLastHz.status === "BLOCKED" ||
+      (upbitUnattRem > 0 && upbitUnattRem <= 3600));
+
   const upbitCard: BrokerCardModel = useMemo(
     () => ({
       broker: "UPBIT",
@@ -209,11 +224,10 @@ export function useDashboardBrokerOps({
       ),
       feed: String(rec(upbitOps.market_feed).status ?? "—"),
       evaluator: String(portfolioSummary.entry_state ?? "—"),
-      unattended: String(
-        rec(upbitOps.unattended).lease_status ??
-          rec(upbitOps.unattended).status ??
-          (rec(upbitOps.unattended).unattended_enabled ? "ACTIVE" : "OFF"),
-      ),
+      unattended: upbitUnattendedStatus,
+      unattendedAutoRenew: upbitAutoRenew,
+      unattendedRemainingSeconds: upbitUnattRem,
+      unattendedRenewWarning: upbitRenewWarning,
       autoPositions: Number(portfolioSummary.positions_open ?? 0),
       todayOrders: null,
       autoPnlLabel: "성과 API",
@@ -230,7 +244,7 @@ export function useDashboardBrokerOps({
           "—",
       ),
     }),
-    [portfolioSummary, upbitOps, upbitReady],
+    [portfolioSummary, upbitAutoRenew, upbitLastHz, upbitOps, upbitReady, upbitRenewWarning, upbitUnattRem, upbitUnattendedStatus],
   );
 
   const kiwoomCard: BrokerCardModel = useMemo(

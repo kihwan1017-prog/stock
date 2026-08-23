@@ -49,6 +49,10 @@ class LiveUnattendedAuthorizationEntity(Base):
     protective_exit_authorized: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
+    # 운영자 명시 opt-in — 만료 전 안전 gate PASS 시 24H horizon 자동 연장
+    auto_renew_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
     authorized_until: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )

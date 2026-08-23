@@ -49,17 +49,18 @@ def test_secret_view_is_masked() -> None:
 
 
 @pytest.mark.unit
-def test_validate_trading_cross_rule() -> None:
+def test_validate_trading_cross_kiwoom_option_d_accepted() -> None:
+    """Kiwoom catalog LIVE + shared MOCK 은 Option D 에서 저장 허용."""
+
     service = AppSettingService(
         MagicMock(), settings=MagicMock()
     )
-    with pytest.raises(SettingError, match="함께 사용"):
-        service._validate_trading_cross(
-            {
-                "kiwoom_use_mock": "true",
-                "kiwoom_live_order_enabled": "true",
-            }
-        )
+    service._validate_trading_cross(
+        {
+            "kiwoom_use_mock": "true",
+            "kiwoom_live_order_enabled": "true",
+        }
+    )
 
 
 @pytest.mark.unit

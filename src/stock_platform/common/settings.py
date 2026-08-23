@@ -161,6 +161,17 @@ class Settings(BaseSettings):
     live_unattended_activation_renew_hours: int = Field(
         default=8, ge=1, le=LIVE_ACTIVATION_TTL_HOURS_MAX
     )
+    # 24H horizon 자동 연장 — 만료 N초 전 precheck (기본 60분)
+    live_unattended_horizon_renew_margin_seconds: int = Field(
+        default=3600, ge=300, le=7200
+    )
+    # horizon 연장 최소 간격 / 의미 있는 연장 하한 (기본 1시간)
+    live_unattended_horizon_renew_interval_seconds: int = Field(
+        default=3600, ge=300, le=86400
+    )
+    live_unattended_horizon_min_extension_seconds: int = Field(
+        default=3600, ge=300, le=86400
+    )
     # ARM/Activation 만료 스캔 주기(초). 주문/Runtime 기동 아님.
     live_session_expiry_scan_interval_seconds: float = Field(
         default=15.0, ge=5.0, le=60.0
