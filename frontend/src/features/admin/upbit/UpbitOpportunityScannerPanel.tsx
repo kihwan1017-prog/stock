@@ -237,6 +237,37 @@ export function UpbitOpportunityScannerPanel() {
           mismatch={cell(shadowStats.mismatch_count ?? 0)}
         </Tag>
       </Space>
+      {(() => {
+        const ab = asRecord(shadowStats.exit_policy_ab) ?? {};
+        const base = asRecord(ab.baseline) ?? {};
+        const cand = asRecord(ab.candidate_a) ?? {};
+        if (!ab.sample_count && ab.sample_count !== 0) return null;
+        return (
+          <>
+            <Typography.Title level={5} style={{ marginBottom: 0 }}>
+              Exit Policy A/B
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              Shadow exit-only 비교 (REAL 정책 미변경). Baseline vs Candidate A.
+            </Typography.Paragraph>
+            <Space wrap>
+              <Tag>
+                n={cell(ab.sample_count)}/{cell(ab.final_verdict)}
+              </Tag>
+              <Tag>
+                Baseline net={cell(base.net_pnl)} wr={cell(base.win_rate)} TP=
+                {cell(base.tp_exit_count)} Trail={cell(base.trailing_exit_count)}{" "}
+                MA={cell(base.ma_exit_count)}
+              </Tag>
+              <Tag color="blue">
+                Candidate A net={cell(cand.net_pnl)} wr={cell(cand.win_rate)} TP=
+                {cell(cand.tp_exit_count)} Trail=
+                {cell(cand.trailing_exit_count)} MA={cell(cand.ma_exit_count)}
+              </Tag>
+            </Space>
+          </>
+        );
+      })()}
       <AdminJsonCard
         title="Shadow Stats / Cohort"
         loading={status.isLoading}

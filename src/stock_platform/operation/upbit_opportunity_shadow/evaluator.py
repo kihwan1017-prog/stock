@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.upbit_opportunity_shadow.candle_loader import (
     ensure_shadow_minute_bars,
+    list_minute_bars_db,
     resolve_missing_target_minutes,
 )
 from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
@@ -22,6 +23,9 @@ from stock_platform.operation.upbit_opportunity_shadow.candle_path import (
     compute_tp_sl,
     observe_windows,
     target_candle_bounds,
+)
+from stock_platform.operation.upbit_opportunity_shadow.exit_policy_ab import (
+    compare_exit_policies_ab,
 )
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     EVALUATION_WINDOWS_MINUTES,
@@ -390,6 +394,9 @@ class UpbitOpportunityShadowEvaluator:
             detail["target_resolve"] = computed.get("target_resolve")
             if path_quality is not None:
                 detail["path_quality"] = path_quality
+            # Exit Policy A/B — REAL 주문/정책과 분리, detail만 갱신
+            if computed.get("exit_ab") is not None:
+                detail["exit_ab"] = computed.get("exit_ab")
             # PASS 시 path_defer 정리(남아 있으면 해소 표시)
             if detail.get("path_defer"):
                 cleared = dict(detail["path_defer"])
@@ -564,6 +571,28 @@ class UpbitOpportunityShadowEvaluator:
         # provenance blob (migration 없이 detail에 첨부)
         path_quality["source_reconcile"] = source_evidence.to_detail_dict()
 
+        # Exit A/B: MA warmup용 lookback (DB only, 추가 broker sync 없음)
+        ab_start = detected - timedelta(minutes=40)
+        lookback = list_minute_bars_db(
+            self._session,
+            symbol=str(row.symbol),
+            start_at=ab_start,
+            end_at=eval_end,
+            timeframe=1,
+        )
+        by_at = {as_utc(b.candle_at): b for b in lookback}
+        for b in bars:
+            by_at[as_utc(b.candle_at)] = b
+        ab_bars = [by_at[k] for k in sorted(by_at.keys())]
+        exit_ab = compare_exit_policies_ab(
+            ab_bars,
+            symbol=str(row.symbol),
+            entry_at=detected,
+            entry_price=entry,
+            now=now_utc,
+            horizon_minutes=60,
+        )
+
         return {
             "ok": True,
             "symbol": row.symbol,
@@ -592,6 +621,7 @@ class UpbitOpportunityShadowEvaluator:
             },
             "tp_pct": tp_pct,
             "sl_pct": sl_pct,
+            "exit_ab": exit_ab,
             "distinct_window_prices": distinct_prices,
             "max_prior_lag_seconds": DEFAULT_MAX_PRIOR_LAG_SECONDS,
             "path_quality": path_quality,

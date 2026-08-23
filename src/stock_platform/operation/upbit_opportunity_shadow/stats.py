@@ -7,6 +7,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from stock_platform.operation.upbit_opportunity_shadow.exit_policy_ab import (
+    summarize_exit_ab_from_shadows,
+)
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     SHADOW_STATUS_COMPLETED,
 )
@@ -124,6 +127,7 @@ def compute_shadow_stats(session: Session) -> dict[str, Any]:
         "paper_shadow": True,
         "shadow_only": True,
         "auto_threshold_tuning": False,
+        "exit_policy_ab": summarize_exit_ab_from_shadows(completed),
     }
 
 
