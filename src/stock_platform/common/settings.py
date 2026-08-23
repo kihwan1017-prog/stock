@@ -244,6 +244,10 @@ class Settings(BaseSettings):
     upbit_portfolio_entry_min_volume_surge: float = 0.8
     upbit_portfolio_entry_min_ma_separation_pct: float = 0.05
     upbit_portfolio_entry_require_ai_allow: bool = True
+    # MA_DEAD_CROSS anti-churn (보호 SL/TP/Trailing 미적용)
+    upbit_portfolio_exit_min_ma_separation_pct: float = 0.03
+    upbit_portfolio_ma_exit_min_holding_seconds: int = 180
+    upbit_portfolio_estimated_fee_rate: float = 0.0005
     # MA Signal → AI Gate (기본 OFF). LIVE Gate는 별도 플래그(기본 OFF)
     autotrading_ai_signal_gate_enabled: bool = False
     autotrading_ai_signal_gate_live_enabled: bool = False

@@ -74,7 +74,10 @@ def _resolve_uba_ledger_position(
     consumer: "ScopedRealtimeConsumer",
     symbol: str,
 ) -> RealtimePositionState | None:
-    """USER_BROKER UBA — BrokerPositionSnapshot 기반 손절·익절 (MOCK/LIVE 원장)."""
+    """USER_BROKER UBA — BrokerPositionSnapshot 기반 손절·익절 (MOCK/LIVE 원장).
+
+    opened_at/buy_fee는 strategy_position_binding에서 보강 (MA exit min-hold용).
+    """
 
     if consumer.scope.account_kind != AccountKind.USER_BROKER:
         return None
@@ -90,6 +93,11 @@ def _resolve_uba_ledger_position(
             BrokerPositionSnapshotEntity,
         )
         from stock_platform.database.session import get_session_factory
+        from stock_platform.risk_engine.strategy_owned_entities import (
+            BINDING_STATUS_OPEN,
+            OWNERSHIP_STRATEGY,
+            StrategyPositionBindingEntity,
+        )
 
         session = get_session_factory()()
         try:
@@ -106,6 +114,33 @@ def _resolve_uba_ledger_position(
                     average_entry_price=None,
                 )
             avg = row.average_purchase_price
+            opened_at = None
+            buy_fee = None
+            # AUTO binding에서 보유 시각·수수료 보강 (MANUAL은 영향 없음)
+            try:
+                binding = session.scalar(
+                    select(StrategyPositionBindingEntity)
+                    .where(
+                        StrategyPositionBindingEntity.user_broker_account_id
+                        == int(consumer.scope.account_id),
+                        StrategyPositionBindingEntity.broker_code == broker,
+                        StrategyPositionBindingEntity.symbol
+                        == symbol.upper(),
+                        StrategyPositionBindingEntity.status
+                        == BINDING_STATUS_OPEN,
+                        StrategyPositionBindingEntity.ownership_code
+                        == OWNERSHIP_STRATEGY,
+                    )
+                    .order_by(StrategyPositionBindingEntity.opened_at.desc())
+                    .limit(1)
+                )
+                if binding is not None:
+                    opened_at = getattr(binding, "opened_at", None)
+                    fees = getattr(binding, "fees", None)
+                    if fees is not None and Decimal(str(fees)) > 0:
+                        buy_fee = Decimal(str(fees))
+            except Exception:  # noqa: BLE001
+                pass
             return RealtimePositionState(
                 quantity=Decimal(str(row.quantity)),
                 average_entry_price=(
@@ -113,6 +148,8 @@ def _resolve_uba_ledger_position(
                     if avg is not None and Decimal(str(avg)) > 0
                     else None
                 ),
+                opened_at=opened_at,
+                buy_fee=buy_fee,
             )
         finally:
             session.close()

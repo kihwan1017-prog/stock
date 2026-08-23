@@ -327,6 +327,10 @@ class UpbitPortfolioService:
             "ai_requirement_label": (
                 "ALLOW" if thresholds.require_ai_allow else "ANY"
             ),
+            **self._ma_exit_policy_public(
+                risk_group_policy_json=blob,
+                entry_cooldown_seconds=int(row.entry_cooldown_seconds),
+            ),
             **self._replacement_policy_public(
                 risk_group_policy_json=blob,
                 candidate_max_age_seconds=int(row.candidate_max_age_seconds),
@@ -366,6 +370,34 @@ class UpbitPortfolioService:
             return dict(payload) if isinstance(payload, dict) else None
         except Exception:  # noqa: BLE001
             return None
+
+    def _ma_exit_policy_public(
+        self,
+        *,
+        risk_group_policy_json: dict[str, Any],
+        entry_cooldown_seconds: int,
+    ) -> dict[str, Any]:
+        """전략 MA 청산 anti-churn — 보호 청산과 분리 표시."""
+
+        from stock_platform.common.settings import get_settings
+        from stock_platform.realtime.ma_exit_policy import (
+            load_ma_exit_thresholds,
+        )
+
+        th = load_ma_exit_thresholds(
+            settings=get_settings(),
+            risk_group_policy_json=risk_group_policy_json,
+        )
+        return {
+            "exit_min_ma_separation_pct": float(th.exit_min_ma_separation_pct),
+            "ma_exit_min_holding_seconds": int(th.ma_exit_min_holding_seconds),
+            # 동일종목 재진입 — 기존 entry_cooldown / slot cooldown 재사용
+            "strategy_exit_reentry_cooldown_seconds": int(
+                entry_cooldown_seconds
+            ),
+            "ma_exit_applies_to_protective": False,
+            "ma_exit_profit_only_gate": False,
+        }
 
     def _replacement_policy_public(
         self,
@@ -497,6 +529,8 @@ class UpbitPortfolioService:
                 "require_ai_allow",
                 "short_ma_window",
                 "long_ma_window",
+                "exit_min_ma_separation_pct",
+                "ma_exit_min_holding_seconds",
             }:
                 blob = dict(row.risk_group_policy_json or {})
                 if value is None:
@@ -513,6 +547,13 @@ class UpbitPortfolioService:
                     if v < 0:
                         raise ValueError("MA_SEPARATION_NEGATIVE")
                     blob[key] = v
+                elif key == "exit_min_ma_separation_pct":
+                    v = float(value)
+                    if v < 0:
+                        raise ValueError("EXIT_MA_SEPARATION_NEGATIVE")
+                    blob[key] = v
+                elif key == "ma_exit_min_holding_seconds":
+                    blob[key] = max(0, int(value))
                 elif key == "min_volume_surge":
                     v = float(value)
                     if v <= 0:

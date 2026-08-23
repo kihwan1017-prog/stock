@@ -43,6 +43,10 @@ class RealtimeStrategyConfig:
     # Portfolio entry: CROSS_EVENT(기본) | BULLISH_STATE — FIXED는 항상 CROSS_EVENT
     entry_signal_policy: str = "CROSS_EVENT"
     portfolio_mode: bool = False
+    # MA_DEAD_CROSS anti-churn (보호 청산 미적용)
+    exit_min_ma_separation_pct: float = 0.03
+    ma_exit_min_holding_seconds: int = 180
+    estimated_fee_rate: float = 0.0005
 
     def uses_daily_bars(self) -> bool:
         return uses_daily_bars(self.timeframe)
@@ -52,6 +56,8 @@ class RealtimeStrategyConfig:
 class RealtimePositionState:
     quantity: Decimal
     average_entry_price: Decimal | None
+    opened_at: datetime | None = None
+    buy_fee: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

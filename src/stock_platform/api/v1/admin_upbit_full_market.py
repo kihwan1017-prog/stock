@@ -224,6 +224,13 @@ class PortfolioPolicyPatchBody(BaseModel):
     require_ai_allow: bool | None = None
     short_ma_window: int | None = Field(default=None, ge=1, le=200)
     long_ma_window: int | None = Field(default=None, ge=2, le=500)
+    # 전략 MA 청산 anti-churn (보호 SL/TP/Trailing 미적용)
+    exit_min_ma_separation_pct: float | None = Field(
+        default=None, ge=0, le=50
+    )
+    ma_exit_min_holding_seconds: int | None = Field(
+        default=None, ge=0, le=86400
+    )
 
     @model_validator(mode="after")
     def _validate_ma_windows(self) -> PortfolioPolicyPatchBody:
@@ -384,6 +391,17 @@ def admin_portfolio_policy_patch(
             detail={"ok": False, "error": str(exc)},
         ) from exc
     session.commit()
+    # 라이브 evaluator에 MA exit / entry 임계값 재부착 (주문 없음)
+    try:
+        from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            ensure_portfolio_entry_evaluator_for_uba,
+        )
+
+        result["evaluator_reattach"] = ensure_portfolio_entry_evaluator_for_uba(
+            int(user_broker_account_id)
+        )
+    except Exception as exc:  # noqa: BLE001
+        result["evaluator_reattach"] = {"ok": False, "error": str(exc)}
     return result
 
 

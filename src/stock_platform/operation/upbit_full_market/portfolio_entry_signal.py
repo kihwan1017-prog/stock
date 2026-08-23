@@ -81,6 +81,8 @@ class PortfolioEntryContext:
     )
     by_symbol: dict[str, SymbolEntrySnapshot] = field(default_factory=dict)
     refreshed_at: datetime | None = None
+    # MA exit anti-churn 등 risk_group_policy_json 원본
+    risk_group_policy_json: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -325,12 +327,16 @@ def build_portfolio_entry_context(
             bound_to_waiting_slot=True,
         )
 
+    policy_blob = dict(
+        (policy_row.risk_group_policy_json if policy_row else None) or {}
+    )
     return PortfolioEntryContext(
         user_broker_account_id=uba_id,
         policy=policy,
         thresholds=thresholds,
         by_symbol=by_symbol,
         refreshed_at=datetime.now(timezone.utc),
+        risk_group_policy_json=policy_blob,
     )
 
 
@@ -362,17 +368,41 @@ def attach_portfolio_entry_context_to_hub(
             consumer.evaluator.portfolio_entry_ctx = ctx
             attached += 1
             # bridge 기본 CROSS_EVENT 방어: ctx 정책으로 portfolio_mode 강제
+            # + MA exit anti-churn 임계값 patch
+            from stock_platform.common.settings import get_settings
+            from stock_platform.realtime.ma_exit_policy import (
+                load_ma_exit_thresholds,
+            )
+
             old_cfg = consumer.evaluator.config
             new_policy = normalize_entry_policy(ctx.policy)
-            if (
+            exit_th = load_ma_exit_thresholds(
+                settings=get_settings(),
+                risk_group_policy_json=getattr(
+                    ctx, "risk_group_policy_json", None
+                ),
+            )
+            need_patch = (
                 not bool(old_cfg.portfolio_mode)
                 or normalize_entry_policy(old_cfg.entry_signal_policy)
                 != new_policy
-            ):
+                or float(old_cfg.exit_min_ma_separation_pct)
+                != float(exit_th.exit_min_ma_separation_pct)
+                or int(old_cfg.ma_exit_min_holding_seconds)
+                != int(exit_th.ma_exit_min_holding_seconds)
+            )
+            if need_patch:
                 consumer.evaluator.config = replace(
                     old_cfg,
                     portfolio_mode=True,
                     entry_signal_policy=new_policy,
+                    exit_min_ma_separation_pct=float(
+                        exit_th.exit_min_ma_separation_pct
+                    ),
+                    ma_exit_min_holding_seconds=int(
+                        exit_th.ma_exit_min_holding_seconds
+                    ),
+                    estimated_fee_rate=float(exit_th.estimated_fee_rate),
                 )
                 config_patched += 1
     return {

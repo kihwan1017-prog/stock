@@ -273,6 +273,12 @@ export function UpbitAutotradingSettingsWorkspace({
       min_volume_surge: Number(policy.min_volume_surge ?? 0.8),
       require_ai_allow: Boolean(policy.require_ai_allow ?? true),
       entry_cooldown_seconds: Number(policy.entry_cooldown_seconds ?? 300),
+      exit_min_ma_separation_pct: Number(
+        policy.exit_min_ma_separation_pct ?? 0.03,
+      ),
+      ma_exit_min_holding_seconds: Number(
+        policy.ma_exit_min_holding_seconds ?? 180,
+      ),
       candidate_max_age_seconds: Number(
         policy.candidate_max_age_seconds ?? 1800,
       ),
@@ -946,6 +952,58 @@ export function UpbitAutotradingSettingsWorkspace({
                 </Tag>
               </Descriptions.Item>
             </Descriptions>
+
+            <Card size="small" title="전략 청산 조건 (MA_DEAD_CROSS)">
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 12 }}
+                title="손절/익절/트레일링 보호청산에는 적용되지 않습니다."
+                description="짧은 MA 반전과 수수료 churn만 줄입니다. 손실이어도 confirmed dead-cross면 전략 청산은 가능합니다."
+              />
+              <Form form={entryForm} layout="vertical">
+                <Space wrap size={12}>
+                  <Form.Item
+                    name="exit_min_ma_separation_pct"
+                    label="MA Exit 최소 역전폭 (%)"
+                  >
+                    <InputNumber min={0} max={50} step={0.01} />
+                  </Form.Item>
+                  <Form.Item
+                    name="ma_exit_min_holding_seconds"
+                    label="MA Exit 최소 보유시간 (초)"
+                  >
+                    <InputNumber min={0} max={86400} step={30} />
+                  </Form.Item>
+                  <Form.Item
+                    name="entry_cooldown_seconds"
+                    label="동일종목 재진입 대기 (초)"
+                  >
+                    <InputNumber min={0} step={30} />
+                  </Form.Item>
+                </Space>
+                <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+                  Entry 최소 MA 간격 {numOrDash(policy.min_ma_separation_pct)}%
+                  와 비대칭 hysteresis. 재진입 대기는 기존 slot cooldown과 동일
+                  SoT입니다.
+                </Typography.Paragraph>
+                <Button
+                  type="primary"
+                  loading={savePolicyMut.isPending}
+                  onClick={async () => {
+                    const values = await entryForm.validateFields([
+                      "exit_min_ma_separation_pct",
+                      "ma_exit_min_holding_seconds",
+                      "entry_cooldown_seconds",
+                    ]);
+                    confirmSavePolicy(values);
+                  }}
+                >
+                  전략 청산 조건 저장
+                </Button>
+              </Form>
+            </Card>
+
             <Typography.Paragraph type="secondary">
               SL/TP/Trailing 값이 ops/risk에 없으면 「—」로 표시합니다. 세부
               리스크 한도는{" "}

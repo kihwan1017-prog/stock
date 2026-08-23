@@ -48,6 +48,10 @@ class ScopeStrategyState:
     previous_long: Decimal | None = None
     last_bar_date: date | None = None
     input_unit: str = "TICK"
+    # MA_DEAD_CROSS confirmation (메모리 전용 — DB lifecycle 변경 없음)
+    ma_exit_confirming: bool = False
+    first_dead_cross_at: datetime | None = None
+    last_ma_exit_telemetry: dict | None = None
 
 
 class MovingAverageStrategyEvaluator:
@@ -358,14 +362,132 @@ class MovingAverageStrategyEvaluator:
             return self._emit(
                 event, state, SignalType.BUY, "MA_GOLDEN_CROSS", short_avg, long_avg
             )
-        if (
+        # MA_DEAD_CROSS — anti-churn gate (보호 SL/TP는 위에서 이미 즉시 처리)
+        raw_dead_cross = (
             position.quantity > ZERO
             and prev_s >= prev_l
+            and short_avg is not None
+            and long_avg is not None
             and short_avg < long_avg
+        )
+        if position.quantity > ZERO and (
+            raw_dead_cross or state.ma_exit_confirming
         ):
-            return self._emit(
-                event, state, SignalType.SELL, "MA_DEAD_CROSS", short_avg, long_avg
+            return self._evaluate_ma_dead_cross_exit(
+                event,
+                state,
+                position=position,
+                short_avg=short_avg,
+                long_avg=long_avg,
+                raw_dead_cross=raw_dead_cross,
             )
+        return None
+
+    def _ma_exit_thresholds(self):
+        """config에 붙은 MA exit 임계값 (attach 시 policy에서 patch)."""
+
+        from stock_platform.realtime.ma_exit_policy import MaExitThresholds
+
+        cfg = self.config
+        return MaExitThresholds(
+            exit_min_ma_separation_pct=float(
+                getattr(cfg, "exit_min_ma_separation_pct", 0.03) or 0.03
+            ),
+            ma_exit_min_holding_seconds=int(
+                getattr(cfg, "ma_exit_min_holding_seconds", 180) or 180
+            ),
+            estimated_fee_rate=float(
+                getattr(cfg, "estimated_fee_rate", 0.0005) or 0.0005
+            ),
+        )
+
+    def _evaluate_ma_dead_cross_exit(
+        self,
+        event: RealtimeMarketEvent,
+        state: ScopeStrategyState,
+        *,
+        position: RealtimePositionState,
+        short_avg: Decimal | None,
+        long_avg: Decimal | None,
+        raw_dead_cross: bool,
+    ) -> StrategySignal | None:
+        """MA_DEAD_CROSS: confirmation + min-hold. 손실이어도 EMIT 허용."""
+
+        from stock_platform.realtime.ma_exit_policy import (
+            evaluate_ma_dead_cross_gate,
+        )
+
+        thresholds = self._ma_exit_thresholds()
+        if raw_dead_cross and not state.ma_exit_confirming:
+            state.ma_exit_confirming = True
+            state.first_dead_cross_at = event.event_time or datetime.now(
+                timezone.utc
+            )
+
+        gate = evaluate_ma_dead_cross_gate(
+            raw_dead_cross_event=raw_dead_cross,
+            confirming=bool(state.ma_exit_confirming),
+            short_ma=short_avg,
+            long_ma=long_avg,
+            opened_at=getattr(position, "opened_at", None),
+            thresholds=thresholds,
+            now=event.event_time or datetime.now(timezone.utc),
+            entry_price=position.average_entry_price,
+            quantity=position.quantity,
+            current_price=event.price,
+            buy_fee=getattr(position, "buy_fee", None),
+        )
+        state.last_ma_exit_telemetry = {
+            **gate,
+            "first_dead_cross_at": (
+                state.first_dead_cross_at.isoformat()
+                if state.first_dead_cross_at
+                else None
+            ),
+            "exit_min_ma_separation_pct": thresholds.exit_min_ma_separation_pct,
+            "ma_exit_min_holding_seconds": thresholds.ma_exit_min_holding_seconds,
+        }
+        self._bump(f"ma_exit_{str(gate.get('decision') or 'HOLD').lower()}")
+
+        decision = str(gate.get("decision") or "HOLD")
+        if decision == "RESET":
+            state.ma_exit_confirming = False
+            state.first_dead_cross_at = None
+            return None
+        if decision == "EMIT":
+            state.ma_exit_confirming = False
+            first_at = state.first_dead_cross_at
+            state.first_dead_cross_at = None
+            return self._emit(
+                event,
+                state,
+                SignalType.SELL,
+                "MA_DEAD_CROSS",
+                short_avg,
+                long_avg,
+                extra_metadata={
+                    "ma_exit_confirmation": "CONFIRMED",
+                    "ma_separation_pct": gate.get("ma_separation_pct"),
+                    "holding_seconds": gate.get("holding_seconds"),
+                    "first_dead_cross_at": (
+                        first_at.isoformat() if first_at else None
+                    ),
+                    "estimated_net_pnl": (gate.get("fee_aware") or {}).get(
+                        "estimated_net_pnl"
+                    ),
+                    "estimated_net_return_pct": (gate.get("fee_aware") or {}).get(
+                        "estimated_net_return_pct"
+                    ),
+                    "break_even_price": (gate.get("fee_aware") or {}).get(
+                        "break_even_price"
+                    ),
+                    "fee_aware": gate.get("fee_aware"),
+                    "profit_only_gate": False,
+                },
+            )
+        # CONFIRMING / HOLD — 주문 없음
+        if decision == "CONFIRMING":
+            state.ma_exit_confirming = True
         return None
 
     def _uses_bullish_state_policy(self) -> bool:
@@ -502,6 +624,13 @@ class MovingAverageStrategyEvaluator:
                         if st.last_signal_at
                         else None
                     ),
+                    "ma_exit_confirming": bool(st.ma_exit_confirming),
+                    "first_dead_cross_at": (
+                        st.first_dead_cross_at.isoformat()
+                        if st.first_dead_cross_at
+                        else None
+                    ),
+                    "last_ma_exit_telemetry": st.last_ma_exit_telemetry,
                     "last_error": st.last_error,
                 }
                 for sym, st in self._by_symbol.items()
@@ -567,6 +696,8 @@ class MovingAverageStrategyEvaluator:
         reason: str,
         short_avg: Decimal | None,
         long_avg: Decimal | None,
+        *,
+        extra_metadata: dict | None = None,
     ) -> StrategySignal | None:
         now = datetime.now(timezone.utc)
         if (
@@ -588,6 +719,28 @@ class MovingAverageStrategyEvaluator:
         if state.last_fingerprint == fingerprint:
             return None
 
+        meta = {
+            "short_average": (
+                str(short_avg) if short_avg is not None else None
+            ),
+            "long_average": (
+                str(long_avg) if long_avg is not None else None
+            ),
+            "ma_input_unit": state.input_unit,
+            "last_bar_date": (
+                state.last_bar_date.isoformat()
+                if state.last_bar_date
+                else None
+            ),
+            # 주문/원장 키는 시세 exchange (broker_code=데이터소스와 혼동 금지)
+            "exchange_code": (
+                event.exchange_code or event.broker_code
+            ),
+            "source_code": event.source_code,
+        }
+        if extra_metadata:
+            meta.update(dict(extra_metadata))
+
         signal = StrategySignal(
             signal_id=StrategySignal.build_id(
                 scope_key=self.scope.scope_key,
@@ -608,25 +761,7 @@ class MovingAverageStrategyEvaluator:
             event_time=event.event_time,
             reference_price=event.price or ZERO,
             reason_code=reason,
-            metadata={
-                "short_average": (
-                    str(short_avg) if short_avg is not None else None
-                ),
-                "long_average": (
-                    str(long_avg) if long_avg is not None else None
-                ),
-                "ma_input_unit": state.input_unit,
-                "last_bar_date": (
-                    state.last_bar_date.isoformat()
-                    if state.last_bar_date
-                    else None
-                ),
-                # 주문/원장 키는 시세 exchange (broker_code=데이터소스와 혼동 금지)
-                "exchange_code": (
-                    event.exchange_code or event.broker_code
-                ),
-                "source_code": event.source_code,
-            },
+            metadata=meta,
         )
         state.last_fingerprint = fingerprint
         state.last_signal_at = now

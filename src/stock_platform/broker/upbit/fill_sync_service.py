@@ -1013,14 +1013,51 @@ class UpbitFillSyncService:
                     elif "TRAIL" in signal_reason:
                         reason_ko = "트레일링 스탑"
 
+                    hold_sec = None
+                    try:
+                        opened = getattr(binding, "opened_at", None)
+                        closed = getattr(binding, "closed_at", None)
+                        if opened is not None and closed is not None:
+                            oa = opened
+                            ca = closed
+                            if getattr(oa, "tzinfo", None) is None:
+                                from datetime import timezone as _tz
+
+                                oa = oa.replace(tzinfo=_tz.utc)
+                            if getattr(ca, "tzinfo", None) is None:
+                                from datetime import timezone as _tz
+
+                                ca = ca.replace(tzinfo=_tz.utc)
+                            hold_sec = max(0, int((ca - oa).total_seconds()))
+                    except Exception:  # noqa: BLE001
+                        hold_sec = None
+
+                    def _hold_ko(seconds: int | None) -> str:
+                        if seconds is None:
+                            return "—"
+                        if seconds < 60:
+                            return f"{seconds}초"
+                        m, s = divmod(int(seconds), 60)
+                        if m < 60:
+                            return f"{m}분 {s}초" if s else f"{m}분"
+                        h, m2 = divmod(m, 60)
+                        return f"{h}시간 {m2}분"
+
+                    sign = "+" if net >= ZERO else ""
                     emit_live_order_telegram(
                         event_type="POSITION_CLOSED",
-                        title="📦 자동매매 포지션 청산",
+                        title="📥 자동매매 청산 완료",
                         message=(
                             f"거래소: 업비트\n"
                             f"종목: {symbol.replace('KRW-', '')}\n"
+                            f"매수가: {entry}원\n"
+                            f"매도가: {avg}원\n"
+                            f"수량: {qty}\n"
+                            f"순손익: {sign}{net:.2f}원 "
+                            f"({sign}{pct:.2f}%)\n"
+                            f"수수료: {fees_b}원\n"
                             f"청산사유: {reason_ko}\n"
-                            f"수량: {qty}\n체결가: {avg}원"
+                            f"보유시간: {_hold_ko(hold_sec)}"
                         ),
                         detail={
                             "order_id": oid,
@@ -1028,12 +1065,18 @@ class UpbitFillSyncService:
                                 binding, "binding_id", None
                             ),
                             "symbol": symbol,
+                            "entry_price": str(entry),
+                            "exit_price": str(avg),
+                            "filled_qty": qty,
+                            "realized_pnl": str(net),
+                            "realized_pnl_pct": str(pct),
+                            "fees": str(fees_b),
                             "exit_reason": signal_reason
                             or "STRATEGY_SIGNAL",
+                            "holding_seconds": hold_sec,
                             "dedupe_key": f"POSITION_CLOSED:{oid}",
                         },
                     )
-                    sign = "+" if net >= ZERO else ""
                     emit_live_order_telegram(
                         event_type="REALIZED_PNL",
                         title="💰 자동매매 실현손익",
@@ -1042,7 +1085,8 @@ class UpbitFillSyncService:
                             f"종목: {symbol.replace('KRW-', '')}\n"
                             f"실현손익: {sign}{net:.2f}원 "
                             f"({sign}{pct:.2f}%)\n"
-                            f"청산사유: {reason_ko}"
+                            f"청산사유: {reason_ko}\n"
+                            f"보유시간: {_hold_ko(hold_sec)}"
                         ),
                         detail={
                             "order_id": oid,
@@ -1051,6 +1095,7 @@ class UpbitFillSyncService:
                             ),
                             "realized_pnl": str(net),
                             "realized_pnl_pct": str(pct),
+                            "holding_seconds": hold_sec,
                             "dedupe_key": f"REALIZED_PNL:{oid}",
                         },
                     )
