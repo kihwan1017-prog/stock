@@ -34,6 +34,9 @@ from stock_platform.operation.upbit_opportunity_shadow.entry_policy_ab import (
 from stock_platform.operation.upbit_opportunity_shadow.pre_entry_features import (
     compute_pre_entry_features,
 )
+from stock_platform.operation.upbit_opportunity_shadow.clean_forward_research import (
+    CLEAN_FORWARD_EPOCH_START,
+)
 from stock_platform.operation.upbit_opportunity_shadow.candle_path import MinuteBar
 from decimal import Decimal
 
@@ -64,6 +67,13 @@ def _outcome(net: float, *, gross: float | None = None, fee: float = 10.0) -> di
     }
 
 
+def _windows_ok() -> dict:
+    return {
+        str(m): {"status": "OK", "price": 100.0, "return_pct": 0.5}
+        for m in (5, 15, 30, 60)
+    }
+
+
 def _shadow(
     *,
     sid: int,
@@ -73,7 +83,34 @@ def _shadow(
     detected: datetime,
     return_5m: float = 0.0,
     mae: float = -0.1,
+    clean_epoch: bool = False,
 ) -> SimpleNamespace:
+    detail: dict = {
+        "exit_ab": {"baseline": _outcome(net)},
+    }
+    snap: dict = {"candidate": {"ma_spread_pct": 0.1}}
+    created_at = detected
+    if clean_epoch:
+        detail.update(
+            {
+                "entry_ab": {"schema": "entry_policy_ab_v1"},
+                "entry_forward_features": {
+                    "ok": True,
+                    "pre_entry_return_5m": 0.1,
+                    "dist_from_5m_high_pct": -0.5,
+                },
+                "windows": _windows_ok(),
+            }
+        )
+        snap["entry_price_provenance"] = {
+            "schema": "shadow_entry_price_provenance_v1",
+            "quality": "CANONICAL_DB_CANDLE",
+            "source": "market.candle_minute.detected_candle_close",
+            "ok": True,
+        }
+        detected = CLEAN_FORWARD_EPOCH_START + timedelta(hours=1)
+        created_at = detected
+
     return SimpleNamespace(
         shadow_id=sid,
         symbol=f"KRW-S{sid % 7}",
@@ -86,10 +123,8 @@ def _shadow(
         rsi14=rsi,
         volume_surge=vol,
         entry_price=Decimal("100"),
-        entry_snapshot={"candidate": {"ma_spread_pct": 0.1}},
-        evaluation_detail={
-            "exit_ab": {"baseline": _outcome(net)},
-        },
+        entry_snapshot=snap,
+        evaluation_detail=detail,
         return_5m_pct=return_5m,
         return_15m_pct=0.0,
         return_30m_pct=0.0,
@@ -97,6 +132,7 @@ def _shadow(
         mfe_pct=0.5,
         mae_pct=mae,
         detected_at=detected,
+        created_at=created_at,
         status="COMPLETED",
         deleted_at=None,
     )
@@ -166,7 +202,7 @@ def test_legacy_new_sample_separation() -> None:
 
 def test_forward_outcome_and_fee() -> None:
     t0 = datetime(2026, 8, 1, tzinfo=timezone.utc)
-    rows = [_shadow(sid=1, rsi=60, vol=0.9, net=-15.0, detected=t0)]
+    rows = [_shadow(sid=1, rsi=60, vol=0.9, net=-15.0, detected=t0, clean_epoch=True)]
     report = run_b1_forward_validation(rows)
     assert report["baseline"]["fees"] == 10.0
     assert report["baseline"]["net_pnl"] == -15.0
@@ -195,10 +231,22 @@ def test_early_dump() -> None:
     t0 = datetime(2026, 8, 1, tzinfo=timezone.utc)
     rows = [
         _shadow(
-            sid=1, rsi=60, vol=0.9, net=-10, detected=t0, return_5m=-0.4
+            sid=1,
+            rsi=60,
+            vol=0.9,
+            net=-10,
+            detected=t0,
+            return_5m=-0.4,
+            clean_epoch=True,
         ),
         _shadow(
-            sid=2, rsi=60, vol=0.9, net=5, detected=t0 + timedelta(minutes=1), return_5m=0.1
+            sid=2,
+            rsi=60,
+            vol=0.9,
+            net=5,
+            detected=t0 + timedelta(minutes=1),
+            return_5m=0.1,
+            clean_epoch=True,
         ),
     ]
     report = run_b1_forward_validation(rows)
@@ -317,7 +365,14 @@ def test_pre_entry_features_from_bars() -> None:
 def test_buckets_and_symbol_aggregation() -> None:
     t0 = datetime(2026, 8, 1, tzinfo=timezone.utc)
     rows = [
-        _shadow(sid=i, rsi=50 + (i % 20), vol=0.8 + (i % 5) * 0.2, net=-5 + i, detected=t0 + timedelta(minutes=i))
+        _shadow(
+            sid=i,
+            rsi=50 + (i % 20),
+            vol=0.8 + (i % 5) * 0.2,
+            net=-5 + i,
+            detected=t0 + timedelta(minutes=i),
+            clean_epoch=True,
+        )
         for i in range(12)
     ]
     report = run_b1_forward_validation(rows)
@@ -325,4 +380,4 @@ def test_buckets_and_symbol_aggregation() -> None:
     assert "MA_EXTENSION" in report["exhaustion_patterns"]
     assert "VOLUME_EXHAUSTION" in report["exhaustion_patterns"]
     assert "top_symbols" in report["symbol_concentration"]
-    assert "EARLY" in report["time_stability"] or report["time_stability"]["compared_chunks"] >= 0
+    assert "chunk_sizes" in report["time_stability"]

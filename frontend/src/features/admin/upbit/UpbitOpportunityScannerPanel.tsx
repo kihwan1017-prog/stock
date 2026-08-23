@@ -302,11 +302,18 @@ export function UpbitOpportunityScannerPanel() {
       {(() => {
         const fv = asRecord(shadowStats.entry_b1_forward_validation) ?? {};
         const progress = asRecord(fv.progress) ?? {};
+        const cleanFwd = asRecord(fv.clean_forward) ?? {};
+        const legacyRef = asRecord(fv.legacy_reference) ?? {};
         const base = asRecord(fv.baseline) ?? {};
         const b1 = asRecord(fv.b1) ?? {};
         const filt = asRecord(fv.filter_attribution) ?? {};
         const early = asRecord(fv.early_dump) ?? {};
-        if (fv.combined_sample_count == null && fv.combined_sample_count !== 0) {
+        const dash = asRecord(fv.dashboard) ?? {};
+        if (
+          fv.clean_sample_count == null &&
+          fv.combined_sample_count == null &&
+          fv.combined_sample_count !== 0
+        ) {
           return null;
         }
         const promoRaw = String(fv.PROMOTION_STATUS ?? "NOT READY");
@@ -316,39 +323,61 @@ export function UpbitOpportunityScannerPanel() {
             : promoRaw === "NOT READY"
               ? "표본 수집 중"
               : promoRaw;
+        const cleanN =
+          cleanFwd.clean_sample_count ?? dash.clean_sample_count ?? 0;
+        const stampedN = cleanFwd.new_stamped_count ?? 0;
         return (
           <>
             <Typography.Title level={5} style={{ marginBottom: 0 }}>
-              진입 전략 Forward 검증
+              진입 전략 Forward 검증 (Clean Epoch)
             </Typography.Title>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-              검증 후보 B1 (RSI65 / VOL0.8) · LEGACY+신규 표본 분리 · REAL 정책
-              미변경 · 자동 승격 없음
+              검증 후보 B1 (RSI65 / VOL0.8) · fb35aa2 이후 CLEAN 표본만 승격
+              gate · REAL 정책 미변경 · B1=RESEARCH ONLY
             </Typography.Paragraph>
             <Space wrap>
-              <Tag>검증 후보: RSI65 / VOL0.8</Tag>
-              <Tag>전체 표본 {cell(progress.combined)}</Tag>
-              <Tag>신규 미사용 표본 {cell(progress.new)}</Tag>
+              <Tag color="green">정상 신규 검증 {cell(progress.clean_min)}</Tag>
               <Tag>
-                기준 전략 손익={cell(base.net_pnl)} PF=
+                권장 검토 {cell(progress.clean_recommended)}
+              </Tag>
+              <Tag>
+                backfill stamp {cell(stampedN)} (clean≠stamped)
+              </Tag>
+              <Tag>
+                CLEAN Baseline 손익={cell(base.net_pnl)} PF=
                 {cell(base.profit_factor)} 승률={cell(base.win_rate)}
               </Tag>
               <Tag color="blue">
-                후보 B1 손익={cell(b1.net_pnl)} PF={cell(b1.profit_factor)} 승률=
-                {cell(b1.win_rate)}
+                CLEAN B1 손익={cell(b1.net_pnl)} PF={cell(b1.profit_factor)}{" "}
+                승률={cell(b1.win_rate)}
               </Tag>
-              <Tag>필터 개선 효과={cell(filt.net_filter_benefit)}</Tag>
+              <Tag>필터 개선={cell(filt.net_filter_benefit)}</Tag>
               <Tag>
-                진입 직후 하락 기준/B1=
-                {cell(early.baseline_early_dump_rate)}/
+                early dump B/B1={cell(early.baseline_early_dump_rate)}/
                 {cell(early.b1_early_dump_rate)}
               </Tag>
               <Tag color={promoRaw === "REVIEW READY" ? "green" : "default"}>
-                REAL 적용 검토: {promo}
+                REAL 승격 검토: {promo}
               </Tag>
             </Space>
             <details style={{ marginTop: 4 }}>
-              <summary style={{ cursor: "pointer" }}>B1 상세 (펼치기)</summary>
+              <summary style={{ cursor: "pointer" }}>
+                이전 연구 결과 (참고용) — {cell(legacyRef.count)}건 ·{" "}
+                {cell(legacyRef.affected)}건 가격 품질 이슈로 승격 제외
+              </summary>
+              <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
+                HISTORICAL_COMPROMISED_REFERENCE — 기존 Baseline/B1 KPI는 REAL
+                승격 gate에 사용하지 않습니다.
+              </Typography.Paragraph>
+              <AdminJsonCard
+                title="Legacy 참고 KPI"
+                loading={false}
+                error={null}
+                data={legacyRef}
+              />
+            </details>
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer" }}>B1 Clean 상세 (펼치기)</summary>
               <AdminJsonCard
                 title="진입 전략 B1 Forward 검증 상세"
                 loading={false}

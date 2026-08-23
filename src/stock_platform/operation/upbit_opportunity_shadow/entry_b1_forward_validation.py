@@ -727,27 +727,47 @@ def daily_research_summary(obs_list: Sequence[ForwardObs], *, day: date | None =
 def run_b1_forward_validation(rows: Sequence[Any]) -> dict[str, Any]:
     """COMPLETED shadow rows → B1 forward validation report."""
 
+    from stock_platform.operation.upbit_opportunity_shadow.clean_forward_research import (
+        HISTORICAL_COMPROMISED_REFERENCE,
+        LEGACY_AFFECTED_COUNT,
+        LEGACY_AFFECTED_PCT,
+        LEGACY_SAMPLE_QUALITY,
+        TARGET_CLEAN_MIN,
+        TARGET_CLEAN_RECOMMENDED,
+        assign_clean_forward_obs,
+        clean_daily_research_summary,
+        evaluate_clean_promotion_gates,
+        partition_forward_rows,
+    )
+
     obs = assign_cohorts(rows)
     legacy_n = sum(1 for o in obs if o.cohort == COHORT_LEGACY)
     new_n = sum(1 for o in obs if o.cohort == COHORT_NEW)
     combined_n = len(obs)
 
-    baseline = arm_kpi(obs, eligible="baseline_eligible")
-    b1 = arm_kpi(obs, eligible="b1_eligible")
-    attr = filter_attribution(obs)
-    rsi_band = rsi_65_70_band(obs)
-    exhaustion = analyze_exhaustion_patterns(obs)
-    stability = time_stability(obs)
-    concentration = symbol_concentration(obs, eligible="b1_eligible")
+    partition = partition_forward_rows(rows)
+    clean_obs = assign_clean_forward_obs(rows)
+    clean_n = len(clean_obs)
+
+    # Promotion KPI — CLEAN only (legacy carry-forward 금지)
+    baseline = arm_kpi(clean_obs, eligible="baseline_eligible")
+    b1 = arm_kpi(clean_obs, eligible="b1_eligible")
+    attr = filter_attribution(clean_obs)
+    rsi_band = rsi_65_70_band(clean_obs)
+    exhaustion = analyze_exhaustion_patterns(clean_obs)
+    stability = time_stability(clean_obs)
+    concentration = symbol_concentration(clean_obs, eligible="b1_eligible")
     fees = fee_efficiency(baseline, b1, attr)
 
-    new_obs = [o for o in obs if o.cohort == COHORT_NEW]
-    new_baseline = arm_kpi(new_obs, eligible="baseline_eligible") if new_obs else None
-    new_b1 = arm_kpi(new_obs, eligible="b1_eligible") if new_obs else None
+    # Legacy reference KPI — 승격 미사용
+    legacy_obs = [o for o in obs if o.cohort == COHORT_LEGACY]
+    legacy_baseline = (
+        arm_kpi(legacy_obs, eligible="baseline_eligible") if legacy_obs else None
+    )
+    legacy_b1 = arm_kpi(legacy_obs, eligible="b1_eligible") if legacy_obs else None
 
-    promo = evaluate_promotion_gates(
-        combined_n=combined_n,
-        new_n=new_n,
+    promo = evaluate_clean_promotion_gates(
+        clean_n=clean_n,
         baseline=baseline,
         b1=b1,
         early_base=baseline.get("early_dump_rate"),
@@ -757,16 +777,25 @@ def run_b1_forward_validation(rows: Sequence[Any]) -> dict[str, Any]:
     )
 
     progress = {
-        "combined": f"{combined_n} / {TARGET_COMBINED_OPPORTUNITIES}",
-        "new": f"{new_n} / {TARGET_NEW_UNSEEN}",
-        "combined_ratio": round(combined_n / TARGET_COMBINED_OPPORTUNITIES, 4),
-        "new_ratio": round(new_n / TARGET_NEW_UNSEEN, 4),
-        "SAMPLE_COLLECTION_IN_PROGRESS": combined_n < TARGET_COMBINED_OPPORTUNITIES
-        or new_n < TARGET_NEW_UNSEEN,
+        "clean_min": f"{clean_n} / {TARGET_CLEAN_MIN}",
+        "clean_recommended": f"{clean_n} / {TARGET_CLEAN_RECOMMENDED}",
+        "clean_ratio_min": round(clean_n / TARGET_CLEAN_MIN, 4) if TARGET_CLEAN_MIN else 0,
+        "clean_ratio_recommended": (
+            round(clean_n / TARGET_CLEAN_RECOMMENDED, 4)
+            if TARGET_CLEAN_RECOMMENDED
+            else 0
+        ),
+        "SAMPLE_COLLECTION_IN_PROGRESS": clean_n < TARGET_CLEAN_MIN,
+        # 하위 호환 — legacy 합산 금지 명시
+        "combined": f"{combined_n} (legacy excluded from promotion)",
+        "new": f"{new_n} (stamped≠clean; see clean_forward)",
+        "legacy_excluded_note": "459 legacy not counted toward promotion",
     }
 
+    clean_summary = clean_daily_research_summary(clean_obs, partition=partition)
+
     return {
-        "schema": "entry_b1_forward_validation_v1",
+        "schema": "entry_b1_forward_validation_v2_clean_epoch",
         "preferred_candidate": LABEL_B1,
         "policies": {
             "baseline": {
@@ -792,12 +821,47 @@ def run_b1_forward_validation(rows: Sequence[Any]) -> dict[str, Any]:
         "legacy_sample_count": legacy_n,
         "new_sample_count": new_n,
         "combined_sample_count": combined_n,
+        "clean_forward": {
+            "epoch_start": partition["clean_epoch_start"],
+            "epoch_source": partition["clean_epoch_source"],
+            "clean_sample_count": clean_n,
+            "new_stamped_count": partition["new_stamped_count"],
+            "clean_new_count": partition["clean_new_count"],
+            "excluded_invalid_price": partition["excluded_invalid_price"],
+            "excluded_time_alignment": partition["excluded_time_alignment"],
+            "backfill_not_clean_note": (
+                "research_stamp_backfill ≠ clean unseen market observation"
+            ),
+            "promotion_uses_legacy": False,
+            "promotion_uses_clean_only": True,
+        },
+        "legacy_reference": {
+            "count": LEGACY_FORWARD_COUNT,
+            "affected": LEGACY_AFFECTED_COUNT,
+            "affected_pct": LEGACY_AFFECTED_PCT,
+            "quality": LEGACY_SAMPLE_QUALITY,
+            "label": HISTORICAL_COMPROMISED_REFERENCE,
+            "baseline": legacy_baseline,
+            "b1": legacy_b1,
+            "note": "참고용 — REAL 승격 gate 미사용",
+        },
         "progress": progress,
         "baseline": baseline,
         "b1": b1,
         "new_unseen_only": {
-            "baseline": new_baseline,
-            "b1": new_b1,
+            "baseline": arm_kpi(
+                [o for o in obs if o.cohort == COHORT_NEW],
+                eligible="baseline_eligible",
+            )
+            if new_n
+            else None,
+            "b1": arm_kpi(
+                [o for o in obs if o.cohort == COHORT_NEW],
+                eligible="b1_eligible",
+            )
+            if new_n
+            else None,
+            "note": "includes stamped backfill — not promotion SoT",
         },
         "filter_attribution": attr,
         "rsi_65_70_band": rsi_band,
@@ -812,7 +876,8 @@ def run_b1_forward_validation(rows: Sequence[Any]) -> dict[str, Any]:
         "time_stability": stability,
         "symbol_concentration": concentration,
         "fee_efficiency": fees,
-        "daily_summary": daily_research_summary(obs),
+        "daily_summary": clean_summary,
+        "daily_summary_legacy_mixed": daily_research_summary(obs),
         "persistence_sot": (
             "trading.upbit_opportunity_shadow.evaluation_detail "
             "(exit_ab / entry_ab / entry_forward_features) — no duplicate table"
@@ -832,7 +897,14 @@ def run_b1_forward_validation(rows: Sequence[Any]) -> dict[str, Any]:
             "candidate": "RSI65 / VOL0.8",
             "progress": progress,
             "promotion": promo.get("PROMOTION_STATUS"),
+            "clean_sample_count": clean_n,
+            "clean_target_min": TARGET_CLEAN_MIN,
+            "clean_target_recommended": TARGET_CLEAN_RECOMMENDED,
+            "legacy_reference_count": LEGACY_FORWARD_COUNT,
+            "legacy_affected": LEGACY_AFFECTED_COUNT,
         },
+        "FINAL_VERDICT_CLEAN_RESET": "CLEAN_FORWARD_RESEARCH_BASELINE_RESET",
+        "NEXT_ACTION_CLEAN": "COLLECT_CLEAN_FORWARD_SAMPLE",
     }
 
 
