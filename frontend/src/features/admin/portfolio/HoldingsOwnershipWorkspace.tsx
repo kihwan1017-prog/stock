@@ -27,7 +27,18 @@ import {
   type HoldingsOwnerFilter,
 } from "@/features/admin/accounts/symbolOwnershipLabels";
 import * as adminApi from "@/features/admin/api/adminApi";
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import {
+  resolveHoldingOwner,
+  shouldIncludeHoldingPositionRow,
+} from "@/features/admin/portfolio/holdingsRowPolicy";
+import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
+import {
+  formatAmountKo,
+  formatPriceKo,
+  formatQuantityKo,
+  isEffectivelyZero,
+  parseDecimalSafe,
+} from "@/shared/utils/numericFormatKo";
 
 const DEFAULT_UPBIT_UBA = Number(
   process.env.NEXT_PUBLIC_DEFAULT_UPBIT_UBA_ID ?? "1380",
@@ -40,16 +51,38 @@ type HoldingRow = {
   key: string;
   broker: string;
   symbol: string;
+  userBrokerAccountId: number | null;
   owner: string;
-  quantity: string;
-  avgPrice: string;
-  currentPrice: string;
-  evalAmount: string;
+  quantity: unknown;
+  avgPrice: unknown;
+  currentPrice: unknown;
+  evalAmount: number;
   unrealized: number;
-  returnRate: string;
+  returnRate: unknown;
   strategy: string;
   manageLabel: string;
 };
+
+function holdingRowKey(
+  broker: string,
+  symbol: string,
+  userBrokerAccountId?: number | null,
+): string {
+  const uba =
+    userBrokerAccountId != null && userBrokerAccountId > 0
+      ? String(userBrokerAccountId)
+      : "na";
+  return `${broker}-${symbol}-${uba}`;
+}
+
+function targetUbaForBroker(
+  broker: string,
+  ubaIds: { upbit: number; kiwoom: number },
+): number {
+  if (broker === "UPBIT") return ubaIds.upbit;
+  if (broker === "KIWOOM") return ubaIds.kiwoom;
+  return 0;
+}
 
 function rec(v: unknown): Record<string, unknown> {
   return asRecord(v) ?? {};
@@ -136,30 +169,64 @@ export function HoldingsOwnershipWorkspace() {
       rec(positionsQ.data).positions ?? positionsQ.data,
     );
     const out: HoldingRow[] = [];
+    // broker:symbol 당 1행 — snapshot 중복·다중 UBA row 방지
+    const bestBySymbol = new Map<string, Record<string, unknown>>();
+
     for (const raw of posRows) {
       const p = rec(raw);
       const broker = String(p.broker_code ?? "").toUpperCase();
       const symbol = String(p.symbol ?? "").toUpperCase();
       if (!broker || !symbol) continue;
-      const own = ownerMap.get(`${broker}:${symbol}`) ?? {};
-      const owner = String(own.owner ?? "UNKNOWN").toUpperCase();
+
+      const targetUba = targetUbaForBroker(broker, ubaIds);
+      const rowUba = Number(p.user_broker_account_id ?? 0) || null;
+      if (targetUba > 0 && rowUba != null && rowUba !== targetUba) continue;
+
+      const dedupeKey = `${broker}:${symbol}`;
+      const prev = bestBySymbol.get(dedupeKey);
+      if (prev) {
+        const prevAt = String(prev.snapshot_time ?? "");
+        const nextAt = String(p.snapshot_time ?? "");
+        if (prevAt && nextAt && nextAt <= prevAt) continue;
+      }
+      bestBySymbol.set(dedupeKey, p);
+    }
+
+    for (const p of bestBySymbol.values()) {
+      const broker = String(p.broker_code ?? "").toUpperCase();
+      const symbol = String(p.symbol ?? "").toUpperCase();
+      const rowUba = Number(p.user_broker_account_id ?? 0) || null;
+      const ownEntry = ownerMap.get(`${broker}:${symbol}`);
+      const hasOwnershipEntry = ownEntry != null;
+      const own = ownEntry ?? {};
+      if (
+        !shouldIncludeHoldingPositionRow(p.quantity, hasOwnershipEntry)
+      ) {
+        continue;
+      }
+      const owner = resolveHoldingOwner(
+        own.owner as string | undefined,
+        hasOwnershipEntry,
+        p.quantity,
+      );
       if (!ownershipMatchesHoldingsFilter(owner, filter)) continue;
-      const qty =
+      const qtyRaw =
         owner === "AUTO"
-          ? String(own.auto_position_qty ?? p.quantity ?? "—")
-          : String(own.manual_position_qty ?? p.quantity ?? "—");
-      const unrealized = Number(p.unrealized_pnl ?? 0);
+          ? (own.auto_position_qty ?? p.quantity)
+          : (own.manual_position_qty ?? p.quantity);
+      const unrealized = parseDecimalSafe(p.unrealized_pnl) ?? 0;
       out.push({
-        key: `${broker}-${symbol}`,
+        key: holdingRowKey(broker, symbol, rowUba),
         broker,
         symbol,
+        userBrokerAccountId: rowUba,
         owner,
-        quantity: qty,
-        avgPrice: cell(p.average_price),
-        currentPrice: cell(p.current_price),
-        evalAmount: cell(p.evaluation_amount),
-        unrealized: Number.isFinite(unrealized) ? unrealized : 0,
-        returnRate: cell(p.return_rate),
+        quantity: qtyRaw,
+        avgPrice: p.average_price,
+        currentPrice: p.current_price,
+        evalAmount: parseDecimalSafe(p.evaluation_amount) ?? 0,
+        unrealized,
+        returnRate: p.return_rate,
         strategy:
           own.strategy_id != null ? `strategy:${own.strategy_id}` : "—",
         manageLabel: ownershipLabelKo(owner),
@@ -167,38 +234,37 @@ export function HoldingsOwnershipWorkspace() {
     }
 
     // 포지션 스냅샷에 없고 ownership만 있는 AUTO/MANUAL (수량>0)
-    for (const [key, own] of ownerMap) {
+    for (const [mapKey, own] of ownerMap) {
       const owner = String(own.owner ?? "").toUpperCase();
       if (!ownershipMatchesHoldingsFilter(owner, filter)) continue;
       if (owner === "FREE") continue;
-      const [broker, symbol] = key.split(":");
+      const [broker, symbol] = mapKey.split(":");
       if (out.some((r) => r.broker === broker && r.symbol === symbol)) continue;
-      const qtyNum = Number(
-        owner === "AUTO" ? own.auto_position_qty : own.manual_position_qty,
-      );
-      if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      const qtyRaw =
+        owner === "AUTO" ? own.auto_position_qty : own.manual_position_qty;
+      if (isEffectivelyZero(qtyRaw)) {
         if (owner !== "AUTO_EXCLUDED") continue;
       }
+      const rowUba = targetUbaForBroker(broker, ubaIds) || null;
       out.push({
-        key,
+        key: holdingRowKey(broker, symbol, rowUba),
         broker,
         symbol,
+        userBrokerAccountId: rowUba,
         owner,
-        quantity: String(
-          owner === "AUTO" ? own.auto_position_qty : own.manual_position_qty,
-        ),
-        avgPrice: "—",
-        currentPrice: "—",
-        evalAmount: "—",
+        quantity: qtyRaw,
+        avgPrice: null,
+        currentPrice: null,
+        evalAmount: 0,
         unrealized: 0,
-        returnRate: "—",
+        returnRate: null,
         strategy:
           own.strategy_id != null ? `strategy:${own.strategy_id}` : "—",
         manageLabel: ownershipLabelKo(owner),
       });
     }
     return out;
-  }, [filter, ownerMap, positionsQ.data]);
+  }, [filter, ownerMap, positionsQ.data, ubaIds]);
 
   const summary = useMemo(() => {
     let totalEval = 0;
@@ -208,7 +274,7 @@ export function HoldingsOwnershipWorkspace() {
     let autoEval = 0;
     let autoUnreal = 0;
     for (const r of rows) {
-      const ev = Number(r.evalAmount);
+      const ev = r.evalAmount;
       const u = r.unrealized;
       if (Number.isFinite(ev)) totalEval += ev;
       totalUnreal += u;
@@ -329,17 +395,17 @@ export function HoldingsOwnershipWorkspace() {
                 <Tag color={ownershipBadgeColor(v)}>{ownershipLabelKo(v)}</Tag>
               ),
             },
-            { title: "수량", dataIndex: "quantity", width: 100 },
-            { title: "평균단가", dataIndex: "avgPrice", width: 100 },
-            { title: "현재가", dataIndex: "currentPrice", width: 100 },
-            { title: "평가금액", dataIndex: "evalAmount", width: 110 },
+            { title: "수량", dataIndex: "quantity", width: 100, render: (v) => formatQuantityKo(v) },
+            { title: "평균단가", dataIndex: "avgPrice", width: 100, render: (v) => formatPriceKo(v) },
+            { title: "현재가", dataIndex: "currentPrice", width: 100, render: (v) => formatPriceKo(v) },
+            { title: "평가금액", dataIndex: "evalAmount", width: 110, render: (v) => formatAmountKo(v) },
             {
               title: "평가손익",
               dataIndex: "unrealized",
               width: 110,
               render: (v: number) => v.toLocaleString("ko-KR"),
             },
-            { title: "수익률", dataIndex: "returnRate", width: 90 },
+            { title: "수익률", dataIndex: "returnRate", width: 90, render: (v) => formatQuantityKo(v) },
             { title: "Strategy", dataIndex: "strategy", width: 120 },
             { title: "관리상태", dataIndex: "manageLabel", width: 110 },
           ]}

@@ -20,6 +20,7 @@ import {
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import type { StackStartSnapshot } from "@/features/admin/accounts/upbit24x7StackOrchestrator";
+import { parseAutoRenewPreview } from "@/features/admin/upbit/upbitAutoRenewPreview";
 import { asRecord } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 
@@ -59,7 +60,8 @@ export function UpbitUnattendedAutoRenewPanel({
 }: Props) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const unattended = asRecord(unattendedPayload);
+  const unattended = asRecord(unattendedPayload) ?? {};
+  const lastHorizonRenew = asRecord(unattended.last_horizon_auto_renew) ?? {};
   const active =
     Boolean(opsSnap?.unattendedEnabled) &&
     String(opsSnap?.unattendedStatusCode ?? "").toUpperCase() === "ACTIVE";
@@ -100,11 +102,11 @@ export function UpbitUnattendedAutoRenewPanel({
   const autoRenewOn =
     opsSnap?.unattendedAutoRenewEnabled ??
     Boolean(unattended.auto_renew_enabled);
-  const preview = asRecord(previewQ.data);
-  const precheck = asRecord(preview.precheck);
-  const precheckBlockers = Array.isArray(precheck.blockers)
-    ? precheck.blockers.map((x) => String(x))
-    : [];
+  const { preview, precheckBlockers, hasPreviewData } =
+    parseAutoRenewPreview(previewQ.data);
+  const previewLoading = active && previewQ.isLoading && !previewQ.data;
+  const previewEmpty =
+    active && !previewQ.isLoading && !previewQ.isError && !hasPreviewData;
 
   return (
     <Card size="small" title="24H 무인운영 · 자동 갱신">
@@ -164,17 +166,35 @@ export function UpbitUnattendedAutoRenewPanel({
           <Descriptions.Item label="최근 갱신">
             {renewStatusTag(
               opsSnap?.lastHorizonAutoRenewStatus ??
-                asRecord(unattended.last_horizon_auto_renew).status,
+                (lastHorizonRenew.status as string | undefined),
             )}
           </Descriptions.Item>
           <Descriptions.Item label="최근 갱신 사유">
             {opsSnap?.lastHorizonAutoRenewReason ??
-              asRecord(unattended.last_horizon_auto_renew).reason ??
+              (lastHorizonRenew.reason as string | undefined) ??
               "—"}
           </Descriptions.Item>
         </Descriptions>
 
-        {active && previewQ.data ? (
+        {previewLoading ? (
+          <Alert
+            type="info"
+            showIcon
+            title="자동 갱신 상태 불러오는 중"
+            description="사전 점검 정보를 조회하고 있습니다."
+          />
+        ) : null}
+
+        {previewEmpty ? (
+          <Alert
+            type="info"
+            showIcon
+            title="사전 점검 정보 없음"
+            description="Dry 갱신 평가 데이터가 아직 없습니다. 새로고침을 눌러 조회하세요."
+          />
+        ) : null}
+
+        {active && hasPreviewData ? (
           <Alert
             type={preview.would_renew ? "success" : "info"}
             showIcon

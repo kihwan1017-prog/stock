@@ -1,3 +1,5 @@
+import { formatCellNumeric } from "@/shared/utils/numericFormatKo";
+
 /** 응답에서 테이블용 행 배열을 안전하게 추출 (Admin/User 공용 · scope 무관) */
 
 export function asRecord(value: unknown): Record<string, unknown> | null {
@@ -53,5 +55,9 @@ export function cell(value: unknown): string {
       return String(value);
     }
   }
-  return String(value);
+  const raw = String(value);
+  if (/[eE]/.test(raw) || /^-?\d+(\.\d+)?$/.test(raw.trim())) {
+    return formatCellNumeric(value).replace(/—/g, "-");
+  }
+  return raw;
 }

@@ -29,6 +29,7 @@ describe("shared/utils dataHelpers", () => {
     expect(cell(undefined)).toBe("-");
     expect(cell(12)).toBe("12");
     expect(cell({ x: 1 })).toBe('{"x":1}');
+    expect(cell("0E-8")).toBe("0");
   });
 });
 
