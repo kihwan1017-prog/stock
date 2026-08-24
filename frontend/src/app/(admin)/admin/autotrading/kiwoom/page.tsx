@@ -201,6 +201,24 @@ export default function AdminAutotradingKiwoomPage() {
           }
         />
 
+        <Card
+          size="small"
+          title="분석·연구"
+          extra={
+            <Link href={`${adminRoutes.researchData}?market=KIWOOM`}>
+              전략·분석에서 자세히 보기
+            </Link>
+          }
+        >
+          <Typography.Text type="secondary">
+            후보·시장·뉴스·AI·검증은 자동매매가 아니라{" "}
+            <Link href={`${adminRoutes.strategyCandidates}?market=KIWOOM`}>
+              전략·분석
+            </Link>
+            에서 관리합니다. 이 화면은 LIVE/ARM/장 세션·런타임 운영 조회용입니다.
+          </Typography.Text>
+        </Card>
+
         <Row gutter={[8, 8]}>
           {(
             [

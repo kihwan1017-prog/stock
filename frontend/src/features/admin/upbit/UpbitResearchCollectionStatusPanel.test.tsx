@@ -175,7 +175,7 @@ describe("UpbitResearchCollectionStatusPanel", () => {
     expect(one).not.toContain('title="Canonical Backend Orchestrator"');
   });
 
-  it("workspace mounts panel under status cards", async () => {
+  it("workspace mounts research summary (not full panel) under status cards", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const src = fs.readFileSync(
@@ -185,9 +185,10 @@ describe("UpbitResearchCollectionStatusPanel", () => {
       ),
       "utf8",
     );
-    expect(src).toContain("UpbitResearchCollectionStatusPanel");
+    expect(src).toContain("UpbitResearchCollectionSummaryCard");
+    expect(src).not.toContain("UpbitResearchCollectionStatusPanel");
     const stackIdx = src.indexOf('type="secondary">STACK');
-    const panelIdx = src.indexOf("<UpbitResearchCollectionStatusPanel");
+    const panelIdx = src.indexOf("<UpbitResearchCollectionSummaryCard");
     const positionsIdx = src.indexOf('<Descriptions.Item label="Positions">');
     expect(stackIdx).toBeGreaterThan(0);
     expect(panelIdx).toBeGreaterThan(stackIdx);

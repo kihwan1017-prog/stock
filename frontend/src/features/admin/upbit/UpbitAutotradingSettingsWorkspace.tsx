@@ -38,7 +38,7 @@ import {
   validatePolicyFormValues,
 } from "@/features/admin/upbit/upbitPortfolioPolicyHelpers";
 import { UpbitOneClickAutotradingControl } from "@/features/admin/autotrading/UpbitOneClickAutotradingControl";
-import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/UpbitResearchCollectionStatusPanel";
+import { UpbitResearchCollectionSummaryCard } from "@/features/admin/upbit/UpbitResearchCollectionSummaryCard";
 import { asRecord } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 
@@ -1253,8 +1253,12 @@ export function UpbitAutotradingSettingsWorkspace({
         description={
           <>
             Provider/Prompt/Policy 등 전역 전략·AI 시스템 설정은{" "}
-            <Link href={adminRoutes.aiProviders}>전략·후보 → AI 전략 설정</Link>
-            에서 관리합니다. 여기서는 계좌(UBA) LIVE 자동매매 정책만 다룹니다.
+            <Link href={adminRoutes.aiProviders}>전략·분석 → AI 설정</Link>
+            에서 관리합니다. 연구·후보·검증은{" "}
+            <Link href={adminRoutes.researchData}>연구 데이터</Link>
+            ·{" "}
+            <Link href={adminRoutes.strategyCandidates}>전략·후보</Link>
+            를 사용하세요. 여기서는 계좌(UBA) LIVE 자동매매 정책만 다룹니다.
           </>
         }
       />
@@ -1321,7 +1325,7 @@ export function UpbitAutotradingSettingsWorkspace({
         </Col>
       </Row>
 
-      <UpbitResearchCollectionStatusPanel ubaId={ubaId} />
+      <UpbitResearchCollectionSummaryCard ubaId={ubaId} />
 
       <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3 }}>
         <Descriptions.Item label="Positions">

@@ -122,12 +122,36 @@ describe("single admin operator menu", () => {
     const strategies = flattenMenuItems(adminMenuItems).find(
       (i) => i.key === "strategies",
     );
+    expect(strategies?.path).toBe(adminRoutes.strategyCandidates);
     expect(strategies?.matchPaths).toEqual(
       expect.arrayContaining([
+        adminRoutes.strategyCandidates,
         adminRoutes.strategies,
         adminRoutes.strategyRequests,
         adminRoutes.strategyDrafts,
       ]),
+    );
+  });
+
+  it("전략·분석에 연구 데이터·AI 분석 leaf 포함", () => {
+    const grp = adminMenuItems.find((i) => i.key === "strategy-analysis");
+    const keys = grp?.children?.map((c) => c.key) ?? [];
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "strategies",
+        "market-analysis",
+        "news-disclosures",
+        "ai-analysis",
+        "ai-config",
+        "strategy-validation",
+        "research-data",
+      ]),
+    );
+    expect(grp?.children?.find((c) => c.key === "research-data")?.path).toBe(
+      adminRoutes.researchData,
+    );
+    expect(grp?.children?.find((c) => c.key === "ai-analysis")?.path).toBe(
+      adminRoutes.aiAnalysis,
     );
   });
 });

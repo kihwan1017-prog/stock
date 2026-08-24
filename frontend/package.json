@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "test:ui:focused": "vitest run src/features/admin/upbit/UpbitResearchCollectionStatusPanel.test.tsx src/test/antdCompatConsoleSmoke.test.tsx",
+    "test:ui:focused": "vitest run src/features/admin/upbit/UpbitResearchCollectionStatusPanel.test.tsx src/features/admin/strategy-analysis/marketScope.test.ts src/features/admin/strategy-analysis/strategyAnalysisWorkspace.test.tsx src/config/menu.test.ts src/test/antdCompatConsoleSmoke.test.tsx",
     "check:antd-compat": "node scripts/check-antd-compat.mjs",
     "lint:antd-compat": "eslint --max-warnings=0 src/features/admin/upbit/UpbitResearchCollectionStatusPanel.tsx src/features/admin/upbit/UpbitPortfolioPolicyPanel.tsx src/features/admin/upbit/upbitAutotradingCanonicalStatus.ts src/features/admin/upbit/upbitPortfolioPolicyHelpers.ts src/features/admin/market/MarketSessionJobsPanel.tsx src/shared/utils/dataHelpers.ts src/test/consoleSmoke.ts src/test/antdCompatConsoleSmoke.test.tsx eslint.config.mjs",
     "check:frontend": "npm run check:antd-compat && npm run lint && npm run typecheck && npm run test:ui:focused",
