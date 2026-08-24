@@ -64,6 +64,7 @@ import { UbaAutoTradingStatusPanel } from "./UbaAutoTradingStatusPanel";
 import { buildUbaAutoTradingViewModel } from "./ubaAutoTradingStatus";
 import { buildOpsStatusSummary } from "./opsStatusSummary";
 import { Upbit24x7OperatorControls } from "./Upbit24x7OperatorControls";
+import { KiwoomMarketHoursArmRenewPanel } from "./KiwoomMarketHoursArmRenewPanel";
 import { runUpbit24x7StackStart, snapshotFromOpsStatus } from "./upbit24x7StackOrchestrator";
 
 function newCorrelationId(prefix: string): string {
@@ -1439,6 +1440,10 @@ export function AdminAccountLiveControlPanel() {
                   />
                 );
               })()
+            ) : null}
+
+            {detailBroker === "KIWOOM" && detailUbaId != null ? (
+              <KiwoomMarketHoursArmRenewPanel ubaId={Number(detailUbaId)} />
             ) : null}
 
             <UbaAutoTradingStatusPanel

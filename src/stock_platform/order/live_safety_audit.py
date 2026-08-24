@@ -193,6 +193,13 @@ def emit_live_order_telegram(
             LIVE_ON,
             LIVE_ARM,
             ARM_ON,
+            "UNATTENDED_AUTHORIZATION_ENABLED",
+            "UNATTENDED_AUTHORIZATION_RENEWED",
+            "UNATTENDED_HORIZON_AUTO_RENEWED",
+            "UNATTENDED_HORIZON_AUTO_RENEW_FAILED",
+            "UNATTENDED_AUTO_RENEW_TOGGLED",
+            "KIWOOM_MARKET_HOURS_ARM_RENEWED",
+            "KIWOOM_MARKET_HOURS_ARM_RENEW_FAILED",
         }:
             mapped = NotificationEventType.MONITORING_ALERT.value
         elif event_type in {

@@ -277,6 +277,8 @@ class UnattendedEnableBody(BaseModel):
     horizon_hours: int | None = Field(default=None, ge=1, le=168)
     correlation_id: str | None = Field(default=None, max_length=128)
     source: str = Field(default="ADMIN_UI", min_length=3, max_length=32)
+    # HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM). None이면 broker로 추론.
+    authorization_mode: str | None = Field(default=None, max_length=32)
 
 
 class UnattendedDisableBody(BaseModel):
@@ -322,6 +324,7 @@ def admin_uba_unattended_enable(
             source=body.source,
             horizon_hours=body.horizon_hours,
             correlation_id=body.correlation_id,
+            authorization_mode=body.authorization_mode,
         )
     except LiveUnattendedError as exc:
         raise HTTPException(

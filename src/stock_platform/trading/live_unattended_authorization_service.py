@@ -42,8 +42,14 @@ STATUS_EXPIRED = "EXPIRED"
 STATUS_REVOKED = "REVOKED"
 STATUS_PROTECTIVE = "PROTECTIVE_EXIT_ONLY"
 
+MODE_HOURS_24 = "HOURS_24"
+MODE_MARKET_HOURS = "MARKET_HOURS"
+ALLOWED_AUTHORIZATION_MODES = frozenset({MODE_HOURS_24, MODE_MARKET_HOURS})
+
 CONFIRM_ENABLE = "ENABLE 24H UNATTENDED"
 CONFIRM_DISABLE = "DISABLE 24H UNATTENDED"
+CONFIRM_ENABLE_MARKET_HOURS = "ENABLE MARKET HOURS UNATTENDED"
+CONFIRM_DISABLE_MARKET_HOURS = "DISABLE MARKET HOURS UNATTENDED"
 
 # Unattended 전용 승인 모델 — LIVE ON approval_phrase 와 역할 분리
 APPROVAL_MODEL_UNATTENDED_LEASE = "UNATTENDED_LEASE_ACK"
@@ -54,8 +60,11 @@ _OK_RECOVERY_STRICT = frozenset({"SUCCESS", "READY"})
 _HIGH_CONFLICT_LEVELS = frozenset({"HIGH", "CRITICAL"})
 
 ACTOR_HORIZON_AUTO_RENEW = "SYSTEM_UNATTENDED_AUTO_RENEW"
+ACTOR_MARKET_HOURS_ARM_RENEW = "SYSTEM_MARKET_HOURS_ARM_RENEW"
 HORIZON_RENEW_SUCCESS_TELEGRAM_INTERVAL_SECONDS = 86400
 HORIZON_RENEW_FAILURE_TELEGRAM_COOLDOWN_SECONDS = 3600
+MARKET_HOURS_RENEW_SUCCESS_TELEGRAM_INTERVAL_SECONDS = 3600
+MARKET_HOURS_RENEW_FAILURE_TELEGRAM_COOLDOWN_SECONDS = 1800
 
 _READINESS_BLOCKERS_FOR_HORIZON_RENEW = frozenset(
     {
@@ -134,23 +143,28 @@ class LiveUnattendedAuthorizationService:
         broker = (
             str(uba.broker_code or "").upper() if uba is not None else None
         )
-        phrase_meta = self._required_phrase_meta(broker)
         row = self.get_active(int(user_broker_account_id))
         now = _now()
         if row is None:
+            default_mode = (
+                MODE_MARKET_HOURS if broker == "KIWOOM" else MODE_HOURS_24
+            )
             return {
                 "unattended_enabled": False,
                 "entry_lease_active": False,
                 "needs_reauthorize": True,
                 "status_code": "OFF",
                 "broker_code": broker,
+                "authorization_mode": default_mode,
                 "authorized_until": None,
                 "remaining_seconds": 0,
                 "entry_authorized": False,
                 "protective_exit_authorized": False,
                 "last_renewed_at": None,
                 "last_renewal_actor": None,
-                **phrase_meta,
+                **self._required_phrase_meta(
+                    broker, authorization_mode=default_mode
+                ),
             }
         until = aware_utc(row.authorized_until)
         remaining = (
@@ -164,6 +178,9 @@ class LiveUnattendedAuthorizationService:
             and remaining > 0
         )
         needs_reauthorize = not entry_lease_active
+        mode = self._authorization_mode(row)
+        detail = dict(row.last_renewal_detail or {})
+        mh_meta = detail.get("market_hours") if isinstance(detail.get("market_hours"), dict) else {}
         return {
             # UI/게이트: PROTECTIVE·만료는 '무인 ENTRY 세션 ON'이 아님
             "unattended_enabled": entry_lease_active,
@@ -171,6 +188,7 @@ class LiveUnattendedAuthorizationService:
             "needs_reauthorize": needs_reauthorize,
             "status_code": row.status_code,
             "broker_code": broker or str(row.broker_code or "").upper(),
+            "authorization_mode": mode,
             "authorization_id": int(row.live_unattended_authorization_id),
             "authorized_until": until.isoformat() if until else None,
             "remaining_seconds": remaining,
@@ -181,19 +199,25 @@ class LiveUnattendedAuthorizationService:
             "renewal_interval_seconds": int(row.renewal_interval_seconds),
             "renewal_margin_seconds": int(row.renewal_margin_seconds),
             "arm_lease_ttl_seconds": int(row.arm_lease_ttl_seconds),
+            "market_hours_ceiling": mh_meta.get("regular_close_at_utc")
+            or (until.isoformat() if mode == MODE_MARKET_HOURS and until else None),
+            "market_hours_regular_close": mh_meta.get("regular_close_at"),
             "last_renewed_at": (
                 aware_utc(row.last_renewed_at).isoformat()
                 if row.last_renewed_at
                 else None
             ),
             "last_renewal_actor": row.last_renewal_actor,
-            "last_renewal_detail": dict(row.last_renewal_detail or {}),
+            "last_renewal_detail": detail,
             "auto_renew_enabled": bool(getattr(row, "auto_renew_enabled", False)),
             "horizon_renew_margin_seconds": self._horizon_renew_margin_seconds(
                 row
             ),
             "next_horizon_renew_check_at": self._next_horizon_renew_check_at(
                 row, until=until, now=now
+            ),
+            "next_arm_renew_eligible_at": self._next_arm_renew_eligible_at(
+                uba, row, now=now
             ),
             "last_horizon_auto_renew": self._last_horizon_auto_renew_summary(
                 row
@@ -204,27 +228,104 @@ class LiveUnattendedAuthorizationService:
                 if row.approved_at
                 else None
             ),
-            **phrase_meta,
+            **self._required_phrase_meta(broker, authorization_mode=mode),
         }
 
     @staticmethod
-    def _required_phrase_meta(broker_code: str | None) -> dict[str, Any]:
+    def _authorization_mode(
+        row: LiveUnattendedAuthorizationEntity | None,
+    ) -> str:
+        if row is None:
+            return MODE_HOURS_24
+        detail_raw = getattr(row, "last_renewal_detail", None) or {}
+        detail = dict(detail_raw) if isinstance(detail_raw, dict) else {}
+        mode = str(detail.get("authorization_mode") or "").upper()
+        if mode in ALLOWED_AUTHORIZATION_MODES:
+            return mode
+        if str(getattr(row, "broker_code", None) or "").upper() == "KIWOOM":
+            return MODE_MARKET_HOURS
+        return MODE_HOURS_24
+
+    @staticmethod
+    def _preserve_mode_detail(
+        row: LiveUnattendedAuthorizationEntity,
+        detail: dict[str, Any],
+    ) -> dict[str, Any]:
+        """renew 시 last_renewal_detail 덮어써도 authorization_mode 유지."""
+
+        out = dict(detail or {})
+        prev_raw = getattr(row, "last_renewal_detail", None) or {}
+        prev = dict(prev_raw) if isinstance(prev_raw, dict) else {}
+        mode = str(
+            out.get("authorization_mode")
+            or prev.get("authorization_mode")
+            or ""
+        ).upper()
+        if mode not in ALLOWED_AUTHORIZATION_MODES:
+            mode = (
+                MODE_MARKET_HOURS
+                if str(getattr(row, "broker_code", None) or "").upper()
+                == "KIWOOM"
+                else MODE_HOURS_24
+            )
+        out["authorization_mode"] = mode
+        if "market_hours" not in out and isinstance(prev.get("market_hours"), dict):
+            out["market_hours"] = prev["market_hours"]
+        return out
+
+    def _next_arm_renew_eligible_at(
+        self,
+        uba: UserBrokerAccount | None,
+        row: LiveUnattendedAuthorizationEntity,
+        *,
+        now: datetime,
+    ) -> str | None:
+        if uba is None or not bool(getattr(row, "auto_renew_enabled", False)):
+            return None
+        arm_exp = aware_utc(getattr(uba, "arm_expires_at", None))
+        if arm_exp is None:
+            return None
+        margin = int(row.renewal_margin_seconds or 600)
+        eligible = arm_exp - timedelta(seconds=margin)
+        return eligible.isoformat()
+
+    @staticmethod
+    def _required_phrase_meta(
+        broker_code: str | None,
+        *,
+        authorization_mode: str = MODE_HOURS_24,
+    ) -> dict[str, Any]:
         """UI/API SoT — Unattended lease ACK vs LIVE ON phrase 역할 분리."""
 
-        return {
-            "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
-            "required_confirmation_text": CONFIRM_ENABLE,
-            "required_confirmation_text_disable": CONFIRM_DISABLE,
-            "requires_live_approval_phrase": False,
-            "required_approval_phrase": None,
-            "approval_phrase_note": (
+        mode = str(authorization_mode or MODE_HOURS_24).upper()
+        if mode == MODE_MARKET_HOURS:
+            enable_phrase = CONFIRM_ENABLE_MARKET_HOURS
+            disable_phrase = CONFIRM_DISABLE_MARKET_HOURS
+            note = (
+                "Kiwoom MARKET_HOURS Unattended enables ARM auto-renew only "
+                "during KRX regular session until regular close. "
+                f"confirmation_text must be '{enable_phrase}'. "
+                f"broker={broker_code or 'UNKNOWN'}"
+            )
+        else:
+            enable_phrase = CONFIRM_ENABLE
+            disable_phrase = CONFIRM_DISABLE
+            note = (
                 "24H Unattended Enable no longer accepts LIVE approval_phrase. "
                 "It authorizes limited unattended operation on an already "
                 "approved LIVE session. LIVE ON still requires its own "
                 "broker approval phrase on LIVE transition APIs. "
-                f"Unattended confirmation_text must be '{CONFIRM_ENABLE}'. "
+                f"Unattended confirmation_text must be '{enable_phrase}'. "
                 f"broker={broker_code or 'UNKNOWN'}"
-            ),
+            )
+        return {
+            "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
+            "authorization_mode": mode,
+            "required_confirmation_text": enable_phrase,
+            "required_confirmation_text_disable": disable_phrase,
+            "requires_live_approval_phrase": False,
+            "required_approval_phrase": None,
+            "approval_phrase_note": note,
         }
 
     def enable(
@@ -237,25 +338,16 @@ class LiveUnattendedAuthorizationService:
         source: str = SOURCE_ADMIN_API,
         horizon_hours: int | None = None,
         correlation_id: str | None = None,
+        authorization_mode: str | None = None,
     ) -> dict[str, Any]:
         """이미 승인된 LIVE 세션에 대한 제한된 unattended lease 승인.
 
         LIVE ON approval_phrase 검증은 이 API에서 수행하지 않는다
         (LIVE transition 경로에서만 유지).
-        """
 
-        text_u = (confirmation_text or "").strip().upper()
-        if not secrets.compare_digest(text_u, CONFIRM_ENABLE):
-            raise LiveUnattendedError(
-                "CONFIRMATION_REQUIRED",
-                f"confirmation_text must be exactly '{CONFIRM_ENABLE}'",
-            )
-        source_u = str(source or "").strip().upper()
-        if source_u not in ALLOWED_ENABLE_SOURCES:
-            raise LiveUnattendedError(
-                "INVALID_SOURCE",
-                f"source must be one of {sorted(ALLOWED_ENABLE_SOURCES)}",
-            )
+        authorization_mode:
+          HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM 정규장 ceiling)
+        """
 
         uba = self._session.get(
             UserBrokerAccount, int(user_broker_account_id)
@@ -263,27 +355,104 @@ class LiveUnattendedAuthorizationService:
         if uba is None:
             raise LiveUnattendedError("UBA_NOT_FOUND", "UBA not found")
         broker = str(uba.broker_code or "").upper()
-        if broker != "UPBIT":
+
+        text_u = (confirmation_text or "").strip().upper()
+        source_u = str(source or "").strip().upper()
+        if source_u not in ALLOWED_ENABLE_SOURCES:
+            raise LiveUnattendedError(
+                "INVALID_SOURCE",
+                f"source must be one of {sorted(ALLOWED_ENABLE_SOURCES)}",
+            )
+
+        # confirmation → mode 결정 (문구 우선, 이후 broker와 교차검증)
+        if authorization_mode is not None:
+            mode = str(authorization_mode).upper()
+            if mode not in ALLOWED_AUTHORIZATION_MODES:
+                raise LiveUnattendedError(
+                    "INVALID_AUTHORIZATION_MODE",
+                    f"authorization_mode must be one of {sorted(ALLOWED_AUTHORIZATION_MODES)}",
+                )
+            expect_confirm = (
+                CONFIRM_ENABLE_MARKET_HOURS
+                if mode == MODE_MARKET_HOURS
+                else CONFIRM_ENABLE
+            )
+            if not secrets.compare_digest(text_u, expect_confirm):
+                raise LiveUnattendedError(
+                    "CONFIRMATION_REQUIRED",
+                    f"confirmation_text must be exactly '{expect_confirm}'",
+                )
+        else:
+            if secrets.compare_digest(text_u, CONFIRM_ENABLE_MARKET_HOURS):
+                mode = MODE_MARKET_HOURS
+            elif secrets.compare_digest(text_u, CONFIRM_ENABLE):
+                mode = MODE_HOURS_24
+            else:
+                raise LiveUnattendedError(
+                    "CONFIRMATION_REQUIRED",
+                    f"confirmation_text must be exactly '{CONFIRM_ENABLE}' "
+                    f"or '{CONFIRM_ENABLE_MARKET_HOURS}'",
+                )
+            expect_confirm = text_u
+
+        if mode == MODE_MARKET_HOURS and broker != "KIWOOM":
+            raise LiveUnattendedError(
+                "BROKER_NOT_SUPPORTED",
+                "MARKET_HOURS unattended is KIWOOM-only",
+            )
+        if mode == MODE_HOURS_24 and broker != "UPBIT":
             raise LiveUnattendedError(
                 "BROKER_NOT_SUPPORTED",
                 "24H unattended is UPBIT-only in this release",
             )
 
         settings = get_settings()
-        default_h = int(
-            getattr(settings, "live_unattended_default_horizon_hours", 24)
-        )
-        max_h = int(
-            getattr(settings, "live_unattended_max_horizon_hours", 168)
-        )
-        hours = int(horizon_hours if horizon_hours is not None else default_h)
-        if hours < 1 or hours > max_h:
-            raise LiveUnattendedError(
-                "INVALID_HORIZON",
-                f"horizon_hours must be 1..{max_h}",
+        market_hours_meta: dict[str, Any] = {}
+        now = _now()
+        if mode == MODE_MARKET_HOURS:
+            from stock_platform.trading.market_hours_authorization import (
+                krx_market_hours_state,
+                market_hours_authorized_until,
             )
 
-        gates = self.evaluate_enable_gates(int(user_broker_account_id))
+            try:
+                until = market_hours_authorized_until(
+                    self._session, now=now
+                )
+            except ValueError as exc:
+                raise LiveUnattendedError(
+                    "MARKET_HOURS_NOT_AVAILABLE",
+                    f"Cannot enable market-hours unattended: {exc}",
+                ) from exc
+            market_hours_meta = krx_market_hours_state(
+                self._session, now=now
+            )
+            hours = max(
+                1,
+                int((until - now).total_seconds() // 3600) or 1,
+            )
+            max_h = hours
+        else:
+            default_h = int(
+                getattr(settings, "live_unattended_default_horizon_hours", 24)
+            )
+            max_h = int(
+                getattr(settings, "live_unattended_max_horizon_hours", 168)
+            )
+            hours = int(
+                horizon_hours if horizon_hours is not None else default_h
+            )
+            if hours < 1 or hours > max_h:
+                raise LiveUnattendedError(
+                    "INVALID_HORIZON",
+                    f"horizon_hours must be 1..{max_h}",
+                )
+            until = now + timedelta(hours=hours)
+
+        gates = self.evaluate_enable_gates(
+            int(user_broker_account_id),
+            authorization_mode=mode,
+        )
         if not gates["ok"]:
             raise LiveUnattendedError(
                 "SAFETY_GATES_FAILED",
@@ -301,7 +470,6 @@ class LiveUnattendedAuthorizationService:
             broker_code=broker,
             user_broker_account_id=int(user_broker_account_id),
         )
-        now = _now()
         act_expires = (
             aware_utc(act.expires_at).isoformat()
             if act is not None and act.expires_at is not None
@@ -315,7 +483,7 @@ class LiveUnattendedAuthorizationService:
             entry_authorized=True,
             protective_exit_authorized=True,
             auto_renew_enabled=False,
-            authorized_until=now + timedelta(hours=hours),
+            authorized_until=until,
             renewal_interval_seconds=int(
                 getattr(settings, "live_unattended_renewal_interval_seconds", 3600)
             ),
@@ -332,9 +500,8 @@ class LiveUnattendedAuthorizationService:
             approved_by=actor[:100],
             approved_at=now,
             approval_reason=(reason or "")[:2000],
-            # Unattended lease ACK 해시 (LIVE phrase 아님)
             approval_phrase_hash=_hash_phrase(
-                f"{APPROVAL_MODEL_UNATTENDED_LEASE}:{CONFIRM_ENABLE}"
+                f"{APPROVAL_MODEL_UNATTENDED_LEASE}:{expect_confirm}"
             ),
             source_activation_id=(
                 int(act.live_trading_transition_id) if act is not None else None
@@ -343,11 +510,18 @@ class LiveUnattendedAuthorizationService:
                 "correlation_id": (correlation_id or "")[:128],
                 "source": source_u,
                 "approval_model": APPROVAL_MODEL_UNATTENDED_LEASE,
+                "authorization_mode": mode,
+                "market_hours": market_hours_meta,
                 "gates": gates,
             },
         )
         self._session.add(row)
         self._session.flush()
+        title = (
+            "Market-Hours Unattended ON"
+            if mode == MODE_MARKET_HOURS
+            else "24H Unattended ON"
+        )
         emit_live_safety_audit(
             self._session,
             event_type="UNATTENDED_AUTHORIZATION_ENABLED",
@@ -360,6 +534,7 @@ class LiveUnattendedAuthorizationService:
                 "actor": actor,
                 "user_broker_account_id": int(user_broker_account_id),
                 "broker": broker,
+                "authorization_mode": mode,
                 "enabled_at": now.isoformat(),
                 "authorization_horizon_hours": hours,
                 "authorized_until": row.authorized_until.isoformat(),
@@ -377,9 +552,15 @@ class LiveUnattendedAuthorizationService:
         )
         emit_live_order_telegram(
             event_type="UNATTENDED_AUTHORIZATION_ENABLED",
-            title="24H Unattended ON",
-            message=f"UBA {user_broker_account_id} unattended until {row.authorized_until.isoformat()}",
-            detail={"authorization_id": row.live_unattended_authorization_id},
+            title=title,
+            message=(
+                f"UBA {user_broker_account_id} {mode} unattended until "
+                f"{row.authorized_until.isoformat()}"
+            ),
+            detail={
+                "authorization_id": row.live_unattended_authorization_id,
+                "authorization_mode": mode,
+            },
         )
         self._session.commit()
         self._session.refresh(row)
@@ -608,12 +789,18 @@ class LiveUnattendedAuthorizationService:
         fail_closed: bool = True,
     ) -> dict[str, Any]:
         text_u = (confirmation_text or "").strip().upper()
-        if CONFIRM_DISABLE not in text_u:
+        row = self.get_active(int(user_broker_account_id))
+        mode = self._authorization_mode(row)
+        expect_disable = (
+            CONFIRM_DISABLE_MARKET_HOURS
+            if mode == MODE_MARKET_HOURS
+            else CONFIRM_DISABLE
+        )
+        if expect_disable not in text_u:
             raise LiveUnattendedError(
                 "CONFIRMATION_REQUIRED",
-                f"confirmation_text must include '{CONFIRM_DISABLE}'",
+                f"confirmation_text must include '{expect_disable}'",
             )
-        row = self.get_active(int(user_broker_account_id))
         if row is None:
             return self.status_dict(int(user_broker_account_id))
         now = _now()
@@ -651,7 +838,10 @@ class LiveUnattendedAuthorizationService:
         return self.status_dict(int(user_broker_account_id))
 
     def evaluate_enable_gates(
-        self, user_broker_account_id: int
+        self,
+        user_broker_account_id: int,
+        *,
+        authorization_mode: str | None = None,
     ) -> dict[str, Any]:
         """Unattended enable 최소 안전 조건 — 하나라도 실패 시 FAIL CLOSED.
 
@@ -677,7 +867,15 @@ class LiveUnattendedAuthorizationService:
 
         broker = str(uba.broker_code or "").upper()
         checks["broker"] = broker
-        if broker != "UPBIT":
+        mode = str(
+            authorization_mode
+            or (MODE_MARKET_HOURS if broker == "KIWOOM" else MODE_HOURS_24)
+        ).upper()
+        checks["authorization_mode"] = mode
+        if mode == MODE_MARKET_HOURS:
+            if broker != "KIWOOM":
+                blockers.append("BROKER_NOT_KIWOOM")
+        elif broker != "UPBIT":
             blockers.append("BROKER_NOT_UPBIT")
 
         if not bool(uba.is_active):
@@ -729,6 +927,22 @@ class LiveUnattendedAuthorizationService:
         checks["execution_env"] = execution_env
         if execution_env == "MOCK":
             blockers.append("UBA_NOT_REAL")
+
+        # MARKET_HOURS: 정규장 중이어야 enable/renew
+        if mode == MODE_MARKET_HOURS:
+            try:
+                from stock_platform.trading.market_hours_authorization import (
+                    krx_market_hours_state,
+                )
+
+                mh = krx_market_hours_state(self._session, now=now)
+                checks["market_hours"] = mh
+                if not mh.get("is_trading_day"):
+                    blockers.append("MARKET_HOLIDAY_OR_WEEKEND")
+                elif not mh.get("in_regular_session"):
+                    blockers.append("MARKET_CLOSED")
+            except Exception:  # noqa: BLE001
+                blockers.append("MARKET_HOURS_CHECK_FAILED")
 
         # Connection CONNECTED
         def _gate_error(code: str, message: str) -> Exception:
@@ -832,13 +1046,16 @@ class LiveUnattendedAuthorizationService:
         except Exception:  # noqa: BLE001
             blockers.append("CONFLICT_CHECK_FAILED")
 
-        # Kill Switch OFF
+        # Kill Switch OFF (GLOBAL + UBA/broker scope)
         try:
             from stock_platform.risk_engine.kill_switch_service import (
                 KillSwitchService,
             )
 
-            if KillSwitchService(self._session).is_active():
+            kill = KillSwitchService(self._session)
+            if kill.is_active() or kill.is_active_for_scopes(
+                [f"UBA:{int(user_broker_account_id)}", broker]
+            ):
                 blockers.append("KILL_SWITCH_ACTIVE")
                 checks["kill_switch"] = "ON"
             else:
@@ -911,11 +1128,17 @@ class LiveUnattendedAuthorizationService:
         }
 
     def evaluate_renewal_gates(
-        self, user_broker_account_id: int
+        self,
+        user_broker_account_id: int,
+        *,
+        authorization_mode: str | None = None,
     ) -> dict[str, Any]:
         """ARM/Activation 자동 renewal 허용 조건."""
 
-        return self.evaluate_enable_gates(int(user_broker_account_id))
+        return self.evaluate_enable_gates(
+            int(user_broker_account_id),
+            authorization_mode=authorization_mode,
+        )
 
     @staticmethod
     def _horizon_renew_margin_seconds(
@@ -1154,7 +1377,16 @@ class LiveUnattendedAuthorizationService:
         *,
         actor: str,
     ) -> dict[str, Any]:
-        """24H horizon 연장 — stack restart 없음, idempotent."""
+        """24H horizon 연장 — stack restart 없음, idempotent.
+
+        MARKET_HOURS 모드는 당일 close ceiling만 사용 — 24H rolling 연장 금지.
+        """
+
+        if self._authorization_mode(row) == MODE_MARKET_HOURS:
+            return {
+                "horizon_renewed": False,
+                "reason": "MARKET_HOURS_NO_HORIZON_ROLL",
+            }
 
         if not bool(getattr(row, "auto_renew_enabled", False)):
             return {"horizon_renewed": False, "reason": "AUTO_RENEW_OFF"}
@@ -1638,11 +1870,18 @@ class LiveUnattendedAuthorizationService:
         if row is None:
             return {"renewed": False, "reason": "NO_ACTIVE_LEASE"}
 
+        mode = self._authorization_mode(row)
+        renew_actor = (
+            ACTOR_MARKET_HOURS_ARM_RENEW
+            if mode == MODE_MARKET_HOURS
+            else actor
+        )
+
         now = _now()
         until = aware_utc(row.authorized_until)
         if until is None or until <= now:
             self._expire_authorization(
-                row, actor=actor, reason="HORIZON_EXPIRED"
+                row, actor=renew_actor, reason="HORIZON_EXPIRED"
             )
             return {"renewed": False, "reason": "HORIZON_EXPIRED"}
 
@@ -1655,6 +1894,32 @@ class LiveUnattendedAuthorizationService:
         if uba is None:
             return {"renewed": False, "reason": "UBA_NOT_FOUND"}
 
+        # MARKET_HOURS: 장 마감 후 ENTRY lease expire (다음 장 자동 시작 없음)
+        if mode == MODE_MARKET_HOURS:
+            from stock_platform.trading.market_hours_authorization import (
+                krx_market_hours_state,
+            )
+
+            mh = krx_market_hours_state(self._session, now=now)
+            if not mh.get("in_regular_session"):
+                if mh.get("past_close") or not mh.get("is_trading_day"):
+                    self._expire_authorization(
+                        row,
+                        actor=renew_actor,
+                        reason="MARKET_HOURS_SESSION_ENDED",
+                    )
+                    self._emit_market_hours_renew_telegram(
+                        success=False,
+                        uba_id=int(user_broker_account_id),
+                        blockers=["MARKET_CLOSED"],
+                        detail={"market_hours": mh},
+                    )
+                return {
+                    "renewed": False,
+                    "reason": "MARKET_CLOSED",
+                    "market_hours": mh,
+                }
+
         horizon_result = self._try_horizon_auto_renew(
             row, uba, actor=ACTOR_HORIZON_AUTO_RENEW
         )
@@ -1664,11 +1929,24 @@ class LiveUnattendedAuthorizationService:
 
         # LIVE/ARM이 꺼져 있으면 renew 대신 lease restore (startup fail-closed 복구)
         if not bool(uba.live_order_enabled) or not bool(uba.live_armed):
+            # MARKET_HOURS: 장중 restore만 (다음 장 자동 기동 금지)
+            if mode == MODE_MARKET_HOURS:
+                from stock_platform.trading.market_hours_authorization import (
+                    krx_market_hours_state,
+                )
+
+                mh = krx_market_hours_state(self._session, now=now)
+                if not mh.get("in_regular_session"):
+                    return {
+                        "renewed": False,
+                        "reason": "MARKET_CLOSED_NO_RESTORE",
+                        "market_hours": mh,
+                    }
             restored = self.restore_from_active_lease(
                 int(user_broker_account_id),
-                actor=actor.replace("RENEWAL", "RESTORE")
-                if "RENEWAL" in actor
-                else f"{actor}_RESTORE",
+                actor=renew_actor.replace("RENEW", "RESTORE")
+                if "RENEW" in renew_actor
+                else f"{renew_actor}_RESTORE",
             )
             return {
                 "renewed": bool(restored.get("restored")),
@@ -1678,7 +1956,10 @@ class LiveUnattendedAuthorizationService:
                 "restore": restored,
             }
 
-        gates = self.evaluate_renewal_gates(int(user_broker_account_id))
+        gates = self.evaluate_renewal_gates(
+            int(user_broker_account_id),
+            authorization_mode=mode,
+        )
         # LIVE/ARM 관련 false-positive 제거 후 재평가
         blockers = [
             b
@@ -1693,6 +1974,13 @@ class LiveUnattendedAuthorizationService:
             }
         ]
         if blockers:
+            if mode == MODE_MARKET_HOURS:
+                self._emit_market_hours_renew_telegram(
+                    success=False,
+                    uba_id=int(user_broker_account_id),
+                    blockers=blockers,
+                    detail={"gates": gates},
+                )
             return {
                 "renewed": False,
                 "reason": "SAFETY_GATES_FAILED",
@@ -1711,6 +1999,7 @@ class LiveUnattendedAuthorizationService:
         )
 
         detail: dict[str, Any] = {
+            "authorization_mode": mode,
             "activation_remaining": act_remaining,
             "arm_remaining": arm_remaining,
         }
@@ -1722,11 +2011,14 @@ class LiveUnattendedAuthorizationService:
                 int(row.activation_renew_hours),
                 max(1, int((until - now).total_seconds() // 3600)),
             )
+            if renew_hours < 1 and mode == MODE_MARKET_HOURS:
+                # 장 마감까지 1시간 미만이면 activation을 close까지 짧게 유지
+                renew_hours = 1
             successor = self._create_successor_activation(
                 uba=uba,
                 previous=act,
-                actor=actor,
-                ttl_hours=renew_hours,
+                actor=renew_actor,
+                ttl_hours=max(1, renew_hours),
             )
             detail["activation_renewed"] = True
             detail["successor_activation_id"] = int(
@@ -1738,6 +2030,7 @@ class LiveUnattendedAuthorizationService:
             did = True
 
         # ARM renew (만료 임박) — lease ceiling 대비 의미 있는 연장만
+        old_arm_expires = arm_exp.isoformat() if arm_exp else None
         if arm_remaining <= margin:
             from stock_platform.trading.live_arm_service import (
                 MIN_MEANINGFUL_ARM_EXTENSION_SECONDS,
@@ -1749,6 +2042,7 @@ class LiveUnattendedAuthorizationService:
             intended_expires = now + timedelta(seconds=arm_ttl)
             if intended_expires > until:
                 intended_expires = until
+                arm_ttl = max(60, int((intended_expires - now).total_seconds()))
             extension_seconds = (
                 (intended_expires - arm_exp).total_seconds()
                 if arm_exp is not None
@@ -1764,9 +2058,13 @@ class LiveUnattendedAuthorizationService:
                 try:
                     arm_result = LiveArmService(self._session).arm(
                         int(user_broker_account_id),
-                        actor=actor,
+                        actor=renew_actor,
                         ttl_seconds=arm_ttl,
-                        reason="UNATTENDED_ARM_RENEWAL",
+                        reason=(
+                            "MARKET_HOURS_ARM_RENEWAL"
+                            if mode == MODE_MARKET_HOURS
+                            else "UNATTENDED_ARM_RENEWAL"
+                        ),
                         correlation_id=(
                             f"unatt-{row.live_unattended_authorization_id}"
                         ),
@@ -1778,13 +2076,36 @@ class LiveUnattendedAuthorizationService:
                     detail["arm_renew_skipped"] = type(exc).__name__
                     detail["arm_renew_error"] = str(exc)[:200]
                     arm_result = {"arm_changed": False}
+                    if mode == MODE_MARKET_HOURS:
+                        self._emit_market_hours_renew_telegram(
+                            success=False,
+                            uba_id=int(user_broker_account_id),
+                            blockers=[type(exc).__name__],
+                            detail=detail,
+                        )
                 if arm_result.get("arm_changed"):
                     detail["arm_renewed"] = True
                     detail["arm_ttl_seconds"] = arm_ttl
                     detail["arm_expires_at"] = arm_result.get(
                         "arm_expires_at"
                     )
+                    detail["old_arm_expires_at"] = old_arm_expires
                     did = True
+                    if mode == MODE_MARKET_HOURS:
+                        self._emit_market_hours_renew_telegram(
+                            success=True,
+                            uba_id=int(user_broker_account_id),
+                            blockers=[],
+                            detail={
+                                "old_arm_expires_at": old_arm_expires,
+                                "new_arm_expires_at": arm_result.get(
+                                    "arm_expires_at"
+                                ),
+                                "authorized_until": until.isoformat()
+                                if until
+                                else None,
+                            },
+                        )
                 elif "arm_renew_skipped" not in detail:
                     detail["arm_renew_skipped"] = arm_result.get(
                         "skipped_reason", "ARM_UNCHANGED"
@@ -1802,15 +2123,15 @@ class LiveUnattendedAuthorizationService:
             }
 
         row.last_renewed_at = now
-        row.last_renewal_actor = actor[:100]
+        row.last_renewal_actor = renew_actor[:100]
         detail["horizon_auto_renew"] = horizon_result
-        row.last_renewal_detail = detail
+        row.last_renewal_detail = self._preserve_mode_detail(row, detail)
         row.updated_at = now
         self._session.flush()
         emit_live_safety_audit(
             self._session,
             event_type="UNATTENDED_AUTHORIZATION_RENEWED",
-            actor=actor,
+            actor=renew_actor,
             run_id=None,
             user_id=int(uba.user_id),
             account_id=int(user_broker_account_id),
@@ -1818,11 +2139,86 @@ class LiveUnattendedAuthorizationService:
             detail=detail,
             commit=False,
         )
+        self._session.commit()
         return {
             "renewed": True,
             "detail": detail,
             "horizon_renewed": horizon_renewed,
+            "authorization_mode": mode,
         }
+
+    def _emit_market_hours_renew_telegram(
+        self,
+        *,
+        success: bool,
+        uba_id: int,
+        blockers: list[str],
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        """장중 ARM 갱신 성공/실패 Telegram (spam 억제). ORDER_REJECTED 금지."""
+
+        detail = dict(detail or {})
+        now = _now()
+        row = self.get_active(int(uba_id))
+        store: dict[str, Any] = {}
+        if row is not None:
+            store = dict(row.last_renewal_detail or {})
+        key = (
+            "last_mh_success_telegram_at"
+            if success
+            else "last_mh_failure_telegram_at"
+        )
+        cooldown = (
+            MARKET_HOURS_RENEW_SUCCESS_TELEGRAM_INTERVAL_SECONDS
+            if success
+            else MARKET_HOURS_RENEW_FAILURE_TELEGRAM_COOLDOWN_SECONDS
+        )
+        last_tg = store.get(key)
+        if last_tg:
+            try:
+                dt = datetime.fromisoformat(str(last_tg).replace("Z", "+00:00"))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if (
+                    now - dt.astimezone(timezone.utc)
+                ).total_seconds() < cooldown:
+                    return
+            except Exception:  # noqa: BLE001
+                pass
+        store[key] = now.isoformat()
+        if row is not None:
+            row.last_renewal_detail = self._preserve_mode_detail(row, store)
+            try:
+                self._session.flush()
+            except Exception:  # noqa: BLE001
+                pass
+
+        if success:
+            emit_live_order_telegram(
+                event_type="KIWOOM_MARKET_HOURS_ARM_RENEWED",
+                title="키움 자동매매 승인 연장",
+                message=(
+                    f"✅ 키움 자동매매 승인 연장\n"
+                    f"계좌: UBA {uba_id}\n"
+                    f"이전 만료: {detail.get('old_arm_expires_at')}\n"
+                    f"새 만료: {detail.get('new_arm_expires_at')}\n"
+                    f"장 마감 ceiling: {detail.get('authorized_until')}\n"
+                    "Safety precheck 정상"
+                ),
+                detail={"uba_id": uba_id, **detail},
+            )
+        else:
+            reason = ", ".join(str(b) for b in blockers[:5]) or "UNKNOWN"
+            emit_live_order_telegram(
+                event_type="KIWOOM_MARKET_HOURS_ARM_RENEW_FAILED",
+                title="키움 자동매매 승인 자동갱신 실패",
+                message=(
+                    f"⚠️ 키움 자동매매 승인 자동갱신 실패\n"
+                    f"계좌: UBA {uba_id}\n"
+                    f"사유: {reason}"
+                ),
+                detail={"uba_id": uba_id, "blockers": blockers, **detail},
+            )
 
     def scan_renew_and_expire(
         self, *, actor: str = "SYSTEM_UNATTENDED"
