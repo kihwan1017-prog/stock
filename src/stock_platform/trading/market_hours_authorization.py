@@ -30,11 +30,16 @@ def krx_market_hours_state(
     from stock_platform.operation.calendar_constants import (
         CalendarSessionType,
     )
+    from stock_platform.operation.calendar_repository import (
+        TradingCalendarRepository,
+    )
     from stock_platform.operation.calendar_service import (
         TradingCalendarService,
     )
 
-    decision = TradingCalendarService(session).evaluate(
+    decision = TradingCalendarService(
+        TradingCalendarRepository(session)
+    ).evaluate(
         exchange_code="KRX",
         calendar_date=calendar_date,
     )
