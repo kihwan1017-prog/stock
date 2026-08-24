@@ -596,6 +596,18 @@ class ApplicationLifecycle:
                 "upbit_shadow_evaluator_start_failed",
                 error=str(exc)[:300],
             )
+        # Upbit Market Context Research (market/asset/F&G) — REAL 주문 무관
+        try:
+            from stock_platform.operation.upbit_market_context.research_collection_scheduler import (
+                upbit_market_context_research_scheduler,
+            )
+
+            upbit_market_context_research_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_market_context_research_scheduler_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP N2 — UPBIT News/Notice Collector (기본 OFF, Scanner/Shadow 격리)
         try:
             from stock_platform.news.collector_scheduler import (
@@ -799,6 +811,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_opportunity_shadow_evaluator_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.operation.upbit_market_context.research_collection_scheduler import (
+                upbit_market_context_research_scheduler,
+            )
+
+            await upbit_market_context_research_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         try:

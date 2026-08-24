@@ -217,6 +217,46 @@ def build_research_collection_status(
 
     # ── LLM ────────────────────────────────────────────────────────────────
     llm = _llm_stats(session, today_start=today_start)
+    llm["trigger"] = "CANDIDATE_DRIVEN"
+    llm["trigger_ko"] = "Scanner 신규 후보 발생 시"
+    llm["periodic"] = False
+
+    # ── Scheduler health (research collectors) ─────────────────────────────
+    scheduler_block = _scheduler_health()
+
+    # next_run / expected_interval 보강
+    market = _enrich_source_with_scheduler(
+        market,
+        scheduler_block,
+        job_key="market",
+        expected_interval_sec=int(
+            (scheduler_block.get("market") or {}).get("interval_seconds") or 600
+        ),
+    )
+    asset = _enrich_source_with_scheduler(
+        asset,
+        scheduler_block,
+        job_key="asset",
+        expected_interval_sec=int(
+            (scheduler_block.get("asset") or {}).get("interval_seconds") or 600
+        ),
+    )
+    news = _enrich_source_with_scheduler(
+        news,
+        scheduler_block,
+        job_key="news",
+        expected_interval_sec=int(
+            (scheduler_block.get("news") or {}).get("interval_seconds") or 900
+        ),
+    )
+    llm = {
+        **llm,
+        "next_run_at": None,
+        "expected_interval_seconds": None,
+        "note_ko": "주기 스케줄 없음 · 후보 발생 시 실행",
+    }
+    if llm.get("status") == "WAITING":
+        llm["status_ko"] = "대기 · 후보 발생 시"
 
     # ── Experiment ─────────────────────────────────────────────────────────
     exp_raw = summarize_entry_quality_experiment_from_shadows(completed)
@@ -287,12 +327,18 @@ def build_research_collection_status(
         "overall_status": overall,
         "overall_status_ko": _overall_ko(overall),
         "last_collected_at": last_collected,
-        "clean_forward": clean_block,
+        "clean_forward": {
+            **clean_block,
+            "trigger": "SCANNER_SHADOW_LIFECYCLE",
+            "trigger_ko": "Scanner 신규 후보 발생 시 자동 축적",
+            "scheduler_fake_rows": False,
+        },
         "reference": reference,
         "market_context": market,
         "asset_context": asset,
         "news": news,
         "llm": llm,
+        "scheduler": scheduler_block,
         "experiment": experiment,
         "mutations": {
             "REAL_ORDER_MUTATION": 0,
@@ -313,14 +359,20 @@ def build_research_collection_status(
             "asset": "종목 Context",
             "news": "뉴스·공지",
             "llm": "LLM 분석",
+            "auto_collect": "자동수집",
         },
         "tooltips_ko": {
-            "clean_forward": "가격 소스 수정 이후 새로 수집한 검증 가능한 연구 데이터입니다.",
+            "clean_forward": "가격 소스 수정 이후 새로 수집한 검증 가능한 연구 데이터입니다. 스케줄러가 가짜 행을 만들지 않습니다.",
             "target_500": "전략 후보를 1차 검토하기 위한 최소 표본 목표입니다.",
             "target_1000": "보다 안정적인 판단을 위한 권장 표본 목표입니다.",
             "legacy": "과거 가격 품질 문제가 있어 참고용으로만 사용합니다.",
-            "llm": "시장·뉴스·종목 정보를 보조 분석하며 REAL 주문을 직접 생성하지 않습니다.",
+            "llm": "시장·뉴스·종목 정보를 보조 분석하며 REAL 주문을 직접 생성하지 않습니다. 후보 발생 시에만 실행됩니다.",
             "waiting": "Scanner 후보가 잠시 없어도 정상일 수 있습니다. ERROR가 아닙니다.",
+            "market_interval": "시장 Context는 약 10분 간격으로 자동 수집됩니다.",
+            "asset_interval": "종목 Context는 시장 수집과 동일 주기로 KRW 전종목을 갱신합니다.",
+            "news_interval": "뉴스·공지는 기존 News Collector 스케줄(공지/암호화폐)을 재사용합니다.",
+            "fng_interval": "Fear & Greed는 약 60분 간격으로 수집합니다.",
+            "description_ttl": "종목 설명은 7일 TTL 캐시를 사용하며 매번 재수집하지 않습니다.",
         },
     }
 
@@ -602,3 +654,204 @@ def _llm_stats(session: Session, *, today_start: datetime) -> dict[str, Any]:
             "error": type(exc).__name__,
             "detail": str(exc)[:120],
         }
+
+
+def _scheduler_health() -> dict[str, Any]:
+    """연구 수집 스케줄러 런타임 상태 — fail-open."""
+
+    jobs: list[dict[str, Any]] = []
+    last_tick = None
+    running_any = False
+    market_info: dict[str, Any] = {
+        "interval_seconds": 600,
+        "scheduled": False,
+        "next_run_at": None,
+        "last_success_at": None,
+        "last_error": None,
+        "enabled": False,
+    }
+    asset_info = dict(market_info)
+    news_info: dict[str, Any] = {
+        "interval_seconds": 900,
+        "scheduled": False,
+        "next_run_at": None,
+        "last_success_at": None,
+        "last_error": None,
+        "enabled": False,
+    }
+    notice_info = dict(news_info)
+    notice_info["interval_seconds"] = 300
+    fng_info: dict[str, Any] = {
+        "interval_seconds": 3600,
+        "scheduled": False,
+        "next_run_at": None,
+        "last_success_at": None,
+        "enabled": False,
+    }
+
+    try:
+        from stock_platform.operation.upbit_market_context.research_collection_scheduler import (
+            upbit_market_context_research_scheduler,
+        )
+
+        st = upbit_market_context_research_scheduler.status()
+        running_any = running_any or bool(st.get("running"))
+        last_tick = st.get("last_run_at") or last_tick
+        market_info = {
+            "interval_seconds": int(st.get("market_interval_seconds") or 600),
+            "scheduled": bool(st.get("enabled") and st.get("running")),
+            "next_run_at": st.get("next_run_at"),
+            "last_success_at": st.get("last_success_at"),
+            "last_error": st.get("last_error"),
+            "enabled": bool(st.get("enabled")),
+        }
+        asset_info = {
+            **market_info,
+            "interval_seconds": int(st.get("asset_interval_seconds") or 600),
+        }
+        fng_info = {
+            "interval_seconds": int(st.get("fng_interval_seconds") or 3600),
+            "scheduled": bool(st.get("enabled") and st.get("running")),
+            "next_run_at": None,
+            "last_success_at": st.get("last_fng_at"),
+            "enabled": bool(st.get("enabled")),
+        }
+        for j in st.get("jobs") or []:
+            jobs.append(
+                {
+                    "id": j.get("id"),
+                    "interval_seconds": j.get("interval_seconds"),
+                    "next_run_at": j.get("next_run_at"),
+                    "family": "market_context",
+                }
+            )
+            if j.get("id") == "upbit_market_context_fear_greed":
+                fng_info["next_run_at"] = j.get("next_run_at")
+    except Exception as exc:  # noqa: BLE001
+        market_info["error"] = type(exc).__name__
+
+    try:
+        from stock_platform.news.collector_scheduler import (
+            upbit_news_notice_collector_scheduler,
+        )
+
+        nst = upbit_news_notice_collector_scheduler.status()
+        running_any = running_any or bool(nst.get("running"))
+        last_tick = nst.get("last_run") or last_tick
+        sources = nst.get("sources") or {}
+        notice = sources.get("UPBIT_NOTICE") or {}
+        crypto = sources.get("CRYPTO_NEWS") or {}
+        notice_info = {
+            "interval_seconds": int(notice.get("interval_seconds") or 300),
+            "scheduled": bool(notice.get("enabled") and nst.get("running")),
+            "next_run_at": notice.get("next_run"),
+            "last_success_at": nst.get("last_success"),
+            "last_error": nst.get("last_error"),
+            "enabled": bool(notice.get("enabled")),
+        }
+        # news aggregate: crypto 우선 interval (권장 15분) + notice
+        crypto_iv = int(crypto.get("interval_seconds") or 900)
+        news_info = {
+            "interval_seconds": crypto_iv,
+            "scheduled": bool(
+                (notice.get("enabled") or crypto.get("enabled"))
+                and nst.get("running")
+            ),
+            "next_run_at": crypto.get("next_run") or notice.get("next_run"),
+            "last_success_at": nst.get("last_success"),
+            "last_error": nst.get("last_error"),
+            "enabled": bool(notice.get("enabled") or crypto.get("enabled")),
+            "notice_enabled": bool(notice.get("enabled")),
+            "crypto_enabled": bool(crypto.get("enabled")),
+        }
+        if notice.get("enabled"):
+            jobs.append(
+                {
+                    "id": "upbit_notice_collection",
+                    "interval_seconds": notice_info["interval_seconds"],
+                    "next_run_at": notice.get("next_run"),
+                    "family": "news",
+                }
+            )
+        if crypto.get("enabled"):
+            jobs.append(
+                {
+                    "id": "crypto_news_collection",
+                    "interval_seconds": crypto_iv,
+                    "next_run_at": crypto.get("next_run"),
+                    "family": "news",
+                }
+            )
+    except Exception as exc:  # noqa: BLE001
+        news_info["error"] = type(exc).__name__
+
+    auto_on = bool(market_info.get("enabled")) or bool(news_info.get("enabled"))
+    return {
+        "running": running_any,
+        "auto_collect": "ON" if auto_on and running_any else (
+            "CONFIGURED" if auto_on else "OFF"
+        ),
+        "auto_collect_ko": (
+            "자동수집 가동 중"
+            if auto_on and running_any
+            else ("설정됨 · 대기" if auto_on else "자동수집 꺼짐")
+        ),
+        "jobs": jobs,
+        "last_tick_at": last_tick,
+        "market": market_info,
+        "asset": asset_info,
+        "news": news_info,
+        "notice": notice_info,
+        "fear_greed": fng_info,
+        "llm": {
+            "trigger": "CANDIDATE_DRIVEN",
+            "scheduled": False,
+            "periodic": False,
+        },
+        "clean_forward": {
+            "trigger": "SCANNER_SHADOW_LIFECYCLE",
+            "scheduled": False,
+            "fake_rows_forbidden": True,
+        },
+        "description_ttl_seconds": int(7 * 24 * 3600),
+    }
+
+
+def _enrich_source_with_scheduler(
+    block: dict[str, Any],
+    scheduler: dict[str, Any],
+    *,
+    job_key: str,
+    expected_interval_sec: int,
+) -> dict[str, Any]:
+    info = scheduler.get(job_key) if isinstance(scheduler, dict) else None
+    info = info if isinstance(info, dict) else {}
+    out = dict(block)
+    out["expected_interval_seconds"] = expected_interval_sec
+    out["next_run_at"] = info.get("next_run_at")
+    out["scheduler_enabled"] = bool(info.get("enabled"))
+    out["scheduler_running"] = bool(info.get("scheduled"))
+    if info.get("last_error") and out.get("status") != "OK":
+        out["last_error"] = info.get("last_error")
+    # DISABLED: 스케줄 꺼짐 + 데이터도 없음/오래됨
+    if not info.get("enabled"):
+        if out.get("status") in {"WAITING", "STALE"} or out.get("rows") in (0, None):
+            # 뉴스 등은 수동/과거 데이터가 있을 수 있음 — enabled=false면 DISABLED 표기
+            if job_key == "news" and (out.get("recent_count") or 0) > 0:
+                out["scheduler_note"] = "collector_disabled_data_present"
+            else:
+                out["status"] = "DISABLED" if not info.get("enabled") else out.get(
+                    "status"
+                )
+                out["status_ko"] = {
+                    "OK": "정상",
+                    "STALE": "수집 지연",
+                    "WAITING": "대기",
+                    "ERROR": "오류",
+                    "DISABLED": "자동수집 꺼짐",
+                }.get(str(out.get("status")), str(out.get("status")))
+    elif info.get("last_error") and out.get("status") == "STALE":
+        out["status"] = "ERROR"
+        out["status_ko"] = "오류"
+    return out
+

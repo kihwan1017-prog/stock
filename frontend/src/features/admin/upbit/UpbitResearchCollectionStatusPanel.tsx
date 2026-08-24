@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * 연구 데이터 수집 현황 — CLEAN / Context / News / LLM / 필터 실험.
- * READ ONLY. REAL/LIVE/주문·정책 mutate 없음. 수집 트리거 버튼 기본 비노출.
+ * 연구 데이터 수집 현황 — CLEAN / Context / News / LLM / Scheduler.
+ * READ ONLY. REAL/LIVE/주문·정책 mutate 없음.
  */
 
 import { useQuery } from "@tanstack/react-query";
@@ -33,23 +33,21 @@ function statusColor(status: unknown): string {
   if (s === "OK" || s === "COLLECTING") return "success";
   if (s === "WAITING") return "processing";
   if (s === "PARTIAL" || s === "STALE") return "warning";
-  if (s === "ERROR") return "error";
+  if (s === "ERROR" || s === "DISABLED") return "error";
   return "default";
 }
 
 function formatClock(iso: unknown): string {
   if (iso == null || iso === "") return "—";
   const s = String(iso);
-  // KST ISO → HH:MM:SS
-  const m = s.match(/T(\d{2}:\d{2}:\d{2})/);
-  if (m) return m[1];
+  const m = s.match(/T(\d{2}:\d{2}(?::\d{2})?)/);
+  if (m) return m[1].slice(0, 5);
   try {
     const d = new Date(s);
     if (!Number.isNaN(d.getTime())) {
       return d.toLocaleTimeString("ko-KR", {
         hour: "2-digit",
         minute: "2-digit",
-        second: "2-digit",
         hour12: false,
         timeZone: "Asia/Seoul",
       });
@@ -77,6 +75,28 @@ function TipLabel({
   );
 }
 
+function SourceLine({
+  label,
+  tip,
+  status,
+  statusKo,
+  detail,
+}: {
+  label: string;
+  tip?: string;
+  status: unknown;
+  statusKo: unknown;
+  detail: string;
+}) {
+  return (
+    <div>
+      <TipLabel label={label} tip={tip} />{" "}
+      <Tag color={statusColor(status)}>● {cell(statusKo ?? "—")}</Tag>
+      <Typography.Text type="secondary"> · {detail}</Typography.Text>
+    </div>
+  );
+}
+
 export function UpbitResearchCollectionStatusPanel({
   ubaId,
 }: {
@@ -97,6 +117,7 @@ export function UpbitResearchCollectionStatusPanel({
   const news = asRecord(data.news) ?? {};
   const llm = asRecord(data.llm) ?? {};
   const experiment = asRecord(data.experiment) ?? {};
+  const scheduler = asRecord(data.scheduler) ?? {};
   const tips = asRecord(data.tooltips_ko) ?? {};
   const labels = asRecord(data.labels_ko) ?? {};
 
@@ -117,6 +138,12 @@ export function UpbitResearchCollectionStatusPanel({
 
   const overallKo = String(data.overall_status_ko ?? data.overall_status ?? "—");
   const overallStatus = String(data.overall_status ?? "");
+  const autoCollect = String(scheduler.auto_collect ?? "");
+  const autoCollectKo = String(
+    scheduler.auto_collect_ko ??
+      (autoCollect === "ON" ? "자동수집 ON" : autoCollect || "—"),
+  );
+  const schedulerRunning = Boolean(scheduler.running);
 
   const summaryExtras = (
     <Space wrap size={4}>
@@ -126,6 +153,38 @@ export function UpbitResearchCollectionStatusPanel({
       <Tag color={statusColor(overallStatus)}>● {overallKo}</Tag>
     </Space>
   );
+
+  const headerMeta = !q.error ? (
+    <Space orientation="vertical" size={2} style={{ width: "100%", marginBottom: 12 }}>
+      <Space wrap size={8}>
+        <Typography.Text>
+          상태 <Tag color={statusColor(overallStatus)}>● {overallKo}</Tag>
+        </Typography.Text>
+        <Typography.Text>
+          자동수집{" "}
+          <Tag color={autoCollect === "ON" ? "success" : "default"}>
+            {autoCollectKo}
+          </Tag>
+        </Typography.Text>
+        <Typography.Text>
+          Scheduler{" "}
+          <Tag color={schedulerRunning ? "success" : "warning"}>
+            {schedulerRunning ? "정상" : "확인 필요"}
+          </Tag>
+        </Typography.Text>
+      </Space>
+      <Typography.Text type="secondary">
+        마지막 실행 {formatClock(scheduler.last_tick_at ?? data.last_collected_at)}
+        {" · "}
+        다음 실행{" "}
+        {formatClock(
+          market.next_run_at ??
+            (asRecord(scheduler.market) ?? {}).next_run_at ??
+            null,
+        )}
+      </Typography.Text>
+    </Space>
+  ) : null;
 
   const detailTabs = (
     <Tabs
@@ -141,9 +200,7 @@ export function UpbitResearchCollectionStatusPanel({
                 {cell(clean.sample_stage_desc_ko)}
               </Typography.Text>
               <Space wrap>
-                <Tag>
-                  정상 신규(CLEAN): {cleanCount}
-                </Tag>
+                <Tag>정상 신규(CLEAN): {cleanCount}</Tag>
                 <Tag>
                   오늘 +{cell(clean.today_new ?? 0)} · 1h +
                   {cell(clean.hour_new ?? 0)} · 24h +{cell(clean.day_new ?? 0)}
@@ -161,6 +218,13 @@ export function UpbitResearchCollectionStatusPanel({
               <Typography.Text type="secondary">
                 마지막 수집 {formatClock(data.last_collected_at)} · 마지막 CLEAN
                 신규 {formatClock(clean.last_new_at)}
+              </Typography.Text>
+              <Typography.Text type="secondary">
+                <TipLabel
+                  label="CLEAN Forward"
+                  tip={String(tips.clean_forward ?? "")}
+                />
+                : {cell(clean.trigger_ko ?? "Scanner 신규 후보 발생 시 자동 축적")}
               </Typography.Text>
             </Space>
           ),
@@ -205,45 +269,36 @@ export function UpbitResearchCollectionStatusPanel({
           key: "market-news",
           label: "시장·뉴스",
           children: (
-            <Row gutter={[12, 12]}>
-              <Col xs={24} md={8}>
-                <Card size="small" title={String(labels.market ?? "시장 Context")}>
-                  <Tag color={statusColor(market.status)}>
-                    ● {cell(market.status_ko ?? market.status)}
-                  </Tag>
-                  <div>Snapshot {cell(market.rows)}건</div>
-                  <div>오늘 신규 {cell(market.today_new)}</div>
-                  <div>최근 {formatClock(market.last_collected_at)}</div>
-                </Card>
-              </Col>
-              <Col xs={24} md={8}>
-                <Card size="small" title={String(labels.asset ?? "종목 Context")}>
-                  <Tag color={statusColor(asset.status)}>
-                    ● {cell(asset.status_ko ?? asset.status)}
-                  </Tag>
-                  <div>
-                    {cell(asset.rows)}건 / {cell(asset.symbols)}종목
-                  </div>
-                  <div>오늘 신규 {cell(asset.today_new)}</div>
-                  <div>최근 {formatClock(asset.last_collected_at)}</div>
-                </Card>
-              </Col>
-              <Col xs={24} md={8}>
-                <Card size="small" title={String(labels.news ?? "뉴스·공지")}>
-                  <Tag color={statusColor(news.status)}>
-                    ● {cell(news.status_ko ?? news.status)}
-                  </Tag>
-                  <div>최근 24시간 {cell(news.recent_count)}건</div>
-                  {news.upbit_notice_count != null ? (
-                    <div>업비트 공지 {cell(news.upbit_notice_count)}건</div>
-                  ) : null}
-                  {news.candidate_linked_count != null ? (
-                    <div>후보 연결 {cell(news.candidate_linked_count)}건</div>
-                  ) : null}
-                  <div>최근 {formatClock(news.last_collected_at)}</div>
-                </Card>
-              </Col>
-            </Row>
+            <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+              <SourceLine
+                label="시장"
+                tip={String(tips.market_interval ?? "")}
+                status={market.status}
+                statusKo={market.status_ko}
+                detail={`${cell(market.rows)}건 · ${formatClock(market.last_collected_at)}`}
+              />
+              <SourceLine
+                label="종목"
+                tip={String(tips.asset_interval ?? "")}
+                status={asset.status}
+                statusKo={asset.status_ko}
+                detail={`${cell(asset.symbols)}종목 · ${formatClock(asset.last_collected_at)}`}
+              />
+              <SourceLine
+                label="뉴스"
+                tip={String(tips.news_interval ?? "")}
+                status={news.status}
+                statusKo={news.status_ko}
+                detail={`${cell(news.recent_count)}건(24h) · ${formatClock(news.last_collected_at)}`}
+              />
+              <SourceLine
+                label="LLM"
+                tip={String(tips.llm ?? "")}
+                status={llm.status}
+                statusKo={llm.status_ko}
+                detail={String(llm.note_ko ?? "후보 발생 시 실행")}
+              />
+            </Space>
           ),
         },
         {
@@ -304,6 +359,18 @@ export function UpbitResearchCollectionStatusPanel({
             </Space>
           ),
         },
+        {
+          key: "dev",
+          label: "개발자",
+          children: (
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              API:{" "}
+              <Typography.Text code>
+                GET /api/v1/admin/autotrading/uba/{ubaId}/research/collection-status
+              </Typography.Text>
+            </Typography.Paragraph>
+          ),
+        },
       ]}
     />
   );
@@ -320,9 +387,12 @@ export function UpbitResearchCollectionStatusPanel({
           type="error"
           showIcon
           title={toApiError(q.error).message}
+          description="연구 수집 현황 API를 불러오지 못했습니다. 백엔드 라우트·재시작을 확인하세요."
           style={{ marginBottom: 12 }}
         />
       ) : null}
+
+      {headerMeta}
 
       <Row gutter={[12, 12]}>
         <Col xs={12} sm={8} md={5}>
@@ -361,34 +431,38 @@ export function UpbitResearchCollectionStatusPanel({
             styles={{ content: { fontSize: 18 } }}
           />
         </Col>
-        <Col xs={12} sm={12} md={5}>
+        <Col xs={24} sm={12} md={10}>
           <Typography.Text type="secondary">소스 상태</Typography.Text>
-          <div>
-            <Space wrap size={4}>
-              <Tag color={statusColor(market.status)}>
-                시장 {cell(market.status_ko ?? "—")}
-              </Tag>
-              <Tag color={statusColor(asset.status)}>
-                종목 {cell(asset.status_ko ?? "—")}
-              </Tag>
-              <Tag color={statusColor(news.status)}>
-                뉴스 {cell(news.status_ko ?? "—")}
-              </Tag>
-              <Tag color={statusColor(llm.status)}>
-                LLM {cell(llm.status_ko ?? "—")}
-              </Tag>
-            </Space>
-          </div>
-        </Col>
-        <Col xs={24} sm={12} md={5}>
-          <Typography.Text type="secondary">시각 · 전체</Typography.Text>
-          <div>
-            마지막 수집 {formatClock(data.last_collected_at)}
-          </div>
-          <Tag color={statusColor(overallStatus)}>● {overallKo}</Tag>
-          {experiment.sample_warning ? (
-            <Tag color="orange">{cell(experiment.sample_warning_ko)}</Tag>
-          ) : null}
+          <Space orientation="vertical" size={2} style={{ width: "100%" }}>
+            <SourceLine
+              label="시장"
+              tip={String(tips.market_interval ?? "")}
+              status={market.status}
+              statusKo={market.status_ko}
+              detail={`${cell(market.rows)}건 · ${formatClock(market.last_collected_at)}`}
+            />
+            <SourceLine
+              label="종목"
+              tip={String(tips.asset_interval ?? "")}
+              status={asset.status}
+              statusKo={asset.status_ko}
+              detail={`${cell(asset.symbols)}종목 · ${formatClock(asset.last_collected_at)}`}
+            />
+            <SourceLine
+              label="뉴스"
+              tip={String(tips.news_interval ?? "")}
+              status={news.status}
+              statusKo={news.status_ko}
+              detail={`${cell(news.recent_count)}건 · ${formatClock(news.last_collected_at)}`}
+            />
+            <SourceLine
+              label="LLM"
+              tip={String(tips.llm ?? "")}
+              status={llm.status}
+              statusKo={llm.status_ko}
+              detail={String(llm.trigger_ko ?? "후보 발생 시")}
+            />
+          </Space>
         </Col>
       </Row>
 

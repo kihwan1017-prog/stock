@@ -528,9 +528,17 @@ class Settings(BaseSettings):
     )
     naver_news_timeout_seconds: float = 15.0
 
-    # STEP N2 — UPBIT News/Notice Collector (기본 OFF, Scanner/Shadow 무관)
-    upbit_notice_collection_enabled: bool = False
-    upbit_notice_collection_interval_seconds: float = 300.0
+    # Upbit Market Context Research Collection (연구 전용, 기본 ON)
+    upbit_market_context_collection_enabled: bool = True
+    upbit_market_context_collection_interval_seconds: float = 600.0  # 10분
+    upbit_market_context_fng_interval_seconds: float = 3600.0  # 60분 F&G
+    # 후보 Shadow 오픈 시 heuristic LLM (전종목 주기 호출 금지)
+    upbit_market_context_candidate_llm_enabled: bool = True
+
+    # STEP N2 — UPBIT News/Notice Collector
+    # 공지(공식 API) 기본 ON · 암호화폐 뉴스(Naver 키 필요) 기본 OFF
+    upbit_notice_collection_enabled: bool = True
+    upbit_notice_collection_interval_seconds: float = 900.0  # 15분 (권장)
     upbit_notice_collection_overlap_hours: float = 48.0
     upbit_notice_api_base_url: str = (
         "https://api-manager.upbit.com/api/v1"

@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, App, Button, Space, Tag, Timeline, Typography } from "antd";
+import { Alert, App, Button, Space, Tag, Timeline, Tooltip, Typography } from "antd";
 import { useState } from "react";
 
 import {
@@ -152,8 +152,12 @@ export function UpbitOneClickAutotradingControl({
       <Alert
         type="info"
         showIcon
-        title="Canonical Backend Orchestrator"
-        description="POST /admin/autotrading/uba/{id}/start|stop — FE 다단계 호출 없음"
+        title="안전 통합 제어 — 시작/중지는 서버에서 안전 절차에 따라 처리됩니다."
+        description={
+          <Tooltip title="POST /admin/autotrading/uba/{id}/start|stop — FE 다단계 호출 없음">
+            <span>프론트엔드는 서버 오케스트레이터 한 번만 호출합니다.</span>
+          </Tooltip>
+        }
       />
       <Space wrap>
         <Button

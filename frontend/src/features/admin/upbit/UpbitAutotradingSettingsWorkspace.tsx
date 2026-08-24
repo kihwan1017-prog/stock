@@ -1210,7 +1210,12 @@ export function UpbitAutotradingSettingsWorkspace({
       <Alert
         type="info"
         showIcon
-        title="설정 워크스페이스 — PORTFOLIO 자동 Enable · REAL 주문 · 로드 시 risk mutate 없음"
+        title="실계좌 포트폴리오 자동매매 설정"
+        description={
+          <Tooltip title="로드 시 risk mutate 없음 · PORTFOLIO Enable은 운영 정책에 따름">
+            <span>화면을 열어도 리스크 설정이 자동으로 바뀌지 않습니다.</span>
+          </Tooltip>
+        }
       />
 
       <Card size="small" title="원클릭 자동매매">

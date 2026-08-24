@@ -197,6 +197,19 @@ class UpbitOpportunityShadowService:
             )
             self._session.add(row)
             self._session.flush()
+            # 후보 발생 시 research LLM — fail-open, REAL 경로 비차단
+            try:
+                from stock_platform.operation.upbit_market_context.candidate_llm import (
+                    maybe_analyze_shadow_candidate,
+                )
+
+                maybe_analyze_shadow_candidate(self._session, row)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "shadow_candidate_llm_hook_failed_open",
+                    symbol=symbol,
+                    error=type(exc).__name__,
+                )
             public = self.to_public(row)
             created.append(public)
             if notify:

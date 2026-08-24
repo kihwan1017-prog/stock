@@ -78,6 +78,13 @@ vi.mock("@/features/admin/api/adminApi", () => ({
       baseline_pf: 0.5,
       baseline_early_dump_rate: 0.4,
     },
+    scheduler: {
+      running: true,
+      auto_collect: "ON",
+      auto_collect_ko: "자동수집 가동 중",
+      last_tick_at: "2026-08-24T20:40:00+09:00",
+      market: { interval_seconds: 600, next_run_at: "2026-08-24T20:50:00+09:00" },
+    },
     labels_ko: {
       clean_forward: "정상 신규 검증",
       market: "시장 Context",
@@ -91,6 +98,7 @@ vi.mock("@/features/admin/api/adminApi", () => ({
       waiting: "Scanner 후보가 잠시 없어도 정상일 수 있습니다. ERROR가 아닙니다.",
       llm: "REAL 주문을 직접 생성하지 않습니다.",
       legacy: "참고용으로만 사용합니다.",
+      market_interval: "시장 Context는 약 10분 간격으로 자동 수집됩니다.",
     },
   })),
 }));
@@ -132,12 +140,39 @@ describe("UpbitResearchCollectionStatusPanel", () => {
     expect(src).toContain("신규 후보 대기 중");
     expect(src).toContain("표본 부족 · 연구용");
     expect(src).toContain("이전 연구");
+    expect(src).toContain("자동수집");
+    expect(src).toContain("Scanner 신규 후보 발생 시 자동 축적");
     expect(src).toContain("WAITING");
     // ERROR는 statusColor 매핑용으로만 — WAITING을 ERROR로 표시하지 않음
     expect(src).toContain('if (s === "WAITING") return "processing"');
     expect(src).toContain("refetchInterval: 45_000");
     expect(src).not.toContain("collect-once");
     expect(src).not.toContain("지금 수집");
+    expect(src).not.toContain("message=");
+    expect(src).not.toContain("valueStyle");
+  });
+
+  it("workspace uses friendly titles without raw orchestrator jargon", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const ws = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "src/features/admin/upbit/UpbitAutotradingSettingsWorkspace.tsx",
+      ),
+      "utf8",
+    );
+    expect(ws).toContain("실계좌 포트폴리오 자동매매 설정");
+    expect(ws).not.toContain("PORTFOLIO 자동 Enable · REAL 주문");
+    const one = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "src/features/admin/autotrading/UpbitOneClickAutotradingControl.tsx",
+      ),
+      "utf8",
+    );
+    expect(one).toContain("안전 통합 제어");
+    expect(one).not.toContain('title="Canonical Backend Orchestrator"');
   });
 
   it("workspace mounts panel under status cards", async () => {

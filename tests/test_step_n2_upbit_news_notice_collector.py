@@ -256,7 +256,9 @@ async def test_collector_retry_and_source_failure_isolation() -> None:
     repo.record_failure.assert_called()
 
 
-def test_scheduler_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_scheduler_respects_env_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    """env=false 이면 Job 미등록 (기본값이 ON이어도 env 우선)."""
+
     monkeypatch.setenv("UPBIT_NOTICE_COLLECTION_ENABLED", "false")
     monkeypatch.setenv("CRYPTO_NEWS_COLLECTION_ENABLED", "false")
     from stock_platform.common.settings import clear_settings_cache, get_settings
