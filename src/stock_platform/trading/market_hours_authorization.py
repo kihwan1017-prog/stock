@@ -77,7 +77,7 @@ def krx_market_hours_state(
         "past_close": past_close,
         "before_open": before_open,
         "now_kst": now_kst.isoformat(),
-        "ceiling_utc": close_utc if is_trading_day else None,
+        "ceiling_utc": close_utc.isoformat() if is_trading_day else None,
     }
 
 
