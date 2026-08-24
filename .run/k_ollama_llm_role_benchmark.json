@@ -5549,5 +5549,40 @@
   ],
   "FINAL_VERDICT": "OLLAMA_LLM_ROLE_BENCHMARK_COMPLETE",
   "NEXT_ACTION": "REVIEW_OLLAMA_LLM_BENCHMARK_WITH_CHATGPT",
-  "GIT_COMMIT": null
+  "GIT_COMMIT": "6334791",
+  "model_notes": {
+    "qwen3:1.7b": {
+      "strengths": [
+        "lowest latency",
+        "highest tps",
+        "0 timeout"
+      ],
+      "weaknesses": [
+        "slightly lower analysis number/news preservation"
+      ]
+    },
+    "qwen3.5:2b": {
+      "strengths": [
+        "best analysis quality median",
+        "0 timeout"
+      ],
+      "weaknesses": [
+        "~2.3x slower than 1.7b"
+      ]
+    },
+    "qwen3.5:4b": {
+      "strengths": [
+        "current production default",
+        "strong analysis quality"
+      ],
+      "weaknesses": [
+        "slowest",
+        "1 timeout"
+      ]
+    }
+  },
+  "runner_up": {
+    "ANALYSIS": "qwen3.5:2b",
+    "TRADING": "qwen3.5:2b (quality tied; slower)"
+  }
 }
