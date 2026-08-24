@@ -458,6 +458,15 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: float = 120.0
     ollama_temperature: float = 0.2
     ollama_keep_alive: str = "10m"
+    # Role-separated LLM hooks (empty = fallback to ollama_model). Not wired to REAL.
+    analysis_llm_model: str = Field(default="")
+    analysis_llm_timeout_seconds: float | None = None
+    analysis_llm_temperature: float | None = None
+    analysis_llm_max_tokens: int | None = None
+    trading_llm_model: str = Field(default="")
+    trading_llm_timeout_seconds: float | None = None
+    trading_llm_temperature: float | None = None
+    trading_llm_max_tokens: int | None = None
     # STEP69 — 사용자 공시 AI 요약 (미설정 시 ollama_model 사용)
     ai_disclosure_summary_model: str = Field(default="")
     ai_disclosure_summary_prompt_version: str = "v1"
@@ -1042,6 +1051,18 @@ class Settings(BaseSettings):
 
         custom = (self.ai_disclosure_summary_model or "").strip()
         return custom or self.ollama_model
+
+    @property
+    def resolved_analysis_llm_model(self) -> str:
+        """ANALYSIS_LLM — 미설정 시 ollama_model (production 동작 불변)."""
+
+        return (self.analysis_llm_model or "").strip() or self.ollama_model
+
+    @property
+    def resolved_trading_llm_model(self) -> str:
+        """TRADING_LLM — 미설정 시 ollama_model (REAL 경로 미배선)."""
+
+        return (self.trading_llm_model or "").strip() or self.ollama_model
 
     @property
     def database_url(self) -> str:
