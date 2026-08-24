@@ -215,6 +215,12 @@ class ScopedRealtimeConsumer:
             "signals_allowed": self.signals_allowed,
             "warmup_status": overall,
             "warmup_by_symbol": warmups,
+            # buffer_len = completed/rolling daily closes in MA deque (READY에 long+1 필요)
+            "buffer_by_symbol": {
+                sym: len(self.evaluator.get_state(sym).prices)
+                for sym in sorted(self.symbols)
+            },
+            "required_buffer_len": int(self.evaluator.config.long_window) + 1,
             "timeframe": self.evaluator.config.timeframe or "",
             "ma_input_unit": (
                 "DAY"
