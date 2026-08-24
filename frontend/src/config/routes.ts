@@ -218,7 +218,7 @@ const adminTitles: Record<string, string> = {
   [adminRoutes.systemSettings]: "시스템 설정",
   [adminRoutes.envSettings]: "환경설정",
   [adminRoutes.logs]: "로그 조회",
-  [adminRoutes.monitoring]: "시스템 모니터링",
+  [adminRoutes.monitoring]: "시스템 상태",
   [adminRoutes.db]: "DB 관리",
   [adminRoutes.api]: "API 관리",
   [adminRoutes.ollama]: "Ollama 관리",
