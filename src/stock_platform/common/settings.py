@@ -471,6 +471,18 @@ class Settings(BaseSettings):
     trading_llm_max_tokens: int = Field(default=512, ge=128, le=2048)
     trading_llm_shadow_enabled: bool = True
     dual_llm_ollama_enabled: bool = True
+    # Teacher (qwen3.5:4b) — selective audit only. REAL 미배선.
+    teacher_llm_model: str = Field(default="")  # 빈값 → ollama_model
+    teacher_llm_enabled: bool = True
+    teacher_llm_timeout_seconds: float = Field(default=120.0, ge=5.0, le=300.0)
+    teacher_llm_temperature: float = Field(default=0.2, ge=0.0, le=1.0)
+    teacher_llm_max_tokens: int = Field(default=512, ge=128, le=2048)
+    teacher_llm_max_rate: float = Field(default=0.15, ge=0.01, le=0.5)
+    teacher_llm_confidence_threshold: float = Field(default=0.65, ge=0.1, le=1.0)
+    teacher_llm_sample_rate: float = Field(default=0.05, ge=0.0, le=0.2)
+    # CLEAN RAG (no Vector DB)
+    dual_llm_rag_top_k: int = Field(default=5, ge=1, le=10)
+    dual_llm_rag_cache_ttl_seconds: float = Field(default=300.0, ge=30.0, le=3600.0)
     # STEP69 — 사용자 공시 AI 요약 (미설정 시 ollama_model 사용)
     ai_disclosure_summary_model: str = Field(default="")
     ai_disclosure_summary_prompt_version: str = "v1"

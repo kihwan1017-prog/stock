@@ -98,6 +98,15 @@ def maybe_analyze_shadow_candidate(
             run_analysis_llm,
         )
         from stock_platform.operation.upbit_market_context.as_of import as_utc
+        from stock_platform.operation.upbit_market_context.dual_llm_runtime import (
+            record_rag_cache_hit,
+        )
+        from stock_platform.operation.upbit_market_context.prompt_versions import (
+            SCHEMA_RAG_V1,
+        )
+        from stock_platform.operation.upbit_market_context.rag_retrieval import (
+            retrieve_similar_cases,
+        )
         from stock_platform.operation.upbit_market_context.schemas import (
             fail_open_output,
         )
@@ -119,6 +128,12 @@ def maybe_analyze_shadow_candidate(
         alignment = meta.get("alignment") if isinstance(meta, dict) else None
         lookahead_ok = True
         quality = QUALITY_AVAILABLE
+        rag_result: dict[str, Any] = {
+            "ok": False,
+            "examples": [],
+            "skipped": True,
+            "reason": "LOOKAHEAD_OR_STALE",
+        }
         if isinstance(alignment, dict) and alignment.get("ok") is False:
             heuristic = fail_open_output(reason="STALE_OR_LOOKAHEAD_CONTEXT")
             lookahead_ok = False
@@ -141,20 +156,56 @@ def maybe_analyze_shadow_candidate(
             heuristic = heuristic_llm_analyze(inp)
             # 2) ANALYSIS_LLM (cache) — Trading보다 먼저 요약 확보
             analysis_result = run_analysis_llm(inp, symbol=symbol)
-            # 3) TRADING_LLM SHADOW — priority gate로 동시 ANALYSIS보다 우선
+            # 3) CLEAN RAG — Trading 입력용 과거 사례 (미래 outcome 금지)
+            try:
+                rag_result = retrieve_similar_cases(
+                    session,
+                    detected_at=row.detected_at,
+                    technical=technical,
+                    candidate=candidate,
+                    analysis=analysis_result,
+                    exclude_shadow_id=shadow_id,
+                )
+                if rag_result.get("cache_hit"):
+                    record_rag_cache_hit()
+            except Exception as rag_exc:  # noqa: BLE001
+                logger.warning(
+                    "rag_retrieve_failed_open",
+                    shadow_id=shadow_id,
+                    error=type(rag_exc).__name__,
+                )
+                rag_result = {
+                    "ok": False,
+                    "examples": [],
+                    "error": type(rag_exc).__name__,
+                    "no_lookahead": True,
+                    "clean_only": True,
+                }
+            # 4) TRADING_LLM SHADOW — priority gate로 동시 ANALYSIS보다 우선
             trading_result = run_trading_llm_shadow(
                 inp,
                 analysis_summary=analysis_result,
                 heuristic=heuristic,
+                rag_examples=list(rag_result.get("examples") or []),
             )
 
         # 저장 recommendation: heuristic 유지 (REAL 영향 없음).
         # Trading shadow는 output_json.trading_llm_shadow 에만 기록.
         detected = as_utc(row.detected_at) or row.detected_at
         out_payload = heuristic.model_dump()
-        out_payload["schema_version"] = "upbit_dual_llm_shadow_v1"
+        out_payload["schema_version"] = SCHEMA_RAG_V1
         out_payload["current_heuristic"] = heuristic.model_dump()
         out_payload["analysis_llm"] = analysis_result
+        out_payload["rag"] = {
+            "retrieval_method": rag_result.get("retrieval_method"),
+            "top_k": rag_result.get("top_k"),
+            "examples": rag_result.get("examples") or [],
+            "cache_hit": bool(rag_result.get("cache_hit")),
+            "no_lookahead": bool(rag_result.get("no_lookahead", True)),
+            "clean_only": bool(rag_result.get("clean_only", True)),
+            "eligible_scored": rag_result.get("eligible_scored"),
+            "excluded": rag_result.get("excluded"),
+        }
         out_payload["trading_llm_shadow"] = trading_result
         out_payload["comparison"] = {
             "heuristic_recommendation": heuristic.recommendation,

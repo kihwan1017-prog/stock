@@ -77,6 +77,10 @@ export function UpbitDualLlmPanel() {
   const st = asRecord(statusQ.data);
   const analysis = asRecord(st?.analysis);
   const trading = asRecord(st?.trading_shadow);
+  const teacher = asRecord(st?.teacher);
+  const fb = asRecord(st?.feedback_metrics);
+  const rag = asRecord(st?.rag);
+  const dataset = asRecord(st?.dataset);
   const cmp = asRecord(cmpQ.data);
   const heur = asRecord(cmp?.current_heuristic);
   const llmArm = asRecord(cmp?.trading_llm_shadow);
@@ -106,18 +110,11 @@ export function UpbitDualLlmPanel() {
       />
 
       <Row gutter={[12, 12]}>
-        <Col xs={24} md={12}>
-          <Card size="small" title="분석 LLM (ANALYSIS)">
+        <Col xs={24} md={8}>
+          <Card size="small" title="분석 LLM">
             <Descriptions size="small" column={1}>
               <Descriptions.Item label="모델">
                 <Tag color="blue">{dash(st?.ANALYSIS_LLM_MODEL)}</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="상태">
-                {st?.ANALYSIS_LLM_WIRED ? (
-                  <Tag color="success">연결됨</Tag>
-                ) : (
-                  <Tag>미연결</Tag>
-                )}
               </Descriptions.Item>
               <Descriptions.Item label="호출/성공">
                 {dash(analysis?.calls)} / {dash(analysis?.ok)}
@@ -140,21 +137,14 @@ export function UpbitDualLlmPanel() {
             </Descriptions>
           </Card>
         </Col>
-        <Col xs={24} md={12}>
-          <Card size="small" title="매매 판단 LLM (TRADING SHADOW)">
+        <Col xs={24} md={8}>
+          <Card size="small" title="매매 판단 LLM">
             <Descriptions size="small" column={1}>
               <Descriptions.Item label="모델">
                 <Tag color="purple">{dash(st?.TRADING_LLM_MODEL)}</Tag>
               </Descriptions.Item>
               <Descriptions.Item label="모드">
                 <Tag color="warning">SHADOW</Tag>
-              </Descriptions.Item>
-              <Descriptions.Item label="상태">
-                {st?.TRADING_LLM_WIRED ? (
-                  <Tag color="success">연결됨</Tag>
-                ) : (
-                  <Tag>미연결</Tag>
-                )}
               </Descriptions.Item>
               <Descriptions.Item label="호출/성공">
                 {dash(trading?.calls)} / {dash(trading?.ok)}
@@ -170,7 +160,68 @@ export function UpbitDualLlmPanel() {
             </Descriptions>
           </Card>
         </Col>
+        <Col xs={24} md={8}>
+          <Card size="small" title="Teacher (선택 검증)">
+            <Descriptions size="small" column={1}>
+              <Descriptions.Item label="모델">
+                <Tag>{dash(st?.TEACHER_LLM_MODEL || st?.REFERENCE_MODEL)}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="역할">
+                <Tag>선택 검증</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="호출/성공">
+                {dash(teacher?.calls)} / {dash(teacher?.ok)}
+              </Descriptions.Item>
+              <Descriptions.Item label="review rate">
+                {teacher?.review_rate != null
+                  ? String(teacher.review_rate)
+                  : "—"}
+              </Descriptions.Item>
+              <Descriptions.Item label="priority">
+                LOW (Trading 대기 금지)
+              </Descriptions.Item>
+            </Descriptions>
+          </Card>
+        </Col>
       </Row>
+
+      <Card size="small" title="RAG / Feedback KPI">
+        <Descriptions size="small" column={3}>
+          <Descriptions.Item label="ALLOW / HOLD / REDUCE">
+            {dash(fb?.ALLOW)} / {dash(fb?.HOLD)} / {dash(fb?.REDUCE)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Early Dump detection">
+            {dash(fb?.EARLY_DUMP_DETECTION_RATE)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Avoided loser">
+            {dash(fb?.avoided_losers)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Missed winner">
+            {dash(fb?.missed_winners)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Net benefit">
+            {dash(fb?.NET_FILTER_BENEFIT)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Fee churn avoid">
+            {dash(fb?.FEE_CHURN_AVOIDANCE)}
+          </Descriptions.Item>
+          <Descriptions.Item label="RAG hit rate">
+            {dash(rag?.hit_rate)}
+          </Descriptions.Item>
+          <Descriptions.Item label="Avg similar cases">
+            {dash(rag?.average_similar_cases)}
+          </Descriptions.Item>
+          <Descriptions.Item label="GOLD / SILVER">
+            {dash(dataset?.GOLD)} / {dash(dataset?.SILVER)}
+          </Descriptions.Item>
+          <Descriptions.Item label="SAMPLE_STAGE">
+            <Tag>{dash(st?.SAMPLE_STAGE)}</Tag>
+          </Descriptions.Item>
+          <Descriptions.Item label="LoRA training">
+            <Tag>NO</Tag>
+          </Descriptions.Item>
+        </Descriptions>
+      </Card>
 
       <Card size="small" title="승격 게이트 (자동 승격 없음)">
         <Descriptions size="small" column={2}>
@@ -182,9 +233,6 @@ export function UpbitDualLlmPanel() {
           </Descriptions.Item>
           <Descriptions.Item label="설명" span={2}>
             {dash(st?.promotion_status_ko)}
-          </Descriptions.Item>
-          <Descriptions.Item label="reference 모델(4b)">
-            {dash(st?.REFERENCE_MODEL)}
           </Descriptions.Item>
           <Descriptions.Item label="Dual 저장 row">
             {dash(st?.dual_llm_rows_stored)}

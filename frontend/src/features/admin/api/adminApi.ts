@@ -777,6 +777,18 @@ export async function getAdminUpbitDualLlmComparison(): Promise<JsonValue> {
   return getJson("/admin/upbit/dual-llm/comparison");
 }
 
+export async function getAdminUpbitDualLlmRagFeedback(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/dual-llm/rag-feedback", params);
+}
+
+export async function getAdminUpbitDualLlmRagFeedbackDetail(
+  analysisId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/upbit/dual-llm/rag-feedback/${analysisId}`);
+}
+
 /** Canonical orchestrator status / start / stop */
 export async function getAdminUbaOrchestratorStatus(
   ubaId: number,

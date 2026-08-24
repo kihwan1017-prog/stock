@@ -981,6 +981,198 @@ function ExperimentsTab() {
   );
 }
 
+function RagFeedbackTab() {
+  const [verdict, setVerdict] = useState<string | undefined>();
+  const [tier, setTier] = useState<string | undefined>();
+  const [teacherOnly, setTeacherOnly] = useState<string | undefined>();
+  const [drawerId, setDrawerId] = useState<number | null>(null);
+
+  const params = useMemo(
+    () => ({
+      limit: 50,
+      verdict: verdict || undefined,
+      tier: tier || undefined,
+      teacher_reviewed:
+        teacherOnly === "true"
+          ? true
+          : teacherOnly === "false"
+            ? false
+            : undefined,
+    }),
+    [verdict, tier, teacherOnly],
+  );
+
+  const listQ = useQuery({
+    queryKey: queryKeys.admin.upbitDualLlmRagFeedback(params),
+    queryFn: () => adminApi.getAdminUpbitDualLlmRagFeedback(params),
+  });
+  const detailQ = useQuery({
+    queryKey: queryKeys.admin.upbitDualLlmRagFeedbackDetail(drawerId ?? 0),
+    queryFn: () =>
+      adminApi.getAdminUpbitDualLlmRagFeedbackDetail(drawerId as number),
+    enabled: drawerId != null,
+  });
+
+  const items = safeArray<Record<string, unknown>>(
+    asRecord(listQ.data)?.items,
+  );
+  const flow = asRecord(asRecord(detailQ.data)?.flow);
+
+  return (
+    <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+      <Alert
+        type="info"
+        showIcon
+        title="RAG / Feedback — 연구 전용"
+        description="CLEAN 유사사례 + Trading SHADOW 예측 vs 실제 결과. Teacher는 정답이 아닙니다. LoRA 학습은 이 화면에서 시작하지 않습니다."
+      />
+      <Form layout="inline" size="small">
+        <Form.Item label="Verdict">
+          <Select
+            allowClear
+            style={{ width: 200 }}
+            placeholder="전체"
+            value={verdict}
+            onChange={setVerdict}
+            options={[
+              { value: "ALLOW_SUCCESS", label: "ALLOW_SUCCESS" },
+              { value: "ALLOW_EARLY_DUMP", label: "ALLOW_EARLY_DUMP" },
+              { value: "HOLD_AVOIDED_LOSS", label: "HOLD_AVOIDED_LOSS" },
+              { value: "HOLD_MISSED_WINNER", label: "HOLD_MISSED_WINNER" },
+              { value: "REDUCE_AVOIDED_LOSS", label: "REDUCE_AVOIDED_LOSS" },
+              { value: "REDUCE_MISSED_WINNER", label: "REDUCE_MISSED_WINNER" },
+              { value: "EARLY_DUMP", label: "Early Dump (부분)" },
+              { value: "MISSED", label: "Missed Winner (부분)" },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item label="Tier">
+          <Select
+            allowClear
+            style={{ width: 120 }}
+            placeholder="전체"
+            value={tier}
+            onChange={setTier}
+            options={[
+              { value: "GOLD", label: "GOLD" },
+              { value: "SILVER", label: "SILVER" },
+              { value: "EXCLUDED", label: "EXCLUDED" },
+            ]}
+          />
+        </Form.Item>
+        <Form.Item label="Teacher">
+          <Select
+            allowClear
+            style={{ width: 120 }}
+            placeholder="전체"
+            value={teacherOnly}
+            onChange={setTeacherOnly}
+            options={[
+              { value: "true", label: "Reviewed" },
+              { value: "false", label: "Not reviewed" },
+            ]}
+          />
+        </Form.Item>
+      </Form>
+      <QueryState
+        isLoading={listQ.isLoading}
+        isError={listQ.isError}
+        error={listQ.error}
+        empty={!listQ.isLoading && items.length === 0}
+        emptyHint="Dual LLM RAG/Feedback row가 아직 없습니다. 신규 Scanner 후보 → outcome 완료 후 축적됩니다."
+      >
+        <Table
+          size="small"
+          rowKey={(r) => String(r.analysis_id)}
+          dataSource={items}
+          pagination={false}
+          onRow={(r) => ({
+            onClick: () => setDrawerId(Number(r.analysis_id)),
+            style: { cursor: "pointer" },
+          })}
+          columns={[
+            { title: "ID", dataIndex: "analysis_id", width: 70, render: dash },
+            { title: "Symbol", dataIndex: "symbol", render: dash },
+            {
+              title: "Detected",
+              dataIndex: "detected_at",
+              render: (v) => formatKstClock(v),
+            },
+            {
+              title: "Trading",
+              dataIndex: "trading_prediction",
+              render: dash,
+            },
+            {
+              title: "Actual",
+              dataIndex: "actual_result",
+              render: (v) => dash(asRecord(v)?.label),
+            },
+            {
+              title: "Verdict",
+              dataIndex: "prediction_verdict",
+              render: dash,
+            },
+            {
+              title: "RAG",
+              dataIndex: "rag_examples",
+              render: (v) =>
+                Array.isArray(v) ? String(v.length) : "0",
+            },
+            {
+              title: "Teacher",
+              dataIndex: "teacher_reviewed",
+              render: (v) => (v ? <Tag color="blue">Y</Tag> : "—"),
+            },
+            {
+              title: "Tier",
+              dataIndex: "dataset_tier",
+              render: (v) => (v ? <Tag>{String(v)}</Tag> : "—"),
+            },
+          ]}
+        />
+      </QueryState>
+
+      <Drawer
+        title={`RAG / Feedback #${drawerId ?? ""}`}
+        open={drawerId != null}
+        onClose={() => setDrawerId(null)}
+        width={720}
+      >
+        {detailQ.isLoading ? (
+          <Typography.Text type="secondary">불러오는 중…</Typography.Text>
+        ) : detailQ.isError ? (
+          <Alert
+            type="error"
+            showIcon
+            title="상세 조회 실패"
+            description={toApiError(detailQ.error).message}
+          />
+        ) : (
+          <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+            <Typography.Text type="secondary">
+              후보 → 유사사례 → 1.7B 분석 → 2B 판단 → 4B 검토(optional) → 실제
+              결과 → Feedback
+            </Typography.Text>
+            <JsonCollapse title="현재 후보" data={flow?.candidate} />
+            <JsonCollapse title="RAG 유사사례" data={flow?.rag_examples} />
+            <JsonCollapse title="1.7B Analysis" data={flow?.analysis_1_7b} />
+            <JsonCollapse title="2B Trading SHADOW" data={flow?.trading_2b} />
+            <JsonCollapse title="4B Teacher (optional)" data={flow?.teacher_4b} />
+            <JsonCollapse title="실제 결과" data={flow?.actual_outcome} />
+            <JsonCollapse title="Feedback" data={flow?.feedback} />
+            <Descriptions size="small" column={1}>
+              <Descriptions.Item label="Dataset tier">
+                {dash(flow?.dataset_tier)}
+              </Descriptions.Item>
+            </Descriptions>
+          </Space>
+        )}
+      </Drawer>
+    </Space>
+  );
+}
+
 export const upbitResearchDetailTabs = {
   CleanForwardTab,
   MarketTab: () => <PaginatedContextTab kind="market" />,
@@ -988,4 +1180,5 @@ export const upbitResearchDetailTabs = {
   NewsTab: () => <PaginatedContextTab kind="news" />,
   LlmTab: () => <PaginatedContextTab kind="llm" />,
   ExperimentsTab,
+  RagFeedbackTab,
 };

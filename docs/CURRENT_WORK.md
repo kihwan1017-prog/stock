@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-24 (Kiwoom Next Trading Day Lifecycle)
+**최종 갱신:** 2026-08-25 (Dual LLM RAG + Feedback pipeline READY)
 
 ---
 
@@ -15,22 +15,30 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | Entry B1 Forward Validation | **SAMPLE_COLLECTION_IN_PROGRESS** | COLLECT_MORE_NEW_UNSEEN_FORWARD |
-| **K** | Next Trading Day Auto Start + EOD Lifecycle | **IMPLEMENTED_FAIL_CLOSED** (uncommitted) | CONFIRM_OPT_IN → next KRX session observe |
-| **K** | #1822 Entry Provenance | **BROKER_IMPORTED_POSITION** (no historical mutate) | Future BUY→binding→SELL link |
+| **U** | Dual LLM RAG + Feedback Learning Pipeline | **READY_NOT_NATURALLY_OBSERVED** | COLLECT_RAG_FEEDBACK_CLEAN_SAMPLE |
+| **K** | Next Trading Day Auto Start | **ENABLED_READY** | OBSERVE_NEXT_KRX_SESSION_AUTO_START |
 
 ---
 
-## K — Next Trading Day Lifecycle (2026-08-24)
+## U — Dual LLM RAG + Feedback (research only)
 
-- Service: `KiwoomTradingDayLifecycleService` + scanner hook
-- Opt-in phrase: `ENABLE KIWOOM NEXT DAY AUTO START`
-- Fail-closed precheck (13 gates); Activation successor only
-- Evidence: `.run/k_kiwoom_next_trading_day_lifecycle.json` / `.md`
+- ANALYSIS=qwen3:1.7b · TRADING=qwen3.5:2b SHADOW · TEACHER=qwen3.5:4b selective
+- CLEAN hybrid RAG (no Vector DB) · Feedback · GOLD/SILVER export prep
+- LoRA training **not** started · REAL gate unchanged
+- Evidence: `.run/k_dual_llm_rag_feedback_pipeline.json` / `.md`
+
+---
+
+## K — Next-day auto-start (enabled)
+
+- Opt-in ON (UBA1381, auth#7, source Activation #46)
+- EOD: LIVE/ARM OFF · PROTECTIVE_EXIT_ONLY
+- Account sync: live Kiwoom account-state sync before LIVE
+- Evidence: `.run/k_kiwoom_next_day_auto_start_enable.json` / `.md`
 
 ---
 
 ## Next Gate
 
-**K:** CONFIRM_NEXT_DAY_OPT_IN_THEN_OBSERVE_NEXT_KRX_SESSION  
-**U:** COLLECT_MORE_NEW_UNSEEN_FORWARD
+**U:** COLLECT_RAG_FEEDBACK_CLEAN_SAMPLE  
+**K:** OBSERVE_NEXT_KRX_SESSION_AUTO_START

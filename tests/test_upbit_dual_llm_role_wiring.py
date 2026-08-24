@@ -228,6 +228,18 @@ def test_candidate_keeps_heuristic_recommendation(
             "latency_ms": 2,
         },
     )
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_market_context.rag_retrieval.retrieve_similar_cases",
+        lambda *_a, **_k: {
+            "ok": True,
+            "examples": [],
+            "retrieval_method": "structured_hybrid_normalized_distance",
+            "top_k": 5,
+            "no_lookahead": True,
+            "clean_only": True,
+            "cache_hit": False,
+        },
+    )
 
     out = cl.maybe_analyze_shadow_candidate(session, row)
     assert out["ok"] is True

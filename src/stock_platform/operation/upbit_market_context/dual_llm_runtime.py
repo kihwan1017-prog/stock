@@ -21,8 +21,11 @@ from stock_platform.common.settings import get_settings
 
 ROLE_ANALYSIS = "ANALYSIS"
 ROLE_TRADING = "TRADING"
+ROLE_TEACHER = "TEACHER"
+# TRADING > ANALYSIS > TEACHER (숫자 작을수록 우선)
 PRIORITY_TRADING = 0
 PRIORITY_ANALYSIS = 10
+PRIORITY_TEACHER = 100
 
 T = TypeVar("T")
 
@@ -33,6 +36,14 @@ _busy = False
 _pending: list[tuple[int, int, threading.Event]] = []
 
 
+def _priority_for(role: str) -> int:
+    if role == ROLE_TRADING:
+        return PRIORITY_TRADING
+    if role == ROLE_TEACHER:
+        return PRIORITY_TEACHER
+    return PRIORITY_ANALYSIS
+
+
 def _next_seq() -> int:
     global _seq
     with _seq_lock:
@@ -41,10 +52,10 @@ def _next_seq() -> int:
 
 
 def run_with_role_priority(role: str, fn: Callable[[], T]) -> T:
-    """단일 Ollama 슬롯 — TRADING이 ANALYSIS보다 먼저 실행."""
+    """단일 Ollama 슬롯 — TRADING > ANALYSIS > TEACHER."""
 
     global _busy
-    priority = PRIORITY_TRADING if role == ROLE_TRADING else PRIORITY_ANALYSIS
+    priority = _priority_for(role)
     ready = threading.Event()
     ticket = (priority, _next_seq(), ready)
     with _gate_cv:
@@ -96,6 +107,24 @@ def trading_config() -> RoleLlmConfig:
         timeout_seconds=float(s.trading_llm_timeout_seconds),
         temperature=float(s.trading_llm_temperature),
         max_tokens=int(s.trading_llm_max_tokens),
+        base_url=str(s.ollama_base_url).rstrip("/"),
+        keep_alive=str(s.ollama_keep_alive),
+    )
+
+
+def teacher_config() -> RoleLlmConfig:
+    """TEACHER — ollama_model(qwen3.5:4b) reference. Trading보다 낮은 우선순위."""
+
+    s = get_settings()
+    model = (getattr(s, "teacher_llm_model", None) or "").strip() or s.ollama_model
+    return RoleLlmConfig(
+        role=ROLE_TEACHER,
+        model=model,
+        timeout_seconds=float(
+            getattr(s, "teacher_llm_timeout_seconds", 120.0) or 120.0
+        ),
+        temperature=float(getattr(s, "teacher_llm_temperature", 0.2) or 0.2),
+        max_tokens=int(getattr(s, "teacher_llm_max_tokens", 512) or 512),
         base_url=str(s.ollama_base_url).rstrip("/"),
         keep_alive=str(s.ollama_keep_alive),
     )
@@ -240,35 +269,40 @@ _stats: dict[str, Any] = {
     "trading_shadow_ok": 0,
     "trading_shadow_timeout": 0,
     "trading_shadow_error": 0,
+    "teacher_calls": 0,
+    "teacher_ok": 0,
+    "teacher_timeout": 0,
+    "teacher_error": 0,
+    "rag_cache_hit": 0,
     "analysis_latencies_ms": [],
     "trading_latencies_ms": [],
+    "teacher_latencies_ms": [],
 }
 
 
 def record_stat(kind: str, *, ok: bool, timeout: bool, latency_ms: float | None) -> None:
     with _stats_lock:
         if kind == ROLE_ANALYSIS:
-            _stats["analysis_calls"] += 1
-            if timeout:
-                _stats["analysis_timeout"] += 1
-            elif ok:
-                _stats["analysis_ok"] += 1
-            else:
-                _stats["analysis_error"] += 1
-            if latency_ms is not None:
-                _stats["analysis_latencies_ms"].append(float(latency_ms))
-                _stats["analysis_latencies_ms"] = _stats["analysis_latencies_ms"][-100:]
+            prefix = "analysis"
+        elif kind == ROLE_TEACHER:
+            prefix = "teacher"
         else:
-            _stats["trading_shadow_calls"] += 1
-            if timeout:
-                _stats["trading_shadow_timeout"] += 1
-            elif ok:
-                _stats["trading_shadow_ok"] += 1
-            else:
-                _stats["trading_shadow_error"] += 1
-            if latency_ms is not None:
-                _stats["trading_latencies_ms"].append(float(latency_ms))
-                _stats["trading_latencies_ms"] = _stats["trading_latencies_ms"][-100:]
+            prefix = "trading_shadow"
+        _stats[f"{prefix}_calls"] += 1
+        if timeout:
+            _stats[f"{prefix}_timeout"] += 1
+        elif ok:
+            _stats[f"{prefix}_ok"] += 1
+        else:
+            _stats[f"{prefix}_error"] += 1
+        lat_key = {
+            "analysis": "analysis_latencies_ms",
+            "teacher": "teacher_latencies_ms",
+            "trading_shadow": "trading_latencies_ms",
+        }[prefix]
+        if latency_ms is not None:
+            _stats[lat_key].append(float(latency_ms))
+            _stats[lat_key] = _stats[lat_key][-100:]
 
 
 def record_cache_hit() -> None:
@@ -276,10 +310,16 @@ def record_cache_hit() -> None:
         _stats["analysis_cache_hit"] += 1
 
 
+def record_rag_cache_hit() -> None:
+    with _stats_lock:
+        _stats["rag_cache_hit"] += 1
+
+
 def runtime_stats() -> dict[str, Any]:
     with _stats_lock:
         a_lat = list(_stats["analysis_latencies_ms"])
         t_lat = list(_stats["trading_latencies_ms"])
+        te_lat = list(_stats["teacher_latencies_ms"])
 
         def _med(vals: list[float]) -> float | None:
             if not vals:
@@ -299,8 +339,15 @@ def runtime_stats() -> dict[str, Any]:
             "trading_shadow_timeout": _stats["trading_shadow_timeout"],
             "trading_shadow_error": _stats["trading_shadow_error"],
             "trading_median_latency_ms": _med(t_lat),
-            "priority": "TRADING > ANALYSIS",
+            "teacher_calls": _stats["teacher_calls"],
+            "teacher_ok": _stats["teacher_ok"],
+            "teacher_timeout": _stats["teacher_timeout"],
+            "teacher_error": _stats["teacher_error"],
+            "teacher_median_latency_ms": _med(te_lat),
+            "rag_cache_hit": _stats["rag_cache_hit"],
+            "priority": "TRADING > ANALYSIS > TEACHER",
             "protective_exit_llm_dependency": False,
+            "trading_starvation": False,
         }
 
 
@@ -314,18 +361,27 @@ def trading_shadow_enabled() -> bool:
     return bool(getattr(s, "trading_llm_shadow_enabled", True))
 
 
+def teacher_enabled() -> bool:
+    s = get_settings()
+    return bool(getattr(s, "teacher_llm_enabled", True)) and dual_llm_enabled()
+
+
 __all__ = [
     "ROLE_ANALYSIS",
     "ROLE_TRADING",
+    "ROLE_TEACHER",
     "analysis_config",
     "trading_config",
+    "teacher_config",
     "chat_json_sync",
     "analysis_cache",
     "run_with_role_priority",
     "record_stat",
     "record_cache_hit",
+    "record_rag_cache_hit",
     "runtime_stats",
     "dual_llm_enabled",
     "trading_shadow_enabled",
+    "teacher_enabled",
     "logger",
 ]

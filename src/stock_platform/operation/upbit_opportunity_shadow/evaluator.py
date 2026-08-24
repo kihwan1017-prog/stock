@@ -159,6 +159,40 @@ class UpbitOpportunityShadowEvaluator:
 
         self._session.commit()
 
+        # CLEAN RAG feedback — 신규 COMPLETED shadow에 prediction 채점만 추가
+        # (Legacy/Backfill/기존 outcome 수정 금지)
+        feedback_out: list[dict[str, Any]] = []
+        if completed_rows:
+            try:
+                from stock_platform.operation.upbit_market_context.rag_feedback_pipeline import (
+                    apply_feedback_for_shadow,
+                )
+
+                for crow in completed_rows:
+                    try:
+                        feedback_out.append(
+                            apply_feedback_for_shadow(
+                                self._session, crow, run_teacher=True
+                            )
+                        )
+                    except Exception as fb_exc:  # noqa: BLE001
+                        logger.warning(
+                            "rag_feedback_apply_failed_open",
+                            shadow_id=getattr(crow, "shadow_id", None),
+                            error=type(fb_exc).__name__,
+                        )
+                if feedback_out:
+                    self._session.commit()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "rag_feedback_batch_failed_open",
+                    error=type(exc).__name__,
+                )
+                try:
+                    self._session.rollback()
+                except Exception:  # noqa: BLE001
+                    pass
+
         from stock_platform.operation.upbit_opportunity_shadow.research_stamp_backfill import (
             backfill_missing_research_stamps,
         )
@@ -186,6 +220,10 @@ class UpbitOpportunityShadowEvaluator:
             "orders_created": 0,
             "mode": "historical_candles",
             "research_stamp_backfill": backfill_out,
+            "rag_feedback": {
+                "applied": len(feedback_out),
+                "items": feedback_out[:20],
+            },
             "shadows": [
                 UpbitOpportunityShadowService.to_public(r) for r in rows
             ],

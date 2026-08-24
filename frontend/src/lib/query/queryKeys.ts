@@ -226,6 +226,10 @@ export const queryKeys = {
       ["admin", "upbit-dual-llm-recent", params ?? {}] as const,
     upbitDualLlmComparison: () =>
       ["admin", "upbit-dual-llm-comparison"] as const,
+    upbitDualLlmRagFeedback: (params?: object) =>
+      ["admin", "upbit-dual-llm-rag-feedback", params ?? {}] as const,
+    upbitDualLlmRagFeedbackDetail: (analysisId: number) =>
+      ["admin", "upbit-dual-llm-rag-feedback-detail", analysisId] as const,
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,

@@ -35,6 +35,7 @@ function ResearchWorkspaceBody() {
     NewsTab,
     LlmTab,
     ExperimentsTab,
+    RagFeedbackTab,
   } = upbitResearchDetailTabs;
 
   const upbitTabs = useMemo(
@@ -77,12 +78,26 @@ function ResearchWorkspaceBody() {
         children: <LlmTab />,
       },
       {
+        key: "rag",
+        label: "RAG / Feedback",
+        children: <RagFeedbackTab />,
+      },
+      {
         key: "experiments",
         label: "필터 실험",
         children: <ExperimentsTab />,
       },
     ],
-    [ubaId, CleanForwardTab, MarketTab, AssetTab, NewsTab, LlmTab, ExperimentsTab],
+    [
+      ubaId,
+      CleanForwardTab,
+      MarketTab,
+      AssetTab,
+      NewsTab,
+      LlmTab,
+      ExperimentsTab,
+      RagFeedbackTab,
+    ],
   );
 
   return (

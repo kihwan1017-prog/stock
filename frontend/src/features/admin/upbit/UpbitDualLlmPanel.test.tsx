@@ -16,6 +16,8 @@ vi.mock("@/features/admin/api/adminApi", () => ({
   getAdminUpbitDualLlmStatus: vi.fn(async () => ({})),
   getAdminUpbitDualLlmRecent: vi.fn(async () => ({ items: [] })),
   getAdminUpbitDualLlmComparison: vi.fn(async () => ({})),
+  getAdminUpbitDualLlmRagFeedback: vi.fn(async () => ({ items: [] })),
+  getAdminUpbitDualLlmRagFeedbackDetail: vi.fn(async () => ({})),
 }));
 
 describe("UpbitDualLlmPanel", () => {
@@ -26,10 +28,12 @@ describe("UpbitDualLlmPanel", () => {
     qc.setQueryData(queryKeys.admin.upbitDualLlmStatus(), {
       ANALYSIS_LLM_MODEL: "qwen3:1.7b",
       TRADING_LLM_MODEL: "qwen3.5:2b",
+      TEACHER_LLM_MODEL: "qwen3.5:4b",
       ANALYSIS_LLM_WIRED: true,
       TRADING_LLM_WIRED: true,
       TRADING_LLM_MODE: "SHADOW",
       REFERENCE_MODEL: "qwen3.5:4b",
+      SAMPLE_STAGE: "COLLECTION_ONLY",
       clean_sample_count: 37,
       promotion_status: "COLLECTION_ONLY",
       promotion_status_ko: "수집 전용 — REAL 승격 근거 아님",
@@ -50,6 +54,18 @@ describe("UpbitDualLlmPanel", () => {
         median_latency_ms: null,
         mode: "SHADOW",
       },
+      teacher: {
+        calls: 0,
+        ok: 0,
+        review_rate: null,
+      },
+      feedback_metrics: {
+        ALLOW: 0,
+        HOLD: 0,
+        REDUCE: 0,
+      },
+      rag: { hit_rate: 0, average_similar_cases: null },
+      dataset: { GOLD: 0, SILVER: 0 },
     });
     qc.setQueryData(queryKeys.admin.upbitDualLlmRecent({ limit: 20 }), {
       items: [],
@@ -68,6 +84,8 @@ describe("UpbitDualLlmPanel", () => {
     expect(html).toContain("qwen3:1.7b");
     expect(html).toContain("qwen3.5:2b");
     expect(html).toContain("SHADOW");
+    expect(html).toContain("Teacher");
+    expect(html).toContain("RAG / Feedback KPI");
     expect(html).toContain("연구·SHADOW 전용");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("NaN");
@@ -86,5 +104,6 @@ describe("UpbitDualLlmPanel", () => {
     );
     expect(api).toContain("/admin/upbit/dual-llm/status");
     expect(api).toContain("getAdminUpbitDualLlmComparison");
+    expect(api).toContain("getAdminUpbitDualLlmRagFeedback");
   });
 });

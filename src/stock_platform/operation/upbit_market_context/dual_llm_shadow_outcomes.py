@@ -14,6 +14,9 @@ from sqlalchemy.orm import Session
 from stock_platform.operation.upbit_market_context.entities import (
     UpbitLlmContextAnalysisEntity,
 )
+from stock_platform.operation.upbit_market_context.prompt_versions import (
+    is_dual_llm_schema,
+)
 from stock_platform.operation.upbit_opportunity_shadow.clean_forward_research import (
     TARGET_CLEAN_MIN,
     assign_clean_forward_obs,
@@ -83,7 +86,7 @@ def build_heuristic_vs_llm_shadow(session: Session) -> dict[str, Any]:
     dual_rows: list[dict[str, Any]] = []
     for a in analyses:
         out = a.output_json if isinstance(a.output_json, dict) else {}
-        if out.get("schema_version") != "upbit_dual_llm_shadow_v1":
+        if not is_dual_llm_schema(out.get("schema_version")):
             # 구 heuristic-only row — 비교 표본에서 제외 (혼동 방지)
             continue
         sid = int(a.shadow_id) if a.shadow_id is not None else 0

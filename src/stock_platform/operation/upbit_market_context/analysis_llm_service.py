@@ -20,6 +20,10 @@ from stock_platform.operation.upbit_market_context.dual_llm_runtime import (
     record_cache_hit,
     record_stat,
 )
+from stock_platform.operation.upbit_market_context.prompt_versions import (
+    ANALYSIS_PROMPT_VERSION,
+    settings_fingerprint,
+)
 from stock_platform.operation.upbit_market_context.schemas import LlmContextInput
 
 ANALYSIS_SCHEMA: dict[str, Any] = {
@@ -179,6 +183,15 @@ def run_analysis_llm(
     result = {
         "model_role": ROLE_ANALYSIS,
         "model": cfg.model,
+        "model_name": cfg.model,
+        "prompt_version": ANALYSIS_PROMPT_VERSION,
+        "settings_fingerprint": settings_fingerprint(
+            model=cfg.model,
+            role=ROLE_ANALYSIS,
+            temperature=cfg.temperature,
+            max_tokens=cfg.max_tokens,
+            prompt_version=ANALYSIS_PROMPT_VERSION,
+        ),
         "ok": True,
         "fallback": False,
         "cache_hit": False,
