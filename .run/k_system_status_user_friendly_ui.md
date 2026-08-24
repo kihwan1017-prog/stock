@@ -25,3 +25,5 @@
 ## Auth browser UI flags
 
 See `k_system_status_user_friendly_ui.json`.
+
+- GIT_COMMIT: 98a2710
