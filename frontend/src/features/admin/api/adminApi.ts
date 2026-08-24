@@ -762,6 +762,21 @@ export async function getAdminUpbitResearchExperiments(): Promise<JsonValue> {
   return getJson("/admin/upbit/research/experiments");
 }
 
+/** Dual LLM role status — READ ONLY (ANALYSIS + TRADING SHADOW) */
+export async function getAdminUpbitDualLlmStatus(): Promise<JsonValue> {
+  return getJson("/admin/upbit/dual-llm/status");
+}
+
+export async function getAdminUpbitDualLlmRecent(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/dual-llm/recent", params);
+}
+
+export async function getAdminUpbitDualLlmComparison(): Promise<JsonValue> {
+  return getJson("/admin/upbit/dual-llm/comparison");
+}
+
 /** Canonical orchestrator status / start / stop */
 export async function getAdminUbaOrchestratorStatus(
   ubaId: number,

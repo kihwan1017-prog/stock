@@ -458,15 +458,19 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: float = 120.0
     ollama_temperature: float = 0.2
     ollama_keep_alive: str = "10m"
-    # Role-separated LLM hooks (empty = fallback to ollama_model). Not wired to REAL.
-    analysis_llm_model: str = Field(default="")
-    analysis_llm_timeout_seconds: float | None = None
-    analysis_llm_temperature: float | None = None
-    analysis_llm_max_tokens: int | None = None
-    trading_llm_model: str = Field(default="")
-    trading_llm_timeout_seconds: float | None = None
-    trading_llm_temperature: float | None = None
-    trading_llm_max_tokens: int | None = None
+    # Dual LLM roles — RESEARCH/SHADOW only. REAL 주문 경로 미연결.
+    # 빈 문자열이면 아래 기본 역할 모델로 resolve (ollama_model=4b는 reference 유지).
+    analysis_llm_model: str = Field(default="qwen3:1.7b")
+    analysis_llm_timeout_seconds: float = Field(default=90.0, ge=5.0, le=300.0)
+    analysis_llm_temperature: float = Field(default=0.2, ge=0.0, le=1.0)
+    analysis_llm_max_tokens: int = Field(default=512, ge=128, le=2048)
+    analysis_llm_cache_ttl_seconds: float = Field(default=600.0, ge=30.0, le=3600.0)
+    trading_llm_model: str = Field(default="qwen3.5:2b")
+    trading_llm_timeout_seconds: float = Field(default=90.0, ge=5.0, le=300.0)
+    trading_llm_temperature: float = Field(default=0.2, ge=0.0, le=1.0)
+    trading_llm_max_tokens: int = Field(default=512, ge=128, le=2048)
+    trading_llm_shadow_enabled: bool = True
+    dual_llm_ollama_enabled: bool = True
     # STEP69 — 사용자 공시 AI 요약 (미설정 시 ollama_model 사용)
     ai_disclosure_summary_model: str = Field(default="")
     ai_disclosure_summary_prompt_version: str = "v1"
@@ -1054,15 +1058,15 @@ class Settings(BaseSettings):
 
     @property
     def resolved_analysis_llm_model(self) -> str:
-        """ANALYSIS_LLM — 미설정 시 ollama_model (production 동작 불변)."""
+        """ANALYSIS_LLM — 기본 qwen3:1.7b. ollama_model(4b)은 reference 유지."""
 
-        return (self.analysis_llm_model or "").strip() or self.ollama_model
+        return (self.analysis_llm_model or "").strip() or "qwen3:1.7b"
 
     @property
     def resolved_trading_llm_model(self) -> str:
-        """TRADING_LLM — 미설정 시 ollama_model (REAL 경로 미배선)."""
+        """TRADING_LLM SHADOW — 기본 qwen3.5:2b. REAL 미배선."""
 
-        return (self.trading_llm_model or "").strip() or self.ollama_model
+        return (self.trading_llm_model or "").strip() or "qwen3.5:2b"
 
     @property
     def database_url(self) -> str:

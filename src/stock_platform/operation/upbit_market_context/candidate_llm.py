@@ -1,7 +1,8 @@
-"""Candidate-driven LLM context analysis — research only, fail-open.
+"""Candidate-driven dual LLM — heuristic + ANALYSIS + TRADING SHADOW.
 
 Scanner 신규 Shadow 생성 시에만 실행. 전종목 주기 LLM 호출 금지.
-REAL 주문/정책을 차단하거나 변경하지 않는다.
+TRADING_LLM은 SHADOW ONLY — REAL recommendation/slot/order/LIVE를 변경하지 않는다.
+실패 시 fail-open (research_failed_open).
 """
 
 from __future__ import annotations
@@ -30,9 +31,10 @@ def maybe_analyze_shadow_candidate(
     *,
     force: bool = False,
 ) -> dict[str, Any]:
-    """단일 Shadow 후보에 대해 heuristic LLM context 저장.
+    """단일 Shadow 후보: heuristic 유지 + dual LLM SHADOW 저장.
 
     실패해도 raise하지 않음 (research_failed_open).
+    Shadow entity.recommendation 은 Scanner 원본 유지 (LLM이 overwrite 금지).
     """
 
     try:
@@ -50,6 +52,7 @@ def maybe_analyze_shadow_candidate(
                 "skipped": True,
                 "reason": "CANDIDATE_LLM_DISABLED",
                 "live_order": False,
+                "REAL_POLICY_CHANGED": "NO",
             }
 
         shadow_id = int(row.shadow_id)
@@ -69,6 +72,7 @@ def maybe_analyze_shadow_candidate(
                     "skipped": True,
                     "reason": "ALREADY_ANALYZED",
                     "analysis_id": int(existing.analysis_id),
+                    "live_order": False,
                 }
 
         snap = row.entry_snapshot if isinstance(row.entry_snapshot, dict) else {}
@@ -90,6 +94,9 @@ def maybe_analyze_shadow_candidate(
             "volatility": row.volatility,
         }
 
+        from stock_platform.operation.upbit_market_context.analysis_llm_service import (
+            run_analysis_llm,
+        )
         from stock_platform.operation.upbit_market_context.as_of import as_utc
         from stock_platform.operation.upbit_market_context.schemas import (
             fail_open_output,
@@ -97,6 +104,9 @@ def maybe_analyze_shadow_candidate(
         from stock_platform.operation.upbit_market_context.source_registry import (
             QUALITY_AVAILABLE,
             QUALITY_STALE,
+        )
+        from stock_platform.operation.upbit_market_context.trading_llm_shadow import (
+            run_trading_llm_shadow,
         )
 
         svc = MarketContextSnapshotService(session)
@@ -109,34 +119,103 @@ def maybe_analyze_shadow_candidate(
         alignment = meta.get("alignment") if isinstance(meta, dict) else None
         lookahead_ok = True
         quality = QUALITY_AVAILABLE
-        # freshness / lookahead gate — fail-open HOLD (REAL block 금지)
         if isinstance(alignment, dict) and alignment.get("ok") is False:
-            out = fail_open_output(reason="STALE_OR_LOOKAHEAD_CONTEXT")
+            heuristic = fail_open_output(reason="STALE_OR_LOOKAHEAD_CONTEXT")
             lookahead_ok = False
             quality = QUALITY_STALE
+            analysis_result = {
+                "ok": False,
+                "fallback": True,
+                "fallback_reason": "STALE_OR_LOOKAHEAD_CONTEXT",
+                "model_role": "ANALYSIS",
+            }
+            trading_result = {
+                "ok": False,
+                "skipped": True,
+                "reason": "LOOKAHEAD_OR_STALE",
+                "mode": "SHADOW",
+                "affects_real": False,
+            }
         else:
-            out = heuristic_llm_analyze(inp)
+            # 1) CURRENT heuristic — REAL/Scanner와 별도 연구 baseline
+            heuristic = heuristic_llm_analyze(inp)
+            # 2) ANALYSIS_LLM (cache) — Trading보다 먼저 요약 확보
+            analysis_result = run_analysis_llm(inp, symbol=symbol)
+            # 3) TRADING_LLM SHADOW — priority gate로 동시 ANALYSIS보다 우선
+            trading_result = run_trading_llm_shadow(
+                inp,
+                analysis_summary=analysis_result,
+                heuristic=heuristic,
+            )
 
+        # 저장 recommendation: heuristic 유지 (REAL 영향 없음).
+        # Trading shadow는 output_json.trading_llm_shadow 에만 기록.
         detected = as_utc(row.detected_at) or row.detected_at
+        out_payload = heuristic.model_dump()
+        out_payload["schema_version"] = "upbit_dual_llm_shadow_v1"
+        out_payload["current_heuristic"] = heuristic.model_dump()
+        out_payload["analysis_llm"] = analysis_result
+        out_payload["trading_llm_shadow"] = trading_result
+        out_payload["comparison"] = {
+            "heuristic_recommendation": heuristic.recommendation,
+            "trading_shadow_recommendation": trading_result.get("recommendation"),
+            "agree": (
+                trading_result.get("ok")
+                and trading_result.get("recommendation") == heuristic.recommendation
+            ),
+            "shadow_only": True,
+            "real_policy_changed": False,
+        }
+        out_payload["latency_ms"] = {
+            "analysis": analysis_result.get("latency_ms"),
+            "trading_shadow": trading_result.get("latency_ms"),
+        }
+
+        # LlmContextOutput 필드는 heuristic 기준 — shadow가 REAL 컬럼을 덮지 않음
+        from stock_platform.operation.upbit_market_context.schemas import LlmContextOutput
+
+        stored = LlmContextOutput.model_validate(
+            {
+                **heuristic.model_dump(),
+            }
+        )
         ent = svc.save_llm_analysis(
             symbol=symbol,
             detected_at=detected,
             context_as_of=detected,
             inp=inp,
-            out=out,
+            out=stored,
             shadow_id=shadow_id,
             lookahead_ok=lookahead_ok,
             quality=quality,
         )
+        # dual payload를 output_json에 merge (JSONB SoT)
+        ent.output_json = out_payload
+        # input에 role meta
+        inp_dump = dict(ent.input_json or {})
+        inp_dump["dual_llm"] = {
+            "analysis_model": analysis_result.get("model"),
+            "trading_model": trading_result.get("model"),
+            "trading_mode": "SHADOW",
+            "affects_real": False,
+        }
+        ent.input_json = inp_dump
         session.flush()
         return {
             "ok": True,
             "skipped": False,
             "analysis_id": int(ent.analysis_id),
-            "recommendation": out.recommendation,
+            "heuristic_recommendation": heuristic.recommendation,
+            "trading_shadow_recommendation": trading_result.get("recommendation"),
+            "trading_shadow_ok": bool(trading_result.get("ok")),
+            "analysis_ok": bool(analysis_result.get("ok")),
             "quality": quality,
             "trigger": "CANDIDATE_SHADOW_OPEN",
+            "mode": "SHADOW",
             "live_order": False,
+            "REAL_POLICY_CHANGED": "NO",
+            "REAL_ORDER_MUTATION": 0,
+            "LIVE_ARM_MUTATION": 0,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning(

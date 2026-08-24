@@ -3,6 +3,7 @@
 /**
  * 전략·분석 → AI 분석 (결과 조회).
  * AI 설정(Provider/Prompt/Policy)과 분리.
+ * UPBIT: Dual LLM (ANALYSIS + TRADING SHADOW) 패널.
  */
 
 import { Card, Space, Typography } from "antd";
@@ -17,6 +18,7 @@ import {
 } from "@/features/admin/strategy-analysis/StrategyAnalysisToolbar";
 import { withMarketQuery } from "@/features/admin/strategy-analysis/marketScope";
 import { useStrategyMarketFromUrl } from "@/features/admin/strategy-analysis/MarketSelector";
+import { UpbitDualLlmPanel } from "@/features/admin/upbit/UpbitDualLlmPanel";
 
 function Body() {
   const market = useStrategyMarketFromUrl();
@@ -45,18 +47,17 @@ function Body() {
         </Space>
       </MarketSection>
 
-      <MarketSection market={market} forMarket="UPBIT" title="업비트 AI 분석">
-        <Space orientation="vertical" size={4}>
-          <Typography.Text>
-            LLM 시장·뉴스·종목 컨텍스트 분석 (후보 발생 시)
-          </Typography.Text>
+      <MarketSection market={market} forMarket="UPBIT" title="업비트 Dual LLM">
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          ANALYSIS_LLM(qwen3:1.7b) + TRADING_LLM SHADOW(qwen3.5:2b). REAL
+          주문·LIVE/ARM과 분리됩니다.
+        </Typography.Paragraph>
+        <UpbitDualLlmPanel />
+        <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
           <Link href={withMarketQuery(adminRoutes.researchData, "UPBIT")}>
-            연구 데이터 → LLM / 수집 현황
+            연구 데이터 → CLEAN / Context 상세
           </Link>
-          <Typography.Text type="secondary">
-            추천(ALLOW/HOLD/REDUCE)은 연구용이며 REAL 주문을 만들지 않습니다.
-          </Typography.Text>
-        </Space>
+        </Typography.Paragraph>
       </MarketSection>
 
       <Card size="small" title="AI 설정으로 이동">
@@ -72,7 +73,7 @@ export default function AdminAiAnalysisHubPage() {
   return (
     <AdminPageShell
       title="AI 분석"
-      description="분석 결과 조회 — 설정과 분리 · 참고용(주문 지시 아님)"
+      description="분석 결과 조회 — Dual LLM SHADOW · 설정과 분리 · 주문 지시 아님"
     >
       <Suspense fallback={<Card size="small" loading />}>
         <Body />
