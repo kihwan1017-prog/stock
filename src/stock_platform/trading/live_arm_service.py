@@ -816,17 +816,29 @@ class LiveArmService:
             },
             commit=False,
         )
+        broker = str(getattr(uba, "broker_code", "") or "").upper()
+        broker_ko = {
+            "KIWOOM": "키움증권",
+            "UPBIT": "업비트",
+        }.get(broker, broker or "계좌")
+        pause_note = "Scheduler: 일시정지" if scheduler_auto_paused else "Scheduler: 유지"
         emit_live_order_telegram(
             event_type=LIVE_ARM_EXPIRED,
-            title="LIVE ARM EXPIRED",
+            title="⚠️ 자동매매 승인 만료",
             message=(
-                f"UBA {uba.user_broker_account_id} ARM expired → "
-                f"LIVE OFF"
-                + (" + Scheduler PAUSE" if scheduler_auto_paused else "")
+                f"계좌: {broker_ko}\n"
+                f"상태: ARM 승인 시간이 만료되어 실거래가 안전하게 중지되었습니다.\n"
+                f"LIVE: 꺼짐\n"
+                f"ARM: 만료\n"
+                f"{pause_note}\n"
+                f"UBA: {int(uba.user_broker_account_id)}"
             ),
             detail={
                 "user_broker_account_id": int(uba.user_broker_account_id),
+                "broker_code": broker,
                 "scheduler_auto_paused": scheduler_auto_paused,
+                "reason_ko": "ARM 승인 시간 만료로 LIVE가 안전하게 중지됨",
+                "account_display": f"{broker_ko} UBA {int(uba.user_broker_account_id)}",
             },
         )
 

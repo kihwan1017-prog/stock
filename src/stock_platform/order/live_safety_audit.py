@@ -167,9 +167,8 @@ def emit_live_order_telegram(
             ARM_TOKEN_REJECT,
             LOOP_DETECTED,
             ANOMALY_ORDER_RATE,
-            LIVE_ARM_EXPIRED,
-            ACTIVATION_EXPIRED,
         }:
+            # 실제 주문/리스크 거부만 ORDER_REJECTED (symbol/order context 필요)
             mapped = NotificationEventType.ORDER_REJECTED.value
         elif event_type in {
             LIVE_ORDER_SUBMITTED,
@@ -196,7 +195,15 @@ def emit_live_order_telegram(
             ARM_ON,
         }:
             mapped = NotificationEventType.MONITORING_ALERT.value
-        elif event_type in {LIVE_DISARM, ARM_OFF, LIVE_OFF, LIVE_DISABLED, ACTIVATION_EXPIRED}:
+        elif event_type in {
+            LIVE_DISARM,
+            ARM_OFF,
+            LIVE_OFF,
+            LIVE_DISABLED,
+            LIVE_ARM_EXPIRED,
+            ACTIVATION_EXPIRED,
+        }:
+            # 세션/승인 만료는 주문 거부가 아님 — MONITORING_ALERT
             mapped = NotificationEventType.MONITORING_ALERT.value
         elif event_type in {POSITION_MISMATCH, CASH_MISMATCH}:
             mapped = NotificationEventType.KILL_SWITCH.value

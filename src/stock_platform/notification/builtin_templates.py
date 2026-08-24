@@ -377,8 +377,9 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "category": "WARNING",
         "severity": "WARNING",
         "title_template": "⚠️ 모니터링 알림",
-        "body_template": "{message}\n사유: {reason_ko}",
-        "short_body_template": "모니터링 · {reason_ko}",
+        # message가 본문 SoT — reason_ko는 있을 때만 보조
+        "body_template": "{message}",
+        "short_body_template": "{message}",
     },
     {
         "event_type": "SAME_SYMBOL_MANUAL_AUTO_CONFLICT",
