@@ -1,6 +1,7 @@
 # Dual LLM RAG + Feedback Learning Pipeline
 
-**Verdict:** `DUAL_LLM_RAG_FEEDBACK_PIPELINE_READY_NOT_NATURALLY_OBSERVED`
+**Verdict:** `DUAL_LLM_RAG_FEEDBACK_PIPELINE_READY_NOT_NATURALLY_OBSERVED`  
+**Commit:** `d915152`
 
 ## Models (unchanged SoT)
 

@@ -94,7 +94,7 @@
     "typecheck": "PASS",
     "test_ui_focused": "34 passed"
   },
-  "GIT_COMMIT": "pending",
+  "GIT_COMMIT": "d915152",
   "LIMITATIONS": [
     "No natural Scanner candidate observed after wiring — dual_llm_rows=0",
     "Feedback KPIs empty until CLEAN outcomes complete with dual schema rows",
