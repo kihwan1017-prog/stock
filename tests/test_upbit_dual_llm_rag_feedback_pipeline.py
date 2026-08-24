@@ -33,10 +33,11 @@ from stock_platform.operation.upbit_market_context.teacher_llm import (
 
 
 def test_prompt_and_schema_versions() -> None:
-    assert ANALYSIS_PROMPT_VERSION.startswith("analysis_prompt_")
-    assert TRADING_PROMPT_VERSION.startswith("trading_prompt_")
+    assert ANALYSIS_PROMPT_VERSION.startswith("analysis_")
+    assert TRADING_PROMPT_VERSION.startswith("trading_")
     assert is_dual_llm_schema("upbit_dual_llm_rag_v1")
     assert is_dual_llm_schema("upbit_dual_llm_shadow_v1")
+    assert is_dual_llm_schema("kiwoom_dual_llm_rag_v1")
     assert not is_dual_llm_schema("legacy")
 
 

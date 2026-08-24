@@ -55,6 +55,15 @@ def strategy_signal_to_realtime(signal: StrategySignal) -> RealtimeSignal:
         strategy_version=signal.strategy_version,
         broker_code=signal.broker_code,
         market_type=signal.market_type,
+        user_broker_account_id=(
+            int(signal.account_id)
+            if str(signal.account_kind or "").upper() == "USER_BROKER"
+            and signal.account_id is not None
+            else None
+        ),
+        source_code=(
+            str(signal.metadata.get("source_code") or "").strip() or None
+        ),
     )
 
 
@@ -102,6 +111,20 @@ async def publish_scoped_signal(signal: StrategySignal) -> dict[str, Any]:
 
     rt = strategy_signal_to_realtime(signal)
     await realtime_signal_bus.publish(rt)
+
+    # KIWOOM Dual LLM SHADOW — REAL path와 독립 (fail-open background)
+    try:
+        from stock_platform.operation.kiwoom_dual_llm.entry_shadow import (
+            schedule_kiwoom_entry_shadow,
+        )
+
+        schedule_kiwoom_entry_shadow(signal)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "kiwoom_dual_llm_shadow_hook_failed_open",
+            error=type(exc).__name__,
+        )
+
     return {
         "published": True,
         "signal_id": signal.signal_id,

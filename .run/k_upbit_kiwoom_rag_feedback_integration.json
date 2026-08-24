@@ -1,0 +1,78 @@
+{
+  "FINAL_VERDICT": "UPBIT_KIWOOM_RAG_FEEDBACK_READY_NOT_NATURALLY_OBSERVED",
+  "COMMON_ENGINE_REUSED": true,
+  "DUPLICATE_ENGINE_CREATED": false,
+  "MODELS": {
+    "ANALYSIS": "qwen3:1.7b",
+    "TRADING": "qwen3.5:2b",
+    "TEACHER": "qwen3.5:4b"
+  },
+  "UPBIT": {
+    "RAG": true,
+    "FEEDBACK": true,
+    "CLEAN_COUNT": "live_sot",
+    "PREDICTIONS": 0,
+    "DATASET_GOLD": 0,
+    "SAMPLE_STAGE": "COLLECTION_ONLY_or_live"
+  },
+  "KIWOOM": {
+    "RAG": true,
+    "FEEDBACK": true,
+    "CLEAN_COUNT": 0,
+    "PREDICTIONS": 0,
+    "DATASET_GOLD": 0,
+    "SAMPLE_STAGE": "COLLECTION_ONLY"
+  },
+  "CROSS_MARKET_RAG_COUNT": 0,
+  "CROSS_MARKET_FEEDBACK_COUNT": 0,
+  "KIWOOM_CONTEXT": {
+    "MARKET": true,
+    "TECHNICAL": true,
+    "NEWS": true,
+    "DISCLOSURE": true
+  },
+  "KIWOOM_RAG_TOP_K": 5,
+  "KIWOOM_NO_LOOKAHEAD": true,
+  "KIWOOM_ANALYSIS_CALLS": 0,
+  "KIWOOM_TRADING_CALLS": 0,
+  "KIWOOM_TEACHER_CALLS": 0,
+  "KIWOOM_NATURAL_SHADOW_PROOF": "KIWOOM_CODE_READY_NOT_NATURALLY_OBSERVED",
+  "UPBIT_REGRESSION": "PASS_pytest",
+  "LLM_PRIORITY": "TRADING > ANALYSIS > TEACHER",
+  "TRADING_STARVATION": false,
+  "LORA_TRAINING_STARTED": false,
+  "LORA_EXPORT": {
+    "UPBIT_ANALYSIS": true,
+    "UPBIT_TRADING": true,
+    "KIWOOM_ANALYSIS": true,
+    "KIWOOM_TRADING": true
+  },
+  "UI_AI_ANALYSIS_KIWOOM": true,
+  "UI_RESEARCH_KIWOOM": true,
+  "FRONTEND_CHECK": "PASS",
+  "AUTH_BROWSER_VERIFY": "NOT_RUN",
+  "CONSOLE_ERRORS": "NOT_OBSERVED",
+  "CONSOLE_WARNINGS": "NOT_OBSERVED",
+  "REAL_POLICY_CHANGED": "NO",
+  "REAL_ORDER_MUTATION": 0,
+  "LIVE_ARM_MUTATION": 0,
+  "RISK_MUTATION": 0,
+  "SLOT_POLICY_MUTATION": 0,
+  "UPBIT_TRADING_MUTATION": 0,
+  "KIWOOM_TRADING_MUTATION": 0,
+  "TRADING_LLM_REAL_GATE_MUTATION": 0,
+  "BACKEND_RESTART_COUNT": 0,
+  "SYSTEM_BUG_ACTIVE": false,
+  "TESTS": {
+    "pytest": "22 passed (isolation+rag+wiring)",
+    "frontend_focused": "36 passed"
+  },
+  "GIT_COMMIT": "pending",
+  "LIMITATIONS": [
+    "No natural KIWOOM BUY evaluation observed after hook wiring",
+    "KIWOOM CLEAN RAG corpus empty until outcomes complete",
+    "Auth browser console not verified",
+    "Storage reuses upbit_llm_context_analysis JSONB with market=KIWOOM (no Alembic)"
+  ],
+  "NEXT_ACTION": "COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE"
+}

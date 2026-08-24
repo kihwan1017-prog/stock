@@ -165,6 +165,7 @@ def maybe_analyze_shadow_candidate(
                     candidate=candidate,
                     analysis=analysis_result,
                     exclude_shadow_id=shadow_id,
+                    market="UPBIT",
                 )
                 if rag_result.get("cache_hit"):
                     record_rag_cache_hit()
@@ -194,9 +195,11 @@ def maybe_analyze_shadow_candidate(
         detected = as_utc(row.detected_at) or row.detected_at
         out_payload = heuristic.model_dump()
         out_payload["schema_version"] = SCHEMA_RAG_V1
+        out_payload["market"] = "UPBIT"
         out_payload["current_heuristic"] = heuristic.model_dump()
         out_payload["analysis_llm"] = analysis_result
         out_payload["rag"] = {
+            "market": "UPBIT",
             "retrieval_method": rag_result.get("retrieval_method"),
             "top_k": rag_result.get("top_k"),
             "examples": rag_result.get("examples") or [],
@@ -205,6 +208,7 @@ def maybe_analyze_shadow_candidate(
             "clean_only": bool(rag_result.get("clean_only", True)),
             "eligible_scored": rag_result.get("eligible_scored"),
             "excluded": rag_result.get("excluded"),
+            "cross_market_rag_count": int(rag_result.get("cross_market_rag_count") or 0),
         }
         out_payload["trading_llm_shadow"] = trading_result
         out_payload["comparison"] = {

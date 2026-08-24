@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from stock_platform.common.settings import get_settings
+from stock_platform.operation.dual_llm.markets import MARKET_UPBIT, require_market
 from stock_platform.operation.upbit_market_context.as_of import as_utc
 from stock_platform.operation.upbit_opportunity_shadow.clean_forward_research import (
     classify_forward_row,
@@ -147,6 +148,7 @@ def build_rag_case_document(row: Any) -> dict[str, Any] | None:
     detected = as_utc(getattr(row, "detected_at", None))
     return {
         "case_id": f"shadow:{int(row.shadow_id)}",
+        "market": MARKET_UPBIT,
         "shadow_id": int(row.shadow_id),
         "symbol": str(row.symbol or ""),
         "detected_at": detected.isoformat() if detected else None,
@@ -255,8 +257,11 @@ def similarity_score(query: dict[str, Any], case: dict[str, Any]) -> float:
     return round(max(0.0, min(1.0, 1.0 - dist)), 6)
 
 
-def _cache_key(query: dict[str, Any], *, detected_at: datetime) -> str:
+def _cache_key(
+    query: dict[str, Any], *, detected_at: datetime, market: str
+) -> str:
     blob = {
+        "market": market,
         "rsi": query.get("rsi"),
         "ma": query.get("ma_separation_pct"),
         "vol": query.get("volume_ratio"),
@@ -277,8 +282,27 @@ def retrieve_similar_cases(
     analysis: dict[str, Any] | None = None,
     top_k: int | None = None,
     exclude_shadow_id: int | None = None,
+    market: str = MARKET_UPBIT,
 ) -> dict[str, Any]:
-    """과거 CLEAN 사례 hybrid TOP-K. no-lookahead 강제."""
+    """과거 CLEAN 사례 hybrid TOP-K. no-lookahead + market isolation 강제."""
+
+    market_n = require_market(market)
+    if market_n != MARKET_UPBIT:
+        # UPBIT shadow corpus는 UPBIT 전용 — 다른 시장은 빈 결과 (교차 금지)
+        return {
+            "ok": True,
+            "market": market_n,
+            "retrieval_method": "structured_hybrid_normalized_distance",
+            "top_k": int(top_k or 5),
+            "examples": [],
+            "pool_scanned": 0,
+            "eligible_scored": 0,
+            "excluded": {"cross_market_blocked": 1},
+            "no_lookahead": True,
+            "clean_only": True,
+            "cache_hit": False,
+            "cross_market_rag_count": 0,
+        }
 
     s = get_settings()
     k = int(top_k if top_k is not None else getattr(s, "dual_llm_rag_top_k", 5) or 5)
@@ -291,21 +315,25 @@ def retrieve_similar_cases(
     query = candidate_feature_vector(
         technical=technical, candidate=candidate, analysis=analysis
     )
-    ck = _cache_key(query, detected_at=det)
+    ck = _cache_key(query, detected_at=det, market=market_n)
     cached = rag_cache.get(ck)
     if cached is not None:
-        # exclude self if needed
         examples = [
             e
             for e in (cached.get("examples") or [])
-            if exclude_shadow_id is None
-            or int(e.get("shadow_id") or 0) != int(exclude_shadow_id)
+            if e.get("market", MARKET_UPBIT) == market_n
+            and (
+                exclude_shadow_id is None
+                or int(e.get("shadow_id") or 0) != int(exclude_shadow_id)
+            )
         ]
         return {
             **cached,
+            "market": market_n,
             "examples": examples[:k],
             "cache_hit": True,
             "top_k": k,
+            "cross_market_rag_count": 0,
         }
 
     rows = list(
@@ -325,6 +353,7 @@ def retrieve_similar_cases(
         "lookahead_or_incomplete": 0,
         "self": 0,
         "build_failed": 0,
+        "cross_market": 0,
     }
     for row in rows:
         sid = int(row.shadow_id)
@@ -342,9 +371,13 @@ def retrieve_similar_cases(
         if doc is None:
             excluded["build_failed"] += 1
             continue
+        if doc.get("market") != market_n:
+            excluded["cross_market"] += 1
+            continue
         sim = similarity_score(query, doc)
         prompt_ex = {
             "case_id": doc["case_id"],
+            "market": MARKET_UPBIT,
             "shadow_id": sid,
             "symbol": doc["symbol"],
             "similarity_score": sim,
@@ -361,7 +394,6 @@ def retrieve_similar_cases(
             "mae": (doc["outcome"] or {}).get("mae"),
             "early_dump": (doc["outcome"] or {}).get("early_dump"),
             "outcome_completed_at": doc.get("outcome_completed_at"),
-            # 과거 실제 결과 — 예제로만 허용 (현재 후보 미래 아님)
             "historical_returns": {
                 "return_5m": (doc["outcome"] or {}).get("return_5m"),
                 "return_60m": (doc["outcome"] or {}).get("return_60m"),
@@ -373,6 +405,7 @@ def retrieve_similar_cases(
     examples = [e for _, e in scored[:k]]
     payload = {
         "ok": True,
+        "market": market_n,
         "retrieval_method": "structured_hybrid_normalized_distance",
         "top_k": k,
         "pool_scanned": len(rows),
@@ -383,6 +416,7 @@ def retrieve_similar_cases(
         "no_lookahead": True,
         "clean_only": True,
         "cache_hit": False,
+        "cross_market_rag_count": int(excluded["cross_market"]),
         "as_of": det.isoformat(),
     }
     rag_cache.put(ck, {**payload, "cache_hit": False}, ttl_seconds=ttl)

@@ -230,6 +230,13 @@ export const queryKeys = {
       ["admin", "upbit-dual-llm-rag-feedback", params ?? {}] as const,
     upbitDualLlmRagFeedbackDetail: (analysisId: number) =>
       ["admin", "upbit-dual-llm-rag-feedback-detail", analysisId] as const,
+    kiwoomDualLlmStatus: () => ["admin", "kiwoom-dual-llm-status"] as const,
+    kiwoomDualLlmRecent: (params?: object) =>
+      ["admin", "kiwoom-dual-llm-recent", params ?? {}] as const,
+    kiwoomDualLlmRagFeedback: (params?: object) =>
+      ["admin", "kiwoom-dual-llm-rag-feedback", params ?? {}] as const,
+    kiwoomDualLlmRagFeedbackDetail: (analysisId: number) =>
+      ["admin", "kiwoom-dual-llm-rag-feedback-detail", analysisId] as const,
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,

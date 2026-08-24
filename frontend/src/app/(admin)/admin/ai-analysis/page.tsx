@@ -19,6 +19,7 @@ import {
 import { withMarketQuery } from "@/features/admin/strategy-analysis/marketScope";
 import { useStrategyMarketFromUrl } from "@/features/admin/strategy-analysis/MarketSelector";
 import { UpbitDualLlmPanel } from "@/features/admin/upbit/UpbitDualLlmPanel";
+import { KiwoomDualLlmPanel } from "@/features/admin/upbit/KiwoomDualLlmPanel";
 
 function Body() {
   const market = useStrategyMarketFromUrl();
@@ -29,8 +30,18 @@ function Body() {
         purposeKo="AI 분석 결과만 조회합니다. Provider/Prompt 설정은 AI 설정 메뉴를 사용하세요."
       />
 
-      <MarketSection market={market} forMarket="KIWOOM" title="키움 AI 분석">
-        <Space orientation="vertical" size={4}>
+      <MarketSection market={market} forMarket="KIWOOM" title="키움 Dual LLM">
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          ANALYSIS(qwen3:1.7b) + TRADING SHADOW(qwen3.5:2b) + Teacher(qwen3.5:4b).
+          MA REAL 경로와 분리 · UPBIT RAG 미혼합.
+        </Typography.Paragraph>
+        <KiwoomDualLlmPanel />
+        <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
+          <Link href={withMarketQuery(adminRoutes.researchData, "KIWOOM")}>
+            연구 데이터 → RAG / Feedback
+          </Link>
+        </Typography.Paragraph>
+        <Space orientation="vertical" size={4} style={{ marginTop: 8 }}>
           <Link
             href={withMarketQuery(adminRoutes.aiMarketAnalyses, "KIWOOM")}
           >
@@ -40,9 +51,6 @@ function Body() {
             href={withMarketQuery(adminRoutes.aiCandidateAssessments, "KIWOOM")}
           >
             후보 평가 초안
-          </Link>
-          <Link href={withMarketQuery(adminRoutes.aiReviews, "KIWOOM")}>
-            분석 품질 검토
           </Link>
         </Space>
       </MarketSection>

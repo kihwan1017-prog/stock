@@ -789,6 +789,29 @@ export async function getAdminUpbitDualLlmRagFeedbackDetail(
   return getJson(`/admin/upbit/dual-llm/rag-feedback/${analysisId}`);
 }
 
+/** Kiwoom Dual LLM — READ ONLY SHADOW research */
+export async function getAdminKiwoomDualLlmStatus(): Promise<JsonValue> {
+  return getJson("/admin/kiwoom/dual-llm/status");
+}
+
+export async function getAdminKiwoomDualLlmRecent(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/kiwoom/dual-llm/recent", params);
+}
+
+export async function getAdminKiwoomDualLlmRagFeedback(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/kiwoom/dual-llm/rag-feedback", params);
+}
+
+export async function getAdminKiwoomDualLlmRagFeedbackDetail(
+  analysisId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/kiwoom/dual-llm/rag-feedback/${analysisId}`);
+}
+
 /** Canonical orchestrator status / start / stop */
 export async function getAdminUbaOrchestratorStatus(
   ubaId: number,

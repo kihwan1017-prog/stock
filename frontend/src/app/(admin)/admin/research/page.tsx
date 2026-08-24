@@ -20,6 +20,7 @@ import {
 import { useStrategyMarketFromUrl } from "@/features/admin/strategy-analysis/MarketSelector";
 import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/UpbitResearchCollectionStatusPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
+import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
 
 function ResearchWorkspaceBody() {
@@ -128,34 +129,57 @@ function ResearchWorkspaceBody() {
 
       {showKiwoom ? (
         <Card size="small" title="키움 연구·분석 데이터">
-          <Typography.Paragraph type="secondary">
-            현재 존재하는 연구/분석 화면으로 연결합니다. 없는 기능은 만들지
-            않습니다.
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            KIWOOM Dual LLM SHADOW · RAG/Feedback는 UPBIT와 격리됩니다. 없는
+            데이터는 EMPTY로 표시하며 placeholder row를 만들지 않습니다.
           </Typography.Paragraph>
-          <Space orientation="vertical" size={4}>
-            <Link href={withMarketQuery(adminRoutes.indicators, "KIWOOM")}>
-              기술지표·일봉 이력
-            </Link>
-            <Link
-              href={withMarketQuery(adminRoutes.aiCandidateLifecycle, "KIWOOM")}
-            >
-              후보 Lifecycle
-            </Link>
-            <Link
-              href={withMarketQuery(adminRoutes.aiMarketAnalyses, "KIWOOM")}
-            >
-              AI 시장·차트 분석
-            </Link>
-            <Link href={withMarketQuery(adminRoutes.news, "KIWOOM")}>
-              뉴스
-            </Link>
-            <Link href={withMarketQuery(adminRoutes.disclosures, "KIWOOM")}>
-              DART 공시
-            </Link>
-            <Link href={withMarketQuery(adminRoutes.backtests, "KIWOOM")}>
-              백테스트·검증
-            </Link>
-          </Space>
+          <Tabs
+            size="small"
+            items={[
+              {
+                key: "rag",
+                label: "RAG / Feedback",
+                children: <KiwoomRagFeedbackTab />,
+              },
+              {
+                key: "links",
+                label: "기존 연구 링크",
+                children: (
+                  <Space orientation="vertical" size={4}>
+                    <Link
+                      href={withMarketQuery(adminRoutes.indicators, "KIWOOM")}
+                    >
+                      기술지표·일봉 이력
+                    </Link>
+                    <Link
+                      href={withMarketQuery(
+                        adminRoutes.aiCandidateLifecycle,
+                        "KIWOOM",
+                      )}
+                    >
+                      후보 Lifecycle
+                    </Link>
+                    <Link
+                      href={withMarketQuery(
+                        adminRoutes.aiMarketAnalyses,
+                        "KIWOOM",
+                      )}
+                    >
+                      AI 시장·차트 분석
+                    </Link>
+                    <Link href={withMarketQuery(adminRoutes.news, "KIWOOM")}>
+                      뉴스
+                    </Link>
+                    <Link
+                      href={withMarketQuery(adminRoutes.disclosures, "KIWOOM")}
+                    >
+                      DART 공시
+                    </Link>
+                  </Space>
+                ),
+              },
+            ]}
+          />
           <Collapse
             size="small"
             style={{ marginTop: 12 }}
@@ -166,7 +190,8 @@ function ResearchWorkspaceBody() {
                 children: (
                   <Typography.Text type="secondary">
                     CLEAN Forward / Entry Early-Dump / E1~E8는 업비트 Shadow
-                    연구 전용입니다. 키움 KPI와 합산하지 마세요.
+                    연구 전용입니다. 키움 KPI와 합산하지 마세요. KIWOOM Dual LLM
+                    SHADOW도 UPBIT RAG와 혼합하지 않습니다.
                   </Typography.Text>
                 ),
               },
