@@ -99,9 +99,15 @@ def market_hours_authorized_until(
     ceiling = state["ceiling_utc"]
     if ceiling is None:
         raise ValueError("NO_CEILING")
+    if isinstance(ceiling, str):
+        ceiling_dt = datetime.fromisoformat(ceiling.replace("Z", "+00:00"))
+        if ceiling_dt.tzinfo is None:
+            ceiling_dt = ceiling_dt.replace(tzinfo=timezone.utc)
+    else:
+        ceiling_dt = aware_utc(ceiling) or ceiling
     now_utc = aware_utc(now) or datetime.now(timezone.utc)
     # 최소 60초 horizon — 마감 직전 enable 방지에 가까운 방어
-    if ceiling <= now_utc + timedelta(seconds=60):
+    if ceiling_dt <= now_utc + timedelta(seconds=60):
         raise ValueError("CEILING_TOO_NEAR")
-    return ceiling
-
+    return ceiling_dt
+

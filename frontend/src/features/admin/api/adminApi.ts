@@ -877,6 +877,7 @@ export async function enableAdminUbaUnattended(
     horizon_hours?: number;
     correlation_id?: string;
     source?: "ADMIN_UI" | "ADMIN_API";
+    authorization_mode?: string | null;
   },
 ): Promise<JsonValue> {
   return postJson(`/admin/autotrading/uba/${ubaId}/unattended/enable`, body);
