@@ -716,6 +716,52 @@ export async function getAdminUbaResearchCollectionStatus(
   );
 }
 
+export async function getAdminUpbitResearchCleanForward(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/clean-forward", params);
+}
+
+export async function getAdminUpbitResearchCleanForwardDetail(
+  shadowId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/upbit/research/clean-forward/${shadowId}`);
+}
+
+export async function getAdminUpbitResearchMarketContext(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/market-context", params);
+}
+
+export async function getAdminUpbitResearchAssetContext(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/asset-context", params);
+}
+
+export async function getAdminUpbitResearchNews(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/news", params);
+}
+
+export async function getAdminUpbitResearchLlmAnalysis(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/llm-analysis", params);
+}
+
+export async function getAdminUpbitResearchLlmAnalysisDetail(
+  analysisId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/upbit/research/llm-analysis/${analysisId}`);
+}
+
+export async function getAdminUpbitResearchExperiments(): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/experiments");
+}
+
 /** Canonical orchestrator status / start / stop */
 export async function getAdminUbaOrchestratorStatus(
   ubaId: number,

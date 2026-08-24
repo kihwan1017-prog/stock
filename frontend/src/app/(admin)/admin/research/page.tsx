@@ -2,7 +2,7 @@
 
 /**
  * 전략·분석 → 연구 데이터 워크스페이스.
- * UPBIT: collection-status 패널 재사용. KIWOOM: 존재하는 연구 링크만.
+ * UPBIT: 수집 현황 + CLEAN/시장/종목/뉴스/LLM/필터 실험 상세.
  */
 
 import { Alert, Card, Collapse, Space, Tabs, Typography } from "antd";
@@ -19,6 +19,7 @@ import {
 } from "@/features/admin/strategy-analysis/marketScope";
 import { useStrategyMarketFromUrl } from "@/features/admin/strategy-analysis/MarketSelector";
 import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/UpbitResearchCollectionStatusPanel";
+import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
 
 function ResearchWorkspaceBody() {
@@ -27,6 +28,15 @@ function ResearchWorkspaceBody() {
   const showKiwoom = isKiwoomVisible(market);
   const showUpbit = isUpbitVisible(market);
 
+  const {
+    CleanForwardTab,
+    MarketTab,
+    AssetTab,
+    NewsTab,
+    LlmTab,
+    ExperimentsTab,
+  } = upbitResearchDetailTabs;
+
   const upbitTabs = useMemo(
     () => [
       {
@@ -34,8 +44,45 @@ function ResearchWorkspaceBody() {
         label: "수집 현황",
         children: <UpbitResearchCollectionStatusPanel ubaId={ubaId} />,
       },
+      {
+        key: "clean",
+        label: (
+          <span>
+            정상 신규 검증 표본{" "}
+            <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+              CLEAN
+            </Typography.Text>
+          </span>
+        ),
+        children: <CleanForwardTab />,
+      },
+      {
+        key: "market",
+        label: "시장 데이터",
+        children: <MarketTab />,
+      },
+      {
+        key: "asset",
+        label: "종목 데이터",
+        children: <AssetTab />,
+      },
+      {
+        key: "news",
+        label: "뉴스·공지",
+        children: <NewsTab />,
+      },
+      {
+        key: "llm",
+        label: "AI 분석 결과",
+        children: <LlmTab />,
+      },
+      {
+        key: "experiments",
+        label: "필터 실험",
+        children: <ExperimentsTab />,
+      },
     ],
-    [ubaId],
+    [ubaId, CleanForwardTab, MarketTab, AssetTab, NewsTab, LlmTab, ExperimentsTab],
   );
 
   return (
@@ -56,11 +103,11 @@ function ResearchWorkspaceBody() {
 
       {showUpbit ? (
         <Card size="small" title="업비트 연구 데이터">
-          <Tabs size="small" items={upbitTabs} />
-          <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
-            상세 탭(CLEAN·시장·종목·뉴스·LLM·필터 실험)은 위 수집 현황 패널의
-            「세부 현황」에서 확인합니다. API는 기존 수집 현황을 재사용합니다.
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+            Scanner 후보 → 기술지표 → 시장/종목 Context → 뉴스 → LLM → CLEAN
+            Forward → 필터 실험을 개별 row로 추적합니다. READ-ONLY.
           </Typography.Paragraph>
+          <Tabs size="small" items={upbitTabs} />
         </Card>
       ) : null}
 
@@ -124,7 +171,7 @@ export default function AdminResearchDataPage() {
   return (
     <AdminPageShell
       title="연구 데이터"
-      description="후보·시장·뉴스·AI 연구 수집 현황 (운영 LIVE 제어와 분리)"
+      description="후보·시장·뉴스·AI 연구 수집 및 상세 drill-down (운영 LIVE 제어와 분리)"
     >
       <Suspense fallback={<Typography.Text>시장 선택 로딩…</Typography.Text>}>
         <ResearchWorkspaceBody />

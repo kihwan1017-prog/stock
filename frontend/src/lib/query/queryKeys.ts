@@ -205,6 +205,22 @@ export const queryKeys = {
       ["admin", "upbit-opportunity-scanner"] as const,
     upbitResearchCollectionStatus: (ubaId: number) =>
       ["admin", "upbit-research-collection-status", ubaId] as const,
+    upbitResearchCleanForward: (params?: object) =>
+      ["admin", "upbit-research-clean-forward", params ?? {}] as const,
+    upbitResearchCleanForwardDetail: (shadowId: number) =>
+      ["admin", "upbit-research-clean-forward-detail", shadowId] as const,
+    upbitResearchMarketContext: (params?: object) =>
+      ["admin", "upbit-research-market-context", params ?? {}] as const,
+    upbitResearchAssetContext: (params?: object) =>
+      ["admin", "upbit-research-asset-context", params ?? {}] as const,
+    upbitResearchNews: (params?: object) =>
+      ["admin", "upbit-research-news", params ?? {}] as const,
+    upbitResearchLlmAnalysis: (params?: object) =>
+      ["admin", "upbit-research-llm-analysis", params ?? {}] as const,
+    upbitResearchLlmDetail: (analysisId: number) =>
+      ["admin", "upbit-research-llm-detail", analysisId] as const,
+    upbitResearchExperiments: () =>
+      ["admin", "upbit-research-experiments"] as const,
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,
