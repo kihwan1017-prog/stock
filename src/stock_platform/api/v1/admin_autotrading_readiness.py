@@ -54,6 +54,19 @@ def admin_uba_autotrading_readiness(
     )
 
 
+class KiwoomMarketRealtimeStartBody(BaseModel):
+    """KIWOOM 시세 WS 명시 START — 주문/LIVE/ARM 변경 없음."""
+
+    user_broker_account_id: int = Field(..., ge=1)
+    symbols: list[str] = Field(..., min_length=1)
+    confirmation_text: str = Field(..., min_length=8)
+    require_real: bool = True
+
+
+class KiwoomMarketRealtimeStopBody(BaseModel):
+    confirmation_text: str = Field(..., min_length=8)
+
+
 @router.get("/kiwoom/market-realtime/status")
 def admin_kiwoom_market_realtime_status(
     _: AuthenticatedUser = Depends(require_admin),
@@ -68,6 +81,68 @@ def admin_kiwoom_market_realtime_status(
         **kiwoom_market_realtime_runtime.status(),
         "mutate_allowed": False,
     }
+
+
+@router.post("/kiwoom/market-realtime/start")
+async def admin_kiwoom_market_realtime_start(
+    body: KiwoomMarketRealtimeStartBody,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """KIWOOM REAL 시세 WS START. Upbit runner/UBA 상태 변경 없음."""
+
+    confirm = str(body.confirmation_text or "").strip().upper()
+    if "START KIWOOM MARKET REALTIME" not in confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "CONFIRMATION_REQUIRED",
+                "message": "confirmation_text must include "
+                "'START KIWOOM MARKET REALTIME'",
+            },
+        )
+    from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+        kiwoom_market_realtime_runtime,
+    )
+
+    result = await kiwoom_market_realtime_runtime.start(
+        user_broker_account_id=int(body.user_broker_account_id),
+        symbols=list(body.symbols),
+        require_real=bool(body.require_real),
+    )
+    if not result.get("started"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": str(result.get("reason") or "START_BLOCKED"),
+                "message": "kiwoom market realtime start blocked",
+                "result": result,
+            },
+        )
+    return result
+
+
+@router.post("/kiwoom/market-realtime/stop")
+async def admin_kiwoom_market_realtime_stop(
+    body: KiwoomMarketRealtimeStopBody,
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """KIWOOM 시세 WS STOP. Upbit 시세/runner 유지."""
+
+    confirm = str(body.confirmation_text or "").strip().upper()
+    if "STOP KIWOOM MARKET REALTIME" not in confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "CONFIRMATION_REQUIRED",
+                "message": "confirmation_text must include "
+                "'STOP KIWOOM MARKET REALTIME'",
+            },
+        )
+    from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+        kiwoom_market_realtime_runtime,
+    )
+
+    return await kiwoom_market_realtime_runtime.stop()
 
 
 @router.get("/uba/{user_broker_account_id}/kiwoom-market-registration")

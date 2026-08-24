@@ -17,13 +17,67 @@ from stock_platform.realtime.execution_models import (
     RealtimeExecutionMode,
 )
 from stock_platform.realtime.runtime import (
-    realtime_execution_runner,
+    realtime_execution_runner_manager,
     realtime_safety_guard,
 )
 from stock_platform.realtime.safety_models import RealtimeOrderSafetyConfig
 
 
 logger = structlog.get_logger(__name__)
+
+
+def _kiwoom_mock_live_blocks_auto_start(uba_id: int) -> bool:
+    """global mock + kiwoom live가 auto-start를 막아야 하면 True."""
+
+    settings = get_settings()
+    if not (
+        bool(getattr(settings, "kiwoom_use_mock", False))
+        and bool(getattr(settings, "kiwoom_live_order_enabled", False))
+    ):
+        return False
+    if uba_id <= 0:
+        return True
+    try:
+        from stock_platform.broker.kiwoom.execution_env import (
+            kiwoom_uba_has_explicit_real_execution,
+        )
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.trading.account_models import UserBrokerAccount
+
+        session = get_session_factory()()
+        try:
+            uba = session.get(UserBrokerAccount, int(uba_id))
+            broker = str(getattr(uba, "broker_code", "") or "").upper()
+            # UPBIT 계좌 LIVE START는 Kiwoom mock+live 충돌 게이트를 적용하지 않는다.
+            if broker == "UPBIT":
+                return False
+            if kiwoom_uba_has_explicit_real_execution(session, uba_id):
+                return False
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        return True
+    return True
+
+
+def _resolve_uba_broker_code(user_broker_account_id: int) -> str | None:
+    """UBA의 broker_code. DB 없으면 None (테스트 호환)."""
+
+    try:
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.trading.account_models import UserBrokerAccount
+
+        session = get_session_factory()()
+        try:
+            uba = session.get(UserBrokerAccount, int(user_broker_account_id))
+            if uba is None:
+                return None
+            broker = str(getattr(uba, "broker_code", "") or "").upper()
+            return broker or None
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def live_order_flags_ready(settings: Any | None = None) -> bool:
@@ -62,9 +116,7 @@ def live_auto_start_allowed(*, allow_live: bool) -> dict[str, Any]:
         return {"allowed": False, "reason": "LIVE_UNLOCK_TOKEN_MISSING"}
     if uba <= 0:
         return {"allowed": False, "reason": "LIVE_UBA_MISSING"}
-    if bool(getattr(settings, "kiwoom_use_mock", False)) and bool(
-        getattr(settings, "kiwoom_live_order_enabled", False)
-    ):
+    if _kiwoom_mock_live_blocks_auto_start(uba):
         return {"allowed": False, "reason": "KIWOOM_MOCK_LIVE_CONFLICT"}
     return {"allowed": True, "reason": None, "uba_id": uba}
 
@@ -74,11 +126,21 @@ def apply_realtime_live_execution_config(
     user_broker_account_id: int | None = None,
     paper_account_id: int | None = None,
     order_amount: Decimal | None = None,
+    unlock_token: str | None = None,
 ) -> dict[str, Any]:
-    """Runner/Safety를 LIVE 모드로 전환 (Flag·Unlock·UBA 필수)."""
+    """Runner/Safety를 LIVE 모드로 전환 (Flag·Unlock·UBA 필수).
+
+    unlock_token: 운영자 START가 프로세스 메모리에만 넣는 값.
+    설정값이 있으면 설정을 우선하고, 원문은 로그하지 않는다.
+    """
 
     settings = get_settings()
     gate = live_auto_start_allowed(allow_live=True)
+    settings_unlock = str(
+        getattr(settings, "realtime_live_unlock_token", "") or ""
+    ).strip()
+    supplied_unlock = str(unlock_token or "").strip()
+    unlock = settings_unlock or supplied_unlock
     if not gate.get("allowed"):
         # 명시 호출에서도 order flag/unlock 없으면 거부
         uba = int(
@@ -86,24 +148,18 @@ def apply_realtime_live_execution_config(
             or getattr(settings, "realtime_live_user_broker_account_id", 0)
             or 0
         )
-        unlock = str(
-            getattr(settings, "realtime_live_unlock_token", "") or ""
-        ).strip()
         if not live_order_flags_ready(settings):
             return {"applied": False, "reason": "LIVE_ORDER_FLAG_OFF"}
         if not unlock:
             return {"applied": False, "reason": "LIVE_UNLOCK_TOKEN_MISSING"}
         if uba <= 0:
             return {"applied": False, "reason": "LIVE_UBA_MISSING"}
-        if bool(getattr(settings, "kiwoom_use_mock", False)) and bool(
-            getattr(settings, "kiwoom_live_order_enabled", False)
-        ):
+        if _kiwoom_mock_live_blocks_auto_start(uba):
             return {"applied": False, "reason": "KIWOOM_MOCK_LIVE_CONFLICT"}
     else:
         uba = int(user_broker_account_id or gate["uba_id"])
-        unlock = str(
-            getattr(settings, "realtime_live_unlock_token", "") or ""
-        ).strip()
+        if not unlock:
+            return {"applied": False, "reason": "LIVE_UNLOCK_TOKEN_MISSING"}
 
     paper_id = int(
         paper_account_id
@@ -113,9 +169,10 @@ def apply_realtime_live_execution_config(
     if paper_id <= 0:
         return {"applied": False, "reason": "PAPER_ACCOUNT_MISSING"}
 
-    current = realtime_execution_runner._config
+    broker = _resolve_uba_broker_code(int(uba)) or "UNRESOLVED"
+    current = realtime_execution_runner_manager.paper_runner._config
     amount = order_amount if order_amount is not None else current.order_amount
-    realtime_execution_runner._config = RealtimeExecutionConfig(
+    live_config = RealtimeExecutionConfig(
         mode=RealtimeExecutionMode.LIVE,
         account_id=paper_id,
         order_amount=amount,
@@ -124,6 +181,22 @@ def apply_realtime_live_execution_config(
         allow_sell=current.allow_sell,
         user_id=current.user_id,
         user_broker_account_id=int(uba),
+        broker_code=broker,
+    )
+    from stock_platform.realtime.execution_runner_manager import (
+        clone_safety_guard,
+    )
+
+    scoped_guard = clone_safety_guard(
+        realtime_safety_guard,
+        live_trading_enabled=True,
+        live_unlock_token=unlock,
+    )
+    realtime_execution_runner_manager.get_or_create_live(
+        user_broker_account_id=int(uba),
+        broker_code=broker,
+        config=live_config,
+        safety_guard=scoped_guard,
     )
 
     sc = realtime_safety_guard._config
@@ -150,26 +223,34 @@ def apply_realtime_live_execution_config(
         "reason": None,
         "mode": "LIVE",
         "user_broker_account_id": uba,
+        "broker_code": broker,
         "paper_account_id": paper_id,
     }
 
 
 def revert_realtime_execution_to_paper() -> dict[str, Any]:
-    """MARKET_CLOSE / Stop 시 PAPER 모드로 복귀 (Fail Closed)."""
+    """MARKET_CLOSE / Stop 시 PAPER 모드로 복귀 (Fail Closed).
+
+    RUNNING LIVE Runner는 유지한다. 유휴 LIVE config만 제거한다.
+    """
 
     settings = get_settings()
     paper_id = int(getattr(settings, "realtime_paper_account_id", 1) or 1)
-    current = realtime_execution_runner._config
-    realtime_execution_runner._config = RealtimeExecutionConfig(
-        mode=RealtimeExecutionMode.PAPER,
-        account_id=paper_id,
-        order_amount=current.order_amount,
-        auto_fill=True,
-        allow_buy=current.allow_buy,
-        allow_sell=current.allow_sell,
-        user_id=current.user_id,
-        user_broker_account_id=None,
+    current = realtime_execution_runner_manager.paper_runner._config
+    realtime_execution_runner_manager.apply_paper_config(
+        RealtimeExecutionConfig(
+            mode=RealtimeExecutionMode.PAPER,
+            account_id=paper_id,
+            order_amount=current.order_amount,
+            auto_fill=True,
+            allow_buy=current.allow_buy,
+            allow_sell=current.allow_sell,
+            user_id=current.user_id,
+            user_broker_account_id=None,
+            broker_code=None,
+        )
     )
+    realtime_execution_runner_manager.drop_idle_live_configs()
     sc = realtime_safety_guard._config
     realtime_safety_guard._config = RealtimeOrderSafetyConfig(
         max_order_amount=sc.max_order_amount,
@@ -238,6 +319,35 @@ async def maybe_start_live_market_feeds(
         except Exception as exc:  # noqa: BLE001
             result["kiwoom_order_ws"] = {"error": type(exc).__name__}
 
+    # 시세 WS는 auto_start 플래그가 켠 경우에만. 명시 Admin START가 기본 SoT.
+    if bool(getattr(settings, "kiwoom_market_realtime_auto_start", False)):
+        try:
+            from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+                kiwoom_market_realtime_runtime,
+            )
+
+            uba = int(
+                getattr(settings, "realtime_live_user_broker_account_id", 0) or 0
+            )
+            feed_syms = syms or []
+            if uba > 0 and feed_syms:
+                result["kiwoom_market_ws"] = (
+                    await kiwoom_market_realtime_runtime.start(
+                        user_broker_account_id=uba,
+                        symbols=feed_syms,
+                        require_real=not bool(
+                            settings.kiwoom_market_data_is_mock
+                        ),
+                    )
+                )
+            else:
+                result["kiwoom_market_ws"] = {
+                    "started": False,
+                    "reason": "AUTO_START_UBA_OR_SYMBOLS_MISSING",
+                }
+        except Exception as exc:  # noqa: BLE001
+            result["kiwoom_market_ws"] = {"error": type(exc).__name__}
+
     return result
 
 
@@ -257,6 +367,16 @@ async def stop_live_market_feeds(
         result["kiwoom_order_ws"] = "stopped"
     except Exception as exc:  # noqa: BLE001
         result["kiwoom_order_ws"] = type(exc).__name__
+
+    try:
+        from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+            kiwoom_market_realtime_runtime,
+        )
+
+        await kiwoom_market_realtime_runtime.stop()
+        result["kiwoom_market_ws"] = "stopped"
+    except Exception as exc:  # noqa: BLE001
+        result["kiwoom_market_ws"] = type(exc).__name__
 
     try:
         from stock_platform.realtime.manager import realtime_manager
@@ -322,22 +442,31 @@ def upbit_market_hours_policy() -> dict[str, Any]:
 
 
 async def restart_live_runtime() -> dict[str, Any]:
-    """LIVE Runner Stop → Config 재적용 → Start (idempotent)."""
+    """지정 UBA LIVE Runner만 Stop → Config 재적용 → Start.
 
-    from stock_platform.realtime.runtime import realtime_strategy_runner
+    다른 UBA Runner는 STOP하지 않는다. strategy runner도 공유이므로
+    여기서 멈추지 않는다.
+    """
 
-    await realtime_execution_runner.stop()
-    await realtime_strategy_runner.stop()
+    settings = get_settings()
+    uba = int(
+        getattr(settings, "realtime_live_user_broker_account_id", 0) or 0
+    )
+    broker = _resolve_uba_broker_code(uba) if uba > 0 else None
+    if uba > 0 and broker:
+        await realtime_execution_runner_manager.stop_scope(uba, broker)
     applied = apply_realtime_live_execution_config()
     if not applied.get("applied"):
         return {"restarted": False, "config": applied}
-    exec_s = await realtime_execution_runner.start()
-    strat_s = await realtime_strategy_runner.start()
+    exec_s = None
+    if uba > 0 and broker:
+        exec_s = await realtime_execution_runner_manager.start_scope(
+            uba, broker
+        )
     feeds = await maybe_start_live_market_feeds()
     return {
         "restarted": True,
         "config": applied,
         "execution": exec_s,
-        "strategy": strat_s,
         "feeds": feeds,
     }

@@ -42,7 +42,7 @@ from stock_platform.realtime.persistence import (
 )
 from stock_platform.realtime.runtime import (
     apply_realtime_paper_account_from_settings,
-    realtime_execution_runner,
+    realtime_execution_runner_manager,
     realtime_strategy_runner,
 )
 from stock_platform.realtime.session_runtime import (
@@ -387,9 +387,9 @@ class ApplicationLifecycle:
         logger.info("ai_provider_manager_startup", source=source)
 
     async def _startup_broker_recovery(self) -> None:
-        """Recovery 완료 전 Scheduler가 시작되지 않도록 선행.
+        """Startup — broker recover_all 금지 · orphan account_state만 local finalize.
 
-        전체 Timeout으로 기동 무한 대기를 방지한다.
+        Scheduler cooldown 기준점(_startup_finished_at)은 성공·실패 공통 설정.
         """
 
         import asyncio
@@ -397,13 +397,23 @@ class ApplicationLifecycle:
 
         try:
             await asyncio.wait_for(
-                broker_recovery_manager.recover(),
-                timeout=150.0,
+                broker_recovery_manager.recover_startup_state_only(
+                    actor="STARTUP",
+                ),
+                timeout=30.0,
             )
         except TimeoutError:
             logger.warning(
                 "broker_recovery_startup_timeout",
-                message="Startup recovery timed out; continuing",
+                message=(
+                    "Startup orphan-state finalization timed out; "
+                    "continuing without recover_all"
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "broker_recovery_startup_state_only_failed",
+                error=type(exc).__name__,
             )
         finally:
             # Scheduler Cooldown 기준점 (성공·타임아웃 공통)
@@ -523,6 +533,20 @@ class ApplicationLifecycle:
                 **live_outbox_worker_runtime.status(),
             }
         logger.info("live_outbox_worker_startup", **live_outbox_start)
+
+        # ARM/Activation 만료 스캔 — 주문·Runtime 기동 없음
+        try:
+            from stock_platform.trading.live_session_expiry_runtime import (
+                live_session_expiry_runtime,
+            )
+
+            expiry_start = live_session_expiry_runtime.start()
+            logger.info("live_session_expiry_startup", **expiry_start)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "live_session_expiry_start_failed",
+                error=str(exc)[:300],
+            )
 
         # 레거시 무필터 Outbox는 Paper/LIVE 전용 worker Flag ON일 때 보조 기동하지 않음
         # (중복 claim 방지 — paper_only / live_only 단일 경로)
@@ -734,10 +758,17 @@ class ApplicationLifecycle:
         from stock_platform.order.live_outbox_worker_runtime import (
             live_outbox_worker_runtime,
         )
+        from stock_platform.trading.live_session_expiry_runtime import (
+            live_session_expiry_runtime,
+        )
         from stock_platform.realtime.paper_price_feed import paper_price_feed
 
         await paper_outbox_worker_runtime.shutdown()
         await live_outbox_worker_runtime.shutdown()
+        try:
+            await live_session_expiry_runtime.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
         await paper_fill_recovery_scheduler.shutdown()
         await paper_price_feed.shutdown()
         try:
@@ -858,7 +889,7 @@ class ApplicationLifecycle:
             )
 
     async def _shutdown_realtime_services(self) -> None:
-        await realtime_execution_runner.stop()
+        await realtime_execution_runner_manager.stop_all()
         await realtime_strategy_runner.stop()
         try:
             from stock_platform.realtime.market_data_hub import (
