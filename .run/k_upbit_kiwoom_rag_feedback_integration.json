@@ -67,7 +67,7 @@
     "pytest": "22 passed (isolation+rag+wiring)",
     "frontend_focused": "36 passed"
   },
-  "GIT_COMMIT": "pending",
+  "GIT_COMMIT": "0582dbd",
   "LIMITATIONS": [
     "No natural KIWOOM BUY evaluation observed after hook wiring",
     "KIWOOM CLEAN RAG corpus empty until outcomes complete",
