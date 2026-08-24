@@ -1,0 +1,182 @@
+{
+  "FINAL_VERDICT": "UPBIT_RESEARCH_COLLECTION_STATUS_PANEL_COMPLETE",
+  "generated_at_utc": "2026-08-24T12:17:24.276363+00:00",
+  "route": "/admin/upbit/autotrading",
+  "panel_location": "after AUTO/MODE/LIVE/ARM/STACK status Row",
+  "api": {
+    "method": "GET",
+    "path": "/api/v1/admin/autotrading/uba/{ubaId}/research/collection-status",
+    "reused_or_added": "ADDED_AGGREGATE_READ",
+    "initial_request_count": 1,
+    "polling_seconds": 45
+  },
+  "snapshot": {
+    "schema": "upbit_research_collection_status_v1",
+    "as_of": "2026-08-24T21:17:23.815136+09:00",
+    "user_broker_account_id": 1380,
+    "research_only": true,
+    "live_order": false,
+    "overall_status": "COLLECTING",
+    "overall_status_ko": "수집 중",
+    "last_collected_at": "2026-08-24T20:52:32.582395+09:00",
+    "clean_forward": {
+      "count": 30,
+      "target_primary": 500,
+      "target_recommended": 1000,
+      "progress_primary_pct": 6.0,
+      "progress_recommended_pct": 3.0,
+      "today_new": 30,
+      "hour_new": 0,
+      "day_new": 30,
+      "last_new_at": "2026-08-24T19:43:52.504196+09:00",
+      "last_new_age_seconds": 5611.666524,
+      "status": "OK",
+      "sample_stage": "COLLECTION_ONLY",
+      "sample_stage_ko": "수집 단계",
+      "sample_stage_desc_ko": "CLEAN 표본이 아직 적어 REAL 전략 변경 근거로 사용하지 않습니다."
+    },
+    "reference": {
+      "legacy_count": 459,
+      "backfill_count": 17,
+      "legacy_historical_label": 459,
+      "label_ko": "참고용 · 승격 판단 제외",
+      "note": "CLEAN과 합산하지 않음"
+    },
+    "market_context": {
+      "status": "OK",
+      "status_ko": "정상",
+      "rows": 10,
+      "today_new": 10,
+      "last_collected_at": "2026-08-24T20:52:32.582395+09:00",
+      "age_seconds": 1491.591328
+    },
+    "asset_context": {
+      "status": "OK",
+      "status_ko": "정상",
+      "rows": 200,
+      "today_new": 200,
+      "last_collected_at": "2026-08-24T20:52:31.866193+09:00",
+      "age_seconds": 1492.311538,
+      "symbols": 200
+    },
+    "news": {
+      "status": "OK",
+      "status_ko": "정상",
+      "recent_count": 16,
+      "upbit_notice_count": 16,
+      "candidate_linked_count": 9,
+      "last_collected_at": "2026-08-24T18:05:02+09:00",
+      "age_seconds": 11542.23005,
+      "dedupe": "headline+published_at pipeline"
+    },
+    "llm": {
+      "status": "WAITING",
+      "status_ko": "대기",
+      "total": 0,
+      "today_count": 0,
+      "allow": 0,
+      "hold": 0,
+      "reduce": 0,
+      "failed": 0,
+      "last_analysis_at": null,
+      "age_seconds": null
+    },
+    "experiment": {
+      "status": "COLLECTION_ONLY",
+      "status_ko": "수집 단계",
+      "best_candidate": "E2",
+      "best_candidate_label_ko": "MA 이격 최소",
+      "best_net_filter_benefit": 134.3011,
+      "sample_warning": true,
+      "sample_warning_ko": "표본 부족 · 연구용",
+      "provisional_badge": true,
+      "baseline_net": -330.3887,
+      "baseline_pf": 0.6378,
+      "baseline_early_dump_rate": 0.25,
+      "REAL_PROMOTION_RECOMMENDED": "NO"
+    },
+    "mutations": {
+      "REAL_ORDER_MUTATION": 0,
+      "LIVE_ARM_MUTATION": 0,
+      "ENTRY_POLICY_MUTATION": 0,
+      "EXIT_POLICY_MUTATION": 0,
+      "RISK_MUTATION": 0,
+      "SLOT_POLICY_MUTATION": 0,
+      "UBA1381_MUTATION": 0
+    },
+    "labels_ko": {
+      "clean_forward": "정상 신규 검증",
+      "target_500": "1차 검토 최소 표본",
+      "target_1000": "권장 검토 표본",
+      "legacy": "이전 연구 데이터",
+      "backfill": "보완 데이터",
+      "market": "시장 Context",
+      "asset": "종목 Context",
+      "news": "뉴스·공지",
+      "llm": "LLM 분석"
+    },
+    "tooltips_ko": {
+      "clean_forward": "가격 소스 수정 이후 새로 수집한 검증 가능한 연구 데이터입니다.",
+      "target_500": "전략 후보를 1차 검토하기 위한 최소 표본 목표입니다.",
+      "target_1000": "보다 안정적인 판단을 위한 권장 표본 목표입니다.",
+      "legacy": "과거 가격 품질 문제가 있어 참고용으로만 사용합니다.",
+      "llm": "시장·뉴스·종목 정보를 보조 분석하며 REAL 주문을 직접 생성하지 않습니다.",
+      "waiting": "Scanner 후보가 잠시 없어도 정상일 수 있습니다. ERROR가 아닙니다."
+    }
+  },
+  "summary": {
+    "clean_count": 30,
+    "target_500": 500,
+    "target_1000": 1000,
+    "today_new": 30,
+    "legacy": 459,
+    "backfill": 17,
+    "market": {
+      "status": "OK",
+      "rows": 10
+    },
+    "asset": {
+      "status": "OK",
+      "rows": 200,
+      "symbols": 200
+    },
+    "news": {
+      "status": "OK",
+      "recent_count": 16
+    },
+    "llm": {
+      "status": "WAITING",
+      "today_count": 0
+    },
+    "experiment": {
+      "status": "COLLECTION_ONLY",
+      "best_candidate": "E2",
+      "best_candidate_label_ko": "MA 이격 최소",
+      "sample_warning": true
+    },
+    "overall_status": "COLLECTING",
+    "overall_status_ko": "수집 중",
+    "last_collected_at": "2026-08-24T20:52:32.582395+09:00",
+    "last_clean_new_at": "2026-08-24T19:43:52.504196+09:00"
+  },
+  "safety": {
+    "REAL_ORDER_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "ENTRY_POLICY_MUTATION": 0,
+    "EXIT_POLICY_MUTATION": 0,
+    "RISK_MUTATION": 0,
+    "SLOT_POLICY_MUTATION": 0,
+    "UBA1381_MUTATION": 0
+  },
+  "BACKEND_RESTART_COUNT": 0,
+  "NEXT_ACTION": "COLLECT_MORE_CLEAN_FORWARD",
+  "limitations": [
+    "Browser console verify requires running frontend + admin session",
+    "Backend process may need reload to pick up new route if already running",
+    "Research data is platform-common (UBA id display/scope only)"
+  ],
+  "tests": {
+    "backend": "tests/test_upbit_research_collection_status.py PASS",
+    "frontend": "UpbitResearchCollectionStatusPanel.test.tsx PASS"
+  }
+}

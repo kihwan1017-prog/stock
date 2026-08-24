@@ -200,6 +200,8 @@ export const queryKeys = {
     upbitRateLimits: () => ["admin", "upbit-rate-limits"] as const,
     upbitOpportunityScanner: () =>
       ["admin", "upbit-opportunity-scanner"] as const,
+    upbitResearchCollectionStatus: (ubaId: number) =>
+      ["admin", "upbit-research-collection-status", ubaId] as const,
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,

@@ -38,6 +38,7 @@ import {
   validatePolicyFormValues,
 } from "@/features/admin/upbit/upbitPortfolioPolicyHelpers";
 import { UpbitOneClickAutotradingControl } from "@/features/admin/autotrading/UpbitOneClickAutotradingControl";
+import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/UpbitResearchCollectionStatusPanel";
 import { asRecord } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 
@@ -1314,6 +1315,8 @@ export function UpbitAutotradingSettingsWorkspace({
           </Card>
         </Col>
       </Row>
+
+      <UpbitResearchCollectionStatusPanel ubaId={ubaId} />
 
       <Descriptions size="small" bordered column={{ xs: 1, sm: 2, md: 3 }}>
         <Descriptions.Item label="Positions">

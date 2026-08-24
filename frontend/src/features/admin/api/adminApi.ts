@@ -706,6 +706,15 @@ export async function getAdminUbaAutotradingReadiness(
   return getJson(`/admin/autotrading/uba/${ubaId}/readiness`);
 }
 
+/** 연구 데이터 수집 현황 — READ ONLY (REAL/LIVE/주문 무관) */
+export async function getAdminUbaResearchCollectionStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/autotrading/uba/${ubaId}/research/collection-status`,
+  );
+}
+
 /** Canonical orchestrator status / start / stop */
 export async function getAdminUbaOrchestratorStatus(
   ubaId: number,
@@ -4731,6 +4740,15 @@ export async function listUpbitOpportunityShadows(params?: {
 
 export async function evaluateUpbitOpportunityShadows(): Promise<JsonValue> {
   return postJson("/admin/upbit/opportunity-scanner/shadows/evaluate", {});
+}
+
+/** 시장·뉴스·LLM 컨텍스트 research (REAL 미적용) */
+export async function getUpbitMarketContextResearch(): Promise<JsonValue> {
+  return getJson("/admin/upbit/opportunity-scanner/market-context/research");
+}
+
+export async function collectUpbitMarketContextOnce(): Promise<JsonValue> {
+  return postJson("/admin/upbit/opportunity-scanner/market-context/collect-once", {});
 }
 
 /** STEP N2 — UPBIT News/Notice Collector (COLLECT only) */

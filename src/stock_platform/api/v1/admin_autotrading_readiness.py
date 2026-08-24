@@ -1,8 +1,8 @@
-"""Admin UPBIT Autotrading readiness / 24x7 Runtime·Worker 제어.
+"""Admin UPBIT Autotrading readiness / 24x7 RuntimeÂ·Worker ì ì´.
 
 Canonical START/STOP: POST .../uba/{id}/start|stop (AutotradingOrchestrator).
-개별 Runtime/Worker/Exit API는 backward compatible 유지.
-Activation/LIVE/ARM 자동 토글은 Orchestrator에서도 금지(재승인 경로 제외).
+ê°ë³ Runtime/Worker/Exit APIë backward compatible ì ì§.
+Activation/LIVE/ARM ìë í ê¸ì Orchestratorììë ê¸ì§(ì¬ì¹ì¸ ê²½ë¡ ì ì¸).
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ def admin_uba_autotrading_readiness(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """UBA 자동매매 Master Gate — 상태 조회만 (시작/주문 없음)."""
+    """UBA ìëë§¤ë§¤ Master Gate â ìí ì¡°íë§ (ìì/ì£¼ë¬¸ ìì)."""
 
     return evaluate_uba_autotrading_ready(
         session, user_broker_account_id=int(user_broker_account_id)
@@ -55,7 +55,7 @@ def admin_uba_autotrading_readiness(
 
 
 class KiwoomMarketRealtimeStartBody(BaseModel):
-    """KIWOOM 시세 WS 명시 START — 주문/LIVE/ARM 변경 없음."""
+    """KIWOOM ìì¸ WS ëªì START â ì£¼ë¬¸/LIVE/ARM ë³ê²½ ìì."""
 
     user_broker_account_id: int = Field(..., ge=1)
     symbols: list[str] = Field(..., min_length=1)
@@ -71,7 +71,7 @@ class KiwoomMarketRealtimeStopBody(BaseModel):
 def admin_kiwoom_market_realtime_status(
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """KIWOOM 시세 WS 상태 READ. START/주문 없음. 토큰 미포함."""
+    """KIWOOM ìì¸ WS ìí READ. START/ì£¼ë¬¸ ìì. í í° ë¯¸í¬í¨."""
 
     from stock_platform.realtime.kiwoom_market_realtime_runtime import (
         kiwoom_market_realtime_runtime,
@@ -88,7 +88,7 @@ async def admin_kiwoom_market_realtime_start(
     body: KiwoomMarketRealtimeStartBody,
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """KIWOOM REAL 시세 WS START. Upbit runner/UBA 상태 변경 없음."""
+    """KIWOOM REAL ìì¸ WS START. Upbit runner/UBA ìí ë³ê²½ ìì."""
 
     confirm = str(body.confirmation_text or "").strip().upper()
     if "START KIWOOM MARKET REALTIME" not in confirm:
@@ -126,7 +126,7 @@ async def admin_kiwoom_market_realtime_stop(
     body: KiwoomMarketRealtimeStopBody,
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """KIWOOM 시세 WS STOP. Upbit 시세/runner 유지."""
+    """KIWOOM ìì¸ WS STOP. Upbit ìì¸/runner ì ì§."""
 
     confirm = str(body.confirmation_text or "").strip().upper()
     if "STOP KIWOOM MARKET REALTIME" not in confirm:
@@ -153,7 +153,7 @@ def admin_kiwoom_market_registration(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """시세 consumer 등록 dry-readiness. Runtime START 없음."""
+    """ìì¸ consumer ë±ë¡ dry-readiness. Runtime START ìì."""
 
     from stock_platform.realtime.kiwoom_market_runtime_readiness import (
         evaluate_kiwoom_market_runtime_registration,
@@ -171,7 +171,7 @@ def admin_kiwoom_market_registration(
 def admin_exit_monitor_status(
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """Exit Monitor 상태. in-memory READ만. START/STOP 없음."""
+    """Exit Monitor ìí. in-memory READë§. START/STOP ìì."""
 
     from stock_platform.trading.upbit_24x7_control import exit_monitor_status
 
@@ -187,7 +187,7 @@ def admin_uba_strategy_runtime_status(
     strategy_id: int | None = Query(default=None),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """Strategy Runtime 상태. in-memory READ만. START/STOP 없음."""
+    """Strategy Runtime ìí. in-memory READë§. START/STOP ìì."""
 
     from stock_platform.trading.upbit_24x7_control import runtime_status_for_uba
 
@@ -201,7 +201,7 @@ def admin_uba_strategy_runtime_status(
 def admin_live_outbox_worker_status(
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """LIVE Outbox Worker 상태. ENABLE은 env/settings — 이 API는 조회만."""
+    """LIVE Outbox Worker ìí. ENABLEì env/settings â ì´ APIë ì¡°íë§."""
 
     from stock_platform.order.live_outbox_worker_runtime import (
         live_outbox_worker_runtime,
@@ -226,7 +226,7 @@ def admin_uba_24x7_control_status(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """UPBIT 24/7 Runtime/Worker/Exit 상태. START ALL 없음."""
+    """UPBIT 24/7 Runtime/Worker/Exit ìí. START ALL ìì."""
 
     from stock_platform.trading.upbit_24x7_control import (
         combined_control_status,
@@ -246,7 +246,7 @@ def admin_uba_ops_status(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """UBA 운영 상태 SoT aggregate (AUTO TRADING / TTL / Unattended)."""
+    """UBA ì´ì ìí SoT aggregate (AUTO TRADING / TTL / Unattended)."""
 
     from stock_platform.trading.uba_operational_summary import (
         build_uba_operational_summary,
@@ -265,21 +265,21 @@ def admin_uba_ops_status(
     return out
 
 
-# NOTE: full-market FIXED row ensure는 summary 내부 get_or_create.
-# 세션 autocommit 없음 → 위에서 commit.
+# NOTE: full-market FIXED row ensureë summary ë´ë¶ get_or_create.
+# ì¸ì autocommit ìì â ììì commit.
 
 
 class UnattendedEnableBody(BaseModel):
-    """Unattended lease ACK — LIVE approval_phrase 미사용."""
+    """Unattended lease ACK â LIVE approval_phrase ë¯¸ì¬ì©."""
 
     confirmation_text: str = Field(..., min_length=8)
     reason: str = Field(..., min_length=3, max_length=2000)
     horizon_hours: int | None = Field(default=None, ge=1, le=168)
     correlation_id: str | None = Field(default=None, max_length=128)
     source: str = Field(default="ADMIN_UI", min_length=3, max_length=32)
-    # HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM). None이면 broker로 추론.
+    # HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM). Noneì´ë©´ brokerë¡ ì¶ë¡ .
     authorization_mode: str | None = Field(default=None, max_length=32)
-    # KIWOOM MARKET_HOURS — 익일 장 시작 자동 lifecycle opt-in
+    # KIWOOM MARKET_HOURS â ìµì¼ ì¥ ìì ìë lifecycle opt-in
     next_trading_day_auto_start: bool = False
 
 
@@ -318,7 +318,7 @@ def admin_uba_unattended_enable(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """24H Unattended 명시 승인. 자동 ON 금지."""
+    """24H Unattended ëªì ì¹ì¸. ìë ON ê¸ì§."""
 
     from stock_platform.trading.live_unattended_authorization_service import (
         LiveUnattendedAuthorizationService,
@@ -353,7 +353,7 @@ def admin_uba_unattended_reauthorize(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """만료/PROTECTIVE 이후 24H 재승인 + canonical LIVE/ARM/stack 복구."""
+    """ë§ë£/PROTECTIVE ì´í 24H ì¬ì¹ì¸ + canonical LIVE/ARM/stack ë³µêµ¬."""
 
     from stock_platform.trading.live_unattended_authorization_service import (
         LiveUnattendedAuthorizationService,
@@ -415,7 +415,7 @@ def admin_uba_unattended_auto_renew_toggle(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """24H lease 자동 갱신 opt-in/out — ACTIVE lease 필수."""
+    """24H lease ìë ê°±ì  opt-in/out â ACTIVE lease íì."""
 
     from stock_platform.trading.live_unattended_authorization_service import (
         LiveUnattendedAuthorizationService,
@@ -441,7 +441,7 @@ def admin_uba_unattended_horizon_auto_renew_preview(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """READ-ONLY dry evaluation — would_renew / projected expiry."""
+    """READ-ONLY dry evaluation â would_renew / projected expiry."""
 
     from stock_platform.trading.live_unattended_authorization_service import (
         LiveUnattendedAuthorizationService,
@@ -458,7 +458,7 @@ def admin_uba_kiwoom_lifecycle_status(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """Kiwoom next-trading-day lifecycle 상태 (READ)."""
+    """Kiwoom next-trading-day lifecycle ìí (READ)."""
 
     from stock_platform.trading.kiwoom_trading_day_lifecycle import (
         KiwoomTradingDayLifecycleService,
@@ -475,7 +475,7 @@ def admin_uba_kiwoom_lifecycle_precheck(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """자동 시작 precheck (READ-ONLY, fail-closed)."""
+    """ìë ìì precheck (READ-ONLY, fail-closed)."""
 
     from stock_platform.trading.kiwoom_trading_day_lifecycle import (
         KiwoomTradingDayLifecycleService,
@@ -492,7 +492,7 @@ def admin_uba_kiwoom_lifecycle_preview(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """다음 거래일 auto-start dry preview — LIVE mutation 없음."""
+    """ë¤ì ê±°ëì¼ auto-start dry preview â LIVE mutation ìì."""
 
     from stock_platform.trading.kiwoom_trading_day_lifecycle import (
         KiwoomTradingDayLifecycleService,
@@ -510,7 +510,7 @@ def admin_uba_kiwoom_next_day_auto_start(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """익일 장 시작 자동 lifecycle opt-in/out (확인 문구 필수)."""
+    """ìµì¼ ì¥ ìì ìë lifecycle opt-in/out (íì¸ ë¬¸êµ¬ íì)."""
 
     from stock_platform.trading.kiwoom_trading_day_lifecycle import (
         KiwoomTradingDayLifecycleService,
@@ -594,7 +594,7 @@ async def admin_live_outbox_worker_start(
     body: Upbit24x7ConfirmBody,
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """operator START. asyncio.create_task 가 필요하므로 async 핸들러로 둔다."""
+    """operator START. asyncio.create_task ê° íìíë¯ë¡ async í¸ë¤ë¬ë¡ ëë¤."""
 
     from stock_platform.trading.upbit_24x7_control import (
         Upbit24x7ControlError,
@@ -617,7 +617,7 @@ async def admin_live_outbox_worker_stop(
     body: Upbit24x7ConfirmBody,
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """operator STOP. running loop 에서 shutdown task 를 스케줄한다."""
+    """operator STOP. running loop ìì shutdown task ë¥¼ ì¤ì¼ì¤íë¤."""
 
     from stock_platform.trading.upbit_24x7_control import (
         Upbit24x7ControlError,
@@ -640,7 +640,7 @@ async def admin_exit_monitor_start(
     body: Upbit24x7ConfirmBody,
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """operator START. live_upbit 플래그는 변경하지 않는다."""
+    """operator START. live_upbit íëê·¸ë ë³ê²½íì§ ìëë¤."""
 
     from stock_platform.trading.upbit_24x7_control import (
         Upbit24x7ControlError,
@@ -663,7 +663,7 @@ async def admin_exit_monitor_stop(
     body: Upbit24x7ConfirmBody,
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """operator STOP. live scan scheduler 를 내린다. START는 이 STEP에서 호출 금지."""
+    """operator STOP. live scan scheduler ë¥¼ ë´ë¦°ë¤. STARTë ì´ STEPìì í¸ì¶ ê¸ì§."""
 
     from stock_platform.trading.upbit_24x7_control import (
         Upbit24x7ControlError,
@@ -688,7 +688,7 @@ def admin_uba_strategy_link_set_active(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """승인된 Strategy link 활성/비활성. Runtime RUN·주문 전송 없음."""
+    """ì¹ì¸ë Strategy link íì±/ë¹íì±. Runtime RUNÂ·ì£¼ë¬¸ ì ì¡ ìì."""
 
     try:
         result = admin_set_uba_strategy_link_active(
@@ -709,7 +709,7 @@ def admin_uba_strategy_link_set_active(
 
 
 class OrchestratorStartBody(BaseModel):
-    """Canonical autotrading START — REAL 주문 강제 생성 없음."""
+    """Canonical autotrading START â REAL ì£¼ë¬¸ ê°ì  ìì± ìì."""
 
     reauthorize_unattended: bool = False
     strategy_id: int | None = Field(default=None, ge=1)
@@ -717,7 +717,7 @@ class OrchestratorStartBody(BaseModel):
 
 
 class OrchestratorStopBody(BaseModel):
-    """ENTRY_ONLY(기본)=신규진입 중지·보호유지 / FULL=스택 종료(OPEN 있으면 차단)."""
+    """ENTRY_ONLY(ê¸°ë³¸)=ì ê·ì§ì ì¤ì§Â·ë³´í¸ì ì§ / FULL=ì¤í ì¢ë£(OPEN ìì¼ë©´ ì°¨ë¨)."""
 
     mode: str = Field(default="ENTRY_ONLY", max_length=32)
     strategy_id: int | None = Field(default=None, ge=1)
@@ -747,7 +747,7 @@ async def admin_uba_orchestrator_start(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """Canonical START — UBA single-flight · fail-closed · idempotent."""
+    """Canonical START â UBA single-flight Â· fail-closed Â· idempotent."""
 
     from stock_platform.trading.autotrading_orchestrator import (
         AutotradingOrchestrator,
@@ -769,7 +769,7 @@ async def admin_uba_orchestrator_stop(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """Canonical STOP — default ENTRY_ONLY (Exit/LIVE/ARM 유지)."""
+    """Canonical STOP â default ENTRY_ONLY (Exit/LIVE/ARM ì ì§)."""
 
     from stock_platform.trading.autotrading_orchestrator import (
         AutotradingOrchestrator,
@@ -780,4 +780,22 @@ async def admin_uba_orchestrator_stop(
         actor=user.username,
         mode=str(body.mode or "ENTRY_ONLY"),
         strategy_id=body.strategy_id,
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/research/collection-status")
+def admin_uba_research_collection_status(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """연구 데이터 수집 현황 — READ ONLY. REAL/LIVE/주문 무관."""
+
+    from stock_platform.operation.upbit_market_context.research_collection_status import (
+        build_research_collection_status,
+    )
+
+    return build_research_collection_status(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
     )
