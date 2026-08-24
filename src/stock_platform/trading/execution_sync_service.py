@@ -154,7 +154,19 @@ class ExecutionSyncService:
                 pass
 
         # STEP 8-8 — LIVE 체결 후 Position 검증 (불일치 시 Kill Switch)
-        if new_status == OrderStatus.FILLED:
+        # Recovery/Reconcile 경로: 이미 broker SoT 확정 후 지연 반영이므로
+        # post-fill TTL/Kill 유발 금지 (GLOBAL kill 오염 방지)
+        actor_u = str(actor or "").upper()
+        skip_post_fill = any(
+            token in actor_u
+            for token in (
+                "RECOVERY",
+                "RECONCILE",
+                "KA10076",
+                "OPEN_ORDER_FILL",
+            )
+        )
+        if new_status == OrderStatus.FILLED and not skip_post_fill:
             try:
                 from stock_platform.order.post_fill_runner import (
                     PostFillVerifyRunner,

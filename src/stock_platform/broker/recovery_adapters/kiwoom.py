@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from stock_platform.broker.credential_adapter_factory import (
     build_kiwoom_account_client_for_uba,
+    build_kiwoom_order_inquiry_client_for_uba,
+    build_kiwoom_order_inquiry_client_from_env,
 )
 from stock_platform.broker.credential_vault_service import (
     BrokerCredentialVaultError,
@@ -144,28 +146,50 @@ class KiwoomRecoveryAdapter:
                 }
 
             try:
-                from stock_platform.broker.kiwoom.inquiry_client import (
-                    KiwoomOrderInquiryClient,
-                )
                 from stock_platform.broker.kiwoom.recovery import (
                     KiwoomOrderRecoveryService,
                 )
 
-                inquiry = KiwoomOrderInquiryClient(
-                    account_client._client
-                )
-                summary = KiwoomOrderRecoveryService(
+                # inquiry는 sync http_client(request_type) 계약 — account async client 주입 금지
+                if context.user_broker_account_id is not None:
+                    inquiry = build_kiwoom_order_inquiry_client_for_uba(
+                        session,
+                        int(context.user_broker_account_id),
+                    )
+                else:
+                    inquiry = build_kiwoom_order_inquiry_client_from_env()
+                recovery = KiwoomOrderRecoveryService(
                     session=session,
                     inquiry_client=inquiry,
-                ).recover_pending_orders(
+                )
+                summary = recovery.recover_pending_orders(
                     account_number=account_number,
+                    actor="KIWOOM_RECOVERY_ADAPTER",
+                )
+                # pending에서 빠진 전량체결 → ka10076로 ACCEPTED terminal sync
+                exec_summary = recovery.recover_open_orders_from_executions(
+                    account_number=account_number,
+                    user_broker_account_id=(
+                        int(context.user_broker_account_id)
+                        if context.user_broker_account_id is not None
+                        else None
+                    ),
                     actor="KIWOOM_RECOVERY_ADAPTER",
                 )
                 session.commit()
                 result.orders_updated += int(summary.matched_orders)
+                result.orders_updated += int(
+                    exec_summary.reconciled_from_executions
+                )
                 result.conflicts_found += int(
                     summary.missing_local_orders
                 )
+                result.detail["execution_recovery"] = {
+                    "inspected_executions": exec_summary.inspected_executions,
+                    "matched_orders": exec_summary.matched_orders,
+                    "reconciled": exec_summary.reconciled_from_executions,
+                    "new_executions": exec_summary.new_executions,
+                }
                 if summary.missing_local_orders > 0:
                     result.warnings.append(
                         "External pending without local match "

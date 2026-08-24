@@ -13,15 +13,65 @@ from stock_platform.broker.kiwoom.inquiry_models import (
 )
 
 
+class KiwoomInquiryError(RuntimeError):
+    """키움 조회 TR 실패 (return_code != 0 또는 필수 파라미터 오류)."""
+
+    def __init__(
+        self,
+        *,
+        api_id: str,
+        return_code: Any,
+        return_msg: str,
+    ) -> None:
+        self.api_id = api_id
+        self.return_code = return_code
+        self.return_msg = return_msg
+        super().__init__(
+            f"Kiwoom inquiry {api_id} failed: "
+            f"return_code={return_code} msg={return_msg}"
+        )
+
+
 class KiwoomOrderInquiryClient:
     ACCOUNT_PATH = "/api/dostk/acnt"
     PENDING_API_ID = "ka10075"
     EXECUTION_API_ID = "ka10076"
 
+    # ka10075 필수: all_stk_tp / trde_tp / stex_tp
+    _DEFAULT_PENDING_BODY = {
+        "all_stk_tp": "0",
+        "trde_tp": "0",
+        "stex_tp": "0",
+    }
+    # ka10076 필수: qry_tp / sell_tp / stex_tp
+    _DEFAULT_EXECUTION_BODY = {
+        "qry_tp": "0",
+        "sell_tp": "0",
+        "stex_tp": "0",
+    }
+
     def __init__(
         self,
         rest_client: KiwoomRestClient,
     ) -> None:
+        # async account client(client.KiwoomRestClient) 오주입 방지
+        post = getattr(rest_client, "post", None)
+        if post is None:
+            raise TypeError(
+                "KiwoomOrderInquiryClient requires a RestClient with post()"
+            )
+        try:
+            import inspect
+
+            params = inspect.signature(post).parameters
+        except (TypeError, ValueError):
+            params = {}
+        if "request_type" not in params:
+            raise TypeError(
+                "KiwoomOrderInquiryClient requires sync http_client."
+                "KiwoomRestClient (post(..., request_type=...)); "
+                "async account client.KiwoomRestClient is not supported"
+            )
         self._rest_client = rest_client
 
     def get_pending_orders(
@@ -31,8 +81,10 @@ class KiwoomOrderInquiryClient:
         continuation_key: str | None = None,
         extra_body: dict[str, Any] | None = None,
     ) -> KiwoomInquiryPage:
+        # account_number는 토큰 계좌 기준 — body 필수 아님. 하위 호환용 유지.
+        _ = account_number
         body = {
-            "account_no": account_number,
+            **self._DEFAULT_PENDING_BODY,
             **(extra_body or {}),
         }
 
@@ -43,6 +95,7 @@ class KiwoomOrderInquiryClient:
             request_type="INQUIRY",
             continuation_key=continuation_key,
         )
+        self._ensure_ok(self.PENDING_API_ID, payload)
 
         items = self._extract_items(
             payload,
@@ -73,8 +126,9 @@ class KiwoomOrderInquiryClient:
         continuation_key: str | None = None,
         extra_body: dict[str, Any] | None = None,
     ) -> KiwoomInquiryPage:
+        _ = account_number
         body = {
-            "account_no": account_number,
+            **self._DEFAULT_EXECUTION_BODY,
             **(extra_body or {}),
         }
 
@@ -85,6 +139,7 @@ class KiwoomOrderInquiryClient:
             request_type="INQUIRY",
             continuation_key=continuation_key,
         )
+        self._ensure_ok(self.EXECUTION_API_ID, payload)
 
         items = self._extract_items(
             payload,
@@ -106,6 +161,29 @@ class KiwoomOrderInquiryClient:
                 == "Y"
             ),
             next_key=headers.get("next-key"),
+        )
+
+    @staticmethod
+    def _ensure_ok(api_id: str, payload: dict[str, Any]) -> None:
+        """return_code가 있으면 0만 허용. 빈 목록과 API 오류를 구분."""
+
+        if "return_code" not in payload:
+            return
+        code = payload.get("return_code")
+        try:
+            code_int = int(code)
+        except (TypeError, ValueError):
+            code_int = -1
+        if code_int == 0:
+            return
+        raise KiwoomInquiryError(
+            api_id=api_id,
+            return_code=code,
+            return_msg=str(
+                payload.get("return_msg")
+                or payload.get("message")
+                or ""
+            ),
         )
 
     @staticmethod
@@ -134,3 +212,4 @@ class KiwoomOrderInquiryClient:
                 return value
 
         return []
+

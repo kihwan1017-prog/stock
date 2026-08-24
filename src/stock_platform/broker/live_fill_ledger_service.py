@@ -37,12 +37,22 @@ class LiveFillLedgerService:
         """MOCK/테스트용 초기 현금 시드 (없으면 생성)."""
 
         account_number = f"UBA:{int(user_broker_account_id)}"
+        # UBA 고유 제약(uq_..._uba_active) 우선 — account_number 표기 불일치 흡수
         row = self._session.scalar(
             select(BrokerAccountSnapshotEntity).where(
                 BrokerAccountSnapshotEntity.broker_code == broker_code,
-                BrokerAccountSnapshotEntity.account_number == account_number,
+                BrokerAccountSnapshotEntity.user_broker_account_id
+                == int(user_broker_account_id),
             )
         )
+        if row is None:
+            row = self._session.scalar(
+                select(BrokerAccountSnapshotEntity).where(
+                    BrokerAccountSnapshotEntity.broker_code == broker_code,
+                    BrokerAccountSnapshotEntity.account_number
+                    == account_number,
+                )
+            )
         if row is not None:
             return row
         now = datetime.now(timezone.utc)
