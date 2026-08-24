@@ -71,8 +71,6 @@ export function AutoTradingPerformancePanel({ refreshMs = 60_000 }: Props) {
 
   const data = rec(perfQ.data);
   const summary = parsePerformanceSummary(data.summary);
-  const dailyRows = extractRows(data.daily_returns);
-  const cumulativeRows = extractRows(data.cumulative_returns);
   const symbolRows = extractRows(data.symbol_performance);
   const exitRows = extractRows(data.exit_reason_performance);
   const recentRows = extractRows(data.recent_closed_trades);
@@ -81,32 +79,30 @@ export function AutoTradingPerformancePanel({ refreshMs = 60_000 }: Props) {
   const distRows = extractRows(data.return_distribution);
   const brokerCmp = extractRows(data.broker_comparison);
 
-  const dailyChart = useMemo(
-    () =>
-      dailyRows.map((r) => {
-        const row = rec(r);
-        return {
-          date: String(row.trading_date ?? "").slice(5),
-          daily_return_pct: Number(row.daily_return_pct ?? 0),
-          realized_pnl: Number(row.realized_pnl ?? 0),
-          trade_count: Number(row.trade_count ?? 0),
-        };
-      }),
-    [dailyRows],
-  );
+  const dailyChart = useMemo(() => {
+    const rows = extractRows(rec(perfQ.data).daily_returns);
+    return rows.map((r) => {
+      const row = rec(r);
+      return {
+        date: String(row.trading_date ?? "").slice(5),
+        daily_return_pct: Number(row.daily_return_pct ?? 0),
+        realized_pnl: Number(row.realized_pnl ?? 0),
+        trade_count: Number(row.trade_count ?? 0),
+      };
+    });
+  }, [perfQ.data]);
 
-  const cumulativeChart = useMemo(
-    () =>
-      cumulativeRows.map((r) => {
-        const row = rec(r);
-        return {
-          date: String(row.trading_date ?? "").slice(5),
-          cumulative_return_pct: Number(row.cumulative_return_pct ?? 0),
-          cumulative_realized_pnl: Number(row.cumulative_realized_pnl ?? 0),
-        };
-      }),
-    [cumulativeRows],
-  );
+  const cumulativeChart = useMemo(() => {
+    const rows = extractRows(rec(perfQ.data).cumulative_returns);
+    return rows.map((r) => {
+      const row = rec(r);
+      return {
+        date: String(row.trading_date ?? "").slice(5),
+        cumulative_return_pct: Number(row.cumulative_return_pct ?? 0),
+        cumulative_realized_pnl: Number(row.cumulative_realized_pnl ?? 0),
+      };
+    });
+  }, [perfQ.data]);
 
   const hasClosed = summary.closedTradeCount > 0;
   const lowSample = data.low_sample_warning === true;

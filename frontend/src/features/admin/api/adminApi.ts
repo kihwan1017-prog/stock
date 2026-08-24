@@ -437,7 +437,8 @@ export async function executeUpbitLiveValidation(body: {
   side: string;
   amount: number;
   limit_price: number;
-  arm_token: string;
+  /** challenge용 선택 토큰 — 없으면 서버가 UBA ARM 상태 검증 */
+  arm_token?: string | null;
   execute_live: boolean;
   confirmation_text: string;
   preflight_id: string;

@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -41,8 +43,6 @@ describe("upbitPortfolioPolicyHelpers", () => {
 
 describe("UpbitPortfolioPolicyPanel wiring", () => {
   it("workspace imports policy panel and entry tab label", () => {
-    const fs = require("node:fs");
-    const path = require("node:path");
     const ws = fs.readFileSync(
       path.join(
         process.cwd(),

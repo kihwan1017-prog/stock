@@ -19,7 +19,7 @@ import {
   Typography,
 } from "antd";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { adminRoutes } from "@/config/routes";
 import {
@@ -91,28 +91,28 @@ export default function AdminAutotradingKiwoomPage() {
     return opts;
   }, [accountsQ.data]);
 
-  useEffect(() => {
-    if (ubaOptions.length && !ubaOptions.some((o) => o.value === ubaId)) {
-      setUbaId(ubaOptions[0].value);
-    }
+  const activeUbaId = useMemo(() => {
+    if (!ubaOptions.length) return ubaId;
+    if (ubaOptions.some((o) => o.value === ubaId)) return ubaId;
+    return ubaOptions[0].value;
   }, [ubaOptions, ubaId]);
 
   const opsQ = useQuery({
-    queryKey: ["admin", "uba-ops-status", ubaId, "kiwoom-ws"],
-    queryFn: () => adminApi.getAdminUbaOpsStatus(ubaId),
-    enabled: ubaId > 0,
+    queryKey: ["admin", "uba-ops-status", activeUbaId, "kiwoom-ws"],
+    queryFn: () => adminApi.getAdminUbaOpsStatus(activeUbaId),
+    enabled: activeUbaId > 0,
     refetchInterval: 20_000,
   });
   const readyQ = useQuery({
-    queryKey: ["admin", "autotrading-readiness", ubaId],
-    queryFn: () => adminApi.getAdminUbaAutotradingReadiness(ubaId),
-    enabled: ubaId > 0,
+    queryKey: ["admin", "autotrading-readiness", activeUbaId],
+    queryFn: () => adminApi.getAdminUbaAutotradingReadiness(activeUbaId),
+    enabled: activeUbaId > 0,
     refetchInterval: 20_000,
   });
   const ownQ = useQuery({
-    queryKey: ["admin", "symbol-ownership", ubaId, "KIWOOM"],
-    queryFn: () => adminApi.listAdminSymbolOwnership(ubaId, "KIWOOM"),
-    enabled: ubaId > 0,
+    queryKey: ["admin", "symbol-ownership", activeUbaId, "KIWOOM"],
+    queryFn: () => adminApi.listAdminSymbolOwnership(activeUbaId, "KIWOOM"),
+    enabled: activeUbaId > 0,
     refetchInterval: 30_000,
   });
   const krxQ = useQuery({
@@ -121,7 +121,7 @@ export default function AdminAutotradingKiwoomPage() {
     refetchInterval: 60_000,
   });
   const ordersQ = useQuery({
-    queryKey: ["admin", "orders", "kiwoom", ubaId],
+    queryKey: ["admin", "orders", "kiwoom", activeUbaId],
     queryFn: () =>
       adminApi.listOrders({ broker_code: "KIWOOM", limit: 100 }),
     refetchInterval: 30_000,
@@ -173,7 +173,7 @@ export default function AdminAutotradingKiwoomPage() {
       description="KRX 장 상태 · 계좌 활성화 · 실거래(LIVE)/자동주문 승인(ARM) · 자동매매 런타임 조회. 변경은 계좌 현황에서만."
       extra={
         <select
-          value={ubaId}
+          value={activeUbaId}
           onChange={(e) => setUbaId(Number(e.target.value))}
           style={{ minWidth: 140 }}
         >

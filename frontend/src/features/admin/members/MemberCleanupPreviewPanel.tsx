@@ -82,13 +82,12 @@ export function MemberCleanupPreviewPanel() {
     onError: (error) => message.error(toApiError(error).message),
   });
 
-  const rows = candidatesQuery.data?.items ?? [];
   const selectableRows = useMemo(
     () =>
-      rows.filter(
+      (candidatesQuery.data?.items ?? []).filter(
         (row) => !row.protected && !row.is_self && row.can_deactivate,
       ),
-    [rows],
+    [candidatesQuery.data],
   );
 
   const canExecute =
@@ -181,7 +180,7 @@ export function MemberCleanupPreviewPanel() {
                 size="small"
                 loading={candidatesQuery.isLoading}
                 rowKey={(row) => String(row.user_id)}
-                dataSource={rows}
+                dataSource={candidatesQuery.data?.items ?? []}
                 rowSelection={{
                   selectedRowKeys: selectedUserIds,
                   onChange: (keys) => setSelectedUserIds(keys as number[]),

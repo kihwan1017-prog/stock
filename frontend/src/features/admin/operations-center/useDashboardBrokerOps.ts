@@ -5,7 +5,7 @@ import { useMemo } from "react";
 
 import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
-import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
+import { extractRows } from "@/features/admin/utils/dataHelpers";
 
 import type { BrokerCardModel } from "./BrokerOpsCard";
 import {
@@ -244,7 +244,7 @@ export function useDashboardBrokerOps({
           "—",
       ),
     }),
-    [portfolioSummary, upbitAutoRenew, upbitLastHz, upbitOps, upbitReady, upbitRenewWarning, upbitUnattRem, upbitUnattendedStatus],
+    [portfolioSummary, upbitAutoRenew, upbitOps, upbitReady, upbitRenewWarning, upbitUnattRem, upbitUnattendedStatus],
   );
 
   const kiwoomCard: BrokerCardModel = useMemo(

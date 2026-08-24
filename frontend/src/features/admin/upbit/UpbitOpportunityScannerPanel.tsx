@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { App, Button, Space, Tag, Typography } from "antd";
+import { App, Button, Collapse, Space, Tag, Typography } from "antd";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
@@ -18,6 +18,12 @@ export function UpbitOpportunityScannerPanel() {
     queryKey: queryKeys.admin.upbitOpportunityScanner(),
     queryFn: adminApi.getUpbitOpportunityScannerStatus,
     refetchInterval: 30_000,
+  });
+
+  const marketCtx = useQuery({
+    queryKey: ["admin", "upbit", "market-context-research"],
+    queryFn: adminApi.getUpbitMarketContextResearch,
+    refetchInterval: 60_000,
   });
 
   const runOnce = useMutation({
@@ -38,6 +44,19 @@ export function UpbitOpportunityScannerPanel() {
       message.success("Shadow 평가 완료 (주문 없음)");
       void qc.invalidateQueries({
         queryKey: queryKeys.admin.upbitOpportunityScanner(),
+      });
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const collectMarketCtx = useMutation({
+    mutationFn: () => adminApi.collectUpbitMarketContextOnce(),
+    onSuccess: (data) => {
+      const ok = Boolean(asRecord(data)?.ok);
+      if (ok) message.success("시장 컨텍스트 1회 수집 완료 (연구용)");
+      else message.warning("시장 컨텍스트 수집 실패(fail-open) — REAL 영향 없음");
+      void qc.invalidateQueries({
+        queryKey: ["admin", "upbit", "market-context-research"],
       });
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -78,6 +97,92 @@ export function UpbitOpportunityScannerPanel() {
         KRW universe → liquidity/technical Top N → AI → Telegram / Paper Shadow.
         Strategy / LIVE / ARM / 실주문과 연결되지 않습니다. LIVE ORDER: NO.
       </Typography.Paragraph>
+
+      {(() => {
+        const mc = asRecord(marketCtx.data) ?? {};
+        const dash = asRecord(mc.dashboard) ?? {};
+        const fg = asRecord(dash.fear_greed) ?? asRecord(
+          (asRecord(mc.latest_market_features)?.fear_greed as Record<string, unknown>)
+            ?.value as Record<string, unknown>,
+        );
+        const adv = asRecord(dash.advancing) ?? asRecord(
+          (asRecord(mc.latest_market_features)?.advancing_asset_ratio as Record<
+            string,
+            unknown
+          >)?.value as Record<string, unknown>,
+        );
+        const turn = asRecord(dash.turnover) ?? asRecord(
+          (asRecord(mc.latest_market_features)?.["24h_turnover"] as Record<
+            string,
+            unknown
+          >)?.value as Record<string, unknown>,
+        );
+        return (
+          <Collapse
+            size="small"
+            items={[
+              {
+                key: "market-news-llm",
+                label: "시장·뉴스 분석 (연구용 · REAL 미적용)",
+                children: (
+                  <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+                    <Typography.Paragraph
+                      type="secondary"
+                      style={{ marginBottom: 0 }}
+                    >
+                      CLEAN Forward 수집 기간용 컨텍스트. DataLab 스크랩 없음.
+                      LLM은 주문을 만들지 않습니다.
+                    </Typography.Paragraph>
+                    <Space wrap>
+                      <Tag>시장 분위기: {cell(dash.market_mood ?? "—")}</Tag>
+                      <Tag>
+                        공포·탐욕: {cell(fg?.value ?? fg?.classification ?? "—")}
+                      </Tag>
+                      <Tag>
+                        상승 종목 비율: {cell(adv?.ratio ?? "—")}
+                      </Tag>
+                      <Tag>
+                        24H 거래대금: {cell(turn?.total_acc_trade_price_24h_krw ?? "—")}
+                      </Tag>
+                      <Tag>
+                        CLEAN 표본: {cell(mc.CLEAN_SAMPLE_COUNT)}
+                      </Tag>
+                      <Tag color="red">승격: 아니오</Tag>
+                      <Button
+                        size="small"
+                        loading={collectMarketCtx.isPending}
+                        onClick={() => collectMarketCtx.mutate()}
+                      >
+                        컨텍스트 1회 수집
+                      </Button>
+                      <Button
+                        size="small"
+                        loading={marketCtx.isFetching}
+                        onClick={() => void marketCtx.refetch()}
+                      >
+                        새로고침
+                      </Button>
+                    </Space>
+                    <Typography.Text type="secondary">
+                      업비트 종합/알트/Upbit10·30·체결강도 순위·알트시즌 =
+                      DataLab robots 차단으로 보류. 뉴스는 기존 공지/뉴스
+                      파이프라인 재사용.
+                    </Typography.Text>
+                    <AdminJsonCard
+                      title="시장·뉴스 연구 상세"
+                      loading={marketCtx.isLoading}
+                      error={
+                        marketCtx.error ? toApiError(marketCtx.error) : null
+                      }
+                      data={mc}
+                    />
+                  </Space>
+                ),
+              },
+            ]}
+          />
+        );
+      })()}
 
       {/* M5-B: Scanner → Candidates → Shadow → Evaluate → Cohort */}
       <Typography.Title level={5} style={{ marginBottom: 0 }}>
@@ -308,11 +413,9 @@ export function UpbitOpportunityScannerPanel() {
         const b1 = asRecord(fv.b1) ?? {};
         const filt = asRecord(fv.filter_attribution) ?? {};
         const early = asRecord(fv.early_dump) ?? {};
-        const dash = asRecord(fv.dashboard) ?? {};
         if (
           fv.clean_sample_count == null &&
-          fv.combined_sample_count == null &&
-          fv.combined_sample_count !== 0
+          fv.combined_sample_count == null
         ) {
           return null;
         }
@@ -323,8 +426,6 @@ export function UpbitOpportunityScannerPanel() {
             : promoRaw === "NOT READY"
               ? "표본 수집 중"
               : promoRaw;
-        const cleanN =
-          cleanFwd.clean_sample_count ?? dash.clean_sample_count ?? 0;
         const stampedN = cleanFwd.new_stamped_count ?? 0;
         return (
           <>
@@ -383,6 +484,106 @@ export function UpbitOpportunityScannerPanel() {
                 loading={false}
                 error={null}
                 data={fv}
+              />
+            </details>
+          </>
+        );
+      })()}
+      {(() => {
+        const eq = asRecord(shadowStats.entry_quality_early_dump_experiment) ?? {};
+        const dash = asRecord(eq.dashboard) ?? {};
+        const realRef = asRecord(eq.REAL_14_REFERENCE) ?? asRecord(dash.real_reference) ?? {};
+        const filtersRaw = dash.filters_summary ?? eq.filters;
+        const filters: unknown[] = Array.isArray(filtersRaw)
+          ? filtersRaw
+          : filtersRaw &&
+              typeof filtersRaw === "object" &&
+              !Array.isArray(filtersRaw)
+            ? Object.values(filtersRaw as Record<string, unknown>)
+            : [];
+        if (eq.CLEAN_SAMPLE_COUNT == null) {
+          return null;
+        }
+        const gate = String(eq.SAMPLE_GATE ?? dash.sample_gate ?? "");
+        const gateKo =
+          gate === "COLLECTION_ONLY"
+            ? "표본 수집 중"
+            : gate === "DIAGNOSTIC_ONLY"
+              ? "진단 전용"
+              : gate === "PRIMARY_REVIEW"
+                ? "1차 검토 가능"
+                : gate === "RECOMMENDED_REVIEW"
+                  ? "권장 검토 가능"
+                  : gate || "—";
+        return (
+          <>
+            <Typography.Title level={5} style={{ marginBottom: 0 }}>
+              진입 품질 Early-Dump 필터 실험 (CLEAN)
+            </Typography.Title>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+              REAL 14거래 참고(Entry/Early Dump 우선) · CLEAN_FORWARD만 KPI ·
+              Legacy/Backfill 승격 제외 · REAL 정책 자동 변경 없음
+            </Typography.Paragraph>
+            <Space wrap>
+              <Tag color="green">
+                CLEAN 표본 {cell(eq.TARGET_PROGRESS_500 ?? dash.clean_progress_500)}
+              </Tag>
+              <Tag>
+                권장 {cell(eq.TARGET_PROGRESS_1000 ?? dash.clean_progress_1000)}
+              </Tag>
+              <Tag>게이트: {gateKo}</Tag>
+              <Tag>
+                Baseline 손익={cell(dash.baseline_net)} PF=
+                {cell(dash.baseline_pf)} EarlyDump=
+                {cell(dash.baseline_early_dump)}
+              </Tag>
+              <Tag color="blue">
+                현재 최선={cell(dash.best_filter)} 필터이득=
+                {cell(dash.best_benefit)}
+              </Tag>
+              <Tag color="default">
+                REAL 참고 {cell(realRef.rt)}RT {cell(realRef.wins)}W/
+                {cell(realRef.losses)}L net={cell(realRef.net_krw)} (합산 금지)
+              </Tag>
+              <Tag color="red">승격 추천: 아니오</Tag>
+            </Space>
+            <Typography.Paragraph style={{ marginTop: 8, marginBottom: 4 }}>
+              필터 요약 (수락 / 승률 / Net / PF / EarlyDump / 회피손실 / 놓친승 /
+              필터이득)
+            </Typography.Paragraph>
+            <Space wrap size={[4, 4]}>
+              {filters.map((raw, index) => {
+                const f = asRecord(raw) ?? {};
+                return (
+                  <Tag key={String(f.code ?? index)}>
+                    {cell(f.code)} {cell(f.name_ko)} · 진입=
+                    {cell(f.accepted)} 승률={cell(f.win_rate)} Net=
+                    {cell(f.net)} PF={cell(f.PF)} ED=
+                    {cell(f.early_dump_rate)} 회피={cell(f.avoided_losers)}{" "}
+                    놓침={cell(f.missed_winners)} 이득=
+                    {cell(f.net_filter_benefit)}
+                  </Tag>
+                );
+              })}
+            </Space>
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer" }}>
+                {cell(dash.legacy_note) || "이전 연구 결과 (참고용)"}
+              </summary>
+              <Typography.Paragraph type="secondary" style={{ marginTop: 8 }}>
+                Legacy 459건은 가격 품질 이슈로 승격 근거에서 제외합니다. Shadow
+                KPI와 REAL 14건을 합산하지 않습니다.
+              </Typography.Paragraph>
+            </details>
+            <details style={{ marginTop: 4 }}>
+              <summary style={{ cursor: "pointer" }}>
+                Early-Dump 실험 상세 (펼치기)
+              </summary>
+              <AdminJsonCard
+                title="진입 품질 Early-Dump 실험"
+                loading={false}
+                error={null}
+                data={eq}
               />
             </details>
           </>

@@ -84,17 +84,19 @@ export function parseDashboardUrlState(
   const chartRaw = params.get("chart") ?? "cumulative_pnl";
 
   return {
-    tab: TAB_SET.has(tabRaw) ? (tabRaw as DashboardTab) : "summary",
-    broker: BROKER_SET.has(brokerRaw)
+    tab: (TAB_SET as Set<string>).has(tabRaw)
+      ? (tabRaw as DashboardTab)
+      : "summary",
+    broker: (BROKER_SET as Set<string>).has(brokerRaw)
       ? (brokerRaw as BrokerFilter)
       : "ALL",
-    period: PERIOD_SET.has(periodRaw)
+    period: (PERIOD_SET as Set<string>).has(periodRaw)
       ? (periodRaw as PeriodFilter)
       : "30D",
-    summaryPeriod: SUMMARY_PERIOD_SET.has(summaryPeriodRaw)
+    summaryPeriod: (SUMMARY_PERIOD_SET as Set<string>).has(summaryPeriodRaw)
       ? (summaryPeriodRaw as SummaryPeriodFilter)
       : "30D",
-    chart: CHART_SET.has(chartRaw)
+    chart: (CHART_SET as Set<string>).has(chartRaw)
       ? (chartRaw as PerformanceChartType)
       : "cumulative_pnl",
   };

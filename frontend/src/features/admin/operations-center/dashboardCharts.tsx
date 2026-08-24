@@ -27,7 +27,6 @@ import { formatKrw, formatPct } from "./autoTradingPerformanceHelpers";
 import type { PerformanceChartType } from "./dashboardTabState";
 
 const CHART_HEIGHT = 280;
-const COLORS = ["#1677ff", "#13c2c2", "#722ed1", "#fa8c16", "#52c41a"];
 
 function rec(v: unknown): Record<string, unknown> {
   return asRecord(v) ?? {};
@@ -75,7 +74,6 @@ export function DashboardPerformanceChart({
   });
 
   const cumByBroker = extractRows(data.cumulative_by_broker);
-  const dailyByBroker = extractRows(data.daily_by_broker);
 
   const symbols = extractRows(data.symbol_performance).map((r) => {
     const row = rec(r);

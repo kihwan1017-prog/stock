@@ -11,11 +11,8 @@ Next 16 + antd 6 기준. 패키지 임의 업그레이드 금지 — **현재 �
 5. **deprecated antd API** 금지: `Tabs.TabPane`, `Collapse.Panel`, `Dropdown overlay`, `bodyStyle`, `maskStyle`, `destroyOnClose`.
 6. 신규 Admin 컴포넌트는 console smoke (`src/test/consoleSmoke.ts`) 포함.
 7. UI commit 전:
-   - `npm run check:antd-compat`
-   - `npm run lint:antd-compat` (또는 전체 `npm run lint`)
-   - `npm run typecheck` (unrelated known error는 분리 보고)
-   - `npm run test:ui:focused`
-   - `npm run check:frontend` (통합 게이트)
+   - `npm run check:frontend` (= antd-compat + **full lint** + **full typecheck** + focused vitest)
+   - 필요 시 개별: `check:antd-compat` / `lint` / `typecheck` / `test:ui:focused`
 
 ## 참고
 

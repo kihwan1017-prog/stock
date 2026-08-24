@@ -17,7 +17,7 @@ import {
   Tag,
   Typography,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { resolveOrderTradingKind } from "@/features/admin/autotrading/orderOwnership";
@@ -53,10 +53,23 @@ const DEFAULT_PAPER_ACCOUNT_ID = Number(
 const RESOLVE_WARNING =
   "브로커 미전송 여부를 서버에서 재검증합니다. 확인되지 않으면 폐기할 수 없습니다.";
 
+function readInitialOrderListTab(): OrderListTab {
+  if (typeof window === "undefined") return "all";
+  try {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "open" || t === "fills" || t === "rejected" || t === "all") {
+      return t;
+    }
+  } catch {
+    /* ignore */
+  }
+  return "all";
+}
+
 export default function AdminOrdersPage() {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
-  const [listTab, setListTab] = useState<OrderListTab>("all");
+  const [listTab, setListTab] = useState<OrderListTab>(readInitialOrderListTab);
   const [ownershipFilter, setOwnershipFilter] = useState<
     "ALL" | "AUTO" | "MANUAL" | "UNKNOWN"
   >("ALL");
@@ -69,16 +82,6 @@ export default function AdminOrdersPage() {
     offset: number;
   }>({ limit: 50, offset: 0 });
 
-  useEffect(() => {
-    try {
-      const t = new URLSearchParams(window.location.search).get("tab");
-      if (t === "open" || t === "fills" || t === "rejected" || t === "all") {
-        setListTab(t);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [retireRow, setRetireRow] = useState<OrderRow | null>(null);
   const [retireReason, setRetireReason] = useState("");

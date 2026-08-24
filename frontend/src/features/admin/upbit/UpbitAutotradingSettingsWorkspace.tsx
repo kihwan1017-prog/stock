@@ -242,8 +242,9 @@ export function UpbitAutotradingSettingsWorkspace({
     return opts;
   }, [accountsQuery.data]);
 
-  const capitalInitial = useMemo(
-    () => ({
+  const capitalInitial = useMemo(() => {
+    const policy = asObj(asObj(portfolioQuery.data).policy);
+    return {
       portfolio_capital_limit_krw:
         policy.portfolio_capital_limit_krw != null
           ? Number(policy.portfolio_capital_limit_krw)
@@ -257,12 +258,12 @@ export function UpbitAutotradingSettingsWorkspace({
       ),
       allow_averaging_down: Boolean(policy.allow_averaging_down),
       allow_duplicate_symbol: Boolean(policy.allow_duplicate_symbol),
-    }),
-    [policy],
-  );
+    };
+  }, [portfolioQuery.data]);
 
-  const entryInitial = useMemo(
-    () => ({
+  const entryInitial = useMemo(() => {
+    const policy = asObj(asObj(portfolioQuery.data).policy);
+    return {
       max_positions: Number(policy.max_positions ?? 3),
       entry_signal_policy: String(
         policy.entry_signal_policy ?? "BULLISH_STATE",
@@ -294,17 +295,16 @@ export function UpbitAutotradingSettingsWorkspace({
         policy.portfolio_daily_entry_limit ?? 10,
       ),
       consecutive_loss_limit: Number(policy.consecutive_loss_limit ?? 3),
-    }),
-    [policy],
-  );
+    };
+  }, [portfolioQuery.data]);
 
-  const safetyInitial = useMemo(
-    () => ({
+  const safetyInitial = useMemo(() => {
+    const policy = asObj(asObj(portfolioQuery.data).policy);
+    return {
       daily_loss_limit_pct: Number(policy.daily_loss_limit_pct ?? 0.02),
       consecutive_loss_limit: Number(policy.consecutive_loss_limit ?? 3),
-    }),
-    [policy],
-  );
+    };
+  }, [portfolioQuery.data]);
 
   // Form이 탭에 묶여 있으므로 forceRender 전에는 setFieldsValue 하지 않음
   const formsReady =

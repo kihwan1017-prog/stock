@@ -26,7 +26,6 @@ import {
 
 import {
   adminRoutes,
-  userRoutes,
   type AdminRoute,
   type AppRoute,
   type UserRoute,

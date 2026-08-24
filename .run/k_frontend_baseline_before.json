@@ -1,0 +1,38 @@
+{
+  "schema": "frontend_baseline_before_v1",
+  "captured_at": "2026-08-24T12:47:00+00:00",
+  "dependencies": {
+    "next": "16.2.10",
+    "react": "19.2.4",
+    "antd": "6.5.1",
+    "typescript": "5.9.3",
+    "eslint": "9.39.5"
+  },
+  "gates": {
+    "check:antd-compat": "PASS",
+    "check:frontend": "PASS",
+    "typecheck": "FAIL",
+    "lint": "FAIL"
+  },
+  "typecheck_errors": [
+    {"file": "src/app/(admin)/admin/live-validation/upbit/page.tsx", "line": 303, "code": "TS2322", "message": "arm_token string|null not assignable to string", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/accounts/AdminAccountLiveControlPanel.tsx", "line": 199, "code": "TS2554", "message": "runtimePreflight() expected 0 args", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/operations-center/CompactAdminDashboard.tsx", "line": 61, "code": "TS2322", "message": "PeriodFilter 90D mismatch", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/operations-center/DashboardSummaryTab.tsx", "line": 64, "code": "TS2322", "message": "SummaryPeriodFilter vs PeriodFilter", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/operations-center/dashboardTabState.ts", "line": "87-97", "code": "TS2345", "message": "Set.has(string) vs typed Set", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/upbit/UpbitOpportunityScannerPanel.tsx", "line": 420, "code": "TS2367", "message": "null !== 0 after null check", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/upbit/UpbitOpportunityScannerPanel.tsx", "line": 503, "code": "TS2352", "message": "any[] cast to Record", "classification": "A", "fix_required": true},
+    {"file": "src/features/admin/upbit/UpbitOpportunityScannerPanel.tsx", "line": 505, "code": "TS2367", "message": "null !== 0 after null check", "classification": "A", "fix_required": true}
+  ],
+  "lint_summary": {"errors": 17, "warnings": 16},
+  "lint_error_files": [
+    "autotrading/kiwoom/page.tsx",
+    "orders/page.tsx",
+    "ArmTokenOnceModal.tsx",
+    "AutoTradingPerformancePanel.tsx",
+    "UpbitAutotradingSettingsWorkspace.tsx",
+    "UpbitOpportunityScannerPanel.tsx",
+    "upbitPortfolioPolicyHelpers.test.ts",
+    "GuidedUpbitLiveSmokePanel.tsx"
+  ]
+}

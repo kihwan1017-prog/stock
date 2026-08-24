@@ -227,7 +227,6 @@ export function TradingCockpitPanel({
   const upbitReady = rec(readinessQueries[0]?.data);
   const kiwoomReady = rec(readinessQueries[1]?.data);
   const portfolio = rec(portfolioQ.data);
-  const slots = Array.isArray(portfolio.slots) ? portfolio.slots : [];
   const summary = rec(portfolio.summary);
 
   const autoSymbolCount = useMemo(() => {
@@ -412,6 +411,9 @@ export function TradingCockpitPanel({
   };
 
   const activityItems = useMemo(() => {
+    const slots = Array.isArray(rec(portfolioQ.data).slots)
+      ? (rec(portfolioQ.data).slots as unknown[])
+      : [];
     // antd Timeline: items.children 폐기 → items.content
     const items: { color?: string; content: ReactNode }[] = [];
     for (const raw of slots) {
@@ -432,7 +434,7 @@ export function TradingCockpitPanel({
       });
     }
     return items.slice(0, 8);
-  }, [slots]);
+  }, [portfolioQ.data]);
 
   const healthTone = toneFromRuntime(String(systemHealth ?? ""));
 

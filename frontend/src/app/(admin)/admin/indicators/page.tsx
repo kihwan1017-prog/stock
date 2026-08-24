@@ -128,8 +128,8 @@ export default function AdminIndicatorsPage() {
   const paramRows = paramsQuery.data?.items ?? [];
   const systemDefaults = paramsQuery.data?.system_defaults ?? {};
   const activeVersions = useMemo(
-    () => paramRows.filter((row) => row.is_active),
-    [paramRows],
+    () => (paramsQuery.data?.items ?? []).filter((row) => row.is_active),
+    [paramsQuery.data],
   );
 
   const historyPayload = historyQuery.data as { items?: JobHistoryRow[] } | undefined;

@@ -5,7 +5,7 @@
 import { asRecord } from "@/features/admin/utils/dataHelpers";
 
 export type BrokerFilter = "ALL" | "UPBIT" | "KIWOOM";
-export type PeriodFilter = "TODAY" | "7D" | "30D" | "ALL";
+export type PeriodFilter = "TODAY" | "7D" | "30D" | "90D" | "ALL";
 
 export type PerformanceSummary = {
   todayRealizedPnl: number | null;
@@ -86,5 +86,6 @@ export const PERIOD_FILTER_OPTIONS: { label: string; value: PeriodFilter }[] = [
   { label: "오늘", value: "TODAY" },
   { label: "7일", value: "7D" },
   { label: "30일", value: "30D" },
+  { label: "90일", value: "90D" },
   { label: "전체", value: "ALL" },
 ];

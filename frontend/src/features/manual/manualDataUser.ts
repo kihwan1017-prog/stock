@@ -1,4 +1,4 @@
-import { adminRoutes, userRoutes } from "@/config/routes";
+import { userRoutes } from "@/config/routes";
 
 import type { ManualSection } from "./manualTypes";
 

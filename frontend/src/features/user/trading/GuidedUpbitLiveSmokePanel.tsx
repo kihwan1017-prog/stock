@@ -34,11 +34,11 @@ import { formatLiveSmokeConfirmError } from "@/features/user/trading/liveSmokeCo
 const BUY_CONFIRM = "UPBIT LIVE BUY CONFIRM";
 const SELL_CONFIRM = "UPBIT LIVE SELL CONFIRM";
 
-function grantRemainingSeconds(expiresAt: unknown): number {
+function grantRemainingSeconds(expiresAt: unknown, nowMs: number): number {
   if (!expiresAt) return 0;
   const ms = Date.parse(String(expiresAt));
   if (!Number.isFinite(ms)) return 0;
-  return Math.max(0, Math.floor((ms - Date.now()) / 1000));
+  return Math.max(0, Math.floor((ms - nowMs) / 1000));
 }
 
 export function GuidedUpbitLiveSmokePanel() {
@@ -59,8 +59,13 @@ export function GuidedUpbitLiveSmokePanel() {
     string,
     unknown
   > | null>(null);
-  const [grantTick, setGrantTick] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [smokeBuyRunId, setSmokeBuyRunId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const accountsQuery = useQuery({
     queryKey: ["user", "live-order-status"],
@@ -82,40 +87,22 @@ export function GuidedUpbitLiveSmokePanel() {
     [accountsQuery.data, userAccountsQuery.data],
   );
 
-  // 기본/단일 계좌 자동 선택 → Pre-flight 단계
-  useEffect(() => {
-    if (ubaId != null) return;
-    if (upbitAccounts.length === 0) return;
-    const selected = pickDefaultUba(upbitAccounts);
-    if (selected == null) return;
-    setUbaId(selected);
-    setStep(1);
-    setPreview(null);
-    setOrderTest(null);
-    setResult(null);
-    setDispatchResult(null);
-  }, [upbitAccounts, ubaId]);
+  const activeUbaId = ubaId ?? pickDefaultUba(upbitAccounts);
 
   const preflightQuery = useQuery({
-    queryKey: ["user", "live-order-preflight", ubaId],
-    queryFn: () => userApi.getLiveOrderPreflight(Number(ubaId)),
-    enabled: ubaId != null,
+    queryKey: ["user", "live-order-preflight", activeUbaId],
+    queryFn: () => userApi.getLiveOrderPreflight(Number(activeUbaId)),
+    enabled: activeUbaId != null,
     refetchOnMount: "always",
   });
 
-  useEffect(() => {
-    if (ubaId != null && preflightQuery.isSuccess && step < 1) {
-      setStep(1);
-    }
-  }, [ubaId, preflightQuery.isSuccess, step]);
-
-  useEffect(() => {
-    setOrderTest(null);
-  }, [ubaId, market, side, orderType, amount, limitPrice]);
+  const stepFloor =
+    activeUbaId != null && preflightQuery.isSuccess ? 1 : 0;
+  const displayStep = Math.max(step, stepFloor);
 
   const previewMutation = useMutation({
     mutationFn: () =>
-      userApi.postLiveOrderPreview(Number(ubaId), {
+      userApi.postLiveOrderPreview(Number(activeUbaId), {
         market,
         side,
         order_type: orderType,
@@ -148,7 +135,7 @@ export function GuidedUpbitLiveSmokePanel() {
           preview?.reference_price ??
           undefined,
       );
-      return userApi.postLiveOrderTest(Number(ubaId), {
+      return userApi.postLiveOrderTest(Number(activeUbaId), {
         market,
         side,
         order_type: orderType,
@@ -181,7 +168,7 @@ export function GuidedUpbitLiveSmokePanel() {
           preview?.reference_price ??
           0,
       );
-      return userApi.postLiveOrderConfirm(Number(ubaId), {
+      return userApi.postLiveOrderConfirm(Number(activeUbaId), {
         market,
         side,
         amount: Number(amount),
@@ -211,7 +198,7 @@ export function GuidedUpbitLiveSmokePanel() {
   const dispatchMutation = useMutation({
     mutationFn: () => {
       const runId = String(result?.run_id ?? "");
-      return userApi.postLiveOrderSmokeDispatch(Number(ubaId), runId);
+      return userApi.postLiveOrderSmokeDispatch(Number(activeUbaId), runId);
     },
     onSuccess: (data) => {
       const rec = asRecord(data);
@@ -230,20 +217,9 @@ export function GuidedUpbitLiveSmokePanel() {
   const grantInfo = asRecord(result?.one_shot_grant);
   const grantExpiresAt = grantInfo?.dispatch_expires_at;
   const grantRemaining = useMemo(
-    () => grantRemainingSeconds(grantExpiresAt),
-    // grantTick으로 1초마다 재계산
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- tick drives refresh
-    [grantExpiresAt, grantTick],
+    () => grantRemainingSeconds(grantExpiresAt, nowMs),
+    [grantExpiresAt, nowMs],
   );
-
-  useEffect(() => {
-    if (!grantExpiresAt) return;
-    if (grantRemaining <= 0) return;
-    const id = window.setInterval(() => {
-      setGrantTick((n) => n + 1);
-    }, 1000);
-    return () => window.clearInterval(id);
-  }, [grantExpiresAt, grantRemaining]);
 
   const brokerStatus = String(
     result?.broker_order_status ?? "NOT_SUBMITTED",
@@ -264,7 +240,7 @@ export function GuidedUpbitLiveSmokePanel() {
     String(dispatchResult?.outcome ?? "").toUpperCase() === "AMBIGUOUS" ||
     Boolean(result?.manual_review_required);
   const dispatchEnabled =
-    Boolean(ubaId && result?.run_id && result?.order_id) &&
+    Boolean(activeUbaId && result?.run_id && result?.order_id) &&
     isOutboxPending &&
     brokerStatus === "NOT_SUBMITTED" &&
     grantIssued &&
@@ -280,7 +256,7 @@ export function GuidedUpbitLiveSmokePanel() {
   const orderTestFresh =
     orderTestPassed &&
     !!orderTest?.expires_at &&
-    Date.parse(String(orderTest.expires_at)) > Date.now();
+    Date.parse(String(orderTest.expires_at)) > nowMs;
   const liveButtonEnabled =
     orderTestPassed &&
     orderTestFresh &&
@@ -333,14 +309,14 @@ export function GuidedUpbitLiveSmokePanel() {
           />
         ) : null}
 
-        <Steps size="small" current={step} items={steps} />
+        <Steps size="small" current={displayStep} items={steps} />
 
         <Form layout="vertical">
           <Form.Item label="1. UPBIT 계좌 (1건이면 자동 선택)">
             <Select
               placeholder={accountsLoading ? "계좌 로딩 중…" : "UBA 선택"}
               loading={accountsLoading}
-              value={ubaId ?? undefined}
+              value={ubaId ?? activeUbaId ?? undefined}
               options={upbitAccounts.map((a) => ({
                 value: a.user_broker_account_id,
                 label: `UBA ${a.user_broker_account_id}${
@@ -362,7 +338,7 @@ export function GuidedUpbitLiveSmokePanel() {
             />
           </Form.Item>
 
-          {ubaId != null ? (
+          {activeUbaId != null ? (
             <Space wrap>
               <Button
                 loading={preflightQuery.isFetching}
@@ -392,7 +368,7 @@ export function GuidedUpbitLiveSmokePanel() {
             />
           ) : null}
 
-          {step >= 1 ? (
+          {displayStep >= 1 ? (
             <Form.Item
               label="4. 종목 / 주문유형 / 금액"
               style={{ marginTop: 12 }}
@@ -405,7 +381,10 @@ export function GuidedUpbitLiveSmokePanel() {
                     { value: "KRW-ETH", label: "KRW-ETH" },
                     { value: "KRW-XRP", label: "KRW-XRP" },
                   ]}
-                  onChange={setMarket}
+                  onChange={(v) => {
+                    setMarket(v);
+                    setOrderTest(null);
+                  }}
                   style={{ width: 140 }}
                 />
                 <Select
@@ -414,7 +393,10 @@ export function GuidedUpbitLiveSmokePanel() {
                     { value: "BUY", label: "매수" },
                     { value: "SELL", label: "매도" },
                   ]}
-                  onChange={(v) => setSide(v)}
+                  onChange={(v) => {
+                    setSide(v);
+                    setOrderTest(null);
+                  }}
                   style={{ width: 100 }}
                 />
                 <Select
@@ -434,22 +416,26 @@ export function GuidedUpbitLiveSmokePanel() {
                   <InputNumber
                     placeholder="지정가 (원)"
                     value={limitPrice ?? undefined}
-                    onChange={(v) =>
-                      setLimitPrice(v == null ? null : Number(v))
-                    }
+                    onChange={(v) => {
+                      setLimitPrice(v == null ? null : Number(v));
+                      setOrderTest(null);
+                    }}
                     style={{ width: 160 }}
                   />
                 ) : null}
                 <InputNumber
                   placeholder="금액(KRW)"
                   value={amount ?? undefined}
-                  onChange={(v) => setAmount(v == null ? null : Number(v))}
+                  onChange={(v) => {
+                    setAmount(v == null ? null : Number(v));
+                    setOrderTest(null);
+                  }}
                   style={{ width: 140 }}
                 />
                 <Button
                   type="primary"
                   loading={previewMutation.isPending}
-                  disabled={ubaId == null}
+                  disabled={activeUbaId == null}
                   onClick={() => {
                     setStep(2);
                     previewMutation.mutate();
@@ -459,7 +445,7 @@ export function GuidedUpbitLiveSmokePanel() {
                 </Button>
                 <Button
                   loading={orderTestMutation.isPending}
-                  disabled={ubaId == null || !preview}
+                  disabled={activeUbaId == null || !preview}
                   onClick={() => orderTestMutation.mutate()}
                 >
                   7. 업비트 주문 생성 테스트
@@ -617,7 +603,8 @@ export function GuidedUpbitLiveSmokePanel() {
               />
               {(() => {
                 const selected = upbitAccounts.find(
-                  (a) => Number(a.user_broker_account_id) === Number(ubaId),
+                  (a) =>
+                    Number(a.user_broker_account_id) === Number(activeUbaId),
                 );
                 const liveRec = asRecord(selected);
                 const armed = Boolean(
@@ -630,10 +617,10 @@ export function GuidedUpbitLiveSmokePanel() {
                   liveRec?.arm_expires_at ?? pf?.arm_expires_at ?? "",
                 );
                 const remainingSec =
-                  expiresAt && Date.parse(expiresAt) > Date.now()
+                  expiresAt && Date.parse(expiresAt) > nowMs
                     ? Math.max(
                         0,
-                        Math.floor((Date.parse(expiresAt) - Date.now()) / 1000),
+                        Math.floor((Date.parse(expiresAt) - nowMs) / 1000),
                       )
                     : 0;
                 return (

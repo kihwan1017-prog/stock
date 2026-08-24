@@ -87,15 +87,13 @@ export function AccountStrategyPerformancePanel({
     enabled: accountReady && selectedStrategyKey != null,
   });
 
-  const performanceRows = performanceQuery.data?.items ?? [];
-
   const selectedLabel = useMemo(() => {
     if (!selectedStrategyKey) return null;
-    const row = performanceRows.find(
+    const row = (performanceQuery.data?.items ?? []).find(
       (item) => resolveStrategyKey(item) === selectedStrategyKey,
     );
     return row?.strategy_name ?? selectedStrategyKey;
-  }, [performanceRows, selectedStrategyKey]);
+  }, [performanceQuery.data, selectedStrategyKey]);
 
   if (!accountReady) {
     return null;
@@ -135,7 +133,7 @@ export function AccountStrategyPerformancePanel({
           size="small"
           loading={performanceQuery.isLoading}
           rowKey={(row) => resolveStrategyKey(row)}
-          dataSource={performanceRows}
+          dataSource={performanceQuery.data?.items ?? []}
           locale={{ emptyText: "전략별 성과 데이터가 없습니다." }}
           pagination={false}
           onRow={(row) => ({

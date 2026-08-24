@@ -1,0 +1,59 @@
+{
+  "FINAL_VERDICT": "FRONTEND_BASELINE_CLEAN",
+  "generated_at_utc": "2026-08-24T13:10:00+00:00",
+  "BEFORE": {
+    "lint_errors": 17,
+    "lint_warnings": 16,
+    "typecheck_errors": 12,
+    "antd_compat": "PASS",
+    "check_frontend_narrow": "PASS"
+  },
+  "FIXED": {
+    "dashboard_period_filter_90d_unify": true,
+    "dashboardTabState_Set_has_typing": true,
+    "opportunity_scanner_null_compare_and_filters": true,
+    "runtimePreflight_queryKey_uba": true,
+    "live_validation_arm_token_optional": true,
+    "setState_in_effect_derive_patterns": true,
+    "preserve_manual_memoization_query_deps": true,
+    "Math.random_and_Date.now_impure_render": true,
+    "unused_imports_vars": true,
+    "test_require_to_esm_import": true
+  },
+  "AFTER": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "check:antd-compat": "PASS",
+    "test:ui:focused": "PASS 7/7",
+    "check:frontend": "PASS (now includes full lint+typecheck+antd+focused tests)"
+  },
+  "BROWSER": {
+    "upbit": "LIMITED_NO_AUTH_E2E",
+    "dashboard": "LIMITED_NO_AUTH_E2E",
+    "portfolio": "LIMITED_NO_AUTH_E2E"
+  },
+  "QUALITY": {
+    "console_errors_browser": "NOT_VERIFIED_AUTH",
+    "console_warnings_browser": "NOT_VERIFIED_AUTH",
+    "deprecated_antd_remaining": 0,
+    "typecheck_remaining": 0,
+    "lint_remaining": 0
+  },
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "CANCEL_AMEND_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "ENTRY_POLICY_MUTATION": 0,
+    "EXIT_POLICY_MUTATION": 0,
+    "RISK_MUTATION": 0,
+    "SLOT_POLICY_MUTATION": 0,
+    "DB_MUTATION": 0,
+    "UBA1380_MUTATION": 0,
+    "UBA1381_MUTATION": 0,
+    "BACKEND_RESTART_COUNT": 0
+  },
+  "REMAINING_FRONTEND_ERRORS": [],
+  "BLOCKED_BY_EXISTING_WIP": [],
+  "FRONTEND_BASELINE_CLEAN": true,
+  "NEXT_ACTION": "CONTINUE_NORMAL_UI_DEVELOPMENT_WITH_CLEAN_BASELINE"
+}

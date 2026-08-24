@@ -16,7 +16,7 @@ import {
   setAdminUbaKiwoomNextDayAutoStart,
   setAdminUbaUnattendedAutoRenew,
 } from "@/features/admin/api/adminApi";
-import { toApiError } from "@/shared/api/http";
+import { toApiError } from "@/lib/api/apiError";
 
 const CONFIRM_ENABLE = "ENABLE MARKET HOURS UNATTENDED";
 const CONFIRM_NEXT_DAY_ON = "ENABLE KIWOOM NEXT DAY AUTO START";
@@ -66,7 +66,6 @@ export function KiwoomMarketHoursArmRenewPanel({ ubaId }: Props) {
     life?.next_trading_day_auto_start ?? data?.next_trading_day_auto_start,
   );
   const market = (life?.market || {}) as Record<string, unknown>;
-  const lastPrecheck = (life?.last_precheck || {}) as Record<string, unknown>;
 
   const enableMut = useMutation({
     mutationFn: async () => {
@@ -126,6 +125,7 @@ export function KiwoomMarketHoursArmRenewPanel({ ubaId }: Props) {
   });
 
   const summary = useMemo(() => {
+    const lastPrecheck = (life?.last_precheck || {}) as Record<string, unknown>;
     const blockers = life?.lifecycle_blockers;
     const precheckBlockers = lastPrecheck.blockers;
     return {
@@ -168,7 +168,7 @@ export function KiwoomMarketHoursArmRenewPanel({ ubaId }: Props) {
           ?.warmup_status || "—",
       ),
     };
-  }, [data, life, market.calendar_date, market.regular_close_at, lastPrecheck]);
+  }, [data, life, market.calendar_date, market.regular_close_at]);
 
   return (
     <Card size="small" title="키움 장 시작/장중 lifecycle">

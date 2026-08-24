@@ -53,7 +53,10 @@ export const queryKeys = {
       includeOps?: boolean;
     }) =>
       ["admin", "autotrading-performance", params ?? {}] as const,
-    runtimePreflight: () => ["admin", "runtime", "preflight"] as const,
+    runtimePreflight: (ubaId?: number) =>
+      ubaId != null
+        ? (["admin", "runtime", "preflight", ubaId] as const)
+        : (["admin", "runtime", "preflight"] as const),
     aiProviderConfigurations: () =>
       ["admin", "ai-provider-configurations"] as const,
     aiPromptTemplates: () => ["admin", "ai-prompt-templates"] as const,

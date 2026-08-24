@@ -138,7 +138,7 @@ function normalizeRecommendation(raw: unknown): AiRecommendation {
   return "UNKNOWN";
 }
 
-function humanizeBlocker(code: string, recommendation: AiRecommendation): string {
+function humanizeBlocker(code: string): string {
   const map: Record<string, string> = {
     LIVE_OFF: "LIVE OFF",
     ARM_OFF_OR_EXPIRED: "ARM OFF",
@@ -262,7 +262,7 @@ export function buildUbaAutoTradingViewModel(
   }
 
   const displayBlockers = [
-    ...blockers.map((code) => humanizeBlocker(code, recommendation)),
+    ...blockers.map((code) => humanizeBlocker(code)),
   ];
   // AI HOLD는 AUTO STOPPED가 아님 — blockers에 섞지 않고 별도 표시
   if (
