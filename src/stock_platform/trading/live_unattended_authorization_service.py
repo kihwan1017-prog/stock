@@ -1761,10 +1761,11 @@ class LiveUnattendedAuthorizationService:
 
         row.last_renewed_at = now
         row.last_renewal_actor = actor[:100]
-        row.last_renewal_detail = {
-            "restore": True,
-            **detail,
-        }
+        # restore detail 덮어써도 MARKET_HOURS mode 유지
+        row.last_renewal_detail = self._preserve_mode_detail(
+            row,
+            {"restore": True, **detail},
+        )
         row.updated_at = now
         self._session.flush()
         emit_live_safety_audit(
@@ -1775,7 +1776,7 @@ class LiveUnattendedAuthorizationService:
             user_id=int(uba.user_id),
             account_id=int(user_broker_account_id),
             strategy_id=None,
-            detail=detail,
+            detail=dict(row.last_renewal_detail or {}),
             commit=False,
         )
 
