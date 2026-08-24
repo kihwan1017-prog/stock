@@ -24,11 +24,9 @@ import {
   entryBlockReasonKo,
 } from "@/features/admin/autotrading/entryBlockReasonKo";
 import {
-  formatAgeKo,
   formatIsoAgeKo,
-  slotStatusLabelKo,
 } from "@/features/admin/autotrading/slotStatusLabels";
-import { asRecord } from "@/shared/utils/dataHelpers";
+import { asRecordOrEmpty } from "@/shared/utils/dataHelpers";
 
 import {
   ENTRY_FUNNEL_STEPS,
@@ -65,9 +63,9 @@ export function UpbitPortfolioPolicyPanel({
   const slotRows = [...slots]
     .sort(
       (a, b) =>
-        Number(asRecord(a).slot_no ?? 0) - Number(asRecord(b).slot_no ?? 0),
+        Number(a.slot_no ?? 0) - Number(b.slot_no ?? 0),
     )
-    .filter((row) => Number(asRecord(row).slot_no ?? 0) <= capacity);
+    .filter((row) => Number(row.slot_no ?? 0) <= capacity);
 
   while (slotRows.length < capacity) {
     slotRows.push({
@@ -241,7 +239,7 @@ export function UpbitPortfolioPolicyPanel({
         <Table
           size="small"
           pagination={false}
-          rowKey={(r) => String(asRecord(r).slot_no ?? "x")}
+          rowKey={(r) => String(asRecordOrEmpty(r).slot_no ?? "x")}
           dataSource={slotRows}
           columns={[
             {
@@ -259,7 +257,7 @@ export function UpbitPortfolioPolicyPanel({
               key: "score",
               width: 72,
               render: (_: unknown, row) => {
-                const o = asRecord(row);
+                const o = asRecordOrEmpty(row);
                 const v = o.scanner_score ?? o.score;
                 return v == null ? "—" : String(v);
               },
@@ -275,14 +273,14 @@ export function UpbitPortfolioPolicyPanel({
               key: "wait",
               width: 88,
               render: (_: unknown, row) =>
-                formatWaitingAge(asRecord(row).waiting_age_seconds),
+                formatWaitingAge(asRecordOrEmpty(row).waiting_age_seconds),
             },
             {
               title: "Entry 판정",
               key: "decision",
               width: 100,
               render: (_: unknown, row) => {
-                const o = asRecord(row);
+                const o = asRecordOrEmpty(row);
                 const st = String(o.status ?? "").toUpperCase();
                 if (st === "EMPTY") return "—";
                 const d = o.last_entry_decision;
@@ -294,7 +292,7 @@ export function UpbitPortfolioPolicyPanel({
               key: "reason",
               ellipsis: true,
               render: (_: unknown, row) => {
-                const o = asRecord(row);
+                const o = asRecordOrEmpty(row);
                 if (String(o.status ?? "").toUpperCase() === "EMPTY") {
                   return "빈 슬롯";
                 }
@@ -316,7 +314,7 @@ export function UpbitPortfolioPolicyPanel({
               key: "eval_at",
               width: 120,
               render: (_: unknown, row) => {
-                const at = asRecord(row).last_entry_evaluated_at;
+                const at = asRecordOrEmpty(row).last_entry_evaluated_at;
                 return at ? formatIsoAgeKo(String(at)) : "—";
               },
             },
@@ -325,7 +323,7 @@ export function UpbitPortfolioPolicyPanel({
               key: "repl",
               width: 160,
               render: (_: unknown, row) => {
-                const o = asRecord(row);
+                const o = asRecordOrEmpty(row);
                 if (String(o.status ?? "").toUpperCase() === "EMPTY") {
                   return <Tag>EMPTY 우선 배정</Tag>;
                 }

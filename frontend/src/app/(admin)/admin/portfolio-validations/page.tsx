@@ -259,7 +259,7 @@ export default function AdminPortfolioValidationsPage() {
             <Alert
               type="warning"
               showIcon
-              message="UNION_FORWARD_FILL은 이번 STEP에서 지원하지 않아 실행 시 오류로 차단됩니다(경계 조건 미확정으로 명시적 차단)."
+              title="UNION_FORWARD_FILL은 이번 STEP에서 지원하지 않아 실행 시 오류로 차단됩니다(경계 조건 미확정으로 명시적 차단)."
             />
           )}
 
@@ -318,7 +318,7 @@ export default function AdminPortfolioValidationsPage() {
               <Alert
                 type="info"
                 showIcon
-                message={cell(report.methodology_note)}
+                title={cell(report.methodology_note)}
               />
 
               <Descriptions title="Portfolio KPI" bordered size="small" column={3}>

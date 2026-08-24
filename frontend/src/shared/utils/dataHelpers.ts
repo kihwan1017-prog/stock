@@ -9,6 +9,14 @@ export function asRecord(value: unknown): Record<string, unknown> | null {
   return null;
 }
 
+/**
+ * UI 표시용 빈 객체 fallback.
+ * LOADING/EMPTY/ERROR 분기는 호출부에서 먼저 처리한 뒤 사용한다.
+ */
+export function asRecordOrEmpty(value: unknown): Record<string, unknown> {
+  return asRecord(value) ?? {};
+}
+
 export function extractRows(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) {
     return data.filter(

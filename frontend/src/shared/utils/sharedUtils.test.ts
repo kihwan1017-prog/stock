@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
+import { asRecord, asRecordOrEmpty, cell, extractRows } from "@/shared/utils/dataHelpers";
 import {
   percentToRate,
   rateToPercent,
@@ -15,6 +15,11 @@ describe("shared/utils dataHelpers", () => {
     expect(asRecord({ a: 1 })).toEqual({ a: 1 });
     expect(asRecord(null)).toBeNull();
     expect(asRecord([1])).toBeNull();
+  });
+
+  it("asRecordOrEmpty: null-safe empty object", () => {
+    expect(asRecordOrEmpty(null)).toEqual({});
+    expect(asRecordOrEmpty({ a: 1 })).toEqual({ a: 1 });
   });
 
   it("extractRows: array / nested keys", () => {

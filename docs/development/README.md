@@ -46,6 +46,8 @@
 | [STEP8_OPS_COMPLETION.md](STEP8_OPS_COMPLETION.md) | STEP 8 운영 마무리 Completion Report |
 | [STEP35_TEST_SUMMARY.md](STEP35_TEST_SUMMARY.md) | STEP35 테스트 요약 |
 | [STEP36_DB_CHANGE_PLAN.md](STEP36_DB_CHANGE_PLAN.md) | STEP36 DB 변경 계획 |
+| [KIWOOM_LIVE_MOCK_SOT_ALIGNMENT.md](KIWOOM_LIVE_MOCK_SOT_ALIGNMENT.md) | KIWOOM execution vs `KIWOOM_USE_MOCK` market SoT 정렬 (src 유지창 패치) |
+| [ANTD_UI_COMPATIBILITY_CHECKLIST.md](ANTD_UI_COMPATIBILITY_CHECKLIST.md) | Ant Design 6 / Next 16 Admin UI 호환성·lint 게이트 체크리스트 |
 | [README.md](README.md) | 이 폴더 안내 |
 
 DB 규칙 본문: [../database/DB_DEVELOPMENT_RULES.md](../database/DB_DEVELOPMENT_RULES.md)  

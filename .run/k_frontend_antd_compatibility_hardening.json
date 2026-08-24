@@ -1,0 +1,92 @@
+{
+  "FINAL_VERDICT": "FRONTEND_ANTD_COMPATIBILITY_HARDENED",
+  "generated_at_utc": "2026-08-24T12:40:00+00:00",
+  "CURRENT_DEPENDENCIES": {
+    "declared": {
+      "next": "16.2.10",
+      "react": "19.2.4",
+      "react-dom": "19.2.4",
+      "antd": "^6.5.1",
+      "@ant-design/icons": "^6.3.2",
+      "typescript": "^5",
+      "eslint": "^9"
+    },
+    "installed": {
+      "next": "16.2.10",
+      "react": "19.2.4",
+      "react-dom": "19.2.4",
+      "antd": "6.5.1",
+      "@ant-design/icons": "6.3.2",
+      "typescript": "5.9.3",
+      "eslint": "9.39.5"
+    },
+    "package_upgrade": "NONE"
+  },
+  "CURRENT_WARNING": {
+    "warning": "[antd: Alert] `message` is deprecated. Please use `title` instead.",
+    "stack_note": "UpbitAutotradingSettingsWorkspace line ~1319 is child stack only",
+    "ROOT_CAUSE_FILE": "frontend/src/features/admin/upbit/UpbitResearchCollectionStatusPanel.tsx",
+    "ROOT_CAUSE_LINES": [190, 197, 298, 322],
+    "OLD_PROP": "message",
+    "NEW_PROP": "title",
+    "FIXED": "YES"
+  },
+  "PROJECT_AUDIT": {
+    "Alert_message_before": 19,
+    "Alert_message_after": 0,
+    "Modal_static_confirm": {
+      "classification": "SAFE_RECOMMENDED_APP_USEAPP",
+      "count": "multiple",
+      "action": "NOT_MASS_MIGRATED (not active deprecation warning in this STEP)"
+    },
+    "Tabs_TabPane": { "status": "SAFE", "count": 0 },
+    "Collapse_Panel": { "status": "SAFE", "count": 0 },
+    "Dropdown_overlay": { "status": "SAFE", "count": 0 },
+    "bodyStyle_maskStyle_destroyOnClose": { "status": "SAFE", "count": 0 },
+    "Table_default_import": { "status": "SAFE", "count": 0 },
+    "Table_named_import": "OK",
+    "Null_unsafe_asRecord_dot_access": {
+      "found": ["upbitAutotradingCanonicalStatus.parseOpsLiveArm", "UpbitPortfolioPolicyPanel renders", "upbitPortfolioPolicyHelpers.policyDisplayRecord"],
+      "fixed": true,
+      "helper_added": "asRecordOrEmpty"
+    }
+  },
+  "PREVENTION": {
+    "eslint_antd_compat_rules": true,
+    "check_antd_compat_script": true,
+    "lint_antd_compat_script": true,
+    "console_smoke_helper": "src/test/consoleSmoke.ts",
+    "focused_vitest": "test:ui:focused",
+    "check_frontend": true,
+    "developer_checklist": "docs/development/ANTD_UI_COMPATIBILITY_CHECKLIST.md"
+  },
+  "VALIDATION": {
+    "check_antd_compat": "PASS",
+    "lint_antd_compat": "PASS",
+    "lint_full": "FAIL_PREEXISTING (react-hooks/set-state-in-effect etc — unrelated)",
+    "typecheck_full": "FAIL_PREEXISTING (dashboard/ops PeriodFilter, OpportunityScanner, live-validation — unrelated; our files clean)",
+    "typecheck_changed_files": "PASS",
+    "vitest_focused": "PASS 7/7",
+    "browser_smoke_upbit": "LIMITED_NO_AUTH_E2E",
+    "browser_smoke_dashboard": "LIMITED_NO_AUTH_E2E",
+    "browser_smoke_portfolio": "LIMITED_NO_AUTH_E2E",
+    "console_errors_unit": 0,
+    "console_warnings_unit_forbidden": 0
+  },
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "POLICY_MUTATION": 0,
+    "RISK_MUTATION": 0,
+    "SLOT_MUTATION": 0,
+    "DB_MUTATION": 0,
+    "UBA1381_MUTATION": 0,
+    "BACKEND_RESTART_COUNT": 0
+  },
+  "REMAINING_LIMITATIONS": [
+    "Full npm run lint / typecheck still fail on pre-existing unrelated WIP",
+    "Authenticated Playwright browser smoke not run (LIMITED)",
+    "Modal.confirm static usage remains; migrate to App.useApp().modal when touching those screens"
+  ],
+  "NEXT_ACTION": "CONTINUE_NORMAL_UI_DEVELOPMENT_WITH_COMPATIBILITY_GATE"
+}

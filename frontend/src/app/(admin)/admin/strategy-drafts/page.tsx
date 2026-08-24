@@ -3634,7 +3634,7 @@ export default function AdminStrategyDraftsPage() {
                       {decisionPackage?.stale && (
                         <Alert
                           type="error" showIcon
-                          message={`Stale Package — Decision을 생성할 수 없습니다: ${(decisionPackage?.stale_reasons as string[] | undefined)?.join(", ") ?? ""}`}
+                          title={`Stale Package — Decision을 생성할 수 없습니다: ${(decisionPackage?.stale_reasons as string[] | undefined)?.join(", ") ?? ""}`}
                         />
                       )}
                       {decisionPackage?.readiness_reason_codes != null &&
@@ -3735,7 +3735,7 @@ export default function AdminStrategyDraftsPage() {
                         <Alert
                           type={promotionReadiness.ready ? "success" : "info"}
                           showIcon
-                          message={`Promotion Readiness: ready=${String(promotionReadiness.ready)}, next_action=${cell(promotionReadiness.next_action)}`}
+                          title={`Promotion Readiness: ready=${String(promotionReadiness.ready)}, next_action=${cell(promotionReadiness.next_action)}`}
                         />
                       )}
 
@@ -4003,7 +4003,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="error"
                         showIcon
-                        message="Blocking"
+                        title="Blocking"
                         description={extractRows(activationPackage.blocking_reason_codes).join(", ")}
                       />
                     )}
@@ -4011,7 +4011,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="warning"
                         showIcon
-                        message="Warning"
+                        title="Warning"
                         description={extractRows(activationPackage.warning_reason_codes).join(", ")}
                       />
                     )}
@@ -4318,7 +4318,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="error"
                         showIcon
-                        message="Blocking"
+                        title="Blocking"
                         description={extractRows(runtimeRegPackage.blocking_reason_codes).join(", ")}
                       />
                     )}
@@ -4326,7 +4326,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="warning"
                         showIcon
-                        message="Warning"
+                        title="Warning"
                         description={extractRows(runtimeRegPackage.warning_reason_codes).join(", ")}
                       />
                     )}
@@ -4655,7 +4655,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="error"
                         showIcon
-                        message="Blocking"
+                        title="Blocking"
                         description={extractRows(deployPackage.blocking_reason_codes).join(", ")}
                       />
                     )}
@@ -4663,14 +4663,14 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="warning"
                         showIcon
-                        message="Warning"
+                        title="Warning"
                         description={extractRows(deployPackage.warning_reason_codes).join(", ")}
                       />
                     )}
                     <Alert
                       type="info"
                       showIcon
-                      message="Scheduler Plan은 비활성 상태로만 저장됩니다"
+                      title="Scheduler Plan은 비활성 상태로만 저장됩니다"
                       description="enabled=false, registered_to_scheduler=false, scheduler_job_id=NULL — 실제 Scheduler Job은 생성되지 않습니다."
                     />
 
@@ -4978,7 +4978,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="error"
                         showIcon
-                        message="Blocking"
+                        title="Blocking"
                         description={extractRows(opPackage.blocking_reason_codes).join(", ")}
                       />
                     )}
@@ -4986,7 +4986,7 @@ export default function AdminStrategyDraftsPage() {
                       <Alert
                         type="warning"
                         showIcon
-                        message="Warning"
+                        title="Warning"
                         description={extractRows(opPackage.warning_reason_codes).join(", ")}
                       />
                     )}

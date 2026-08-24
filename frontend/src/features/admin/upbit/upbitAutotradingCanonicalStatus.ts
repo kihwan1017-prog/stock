@@ -4,7 +4,7 @@
  */
 
 import { buildOpsStatusSummary } from "@/features/admin/accounts/opsStatusSummary";
-import { asRecord } from "@/shared/utils/dataHelpers";
+import { asRecordOrEmpty } from "@/shared/utils/dataHelpers";
 
 export type UpbitAutotradingAggregateTier = "available_waiting" | "blocked";
 
@@ -33,7 +33,7 @@ export function parseOpsLiveArm(ops: unknown): {
   armLabel: string;
   armExpiresAt: string | null;
 } {
-  const root = asRecord(ops);
+  const root = asRecordOrEmpty(ops);
   const liveOn = String(root.live ?? "OFF").toUpperCase() === "ON";
   const armOn = String(root.arm ?? "OFF").toUpperCase() === "ON";
   const summary = buildOpsStatusSummary(ops);
@@ -53,8 +53,8 @@ export function mergeAutotradingBlockers(
   readiness?: unknown,
 ): string[] {
   const { liveOn, armOn } = parseOpsLiveArm(ops);
-  const opsRoot = asRecord(ops);
-  const readyRoot = asRecord(readiness);
+  const opsRoot = asRecordOrEmpty(ops);
+  const readyRoot = asRecordOrEmpty(readiness);
   const merged = new Set<string>();
 
   if (!liveOn) merged.add("LIVE_OFF");
@@ -82,7 +82,7 @@ export function buildUpbitAutotradingAggregateStatus(input: {
 }): UpbitAutotradingAggregateStatus {
   const { liveOn, armOn } = parseOpsLiveArm(input.ops);
   const summary = buildOpsStatusSummary(input.ops);
-  const readyRoot = asRecord(input.readiness);
+  const readyRoot = asRecordOrEmpty(input.readiness);
   const readinessStatus = String(
     readyRoot.status ?? readyRoot.readiness ?? "—",
   ).toUpperCase();
@@ -92,8 +92,6 @@ export function buildUpbitAutotradingAggregateStatus(input: {
   const blockers = mergeAutotradingBlockers(input.ops, input.readiness);
 
   const readinessReady = readinessStatus === "READY_FOR_AUTO_TRADING";
-  const entryOrdersPermitted =
-    liveOn && armOn && readinessReady && blockers.length === 0;
 
   if (!liveOn || !armOn) {
     const gateBlockers = [

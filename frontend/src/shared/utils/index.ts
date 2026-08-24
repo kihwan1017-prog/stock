@@ -1,5 +1,6 @@
 export {
   asRecord,
+  asRecordOrEmpty,
   cell,
   extractRows,
 } from "@/shared/utils/dataHelpers";

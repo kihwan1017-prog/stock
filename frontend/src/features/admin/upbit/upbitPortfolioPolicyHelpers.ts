@@ -36,7 +36,7 @@ export function formatWaitingAge(seconds: unknown): string {
 }
 
 export function policyDisplayRecord(policy: unknown): Record<string, unknown> {
-  return asRecord(policy);
+  return asRecord(policy) ?? {};
 }
 
 export function entryPolicyLabel(raw: unknown): string {

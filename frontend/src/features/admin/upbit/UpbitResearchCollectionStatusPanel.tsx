@@ -187,14 +187,14 @@ export function UpbitResearchCollectionStatusPanel({
               <Alert
                 type="info"
                 showIcon
-                message={cell(clean.sample_stage_ko)}
+                title={cell(clean.sample_stage_ko)}
                 description={cell(clean.sample_stage_desc_ko)}
               />
               {String(clean.status) === "WAITING" ? (
                 <Alert
                   type="info"
                   showIcon
-                  message="신규 후보 대기 중"
+                  title="신규 후보 대기 중"
                   description={String(tips.waiting ?? "")}
                 />
               ) : null}
@@ -295,7 +295,7 @@ export function UpbitResearchCollectionStatusPanel({
                 <Alert
                   type="warning"
                   showIcon
-                  message={cell(experiment.sample_warning_ko ?? "표본 부족 · 연구용")}
+                  title={cell(experiment.sample_warning_ko ?? "표본 부족 · 연구용")}
                 />
               ) : null}
               <Typography.Text type="secondary">
@@ -319,7 +319,7 @@ export function UpbitResearchCollectionStatusPanel({
         <Alert
           type="error"
           showIcon
-          message={toApiError(q.error).message}
+          title={toApiError(q.error).message}
           style={{ marginBottom: 12 }}
         />
       ) : null}

@@ -175,7 +175,7 @@ export function MarketSessionJobsPanel() {
         <Alert
           type="error"
           showIcon
-          message="Health 조회 실패"
+          title="Health 조회 실패"
           description={toApiError(healthQuery.error).message}
           style={{ marginBottom: 12 }}
         />
@@ -184,7 +184,7 @@ export function MarketSessionJobsPanel() {
         <Alert
           type="error"
           showIcon
-          message="Reconcile 실패"
+          title="Reconcile 실패"
           description={toApiError(reconcileMut.error).message}
           style={{ marginBottom: 12 }}
           closable
