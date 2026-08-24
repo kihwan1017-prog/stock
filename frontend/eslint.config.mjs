@@ -43,6 +43,12 @@ const antdCompatRestrictions = {
     },
     {
       selector:
+        "JSXOpeningElement[name.name='Statistic'] > JSXAttribute[name.name='valueStyle']",
+      message:
+        "antd Statistic: deprecated `valueStyle` — use `styles={{ content: ... }}` (antd 6).",
+    },
+    {
+      selector:
         "ImportDeclaration[source.value='antd'] > ImportDefaultSpecifier",
       message:
         "antd: default import 금지 — named import만 사용 (예: import { Table } from 'antd').",

@@ -29,6 +29,12 @@ for (const file of walk(root)) {
       offenders.push(`${rel}: Alert deprecated message=`);
     }
   }
+  // AntD Statistic only — false positive 방지 (다른 컴포넌트 valueStyle 제외)
+  for (const block of text.match(/<Statistic\b[\s\S]*?>/g) || []) {
+    if (/\bvalueStyle=/.test(block)) {
+      offenders.push(`${rel}: Statistic deprecated valueStyle=`);
+    }
+  }
   if (/Tabs\.TabPane/.test(text)) {
     offenders.push(`${rel}: Tabs.TabPane`);
   }
@@ -48,4 +54,6 @@ if (offenders.length) {
   for (const o of offenders) console.error(" -", o);
   process.exit(1);
 }
-console.log("antd-compat OK (Alert.message / TabPane / Collapse.Panel / default import)");
+console.log(
+  "antd-compat OK (Alert.message / Statistic.valueStyle / TabPane / Collapse.Panel / default import)",
+);

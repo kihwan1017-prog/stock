@@ -53,7 +53,7 @@ describe("antd compatibility console smoke", () => {
     vi.clearAllMocks();
   });
 
-  it("ResearchCollectionStatusPanel has no Alert message prop in source", async () => {
+  it("ResearchCollectionStatusPanel has no Alert message or Statistic valueStyle", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
     const src = fs.readFileSync(
@@ -63,10 +63,10 @@ describe("antd compatibility console smoke", () => {
       ),
       "utf8",
     );
-    expect(src).not.toMatch(
-      /<Alert\b[\s\S]{0,120}?\bmessage=/,
-    );
+    expect(src).not.toMatch(/<Alert\b[\s\S]{0,120}?\bmessage=/);
     expect(src).toMatch(/<Alert\b[\s\S]{0,120}?\btitle=/);
+    expect(src).not.toMatch(/<Statistic\b[\s\S]{0,200}?\bvalueStyle=/);
+    expect(src).toMatch(/styles=\{\{\s*content:/);
   });
 
   it("static render does not emit forbidden console patterns", () => {
@@ -91,11 +91,9 @@ describe("antd compatibility console smoke", () => {
     }
   });
 
-  it("repo has zero Alert message= props under src", async () => {
+  it("repo has zero Alert message= and Statistic valueStyle= under src", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");
-    const { execSync } = await import("node:child_process");
-    // ripgrep may be unavailable — walk TSX
     function walk(dir: string, out: string[] = []): string[] {
       for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
         if (ent.name === "node_modules" || ent.name === ".next") continue;
@@ -106,15 +104,18 @@ describe("antd compatibility console smoke", () => {
       return out;
     }
     const files = walk(path.join(process.cwd(), "src"));
-    const offenders: string[] = [];
+    const alertOffenders: string[] = [];
+    const statisticOffenders: string[] = [];
     for (const file of files) {
       const text = fs.readFileSync(file, "utf8");
-      const blocks = text.match(/<Alert\b[\s\S]*?>/g) || [];
-      for (const b of blocks) {
-        if (/\bmessage=/.test(b)) offenders.push(file);
+      for (const b of text.match(/<Alert\b[\s\S]*?>/g) || []) {
+        if (/\bmessage=/.test(b)) alertOffenders.push(file);
+      }
+      for (const b of text.match(/<Statistic\b[\s\S]*?>/g) || []) {
+        if (/\bvalueStyle=/.test(b)) statisticOffenders.push(file);
       }
     }
-    expect(offenders).toEqual([]);
-    void execSync;
+    expect(alertOffenders).toEqual([]);
+    expect(statisticOffenders).toEqual([]);
   });
 });

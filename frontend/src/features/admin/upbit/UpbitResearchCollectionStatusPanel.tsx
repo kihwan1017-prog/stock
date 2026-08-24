@@ -335,7 +335,7 @@ export function UpbitResearchCollectionStatusPanel({
             }
             value={cleanCount}
             suffix={`/ ${target500.toLocaleString()}`}
-            valueStyle={{ fontSize: 18 }}
+            styles={{ content: { fontSize: 18 } }}
           />
           <Progress percent={Number(pct500.toFixed(1))} size="small" showInfo />
         </Col>
@@ -349,7 +349,7 @@ export function UpbitResearchCollectionStatusPanel({
             }
             value={cleanCount}
             suffix={`/ ${target1000.toLocaleString()}`}
-            valueStyle={{ fontSize: 18 }}
+            styles={{ content: { fontSize: 18 } }}
           />
           <Progress percent={Number(pct1000.toFixed(1))} size="small" showInfo />
         </Col>
@@ -358,7 +358,7 @@ export function UpbitResearchCollectionStatusPanel({
             title="오늘 신규"
             value={Number(clean.today_new ?? 0)}
             prefix="+"
-            valueStyle={{ fontSize: 18 }}
+            styles={{ content: { fontSize: 18 } }}
           />
         </Col>
         <Col xs={12} sm={12} md={5}>

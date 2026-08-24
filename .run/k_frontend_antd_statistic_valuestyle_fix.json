@@ -1,0 +1,48 @@
+{
+  "FINAL_VERDICT": "FRONTEND_ANTD_STATISTIC_DEPRECATION_FIXED_AUTH_VERIFY_PENDING",
+  "generated_at_utc": "2026-08-24T13:25:00+00:00",
+  "ROOT_CAUSE_FILE": "frontend/src/features/admin/upbit/UpbitResearchCollectionStatusPanel.tsx",
+  "ROOT_CAUSE_LINES": [338, 352, 361],
+  "STATISTIC_VALUESTYLE_BEFORE_COUNT": 3,
+  "STATISTIC_VALUESTYLE_AFTER_COUNT": 0,
+  "FILES_CHANGED": [
+    "frontend/src/features/admin/upbit/UpbitResearchCollectionStatusPanel.tsx",
+    "frontend/eslint.config.mjs",
+    "frontend/scripts/check-antd-compat.mjs",
+    "frontend/src/test/antdCompatConsoleSmoke.test.tsx",
+    "docs/development/ANTD_UI_COMPATIBILITY_CHECKLIST.md"
+  ],
+  "OLD_API": "valueStyle={{ fontSize: 18 }}",
+  "NEW_API": "styles={{ content: { fontSize: 18 } }}",
+  "CHECK_GATE_MISS_ROOT_CAUSE": "CHECK_RULE_MISSING",
+  "check_antd_compat_updated": true,
+  "Alert_message_remaining": 0,
+  "Statistic_valueStyle_remaining": 0,
+  "other_antd_deprecated_found": [],
+  "VALIDATION": {
+    "lint": "PASS",
+    "typecheck": "PASS",
+    "check:antd-compat": "PASS",
+    "test:ui:focused": "PASS",
+    "check:frontend": "PASS"
+  },
+  "BROWSER": {
+    "authenticated_upbit_render": "NOT_RUN",
+    "reason": "No authenticated browser session used in this step; auth token probing avoided",
+    "console_errors": "NOT_VERIFIED",
+    "console_warnings": "NOT_VERIFIED",
+    "antd_warnings": "NOT_VERIFIED"
+  },
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "POLICY_MUTATION": 0,
+    "RISK_MUTATION": 0,
+    "SLOT_MUTATION": 0,
+    "DB_MUTATION": 0,
+    "UBA1380_MUTATION": 0,
+    "UBA1381_MUTATION": 0,
+    "BACKEND_RESTART_COUNT": 0
+  },
+  "NEXT_ACTION": "CONTINUE_UI_WITH_RUNTIME_ANTD_GATE"
+}
