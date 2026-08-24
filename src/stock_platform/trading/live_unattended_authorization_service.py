@@ -210,6 +210,9 @@ class LiveUnattendedAuthorizationService:
             "last_renewal_actor": row.last_renewal_actor,
             "last_renewal_detail": detail,
             "auto_renew_enabled": bool(getattr(row, "auto_renew_enabled", False)),
+            "next_trading_day_auto_start": bool(
+                detail.get("next_trading_day_auto_start")
+            ),
             "horizon_renew_margin_seconds": self._horizon_renew_margin_seconds(
                 row
             ),
@@ -271,6 +274,13 @@ class LiveUnattendedAuthorizationService:
         out["authorization_mode"] = mode
         if "market_hours" not in out and isinstance(prev.get("market_hours"), dict):
             out["market_hours"] = prev["market_hours"]
+        # next-day opt-in 보존 (renew/restore detail 덮어쓰기 대비)
+        if "next_trading_day_auto_start" not in out and (
+            "next_trading_day_auto_start" in prev
+        ):
+            out["next_trading_day_auto_start"] = prev[
+                "next_trading_day_auto_start"
+            ]
         return out
 
     def _next_arm_renew_eligible_at(
@@ -339,6 +349,7 @@ class LiveUnattendedAuthorizationService:
         horizon_hours: int | None = None,
         correlation_id: str | None = None,
         authorization_mode: str | None = None,
+        next_trading_day_auto_start: bool = False,
     ) -> dict[str, Any]:
         """이미 승인된 LIVE 세션에 대한 제한된 unattended lease 승인.
 
@@ -347,6 +358,8 @@ class LiveUnattendedAuthorizationService:
 
         authorization_mode:
           HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM 정규장 ceiling)
+        next_trading_day_auto_start:
+          KIWOOM MARKET_HOURS 전용 — 익일 장 시작 자동 lifecycle opt-in
         """
 
         uba = self._session.get(
@@ -513,6 +526,9 @@ class LiveUnattendedAuthorizationService:
                 "authorization_mode": mode,
                 "market_hours": market_hours_meta,
                 "gates": gates,
+                "next_trading_day_auto_start": bool(
+                    next_trading_day_auto_start and mode == MODE_MARKET_HOURS
+                ),
             },
         )
         self._session.add(row)

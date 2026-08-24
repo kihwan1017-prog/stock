@@ -1,0 +1,85 @@
+{
+  "FINAL_VERDICT": "KIWOOM_NEXT_TRADING_DAY_LIFECYCLE_IMPLEMENTED_FAIL_CLOSED",
+  "generated_at": "2026-08-24T18:45:00+09:00",
+  "AUTO_START": {
+    "1_NEXT_DAY_AUTO_START_IMPLEMENTED": "YES",
+    "2_TRADING_CALENDAR_USED": "YES",
+    "3_HOLIDAY_SAFE": "YES",
+    "4_PRECHECK_GATE_COUNT": 13,
+    "5_FAIL_CLOSED": "YES",
+    "6_ACTIVATION_HANDLING": "SUCCESSOR_ONLY",
+    "7_LIVE_AUTO_START": "YES",
+    "8_MARKET_HOURS_AUTH_AUTO_START": "YES",
+    "9_ARM_AUTO_START": "YES",
+    "10_ARM_AUTO_RENEW": "YES",
+    "11_ARM_CLOSE_CEILING": "YES"
+  },
+  "RUNTIME": {
+    "12_FEED_AUTO_START": "YES",
+    "13_WARMUP_PRELOAD": "PRESERVED",
+    "14_RUNTIME_AUTO_RESUME": "YES",
+    "15_RUNNER_AUTO_START": "YES",
+    "16_RESTART_RECOVERY": "YES",
+    "17_UPBIT_CONCURRENT_SAFE": "YES"
+  },
+  "EOD": {
+    "18_NEW_ENTRY_BLOCK_AFTER_CLOSE": "YES",
+    "19_ARM_RENEW_AFTER_CLOSE": "NO",
+    "20_LIVE_ARM_EOD_STATE": "FAIL_CLOSED",
+    "21_PROTECTIVE_EXIT_BEHAVIOR": "PRESERVED"
+  },
+  "PROVENANCE": {
+    "22_1822_ENTRY_GAP_ROOT_CAUSE": "BROKER_IMPORTED_POSITION",
+    "22_detail": {
+      "local_filled_buy": [],
+      "bindings": [],
+      "only_local_buy": {"order_id": 1798, "status": "CANCELLED"},
+      "reasons": [
+        "NO_LOCAL_FILLED_BUY",
+        "NO_STRATEGY_BINDING",
+        "LIKELY_EXTERNAL_OR_IMPORTED_POSITION"
+      ]
+    },
+    "23_GENERIC_FIX_IMPLEMENTED": "YES",
+    "23_fix": "kiwoom fill_position_write BUY=entry_order_id SELL=exit_order_id",
+    "24_FUTURE_ROUND_TRIP_PNL_READY": "YES",
+    "historical_1822_mutation": false
+  },
+  "TEST": {
+    "25_TEST_COUNT": 11,
+    "25_files": [
+      "tests/test_kiwoom_next_trading_day_lifecycle.py"
+    ],
+    "25_regression_also_pass": [
+      "tests/test_kiwoom_market_hours_arm_auto_renew.py",
+      "tests/test_strategy_owned_binding_fill_idempotency.py",
+      "tests/test_live_unattended_authorization.py"
+    ],
+    "26_TEST_RESULT": "PASS",
+    "27_GIT_COMMIT": "UNCOMMITTED",
+    "28_BACKEND_RESTART_COUNT": 0
+  },
+  "SAFETY": {
+    "29_REAL_ORDER_FORCE_MUTATION": 0,
+    "30_CANCEL_AMEND_MUTATION": 0,
+    "31_POLICY_MUTATION": 0,
+    "32_RISK_MUTATION": 0,
+    "33_UBA1380_MUTATION": 0,
+    "34_SYSTEM_BUG_ACTIVE": "NO",
+    "35_LIMITATIONS": [
+      "opt_in_required",
+      "source_activation_required_no_greenfield_phrase_bypass",
+      "market_hours_enable_only_in_regular_session",
+      "account_sync_via_recovery_gate_not_forced_rest",
+      "warmup_ready_gated_by_existing_evaluator"
+    ],
+    "36_CAN_RUN_NEXT_TRADING_DAY_UNATTENDED": "CONDITIONAL_YES",
+    "37_NEXT_ACTION": "CONFIRM_NEXT_DAY_OPT_IN_THEN_OBSERVE_NEXT_KRX_SESSION"
+  },
+  "phrases": {
+    "market_hours_enable": "ENABLE MARKET HOURS UNATTENDED",
+    "next_day_enable": "ENABLE KIWOOM NEXT DAY AUTO START",
+    "next_day_disable": "DISABLE KIWOOM NEXT DAY AUTO START"
+  },
+  "hook": "scan_and_expire_live_sessions -> KiwoomTradingDayLifecycleService.scan_all"
+}

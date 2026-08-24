@@ -869,6 +869,9 @@ export async function getAdminUbaUnattendedStatus(
   return getJson(`/admin/autotrading/uba/${ubaId}/unattended`);
 }
 
+/** alias — Kiwoom panel 등에서 짧은 이름 사용 */
+export const getAdminUbaUnattended = getAdminUbaUnattendedStatus;
+
 export async function enableAdminUbaUnattended(
   ubaId: number,
   body: {
@@ -878,6 +881,7 @@ export async function enableAdminUbaUnattended(
     correlation_id?: string;
     source?: "ADMIN_UI" | "ADMIN_API";
     authorization_mode?: string | null;
+    next_trading_day_auto_start?: boolean;
   },
 ): Promise<JsonValue> {
   return postJson(`/admin/autotrading/uba/${ubaId}/unattended/enable`, body);
@@ -923,6 +927,38 @@ export async function getAdminUbaHorizonAutoRenewPreview(
 ): Promise<JsonValue> {
   return getJson(
     `/admin/autotrading/uba/${ubaId}/unattended/horizon-auto-renew/preview`,
+  );
+}
+
+export async function getAdminUbaKiwoomLifecycle(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/kiwoom-lifecycle`);
+}
+
+export async function getAdminUbaKiwoomLifecyclePrecheck(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/kiwoom-lifecycle/precheck`);
+}
+
+export async function getAdminUbaKiwoomLifecyclePreview(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/kiwoom-lifecycle/preview`);
+}
+
+export async function setAdminUbaKiwoomNextDayAutoStart(
+  ubaId: number,
+  body: {
+    enabled: boolean;
+    confirmation_text: string;
+    reason?: string;
+  },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/kiwoom-lifecycle/next-day-auto-start`,
+    body,
   );
 }
 

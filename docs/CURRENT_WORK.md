@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-23 (Entry B1 Forward Validation Phase)
+**최종 갱신:** 2026-08-24 (Kiwoom Next Trading Day Lifecycle)
 
 ---
 
@@ -16,24 +16,21 @@
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
 | **U** | Entry B1 Forward Validation | **SAMPLE_COLLECTION_IN_PROGRESS** | COLLECT_MORE_NEW_UNSEEN_FORWARD |
-| **U** | Exit Candidate A | **REJECTED** | KEEP_BASELINE_EXIT_POLICY |
-| **SHARED** | Dynamic FREE first AUTO BUY | **BROKER_REJECTED** | FIX_UPBIT_MARKET_BUY… |
-| **K** | ORDER_LIMIT_V2 | unchanged | NEXT_KRX_DAY… |
+| **K** | Next Trading Day Auto Start + EOD Lifecycle | **IMPLEMENTED_FAIL_CLOSED** (uncommitted) | CONFIRM_OPT_IN → next KRX session observe |
+| **K** | #1822 Entry Provenance | **BROKER_IMPORTED_POSITION** (no historical mutate) | Future BUY→binding→SELL link |
 
 ---
 
-## U — Entry B1 Forward Validation (SHADOW ONLY)
+## K — Next Trading Day Lifecycle (2026-08-24)
 
-- Preferred: **B1 RSI65 / VOL0.8** (Candidate B VOL1.0 excluded)
-- LEGACY_FORWARD 459 preserved · NEW_UNSEEN_FORWARD separated
-- Targets: combined ≥1000 · new ≥500
-- REAL_PROMOTION_RECOMMENDED: **NO** (auto-promote forbidden)
-- REAL_POLICY_MUTATION: **0**
-
-Evidence: `.run/k_upbit_entry_b1_forward_validation.json`
+- Service: `KiwoomTradingDayLifecycleService` + scanner hook
+- Opt-in phrase: `ENABLE KIWOOM NEXT DAY AUTO START`
+- Fail-closed precheck (13 gates); Activation successor only
+- Evidence: `.run/k_kiwoom_next_trading_day_lifecycle.json` / `.md`
 
 ---
 
 ## Next Gate
 
-**Exactly one:** COLLECT_MORE_NEW_UNSEEN_FORWARD
+**K:** CONFIRM_NEXT_DAY_OPT_IN_THEN_OBSERVE_NEXT_KRX_SESSION  
+**U:** COLLECT_MORE_NEW_UNSEEN_FORWARD

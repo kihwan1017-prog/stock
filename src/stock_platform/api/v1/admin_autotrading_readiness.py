@@ -279,6 +279,16 @@ class UnattendedEnableBody(BaseModel):
     source: str = Field(default="ADMIN_UI", min_length=3, max_length=32)
     # HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM). None이면 broker로 추론.
     authorization_mode: str | None = Field(default=None, max_length=32)
+    # KIWOOM MARKET_HOURS — 익일 장 시작 자동 lifecycle opt-in
+    next_trading_day_auto_start: bool = False
+
+
+class NextDayAutoStartBody(BaseModel):
+    """Kiwoom next-trading-day auto-start opt-in/out."""
+
+    enabled: bool
+    confirmation_text: str = Field(..., min_length=8)
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class UnattendedDisableBody(BaseModel):
@@ -325,6 +335,9 @@ def admin_uba_unattended_enable(
             horizon_hours=body.horizon_hours,
             correlation_id=body.correlation_id,
             authorization_mode=body.authorization_mode,
+            next_trading_day_auto_start=bool(
+                body.next_trading_day_auto_start
+            ),
         )
     except LiveUnattendedError as exc:
         raise HTTPException(
@@ -437,6 +450,90 @@ def admin_uba_unattended_horizon_auto_renew_preview(
     return LiveUnattendedAuthorizationService(
         session
     ).dry_horizon_auto_renew_evaluation(int(user_broker_account_id))
+
+
+@router.get("/uba/{user_broker_account_id}/kiwoom-lifecycle")
+def admin_uba_kiwoom_lifecycle_status(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Kiwoom next-trading-day lifecycle 상태 (READ)."""
+
+    from stock_platform.trading.kiwoom_trading_day_lifecycle import (
+        KiwoomTradingDayLifecycleService,
+    )
+
+    return KiwoomTradingDayLifecycleService(session).status_dict(
+        int(user_broker_account_id)
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/kiwoom-lifecycle/precheck")
+def admin_uba_kiwoom_lifecycle_precheck(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """자동 시작 precheck (READ-ONLY, fail-closed)."""
+
+    from stock_platform.trading.kiwoom_trading_day_lifecycle import (
+        KiwoomTradingDayLifecycleService,
+    )
+
+    return KiwoomTradingDayLifecycleService(session).evaluate_auto_start_precheck(
+        int(user_broker_account_id)
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/kiwoom-lifecycle/preview")
+def admin_uba_kiwoom_lifecycle_preview(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """다음 거래일 auto-start dry preview — LIVE mutation 없음."""
+
+    from stock_platform.trading.kiwoom_trading_day_lifecycle import (
+        KiwoomTradingDayLifecycleService,
+    )
+
+    return KiwoomTradingDayLifecycleService(session).preview_next_session(
+        int(user_broker_account_id)
+    )
+
+
+@router.post("/uba/{user_broker_account_id}/kiwoom-lifecycle/next-day-auto-start")
+def admin_uba_kiwoom_next_day_auto_start(
+    user_broker_account_id: int,
+    body: NextDayAutoStartBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """익일 장 시작 자동 lifecycle opt-in/out (확인 문구 필수)."""
+
+    from stock_platform.trading.kiwoom_trading_day_lifecycle import (
+        KiwoomTradingDayLifecycleService,
+    )
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedError,
+    )
+
+    try:
+        return KiwoomTradingDayLifecycleService(
+            session
+        ).set_next_trading_day_auto_start(
+            int(user_broker_account_id),
+            enabled=bool(body.enabled),
+            actor=user.username,
+            confirmation_text=body.confirmation_text,
+            reason=body.reason,
+        )
+    except LiveUnattendedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
 
 
 @router.post("/uba/{user_broker_account_id}/strategy-runtime/start")

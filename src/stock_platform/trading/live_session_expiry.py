@@ -362,9 +362,28 @@ def scan_and_expire_live_sessions(
     activation_n = expire_due_activations(session, actor=actor)
     arm_n = LiveArmService(session).expire_all_due(actor=actor)
     stale_n = revoke_stale_live_without_activation(session, actor=actor)
+
+    # Kiwoom next-trading-day lifecycle (opt-in only, fail-closed)
+    kiwoom_lifecycle: dict[str, Any] = {"scanned": 0, "results": []}
+    try:
+        from stock_platform.trading.kiwoom_trading_day_lifecycle import (
+            KiwoomTradingDayLifecycleService,
+        )
+
+        kiwoom_lifecycle = KiwoomTradingDayLifecycleService(session).scan_all(
+            actor=f"{actor}_KIWOOM_NEXT_DAY"
+        )
+    except Exception:  # noqa: BLE001
+        kiwoom_lifecycle = {
+            "scanned": 0,
+            "results": [],
+            "error": "KIWOOM_LIFECYCLE_SCAN_FAILED",
+        }
+
     return {
         "unattended": unattended,
         "activation_expired": int(activation_n),
         "arm_expired": int(arm_n),
         "stale_revoked": int(stale_n),
+        "kiwoom_lifecycle": kiwoom_lifecycle,
     }

@@ -61,7 +61,11 @@ def apply_kiwoom_fill_position_write(
                     getattr(event, "side", None)
                     or getattr(order, "side_code", "")
                     or ""
-                )
+                ).upper()
+                # Upbit fill_sync와 동일: BUY=entry, SELL=exit (SELL을 entry로 쓰지 않음)
+                is_buy = side in {"BUY", "BID"}
+                is_sell = side in {"SELL", "ASK"}
+                order_id = getattr(order, "order_id", None)
                 StrategyOwnedRiskService(session).ensure_binding_from_fill(
                     user_broker_account_id=int(uba_id),
                     broker_code=str(
@@ -70,14 +74,30 @@ def apply_kiwoom_fill_position_write(
                     strategy_id=int(strategy_id),
                     deployment_id=getattr(order, "strategy_deployment_id", None),
                     symbol=str(getattr(order, "symbol", "") or ""),
-                    entry_order_id=getattr(order, "order_id", None),
+                    entry_order_id=(
+                        int(order_id) if is_buy and order_id is not None else None
+                    ),
                     broker_order_id=str(
                         getattr(event, "broker_order_id", None) or ""
                     )
                     or None,
                     quantity=qty,
-                    entry_price=Decimal(str(px)) if px is not None else None,
+                    entry_price=(
+                        Decimal(str(px))
+                        if is_buy and px is not None
+                        else None
+                    ),
                     side=side,
+                    fill_price=(
+                        Decimal(str(px))
+                        if is_sell and px is not None
+                        else None
+                    ),
+                    exit_order_id=(
+                        int(order_id)
+                        if is_sell and order_id is not None
+                        else None
+                    ),
                 )
                 StrategyOwnedRiskService(session).compute_and_persist(
                     user_broker_account_id=int(uba_id),
