@@ -26,7 +26,7 @@ import {
   Typography,
 } from "antd";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
@@ -88,6 +88,8 @@ export function LlmLearningCenterView({ market }: Props) {
   const queryClient = useQueryClient();
   const [question, setQuestion] = useState("");
   const [askAnswer, setAskAnswer] = useState<Record<string, unknown> | null>(null);
+  const [askElapsedSec, setAskElapsedSec] = useState(0);
+  const [lastFailedQuestion, setLastFailedQuestion] = useState<string | null>(null);
   const [commentForm] = Form.useForm();
 
   const summaryQ = useQuery({
@@ -147,8 +149,32 @@ export function LlmLearningCenterView({ market }: Props) {
       }),
     onSuccess: (data) => {
       setAskAnswer(asRecord(data));
+      setLastFailedQuestion(null);
+    },
+    onError: (_err, q) => {
+      setLastFailedQuestion(q);
     },
   });
+
+  useEffect(() => {
+    if (!askMut.isPending) {
+      setAskElapsedSec(0);
+      return;
+    }
+    const started = Date.now();
+    setAskElapsedSec(0);
+    const timer = window.setInterval(() => {
+      setAskElapsedSec(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [askMut.isPending]);
+
+  const submitQuestion = (q: string) => {
+    const trimmed = q.trim();
+    if (!trimmed || askMut.isPending) return;
+    setLastFailedQuestion(null);
+    askMut.mutate(trimmed);
+  };
 
   const commentMut = useMutation({
     mutationFn: adminApi.postAdminLlmLearningComment,
@@ -469,9 +495,10 @@ export function LlmLearningCenterView({ market }: Props) {
                 <Button
                   key={q}
                   size="small"
+                  disabled={askMut.isPending}
                   onClick={() => {
                     setQuestion(q);
-                    askMut.mutate(q);
+                    submitQuestion(q);
                   }}
                 >
                   {q}
@@ -483,21 +510,40 @@ export function LlmLearningCenterView({ market }: Props) {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="학습 상태, Confirm2, Teacher findings 등"
+              disabled={askMut.isPending}
             />
-            <Button
-              type="primary"
-              style={{ marginTop: 8 }}
-              loading={askMut.isPending}
-              onClick={() => question.trim() && askMut.mutate(question.trim())}
-            >
-              질문하기
-            </Button>
+            <Space style={{ marginTop: 8 }}>
+              <Button
+                type="primary"
+                loading={askMut.isPending}
+                disabled={askMut.isPending || !question.trim()}
+                onClick={() => submitQuestion(question)}
+              >
+                질문하기
+              </Button>
+              {askMut.isPending ? (
+                <Typography.Text type="secondary">
+                  답변 생성 중… {askElapsedSec}초 (Teacher 4B, 최대 3분)
+                </Typography.Text>
+              ) : null}
+            </Space>
             {askMut.isError ? (
               <Alert
                 type="error"
                 showIcon
                 style={{ marginTop: 8 }}
                 title={toApiError(askMut.error).message}
+                action={
+                  lastFailedQuestion ? (
+                    <Button
+                      size="small"
+                      onClick={() => submitQuestion(lastFailedQuestion)}
+                      disabled={askMut.isPending}
+                    >
+                      다시 시도
+                    </Button>
+                  ) : undefined
+                }
               />
             ) : null}
             {answerBlock ? (

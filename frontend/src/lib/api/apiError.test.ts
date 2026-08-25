@@ -68,7 +68,23 @@ describe("apiError mapper", () => {
     } as AxiosError;
     const error = mapAxiosErrorToApiError(axiosError);
     expect(error.status).toBe(0);
-    expect(error.message).toBe("네트워크 연결에 실패했습니다.");
+    expect(error.message).toBe(
+      "네트워크 연결에 실패했습니다. 서버 연결 상태를 확인해주세요.",
+    );
+  });
+
+  it("maps axios timeout to assistant-friendly Korean message", () => {
+    const axiosError = {
+      isAxiosError: true,
+      name: "AxiosError",
+      code: "ECONNABORTED",
+      message: "timeout of 15000ms exceeded",
+      toJSON: () => ({}),
+    } as AxiosError;
+    const error = mapAxiosErrorToApiError(axiosError);
+    expect(error.message).toBe(
+      "AI 답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.",
+    );
   });
 
   it("returns existing ApiError via toApiError", () => {

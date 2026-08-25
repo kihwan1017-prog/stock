@@ -868,13 +868,18 @@ export async function getAdminLlmLearningLoraReadiness(
   return getJson("/admin/llm-learning/lora-readiness", params);
 }
 
+/** LLM Assistant (Teacher 4B) — Ollama inference can exceed default 15s client timeout. */
+export const LLM_LEARNING_ASSISTANT_ASK_TIMEOUT_MS = 180_000;
+
 export async function postAdminLlmLearningAsk(body: {
   question: string;
   market?: string;
   session_id?: string;
   use_llm?: boolean;
 }): Promise<JsonValue> {
-  return postJson("/admin/llm-learning/ask", body);
+  return postJson("/admin/llm-learning/ask", body, undefined, {
+    timeout: LLM_LEARNING_ASSISTANT_ASK_TIMEOUT_MS,
+  });
 }
 
 export async function getAdminLlmLearningComments(

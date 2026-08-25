@@ -104,3 +104,22 @@ def test_api_router_prefix() -> None:
     from stock_platform.api.v1.admin_llm_learning import router
 
     assert router.prefix == "/api/v1/admin/llm-learning"
+
+
+def test_assistant_compact_context_bounded() -> None:
+    from stock_platform.operation.llm_learning_center.assistant import (
+        _compact_learning_summary,
+        _context_payload,
+    )
+
+    huge = {
+        "models": {"TEACHER": "qwen3.5:4b"},
+        "learning_stages": [{"id": f"S{i}", "label_ko": "x", "status_ko": "y"} for i in range(20)],
+        "samples": {"CLEAN": 76},
+        "noise": "Z" * 20_000,
+    }
+    compact = _compact_learning_summary(huge)
+    assert "noise" not in compact
+    raw, stats = _context_payload("learning_status", huge)
+    assert stats["CONTEXT_CHARS"] <= 12_500
+    assert stats["PROMPT_TOKENS_ESTIMATE"] > 0

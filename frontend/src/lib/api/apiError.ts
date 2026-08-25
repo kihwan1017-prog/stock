@@ -116,11 +116,21 @@ function extractRequestId(data: unknown, headers?: Record<string, unknown>): str
   return typeof headerValue === "string" ? headerValue : undefined;
 }
 
-function resolveFallbackMessage(status: number, axiosMessage?: string): string {
+function resolveFallbackMessage(
+  status: number,
+  axiosMessage?: string,
+  axiosCode?: string,
+): string {
+  if (
+    axiosCode === "ECONNABORTED" ||
+    (typeof axiosMessage === "string" && /timeout of \d+ms exceeded/i.test(axiosMessage))
+  ) {
+    return "AI 답변 생성 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.";
+  }
   if (typeof axiosMessage === "string" && axiosMessage.trim().length > 0) {
-    // Axios 기본 "Network Error" 등은 한글로 치환
+    // Axios 기본 "Network Error" — client abort(타임아웃) 또는 연결 실패
     if (axiosMessage === "Network Error" || status === 0) {
-      return "네트워크 연결에 실패했습니다.";
+      return "네트워크 연결에 실패했습니다. 서버 연결 상태를 확인해주세요.";
     }
     return axiosMessage;
   }
@@ -134,7 +144,9 @@ export function mapAxiosErrorToApiError(error: AxiosError): ApiError {
   const data = error.response?.data;
   const headers = error.response?.headers as Record<string, unknown> | undefined;
 
-  const message = extractMessage(data) ?? resolveFallbackMessage(status, error.message);
+  const message =
+    extractMessage(data) ??
+    resolveFallbackMessage(status, error.message, error.code);
 
   return new ApiError({
     status,

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import re
+import time
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -51,6 +53,93 @@ SYSTEM_PROMPT = (
     "표본 수가 부족하면 '아직 결론 내릴 수 없음'을 명시하세요.\n"
     "JSON만 반환하세요."
 )
+
+# Assistant prompt에 넣을 context 상한 (과도한 JSON dump 방지)
+_MAX_CONTEXT_CHARS = 12_000
+
+
+def _compact_learning_summary(summary: dict[str, Any]) -> dict[str, Any]:
+    """learning_status용 bounded context — 전체 raw dump 금지."""
+
+    stages = summary.get("learning_stages") or []
+    slim_stages = [
+        {
+            "id": s.get("id"),
+            "label_ko": s.get("label_ko"),
+            "status_ko": s.get("status_ko"),
+        }
+        for s in stages[:12]
+        if isinstance(s, dict)
+    ]
+    markets = summary.get("markets") if isinstance(summary.get("markets"), dict) else {}
+    return {
+        "models": summary.get("models"),
+        "analysis": summary.get("analysis"),
+        "trading": summary.get("trading"),
+        "teacher": summary.get("teacher"),
+        "rag": summary.get("rag"),
+        "lora": summary.get("lora"),
+        "samples": summary.get("samples"),
+        "markets": {
+            k: {
+                "CLEAN": v.get("CLEAN"),
+                "predictions": v.get("predictions"),
+                "outcomes": v.get("outcomes"),
+                "forward_shadow": v.get("forward_shadow"),
+            }
+            for k, v in markets.items()
+            if isinstance(v, dict)
+        },
+        "learning_stages": slim_stages,
+        "CROSS_MARKET_RAG": summary.get("CROSS_MARKET_RAG"),
+    }
+
+
+def _compact_context(intent: str, context: dict[str, Any]) -> dict[str, Any]:
+    if intent in {"learning_status", "overview", "market_overview"}:
+        return _compact_learning_summary(context)
+    if intent == "forward_shadow":
+        summary = context.get("summary") if isinstance(context.get("summary"), dict) else {}
+        return {
+            "rule": context.get("rule"),
+            "rule_version": context.get("rule_version"),
+            "sample_stage": summary.get("sample_stage"),
+            "baseline": summary.get("baseline"),
+            "confirm2": summary.get("confirm2"),
+            "comparison": summary.get("comparison"),
+        }
+    if intent == "teacher_findings":
+        items = context.get("items") if isinstance(context.get("items"), list) else []
+        return {"total": context.get("total"), "items": items[:8]}
+    if intent == "lora_readiness":
+        return {
+            "LORA_TRAINING_STARTED": context.get("LORA_TRAINING_STARTED"),
+            "summary": context.get("summary"),
+            "by_market": {
+                k: {
+                    "clean_n": v.get("clean_n"),
+                    "analysis": (v.get("analysis") or {}).get("dataset_n"),
+                    "trading": (v.get("trading") or {}).get("dataset_n"),
+                }
+                for k, v in (context.get("by_market") or {}).items()
+                if isinstance(v, dict)
+            },
+        }
+    return context
+
+
+def _context_payload(intent: str, context: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    compact = _compact_context(intent, context)
+    raw = json.dumps(compact, ensure_ascii=False, default=str)
+    if len(raw) > _MAX_CONTEXT_CHARS:
+        compact = {"truncated": True, "intent": intent, "preview": raw[:_MAX_CONTEXT_CHARS]}
+        raw = json.dumps(compact, ensure_ascii=False, default=str)
+    stats = {
+        "CONTEXT_ROWS": len(compact) if isinstance(compact, dict) else 1,
+        "CONTEXT_CHARS": len(raw),
+        "PROMPT_TOKENS_ESTIMATE": max(1, len(raw) // 4),
+    }
+    return raw, stats
 
 
 def redact_secrets(text: str) -> str:
@@ -191,12 +280,29 @@ def ask_assistant(
 ) -> dict[str, Any]:
     """POST /ask handler core — READ ONLY."""
 
+    t_total = time.perf_counter()
+    timings: dict[str, float | None] = {
+        "AUTH_MS": None,
+        "INTENT_CLASSIFY_MS": None,
+        "DB_CONTEXT_MS": None,
+        "PROMPT_BUILD_MS": None,
+        "OLLAMA_QUEUE_WAIT_MS": None,
+        "OLLAMA_INFERENCE_MS": None,
+        "TOTAL_MS": None,
+    }
+
     q_clean = redact_secrets(question.strip())
+    t_intent = time.perf_counter()
     intent = classify_intent(q_clean, market_scope=market)
+    timings["INTENT_CLASSIFY_MS"] = round((time.perf_counter() - t_intent) * 1000, 1)
+
+    t_ctx = time.perf_counter()
     context, refs = build_context_for_intent(session, intent, market=market)
+    timings["DB_CONTEXT_MS"] = round((time.perf_counter() - t_ctx) * 1000, 1)
 
     if intent == "mutation_refusal":
         parsed = _fallback_answer(context, intent)
+        timings["TOTAL_MS"] = round((time.perf_counter() - t_total) * 1000, 1)
         return {
             "schema": "llm_learning_assistant_answer_v1",
             "intent": intent,
@@ -206,14 +312,19 @@ def ask_assistant(
             "model": None,
             "read_only": True,
             "REAL_ORDER_MUTATION": 0,
+            "timings_ms": timings,
         }
 
     cfg = teacher_config()
+    t_prompt = time.perf_counter()
+    context_json, ctx_stats = _context_payload(intent, context)
+    refs.update(ctx_stats)
     user_prompt = (
         f"질문: {q_clean}\n\n"
-        f"READ ONLY context (JSON):\n{context}\n\n"
+        f"READ ONLY context (JSON):\n{context_json}\n\n"
         "섹션: [현재 데이터][판단][표본 수][주의사항] 형식으로 JSON 필드에 담으세요."
     )
+    timings["PROMPT_BUILD_MS"] = round((time.perf_counter() - t_prompt) * 1000, 1)
 
     llm_result: dict[str, Any] | None = None
     if use_llm:
@@ -223,6 +334,10 @@ def ask_assistant(
             user_prompt=user_prompt,
             response_schema=ASSISTANT_SCHEMA,
         )
+        if llm_result:
+            timings["OLLAMA_INFERENCE_MS"] = llm_result.get("latency_ms")
+            if llm_result.get("timeout"):
+                refs["OLLAMA_TIMEOUT"] = True
 
     if llm_result and llm_result.get("ok") and isinstance(llm_result.get("parsed"), dict):
         parsed = llm_result["parsed"]
@@ -233,6 +348,10 @@ def ask_assistant(
         parsed = _fallback_answer(context, intent)
         if llm_result:
             parsed["llm_error"] = str(llm_result.get("error") or "LLM_ERROR")[:120]
+            if llm_result.get("timeout"):
+                parsed["llm_error"] = "OLLAMA_TIMEOUT"
+
+    timings["TOTAL_MS"] = round((time.perf_counter() - t_total) * 1000, 1)
 
     return {
         "schema": "llm_learning_assistant_answer_v1",
@@ -244,6 +363,7 @@ def ask_assistant(
         "read_only": True,
         "REAL_ORDER_MUTATION": 0,
         "latency_ms": (llm_result or {}).get("latency_ms"),
+        "timings_ms": timings,
     }
 
 
