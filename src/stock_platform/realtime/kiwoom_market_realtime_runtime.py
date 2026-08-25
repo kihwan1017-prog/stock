@@ -110,11 +110,15 @@ class KiwoomMarketRealtimeRuntime:
             return {"started": False, "reason": "SYMBOLS_REQUIRED"}
 
         settings = get_settings()
-        if require_real and bool(settings.kiwoom_market_data_is_mock):
+        # 프로세스 KIWOOM_USE_MOCK 단독으로는 REAL lifecycle feed를 막지 않는다.
+        # 명시적 KIWOOM_MARKET_DATA_USE_MOCK=true 만 require_real 경로를 차단.
+        # Canonical SoT: UBA credential REAL + for_real_host() (아래 vault resolve).
+        if require_real and settings.kiwoom_market_data_use_mock is True:
             return {
                 "started": False,
                 "reason": "MARKET_DATA_MOCK_FORBIDDEN",
                 "process_market_environment": "MOCK",
+                "note": "explicit KIWOOM_MARKET_DATA_USE_MOCK=true",
             }
 
         # 동일 UBA에서 이미 RUNNING이면 심볼만 합집합 추가

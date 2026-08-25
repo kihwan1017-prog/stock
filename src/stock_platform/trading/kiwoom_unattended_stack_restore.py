@@ -16,6 +16,7 @@ KiwoomTradingDayLifecycleService가 담당한다.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import structlog
@@ -98,26 +99,26 @@ async def sync_kiwoom_account_state_for_startup(
             "pending_order_count": pending_count,
             "fields": dict(result.fields or {}),
         }
-        except Exception as exc:  # noqa: BLE001
-            # CredentialVaultError 포함 — 민감정보 없이 코드만
-            code = str(getattr(exc, "code", "") or "") or type(exc).__name__
-            logger.warning(
-                "kiwoom_startup_account_sync_failed",
-                uba_id=uba_id,
-                error=code,
-            )
-            return {
-                "ok": False,
-                "synced": False,
-                "reason": (
-                    code
-                    if code
-                    not in {"", "Exception", "Error"}
-                    else "ACCOUNT_SYNC_FAILED"
-                ),
-                "error": type(exc).__name__,
-                "message": str(exc)[:200],
-            }
+    except Exception as exc:  # noqa: BLE001
+        # CredentialVaultError 포함 — 민감정보 없이 코드만
+        code = str(getattr(exc, "code", "") or "") or type(exc).__name__
+        logger.warning(
+            "kiwoom_startup_account_sync_failed",
+            uba_id=uba_id,
+            error=code,
+        )
+        return {
+            "ok": False,
+            "synced": False,
+            "reason": (
+                code
+                if code
+                not in {"", "Exception", "Error"}
+                else "ACCOUNT_SYNC_FAILED"
+            ),
+            "error": type(exc).__name__,
+            "message": str(exc)[:200],
+        }
 
 
 def evaluate_kiwoom_stack_restore_gates(
@@ -193,6 +194,97 @@ def evaluate_kiwoom_stack_restore_gates(
     return {"ok": len(uniq) == 0, "blockers": uniq, "checks": checks}
 
 
+def _resolve_kiwoom_stack_feed_symbols(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    strategy_id: int | None,
+    symbols: list[str] | None,
+) -> list[str]:
+    """공식 stack restore용 시세 심볼 SoT (하드코딩 금지).
+
+    우선순위:
+      1) 호출자 명시 symbols
+      2) ACTIVE strategy_deployment.symbol / payload
+      3) definition/backtest/perf 복원 (_resolve_runtime_payload_and_symbol)
+      4) settings.realtime_strategy_symbol
+    """
+
+    cleaned = sorted(
+        {
+            str(s).strip().upper()
+            for s in (symbols or [])
+            if str(s or "").strip()
+        }
+    )
+    if cleaned:
+        return cleaned
+
+    from stock_platform.common.settings import get_settings
+    from stock_platform.strategy_deployment.definition_entities import (
+        StrategyDefinitionEntity,
+    )
+    from stock_platform.strategy_deployment.entities import (
+        StrategyDeploymentEntity,
+    )
+    from stock_platform.strategy_deployment.models import (
+        StrategyDeploymentStatus,
+    )
+    from stock_platform.strategy_deployment.runtime_loader import (
+        _resolve_runtime_payload_and_symbol,
+    )
+
+    sid = int(strategy_id) if strategy_id is not None else None
+    if sid is not None:
+        deployment = session.scalar(
+            select(StrategyDeploymentEntity)
+            .where(
+                StrategyDeploymentEntity.strategy_id == sid,
+                StrategyDeploymentEntity.status_code
+                == StrategyDeploymentStatus.ACTIVE.value,
+            )
+            .order_by(StrategyDeploymentEntity.strategy_deployment_id.desc())
+            .limit(1)
+        )
+        definition = session.get(StrategyDefinitionEntity, sid)
+        if deployment is not None or definition is not None:
+            _payload, symbol = _resolve_runtime_payload_and_symbol(
+                session,
+                deployment
+                or SimpleNamespace(symbol=None, parameter_payload={}),
+                definition,
+            )
+            if symbol:
+                return [str(symbol).strip().upper()]
+
+        # performance run fallback (deployment.symbol 비어 있을 때)
+        try:
+            from stock_platform.performance.entities import (
+                StrategyPerformanceRunEntity,
+            )
+
+            perf = session.scalar(
+                select(StrategyPerformanceRunEntity)
+                .where(StrategyPerformanceRunEntity.strategy_id == sid)
+                .order_by(
+                    StrategyPerformanceRunEntity.strategy_performance_run_id.desc()
+                )
+                .limit(1)
+            )
+            if perf is not None and str(getattr(perf, "symbol", "") or "").strip():
+                return [str(perf.symbol).strip().upper()]
+        except Exception:  # noqa: BLE001
+            pass
+
+    settings = get_settings()
+    fallback = str(
+        getattr(settings, "realtime_strategy_symbol", "") or ""
+    ).strip().upper()
+    if fallback:
+        return [fallback]
+    return []
+
+
 async def restore_kiwoom_trading_stack(
     session: Session,
     *,
@@ -219,10 +311,17 @@ async def restore_kiwoom_trading_stack(
     link_meta = (gates.get("checks") or {}).get("strategy_link") or {}
     strategy_id = link_meta.get("strategy_id")
 
-    # 심볼: 명시 > link 메타 없음 시 빈 목록 (runtime이 기존 구독 유지)
-    feed_symbols = [str(s).strip() for s in (symbols or []) if str(s).strip()]
+    # 심볼: 명시 > deployment/definition/backtest/perf SoT (빈 목록이면 feed start 불가)
+    feed_symbols = _resolve_kiwoom_stack_feed_symbols(
+        session,
+        user_broker_account_id=uba_id,
+        strategy_id=int(strategy_id) if strategy_id is not None else None,
+        symbols=symbols,
+    )
+    detail["feed_symbols"] = list(feed_symbols)
 
     # 1) Kiwoom market realtime WS (idempotent)
+    # market_realtime_auto_start=false 여도 이 공식 restore 경로는 명시 start 호출.
     try:
         from stock_platform.realtime.kiwoom_market_realtime_runtime import (
             kiwoom_market_realtime_runtime,
@@ -232,12 +331,30 @@ async def restore_kiwoom_trading_stack(
         already = bool(st.get("running") and st.get("connected"))
         same_uba = int(st.get("user_broker_account_id") or 0) == uba_id
         if already and same_uba:
+            if feed_symbols:
+                # 이미 연결 중이면 scope 심볼만 합집합 구독
+                await kiwoom_market_realtime_runtime.start(
+                    user_broker_account_id=uba_id,
+                    symbols=feed_symbols,
+                    require_real=True,
+                )
             detail["feed"] = {
                 "started": True,
                 "idempotent": True,
                 "reason": "ALREADY_RUNNING",
             }
         else:
+            if not feed_symbols:
+                detail["feed"] = {
+                    "started": False,
+                    "reason": "SYMBOLS_REQUIRED",
+                }
+                return {
+                    "restored": False,
+                    "reason": "FEED_START_FAILED",
+                    "detail": detail,
+                    "actor": actor,
+                }
             started = await kiwoom_market_realtime_runtime.start(
                 user_broker_account_id=uba_id,
                 symbols=feed_symbols,
@@ -252,6 +369,8 @@ async def restore_kiwoom_trading_stack(
                         "reason",
                         "already_running",
                         "user_broker_account_id",
+                        "environment",
+                        "symbols",
                     )
                     if k in started
                 },

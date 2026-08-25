@@ -14,12 +14,13 @@ from stock_platform.realtime.kiwoom_market_realtime_runtime import (
 
 
 @pytest.mark.asyncio
-async def test_market_realtime_start_blocks_when_process_market_mock() -> None:
+async def test_market_realtime_start_blocks_when_explicit_market_mock() -> None:
     runtime = KiwoomMarketRealtimeRuntime()
     with patch(
         "stock_platform.realtime.kiwoom_market_realtime_runtime.get_settings",
         return_value=SimpleNamespace(
             kiwoom_market_data_is_mock=True,
+            kiwoom_market_data_use_mock=True,
             kiwoom_use_mock=True,
             kiwoom_market_realtime_auto_start=False,
         ),
@@ -46,6 +47,7 @@ async def test_market_realtime_start_blocks_mock_credential() -> None:
             "stock_platform.realtime.kiwoom_market_realtime_runtime.get_settings",
             return_value=SimpleNamespace(
                 kiwoom_market_data_is_mock=False,
+                kiwoom_market_data_use_mock=False,
                 kiwoom_use_mock=True,
                 kiwoom_market_realtime_auto_start=False,
             ),
@@ -100,6 +102,7 @@ async def test_market_realtime_start_spawns_task_and_stop_clears() -> None:
             "stock_platform.realtime.kiwoom_market_realtime_runtime.get_settings",
             return_value=SimpleNamespace(
                 kiwoom_market_data_is_mock=False,
+                kiwoom_market_data_use_mock=False,
                 kiwoom_use_mock=True,
                 kiwoom_market_realtime_auto_start=False,
             ),
