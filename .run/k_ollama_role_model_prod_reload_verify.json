@@ -109,8 +109,11 @@
   "REAL_TRADING_MUTATION": 0,
   "MODEL_INSTALL": 0,
   "MODEL_DELETE": 0,
-  "FILES_CHANGED": 0,
-  "GIT_COMMIT": "0d5051b",
+  "FILES_CHANGED": [
+    "frontend/src/features/admin/ollama/OllamaRoleModelPanel.tsx"
+  ],
+  "GIT_COMMIT": "ebec7f4",
+  "GIT_COMMIT_BASELINE_FEATURE": "0d5051b",
   "SYSTEM_BUG_ACTIVE": false,
   "NEXT_ACTION": "CONTINUE_NORMAL_OPERATION"
 }
