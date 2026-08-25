@@ -175,7 +175,9 @@ describe("UpbitResearchDetailWorkspace", () => {
     expect(src).not.toContain("message=");
     expect(src).not.toMatch(/\bvalueStyle\b/);
     expect(src).toContain('size="large"');
-    expect(src).not.toMatch(/<Drawer[\s\S]{0,120}\bwidth=/);
+    expect(src).toContain("size={720}");
+    // Drawer width prop 전수 금지 (antd 6 size로 대체)
+    expect(src).not.toMatch(/<Drawer[\s\S]*?\bwidth=/);
     const api = fs.readFileSync(
       path.join(process.cwd(), "src/features/admin/api/adminApi.ts"),
       "utf8",

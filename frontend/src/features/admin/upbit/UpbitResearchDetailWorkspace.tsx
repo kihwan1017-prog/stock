@@ -1139,7 +1139,7 @@ function RagFeedbackTab() {
         title={`RAG / Feedback #${drawerId ?? ""}`}
         open={drawerId != null}
         onClose={() => setDrawerId(null)}
-        width={720}
+        size={720}
       >
         {detailQ.isLoading ? (
           <Typography.Text type="secondary">불러오는 중…</Typography.Text>
