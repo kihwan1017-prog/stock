@@ -31,6 +31,7 @@ from stock_platform.api.v1.admin_runtime_preflight import (
 from stock_platform.api.v1.admin_operations_dashboard import (
     router as admin_operations_dashboard_router,
 )
+from stock_platform.api.v1.mobile import router as mobile_router
 from stock_platform.api.v1.admin_dashboard_ops import (
     router as admin_dashboard_ops_router,
 )
@@ -448,6 +449,7 @@ _ROUTER_GROUPS = (
     admin_autotrading_readiness_router,
     admin_runtime_preflight_router,
     admin_operations_dashboard_router,
+    mobile_router,
     admin_dashboard_ops_router,
     admin_ai_providers_router,
     admin_ai_provider_configurations_router,

@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
  * Admin/User 보호 라우트 — 쿠키 또는 Authorization 헤더 없으면 로그인으로.
  * 토큰은 sessionStorage 우선(클라이언트). 서버 미들웨어는 쿠키 기반 보조 게이트.
  */
-const PROTECTED_PREFIXES = ["/admin", "/user", "/mypage", "/portfolio"];
+const PROTECTED_PREFIXES = ["/admin", "/user", "/mypage", "/portfolio", "/mobile"];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -43,5 +43,7 @@ export const config = {
     "/user/:path*",
     "/mypage/:path*",
     "/portfolio/:path*",
+    "/mobile",
+    "/mobile/:path*",
   ],
 };

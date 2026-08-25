@@ -1,0 +1,157 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.overall {
+  margin: 6px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.meta {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #9aa7b5;
+}
+
+.refreshBtn {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e8eef4;
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.banner {
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.bannerError {
+  background: rgba(220, 60, 60, 0.18);
+  border: 1px solid rgba(220, 60, 60, 0.35);
+}
+
+.bannerOffline {
+  background: rgba(200, 140, 40, 0.18);
+  border: 1px solid rgba(200, 140, 40, 0.35);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+@media (min-width: 768px) {
+  .grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .spanFull {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1100px) {
+  .grid {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+.card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+}
+
+.cardTitle {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #c5d0db;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.rowLabel {
+  color: #9aa7b5;
+}
+
+.rowValue {
+  font-weight: 600;
+  text-align: right;
+}
+
+.pos {
+  color: #3ecf8e;
+}
+
+.neg {
+  color: #ff6b6b;
+}
+
+.neutral {
+  color: #e8eef4;
+}
+
+.listItem {
+  padding: 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.listItem:first-of-type {
+  border-top: none;
+}
+
+.listMain {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.listSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #9aa7b5;
+}
+
+.empty {
+  font-size: 13px;
+  color: #9aa7b5;
+  margin: 0;
+}
+
+.moreLink {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #7eb6ff;
+  text-decoration: none;
+  font-weight: 600;
+}

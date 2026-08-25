@@ -304,6 +304,9 @@ export const queryKeys = {
     docsList: () => ["admin", "docs-list"] as const,
     docDetail: (slug: string) => ["admin", "doc", slug] as const,
   },
+  mobile: {
+    overview: () => ["mobile", "overview"] as const,
+  },
   user: {
     brokerAccount: () => ["user", "broker-account"] as const,
     kiwoomConfig: () => ["user", "kiwoom-config"] as const,
