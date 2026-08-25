@@ -827,6 +827,83 @@ export async function getAdminKiwoomDualLlmRagFeedbackDetail(
   return getJson(`/admin/kiwoom/dual-llm/rag-feedback/${analysisId}`);
 }
 
+/** LLM Learning Center — READ ONLY research hub */
+export async function getAdminLlmLearningSummary(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/summary", params);
+}
+
+export async function getAdminLlmLearningSamples(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/samples", params);
+}
+
+export async function getAdminLlmLearningStages(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/learning-stages", params);
+}
+
+export async function getAdminLlmLearningQuality(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/quality", params);
+}
+
+export async function getAdminLlmLearningTeacherReviews(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/teacher-reviews", params);
+}
+
+export async function getAdminLlmLearningForwardShadow(): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/forward-shadow");
+}
+
+export async function getAdminLlmLearningLoraReadiness(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/lora-readiness", params);
+}
+
+export async function postAdminLlmLearningAsk(body: {
+  question: string;
+  market?: string;
+  session_id?: string;
+  use_llm?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/llm-learning/ask", body);
+}
+
+export async function getAdminLlmLearningComments(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/llm-learning/comments", params);
+}
+
+export async function postAdminLlmLearningComment(body: {
+  market: string;
+  symbol?: string;
+  related_analysis_id?: number;
+  related_prediction_id?: number;
+  related_shadow_id?: number;
+  comment: string;
+  label: string;
+}): Promise<JsonValue> {
+  return postJson("/admin/llm-learning/comments", body);
+}
+
+export async function deleteAdminLlmLearningConversation(
+  messageId: number,
+): Promise<JsonValue> {
+  const { data } = await apiClient.delete(
+    `/admin/llm-learning/conversations/${messageId}`,
+  );
+  return data;
+}
+
 /** Canonical orchestrator status / start / stop */
 export async function getAdminUbaOrchestratorStatus(
   ubaId: number,

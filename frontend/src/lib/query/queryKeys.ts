@@ -241,6 +241,22 @@ export const queryKeys = {
       ["admin", "kiwoom-dual-llm-rag-feedback", params ?? {}] as const,
     kiwoomDualLlmRagFeedbackDetail: (analysisId: number) =>
       ["admin", "kiwoom-dual-llm-rag-feedback-detail", analysisId] as const,
+    llmLearningSummary: (market?: string) =>
+      ["admin", "llm-learning-summary", market ?? "ALL"] as const,
+    llmLearningSamples: (market: string) =>
+      ["admin", "llm-learning-samples", market] as const,
+    llmLearningStages: (market?: string) =>
+      ["admin", "llm-learning-stages", market ?? "ALL"] as const,
+    llmLearningQuality: (market?: string) =>
+      ["admin", "llm-learning-quality", market ?? "ALL"] as const,
+    llmLearningTeacherReviews: (market?: string, params?: object) =>
+      ["admin", "llm-learning-teacher", market ?? "ALL", params ?? {}] as const,
+    llmLearningForwardShadow: () =>
+      ["admin", "llm-learning-forward-shadow"] as const,
+    llmLearningLoraReadiness: (market?: string) =>
+      ["admin", "llm-learning-lora", market ?? "ALL"] as const,
+    llmLearningComments: (market?: string) =>
+      ["admin", "llm-learning-comments", market ?? "ALL"] as const,
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,

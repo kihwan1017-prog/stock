@@ -12,6 +12,7 @@ export const adminRoutes = {
   marketAnalysis: "/admin/market-analysis",
   newsDisclosures: "/admin/news-disclosures",
   aiAnalysis: "/admin/ai-analysis",
+  llmLearning: "/admin/llm-learning",
   strategyValidation: "/admin/strategy-validation",
   researchData: "/admin/research",
   ai: "/admin/ai",

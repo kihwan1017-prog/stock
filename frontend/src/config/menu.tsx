@@ -196,6 +196,15 @@ export const adminMenuItems: AdminMenuItem[] = [
         ],
       },
       {
+        key: "llm-learning",
+        label: "LLM 학습센터",
+        path: adminRoutes.llmLearning,
+        icon: <RobotOutlined />,
+        enabled: true,
+        permission: "menu:ai",
+        matchPaths: [adminRoutes.llmLearning],
+      },
+      {
         key: "ai-analysis",
         label: "AI 분석",
         path: adminRoutes.aiAnalysis,
