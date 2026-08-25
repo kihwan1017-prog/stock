@@ -609,6 +609,8 @@ function PaginatedContextTab({
       if (kind === "news") return adminApi.getAdminUpbitResearchNews(params);
       return adminApi.getAdminUpbitResearchLlmAnalysis(params);
     },
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const llmDetailQ = useQuery({

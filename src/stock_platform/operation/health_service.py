@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -8,6 +10,12 @@ import httpx
 from sqlalchemy import text
 
 from stock_platform.common.settings import get_settings
+
+# /health 가 workers=1 환경에서 순차 외부 HTTP로 API 전체를 막지 않도록
+# 짧은 TTL 캐시 + 외부 probe 병렬화
+_HEALTH_BUILD_CACHE: dict[str, Any] | None = None
+_HEALTH_BUILD_CACHE_AT = 0.0
+_HEALTH_BUILD_CACHE_TTL_SEC = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,36 +93,62 @@ class SystemHealthService:
     """운영용 통합 헬스 집계."""
 
     async def build(self) -> dict[str, Any]:
+        global _HEALTH_BUILD_CACHE, _HEALTH_BUILD_CACHE_AT
+
+        now_mono = time.monotonic()
+        if (
+            _HEALTH_BUILD_CACHE is not None
+            and (now_mono - _HEALTH_BUILD_CACHE_AT) < _HEALTH_BUILD_CACHE_TTL_SEC
+        ):
+            return _HEALTH_BUILD_CACHE
+
         settings = get_settings()
-        components: dict[str, Any] = {
-            "database": check_database(),
-            "ollama": check_ollama(),
-            "upbit_rest": check_http_endpoint(
+        upbit_url = (
+            f"{settings.upbit_base_url.rstrip('/')}"
+            "/v1/market/all?isDetails=false"
+        )
+        dart_configured = bool(settings.dart_api_key.strip())
+        dart_url = (
+            f"{settings.dart_base_url.rstrip('/')}"
+            f"/corpCode.xml?crtfc_key={settings.dart_api_key}"
+            if dart_configured
+            else ""
+        )
+
+        # 외부 HTTP는 병렬 — 순차 시 Ollama+Upbit+DART 타임아웃이 누적되어
+        # workers=1 에서 /version·alerts 등 다른 API까지 블로킹됨
+        db_comp, ollama_comp, upbit_comp, dart_comp = await asyncio.gather(
+            asyncio.to_thread(check_database),
+            asyncio.to_thread(check_ollama),
+            asyncio.to_thread(
+                check_http_endpoint,
                 name="upbit_rest",
-                url=(
-                    f"{settings.upbit_base_url.rstrip('/')}"
-                    "/v1/market/all?isDetails=false"
-                ),
+                url=upbit_url,
                 timeout_seconds=settings.upbit_timeout_seconds,
             ),
-            "dart": (
-                check_http_endpoint(
+            (
+                asyncio.to_thread(
+                    check_http_endpoint,
                     name="dart",
-                    url=(
-                        f"{settings.dart_base_url.rstrip('/')}"
-                        f"/corpCode.xml?crtfc_key={settings.dart_api_key}"
-                    ),
-                    timeout_seconds=min(
-                        5.0,
-                        settings.dart_timeout_seconds,
-                    ),
+                    url=dart_url,
+                    timeout_seconds=min(5.0, settings.dart_timeout_seconds),
                 )
-                if settings.dart_api_key.strip()
-                else {
-                    "status": "SKIPPED",
-                    "message": "DART API key not configured",
-                }
+                if dart_configured
+                else asyncio.sleep(
+                    0,
+                    result={
+                        "status": "SKIPPED",
+                        "message": "DART API key not configured",
+                    },
+                )
             ),
+        )
+
+        components: dict[str, Any] = {
+            "database": db_comp,
+            "ollama": ollama_comp,
+            "upbit_rest": upbit_comp,
+            "dart": dart_comp,
             "news": (
                 {
                     "status": "CONFIGURED",
@@ -680,8 +714,11 @@ class SystemHealthService:
             live_gate["status"] = "DEGRADED"
         components["live_order_health_gate"] = live_gate
 
-        return {
+        payload = {
             "status": overall,
             "checked_at": datetime.now(timezone.utc),
             "components": components,
         }
+        _HEALTH_BUILD_CACHE = payload
+        _HEALTH_BUILD_CACHE_AT = time.monotonic()
+        return payload

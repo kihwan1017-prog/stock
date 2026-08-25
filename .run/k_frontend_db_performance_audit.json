@@ -1,0 +1,132 @@
+{
+  "CURRENT_KST": "2026-08-25T21:35:00+09:00",
+  "FINAL_VERDICT": "FRONTEND_DB_PERF_PARTIAL_IMPROVED",
+  "REAL_TRADING_MUTATION": 0,
+  "SYSTEM_BUG_ACTIVE": [
+    "ALEMBIC_MULTI_HEAD_P0_4",
+    "ANTD_LIST_DRAWER_DEPRECATION_WARNINGS",
+    "HEALTH_COLD_EXTERNAL_PROBES"
+  ],
+  "SLOWEST_PAGES_TOP5": [
+    {"route": "/admin/monitoring", "net_ms_approx": 255, "apis": 10, "max_api_ms": 924},
+    {"route": "/admin/portfolio", "net_ms_approx": 214, "apis": 6, "max_api_ms": 794},
+    {"route": "/admin/upbit/autotrading", "net_ms_approx": 238, "apis": 9, "max_api_ms": 576},
+    {"route": "/admin/orders", "net_ms_approx": 206, "apis": 5, "max_api_ms": 1078},
+    {"route": "/admin/research?market=KIWOOM", "net_ms_approx": 200, "apis": 3, "max_api_ms": 1259}
+  ],
+  "SLOWEST_APIS_TOP10_AFTER": [
+    {"path": "/health", "p50": 43.7, "p95": 943.2, "payload_kb": 21.3},
+    {"path": "/api/v1/admin/upbit/research/experiments", "p50": 277.5, "p95": 649.6, "payload_kb": 2.3},
+    {"path": "/api/v1/admin/autotrading/uba/1381/ops-status", "p50": 155.1, "p95": 606.5, "payload_kb": 10.7},
+    {"path": "/api/v1/admin/upbit/opportunity-scanner/status", "p50": 318.4, "p95": 340.2, "payload_kb": 57.8},
+    {"path": "/api/v1/monitoring/overview?evaluate_alerts=true", "p50": 28.4, "p95": 328.1, "payload_kb": 42.6},
+    {"path": "/api/v1/admin/autotrading/uba/1380/unattended/horizon-auto-renew/preview", "p50": 105.1, "p95": 227.9, "payload_kb": 1.7},
+    {"path": "/api/v1/admin/upbit/dual-llm/comparison", "p50": 128.4, "p95": 216.0, "payload_kb": 1.0},
+    {"path": "/api/v1/admin/autotrading/uba/1380/ops-status", "p50": 146.5, "p95": 201.8, "payload_kb": 10.8},
+    {"path": "/api/v1/admin/autotrading/uba/1380/research/collection-status", "p50": 164.1, "p95": 179.8, "payload_kb": 6.0},
+    {"path": "/api/v1/admin/symbol-ownership/1380", "p50": 89.2, "p95": 177.4, "payload_kb": 3.6}
+  ],
+  "SLOWEST_SQL_TOP10": [
+    {
+      "sql": "SELECT ... FROM operation.upbit_asset_context_snapshot ORDER BY observed_at DESC LIMIT N",
+      "before": "Seq Scan + Sort external merge Disk; LIMIT20=18.4ms LIMIT5000=75.3ms buffers~1914+temp",
+      "after": "Index Scan ix_upbit_asset_ctx_observed_at; LIMIT20=0.05ms LIMIT5000=1.37ms buffers 4/276"
+    },
+    {
+      "sql": "audit_event ORDER BY audit_event_id DESC LIMIT 30",
+      "note": "Index Scan Backward 0.05ms — API slowness was worker blocking not SQL"
+    },
+    {
+      "sql": "audit_event WHERE event_type LIKE 'MONITORING_ALERT%'",
+      "note": "Seq Scan 25ms over 110k rows (8 matches); existing btree on (event_type,created_at)"
+    }
+  ],
+  "INDEXES_ADDED": [
+    {
+      "table": "operation.upbit_asset_context_snapshot",
+      "index": "ix_upbit_asset_ctx_observed_at",
+      "columns": ["observed_at DESC"],
+      "reason": "EXPLAIN Seq Scan + disk sort on list ORDER BY observed_at",
+      "before_ms": {"limit_20": 18.371, "limit_5000": 75.315},
+      "after_ms": {"limit_20": 0.05, "limit_5000": 1.367},
+      "size": "296 kB",
+      "method": "CREATE INDEX CONCURRENTLY"
+    }
+  ],
+  "INDEXES_NOT_ADDED": [
+    {"candidate": "duplicate audit_event (event_type, created_at)", "reason": "already exists"},
+    {"candidate": "trading_order composites", "reason": "list API already fast; no EXPLAIN pain"},
+    {"candidate": "trade_tick/price_daily extras", "reason": "not on audited admin hot path"}
+  ],
+  "QUERY_OPTIMIZATIONS": [
+    "list_asset_context SQL pagination when no rank filter",
+    "monitoring alerts SQL LIKE filter",
+    "SystemHealthService parallel external probes + 5s cache",
+    "health_live promotion proof lru_cache"
+  ],
+  "N_PLUS_ONE_FIXED": ["monitoring_alerts_overfetch"],
+  "PAGINATION_CHANGES": ["asset_context_sql_offset_limit"],
+  "PAYLOAD_REDUCTION": ["deferred_value_json_split_not_applied_contract"],
+  "FRONTEND_FETCH_OPTIMIZATION": [
+    "SystemStatusDashboard staleTime/health_60s/no_focus_refetch",
+    "Research DualLLM collection staleTime"
+  ],
+  "BEFORE_AFTER_API_P95": {
+    "/health": {"before": 4345.4, "after": 943.2},
+    "/version": {"before": 1073.4, "after": 28.5},
+    "/api/v1/monitoring/alerts?limit=10": {"before": 2189.9, "after": 60.7},
+    "/api/v1/admin/upbit/research/asset-context": {"before": 766.3, "after": 38.8},
+    "/api/v1/admin/autotrading/uba/1380/ops-status": {"before": 1026.0, "after": 201.8}
+  },
+  "BEFORE_AFTER_CONCURRENT": {
+    "note": "workers=1; /health no longer serializes other APIs",
+    "after": {
+      "/health": 795.4,
+      "/version": 18.0,
+      "/api/v1/monitoring/alerts?limit=10": 59.9,
+      "/api/v1/admin/autotrading/uba/1380/ops-status": 152.8
+    }
+  },
+  "DB_SIZE_IMPACT": {"index_added_kb": 296},
+  "HIGH_VOLUME_TABLES": [
+    {"schema": "market", "table": "trade_tick", "total": "841 MB", "rows": 3887690},
+    {"schema": "market", "table": "price_daily", "total": "151 MB", "rows": 949850},
+    {"schema": "market", "table": "candle_minute", "total": "77 MB", "rows": 389868},
+    {"schema": "operation", "table": "audit_event", "total": "53 MB", "rows": 109794},
+    {"schema": "ai", "table": "execution_request", "total": "50 MB", "rows": 9710},
+    {"schema": "operation", "table": "upbit_asset_context_snapshot", "total": "18 MB", "rows": 38238},
+    {"schema": "trading", "table": "trading_order", "total": "1016 kB", "rows": 381}
+  ],
+  "TESTS": {
+    "pytest_asset_context_list": "2 passed",
+    "FRONTEND_CHECK": "PASS",
+    "AUTH_BROWSER_VERIFY": "DONE",
+    "CONSOLE_ERRORS_REAL": 0,
+    "CONSOLE_ANTD_DEPRECATION_AS_ERROR": 3
+  },
+  "DB_MIGRATION": {
+    "live_concurrent_index": true,
+    "alembic_file": "database/alembic/versions/perf_acs_obs_20260825_asset_context_observed_index.py",
+    "stamped": false,
+    "reason": "multi-head / alembic_version drift"
+  },
+  "GIT_COMMIT": "NO",
+  "POST_RESTART_UBA1380": {
+    "live": "ON",
+    "arm": "ON",
+    "runtime": "RUNNING"
+  },
+  "LIMITATIONS": [
+    "pg_stat_statements not installed",
+    "experiments/scanner/1381 ops still P95>=300ms",
+    "antd List/Drawer deprecations"
+  ],
+  "NEXT_ACTION": "REVIEW_FRONTEND_DB_PERFORMANCE_WITH_CHATGPT",
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "RISK_MUTATION": 0,
+    "SLOT_MUTATION": 0,
+    "TRADING_POLICY_MUTATION": 0
+  }
+}

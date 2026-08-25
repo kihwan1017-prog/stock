@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
+from functools import lru_cache
 
 from fastapi import APIRouter, Response
-
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.db_pool_monitor import (
     measure_db_latency_ms,
@@ -29,6 +29,28 @@ async def health_live():
         "status": "UP",
         "check": "live",
         "uptime_seconds": identity["uptime_seconds"],
+        "promotion_load_proof": _promotion_load_proof(),
+    }
+
+
+@lru_cache(maxsize=1)
+def _promotion_load_proof() -> dict:
+    """프로세스당 1회 — inspect.getsource 반복 비용 제거."""
+
+    import inspect
+
+    import stock_platform.ai.candidate_promotion.eligibility as eligibility
+    from stock_platform.ai.candidate_recommendation_queue.expiration import is_expired
+
+    validate_source = inspect.getsource(
+        eligibility.AICandidatePromotionEligibilityService.validate_queue
+    )
+    return {
+        "eligibility_file": eligibility.__file__,
+        "is_expired_signature": str(inspect.signature(is_expired)),
+        "caller_keyword": "is_expired(expires_at=queue.expires_at)"
+        in validate_source,
+        "caller_positional": "is_expired(queue.expires_at)" in validate_source,
     }
 
 

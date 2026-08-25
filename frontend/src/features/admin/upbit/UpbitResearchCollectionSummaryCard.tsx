@@ -34,6 +34,8 @@ export function UpbitResearchCollectionSummaryCard({
     queryFn: () => adminApi.getAdminUbaResearchCollectionStatus(ubaId),
     enabled: ubaId > 0,
     refetchInterval: 60_000,
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
   });
 
   const data = asRecord(q.data) ?? {};

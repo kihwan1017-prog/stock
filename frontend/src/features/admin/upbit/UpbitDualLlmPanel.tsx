@@ -62,16 +62,22 @@ export function UpbitDualLlmPanel() {
     queryKey: queryKeys.admin.upbitDualLlmStatus(),
     queryFn: () => adminApi.getAdminUpbitDualLlmStatus(),
     refetchInterval: 60_000,
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
   });
   const recentQ = useQuery({
     queryKey: queryKeys.admin.upbitDualLlmRecent({ limit: 20 }),
     queryFn: () => adminApi.getAdminUpbitDualLlmRecent({ limit: 20 }),
     refetchInterval: 60_000,
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
   });
   const cmpQ = useQuery({
     queryKey: queryKeys.admin.upbitDualLlmComparison(),
     queryFn: () => adminApi.getAdminUpbitDualLlmComparison(),
     refetchInterval: 120_000,
+    staleTime: 90_000,
+    refetchOnWindowFocus: false,
   });
 
   const st = asRecord(statusQ.data);

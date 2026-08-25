@@ -107,6 +107,8 @@ export function UpbitResearchCollectionStatusPanel({
     queryFn: () => adminApi.getAdminUbaResearchCollectionStatus(ubaId),
     enabled: ubaId > 0,
     refetchInterval: 45_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const data = asRecord(q.data) ?? {};

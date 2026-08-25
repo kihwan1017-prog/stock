@@ -9,9 +9,6 @@ from sqlalchemy.orm import Session
 
 from stock_platform.auth.deps import require_admin
 from stock_platform.database.session import get_db_session
-from stock_platform.operation.audit_repository import (
-    AuditEventRepository,
-)
 from stock_platform.operation.monitoring_snapshot import (
     build_monitoring_overview,
     evaluate_alert_rules,
@@ -51,9 +48,19 @@ def monitoring_alerts(
 ) -> dict[str, Any]:
     """Audit 에 저장된 MONITORING_ALERT 최근 목록."""
 
-    repo = AuditEventRepository(session)
-    # event_type 정확 매칭만 지원 → prefix 수동 필터
-    recent = repo.list_recent(limit=min(limit * 3, 200))
+    from sqlalchemy import select
+
+    from stock_platform.operation.audit_models import AuditEvent
+
+    # prefix 필터를 SQL로 — 최근 N건 중 알림이 밀려 누락되는 경우 방지
+    rows = list(
+        session.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.event_type.like("MONITORING_ALERT%"))
+            .order_by(AuditEvent.created_at.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+    )
     items = [
         {
             "audit_event_id": row.audit_event_id,
@@ -62,9 +69,8 @@ def monitoring_alerts(
             "detail": row.detail,
             "created_at": row.created_at,
         }
-        for row in recent
-        if str(row.event_type).startswith("MONITORING_ALERT")
-    ][:limit]
+        for row in rows
+    ]
     return {"items": items, "limit": limit}
 
 

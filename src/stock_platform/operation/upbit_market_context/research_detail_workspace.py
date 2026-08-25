@@ -666,27 +666,6 @@ def list_asset_context(
     rank_min: int | None = None,
     rank_max: int | None = None,
 ) -> dict[str, Any]:
-    q = select(UpbitAssetContextSnapshotEntity)
-    if symbol:
-        q = q.where(
-            func.upper(UpbitAssetContextSnapshotEntity.symbol) == symbol.strip().upper()
-        )
-    if collected_from is not None:
-        q = q.where(
-            UpbitAssetContextSnapshotEntity.observed_at >= _as_utc(collected_from)
-        )
-    if collected_to is not None:
-        q = q.where(
-            UpbitAssetContextSnapshotEntity.observed_at <= _as_utc(collected_to)
-        )
-
-    # rank 필터는 value_json 내부 — SQL 후 필터 (표본 규모 고려)
-    rows_all = list(
-        session.scalars(
-            q.order_by(UpbitAssetContextSnapshotEntity.observed_at.desc()).limit(5000)
-        )
-    )
-
     def _rank(vj: dict[str, Any]) -> int | None:
         for k in ("turnover_rank", "rank", "volume_rank"):
             if vj.get(k) is not None:
@@ -696,6 +675,70 @@ def list_asset_context(
                     return None
         return None
 
+    def _item(r: UpbitAssetContextSnapshotEntity) -> dict[str, Any]:
+        vj = r.value_json if isinstance(r.value_json, dict) else {}
+        return {
+            "snapshot_id": int(r.snapshot_id),
+            "collected_at": _iso_kst(r.observed_at),
+            "symbol": r.symbol,
+            "feature_key": r.feature_key,
+            "trade_price": vj.get("trade_price") or vj.get("price"),
+            "daily_change_pct": vj.get("signed_change_rate")
+            or vj.get("change_rate")
+            or vj.get("daily_change_pct"),
+            "turnover_24h": vj.get("acc_trade_price_24h") or vj.get("turnover_24h"),
+            "turnover_rank": _rank(vj),
+            "volume": vj.get("acc_trade_volume_24h") or vj.get("volume"),
+            "context_quality": r.quality,
+            "source": r.source,
+            "value_json": r.value_json,
+        }
+
+    q = select(UpbitAssetContextSnapshotEntity)
+    cq = select(func.count()).select_from(UpbitAssetContextSnapshotEntity)
+    if symbol:
+        sym = symbol.strip().upper()
+        q = q.where(func.upper(UpbitAssetContextSnapshotEntity.symbol) == sym)
+        cq = cq.where(func.upper(UpbitAssetContextSnapshotEntity.symbol) == sym)
+    if collected_from is not None:
+        fr = _as_utc(collected_from)
+        q = q.where(UpbitAssetContextSnapshotEntity.observed_at >= fr)
+        cq = cq.where(UpbitAssetContextSnapshotEntity.observed_at >= fr)
+    if collected_to is not None:
+        to = _as_utc(collected_to)
+        q = q.where(UpbitAssetContextSnapshotEntity.observed_at <= to)
+        cq = cq.where(UpbitAssetContextSnapshotEntity.observed_at <= to)
+
+    p = max(1, int(page or DEFAULT_PAGE))
+    ps = min(MAX_PAGE_SIZE, max(1, int(page_size or DEFAULT_PAGE_SIZE)))
+    need_rank_filter = rank_min is not None or rank_max is not None
+
+    # rank 필터 없을 때: SQL OFFSET/LIMIT (observed_at 인덱스 사용)
+    if not need_rank_filter:
+        total = int(session.scalar(cq) or 0)
+        rows = list(
+            session.scalars(
+                q.order_by(UpbitAssetContextSnapshotEntity.observed_at.desc())
+                .offset((p - 1) * ps)
+                .limit(ps)
+            )
+        )
+        return {
+            "schema": "upbit_research_asset_context_list_v1",
+            "research_only": True,
+            "items": [_item(r) for r in rows],
+            "total": total,
+            "page": p,
+            "page_size": ps,
+            "note_ko": "rank 필터는 value_json 기반 best-effort입니다.",
+        }
+
+    # rank 필터는 value_json 내부 — 최근 표본만 SQL 후 필터
+    rows_all = list(
+        session.scalars(
+            q.order_by(UpbitAssetContextSnapshotEntity.observed_at.desc()).limit(5000)
+        )
+    )
     filtered = []
     for r in rows_all:
         vj = r.value_json if isinstance(r.value_json, dict) else {}
@@ -707,32 +750,10 @@ def list_asset_context(
         filtered.append(r)
 
     page_rows, total, p, ps = _paginate(filtered, page=page, page_size=page_size)
-    items = []
-    for r in page_rows:
-        vj = r.value_json if isinstance(r.value_json, dict) else {}
-        items.append(
-            {
-                "snapshot_id": int(r.snapshot_id),
-                "collected_at": _iso_kst(r.observed_at),
-                "symbol": r.symbol,
-                "feature_key": r.feature_key,
-                "trade_price": vj.get("trade_price") or vj.get("price"),
-                "daily_change_pct": vj.get("signed_change_rate")
-                or vj.get("change_rate")
-                or vj.get("daily_change_pct"),
-                "turnover_24h": vj.get("acc_trade_price_24h")
-                or vj.get("turnover_24h"),
-                "turnover_rank": _rank(vj),
-                "volume": vj.get("acc_trade_volume_24h") or vj.get("volume"),
-                "context_quality": r.quality,
-                "source": r.source,
-                "value_json": r.value_json,
-            }
-        )
     return {
         "schema": "upbit_research_asset_context_list_v1",
         "research_only": True,
-        "items": items,
+        "items": [_item(r) for r in page_rows],
         "total": total,
         "page": p,
         "page_size": ps,

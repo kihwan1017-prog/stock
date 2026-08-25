@@ -77,6 +77,11 @@ class UpbitAssetContextSnapshotEntity(Base):
             "feature_key",
             "observed_at",
         ),
+        # 목록 API ORDER BY observed_at DESC — Seq Scan+디스크 정렬 방지
+        Index(
+            "ix_upbit_asset_ctx_observed_at",
+            "observed_at",
+        ),
         {"schema": SCHEMA_MARKET},
     )
 

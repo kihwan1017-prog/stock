@@ -13,7 +13,6 @@ import {
   Col,
   Descriptions,
   Empty,
-  List,
   Row,
   Space,
   Tabs,
@@ -292,42 +291,59 @@ export function SystemStatusDashboard() {
     queryKey: queryKeys.system.monitoringOverview({}),
     queryFn: () => adminApi.getMonitoringOverview({ evaluate_alerts: true }),
     refetchInterval: 20_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   });
   const live = useQuery({
     queryKey: queryKeys.system.healthLive(),
     queryFn: adminApi.getHealthLive,
     refetchInterval: 20_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   });
   const ready = useQuery({
     queryKey: queryKeys.system.healthReady(),
     queryFn: adminApi.getHealthReady,
     refetchInterval: 20_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   });
+  // 상세 /health 는 외부 probe 포함 — 폴링 간격·stale 완화로 workers=1 블로킹 완화
   const health = useQuery({
     queryKey: queryKeys.system.health(),
     queryFn: adminApi.getHealth,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    staleTime: 45_000,
+    refetchOnWindowFocus: false,
   });
   const version = useQuery({
     queryKey: queryKeys.system.version(),
     queryFn: adminApi.getVersion,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
   });
   const alerts = useQuery({
     queryKey: queryKeys.system.monitoringAlerts(),
     queryFn: () => adminApi.getMonitoringAlerts({ limit: 10 }),
     refetchInterval: 30_000,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
   });
   const upbitOps = useQuery({
     queryKey: ["admin", "uba-ops-status", DEFAULT_UPBIT_AUTOTRADING_UBA_ID, "sys"],
     queryFn: () =>
       adminApi.getAdminUbaOpsStatus(DEFAULT_UPBIT_AUTOTRADING_UBA_ID),
     refetchInterval: 20_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
   const kiwoomOps = useQuery({
     queryKey: ["admin", "uba-ops-status", DEFAULT_KIWOOM_UBA, "sys"],
     queryFn: () => adminApi.getAdminUbaOpsStatus(DEFAULT_KIWOOM_UBA),
     refetchInterval: 20_000,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
   const upbitReady = useQuery({
@@ -335,12 +351,16 @@ export function SystemStatusDashboard() {
     queryFn: () =>
       adminApi.getAdminUbaAutotradingReadiness(DEFAULT_UPBIT_AUTOTRADING_UBA_ID),
     refetchInterval: 30_000,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
   const kiwoomReady = useQuery({
     queryKey: ["admin", "uba-readiness", DEFAULT_KIWOOM_UBA, "sys"],
     queryFn: () => adminApi.getAdminUbaAutotradingReadiness(DEFAULT_KIWOOM_UBA),
     refetchInterval: 30_000,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
     retry: false,
   });
 
@@ -710,18 +730,17 @@ export function SystemStatusDashboard() {
             표시할 최근 이벤트가 없습니다.
           </Typography.Text>
         ) : (
-          <List
-            size="small"
-            dataSource={recentEvents}
-            renderItem={(item) => (
-              <List.Item>
+          // antd List 폐기 경고 회피 — 단순 이벤트 행은 Space로 충분
+          <Space orientation="vertical" size={6} style={{ width: "100%" }}>
+            {recentEvents.map((item) => (
+              <Space key={item.key} size={8} style={{ width: "100%" }}>
                 <Typography.Text type="secondary" style={{ width: 72 }}>
                   {item.time}
                 </Typography.Text>
                 <Typography.Text>{item.text}</Typography.Text>
-              </List.Item>
-            )}
-          />
+              </Space>
+            ))}
+          </Space>
         )}
       </Card>
 
