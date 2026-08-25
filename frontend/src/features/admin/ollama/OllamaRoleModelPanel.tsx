@@ -14,7 +14,6 @@ import {
   Collapse,
   Form,
   Input,
-  List,
   Row,
   Select,
   Space,
@@ -334,20 +333,18 @@ export function OllamaRoleModelPanel() {
             title={`설치 모델 ${installedRows.length || installedNames.length}개`}
             loading={roleQuery.isLoading || modelsQuery.isLoading}
           >
-            <List
-              dataSource={
-                installedRows.length
-                  ? installedRows
-                  : installedNames.map((name) => ({ name }))
-              }
-              renderItem={(item) => {
+            <Space orientation="vertical" size={12} style={{ width: "100%" }}>
+              {(installedRows.length
+                ? installedRows
+                : installedNames.map((name) => ({ name }))
+              ).map((item) => {
                 const rec = asRecord(item) ?? {};
                 const name = String(rec.name ?? "");
                 const roleList = Array.isArray(rec.roles)
                   ? rec.roles.map(String)
                   : [];
                 return (
-                  <List.Item>
+                  <div key={name || `model-${String(rec.size_bytes ?? "")}`}>
                     <Space
                       orientation="vertical"
                       size={2}
@@ -368,10 +365,10 @@ export function OllamaRoleModelPanel() {
                         )}
                       </Space>
                     </Space>
-                  </List.Item>
+                  </div>
                 );
-              }}
-            />
+              })}
+            </Space>
           </Card>
         </Col>
         <Col xs={24} lg={10}>
