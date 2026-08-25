@@ -749,6 +749,49 @@ class UpbitFullMarketAssignmentService:
             assignment.state = STATE_POSITION_OPEN
             assignment.current_symbol = sym
         self._session.flush()
+        # Forward shadow cohort 등록 (연구용 — REAL 정책 무관)
+        try:
+            from decimal import Decimal as _Dec
+
+            from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.hooks import (
+                enroll_binding_on_open,
+            )
+
+            entry_px = _Dec("0")
+            entry_qty = None
+            entry_fee = None
+            if entry_order_id is not None:
+                from stock_platform.order.entities import TradingOrderEntity
+
+                order = self._session.get(TradingOrderEntity, int(entry_order_id))
+                if order is not None:
+                    avg = getattr(order, "average_fill_price", None) or getattr(
+                        order, "limit_price", None
+                    )
+                    if avg is not None:
+                        entry_px = _Dec(str(avg))
+                    q = getattr(order, "filled_quantity", None) or getattr(
+                        order, "quantity", None
+                    )
+                    if q is not None:
+                        entry_qty = _Dec(str(q))
+            if entry_px <= _Dec("0"):
+                entry_px = _Dec("1")
+
+            enroll_binding_on_open(
+                self._session,
+                user_broker_account_id=uba_id,
+                binding_id=int(binding.binding_id),
+                symbol=sym,
+                strategy_id=assignment.strategy_id,
+                entry_order_id=entry_order_id,
+                entry_at=binding.opened_at,
+                entry_price=entry_px,
+                entry_quantity=entry_qty,
+                entry_fee=entry_fee,
+            )
+        except Exception:  # noqa: BLE001
+            pass
         # OPEN binding → protective quote feed (slot 없어도 GEOD 등 구독)
         feed: dict[str, Any] = {}
         try:
@@ -800,6 +843,43 @@ class UpbitFullMarketAssignmentService:
         for b in closed_bindings:
             b.status = BINDING_STATUS_CLOSED
             b.closed_at = now
+            try:
+                from decimal import Decimal as _Dec
+
+                from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.hooks import (
+                    finalize_binding_on_close,
+                )
+
+                meta = dict(b.meta_json or {})
+                exit_reason = str(meta.get("exit_reason") or "UNKNOWN")
+                exit_px = None
+                exit_oid = meta.get("exit_order_id")
+                if exit_oid is not None:
+                    from stock_platform.order.entities import TradingOrderEntity
+
+                    sell = self._session.get(TradingOrderEntity, int(exit_oid))
+                    if sell is not None:
+                        avg = getattr(sell, "average_fill_price", None)
+                        if avg is not None:
+                            exit_px = _Dec(str(avg))
+                        if not exit_reason or exit_reason == "UNKNOWN":
+                            mp = getattr(sell, "metadata_payload", None) or {}
+                            if isinstance(mp, dict):
+                                exit_reason = str(
+                                    mp.get("signal_reason")
+                                    or mp.get("exit_reason")
+                                    or exit_reason
+                                )
+                if exit_px is not None:
+                    finalize_binding_on_close(
+                        self._session,
+                        binding_id=int(b.binding_id),
+                        exit_reason=exit_reason,
+                        exit_at=now,
+                        exit_price=exit_px,
+                    )
+            except Exception:  # noqa: BLE001
+                pass
 
         if is_full_market_portfolio(assignment.mode):
             from stock_platform.operation.upbit_full_market.constants import (

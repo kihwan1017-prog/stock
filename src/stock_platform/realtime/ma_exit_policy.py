@@ -23,6 +23,7 @@ PROTECTIVE_EXIT_REASONS = frozenset(
         "KILL_SWITCH",
         "PROTECTIVE_EXIT",
         "KILL",
+        "RISK_EXIT",
     }
 )
 

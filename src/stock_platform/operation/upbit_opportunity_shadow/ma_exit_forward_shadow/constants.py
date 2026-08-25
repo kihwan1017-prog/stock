@@ -1,0 +1,49 @@
+"""MA exit forward shadow — research constants (REAL mutation 없음)."""
+
+from __future__ import annotations
+
+RULE_VERSION = "ma_dead_cross_confirm2_v1"
+PRIMARY_SHADOW_RULE = "MA_DEAD_CROSS_CONFIRM2"
+MARKET_UPBIT = "UPBIT"
+RESEARCH_ONLY_LABEL = "RESEARCH_ONLY"
+
+# cohort status
+STATUS_ACTIVE = "ACTIVE"
+STATUS_SHADOW_TRACKING = "SHADOW_TRACKING"
+STATUS_COMPLETED = "COMPLETED"
+STATUS_PRE_EXISTING_EXCLUDED = "PRE_EXISTING_POSITION_EXCLUDED"
+
+# secondary (non-primary promotion)
+SECONDARY_A_RULE = "MA_SEPARATION_0.30"
+SECONDARY_B_RULE = "FEE_AWARE_ENTRY_0.10"
+SECONDARY_A_SEP_PCT = 0.30
+SECONDARY_B_FEE_EDGE_PCT = 0.10
+
+CONFIRM_EVALUATIONS = 2
+EARLY_DUMP_SECONDS = 300
+
+# sample soft gates
+SAMPLE_STAGE_COLLECTION = "COLLECTION_ONLY"
+SAMPLE_STAGE_EARLY = "EARLY_DIAGNOSTIC"
+SAMPLE_STAGE_PRIMARY = "PRIMARY_REVIEW"
+SAMPLE_STAGE_PROMOTION = "PROMOTION_REVIEW"
+
+FRAGILE_RULES = frozenset(
+    {
+        "E6_mom0.10",
+        "E4_fee_buf0.15",
+        "C1_confirm2_fee0.10",
+    }
+)
+
+PROTECTIVE_EXIT_REASONS = frozenset(
+    {
+        "STOP_LOSS",
+        "TAKE_PROFIT",
+        "TRAILING_STOP",
+        "KILL_SWITCH",
+        "KILL",
+        "RISK_EXIT",
+        "PROTECTIVE_EXIT",
+    }
+)

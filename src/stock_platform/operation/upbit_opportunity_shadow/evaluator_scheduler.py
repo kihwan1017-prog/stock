@@ -95,8 +95,17 @@ class UpbitOpportunityShadowEvaluatorScheduler:
             misfire_grace_time=max(interval, 60),
         )
         self._configured = True
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.scheduler import (
+                UpbitMaExitForwardShadowScheduler,
+            )
 
-    def start(self) -> None:
+            UpbitMaExitForwardShadowScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "ma_exit_forward_shadow_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
         allowed, reason = self.automation_allowed()
         if not allowed:
             logger.info(

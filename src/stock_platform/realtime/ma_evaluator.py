@@ -52,6 +52,11 @@ class ScopeStrategyState:
     ma_exit_confirming: bool = False
     first_dead_cross_at: datetime | None = None
     last_ma_exit_telemetry: dict | None = None
+    # Forward shadow 연구용 — 직전 evaluation MA 스냅샷 (REAL emit 무관)
+    last_eval_short: Decimal | None = None
+    last_eval_long: Decimal | None = None
+    last_eval_prev_short: Decimal | None = None
+    last_eval_prev_long: Decimal | None = None
 
 
 class MovingAverageStrategyEvaluator:
@@ -251,13 +256,21 @@ class MovingAverageStrategyEvaluator:
                 ONE + self.config.take_profit_ratio
             )
             if event.price <= stop:
-                return self._emit(
+                sig = self._emit(
                     event, state, SignalType.SELL, "STOP_LOSS", short_avg, long_avg
                 )
+                self._observe_forward_shadow(
+                    event, position, signal=sig, state=state
+                )
+                return sig
             if event.price >= take:
-                return self._emit(
+                sig = self._emit(
                     event, state, SignalType.SELL, "TAKE_PROFIT", short_avg, long_avg
                 )
+                self._observe_forward_shadow(
+                    event, position, signal=sig, state=state
+                )
+                return sig
 
         needed = self.config.long_window + 1
         if len(state.prices) < needed:
@@ -294,6 +307,10 @@ class MovingAverageStrategyEvaluator:
         prev_l = state.previous_long
         state.previous_short = short_avg
         state.previous_long = long_avg
+        state.last_eval_short = short_avg
+        state.last_eval_long = long_avg
+        state.last_eval_prev_short = prev_s
+        state.last_eval_prev_long = prev_l
 
         if (
             short_avg is None
@@ -373,7 +390,7 @@ class MovingAverageStrategyEvaluator:
         if position.quantity > ZERO and (
             raw_dead_cross or state.ma_exit_confirming
         ):
-            return self._evaluate_ma_dead_cross_exit(
+            sig = self._evaluate_ma_dead_cross_exit(
                 event,
                 state,
                 position=position,
@@ -381,7 +398,62 @@ class MovingAverageStrategyEvaluator:
                 long_avg=long_avg,
                 raw_dead_cross=raw_dead_cross,
             )
+            self._observe_forward_shadow(
+                event,
+                position,
+                signal=sig,
+                state=state,
+                short_avg=short_avg,
+                long_avg=long_avg,
+                prev_short=prev_s,
+                prev_long=prev_l,
+            )
+            return sig
+        if position.quantity > ZERO:
+            self._observe_forward_shadow(
+                event,
+                position,
+                signal=None,
+                state=state,
+                short_avg=short_avg,
+                long_avg=long_avg,
+                prev_short=prev_s,
+                prev_long=prev_l,
+            )
         return None
+
+    def _observe_forward_shadow(
+        self,
+        event: RealtimeMarketEvent,
+        position: RealtimePositionState,
+        *,
+        signal: StrategySignal | None,
+        state: ScopeStrategyState,
+        short_avg: Decimal | None = None,
+        long_avg: Decimal | None = None,
+        prev_short: Decimal | None = None,
+        prev_long: Decimal | None = None,
+    ) -> None:
+        """연구용 forward shadow — REAL emit/정책 변경 없음."""
+
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.hooks import (
+                observe_from_evaluator,
+            )
+
+            observe_from_evaluator(
+                scope=self.scope,
+                config=self.config,
+                event=event,
+                position=position,
+                signal=signal,
+                short_ma=short_avg or state.last_eval_short,
+                long_ma=long_avg or state.last_eval_long,
+                prev_short_ma=prev_short or state.last_eval_prev_short,
+                prev_long_ma=prev_long or state.last_eval_prev_long,
+            )
+        except Exception:  # noqa: BLE001
+            return
 
     def _ma_exit_thresholds(self):
         """config에 붙은 MA exit 임계값 (attach 시 policy에서 patch)."""

@@ -221,6 +221,10 @@ export const queryKeys = {
       ["admin", "upbit-research-llm-detail", analysisId] as const,
     upbitResearchExperiments: () =>
       ["admin", "upbit-research-experiments"] as const,
+    upbitResearchMaExitForwardShadowSummary: (ubaId?: number) =>
+      ["admin", "upbit-research-ma-exit-forward-shadow-summary", ubaId ?? null] as const,
+    upbitResearchMaExitForwardShadowRows: (ubaId?: number) =>
+      ["admin", "upbit-research-ma-exit-forward-shadow-rows", ubaId ?? null] as const,
     upbitDualLlmStatus: () => ["admin", "upbit-dual-llm-status"] as const,
     upbitDualLlmRecent: (params?: object) =>
       ["admin", "upbit-dual-llm-recent", params ?? {}] as const,

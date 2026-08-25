@@ -173,3 +173,36 @@ def get_experiments(
     session: Session = Depends(get_db_session),
 ) -> dict[str, Any]:
     return rdw.get_filter_experiments(session)
+
+
+@router.get("/ma-exit-forward-shadow/summary")
+def get_ma_exit_forward_shadow_summary(
+    uba_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.summary import (
+        summarize_forward_shadow,
+    )
+
+    return summarize_forward_shadow(
+        session, user_broker_account_id=uba_id
+    )
+
+
+@router.get("/ma-exit-forward-shadow/rows")
+def list_ma_exit_forward_shadow_rows(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+    uba_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.summary import (
+        list_forward_shadow_rows,
+    )
+
+    return list_forward_shadow_rows(
+        session,
+        user_broker_account_id=uba_id,
+        page=page,
+        page_size=page_size,
+    )

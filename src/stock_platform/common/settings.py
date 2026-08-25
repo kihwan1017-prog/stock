@@ -326,6 +326,10 @@ class Settings(BaseSettings):
     # Shadow evaluator 자동 주기 (1~5분, LIVE/주문 무관)
     upbit_scanner_shadow_evaluator_enabled: bool = True
     upbit_scanner_shadow_evaluator_interval_seconds: float = 180.0
+    # MA exit forward shadow — Confirm2 vs REAL baseline (연구용, REAL 정책 0 변경)
+    upbit_ma_exit_forward_shadow_enabled: bool = True
+    upbit_ma_exit_forward_shadow_deployed_at: str = ""
+    upbit_ma_exit_forward_shadow_interval_seconds: float = 60.0
     upbit_scanner_shadow_mismatch_watch_enabled: bool = True
     upbit_scanner_shadow_mismatch_tolerance: float = 5e-4
     upbit_scanner_shadow_cohort_milestone_watch_enabled: bool = True

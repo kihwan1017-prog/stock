@@ -728,6 +728,21 @@ export async function getAdminUpbitResearchCleanForwardDetail(
   return getJson(`/admin/upbit/research/clean-forward/${shadowId}`);
 }
 
+/** MA exit forward shadow — Confirm2 vs REAL (READ ONLY) */
+export async function getAdminUpbitResearchMaExitForwardShadowSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/ma-exit-forward-shadow/summary", {
+    uba_id: ubaId,
+  });
+}
+
+export async function getAdminUpbitResearchMaExitForwardShadowRows(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/ma-exit-forward-shadow/rows", params);
+}
+
 export async function getAdminUpbitResearchMarketContext(
   params?: Params,
 ): Promise<JsonValue> {
