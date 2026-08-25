@@ -4758,6 +4758,20 @@ export async function getOllamaStatus(): Promise<JsonValue> {
   return getJson("/ollama/status");
 }
 
+export async function getOllamaRoleModels(): Promise<JsonValue> {
+  return getJson("/ollama/role-models");
+}
+
+export async function updateOllamaRoleModels(payload: {
+  analysis_llm_model: string;
+  trading_llm_model: string;
+  teacher_llm_model: string;
+  ollama_model: string;
+  change_reason?: string;
+}): Promise<JsonValue> {
+  return putJson("/ollama/role-models", payload);
+}
+
 export async function getUpbitMarkets(): Promise<JsonValue> {
   return getJson("/upbit/markets");
 }

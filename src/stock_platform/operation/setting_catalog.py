@@ -124,6 +124,31 @@ SETTING_DEFINITIONS: tuple[SettingDefinition, ...] = (
         env_attr="ollama_keep_alive",
         default="10m",
     ),
+    # Dual LLM 역할 모델 — RESEARCH/SHADOW. REAL gate 아님.
+    SettingDefinition(
+        "analysis_llm_model",
+        "ai",
+        "string",
+        "분석 LLM 모델 (ANALYSIS)",
+        env_attr="analysis_llm_model",
+        default="qwen3:1.7b",
+    ),
+    SettingDefinition(
+        "trading_llm_model",
+        "ai",
+        "string",
+        "매매 판단 LLM 모델 (TRADING SHADOW)",
+        env_attr="trading_llm_model",
+        default="qwen3.5:2b",
+    ),
+    SettingDefinition(
+        "teacher_llm_model",
+        "ai",
+        "string",
+        "Teacher LLM 모델 (빈값 → ollama_model)",
+        env_attr="teacher_llm_model",
+        default="",
+    ),
     # risk (DB 전용 운영 파라미터)
     SettingDefinition(
         "risk_max_daily_loss_pct",

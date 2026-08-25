@@ -48,3 +48,13 @@ class SettingHistoryResponse(BaseModel):
     actor: str
     change_reason: str | None = None
     created_at: datetime
+
+
+class OllamaRoleModelUpdateRequest(BaseModel):
+    """역할별 Ollama 모델 저장 — 설치 모델 검증 후 DB+env 반영."""
+
+    analysis_llm_model: str = Field(min_length=1, max_length=120)
+    trading_llm_model: str = Field(min_length=1, max_length=120)
+    teacher_llm_model: str = Field(default="", max_length=120)
+    ollama_model: str = Field(min_length=1, max_length=120)
+    change_reason: str | None = Field(default=None, max_length=255)

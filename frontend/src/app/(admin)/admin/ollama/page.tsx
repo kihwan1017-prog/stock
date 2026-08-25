@@ -4,12 +4,20 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, Col, Row, Space, Tag, Typography } from "antd";
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { SettingsEditor } from "@/features/admin/components/SettingsEditor";
+import { OllamaRoleModelPanel } from "@/features/admin/ollama/OllamaRoleModelPanel";
 import { asRecord, cell } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
+
+/** 역할 모델은 전용 Select UI에서 관리 — SettingsEditor와 중복 편집 방지 */
+const ROLE_MODEL_SETTING_KEYS = [
+  "analysis_llm_model",
+  "trading_llm_model",
+  "teacher_llm_model",
+  "ollama_model",
+];
 
 export default function AdminOllamaPage() {
   const statusQuery = useQuery({
@@ -17,18 +25,13 @@ export default function AdminOllamaPage() {
     queryFn: adminApi.getOllamaStatus,
     refetchInterval: 15_000,
   });
-  const modelsQuery = useQuery({
-    queryKey: queryKeys.admin.ollamaModels(),
-    queryFn: adminApi.listOllamaModels,
-    retry: false,
-  });
 
   const status = asRecord(statusQuery.data);
 
   return (
     <AdminPageShell
       title="Ollama 관리"
-      description="상태 · 모델 · AI 설정"
+      description="역할별 모델 · 설치 목록 · AI 연결 설정"
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Card size="small" loading={statusQuery.isLoading} title="Ollama 상태">
@@ -49,7 +52,7 @@ export default function AdminOllamaPage() {
               </Tag>
               <Typography.Text code>{cell(status?.base_url)}</Typography.Text>
               <Typography.Text>
-                model: {cell(status?.configured_model)}
+                fallback model: {cell(status?.configured_model)}
               </Typography.Text>
               <Typography.Text>
                 installed: {cell(status?.model_count)}
@@ -63,21 +66,16 @@ export default function AdminOllamaPage() {
           )}
         </Card>
 
+        <OllamaRoleModelPanel />
+
         <Row gutter={[16, 16]}>
-          <Col xs={24} lg={12}>
-            <Card title="AI 설정 (DB)" size="small">
-              <SettingsEditor category="ai" />
+          <Col xs={24}>
+            <Card title="AI 연결 설정 (DB)" size="small">
+              <SettingsEditor
+                category="ai"
+                excludeKeys={ROLE_MODEL_SETTING_KEYS}
+              />
             </Card>
-          </Col>
-          <Col xs={24} lg={12}>
-            <AdminJsonCard
-              title="설치된 모델 (GET /ollama/models)"
-              loading={modelsQuery.isLoading}
-              error={
-                modelsQuery.error ? toApiError(modelsQuery.error) : null
-              }
-              data={modelsQuery.data}
-            />
           </Col>
         </Row>
       </Space>

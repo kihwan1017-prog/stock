@@ -24,9 +24,15 @@ import { queryKeys } from "@/lib/query/queryKeys";
 interface SettingsEditorProps {
   category: string;
   title?: string;
+  /** 역할 모델 전용 UI에서 중복 편집을 피하기 위해 숨길 키 */
+  excludeKeys?: string[];
 }
 
-export function SettingsEditor({ category, title }: SettingsEditorProps) {
+export function SettingsEditor({
+  category,
+  title,
+  excludeKeys,
+}: SettingsEditorProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
@@ -37,9 +43,17 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
     queryFn: () => adminApi.listSettings(category),
   });
 
+  const excludeSet = useMemo(
+    () => new Set(excludeKeys ?? []),
+    [excludeKeys],
+  );
+
   const items = useMemo(
-    () => settingsQuery.data ?? [],
-    [settingsQuery.data],
+    () =>
+      (settingsQuery.data ?? []).filter(
+        (item) => !excludeSet.has(item.key),
+      ),
+    [settingsQuery.data, excludeSet],
   );
 
   const initialValues = useMemo(() => {

@@ -270,6 +270,7 @@ export const queryKeys = {
       ["admin", "setting-history", params ?? {}] as const,
     ollamaModels: () => ["admin", "ollama-models"] as const,
     ollamaStatus: () => ["admin", "ollama-status"] as const,
+    ollamaRoleModels: () => ["admin", "ollama-role-models"] as const,
     opsDbStatus: () => ["admin", "ops-db-status"] as const,
     opsMigration: () => ["admin", "ops-migration"] as const,
     opsBackup: () => ["admin", "ops-backup"] as const,
