@@ -141,7 +141,13 @@ class KiwoomMarketRealtimeRuntime:
             await self.stop()
 
         def _resolve_real_feed_client() -> dict[str, Any]:
-            """Vault/credential resolve는 sync — event loop 블로킹 방지용."""
+            """Vault/credential resolve는 sync — event loop 블로킹 방지용.
+
+            시세 feed는 last_used_at write-lock이 불필요 (touch_last_used=False).
+            단계별 monotonic timing만 기록 — secret 미포함.
+            """
+
+            import time
 
             from stock_platform.broker.credential_adapter_factory import (
                 build_kiwoom_order_config_from_vault,
@@ -154,33 +160,72 @@ class KiwoomMarketRealtimeRuntime:
             )
             from stock_platform.database.session import get_session_factory
 
+            timings: dict[str, float] = {}
+            t_begin = time.monotonic()
+
+            def _mark(name: str, started: float) -> None:
+                timings[name] = round((time.monotonic() - started) * 1000, 1)
+
+            t0 = time.monotonic()
             session = get_session_factory()()
+            _mark("db_acquire_ms", t0)
             try:
+                t1 = time.monotonic()
+                # LOCAL_CREDENTIAL_RESOLVE only — token HTTP는 WS run_forever에서
                 resolved = resolve_uba_credential(
                     session,
                     uba_id,
                     expected_broker="KIWOOM",
+                    touch_last_used=False,
                 )
+                _mark("local_credential_resolve_ms", t1)
+                t2 = time.monotonic()
                 order_cfg = build_kiwoom_order_config_from_vault(resolved)
+                _mark("build_order_cfg_ms", t2)
                 if require_real and bool(getattr(order_cfg, "use_mock", False)):
                     return {
                         "ok": False,
                         "reason": "UBA_CREDENTIAL_IS_MOCK",
+                        "timings": timings,
                     }
+                t3 = time.monotonic()
                 token_cache = KiwoomTokenCache(KiwoomTokenClient(order_cfg))
                 if require_real:
                     ws_cfg = KiwoomMarketWebSocketConfig.for_real_host()
                 else:
                     ws_cfg = KiwoomMarketWebSocketConfig.from_settings()
+                _mark("token_cache_ws_cfg_ms", t3)
+                timings["total_ms"] = round(
+                    (time.monotonic() - t_begin) * 1000, 1
+                )
+                logger.info(
+                    "kiwoom_feed_credential_resolve_timings",
+                    uba_id=uba_id,
+                    credential_id=int(resolved.credential_id),
+                    broker=str(resolved.broker_code),
+                    use_mock=bool(order_cfg.use_mock),
+                    **timings,
+                )
                 return {
                     "ok": True,
                     "token_cache": token_cache,
                     "ws_cfg": ws_cfg,
+                    "timings": timings,
                 }
             except Exception as exc:  # noqa: BLE001
+                timings["total_ms"] = round(
+                    (time.monotonic() - t_begin) * 1000, 1
+                )
+                logger.warning(
+                    "kiwoom_feed_credential_resolve_failed",
+                    uba_id=uba_id,
+                    error=type(exc).__name__,
+                    **timings,
+                )
                 return {
                     "ok": False,
                     "reason": f"CREDENTIAL_RESOLVE_{type(exc).__name__}",
+                    "timings": timings,
                 }
             finally:
                 session.close()

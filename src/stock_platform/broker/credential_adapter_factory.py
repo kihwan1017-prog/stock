@@ -55,12 +55,19 @@ def resolve_uba_credential(
     user_broker_account_id: int,
     *,
     expected_broker: str,
+    touch_last_used: bool = True,
 ) -> ResolvedBrokerCredential:
+    """UBA vault resolve.
+
+    touch_last_used=False: 시세/readiness 등 write-lock 불필요 경로.
+    True여도 vault는 별도 short txn + lock_timeout으로 hang을 막는다.
+    """
+
     return BrokerCredentialVaultService(session).resolve_for_runtime(
         user_broker_account_id,
         expected_broker=expected_broker,
         require_verified=True,
-        touch_last_used=True,
+        touch_last_used=bool(touch_last_used),
     )
 
 

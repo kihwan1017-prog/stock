@@ -5,12 +5,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text, update
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from stock_platform.broker.credential_crypto import (
     KEY_VERSION_V1,
@@ -516,8 +519,10 @@ class BrokerCredentialVaultService:
             ) from exc
 
         if touch_last_used:
-            entity.last_used_at = _utcnow()
-            self._session.flush()
+            # 호출자 세션에 row lock을 남기지 않음 — idle-in-transaction hang 방지
+            self._touch_last_used_best_effort(
+                int(entity.broker_account_credential_id)
+            )
 
         return ResolvedBrokerCredential(
             user_broker_account_id=int(user_broker_account_id),
@@ -527,6 +532,37 @@ class BrokerCredentialVaultService:
             payload=payload,
             verification_status=entity.verification_status,
         )
+
+    def _touch_last_used_best_effort(self, credential_id: int) -> None:
+        """last_used_at를 별도 short txn으로 갱신.
+
+        - SET LOCAL lock_timeout: row lock 대기 무한 hang 방지
+        - 호출자 세션과 분리: flush 미커밋으로 credential row를 장시간 잠그지 않음
+        - 실패 시 skip (resolve 자체는 성공 유지 — 시세/주문 SoT와 무관 감사 필드)
+        """
+
+        bind = self._session.get_bind()
+        touch_session = Session(bind=bind)
+        try:
+            touch_session.execute(text("SET LOCAL lock_timeout = '3000'"))
+            touch_session.execute(
+                update(BrokerAccountCredentialEntity)
+                .where(
+                    BrokerAccountCredentialEntity.broker_account_credential_id
+                    == int(credential_id)
+                )
+                .values(last_used_at=_utcnow())
+            )
+            touch_session.commit()
+        except Exception as exc:  # noqa: BLE001
+            touch_session.rollback()
+            logger.warning(
+                "credential_last_used_touch_skipped credential_id=%s error=%s",
+                int(credential_id),
+                type(exc).__name__,
+            )
+        finally:
+            touch_session.close()
 
     def assert_live_order_allowed(
         self,
