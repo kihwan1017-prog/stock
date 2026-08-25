@@ -646,6 +646,15 @@ class UpbitPortfolioService:
         exposure_pct = (
             (exposure / capital) if capital and capital > 0 else None
         )
+        from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
+            summarize_portfolio_daily_entries,
+        )
+
+        daily_entry = summarize_portfolio_daily_entries(
+            self._session,
+            int(user_broker_account_id),
+            daily_limit=int(policy.get("portfolio_daily_entry_limit") or 10),
+        )
         return {
             "mode": assignment.get("mode"),
             "portfolio_enabled": bool(assignment.get("portfolio_enabled")),
@@ -659,6 +668,12 @@ class UpbitPortfolioService:
             "reserved_krw": reserved,
             "min_cash_reserve_pct": float(policy["min_cash_reserve_pct"]),
             "entry_state": policy["entry_state"],
+            "daily_entry": daily_entry,
+            "daily_entry_label_ko": (
+                f"오늘 실제 진입 {daily_entry['entry_count']} / "
+                f"{daily_entry['entry_limit']} "
+                f"(남은 {daily_entry['remaining']})"
+            ),
             "slot_badges": [
                 {
                     "slot_no": s["slot_no"],
@@ -1221,21 +1236,21 @@ class UpbitPortfolioService:
             out["reason"] = "PENDING_ENTRY_LIMIT"
             return out
 
-        # portfolio_daily_entry_limit — 계좌 daily_order_limit과 분리 (무시 금지)
-        day_start = _now().replace(hour=0, minute=0, second=0, microsecond=0)
-        today_entries = list(
-            self._session.scalars(
-                select(UpbitLiveCandidateSelectionEntity).where(
-                    UpbitLiveCandidateSelectionEntity.user_broker_account_id
-                    == uba_id,
-                    UpbitLiveCandidateSelectionEntity.selected_at >= day_start,
-                    UpbitLiveCandidateSelectionEntity.selection_reason.like(
-                        "PORTFOLIO_SLOT_%"
-                    ),
-                )
-            )
+        # portfolio_daily_entry_limit — REAL AUTO BUY(KST day) SoT.
+        # SUPERSEDED/SELECTED/slot rotation 은 쿼터를 소비하지 않는다.
+        from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
+            summarize_portfolio_daily_entries,
         )
-        if len(today_entries) >= int(policy.portfolio_daily_entry_limit):
+
+        daily_limit = int(policy.portfolio_daily_entry_limit)
+        daily_usage = summarize_portfolio_daily_entries(
+            self._session,
+            uba_id,
+            daily_limit=daily_limit,
+            now=_now(),
+        )
+        out["daily_entry_usage"] = daily_usage
+        if int(daily_usage["entry_count"]) >= daily_limit:
             out["reason"] = "PORTFOLIO_DAILY_ENTRY_LIMIT"
             return out
 

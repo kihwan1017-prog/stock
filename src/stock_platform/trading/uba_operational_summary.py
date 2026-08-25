@@ -263,6 +263,20 @@ def build_uba_operational_summary(
             template_symbol=str(template).upper() if template else None,
         )
         full_market = fma.status_dict(uba_id)
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_service import (
+                UpbitPortfolioService,
+            )
+
+            drawer = UpbitPortfolioService(session).drawer_summary(uba_id)
+            de = drawer.get("daily_entry") if isinstance(drawer, dict) else None
+            if isinstance(de, dict):
+                full_market["daily_entry"] = de
+                full_market["daily_entry_label_ko"] = drawer.get(
+                    "daily_entry_label_ko"
+                )
+        except Exception:  # noqa: BLE001
+            pass
         sc = upbit_opportunity_scanner_scheduler.status()
         last = sc.get("last_result_summary") or {}
         cands = last.get("candidates") or []

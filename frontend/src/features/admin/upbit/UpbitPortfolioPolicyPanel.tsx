@@ -41,6 +41,9 @@ type Props = {
   slots: Record<string, unknown>[];
   entryForm: FormInstance;
   entryInitial: Record<string, unknown>;
+  /** 오늘(KST) 실제 AUTO BUY 진입 사용량 */
+  dailyEntry?: Record<string, unknown> | null;
+  dailyEntryLabelKo?: string | null;
 };
 
 function num(v: unknown, digits = 2): string {
@@ -54,11 +57,27 @@ export function UpbitPortfolioPolicyPanel({
   slots,
   entryForm,
   entryInitial,
+  dailyEntry,
+  dailyEntryLabelKo,
 }: Props) {
   const p = policyDisplayRecord(policy);
   const capacity = Number(p.max_positions ?? p.slot_capacity ?? 3);
   const occupied = Number(p.slots_occupied ?? 0);
   const emptyN = Number(p.slots_empty ?? Math.max(0, capacity - occupied));
+  const entryCount =
+    dailyEntry?.entry_count != null && Number.isFinite(Number(dailyEntry.entry_count))
+      ? Number(dailyEntry.entry_count)
+      : null;
+  const entryLimit =
+    dailyEntry?.entry_limit != null && Number.isFinite(Number(dailyEntry.entry_limit))
+      ? Number(dailyEntry.entry_limit)
+      : Number(entryInitial.portfolio_daily_entry_limit ?? 10);
+  const remaining =
+    dailyEntry?.remaining != null && Number.isFinite(Number(dailyEntry.remaining))
+      ? Number(dailyEntry.remaining)
+      : entryCount != null
+        ? Math.max(0, entryLimit - entryCount)
+        : null;
 
   const slotRows = [...slots]
     .sort(
@@ -221,7 +240,25 @@ export function UpbitPortfolioPolicyPanel({
             </Form.Item>
             <Form.Item
               name="portfolio_daily_entry_limit"
-              label="일일 진입 한도"
+              label={
+                <Tooltip title="실제 자동매매 신규 진입 기준. 후보 교체/Shadow는 포함하지 않습니다. (KST 00:00~24:00)">
+                  <span>일일 진입 한도</span>
+                </Tooltip>
+              }
+              extra={
+                entryCount != null ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {dailyEntryLabelKo ??
+                      `오늘 실제 진입 ${entryCount} / ${entryLimit} (남은 ${remaining ?? "—"})`}
+                    {" · "}
+                    기준 KST 00:00~24:00
+                  </Typography.Text>
+                ) : (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    실제 BUY 진입만 집계 · KST 일자
+                  </Typography.Text>
+                )
+              }
             >
               <InputNumber min={1} max={100} />
             </Form.Item>

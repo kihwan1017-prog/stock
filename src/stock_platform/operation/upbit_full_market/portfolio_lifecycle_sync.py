@@ -6,15 +6,17 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from stock_platform.operation.upbit_full_market.constants import (
     BINDING_STATUS_CLOSED,
     BINDING_STATUS_OPEN,
+    SLOT_EMPTY,
     SLOT_ENTRY_PENDING,
     SLOT_EXIT_PENDING,
     SLOT_OPEN,
+    SLOT_WAITING_SIGNAL,
     is_full_market_portfolio,
 )
 from stock_platform.operation.upbit_full_market.entities import (
@@ -224,7 +226,12 @@ def reconcile_portfolio_slot_lifecycle(
     q = select(UpbitPositionSlotEntity).where(
         UpbitPositionSlotEntity.user_broker_account_id == uba_id,
         UpbitPositionSlotEntity.status.in_(
-            [SLOT_ENTRY_PENDING, SLOT_OPEN, SLOT_EXIT_PENDING]
+            [
+                SLOT_ENTRY_PENDING,
+                SLOT_OPEN,
+                SLOT_EXIT_PENDING,
+                SLOT_WAITING_SIGNAL,
+            ]
         ),
     )
     if sym_filter:
@@ -236,16 +243,67 @@ def reconcile_portfolio_slot_lifecycle(
         sym = str(slot.symbol or "").upper()
         if not sym:
             continue
-        row = _reconcile_one_slot(
-            session,
-            slot=slot,
-            assignment=assignment,
-            fm=fm,
-            orders=_load_auto_orders(session, user_broker_account_id=uba_id, symbol=sym),
-            actor=actor,
-        )
+        if str(slot.status) == SLOT_WAITING_SIGNAL:
+            row = _reconcile_waiting_signal_slot(
+                session,
+                slot=slot,
+                assignment=assignment,
+                orders=_load_auto_orders(
+                    session, user_broker_account_id=uba_id, symbol=sym
+                ),
+                actor=actor,
+            )
+        else:
+            row = _reconcile_one_slot(
+                session,
+                slot=slot,
+                assignment=assignment,
+                fm=fm,
+                orders=_load_auto_orders(
+                    session, user_broker_account_id=uba_id, symbol=sym
+                ),
+                actor=actor,
+            )
         if row:
             transitions.append(row)
+
+    # OPEN 포지션이 없으면 assignment.current_symbol 잔여 정리
+    open_syms = list(
+        session.scalars(
+            select(UpbitPositionSlotEntity.symbol).where(
+                UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                UpbitPositionSlotEntity.status.in_(
+                    [SLOT_OPEN, SLOT_EXIT_PENDING, SLOT_ENTRY_PENDING]
+                ),
+                UpbitPositionSlotEntity.symbol.is_not(None),
+            )
+        )
+    )
+    if not open_syms and assignment.current_symbol:
+        # WAITING_SIGNAL만 남아도 "현재 심볼"은 청산 후 잔여일 수 있음
+        still_waiting = session.scalar(
+            select(func.count())
+            .select_from(UpbitPositionSlotEntity)
+            .where(
+                UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+                UpbitPositionSlotEntity.symbol
+                == str(assignment.current_symbol).upper(),
+            )
+        )
+        if int(still_waiting or 0) == 0:
+            prior = str(assignment.current_symbol)
+            assignment.current_symbol = None
+            assignment.updated_at = _now()
+            transitions.append(
+                {
+                    "slot_id": None,
+                    "symbol": prior,
+                    "from": "ASSIGNMENT_CURRENT_SYMBOL",
+                    "to": "CLEARED",
+                    "changes": ["CURRENT_SYMBOL_CLEARED_NO_OPEN"],
+                }
+            )
 
     if transitions:
         session.flush()
@@ -262,6 +320,99 @@ def reconcile_portfolio_slot_lifecycle(
         "transitions": transitions,
         "changed": len(transitions) > 0,
         "orders_created": 0,
+    }
+
+
+def _reconcile_waiting_signal_slot(
+    session: Session,
+    *,
+    slot: UpbitPositionSlotEntity,
+    assignment: Any,
+    orders: list[Any],
+    actor: str,
+) -> dict[str, Any] | None:
+    """WAITING_SIGNAL 잔여 정리 — max-wait 초과·무포지션만 EMPTY로 복귀.
+
+    유효 후보 대기는 유지. 임의 replacement 금지.
+    """
+
+    from stock_platform.operation.upbit_full_market.constants import (
+        DEFAULT_PORTFOLIO_CANDIDATE_MAX_WAIT_SECONDS,
+    )
+    from stock_platform.operation.upbit_full_market.entities import (
+        UpbitPortfolioPolicyEntity,
+    )
+
+    prior = str(slot.status)
+    sym = str(slot.symbol or "").upper()
+    if not sym:
+        return None
+
+    open_binding = _open_upbit_binding(
+        session,
+        user_broker_account_id=int(slot.user_broker_account_id),
+        symbol=sym,
+    )
+    if open_binding is not None:
+        return None
+
+    open_orders = [o for o in orders if _is_open(o)]
+    if open_orders:
+        return None
+
+    entry_buy = _pick_entry_buy(orders, slot)
+    # 이미 ENTRY가 진행 중이면 WAITING 해제 금지
+    if entry_buy is not None and (
+        _is_open(entry_buy) or not _is_filled(entry_buy)
+    ):
+        return None
+
+    policy = session.scalar(
+        select(UpbitPortfolioPolicyEntity).where(
+            UpbitPortfolioPolicyEntity.user_broker_account_id
+            == int(slot.user_broker_account_id)
+        )
+    )
+    max_wait = float(DEFAULT_PORTFOLIO_CANDIDATE_MAX_WAIT_SECONDS)
+    if policy is not None:
+        rg = dict(getattr(policy, "risk_group_policy_json", None) or {})
+        try:
+            max_wait = float(rg.get("candidate_max_wait_seconds") or max_wait)
+        except (TypeError, ValueError):
+            max_wait = float(DEFAULT_PORTFOLIO_CANDIDATE_MAX_WAIT_SECONDS)
+
+    anchor = slot.updated_at or slot.created_at
+    if anchor is None:
+        return None
+    a = anchor if anchor.tzinfo else anchor.replace(tzinfo=timezone.utc)
+    age_sec = max(0.0, (_now() - a.astimezone(timezone.utc)).total_seconds())
+    if age_sec < max_wait:
+        return None
+
+    slot.status = SLOT_EMPTY
+    slot.symbol = None
+    slot.candidate_selection_id = None
+    slot.scanner_run_id = None
+    slot.ai_analysis_id = None
+    slot.entry_order_id = None
+    slot.position_binding_id = None
+    slot.reserved_amount_krw = None
+    slot.allocated_amount_krw = None
+    slot.opened_at = None
+    slot.closed_at = None
+    slot.cooldown_until = None
+    slot.version = int(slot.version or 1) + 1
+    slot.updated_at = _now()
+    _ = (assignment, actor)
+    return {
+        "slot_id": int(slot.slot_id),
+        "symbol": sym,
+        "from": prior,
+        "to": SLOT_EMPTY,
+        "changes": ["WAITING_MAX_WAIT_EXPIRED"],
+        "entry_order_id": None,
+        "exit_order_id": None,
+        "waiting_age_seconds": age_sec,
     }
 
 

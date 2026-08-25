@@ -883,6 +883,12 @@ export function UpbitAutotradingSettingsWorkspace({
               slots={slots as Record<string, unknown>[]}
               entryForm={entryForm}
               entryInitial={entryInitial}
+              dailyEntry={asObj(summary.daily_entry)}
+              dailyEntryLabelKo={
+                summary.daily_entry_label_ko != null
+                  ? String(summary.daily_entry_label_ko)
+                  : null
+              }
             />
             <Button
               type="primary"
