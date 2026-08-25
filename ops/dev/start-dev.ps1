@@ -10,6 +10,7 @@ param(
     [string]$BackendHost = "127.0.0.1",
     [int]$BackendPort = 8000,
     [int]$FrontendPort = 3000,
+    [string]$FrontendHost = "0.0.0.0",
     [int]$ReadyTimeoutSec = 90,
     [switch]$NoBrowser
 )
@@ -226,6 +227,7 @@ print('DB_OK')
         Write-Step "starting backend (uvicorn reload)"
         # OS/PowerShell process env가 secrets env 파일보다 우선하므로,
         # LIVE 관련 override를 자식 프로세스에서 제거해 env 파일을 공식 source로 둔다.
+        # cmd.exe 글로브/따옴표 깨짐 방지: PowerShell 에서 python 을 직접 실행한다.
         $backendCmd = @"
 `$ErrorActionPreference='Continue'
 Set-Location -LiteralPath '$ProjectRoot'
@@ -244,7 +246,9 @@ foreach (`$key in `$liveEnvKeys) {
     Remove-Item -LiteralPath ("Env:" + `$key) -ErrorAction SilentlyContinue
 }
 Write-Host '[start-dev] LIVE-related process env overrides cleared; env file is source of truth'
-cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --reload-exclude tmp_* --reload-exclude *.txt --reload-exclude .run/* --app-dir src >> `"$BackendLog`" 2>&1"
+# glob 패턴(--reload-exclude tmp_* 등)은 cmd/PowerShell 이 확장하므로 사용하지 않는다.
+# --reload-dir src 만으로 루트 tmp_*.txt 감시/인자 오염을 피한다.
+cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --reload-dir src --app-dir src >> `"$BackendLog`" 2>&1"
 "@
         $backendProc = Start-Process -FilePath "powershell.exe" `
             -ArgumentList @(
@@ -261,11 +265,11 @@ cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $Backe
 
     # --- start frontend ---
     if ($startFrontend) {
-        Write-Step "starting frontend (npm run dev)"
+        Write-Step "starting frontend (npm run dev --hostname $FrontendHost)"
         $frontendCmd = @"
 `$ErrorActionPreference='Continue'
 Set-Location -LiteralPath '$FrontendDir'
-cmd.exe /c "npm run dev -- --port $FrontendPort >> `"$FrontendLog`" 2>&1"
+cmd.exe /c "npm run dev -- --hostname $FrontendHost --port $FrontendPort >> `"$FrontendLog`" 2>&1"
 "@
         $frontendProc = Start-Process -FilePath "powershell.exe" `
             -ArgumentList @(
