@@ -1,4 +1,4 @@
-{
+﻿{
   "FINAL_VERDICT": "TAILSCALE_MOBILE_HTTPS_READY",
   "TIMESTAMP_UTC": "2026-08-25T20:30:00Z",
   "TAILSCALE": {
@@ -85,7 +85,7 @@
     ".run/k_tailscale_mobile_https_setup.json",
     ".run/k_tailscale_mobile_https_setup.md"
   ],
-  "GIT_COMMIT": "pending",
+  "GIT_COMMIT": "b1f980c",
   "BACKEND_RESTART_COUNT": 0,
   "FRONTEND_RESTART_COUNT": 0,
   "SYSTEM_BUG_ACTIVE": false,
@@ -105,3 +105,4 @@
   ],
   "NEXT_ACTION": "PHYSICAL_PHONE_LTE_PWA_VERIFY"
 }
+
