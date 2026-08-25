@@ -274,6 +274,7 @@ class UpbitOpportunityScannerService:
                     force=force_ai,
                     ai_concurrency=policy.ai_concurrency,
                     api_calls=api_calls,
+                    scanner_interval_seconds=float(policy.interval_seconds),
                 )
                 stage["AI_GATE_MS"] = _ms_since(t4)
             else:
@@ -579,6 +580,7 @@ class UpbitOpportunityScannerService:
         force: bool,
         ai_concurrency: int = 1,
         api_calls: dict[str, int] | None = None,
+        scanner_interval_seconds: float = 300.0,
     ) -> list[dict[str, Any]]:
         """Top-N 슬롯을 검증된 AI로 채움. 순위 순회 semantics 유지 + 제한 병렬."""
 
@@ -587,6 +589,25 @@ class UpbitOpportunityScannerService:
         pool_size = min(len(ranked), top_n)
         pool = ranked[:pool_size]
         ai_by_symbol: dict[str, dict[str, Any]] = {}
+        ai_timings: list[dict[str, Any]] = []
+        result["ai_symbol_timings"] = ai_timings
+
+        from stock_platform.ai.market_analysis.autotrading_periodic import (
+            resolve_scanner_ai_reuse_seconds,
+        )
+        from stock_platform.common.settings import get_settings
+
+        settings = get_settings()
+        scanner_reuse = resolve_scanner_ai_reuse_seconds(
+            settings,
+            scanner_interval_seconds=float(scanner_interval_seconds),
+        )
+        result["ai_reuse_seconds"] = scanner_reuse
+        result["ai_model"] = str(
+            getattr(settings, "resolved_autotrading_ai_analysis_model", None)
+            or getattr(settings, "resolved_analysis_llm_model", None)
+            or "qwen3:1.7b"
+        )
 
         runner = self._ai_runner
         if runner is None:
@@ -603,7 +624,11 @@ class UpbitOpportunityScannerService:
                 session = SessionFactory()
                 try:
                     job = UpbitAutotradingAiAnalysisJob(session)
-                    out = await job.run_once(symbol=symbol, force=force)
+                    out = await job.run_once(
+                        symbol=symbol,
+                        force=force,
+                        reuse_seconds=scanner_reuse,
+                    )
                     session.commit()
                     return out
                 except Exception:
@@ -618,19 +643,69 @@ class UpbitOpportunityScannerService:
             runner = _default
 
         sem = asyncio.Semaphore(max(1, int(ai_concurrency)))
+        max_inflight = 0
+        inflight = 0
+        inflight_lock = asyncio.Lock()
 
         async def _run_one(symbol: str) -> tuple[str, dict[str, Any]]:
+            nonlocal max_inflight, inflight
+            queued_at = time.perf_counter()
             async with sem:
+                queue_wait_ms = int((time.perf_counter() - queued_at) * 1000)
+                async with inflight_lock:
+                    inflight += 1
+                    max_inflight = max(max_inflight, inflight)
                 api_calls["ai_jobs"] = int(api_calls.get("ai_jobs") or 0) + 1
+                started = time.perf_counter()
                 try:
                     out = await runner(symbol)
+                    total_ms = int((time.perf_counter() - started) * 1000)
+                    timing = {
+                        "symbol": symbol,
+                        "queue_wait_ms": queue_wait_ms,
+                        "total_ms": total_ms,
+                        "model": out.get("model") or out.get("model_used"),
+                        "result": out.get("recommendation"),
+                        "cache_hit": bool(
+                            out.get("skipped")
+                            and out.get("skip_reason")
+                            in {"FRESH_RESULT_EXISTS", "DUPLICATE_TIME_BUCKET"}
+                        ),
+                        "skip_reason": out.get("skip_reason"),
+                        "timeout": "TIMEOUT"
+                        in str(out.get("error") or "").upper(),
+                        "retry_count": 0,
+                        "ollama_eval_ms": out.get("execution_latency_ms"),
+                        "warmup": (out.get("warmup") or {}).get("skip_reason")
+                        or (out.get("warmup") or {}).get("note"),
+                        "debounce_waited": bool(
+                            (out.get("warmup") or {}).get("debounce_waited")
+                        ),
+                    }
+                    ai_timings.append(timing)
                     return symbol, out
                 except Exception as exc:  # noqa: BLE001
+                    total_ms = int((time.perf_counter() - started) * 1000)
+                    ai_timings.append(
+                        {
+                            "symbol": symbol,
+                            "queue_wait_ms": queue_wait_ms,
+                            "total_ms": total_ms,
+                            "result": "HOLD",
+                            "cache_hit": False,
+                            "timeout": False,
+                            "retry_count": 0,
+                            "error": type(exc).__name__,
+                        }
+                    )
                     return symbol, {
                         "ok": False,
                         "error": type(exc).__name__,
                         "recommendation": "HOLD",
                     }
+                finally:
+                    async with inflight_lock:
+                        inflight -= 1
 
         if pool:
             pairs = await asyncio.gather(
@@ -639,6 +714,9 @@ class UpbitOpportunityScannerService:
             for sym, out in pairs:
                 ai_by_symbol[sym] = out
                 result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
+
+        result["ai_max_inflight"] = max_inflight
+        result["ai_concurrency_configured"] = max(1, int(ai_concurrency))
 
         selected: list[dict[str, Any]] = []
         failed_budget = 0

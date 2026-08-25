@@ -267,7 +267,8 @@ class Settings(BaseSettings):
     autotrading_ai_analysis_symbol: str = "KRW-XRP"
     autotrading_ai_analysis_timeframe: str = "1m"
     autotrading_ai_analysis_provider: str = "ollama"
-    autotrading_ai_analysis_model: str = "qwen3.5:4b"
+    # 빈 문자열 → resolved_analysis_llm_model (1.7b). 4b는 Teacher/reference 전용.
+    autotrading_ai_analysis_model: str = Field(default="")
     # Ollama 분석 timeout — cold start 여유만 소폭 (무분별 확대 금지)
     autotrading_ai_analysis_timeout_seconds: float = 150.0
     autotrading_ai_analysis_max_tokens: int = Field(default=1024, ge=256, le=4096)
@@ -1084,6 +1085,19 @@ class Settings(BaseSettings):
         """ANALYSIS_LLM — 기본 qwen3:1.7b. ollama_model(4b)은 reference 유지."""
 
         return (self.analysis_llm_model or "").strip() or "qwen3:1.7b"
+
+    @property
+    def resolved_autotrading_ai_analysis_model(self) -> str:
+        """Scanner/주기 차트 AI Gate 모델 — Analysis 역할(1.7b)과 정렬.
+
+        명시 autotrading_ai_analysis_model 이 있으면 존중.
+        비어 있으면 resolved_analysis_llm_model (Teacher 4b로 조용히 fallback 금지).
+        """
+
+        custom = (self.autotrading_ai_analysis_model or "").strip()
+        if custom:
+            return custom
+        return self.resolved_analysis_llm_model
 
     @property
     def resolved_trading_llm_model(self) -> str:

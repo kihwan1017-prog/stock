@@ -85,6 +85,7 @@ class UpbitOpportunityShadowService:
 
         created: list[dict[str, Any]] = []
         skipped: list[dict[str, Any]] = []
+        pending_llm_ids: list[int] = []
 
         for cand in candidates:
             rec = str(cand.get("recommendation") or "").upper()
@@ -197,21 +198,9 @@ class UpbitOpportunityShadowService:
             )
             self._session.add(row)
             self._session.flush()
-            # 후보 발생 시 research LLM — fail-open, REAL 경로 비차단
-            try:
-                from stock_platform.operation.upbit_market_context.candidate_llm import (
-                    maybe_analyze_shadow_candidate,
-                )
-
-                maybe_analyze_shadow_candidate(self._session, row)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "shadow_candidate_llm_hook_failed_open",
-                    symbol=symbol,
-                    error=type(exc).__name__,
-                )
             public = self.to_public(row)
             created.append(public)
+            pending_llm_ids.append(int(row.shadow_id))
             if notify:
                 try:
                     publish_shadow_opened(public)
@@ -222,8 +211,22 @@ class UpbitOpportunityShadowService:
                         error=type(exc).__name__,
                     )
 
+        llm_schedule: list[dict[str, Any]] = []
         if created:
             self._session.commit()
+            # dual LLM(1.7b+2b Shadow)은 Scanner REAL 완료를 막지 않음
+            try:
+                from stock_platform.operation.upbit_market_context.candidate_llm import (
+                    schedule_shadow_candidate_llm,
+                )
+
+                for sid in pending_llm_ids:
+                    llm_schedule.append(schedule_shadow_candidate_llm(sid))
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "shadow_candidate_llm_hook_failed_open",
+                    error=type(exc).__name__,
+                )
         else:
             self._session.flush()
 
@@ -234,6 +237,7 @@ class UpbitOpportunityShadowService:
             "orders_created": 0,
             "live_auto_start": False,
             "paper_shadow": True,
+            "dual_llm_schedule": llm_schedule,
         }
 
     def _has_active_shadow(self, symbol: str) -> bool:

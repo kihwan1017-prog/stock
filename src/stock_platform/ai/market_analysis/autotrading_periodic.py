@@ -103,10 +103,47 @@ def _reset_ollama_circuit_after_warmup() -> dict[str, Any]:
         return {"reset": False, "error": type(exc).__name__}
 
 
+def resolve_scanner_ai_reuse_seconds(
+    settings: Any | None = None,
+    *,
+    scanner_interval_seconds: float,
+    ttl_seconds: float | None = None,
+) -> float:
+    """Scanner top-N AI Gate 전용 reuse.
+
+    주기 Job(resolve_analysis_reuse_seconds)은 '다음 tick 재분석'을 위해
+    interval-grace(<interval)를 쓰지만, Scanner는 interval(300s)마다
+    top-N이 바뀌고 겹치는 심볼은 캐시 재사용이 맞다.
+    reuse < scanner_interval 이면 매 scan마다 전원 miss → Ollama 폭주.
+    """
+
+    settings = settings if settings is not None else get_settings()
+    ttl = float(
+        ttl_seconds
+        if ttl_seconds is not None
+        else (
+            getattr(settings, "autotrading_ai_analysis_ttl_seconds", 900.0)
+            or 900.0
+        )
+    )
+    cache_ttl = float(
+        getattr(settings, "analysis_llm_cache_ttl_seconds", 600.0) or 600.0
+    )
+    interval = max(60.0, float(scanner_interval_seconds))
+    # 명시 scanner/analysis reuse 오버라이드가 있으면 존중(하한=interval)
+    raw = getattr(settings, "autotrading_ai_analysis_reuse_seconds", None)
+    if raw is not None and str(raw).strip() != "":
+        reuse = max(interval, float(raw))
+    else:
+        reuse = max(interval, cache_ttl)
+    return min(max(60.0, reuse), ttl)
+
+
 async def _warmup_ollama(settings: Any) -> dict[str, Any]:
     """모델 cold-start 완화용 초소형 ping. 실패해도 분석은 계속.
 
     Scanner top-N이 연속 호출해도 keep_alive 구간 안에서는 재warmup 생략.
+    sleep/wait 없이 skip — debounce expiration을 await 하지 않음.
     """
 
     import time as _time
@@ -126,16 +163,24 @@ async def _warmup_ollama(settings: Any) -> dict[str, Any]:
             "skipped": True,
             "skip_reason": "WARMUP_DEBOUNCED",
             "debounce_seconds": _WARMUP_DEBOUNCE_SECONDS,
+            "debounce_waited": False,
         }
 
     base = str(
         getattr(settings, "ollama_base_url", None) or "http://127.0.0.1:11434"
     ).rstrip("/")
-    model = str(
-        getattr(settings, "autotrading_ai_analysis_model", None)
-        or getattr(settings, "ollama_model", None)
-        or "qwen3.5:4b"
-    )
+    # Analysis 역할 모델과 동일 — Teacher 4b를 warmup으로 로드해 스위칭하지 않음
+    _explicit_model = (
+        getattr(settings, "autotrading_ai_analysis_model", None) or ""
+    ).strip()
+    if _explicit_model:
+        model = _explicit_model
+    else:
+        model = str(
+            getattr(settings, "resolved_analysis_llm_model", None)
+            or getattr(settings, "analysis_llm_model", None)
+            or "qwen3:1.7b"
+        )
     try:
         # cold start는 60~120s 소요 가능 — warmup만 여유, 분석 timeout과 분리
         async with httpx.AsyncClient(timeout=150.0) as client:
@@ -158,6 +203,8 @@ async def _warmup_ollama(settings: Any) -> dict[str, Any]:
                 "tags_ok": True,
                 "generate_status": gen.status_code,
                 "note": "cold_start_warmup",
+                "model": model,
+                "debounce_waited": False,
             }
             if ok:
                 out["circuit"] = _reset_ollama_circuit_after_warmup()
@@ -172,6 +219,8 @@ async def _warmup_ollama(settings: Any) -> dict[str, Any]:
             "ok": False,
             "error": type(exc).__name__,
             "note": "warmup_failed_continue",
+            "model": model,
+            "debounce_waited": False,
         }
 
 
@@ -540,6 +589,7 @@ class UpbitAutotradingAiAnalysisJob:
         timeframe: str | None = None,
         force: bool = False,
         now: datetime | None = None,
+        reuse_seconds: float | None = None,
     ) -> dict[str, Any]:
         settings = get_settings()
         exchange = "UPBIT"
@@ -561,22 +611,33 @@ class UpbitAutotradingAiAnalysisJob:
             getattr(settings, "autotrading_ai_analysis_ttl_seconds", 900.0) or 900.0
         )
         # Gate TTL(900)과 Scheduler reuse/skip window 분리 — STALE gap 방지
-        reuse_seconds = resolve_analysis_reuse_seconds(
-            settings,
-            interval_seconds=interval,
-            ttl_seconds=ttl,
-        )
+        # Scanner는 reuse_seconds 인자로 별도 window 주입 (주기 Job semantics 유지)
+        if reuse_seconds is not None:
+            resolved_reuse = min(max(60.0, float(reuse_seconds)), ttl)
+        else:
+            resolved_reuse = resolve_analysis_reuse_seconds(
+                settings,
+                interval_seconds=interval,
+                ttl_seconds=ttl,
+            )
         min_conf = float(
             getattr(settings, "autotrading_ai_min_confidence", 0.4) or 0.4
         )
         provider = str(
             getattr(settings, "autotrading_ai_analysis_provider", None) or "ollama"
         ).lower()
-        model = str(
-            getattr(settings, "autotrading_ai_analysis_model", None)
-            or getattr(settings, "ollama_model", None)
-            or "qwen3.5:4b"
-        )
+        # 명시 autotrading model > Analysis 역할 모델. Teacher 4b silent fallback 금지.
+        _explicit_model = (
+            getattr(settings, "autotrading_ai_analysis_model", None) or ""
+        ).strip()
+        if _explicit_model:
+            model = _explicit_model
+        else:
+            model = str(
+                getattr(settings, "resolved_analysis_llm_model", None)
+                or getattr(settings, "analysis_llm_model", None)
+                or "qwen3:1.7b"
+            )
         now_utc = now or datetime.now(timezone.utc)
         if now_utc.tzinfo is None:
             now_utc = now_utc.replace(tzinfo=timezone.utc)
@@ -591,7 +652,7 @@ class UpbitAutotradingAiAnalysisJob:
             "provider": provider,
             "model": model,
             "ttl_seconds": ttl,
-            "reuse_seconds": reuse_seconds,
+            "reuse_seconds": resolved_reuse,
             "interval_seconds": interval,
             "skipped": False,
             "orders_created": 0,
@@ -608,12 +669,13 @@ class UpbitAutotradingAiAnalysisJob:
             if isinstance(prev_safe, dict):
                 previous_recommendation = prev_safe.get("recommendation")
         if not force and is_analysis_fresh(
-            latest, ttl_seconds=reuse_seconds, now=now_utc
+            latest, ttl_seconds=resolved_reuse, now=now_utc
         ):
             out.update(
                 {
                     "skipped": True,
                     "skip_reason": "FRESH_RESULT_EXISTS",
+                    "ok": True,
                     "market_analysis_id": int(latest.market_analysis_id)
                     if latest
                     else None,
@@ -700,7 +762,7 @@ class UpbitAutotradingAiAnalysisJob:
                 execution_mode="EXTERNAL",
                 provider_code=provider,
                 model=model,
-                # qwen3.5:4b 차트 JSON — think OFF + 1024 tokens (512는 thinking/본문 절단)
+                # Analysis 1.7b JSON — think OFF. max_tokens는 settings 유지
                 max_tokens=int(
                     getattr(
                         settings,
@@ -715,6 +777,7 @@ class UpbitAutotradingAiAnalysisJob:
                         "autotrading_ai_analysis_timeout_seconds",
                         None,
                     )
+                    or getattr(settings, "analysis_llm_timeout_seconds", 90.0)
                     or getattr(settings, "ollama_timeout_seconds", 180.0)
                     or 180.0
                 ),

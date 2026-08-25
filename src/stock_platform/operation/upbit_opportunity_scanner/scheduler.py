@@ -149,6 +149,13 @@ class UpbitOpportunityScannerScheduler:
                 "ai_failed_skipped": self._last_result.get(
                     "ai_failed_skipped"
                 ),
+                "ai_model": self._last_result.get("ai_model"),
+                "ai_reuse_seconds": self._last_result.get("ai_reuse_seconds"),
+                "ai_max_inflight": self._last_result.get("ai_max_inflight"),
+                "ai_concurrency_configured": self._last_result.get(
+                    "ai_concurrency_configured"
+                ),
+                "ai_symbol_timings": self._last_result.get("ai_symbol_timings"),
                 "top_n": len(self._last_result.get("candidates") or []),
                 "notifications": self._last_result.get("notifications"),
                 "shadow": self._last_result.get("shadow"),

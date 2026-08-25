@@ -7,6 +7,8 @@ TRADING_LLM은 SHADOW ONLY — REAL recommendation/slot/order/LIVE를 변경하�
 
 from __future__ import annotations
 
+import threading
+from collections import deque
 from typing import Any
 
 from sqlalchemy import select
@@ -286,3 +288,137 @@ def maybe_analyze_shadow_candidate(
             "live_order": False,
             "REAL_POLICY_CHANGED": "NO",
         }
+
+
+# --- Shadow dual-LLM background (Scanner REAL path 비차단) ---
+_SHADOW_LLM_MAX_QUEUE = 32
+_shadow_llm_pending: set[int] = set()
+_shadow_llm_queue: deque[int] = deque()
+_shadow_llm_lock = threading.Lock()
+_shadow_llm_worker_started = False
+
+
+def shadow_llm_queue_stats() -> dict[str, Any]:
+    with _shadow_llm_lock:
+        return {
+            "pending": len(_shadow_llm_pending),
+            "queued": len(_shadow_llm_queue),
+            "max_queue": _SHADOW_LLM_MAX_QUEUE,
+        }
+
+
+def schedule_shadow_candidate_llm(shadow_id: int) -> dict[str, Any]:
+    """ALLOW Shadow 생성 후 dual LLM을 bounded background로 실행.
+
+    Scanner completion을 await 하지 않음. 연구 실패는 REAL에 영향 없음.
+    """
+
+    global _shadow_llm_worker_started
+
+    sid = int(shadow_id)
+    if sid <= 0:
+        return {"ok": False, "skipped": True, "reason": "INVALID_SHADOW_ID"}
+
+    with _shadow_llm_lock:
+        if sid in _shadow_llm_pending:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "DEDUP_INFLIGHT",
+                "shadow_id": sid,
+            }
+        if len(_shadow_llm_pending) >= _SHADOW_LLM_MAX_QUEUE:
+            return {
+                "ok": False,
+                "skipped": True,
+                "reason": "QUEUE_FULL",
+                "shadow_id": sid,
+                "max_queue": _SHADOW_LLM_MAX_QUEUE,
+            }
+        _shadow_llm_pending.add(sid)
+        _shadow_llm_queue.append(sid)
+        start_worker = not _shadow_llm_worker_started
+        if start_worker:
+            _shadow_llm_worker_started = True
+
+    if start_worker:
+        try:
+            threading.Thread(
+                target=_shadow_llm_worker_loop,
+                name="upbit-shadow-dual-llm",
+                daemon=True,
+            ).start()
+        except Exception as exc:  # noqa: BLE001
+            with _shadow_llm_lock:
+                _shadow_llm_pending.discard(sid)
+                _shadow_llm_worker_started = False
+            logger.warning(
+                "shadow_candidate_llm_schedule_failed",
+                error=type(exc).__name__,
+                shadow_id=sid,
+            )
+            return {
+                "ok": False,
+                "skipped": True,
+                "reason": "THREAD_START_FAILED",
+                "error": type(exc).__name__,
+            }
+
+    return {
+        "ok": True,
+        "skipped": False,
+        "scheduled": True,
+        "shadow_id": sid,
+        "mode": "BACKGROUND_SHADOW",
+        "affects_real": False,
+    }
+
+
+def _shadow_llm_worker_loop() -> None:
+    """단일 worker — 무한 task 폭증 방지, queue drain."""
+
+    global _shadow_llm_worker_started
+
+    from stock_platform.database.session import get_session_factory
+
+    SessionFactory = get_session_factory()
+    while True:
+        with _shadow_llm_lock:
+            if not _shadow_llm_queue:
+                _shadow_llm_worker_started = False
+                return
+            sid = _shadow_llm_queue.popleft()
+
+        session = SessionFactory()
+        try:
+            row = session.get(UpbitOpportunityShadowEntity, sid)
+            if row is None:
+                logger.warning(
+                    "shadow_candidate_llm_row_missing",
+                    shadow_id=sid,
+                )
+            else:
+                result = maybe_analyze_shadow_candidate(session, row)
+                session.commit()
+                logger.info(
+                    "shadow_candidate_llm_background_done",
+                    shadow_id=sid,
+                    ok=result.get("ok"),
+                    skipped=result.get("skipped"),
+                    analysis_id=result.get("analysis_id"),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "shadow_candidate_llm_background_failed_open",
+                shadow_id=sid,
+                error=type(exc).__name__,
+            )
+            try:
+                session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            session.close()
+            with _shadow_llm_lock:
+                _shadow_llm_pending.discard(sid)
+

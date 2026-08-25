@@ -15,8 +15,28 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
+| **U** | Prod AI Gate 312s latency | **UPBIT_PROD_AI_GATE_LATENCY_FIXED** | OBSERVE_UPBIT_5MIN_SCANNER_WITH_FAST_PROD_AI_GATE (manual backend restart if ghost PID) |
+| **U** | Scanner 5min latency optimization | **UPBIT_SCANNER_5MIN_OPTIMIZED** | superseded by AI Gate model/reuse fix |
 | **SHARED** | UPBIT+KIWOOM CLEAN RAG Feedback | **READY_NOT_NATURALLY_OBSERVED** | COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE |
 | **K** | Next Trading Day Auto Start | **ENABLED_READY** | OBSERVE_NEXT_KRX_SESSION_AUTO_START |
+
+---
+
+## U — Prod AI Gate fix (2026-08-25 evening)
+
+- Root: Scanner chart job used **qwen3.5:4b** + reuse 180s &lt; interval 300s
+- Fix: Analysis **1.7b** + scanner reuse 600s + shadow dual LLM background queue
+- Prod-path bench: AI_GATE median **19ms**, scanner median **4.5s**
+- Evidence: `.run/k_upbit_prod_ai_gate_latency_audit.*`
+- Live uvicorn restart may need manual OS kill if port ghost PID persists
+
+---
+
+## U — Scanner interval
+
+- Commit `717944b` — candle concurrency 8, AI concurrency 2, warmup debounce, single-flight telemetry
+- Env `UPBIT_OPPORTUNITY_SCANNER_INTERVAL_SECONDS=300` after median/p95 gate
+- Evidence: `.run/k_upbit_scanner_latency_optimization.*`
 
 ---
 
