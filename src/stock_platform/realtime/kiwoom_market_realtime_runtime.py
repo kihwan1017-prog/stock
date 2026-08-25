@@ -140,44 +140,62 @@ class KiwoomMarketRealtimeRuntime:
         if self._task is not None and not self._task.done():
             await self.stop()
 
-        from stock_platform.broker.credential_adapter_factory import (
-            build_kiwoom_order_config_from_vault,
-            resolve_uba_credential,
-        )
-        from stock_platform.broker.kiwoom.token_cache import KiwoomTokenCache
-        from stock_platform.broker.kiwoom.token_client import KiwoomTokenClient
-        from stock_platform.broker.kiwoom.ws_config import (
-            KiwoomMarketWebSocketConfig,
-        )
-        from stock_platform.database.session import get_session_factory
+        def _resolve_real_feed_client() -> dict[str, Any]:
+            """Vault/credential resolve는 sync — event loop 블로킹 방지용."""
 
-        session = get_session_factory()()
-        try:
-            resolved = resolve_uba_credential(
-                session,
-                uba_id,
-                expected_broker="KIWOOM",
+            from stock_platform.broker.credential_adapter_factory import (
+                build_kiwoom_order_config_from_vault,
+                resolve_uba_credential,
             )
-            order_cfg = build_kiwoom_order_config_from_vault(resolved)
-            if require_real and bool(getattr(order_cfg, "use_mock", False)):
+            from stock_platform.broker.kiwoom.token_cache import KiwoomTokenCache
+            from stock_platform.broker.kiwoom.token_client import KiwoomTokenClient
+            from stock_platform.broker.kiwoom.ws_config import (
+                KiwoomMarketWebSocketConfig,
+            )
+            from stock_platform.database.session import get_session_factory
+
+            session = get_session_factory()()
+            try:
+                resolved = resolve_uba_credential(
+                    session,
+                    uba_id,
+                    expected_broker="KIWOOM",
+                )
+                order_cfg = build_kiwoom_order_config_from_vault(resolved)
+                if require_real and bool(getattr(order_cfg, "use_mock", False)):
+                    return {
+                        "ok": False,
+                        "reason": "UBA_CREDENTIAL_IS_MOCK",
+                    }
+                token_cache = KiwoomTokenCache(KiwoomTokenClient(order_cfg))
+                if require_real:
+                    ws_cfg = KiwoomMarketWebSocketConfig.for_real_host()
+                else:
+                    ws_cfg = KiwoomMarketWebSocketConfig.from_settings()
                 return {
-                    "started": False,
-                    "reason": "UBA_CREDENTIAL_IS_MOCK",
-                    "user_broker_account_id": uba_id,
+                    "ok": True,
+                    "token_cache": token_cache,
+                    "ws_cfg": ws_cfg,
                 }
-            token_cache = KiwoomTokenCache(KiwoomTokenClient(order_cfg))
-            if require_real:
-                ws_cfg = KiwoomMarketWebSocketConfig.for_real_host()
-            else:
-                ws_cfg = KiwoomMarketWebSocketConfig.from_settings()
-        except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "ok": False,
+                    "reason": f"CREDENTIAL_RESOLVE_{type(exc).__name__}",
+                }
+            finally:
+                session.close()
+
+        resolved_parts = await asyncio.to_thread(_resolve_real_feed_client)
+        if not resolved_parts.get("ok"):
             return {
                 "started": False,
-                "reason": f"CREDENTIAL_RESOLVE_{type(exc).__name__}",
+                "reason": str(
+                    resolved_parts.get("reason") or "CREDENTIAL_RESOLVE_FAILED"
+                ),
                 "user_broker_account_id": uba_id,
             }
-        finally:
-            session.close()
+        token_cache = resolved_parts["token_cache"]
+        ws_cfg = resolved_parts["ws_cfg"]
 
         client = KiwoomMarketRealtimeClient(
             config=ws_cfg,
