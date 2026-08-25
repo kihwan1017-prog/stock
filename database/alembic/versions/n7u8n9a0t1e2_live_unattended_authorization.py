@@ -1,6 +1,9 @@
-"""revision: n1b2c3d4e5f6
+"""revision: n7u8n9a0t1e2
 
 Live unattended authorization lease (24H operator-approved horizon).
+
+NOTE: Formerly collided with n1b2c3d4e5f6 (grant_trading_write_to_viewer).
+Rewired 2026-08-25 — DDL unchanged.
 """
 
 from __future__ import annotations
@@ -9,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "n1b2c3d4e5f6"
+revision = "n7u8n9a0t1e2"
 down_revision = "o6p7q8r9s0t1"
 branch_labels = None
 depends_on = None

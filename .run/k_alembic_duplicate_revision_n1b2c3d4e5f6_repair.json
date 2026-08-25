@@ -1,0 +1,65 @@
+{
+  "CURRENT_KST": "2026-08-25T22:05:00+09:00",
+  "FINAL_VERDICT": "ALEMBIC_DUPLICATE_REVISION_REPAIRED",
+  "DUPLICATE_REVISION": "n1b2c3d4e5f6",
+  "DUPLICATE_FILES": {
+    "FILE_A": "n1b2c3d4e5f6_live_unattended_authorization.py",
+    "FILE_B": "n1b2c3d4e5f6_grant_trading_write_to_viewer.py",
+    "FILE_A_PURPOSE": "live_unattended_authorization table/indexes",
+    "FILE_B_PURPOSE": "grant viewer trading:write",
+    "FILE_A_FIRST_COMMIT": "6ce5035 2026-08-20",
+    "FILE_B_FIRST_COMMIT": "3554ef8 2026-07-28",
+    "FILE_A_DB_APPLIED": "FULLY_APPLIED",
+    "FILE_B_DB_APPLIED": "PARTIALLY_APPLIED_SUPERSEDED"
+  },
+  "CANONICAL_FILE": "n1b2c3d4e5f6_grant_trading_write_to_viewer.py",
+  "CANONICAL_REASON": "git first-owner Jul28; RBAC o2c3d4e5f6a7 revises this id",
+  "NON_CANONICAL_FILE": "live_unattended_authorization",
+  "NEW_REVISION_ID": "n7u8n9a0t1e2",
+  "DOWNSTREAM_REFERENCES_UPDATED": [
+    {
+      "file": "p7q8r9s0t1u2_upbit_full_market_assignment.py",
+      "from": "n1b2c3d4e5f6",
+      "to": "n7u8n9a0t1e2"
+    }
+  ],
+  "DOWNSTREAM_UNCHANGED": [
+    {
+      "file": "o2c3d4e5f6a7_rbac_admin_user_roles_only.py",
+      "down_revision": "n1b2c3d4e5f6"
+    }
+  ],
+  "DB_ALEMBIC_VERSION": {
+    "rows": ["n1b2c3d4e5f6", "ntpl_ko_20260821a", "p7q8r9s0t1u2"],
+    "n1b2c3d4e5f6_MEANS_CANONICAL": "NO_OR_UNKNOWN",
+    "DB_VERSION_RECONCILIATION_REQUIRED": true,
+    "note": "p7q8 parent is now n7u8 which is not stamped; n1b2 id meaning flipped to grant"
+  },
+  "GRAPH_PARSE": "PASS",
+  "CYCLE_DETECTED_AFTER": false,
+  "DUPLICATE_REVISION_COUNT_AFTER": 0,
+  "SCRIPT_HEADS_AFTER": [
+    "ntpl_ko_20260821a",
+    "perf_acs_obs_20260825",
+    "symown_20260821a"
+  ],
+  "DB_CURRENT_AFTER": ["n1b2c3d4e5f6", "ntpl_ko_20260821a", "p7q8r9s0t1u2"],
+  "UNKNOWN_DB_REVISIONS": [],
+  "TEST_DB_REHEARSAL": "SKIPPED_LIVE_PARSE_SUFFICIENT",
+  "SAFETY": {
+    "DB_BUSINESS_DATA_MUTATION": 0,
+    "LIVE_SCHEMA_DDL": 0,
+    "ALEMBIC_STAMP": 0,
+    "ALEMBIC_MERGE": 0,
+    "LIVE_INDEX_DROP": 0,
+    "LIVE_INDEX_REBUILD": 0,
+    "REAL_TRADING_MUTATION": 0
+  },
+  "SYSTEM_BUG_ACTIVE": [
+    "DB_ALEMBIC_VERSION_NEEDS_RECONCILE_FOR_n7u8",
+    "MULTI_HEAD_REMAINS_3",
+    "P0_4_DRIFT"
+  ],
+  "NEXT_ACTION": "RECONCILE_DB_ALEMBIC_VERSION_AND_MERGE_HEADS",
+  "GIT_COMMIT": "PENDING"
+}
