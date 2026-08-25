@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -23,6 +24,7 @@ from stock_platform.operation.upbit_opportunity_scanner.policy import (
 
 class UpbitOpportunityScannerScheduler:
     JOB_ID = "upbit_opportunity_scanner"
+    _DURATION_HISTORY_MAX = 24
 
     def __init__(self) -> None:
         settings = get_settings()
@@ -33,6 +35,7 @@ class UpbitOpportunityScannerScheduler:
         self._started = False
         self._tick_in_progress = False
         self._last_run_at: datetime | None = None
+        self._last_completed_at: datetime | None = None
         self._last_success_at: datetime | None = None
         self._last_failure_at: datetime | None = None
         self._last_result: dict[str, Any] | None = None
@@ -43,6 +46,9 @@ class UpbitOpportunityScannerScheduler:
         self._run_count = 0
         self._success_count = 0
         self._failure_count = 0
+        self._duration_history_ms: deque[int] = deque(
+            maxlen=self._DURATION_HISTORY_MAX
+        )
         # service 인스턴스 재사용 — cooldown 유지
         self._service_holder: Any | None = None
 
@@ -76,6 +82,7 @@ class UpbitOpportunityScannerScheduler:
             self._scheduler.remove_job(self.JOB_ID)
         except Exception:  # noqa: BLE001
             pass
+        # max_instances=1 + coalesce + in-process single-flight(_tick_in_progress)
         self._scheduler.add_job(
             _tick,
             IntervalTrigger(seconds=interval),
@@ -107,6 +114,7 @@ class UpbitOpportunityScannerScheduler:
                 mode=SCANNER_MODE_SHADOW_ONLY,
                 interval_seconds=policy.interval_seconds,
                 top_n=policy.top_n,
+                single_flight=True,
             )
 
     async def shutdown(self) -> None:
@@ -146,6 +154,13 @@ class UpbitOpportunityScannerScheduler:
                 "shadow": self._last_result.get("shadow"),
                 "scanner_run_id": self._last_result.get("scanner_run_id"),
                 "elapsed_ms": self._last_result.get("elapsed_ms"),
+                "stage_timings_ms": self._last_result.get("stage_timings_ms"),
+                "api_call_counts": self._last_result.get("api_call_counts"),
+                "http_429_count": self._last_result.get("http_429_count"),
+                "timeout_count": self._last_result.get("timeout_count"),
+                "failed_symbol_count": self._last_result.get(
+                    "failed_symbol_count"
+                ),
                 "candidates": [
                     {
                         "rank": c.get("rank"),
@@ -159,6 +174,20 @@ class UpbitOpportunityScannerScheduler:
                     for c in (self._last_result.get("candidates") or [])
                 ],
             }
+        hist = list(self._duration_history_ms)
+        hist_stats = None
+        if hist:
+            ordered = sorted(hist)
+            p95_idx = min(
+                len(ordered) - 1, max(0, int(0.95 * len(ordered)) - 1)
+            )
+            hist_stats = {
+                "n": len(ordered),
+                "min_ms": ordered[0],
+                "median_ms": ordered[len(ordered) // 2],
+                "p95_ms": ordered[p95_idx],
+                "max_ms": ordered[-1],
+            }
         return {
             "enabled": policy.enabled,
             "mode": policy.mode,
@@ -167,7 +196,11 @@ class UpbitOpportunityScannerScheduler:
             "running": bool(self._scheduler.running),
             "started": self._started,
             "tick_in_progress": self._tick_in_progress,
+            "single_flight": True,
+            "skip_if_running": True,
             "interval_seconds": policy.interval_seconds,
+            "candle_concurrency": policy.candle_concurrency,
+            "ai_concurrency": policy.ai_concurrency,
             "top_n": policy.top_n,
             "min_24h_trade_value_krw": policy.min_24h_trade_value_krw,
             "job_id": self.JOB_ID,
@@ -175,8 +208,15 @@ class UpbitOpportunityScannerScheduler:
             "last_run_at": (
                 self._last_run_at.isoformat() if self._last_run_at else None
             ),
+            "last_completed_at": (
+                self._last_completed_at.isoformat()
+                if self._last_completed_at
+                else None
+            ),
             "next_run_at": next_run,
             "last_duration_ms": self._last_duration_ms,
+            "duration_history_ms": hist,
+            "duration_stats": hist_stats,
             "last_success_at": (
                 self._last_success_at.isoformat()
                 if self._last_success_at
@@ -190,6 +230,7 @@ class UpbitOpportunityScannerScheduler:
             "last_error": self._last_error,
             "last_skip_reason": self._last_skip_reason,
             "overlap_skip_count": self._overlap_skip_count,
+            "skipped_overlap": self._overlap_skip_count,
             "run_count": self._run_count,
             "success_count": self._success_count,
             "failure_count": self._failure_count,
@@ -224,7 +265,10 @@ class UpbitOpportunityScannerScheduler:
         if self._tick_in_progress:
             self._overlap_skip_count += 1
             self._last_skip_reason = "OVERLAP_SKIP"
-            logger.info("upbit_opportunity_scanner_overlap_skip")
+            logger.info(
+                "upbit_opportunity_scanner_overlap_skip",
+                overlap_skip_count=self._overlap_skip_count,
+            )
             return {
                 "ok": False,
                 "skipped": True,
@@ -262,11 +306,13 @@ class UpbitOpportunityScannerScheduler:
                         (time.perf_counter() - started) * 1000
                     )
                     result["duration_ms"] = self._last_duration_ms
+                    self._duration_history_ms.append(self._last_duration_ms)
+                    self._last_completed_at = datetime.now(timezone.utc)
                     if result.get("ok"):
                         self._last_success_at = datetime.now(timezone.utc)
                         self._success_count += 1
                         self._last_error = None
-                        # LIVE consume layer (FULL_MARKET만). Scanner 주문 없음.
+                        t_sel = time.perf_counter()
                         try:
                             from stock_platform.common.settings import (
                                 get_settings as _gs,
@@ -301,6 +347,10 @@ class UpbitOpportunityScannerScheduler:
                                 session.rollback()
                             except Exception:  # noqa: BLE001
                                 pass
+                        if isinstance(result.get("stage_timings_ms"), dict):
+                            result["stage_timings_ms"]["LIVE_SELECTION_MS"] = (
+                                int((time.perf_counter() - t_sel) * 1000)
+                            )
                     else:
                         self._last_failure_at = datetime.now(timezone.utc)
                         self._failure_count += 1
@@ -325,6 +375,8 @@ class UpbitOpportunityScannerScheduler:
                     self._last_duration_ms = int(
                         (time.perf_counter() - started) * 1000
                     )
+                    self._duration_history_ms.append(self._last_duration_ms)
+                    self._last_completed_at = datetime.now(timezone.utc)
                     logger.warning(
                         "upbit_opportunity_scanner_tick_failed",
                         error=type(exc).__name__,

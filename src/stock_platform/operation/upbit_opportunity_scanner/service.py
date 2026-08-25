@@ -1,14 +1,16 @@
 """UPBIT Opportunity Scanner Service — Alert-only DRY 경로.
 
 Strategy/Deployment/Runtime/LIVE/ARM/Order 변경 금지.
+성능: ticker batch + candle bounded concurrency + AI 제한 병렬(세션 분리).
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable
 
 import structlog
 from sqlalchemy.orm import Session
@@ -43,6 +45,10 @@ def _f(value: Any) -> float | None:
         return None
 
 
+def _ms_since(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)
+
+
 class UpbitOpportunityScannerService:
     """DISCOVER → RANK → ANALYZE → NOTIFY. 주문/런타임 변경 없음."""
 
@@ -68,11 +74,19 @@ class UpbitOpportunityScannerService:
         policy: ScannerPolicy | None = None,
         notify: bool = True,
         force_ai: bool = False,
+        persist_shadow: bool = True,
     ) -> dict[str, Any]:
         started = time.perf_counter()
         policy = policy or load_scanner_policy(get_settings())
         owns_client = self._client is None
         client = self._client or UpbitQuotationClient()
+        stage: dict[str, int] = {}
+        api_calls: dict[str, int] = {
+            "ticker_batches": 0,
+            "minute_candles": 0,
+            "ai_jobs": 0,
+            "candle_prefetch": 0,
+        }
 
         result: dict[str, Any] = {
             "ok": False,
@@ -93,6 +107,9 @@ class UpbitOpportunityScannerService:
                 "exclude_stablecoins": policy.exclude_stablecoins,
                 "exclude_caution_markets": policy.exclude_caution_markets,
                 "ai_backfill_enabled": policy.ai_backfill_enabled,
+                "candle_concurrency": policy.candle_concurrency,
+                "ai_concurrency": policy.ai_concurrency,
+                "candle_timeout_seconds": policy.candle_timeout_seconds,
             },
             "universe_count": 0,
             "liquidity_pass_count": 0,
@@ -103,15 +120,22 @@ class UpbitOpportunityScannerService:
             "notifications": None,
             "shadow": None,
             "errors": [],
+            "stage_timings_ms": stage,
+            "api_call_counts": api_calls,
+            "http_429_count": 0,
+            "timeout_count": 0,
+            "failed_symbol_count": 0,
         }
 
         try:
+            t0 = time.perf_counter()
             universe = load_krw_universe(
                 self._session,
                 exclude_caution=policy.exclude_caution_markets,
                 exclude_stablecoins=policy.exclude_stablecoins,
                 stable_bases=policy.stablecoin_base_assets,
             )
+            stage["UNIVERSE_LOAD_MS"] = _ms_since(t0)
             result["universe_count"] = len(universe)
             if not universe:
                 result["ok"] = True
@@ -119,36 +143,45 @@ class UpbitOpportunityScannerService:
                 return result
 
             symbols = [u["symbol"] for u in universe]
-            tickers = await self._fetch_tickers(client, symbols, policy)
+            t1 = time.perf_counter()
+            tickers = await self._fetch_tickers(
+                client, symbols, policy, api_calls
+            )
+            stage["MARKET_DATA_FETCH_MS"] = _ms_since(t1)
+
+            t2 = time.perf_counter()
             liquid = self._liquidity_filter(tickers, policy)
+            stage["TECHNICAL_FILTER_MS"] = _ms_since(t2)
             result["liquidity_pass_count"] = len(liquid)
 
-            # 거래대금 상위만 기술분석 (API 폭주 방지)
+            # Stage A: 유동성 상위만 Stage B(분봉/지표) — 기존 조건만 사용
             liquid_sorted = sorted(
                 liquid,
                 key=lambda x: float(x.get("trade_value_24h") or 0),
                 reverse=True,
             )[: policy.technical_candidate_limit]
 
+            t3 = time.perf_counter()
+            candle_map, candle_stats = await self._fetch_candles_bounded(
+                client,
+                [str(x["symbol"]) for x in liquid_sorted],
+                policy,
+                api_calls,
+            )
+            result["timeout_count"] = int(candle_stats.get("timeouts") or 0)
+            result["http_429_count"] = int(candle_stats.get("rate_limits") or 0)
+            result["failed_symbol_count"] = int(
+                candle_stats.get("failed_symbols") or 0
+            )
+            for err in candle_stats.get("errors") or []:
+                result["errors"].append(err)
+
             ranked: list[dict[str, Any]] = []
             for item in liquid_sorted:
                 symbol = item["symbol"]
-                try:
-                    candle_rows = await client.list_minute_candles(
-                        market=symbol,
-                        unit=policy.candle_unit,
-                        count=max(policy.min_candles, 50),
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    result["errors"].append(
-                        {
-                            "symbol": symbol,
-                            "stage": "candle",
-                            "error": type(exc).__name__,
-                        }
-                    )
+                candle_rows = candle_map.get(symbol)
+                if not candle_rows:
                     continue
-
                 snap = build_indicator_snapshot(candle_rows)
                 if str(snap.get("status") or "") == "INSUFFICIENT":
                     continue
@@ -210,21 +243,45 @@ class UpbitOpportunityScannerService:
                 )
 
             ranked.sort(key=lambda x: float(x.get("score") or 0), reverse=True)
+            stage["CANDIDATE_RANK_MS"] = _ms_since(t3)
             result["technical_candidate_count"] = len(ranked)
 
             if policy.ai_enabled:
+                # AI 경로 ensure_minute_candles 재호출 비용 완화 — top pool만 prefetch
+                # (주입된 ai_runner=unit test 경로에서는 DB sync 생략)
+                if self._ai_runner is None:
+                    pool_n = max(
+                        policy.top_n,
+                        min(len(ranked), policy.top_n + 5),
+                    )
+                    prefetch_syms = [
+                        str(r["symbol"]) for r in ranked[:pool_n]
+                    ]
+                    t_pf = time.perf_counter()
+                    await self._prefetch_ai_candles(
+                        prefetch_syms, policy, api_calls
+                    )
+                    stage["CANDLE_PREFETCH_MS"] = _ms_since(t_pf)
+                else:
+                    stage["CANDLE_PREFETCH_MS"] = 0
+
+                t4 = time.perf_counter()
                 top = await self._analyze_ranked(
                     ranked,
                     result,
                     top_n=policy.top_n,
                     backfill=policy.ai_backfill_enabled,
                     force=force_ai,
+                    ai_concurrency=policy.ai_concurrency,
+                    api_calls=api_calls,
                 )
+                stage["AI_GATE_MS"] = _ms_since(t4)
             else:
                 top = ranked[: policy.top_n]
                 for row in top:
                     row["recommendation"] = "HOLD"
                     row["ai_skipped"] = True
+                stage["AI_GATE_MS"] = 0
 
             for index, row in enumerate(top, start=1):
                 row["rank"] = index
@@ -261,54 +318,63 @@ class UpbitOpportunityScannerService:
                         self._cooldown[str(row["symbol"])] = now_ts
                         self._last_alert_rec[str(row["symbol"])] = rec
 
-            # Paper Shadow — ALLOW/REDUCE만, 실주문 0
-            try:
-                from stock_platform.operation.upbit_opportunity_shadow import (
-                    UpbitOpportunityShadowEvaluator,
-                    UpbitOpportunityShadowService,
-                )
+            t5 = time.perf_counter()
+            if persist_shadow:
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow import (
+                        UpbitOpportunityShadowEvaluator,
+                        UpbitOpportunityShadowService,
+                    )
 
-                shadow_svc = UpbitOpportunityShadowService(
-                    self._session, now=self._now
-                )
-                result["shadow"] = shadow_svc.create_from_candidates(
-                    candidates=top,
-                    scanner_run_id=str(result["scanner_run_id"]),
-                    notify=notify,
-                )
-                # lightweight evaluate (이미 지난 window가 있으면 채움)
-                eval_out = await UpbitOpportunityShadowEvaluator(
-                    self._session,
-                    now=self._now,
-                ).evaluate_pending(notify=notify)
-                if isinstance(result["shadow"], dict):
-                    result["shadow"]["evaluation"] = {
-                        "evaluated": eval_out.get("evaluated"),
-                        "completed": eval_out.get("completed"),
-                    }
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "upbit_scanner_shadow_failed",
-                    error=type(exc).__name__,
-                )
-                result["errors"].append(
-                    {
-                        "stage": "shadow",
-                        "error": type(exc).__name__,
-                        "message": str(exc)[:200],
-                    }
-                )
+                    shadow_svc = UpbitOpportunityShadowService(
+                        self._session, now=self._now
+                    )
+                    result["shadow"] = shadow_svc.create_from_candidates(
+                        candidates=top,
+                        scanner_run_id=str(result["scanner_run_id"]),
+                        notify=notify,
+                    )
+                    eval_out = await UpbitOpportunityShadowEvaluator(
+                        self._session,
+                        now=self._now,
+                    ).evaluate_pending(notify=notify)
+                    if isinstance(result["shadow"], dict):
+                        result["shadow"]["evaluation"] = {
+                            "evaluated": eval_out.get("evaluated"),
+                            "completed": eval_out.get("completed"),
+                        }
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "upbit_scanner_shadow_failed",
+                        error=type(exc).__name__,
+                    )
+                    result["errors"].append(
+                        {
+                            "stage": "shadow",
+                            "error": type(exc).__name__,
+                            "message": str(exc)[:200],
+                        }
+                    )
+            stage["PERSIST_MS"] = _ms_since(t5)
+            # LIVE selection은 scheduler consume hook — 여기선 시간만 placeholder
+            stage.setdefault("LIVE_SELECTION_MS", 0)
 
             result["ok"] = True
             return result
         except Exception as exc:  # noqa: BLE001
             logger.exception("upbit_opportunity_scanner_failed")
             result["errors"].append(
-                {"stage": "run", "error": type(exc).__name__, "message": str(exc)[:200]}
+                {
+                    "stage": "run",
+                    "error": type(exc).__name__,
+                    "message": str(exc)[:200],
+                }
             )
             return result
         finally:
             result["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
+            result["stage_timings_ms"] = stage
+            result["api_call_counts"] = api_calls
             if owns_client and self._client is None:
                 await client.aclose()
 
@@ -337,12 +403,16 @@ class UpbitOpportunityScannerService:
         client: UpbitQuotationClient,
         symbols: list[str],
         policy: ScannerPolicy,
+        api_calls: dict[str, int],
     ) -> list[dict[str, Any]]:
         out: list[dict[str, Any]] = []
         batch = max(1, int(policy.ticker_batch_size))
         for i in range(0, len(symbols), batch):
             chunk = symbols[i : i + batch]
             try:
+                api_calls["ticker_batches"] = (
+                    int(api_calls.get("ticker_batches") or 0) + 1
+                )
                 rows = await client.list_tickers(markets=chunk)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
@@ -359,9 +429,7 @@ class UpbitOpportunityScannerService:
                     {
                         "symbol": market,
                         "trade_price": _f(row.get("trade_price")),
-                        "trade_value_24h": _f(
-                            row.get("acc_trade_price_24h")
-                        )
+                        "trade_value_24h": _f(row.get("acc_trade_price_24h"))
                         or 0.0,
                         "change_rate": _f(row.get("signed_change_rate")),
                     }
@@ -388,6 +456,119 @@ class UpbitOpportunityScannerService:
             passed.append(row)
         return passed
 
+    async def _fetch_candles_bounded(
+        self,
+        client: UpbitQuotationClient,
+        symbols: list[str],
+        policy: ScannerPolicy,
+        api_calls: dict[str, int],
+    ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+        """Stage B — technical pool 분봉을 bounded concurrency로 수집."""
+
+        sem = asyncio.Semaphore(max(1, int(policy.candle_concurrency)))
+        timeout = float(policy.candle_timeout_seconds)
+        out: dict[str, list[dict[str, Any]]] = {}
+        errors: list[dict[str, Any]] = []
+        timeouts = 0
+        rate_limits = 0
+        lock = asyncio.Lock()
+
+        async def _one(symbol: str) -> None:
+            nonlocal timeouts, rate_limits
+            async with sem:
+                try:
+                    api_calls["minute_candles"] = (
+                        int(api_calls.get("minute_candles") or 0) + 1
+                    )
+                    rows = await asyncio.wait_for(
+                        client.list_minute_candles(
+                            market=symbol,
+                            unit=policy.candle_unit,
+                            count=max(policy.min_candles, 50),
+                        ),
+                        timeout=timeout,
+                    )
+                    async with lock:
+                        out[symbol] = rows
+                except TimeoutError:
+                    timeouts += 1
+                    async with lock:
+                        errors.append(
+                            {
+                                "symbol": symbol,
+                                "stage": "candle",
+                                "error": "TimeoutError",
+                            }
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    name = type(exc).__name__
+                    if "429" in name or "RateLimit" in name:
+                        rate_limits += 1
+                    async with lock:
+                        errors.append(
+                            {
+                                "symbol": symbol,
+                                "stage": "candle",
+                                "error": name,
+                            }
+                        )
+
+        await asyncio.gather(*[_one(s) for s in symbols])
+        return out, {
+            "timeouts": timeouts,
+            "rate_limits": rate_limits,
+            "failed_symbols": len(errors),
+            "errors": errors,
+        }
+
+    async def _prefetch_ai_candles(
+        self,
+        symbols: list[str],
+        policy: ScannerPolicy,
+        api_calls: dict[str, int],
+    ) -> None:
+        """AI job의 ensure_minute_candles가 REST를 다시 치지 않도록 DB 워밍."""
+
+        if not symbols:
+            return
+        from stock_platform.ai.market_analysis.autotrading_periodic import (
+            ensure_minute_candles,
+        )
+        from stock_platform.database.session import get_session_factory
+
+        sem = asyncio.Semaphore(max(1, min(4, int(policy.candle_concurrency))))
+        Session = get_session_factory()
+
+        async def _one(symbol: str) -> None:
+            async with sem:
+                session = Session()
+                try:
+                    api_calls["candle_prefetch"] = (
+                        int(api_calls.get("candle_prefetch") or 0) + 1
+                    )
+                    await ensure_minute_candles(
+                        session,
+                        symbol=symbol,
+                        timeframe=int(policy.candle_unit),
+                        min_count=max(policy.min_candles, 30),
+                        stale_seconds=120.0,
+                    )
+                    session.commit()
+                except Exception as exc:  # noqa: BLE001
+                    try:
+                        session.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    logger.debug(
+                        "upbit_scanner_candle_prefetch_failed",
+                        symbol=symbol,
+                        error=type(exc).__name__,
+                    )
+                finally:
+                    session.close()
+
+        await asyncio.gather(*[_one(s) for s in symbols])
+
     async def _analyze_ranked(
         self,
         ranked: list[dict[str, Any]],
@@ -396,21 +577,68 @@ class UpbitOpportunityScannerService:
         top_n: int,
         backfill: bool,
         force: bool,
+        ai_concurrency: int = 1,
+        api_calls: dict[str, int] | None = None,
     ) -> list[dict[str, Any]]:
-        """Top-N 슬롯을 검증된 AI로 채움. FAILED는 백필로 교체 가능."""
+        """Top-N 슬롯을 검증된 AI로 채움. 순위 순회 semantics 유지 + 제한 병렬."""
+
+        api_calls = api_calls if api_calls is not None else {}
+        # 성공 가정 시 Top-N만 선분석. backfill 실패분은 아래에서 on-demand.
+        pool_size = min(len(ranked), top_n)
+        pool = ranked[:pool_size]
+        ai_by_symbol: dict[str, dict[str, Any]] = {}
 
         runner = self._ai_runner
         if runner is None:
+            from stock_platform.database.session import get_session_factory
+
+            SessionFactory = get_session_factory()
 
             async def _default(symbol: str) -> dict[str, Any]:
+                # 공유 Session 동시 사용 금지 — 호출마다 독립 세션
                 from stock_platform.ai.market_analysis.autotrading_periodic import (
                     UpbitAutotradingAiAnalysisJob,
                 )
 
-                job = UpbitAutotradingAiAnalysisJob(self._session)
-                return await job.run_once(symbol=symbol, force=force)
+                session = SessionFactory()
+                try:
+                    job = UpbitAutotradingAiAnalysisJob(session)
+                    out = await job.run_once(symbol=symbol, force=force)
+                    session.commit()
+                    return out
+                except Exception:
+                    try:
+                        session.rollback()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    raise
+                finally:
+                    session.close()
 
             runner = _default
+
+        sem = asyncio.Semaphore(max(1, int(ai_concurrency)))
+
+        async def _run_one(symbol: str) -> tuple[str, dict[str, Any]]:
+            async with sem:
+                api_calls["ai_jobs"] = int(api_calls.get("ai_jobs") or 0) + 1
+                try:
+                    out = await runner(symbol)
+                    return symbol, out
+                except Exception as exc:  # noqa: BLE001
+                    return symbol, {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "recommendation": "HOLD",
+                    }
+
+        if pool:
+            pairs = await asyncio.gather(
+                *[_run_one(str(r["symbol"])) for r in pool]
+            )
+            for sym, out in pairs:
+                ai_by_symbol[sym] = out
+                result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
 
         selected: list[dict[str, Any]] = []
         failed_budget = 0
@@ -418,44 +646,49 @@ class UpbitOpportunityScannerService:
         for row in ranked:
             if len(selected) >= top_n:
                 break
-            # backfill OFF면 단순 Top-N만 AI
             if not backfill and failed_budget + len(selected) >= top_n:
                 break
 
             symbol = str(row["symbol"])
-            try:
-                ai_out = await runner(symbol)
-                result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
-                self._apply_ai_result(row, ai_out)
-            except Exception as exc:  # noqa: BLE001
-                result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
+            if symbol in ai_by_symbol:
+                ai_out = ai_by_symbol[symbol]
+            else:
+                # pool 밖은 필요 시에만 직렬 추가 호출 (드묾)
+                try:
+                    api_calls["ai_jobs"] = int(api_calls.get("ai_jobs") or 0) + 1
+                    ai_out = await runner(symbol)
+                    result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
+                except Exception as exc:  # noqa: BLE001
+                    result["ai_calls"] = int(result.get("ai_calls") or 0) + 1
+                    ai_out = {
+                        "ok": False,
+                        "error": type(exc).__name__,
+                        "recommendation": "HOLD",
+                    }
+
+            if ai_out.get("error") and not ai_out.get("ok"):
                 row["recommendation"] = "HOLD"
-                row["ai_error"] = type(exc).__name__
+                row["ai_error"] = ai_out.get("error")
                 row["fail_closed"] = True
                 result["errors"].append(
                     {
                         "symbol": symbol,
                         "stage": "ai",
-                        "error": type(exc).__name__,
+                        "error": str(ai_out.get("error")),
                     }
                 )
-                logger.warning(
-                    "upbit_scanner_ai_failed",
-                    symbol=symbol,
-                    error=type(exc).__name__,
-                )
+            else:
+                self._apply_ai_result(row, ai_out)
 
             if row.get("fail_closed"):
                 result["ai_failed_skipped"] = (
                     int(result.get("ai_failed_skipped") or 0) + 1
                 )
                 if backfill:
-                    # Top-N 슬롯을 FAILED로 소비하지 않음
                     failed_budget += 1
                     continue
             selected.append(row)
 
-        # backfill OFF / AI 부족 시 남은 슬롯을 기술순위 HOLD로 채움
         if len(selected) < top_n:
             selected_syms = {str(r["symbol"]) for r in selected}
             for row in ranked:
@@ -471,6 +704,14 @@ class UpbitOpportunityScannerService:
         return selected
 
     def _apply_ai_result(self, row: dict[str, Any], ai_out: dict[str, Any]) -> None:
+        # 캐시 hit(FRESH)은 판정 재사용 — fail-closed로 Top-N을 비우지 않음
+        skip_reason = str(ai_out.get("skip_reason") or "")
+        if ai_out.get("skipped") and skip_reason in {
+            "FRESH_RESULT_EXISTS",
+            "DUPLICATE_TIME_BUCKET",
+        }:
+            ai_out = {**ai_out, "ok": True}
+
         if ai_out.get("skipped") and ai_out.get("recommendation"):
             row["recommendation"] = str(ai_out.get("recommendation")).upper()
         else:
@@ -498,4 +739,3 @@ class UpbitOpportunityScannerService:
                 )
             )
             row["fail_closed"] = True
-

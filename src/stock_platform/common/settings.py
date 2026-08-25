@@ -275,6 +275,7 @@ class Settings(BaseSettings):
     # UPBIT Opportunity Scanner — SHADOW_ONLY Fail Closed (기본 OFF, 주문/Runtime 무관)
     upbit_opportunity_scanner_enabled: bool = False
     upbit_opportunity_scanner_mode: str = "SHADOW_ONLY"
+    # 기본 900. 5분(300)은 latency gate(median<=180 / p95<=240) 통과 후에만 env로 적용.
     upbit_opportunity_scanner_interval_seconds: float = 900.0
     upbit_scanner_min_24h_trade_value_krw: float = 5_000_000_000.0
     upbit_scanner_top_n: int = Field(default=5, ge=1, le=10)
@@ -285,6 +286,14 @@ class Settings(BaseSettings):
     )
     upbit_scanner_min_candles: int = Field(default=30, ge=20, le=200)
     upbit_scanner_candle_unit: int = Field(default=1, ge=1, le=15)
+    # 분봉 N+1 완화 — Upbit quotation rate limiter(기본 8 rps)와 맞춤
+    upbit_scanner_candle_concurrency: int = Field(default=8, ge=1, le=16)
+    # Ollama는 미니PC에서 과병렬 금지. 1=직렬, 2=제한 병렬(동일 판정 semantics)
+    upbit_scanner_ai_concurrency: int = Field(default=2, ge=1, le=4)
+    # 심볼당 candle REST timeout (전체 scan hang 방지)
+    upbit_scanner_candle_timeout_seconds: float = Field(
+        default=12.0, ge=3.0, le=60.0
+    )
     upbit_scanner_ai_enabled: bool = True
     upbit_scanner_notify_hold: bool = False
     # Scanner universe 품질 필터 (중앙 policy)

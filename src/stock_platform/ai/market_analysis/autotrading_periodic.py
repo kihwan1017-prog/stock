@@ -32,6 +32,11 @@ ACTOR = "job:upbit-autotrading-ai-analysis"
 MIN_MINUTE_CANDLES = 30
 DEFAULT_CANDLE_LOOKBACK_HOURS = 8
 
+# Scanner top-N이 심볼마다 warmup generate를 반복하지 않도록 process debounce
+_WARMUP_DEBOUNCE_SECONDS = 600.0
+_last_warmup_monotonic: float | None = None
+_last_warmup_ok: bool = False
+
 
 def time_bucket(now: datetime, interval_seconds: float) -> int:
     """동일 symbol·interval 중복 방지용 버킷."""
@@ -99,9 +104,29 @@ def _reset_ollama_circuit_after_warmup() -> dict[str, Any]:
 
 
 async def _warmup_ollama(settings: Any) -> dict[str, Any]:
-    """모델 cold-start 완화용 초소형 ping. 실패해도 분석은 계속."""
+    """모델 cold-start 완화용 초소형 ping. 실패해도 분석은 계속.
+
+    Scanner top-N이 연속 호출해도 keep_alive 구간 안에서는 재warmup 생략.
+    """
+
+    import time as _time
 
     import httpx
+
+    global _last_warmup_monotonic, _last_warmup_ok
+
+    now_m = _time.monotonic()
+    if (
+        _last_warmup_monotonic is not None
+        and _last_warmup_ok
+        and (now_m - _last_warmup_monotonic) < _WARMUP_DEBOUNCE_SECONDS
+    ):
+        return {
+            "ok": True,
+            "skipped": True,
+            "skip_reason": "WARMUP_DEBOUNCED",
+            "debounce_seconds": _WARMUP_DEBOUNCE_SECONDS,
+        }
 
     base = str(
         getattr(settings, "ollama_base_url", None) or "http://127.0.0.1:11434"
@@ -136,8 +161,13 @@ async def _warmup_ollama(settings: Any) -> dict[str, Any]:
             }
             if ok:
                 out["circuit"] = _reset_ollama_circuit_after_warmup()
+                _last_warmup_ok = True
+                _last_warmup_monotonic = _time.monotonic()
+            else:
+                _last_warmup_ok = False
             return out
     except Exception as exc:  # noqa: BLE001
+        _last_warmup_ok = False
         return {
             "ok": False,
             "error": type(exc).__name__,

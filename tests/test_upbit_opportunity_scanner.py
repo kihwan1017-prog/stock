@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -42,6 +43,9 @@ def _policy(**overrides) -> ScannerPolicy:
         exclude_stablecoins=True,
         exclude_caution_markets=True,
         ai_backfill_enabled=True,
+        candle_concurrency=8,
+        ai_concurrency=2,
+        candle_timeout_seconds=12.0,
     )
     base.update(overrides)
     return ScannerPolicy(**base)
@@ -571,5 +575,151 @@ async def test_ticker_failure_does_not_crash(monkeypatch):
     assert out["ok"] is True
     assert out["liquidity_pass_count"] == 0
     assert out["candidates"] == []
+    assert out["orders_created"] == 0
+
+
+@pytest.mark.asyncio
+async def test_candle_fetch_uses_bounded_concurrency(monkeypatch):
+    """분봉은 직렬 N+1이 아니라 concurrency 한도 안에서 gather."""
+
+    policy = _policy(
+        top_n=2,
+        technical_candidate_limit=4,
+        candle_concurrency=2,
+        ai_enabled=False,
+    )
+    inflight = {"n": 0, "max": 0}
+
+    def _candles(price: float = 100.0):
+        rows = []
+        for i in range(40):
+            p = price + (i % 3) * 0.1
+            rows.append(
+                {
+                    "opening_price": p,
+                    "high_price": p + 0.2,
+                    "low_price": p - 0.2,
+                    "trade_price": p,
+                    "candle_acc_trade_volume": 1000 + i * 10,
+                }
+            )
+        return list(reversed(rows))
+
+    async def _minute(**kwargs):
+        inflight["n"] += 1
+        inflight["max"] = max(inflight["max"], inflight["n"])
+        await asyncio.sleep(0.05)
+        inflight["n"] -= 1
+        return _candles()
+
+    client = MagicMock()
+    client.list_tickers = AsyncMock(
+        return_value=[
+            {
+                "market": f"KRW-S{i}",
+                "trade_price": 100,
+                "acc_trade_price_24h": 9_000_000_000,
+                "signed_change_rate": 0.01,
+            }
+            for i in range(4)
+        ]
+    )
+    client.list_minute_candles = AsyncMock(side_effect=_minute)
+    client.aclose = AsyncMock()
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
+        lambda session, **_kwargs: [
+            {"symbol": f"KRW-S{i}", "name": str(i)} for i in range(4)
+        ],
+    )
+
+    svc = UpbitOpportunityScannerService(
+        MagicMock(), quotation_client=client, now=datetime.now(timezone.utc)
+    )
+    out = await svc.run(policy=policy, notify=False, persist_shadow=False)
+    assert out["ok"] is True
+    assert client.list_minute_candles.await_count == 4
+    assert inflight["max"] <= 2
+    assert out["api_call_counts"]["minute_candles"] == 4
+    assert "CANDIDATE_RANK_MS" in out["stage_timings_ms"]
+
+
+@pytest.mark.asyncio
+async def test_ai_fresh_cache_does_not_fail_closed_slot():
+    policy = _policy(top_n=1, technical_candidate_limit=1, ai_backfill_enabled=True)
+
+    def _candles():
+        rows = []
+        for i in range(40):
+            p = 100 + (i % 3) * 0.1
+            rows.append(
+                {
+                    "opening_price": p,
+                    "high_price": p + 0.2,
+                    "low_price": p - 0.2,
+                    "trade_price": p,
+                    "candle_acc_trade_volume": 1000 + i * 10,
+                }
+            )
+        return list(reversed(rows))
+
+    client = MagicMock()
+    client.list_tickers = AsyncMock(
+        return_value=[
+            {
+                "market": "KRW-AAA",
+                "trade_price": 100,
+                "acc_trade_price_24h": 9_000_000_000,
+                "signed_change_rate": 0.01,
+            }
+        ]
+    )
+    client.list_minute_candles = AsyncMock(return_value=_candles())
+    client.aclose = AsyncMock()
+
+    async def ai_runner(symbol: str) -> dict:
+        return {
+            "skipped": True,
+            "skip_reason": "FRESH_RESULT_EXISTS",
+            "recommendation": "ALLOW",
+            "confidence": 0.9,
+            "market_analysis_id": 9,
+        }
+
+    svc = UpbitOpportunityScannerService(
+        MagicMock(),
+        quotation_client=client,
+        ai_runner=ai_runner,
+    )
+    # universe monkeypatch via direct liquid path — use run with monkeypatch in caller
+    with (
+        patch(
+            "stock_platform.operation.upbit_opportunity_scanner.service.load_krw_universe",
+            return_value=[{"symbol": "KRW-AAA", "name": "A"}],
+        ),
+        patch.object(
+            UpbitOpportunityScannerService,
+            "_prefetch_ai_candles",
+            new=AsyncMock(return_value=None),
+        ),
+    ):
+        out = await svc.run(policy=policy, notify=False, persist_shadow=False)
+    assert out["ok"] is True
+    assert out["candidates"][0]["recommendation"] == "ALLOW"
+    assert not out["candidates"][0].get("fail_closed")
+
+
+@pytest.mark.asyncio
+async def test_scheduler_single_flight_skips_overlap():
+    from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+        UpbitOpportunityScannerScheduler,
+    )
+
+    sched = UpbitOpportunityScannerScheduler()
+    sched._tick_in_progress = True
+    out = await sched._run_tick(notify=False)
+    assert out["skipped"] is True
+    assert out["code"] == "OVERLAP_SKIP"
+    assert sched._overlap_skip_count == 1
     assert out["orders_created"] == 0
 

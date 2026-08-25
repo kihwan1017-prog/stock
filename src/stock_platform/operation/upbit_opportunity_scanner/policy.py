@@ -47,6 +47,9 @@ class ScannerPolicy:
     rsi_ideal_high: float = 70.0
     rsi_overbought: float = 78.0
     ticker_batch_size: int = 100
+    candle_concurrency: int = 8
+    ai_concurrency: int = 2
+    candle_timeout_seconds: float = 12.0
 
 
 def load_scanner_policy(settings: Any | None = None) -> ScannerPolicy:
@@ -121,6 +124,27 @@ def load_scanner_policy(settings: Any | None = None) -> ScannerPolicy:
             getattr(settings, "upbit_scanner_ai_backfill_enabled", True)
         ),
         stablecoin_base_assets=bases,
+        candle_concurrency=max(
+            1,
+            min(
+                16,
+                int(
+                    getattr(settings, "upbit_scanner_candle_concurrency", 8)
+                    or 8
+                ),
+            ),
+        ),
+        ai_concurrency=max(
+            1,
+            min(
+                4,
+                int(getattr(settings, "upbit_scanner_ai_concurrency", 2) or 2),
+            ),
+        ),
+        candle_timeout_seconds=float(
+            getattr(settings, "upbit_scanner_candle_timeout_seconds", 12.0)
+            or 12.0
+        ),
     )
 
 

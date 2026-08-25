@@ -199,7 +199,12 @@ export function UpbitOpportunityScannerPanel() {
           running={String(st.running ?? false)}
         </Tag>
         <Tag>interval={cell(st.interval_seconds)}</Tag>
+        <Tag color={st.tick_in_progress ? "orange" : "default"}>
+          in_progress={String(st.tick_in_progress ?? false)}
+        </Tag>
+        <Tag>single_flight={String(st.single_flight ?? true)}</Tag>
         <Tag>duration_ms={cell(st.last_duration_ms)}</Tag>
+        <Tag>overlap_skip={cell(st.overlap_skip_count)}</Tag>
         <Tag>top_n={cell(st.top_n)}</Tag>
         <Button
           size="small"
@@ -228,11 +233,19 @@ export function UpbitOpportunityScannerPanel() {
           last_run_at: st.last_run_at,
           next_run_at: st.next_run_at,
           last_duration_ms: st.last_duration_ms,
+          last_completed_at: st.last_completed_at,
           last_error: st.last_error,
           run_count: st.run_count,
           success_count: st.success_count,
           failure_count: st.failure_count,
           overlap_skip_count: st.overlap_skip_count,
+          tick_in_progress: st.tick_in_progress,
+          single_flight: st.single_flight,
+          candle_concurrency: st.candle_concurrency,
+          ai_concurrency: st.ai_concurrency,
+          duration_stats: st.duration_stats,
+          stage_timings_ms: summary.stage_timings_ms,
+          api_call_counts: summary.api_call_counts,
           universe_count: summary.universe_count,
           liquidity_pass_count: summary.liquidity_pass_count,
           technical_candidate_count: summary.technical_candidate_count,
