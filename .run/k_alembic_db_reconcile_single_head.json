@@ -1,0 +1,68 @@
+{
+  "CURRENT_KST": "2026-08-25T22:15:00+09:00",
+  "FINAL_VERDICT": "ALEMBIC_DB_RECONCILED_SINGLE_HEAD",
+  "BEFORE": {
+    "SCRIPT_HEADS": [
+      "ntpl_ko_20260821a",
+      "perf_acs_obs_20260825",
+      "symown_20260821a"
+    ],
+    "ALEMBIC_VERSION_ROWS": [
+      "n1b2c3d4e5f6",
+      "ntpl_ko_20260821a",
+      "p7q8r9s0t1u2"
+    ],
+    "table_count": 233,
+    "index_count": 713
+  },
+  "OLD_N1B2_SEMANTIC": "B_OLD_UNATTENDED_DUPLICATE",
+  "N7U8_APPLIED": true,
+  "P7Q8_APPLIED": true,
+  "SYMOWN_APPLIED": true,
+  "NTPL_APPLIED": true,
+  "PERF_INDEX_APPLIED": true,
+  "RECONCILIATION_CASE": "A",
+  "VERSION_RECONCILIATION_PERFORMED": true,
+  "ALEMBIC_VERSION_BEFORE": [
+    "n1b2c3d4e5f6",
+    "ntpl_ko_20260821a",
+    "p7q8r9s0t1u2"
+  ],
+  "ALEMBIC_VERSION_AFTER_STAMP": [
+    "ntpl_ko_20260821a",
+    "perf_acs_obs_20260825",
+    "symown_20260821a"
+  ],
+  "MISSING_DDL_APPLIED": [],
+  "MERGE_SAFE": true,
+  "MERGE_REVISION": "a8105aa410f9",
+  "FINAL": {
+    "SCRIPT_HEADS": ["a8105aa410f9"],
+    "HEAD_COUNT": 1,
+    "DB_CURRENT": ["a8105aa410f9"],
+    "GRAPH_PARSE": "PASS",
+    "CYCLE_COUNT": 0,
+    "DUPLICATE_REVISION_COUNT": 0,
+    "UNKNOWN_REVISION_COUNT": 0,
+    "table_count": 233,
+    "index_count": 713,
+    "LIVE_INDEX_PRESERVED": true,
+    "LIVE_INDEX_REBUILT": false,
+    "DUPLICATE_DDL_ERRORS": 0
+  },
+  "DB_BUSINESS_DATA_MUTATION": 0,
+  "ALEMBIC_VERSION_METADATA_MUTATION": true,
+  "REAL_TRADING_MUTATION": 0,
+  "BACKEND_RESTART_COUNT": 0,
+  "TEST_DB_REHEARSAL": "LIVE_STAMP_UPGRADE_REHEARSAL",
+  "TESTS": {
+    "pytest_asset_context_list": "PASS",
+    "api_smoke": "PASS"
+  },
+  "SYSTEM_BUG_ACTIVE": [],
+  "LIMITATIONS": [
+    "Grant branch tip not separately stamped; covered as ancestor of merged head via graph"
+  ],
+  "NEXT_ACTION": "CONTINUE_NORMAL_OPERATION",
+  "GIT_COMMIT": "PENDING"
+}

@@ -1,0 +1,14 @@
+{
+  "alembic_version": [
+    "a8105aa410f9"
+  ],
+  "table_count": 233,
+  "index_count": 713,
+  "perf_index": true,
+  "heads": [
+    "a8105aa410f9"
+  ],
+  "head_count": 1,
+  "duplicate_revision_count": 0,
+  "duplicates": {}
+}
