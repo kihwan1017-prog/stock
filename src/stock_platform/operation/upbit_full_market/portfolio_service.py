@@ -1743,6 +1743,13 @@ class UpbitPortfolioService:
                 return out
             slot.status = SLOT_WAITING_SIGNAL
             slot.version = int(slot.version or 1) + 1
+            from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+                stamp_waiting_started_at,
+            )
+
+            stamp_waiting_started_at(
+                slot, started_at=getattr(sel, "selected_at", None), reset=False
+            )
             self._session.flush()
         else:
             slot.status = SLOT_WAITING_SIGNAL
@@ -1877,7 +1884,7 @@ class UpbitPortfolioService:
             if not isinstance(telem, dict):
                 telem = {}
             wl_assess = assess_waiting_slot(
-                slot=slot, policy=wl_pol, telemetry=telem
+                slot=slot, policy=wl_pol, telemetry=telem, session=self._session
             )
             slot_views.append(
                 SlotScoreView(
@@ -2153,6 +2160,15 @@ class UpbitPortfolioService:
 
         slot.status = SLOT_WAITING_SIGNAL
         slot.version = int(slot.version or 1) + 1
+        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+            stamp_waiting_started_at,
+        )
+
+        stamp_waiting_started_at(
+            slot,
+            started_at=getattr(new_sel, "selected_at", None),
+            reset=True,
+        )
         self._session.flush()
 
         notify: dict[str, Any] | None = None

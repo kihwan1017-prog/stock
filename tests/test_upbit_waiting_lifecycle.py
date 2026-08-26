@@ -22,9 +22,13 @@ from stock_platform.operation.upbit_full_market.slot_replacement import (
 from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
     assess_waiting_slot,
     detect_waiting_slot_starvation,
+    ensure_waiting_started_at,
     record_waiting_revalidation,
     release_waiting_slot_to_empty,
     revalidate_waiting_slots,
+    resolve_waiting_started_at,
+    stamp_waiting_started_at,
+    waiting_age_seconds,
 )
 from stock_platform.operation.upbit_full_market.waiting_lifecycle_policy import (
     REASON_HARD_EXPIRE_NO_SIGNAL,
@@ -69,16 +73,19 @@ def _slot_entity(
     meta: dict | None = None,
 ) -> SimpleNamespace:
     now = _now()
+    started = now - timedelta(seconds=age_sec)
     clamp: dict = {}
-    if meta:
-        clamp["waiting_lifecycle_v1"] = meta
+    wl_meta = dict(meta or {})
+    if "waiting_started_at" not in wl_meta:
+        wl_meta["waiting_started_at"] = started.isoformat()
+    clamp["waiting_lifecycle_v1"] = wl_meta
     return SimpleNamespace(
         slot_id=slot_id,
         slot_no=1,
         symbol=symbol,
         status=SLOT_WAITING_SIGNAL,
-        updated_at=now - timedelta(seconds=age_sec),
-        created_at=now - timedelta(seconds=age_sec),
+        updated_at=now - timedelta(seconds=60),
+        created_at=started,
         clamp_reasons=clamp,
         entry_order_id=entry_order_id,
         position_binding_id=binding_id,
@@ -115,6 +122,7 @@ def test_temporary_block_once_keeps_waiting() -> None:
         telemetry={
             "last_decision": "BLOCK",
             "last_block_reason": "RSI_TOO_HIGH",
+            "last_evaluated_at": _now().isoformat(),
         },
         now=_now(),
     )
@@ -131,6 +139,7 @@ def test_consecutive_blocks_below_threshold_keeps_waiting() -> None:
         telemetry={
             "last_decision": "NONE",
             "last_block_reason": "MA_SEPARATION_TOO_SMALL",
+            "last_evaluated_at": _now().isoformat(),
         },
         now=_now(),
     )
@@ -146,6 +155,7 @@ def test_soft_stale_after_threshold() -> None:
         telemetry={
             "last_decision": "NONE",
             "last_block_reason": "SHORT_MA_NOT_ABOVE_LONG_MA",
+            "last_evaluated_at": _now().isoformat(),
         },
         now=_now(),
     )
@@ -160,7 +170,11 @@ def test_hard_expire_releases() -> None:
     a = assess_waiting_slot(
         slot=slot,
         policy=POLICY,
-        telemetry={"last_decision": "NONE", "last_block_reason": "RSI_TOO_HIGH"},
+        telemetry={
+            "last_decision": "NONE",
+            "last_block_reason": "RSI_TOO_HIGH",
+            "last_evaluated_at": _now().isoformat(),
+        },
         now=_now(),
     )
     assert a.hard_expired is True
@@ -304,10 +318,18 @@ def test_no_trade_broken_becomes_pipeline_stall() -> None:
 
 
 def test_revalidate_respects_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_full_market.waiting_lifecycle._now",
+        _now,
+    )
     session = MagicMock()
-    slot = _slot_entity(meta={"last_revalidated_at": _now().isoformat()})
+    slot = _slot_entity(
+        age_sec=3600,
+        meta={"last_revalidated_at": _now().isoformat(), "consecutive_no_signal": 2},
+    )
     session.scalars.return_value.all.return_value = [slot]
     session.scalar.return_value = SimpleNamespace(risk_group_policy_json={})
+    session.get.return_value = SimpleNamespace(selected_at=_now() - timedelta(hours=2))
 
     out = revalidate_waiting_slots(
         session,
@@ -316,4 +338,80 @@ def test_revalidate_respects_interval(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     assert out["revalidated"] == 1
     assert out["released"] == 0
-    assert out["assessments"][0].get("skipped") == "REVALIDATION_INTERVAL"
+    skipped = out["assessments"][0]
+    assert skipped.get("skipped") == "REVALIDATION_INTERVAL"
+    assert skipped.get("age_seconds", 0) >= 3500
+
+
+def test_revalidation_updates_updated_at_but_preserves_waiting_age(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A: revalidation → updated_at 갱신, waiting age 유지."""
+
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_full_market.waiting_lifecycle._now",
+        _now,
+    )
+    slot = _slot_entity(age_sec=3600, meta={"consecutive_no_signal": 1})
+    before_age = waiting_age_seconds(slot)
+    a = assess_waiting_slot(
+        slot=slot,
+        policy=POLICY,
+        telemetry={
+            "last_decision": "BLOCK",
+            "last_block_reason": "RSI_TOO_HIGH",
+            "last_evaluated_at": _now().isoformat(),
+        },
+    )
+    record_waiting_revalidation(slot, a)
+    after_age = waiting_age_seconds(slot)
+    assert abs(after_age - before_age) < 2.0
+    assert slot.updated_at == _now()
+
+
+def test_no_count_without_fresh_evaluation() -> None:
+    slot = _slot_entity(age_sec=600, meta={"consecutive_no_signal": 2})
+    a = assess_waiting_slot(
+        slot=slot,
+        policy=POLICY,
+        telemetry={},
+    )
+    assert a.consecutive_no_signal == 2
+
+
+def test_restart_preserves_block_count_and_waiting_started_at(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_full_market.waiting_lifecycle._now",
+        _now,
+    )
+    started = (_now() - timedelta(hours=2)).isoformat()
+    meta = {"waiting_started_at": started, "consecutive_no_signal": 3}
+    slot = _slot_entity(age_sec=7200, meta=meta)
+    a = assess_waiting_slot(
+        slot=slot,
+        policy=POLICY,
+        telemetry={
+            "last_decision": "BLOCK",
+            "last_block_reason": "RSI_TOO_HIGH",
+            "last_evaluated_at": _now().isoformat(),
+        },
+    )
+    assert a.consecutive_no_signal == 4
+    assert a.age_seconds >= 7100
+    assert _slot_meta_safe(slot).get("waiting_started_at") == started
+
+
+def _slot_meta_safe(slot: SimpleNamespace) -> dict:
+    raw = slot.clamp_reasons
+    return dict(raw.get("waiting_lifecycle_v1") or {})
+
+
+def test_stamp_waiting_started_at_on_replacement_resets_epoch() -> None:
+    slot = _slot_entity(age_sec=5000)
+    old_started = _slot_meta_safe(slot)["waiting_started_at"]
+    stamp_waiting_started_at(slot, started_at=_now(), reset=True)
+    new_meta = _slot_meta_safe(slot)
+    assert new_meta["waiting_started_at"] != old_started
+    assert new_meta["consecutive_no_signal"] == 0

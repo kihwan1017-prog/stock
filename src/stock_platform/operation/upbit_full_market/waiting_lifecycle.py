@@ -15,6 +15,7 @@ from stock_platform.operation.upbit_full_market.constants import (
     SLOT_WAITING_SIGNAL,
 )
 from stock_platform.operation.upbit_full_market.entities import (
+    UpbitLiveCandidateSelectionEntity,
     UpbitPortfolioPolicyEntity,
     UpbitPositionSlotEntity,
 )
@@ -37,12 +38,28 @@ EVT_SOFT_STALE = "WAITING_SOFT_STALE"
 EVT_RELEASED = "WAITING_RELEASED"
 EVT_REPLACED = "WAITING_REPLACED"
 
+# 시스템 장애 — consecutive block count 증가 금지
+SYSTEM_SKIP_BLOCK_REASONS = frozenset(
+    {
+        "FEED_STALE",
+        "FEED_UNAVAILABLE",
+        "RUNTIME_DOWN",
+        "RUNTIME_NOT_RUNNING",
+        "EXIT_MONITOR_DOWN",
+        "EXIT_MONITOR_NOT_RUNNING",
+        "SYSTEM_UNAVAILABLE",
+        "EVALUATION_SKIPPED",
+        "STACK_NOT_READY",
+    }
+)
+
 
 @dataclass(frozen=True, slots=True)
 class WaitingSlotAssessment:
     slot_id: int
     symbol: str
     age_seconds: float
+    waiting_started_at: datetime | None
     consecutive_no_signal: int
     last_decision: str | None
     last_block_reason: str | None
@@ -64,6 +81,19 @@ def _aware(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc)
+
+
+def _parse_iso(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return _aware(value)
+    try:
+        return _aware(
+            datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _slot_meta(slot: UpbitPositionSlotEntity) -> dict[str, Any]:
@@ -91,30 +121,166 @@ def _is_no_entry_progress(decision: str | None) -> bool:
     return d not in {"BUY", "TECHNICAL_PASS"}
 
 
+def _selection_selected_at(
+    session: Session | None,
+    slot: UpbitPositionSlotEntity,
+) -> datetime | None:
+    if session is None or slot.candidate_selection_id is None:
+        return None
+    sel = session.get(
+        UpbitLiveCandidateSelectionEntity, int(slot.candidate_selection_id)
+    )
+    if sel is None:
+        return None
+    return _aware(getattr(sel, "selected_at", None))
+
+
+def resolve_waiting_started_at(
+    slot: UpbitPositionSlotEntity,
+    *,
+    session: Session | None = None,
+    selection_selected_at: datetime | None = None,
+    now: datetime | None = None,
+) -> datetime:
+    """WAITING age SoT — updated_at 사용 금지."""
+
+    now = now or _now()
+    meta = _slot_meta(slot)
+    stored = _parse_iso(meta.get("waiting_started_at"))
+    if stored is not None:
+        return stored
+
+    if selection_selected_at is not None:
+        return _aware(selection_selected_at) or now
+
+    sel_at = _selection_selected_at(session, slot)
+    if sel_at is not None:
+        return sel_at
+
+    # backfill: created_at만 (updated_at은 revalidation마다 갱신됨)
+    return _aware(slot.created_at) or now
+
+
+def ensure_waiting_started_at(
+    slot: UpbitPositionSlotEntity,
+    *,
+    session: Session | None = None,
+    selection_selected_at: datetime | None = None,
+) -> datetime:
+    """기존 WAITING row backfill — waiting_started_at 없으면 provenance에서 1회 설정."""
+
+    meta = _slot_meta(slot)
+    if meta.get("waiting_started_at"):
+        return _parse_iso(meta["waiting_started_at"]) or _now()
+    started = resolve_waiting_started_at(
+        slot,
+        session=session,
+        selection_selected_at=selection_selected_at,
+    )
+    meta["waiting_started_at"] = started.isoformat()
+    _write_slot_meta(slot, meta)
+    return started
+
+
+def stamp_waiting_started_at(
+    slot: UpbitPositionSlotEntity,
+    *,
+    started_at: datetime | None = None,
+    reset: bool = False,
+) -> None:
+    """신규 WAITING 배정/교체 — waiting_started_at 설정 (교체 시 reset)."""
+
+    meta = _slot_meta(slot)
+    if not reset and meta.get("waiting_started_at"):
+        return
+    ts = _aware(started_at) or _now()
+    meta["waiting_started_at"] = ts.isoformat()
+    meta["consecutive_no_signal"] = 0
+    meta.pop("last_revalidated_at", None)
+    _write_slot_meta(slot, meta)
+
+
+def waiting_age_seconds(
+    slot: UpbitPositionSlotEntity,
+    *,
+    session: Session | None = None,
+    now: datetime | None = None,
+) -> float:
+    """CURRENT_TIME - waiting_started_at."""
+
+    now = now or _now()
+    started = resolve_waiting_started_at(slot, session=session, now=now)
+    return max(0.0, (now - started).total_seconds())
+
+
+def oldest_waiting_age_seconds(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    now: datetime | None = None,
+) -> float | None:
+    """Watchdog starvation — metadata waiting_started_at 기준."""
+
+    now = now or _now()
+    slots = session.scalars(
+        select(UpbitPositionSlotEntity).where(
+            UpbitPositionSlotEntity.user_broker_account_id
+            == int(user_broker_account_id),
+            UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+        )
+    ).all()
+    if not slots:
+        return None
+    ages = [
+        waiting_age_seconds(s, session=session, now=now) for s in slots
+    ]
+    return max(ages) if ages else None
+
+
+def _should_count_no_signal(telemetry: dict[str, Any]) -> bool:
+    """fresh evaluation + entry 조건 실패만 count — 시스템 skip 제외."""
+
+    if telemetry.get("evaluation_skipped"):
+        return False
+    reason = str(telemetry.get("last_block_reason") or "").upper()
+    if reason in SYSTEM_SKIP_BLOCK_REASONS:
+        return False
+    if not telemetry.get("last_evaluated_at"):
+        # 아직 entry evaluator 미실행 — count 증가 금지
+        if not str(telemetry.get("last_decision") or "").strip():
+            return False
+    return True
+
+
 def assess_waiting_slot(
     *,
     slot: UpbitPositionSlotEntity,
     policy: WaitingLifecyclePolicy,
     telemetry: dict[str, Any] | None,
+    session: Session | None = None,
     now: datetime | None = None,
+    count_block: bool = True,
 ) -> WaitingSlotAssessment:
     """Revalidation 판정 — BUY 생성 없음."""
 
     now = now or _now()
     sym = str(slot.symbol or "").upper()
-    anchor = _aware(slot.updated_at) or _aware(slot.created_at) or now
-    age = max(0.0, (now - anchor).total_seconds())
+    started = ensure_waiting_started_at(slot, session=session)
+    age = max(0.0, (now - started).total_seconds())
     telem = telemetry or {}
     decision = str(telem.get("last_decision") or "").upper() or None
+    if decision == "NONE":
+        decision = None
     block_reason = str(telem.get("last_block_reason") or "") or None
     block_class = classify_waiting_block_reason(block_reason)
 
     meta = _slot_meta(slot)
     consecutive = int(meta.get("consecutive_no_signal") or 0)
-    if _is_no_entry_progress(decision):
-        consecutive += 1
-    else:
-        consecutive = 0
+    if count_block and _should_count_no_signal(telem):
+        if _is_no_entry_progress(decision):
+            consecutive += 1
+        else:
+            consecutive = 0
 
     soft_stale = (
         age >= policy.soft_stale_seconds
@@ -157,6 +323,7 @@ def assess_waiting_slot(
         slot_id=int(slot.slot_id),
         symbol=sym,
         age_seconds=age,
+        waiting_started_at=started,
         consecutive_no_signal=consecutive,
         last_decision=decision,
         last_block_reason=block_reason,
@@ -175,10 +342,12 @@ def record_waiting_revalidation(
     *,
     now: datetime | None = None,
 ) -> None:
-    """slot metadata 갱신 — debounce counter."""
+    """slot metadata 갱신 — waiting_started_at 유지, updated_at만 heartbeat."""
 
     now = now or _now()
     meta = _slot_meta(slot)
+    if not meta.get("waiting_started_at") and assessment.waiting_started_at:
+        meta["waiting_started_at"] = assessment.waiting_started_at.isoformat()
     meta.update(
         {
             "consecutive_no_signal": assessment.consecutive_no_signal,
@@ -189,6 +358,8 @@ def record_waiting_revalidation(
             "hard_expired": assessment.hard_expired,
         }
     )
+    if assessment.last_decision in {"BUY", "TECHNICAL_PASS"}:
+        meta["last_progress_at"] = now.isoformat()
     _write_slot_meta(slot, meta)
     slot.updated_at = now
 
@@ -202,6 +373,11 @@ def record_waiting_revalidation(
             "slot_id": assessment.slot_id,
             "symbol": assessment.symbol,
             "age_seconds": round(assessment.age_seconds, 1),
+            "waiting_started_at": (
+                assessment.waiting_started_at.isoformat()
+                if assessment.waiting_started_at
+                else None
+            ),
             "consecutive_no_signal": assessment.consecutive_no_signal,
             "block_reason": assessment.last_block_reason,
             "soft_stale": assessment.soft_stale,
@@ -220,7 +396,6 @@ def release_waiting_slot_to_empty(
 ) -> dict[str, Any] | None:
     """WAITING → EMPTY — REAL order/binding 생성 금지."""
 
-    # OPEN binding / 진행 중 entry order 있으면 release 금지
     if slot.entry_order_id is not None:
         return None
     if slot.position_binding_id is not None:
@@ -318,12 +493,11 @@ def revalidate_waiting_slots(
         meta = _slot_meta(slot)
         last_rev = meta.get("last_revalidated_at")
         if last_rev:
-            try:
-                prev = datetime.fromisoformat(str(last_rev).replace("Z", "+00:00"))
-                if prev.tzinfo is None:
-                    prev = prev.replace(tzinfo=timezone.utc)
-                elapsed = (_now() - prev.astimezone(timezone.utc)).total_seconds()
+            prev = _parse_iso(last_rev)
+            if prev is not None:
+                elapsed = (_now() - prev).total_seconds()
                 if elapsed < policy.revalidation_interval_seconds:
+                    started = ensure_waiting_started_at(slot, session=session)
                     assessments.append(
                         {
                             "slot_id": int(slot.slot_id),
@@ -332,21 +506,34 @@ def revalidate_waiting_slots(
                             "interval_remaining_seconds": round(
                                 policy.revalidation_interval_seconds - elapsed, 1
                             ),
+                            "waiting_started_at": started.isoformat(),
+                            "age_seconds": round(
+                                waiting_age_seconds(
+                                    slot, session=session
+                                ),
+                                1,
+                            ),
                         }
                     )
                     continue
-            except (TypeError, ValueError):
-                pass
 
         telem = telemetry_by_symbol.get(sym) or {}
         assessment = assess_waiting_slot(
-            slot=slot, policy=policy, telemetry=telem
+            slot=slot,
+            policy=policy,
+            telemetry=telem,
+            session=session,
         )
         record_waiting_revalidation(slot, assessment)
         assessments.append(
             {
                 "slot_id": assessment.slot_id,
                 "symbol": assessment.symbol,
+                "waiting_started_at": (
+                    assessment.waiting_started_at.isoformat()
+                    if assessment.waiting_started_at
+                    else None
+                ),
                 "age_seconds": round(assessment.age_seconds, 1),
                 "consecutive_no_signal": assessment.consecutive_no_signal,
                 "last_decision": assessment.last_decision,

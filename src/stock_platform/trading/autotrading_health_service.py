@@ -240,13 +240,25 @@ def _collect_heartbeats(
         oldest_wait = session.scalar(
             text(
                 """
-                SELECT MIN(COALESCE(updated_at, created_at))
+                SELECT MIN(created_at)
                 FROM operation.upbit_position_slot
                 WHERE user_broker_account_id = :uba AND status = 'WAITING_SIGNAL'
                 """
             ),
             {"uba": uba_id},
         )
+        try:
+            from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+                oldest_waiting_age_seconds,
+            )
+
+            wl_oldest: float | None = oldest_waiting_age_seconds(
+                session, user_broker_account_id=uba_id, now=now
+            )
+            if wl_oldest is not None:
+                hb["oldest_waiting_age_seconds"] = round(wl_oldest, 1)
+        except Exception:  # noqa: BLE001
+            wl_oldest = None
         last_ord = session.scalar(
             text(
                 """
@@ -262,7 +274,7 @@ def _collect_heartbeats(
         hb["waiting_last_updated_at"] = (
             aware_utc(last_wait).isoformat() if last_wait else None
         )
-        if oldest_wait is not None:
+        if wl_oldest is None and oldest_wait is not None:
             ow = aware_utc(oldest_wait)
             if ow is not None:
                 hb["oldest_waiting_age_seconds"] = round(
