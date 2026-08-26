@@ -536,6 +536,48 @@ def admin_uba_kiwoom_next_day_auto_start(
         ) from exc
 
 
+@router.post("/uba/{user_broker_account_id}/kiwoom-lifecycle/tick")
+async def admin_uba_kiwoom_lifecycle_tick(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """공식 lifecycle tick + stack restore (장중 ENSURE_STACK).
+
+    REAL 주문 강제 생성 없음. feed/runtime/runner만 idempotent 복구.
+    """
+
+    from stock_platform.trading.kiwoom_trading_day_lifecycle import (
+        KiwoomTradingDayLifecycleService,
+    )
+    from stock_platform.trading.kiwoom_unattended_stack_restore import (
+        restore_kiwoom_trading_stack,
+    )
+
+    uba_id = int(user_broker_account_id)
+    tick = KiwoomTradingDayLifecycleService(session).tick_uba(
+        uba_id, actor=f"admin:{user.username}"
+    )
+    session.commit()
+    stack: dict | None = None
+    if tick.get("action") in {
+        "ENSURE_STACK",
+        "RESTART_PIPELINE_SCHEDULED",
+    } or tick.get("phase") == "TRADING":
+        stack = await restore_kiwoom_trading_stack(
+            session,
+            user_broker_account_id=uba_id,
+            actor=f"admin:{user.username}:TICK",
+        )
+        session.commit()
+    return {
+        "tick": tick,
+        "stack": stack,
+        "REAL_ORDER_MUTATION": 0,
+        "actor": user.username,
+    }
+
+
 @router.post("/uba/{user_broker_account_id}/strategy-runtime/start")
 async def admin_uba_strategy_runtime_start(
     user_broker_account_id: int,

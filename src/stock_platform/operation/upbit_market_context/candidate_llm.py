@@ -7,8 +7,11 @@ TRADING_LLM은 SHADOW ONLY — REAL recommendation/slot/order/LIVE를 변경하�
 
 from __future__ import annotations
 
+import json
 import threading
 from collections import deque
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
@@ -27,6 +30,31 @@ from stock_platform.operation.upbit_opportunity_shadow.entities import (
 )
 
 
+def _jsonable(value: Any) -> Any:
+    """JSONB 저장용 — datetime/Decimal 등 비직렬화 타입 제거."""
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, dict):
+        return {str(k): _jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(v) for v in value]
+    if hasattr(value, "model_dump"):
+        try:
+            return _jsonable(value.model_dump(mode="json"))
+        except TypeError:
+            return _jsonable(value.model_dump())
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        return str(value)
+
+
 def maybe_analyze_shadow_candidate(
     session: Session,
     row: UpbitOpportunityShadowEntity,
@@ -39,6 +67,8 @@ def maybe_analyze_shadow_candidate(
     Shadow entity.recommendation 은 Scanner 원본 유지 (LLM이 overwrite 금지).
     """
 
+    shadow_id = int(getattr(row, "shadow_id", 0) or 0)
+    symbol = str(getattr(row, "symbol", "") or "")
     try:
         from stock_platform.common.settings import get_settings
 
@@ -57,8 +87,6 @@ def maybe_analyze_shadow_candidate(
                 "REAL_POLICY_CHANGED": "NO",
             }
 
-        shadow_id = int(row.shadow_id)
-        symbol = str(row.symbol or "")
         if not symbol:
             return {"ok": False, "skipped": True, "reason": "NO_SYMBOL"}
 
@@ -195,24 +223,28 @@ def maybe_analyze_shadow_candidate(
         # 저장 recommendation: heuristic 유지 (REAL 영향 없음).
         # Trading shadow는 output_json.trading_llm_shadow 에만 기록.
         detected = as_utc(row.detected_at) or row.detected_at
-        out_payload = heuristic.model_dump()
+        out_payload = _jsonable(heuristic.model_dump(mode="json"))
         out_payload["schema_version"] = SCHEMA_RAG_V1
         out_payload["market"] = "UPBIT"
-        out_payload["current_heuristic"] = heuristic.model_dump()
-        out_payload["analysis_llm"] = analysis_result
-        out_payload["rag"] = {
-            "market": "UPBIT",
-            "retrieval_method": rag_result.get("retrieval_method"),
-            "top_k": rag_result.get("top_k"),
-            "examples": rag_result.get("examples") or [],
-            "cache_hit": bool(rag_result.get("cache_hit")),
-            "no_lookahead": bool(rag_result.get("no_lookahead", True)),
-            "clean_only": bool(rag_result.get("clean_only", True)),
-            "eligible_scored": rag_result.get("eligible_scored"),
-            "excluded": rag_result.get("excluded"),
-            "cross_market_rag_count": int(rag_result.get("cross_market_rag_count") or 0),
-        }
-        out_payload["trading_llm_shadow"] = trading_result
+        out_payload["current_heuristic"] = _jsonable(heuristic.model_dump(mode="json"))
+        out_payload["analysis_llm"] = _jsonable(analysis_result)
+        out_payload["rag"] = _jsonable(
+            {
+                "market": "UPBIT",
+                "retrieval_method": rag_result.get("retrieval_method"),
+                "top_k": rag_result.get("top_k"),
+                "examples": rag_result.get("examples") or [],
+                "cache_hit": bool(rag_result.get("cache_hit")),
+                "no_lookahead": bool(rag_result.get("no_lookahead", True)),
+                "clean_only": bool(rag_result.get("clean_only", True)),
+                "eligible_scored": rag_result.get("eligible_scored"),
+                "excluded": rag_result.get("excluded"),
+                "cross_market_rag_count": int(
+                    rag_result.get("cross_market_rag_count") or 0
+                ),
+            }
+        )
+        out_payload["trading_llm_shadow"] = _jsonable(trading_result)
         out_payload["comparison"] = {
             "heuristic_recommendation": heuristic.recommendation,
             "trading_shadow_recommendation": trading_result.get("recommendation"),
@@ -227,13 +259,30 @@ def maybe_analyze_shadow_candidate(
             "analysis": analysis_result.get("latency_ms"),
             "trading_shadow": trading_result.get("latency_ms"),
         }
+        out_payload["provenance"] = {
+            "market": "UPBIT",
+            "uba_id": 1380,
+            "candidate_id": candidate.get("rank") or candidate.get("candidate_id"),
+            "shadow_id": shadow_id,
+            "symbol": symbol,
+            "analysis_model": analysis_result.get("model"),
+            "trading_model": trading_result.get("model"),
+            "prompt_version": SCHEMA_RAG_V1,
+            "context_as_of": detected.isoformat()
+            if hasattr(detected, "isoformat")
+            else str(detected),
+            "scanner_recommendation": row.recommendation,
+            "scanner_score": float(row.scanner_score)
+            if row.scanner_score is not None
+            else None,
+        }
 
         # LlmContextOutput 필드는 heuristic 기준 — shadow가 REAL 컬럼을 덮지 않음
         from stock_platform.operation.upbit_market_context.schemas import LlmContextOutput
 
         stored = LlmContextOutput.model_validate(
             {
-                **heuristic.model_dump(),
+                **heuristic.model_dump(mode="json"),
             }
         )
         ent = svc.save_llm_analysis(
@@ -249,12 +298,16 @@ def maybe_analyze_shadow_candidate(
         # dual payload를 output_json에 merge (JSONB SoT)
         ent.output_json = out_payload
         # input에 role meta
-        inp_dump = dict(ent.input_json or {})
+        inp_dump = _jsonable(dict(ent.input_json or {}))
         inp_dump["dual_llm"] = {
             "analysis_model": analysis_result.get("model"),
             "trading_model": trading_result.get("model"),
             "trading_mode": "SHADOW",
             "affects_real": False,
+            "market": "UPBIT",
+            "uba_id": 1380,
+            "shadow_id": shadow_id,
+            "prompt_version": SCHEMA_RAG_V1,
         }
         ent.input_json = inp_dump
         session.flush()
@@ -275,9 +328,23 @@ def maybe_analyze_shadow_candidate(
             "LIVE_ARM_MUTATION": 0,
         }
     except Exception as exc:  # noqa: BLE001
+        # flush 실패 후 session dirty — rollback 후 fail-open
+        try:
+            session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        logger.warning(
+            "PREDICTION_PERSIST_FAILED",
+            event="PREDICTION_PERSIST_FAILED",
+            shadow_id=shadow_id,
+            symbol=symbol,
+            error=type(exc).__name__,
+            detail=str(exc)[:200],
+        )
         logger.warning(
             "candidate_llm_context_failed_open",
-            shadow_id=getattr(row, "shadow_id", None),
+            shadow_id=shadow_id,
+            symbol=symbol,
             error=type(exc).__name__,
             detail=str(exc)[:160],
         )
@@ -285,6 +352,7 @@ def maybe_analyze_shadow_candidate(
             "ok": False,
             "research_failed_open": True,
             "error": type(exc).__name__,
+            "persist_failed": True,
             "live_order": False,
             "REAL_POLICY_CHANGED": "NO",
         }
@@ -296,6 +364,13 @@ _shadow_llm_pending: set[int] = set()
 _shadow_llm_queue: deque[int] = deque()
 _shadow_llm_lock = threading.Lock()
 _shadow_llm_worker_started = False
+_shadow_llm_counters: dict[str, int] = {
+    "enqueued": 0,
+    "dequeued": 0,
+    "completed": 0,
+    "failed": 0,
+    "dropped": 0,
+}
 
 
 def shadow_llm_queue_stats() -> dict[str, Any]:
@@ -304,6 +379,15 @@ def shadow_llm_queue_stats() -> dict[str, Any]:
             "pending": len(_shadow_llm_pending),
             "queued": len(_shadow_llm_queue),
             "max_queue": _SHADOW_LLM_MAX_QUEUE,
+            "QUEUE_MAXSIZE": _SHADOW_LLM_MAX_QUEUE,
+            "QUEUE_DEPTH": len(_shadow_llm_queue),
+            "ENQUEUED": _shadow_llm_counters["enqueued"],
+            "DEQUEUED": _shadow_llm_counters["dequeued"],
+            "COMPLETED": _shadow_llm_counters["completed"],
+            "FAILED": _shadow_llm_counters["failed"],
+            "DROPPED": _shadow_llm_counters["dropped"],
+            "restart_lossy": True,
+            "note": "in-memory queue — process restart drops pending items",
         }
 
 
@@ -328,6 +412,7 @@ def schedule_shadow_candidate_llm(shadow_id: int) -> dict[str, Any]:
                 "shadow_id": sid,
             }
         if len(_shadow_llm_pending) >= _SHADOW_LLM_MAX_QUEUE:
+            _shadow_llm_counters["dropped"] += 1
             return {
                 "ok": False,
                 "skipped": True,
@@ -337,6 +422,7 @@ def schedule_shadow_candidate_llm(shadow_id: int) -> dict[str, Any]:
             }
         _shadow_llm_pending.add(sid)
         _shadow_llm_queue.append(sid)
+        _shadow_llm_counters["enqueued"] += 1
         start_worker = not _shadow_llm_worker_started
         if start_worker:
             _shadow_llm_worker_started = True
@@ -351,6 +437,7 @@ def schedule_shadow_candidate_llm(shadow_id: int) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             with _shadow_llm_lock:
                 _shadow_llm_pending.discard(sid)
+                _shadow_llm_counters["dropped"] += 1
                 _shadow_llm_worker_started = False
             logger.warning(
                 "shadow_candidate_llm_schedule_failed",
@@ -375,7 +462,10 @@ def schedule_shadow_candidate_llm(shadow_id: int) -> dict[str, Any]:
 
 
 def _shadow_llm_worker_loop() -> None:
-    """단일 worker — 무한 task 폭증 방지, queue drain."""
+    """단일 worker — 무한 task 폭증 방지, queue drain.
+
+    LLM 완료 후 DB commit이 끝난 뒤에만 pending에서 제거한다.
+    """
 
     global _shadow_llm_worker_started
 
@@ -388,6 +478,7 @@ def _shadow_llm_worker_loop() -> None:
                 _shadow_llm_worker_started = False
                 return
             sid = _shadow_llm_queue.popleft()
+            _shadow_llm_counters["dequeued"] += 1
 
         session = SessionFactory()
         try:
@@ -397,19 +488,45 @@ def _shadow_llm_worker_loop() -> None:
                     "shadow_candidate_llm_row_missing",
                     shadow_id=sid,
                 )
+                with _shadow_llm_lock:
+                    _shadow_llm_counters["failed"] += 1
             else:
                 result = maybe_analyze_shadow_candidate(session, row)
-                session.commit()
-                logger.info(
-                    "shadow_candidate_llm_background_done",
-                    shadow_id=sid,
-                    ok=result.get("ok"),
-                    skipped=result.get("skipped"),
-                    analysis_id=result.get("analysis_id"),
-                )
+                if result.get("ok") and not result.get("skipped"):
+                    session.commit()
+                    with _shadow_llm_lock:
+                        _shadow_llm_counters["completed"] += 1
+                    logger.info(
+                        "shadow_candidate_llm_background_done",
+                        shadow_id=sid,
+                        ok=True,
+                        analysis_id=result.get("analysis_id"),
+                    )
+                elif result.get("persist_failed") or result.get("ok") is False:
+                    # maybe_analyze가 이미 rollback
+                    with _shadow_llm_lock:
+                        _shadow_llm_counters["failed"] += 1
+                    logger.warning(
+                        "shadow_candidate_llm_background_persist_failed",
+                        shadow_id=sid,
+                        error=result.get("error"),
+                    )
+                else:
+                    # skipped (already analyzed / disabled)
+                    session.rollback()
+                    with _shadow_llm_lock:
+                        _shadow_llm_counters["completed"] += 1
+                    logger.info(
+                        "shadow_candidate_llm_background_done",
+                        shadow_id=sid,
+                        ok=result.get("ok"),
+                        skipped=result.get("skipped"),
+                        analysis_id=result.get("analysis_id"),
+                    )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "shadow_candidate_llm_background_failed_open",
+                event="PREDICTION_PERSIST_FAILED",
                 shadow_id=sid,
                 error=type(exc).__name__,
             )
@@ -417,8 +534,9 @@ def _shadow_llm_worker_loop() -> None:
                 session.rollback()
             except Exception:  # noqa: BLE001
                 pass
+            with _shadow_llm_lock:
+                _shadow_llm_counters["failed"] += 1
         finally:
             session.close()
             with _shadow_llm_lock:
                 _shadow_llm_pending.discard(sid)
-

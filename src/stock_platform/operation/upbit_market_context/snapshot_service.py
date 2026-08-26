@@ -353,13 +353,15 @@ class MarketContextSnapshotService:
         lookahead_ok: bool = True,
         quality: str = QUALITY_AVAILABLE,
     ) -> UpbitLlmContextAnalysisEntity:
+        # JSONB는 datetime/Decimal 직렬화 불가 — mode=json 필수
+        # (미적용 시 flush TypeError → fail-open swallow → calls>0 rows=0)
         ent = UpbitLlmContextAnalysisEntity(
             symbol=symbol,
             shadow_id=shadow_id,
             detected_at=as_utc(detected_at) or _now(),
             context_as_of=as_utc(context_as_of) or _now(),
-            input_json=inp.model_dump(),
-            output_json=out.model_dump(),
+            input_json=inp.model_dump(mode="json"),
+            output_json=out.model_dump(mode="json"),
             recommendation=out.recommendation,
             confidence=float(out.confidence),
             entry_quality_score=int(out.entry_quality_score),
