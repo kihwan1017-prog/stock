@@ -573,12 +573,20 @@ def build_trading_health_snapshot(
         oldest_age = heartbeats.get("oldest_waiting_age_seconds")
         if oldest_age is not None:
             oldest_age = float(oldest_age)
+        stack_ready_for_starvation = (
+            not partial_restore
+            and runtime_st == "RUNNING"
+            and worker_st == "RUNNING"
+            and exit_st == "RUNNING"
+            and feed_healthy
+            and scanner_st == "RUNNING"
+        )
         waiting_starvation = detect_waiting_slot_starvation(
             waiting_count=int(slots.get("waiting_count") or 0),
             empty_count=int(slots.get("empty_count") or 0),
             max_positions=max_pos,
             quota_remaining=int(daily.get("remaining") or 0),
-            stack_ready=health_state == HEALTH_READY and not partial_restore,
+            stack_ready=stack_ready_for_starvation,
             oldest_waiting_age_seconds=oldest_age,
             order_count_window=int((funnel or {}).get("stages", {}).get("ORDER", 0)),
             candidate_or_selection_active=(
