@@ -653,7 +653,10 @@ class UpbitPortfolioService:
         daily_entry = summarize_portfolio_daily_entries(
             self._session,
             int(user_broker_account_id),
-            daily_limit=int(policy.get("portfolio_daily_entry_limit") or 10),
+            daily_limit=int(
+                policy.get("portfolio_daily_entry_limit")
+                or DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT
+            ),
         )
         return {
             "mode": assignment.get("mode"),

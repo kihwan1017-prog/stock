@@ -331,7 +331,7 @@ def evaluate_telegram_policy(
         if market == TelegramMarket.UPBIT:
             usage = _upbit_daily_usage(sess, int(uba) if uba is not None else None)
             if bool(usage.get("blocking")) or int(usage.get("entry_count") or 0) >= int(
-                usage.get("entry_limit") or 10
+                usage.get("entry_limit") or DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT
             ):
                 return TelegramDecision(
                     allowed=False,
@@ -393,9 +393,13 @@ def maybe_emit_upbit_daily_limit_edge(
 ) -> str | None:
     """AVAILABLE↔DAILY_LIMIT_REACHED edge SYSTEM 1회."""
 
+    from stock_platform.operation.upbit_full_market.constants import (
+        DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT,
+    )
+
     blocking = bool(usage.get("blocking"))
     count = int(usage.get("entry_count") or 0)
-    limit = int(usage.get("entry_limit") or 10)
+    limit = int(usage.get("entry_limit") or DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT)
     key = _edge_key("UPBIT", "DAILY_LIMIT")
     with _EDGE_LOCK:
         prev = _EDGE_STATE.get(key)

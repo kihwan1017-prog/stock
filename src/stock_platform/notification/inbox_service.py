@@ -535,6 +535,28 @@ class NotificationDispatcher:
         if not user_ids:
             # 운영 전용 이벤트 — Inbox 생략 (기존 Telegram 경로 유지)
             return None
+        # 웹 모니터링도 Telegram과 동일 한글 presentation
+        try:
+            from stock_platform.notification.user_facing_alerts import (
+                build_user_facing_copy,
+                should_coalesce_startup_monitoring,
+            )
+
+            coalesce, _ = should_coalesce_startup_monitoring(
+                event_type=event_type,
+                detail=payload,
+                message=message,
+            )
+            if coalesce:
+                return None
+            title, message, payload = build_user_facing_copy(
+                event_type=event_type,
+                title=title,
+                message=message,
+                detail=payload,
+            )
+        except Exception:  # noqa: BLE001
+            pass
         dedupe = payload.get("dedupe_key")
         if isinstance(dedupe, str):
             dedupe_key = dedupe

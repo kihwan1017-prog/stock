@@ -78,6 +78,31 @@ BUILTIN_KO: dict[str, dict[str, str]] = {
         "KIWOOM": "키움",
         "PAPER": "모의",
     },
+    # Telegram/웹 사용자 표시용 시장명
+    "market_display": {
+        "UPBIT": "업비트",
+        "KIWOOM": "키움증권",
+        "PAPER": "모의",
+    },
+    "alert_reason": {
+        "FAIL_CLOSED_RESTART": "서버 재시작에 따른 안전 해제",
+        "STARTUP": "서버 시작 절차",
+        "SYSTEM_UNATTENDED_STARTUP_RESTORE": "서버 재시작 후 자동 복구",
+        "MARKET_HOURS_ARM_RESTORE": "장 운영시간 자동 복구",
+        "DAILY_ENTRY_LIMIT_REACHED": "오늘 신규 매수 한도 도달",
+        "RUNTIME_STOPPED": "자동매매 실행 중지",
+        "MARKET_CLOSED": "정규장 종료",
+        "MANUAL": "운영자 수동 조작",
+        "EXPIRED": "세션 만료",
+    },
+    "alert_actor": {
+        "STARTUP": "서버 시작 절차",
+        "SYSTEM_UNATTENDED_STARTUP_RESTORE": "서버 재시작 후 자동 복구",
+        "MARKET_HOURS_ARM_RESTORE": "장 운영시간 자동 복구",
+        "SYSTEM": "시스템",
+        "ADMIN": "관리자",
+        "OPERATOR": "운영자",
+    },
     "severity": {
         "INFO": "안내",
         "SUCCESS": "성공",

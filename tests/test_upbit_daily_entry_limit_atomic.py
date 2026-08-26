@@ -138,6 +138,27 @@ def _run_concurrent_admissions(
     }
 
 
+def test_concurrency_count19_attempts5_limit20() -> None:
+    out = _run_concurrent_admissions(initial_count=19, limit=20, attempts=5)
+    assert out["allowed"] == 1
+    assert out["blocked"] == 4
+    assert out["final_count"] == 20
+
+
+def test_concurrency_count18_attempts5_limit20() -> None:
+    out = _run_concurrent_admissions(initial_count=18, limit=20, attempts=5)
+    assert out["allowed"] == 2
+    assert out["blocked"] == 3
+    assert out["final_count"] == 20
+
+
+def test_concurrency_count20_attempts5_limit20() -> None:
+    out = _run_concurrent_admissions(initial_count=20, limit=20, attempts=5)
+    assert out["allowed"] == 0
+    assert out["blocked"] == 5
+    assert out["final_count"] == 20
+
+
 def test_concurrency_count9_attempts5() -> None:
     out = _run_concurrent_admissions(initial_count=9, limit=10, attempts=5)
     assert out["allowed"] == 1

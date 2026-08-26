@@ -95,7 +95,7 @@ def resolve_portfolio_daily_entry_limit(
     session: Session,
     user_broker_account_id: int,
 ) -> int:
-    """정책 row의 limit (없으면 DEFAULT 10)."""
+    """정책 row의 limit (없으면 DEFAULT)."""
 
     from stock_platform.operation.upbit_full_market.entities import (
         UpbitPortfolioPolicyEntity,

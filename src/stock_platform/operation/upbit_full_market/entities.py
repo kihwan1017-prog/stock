@@ -274,7 +274,7 @@ class UpbitPortfolioPolicyEntity(Base):
         Integer, nullable=False, server_default=text("1")
     )
     portfolio_daily_entry_limit: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default=text("10")
+        Integer, nullable=False, server_default=text("20")
     )
     entry_state: Mapped[str] = mapped_column(
         String(30),

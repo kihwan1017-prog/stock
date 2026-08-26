@@ -534,10 +534,13 @@ class LiveArmService:
             ),
             detail={
                 "user_broker_account_id": int(uba.user_broker_account_id),
+                "broker_code": str(uba.broker_code or "").upper(),
                 "expires_at": expires.isoformat(),
                 "actor": actor,
                 "previous_arm": before_arm,
                 "arm_changed": True,
+                "live": bool(uba.live_order_enabled),
+                "new_arm": True,
             },
         )
         # 원문 토큰은 응답에만 1회 반환 (DB에는 해시만)
@@ -655,8 +658,12 @@ class LiveArmService:
             ),
             detail={
                 "user_broker_account_id": int(uba.user_broker_account_id),
+                "broker_code": str(uba.broker_code or "").upper(),
                 "reason": reason,
                 "actor": actor,
+                "previous_arm": before_arm,
+                "new_arm": False,
+                "live": bool(uba.live_order_enabled),
             },
         )
         status = self.get_arm_status(int(user_broker_account_id))

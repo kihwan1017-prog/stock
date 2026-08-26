@@ -61,16 +61,48 @@ def monitoring_alerts(
             .limit(max(1, min(limit, 200)))
         )
     )
-    items = [
-        {
-            "audit_event_id": row.audit_event_id,
-            "event_type": row.event_type,
-            "actor": row.actor,
-            "detail": row.detail,
-            "created_at": row.created_at,
-        }
-        for row in rows
-    ]
+    items = []
+    for row in rows:
+        detail = row.detail if isinstance(row.detail, dict) else {}
+        user_title = None
+        user_message = None
+        try:
+            from stock_platform.notification.user_facing_alerts import (
+                build_user_facing_copy,
+            )
+
+            raw_title = str(
+                (detail or {}).get("title")
+                or (detail or {}).get("message")
+                or row.event_type
+                or ""
+            )
+            raw_message = str(
+                (detail or {}).get("message")
+                or (detail or {}).get("body")
+                or ""
+            )
+            user_title, user_message, _enriched = build_user_facing_copy(
+                event_type="MONITORING_ALERT",
+                title=raw_title,
+                message=raw_message,
+                detail=detail,
+            )
+        except Exception:  # noqa: BLE001
+            user_title = None
+            user_message = None
+        items.append(
+            {
+                "audit_event_id": row.audit_event_id,
+                "event_type": row.event_type,
+                "actor": row.actor,
+                "detail": row.detail,
+                "created_at": row.created_at,
+                "user_title": user_title,
+                "user_message": user_message,
+                "raw_detail_available": True,
+            }
+        )
     return {"items": items, "limit": limit}
 
 

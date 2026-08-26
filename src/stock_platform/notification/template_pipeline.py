@@ -146,6 +146,41 @@ def render_notification(
     """DB template 우선, 없으면 builtin. LLM 호출 없음."""
 
     payload = mask_sensitive(dict(detail or {}))
+    # 사용자 친화 한글 + 정상 startup coalesce (원본은 payload _raw_* 보존)
+    try:
+        from stock_platform.notification.user_facing_alerts import (
+            build_user_facing_copy,
+            should_coalesce_startup_monitoring,
+        )
+
+        coalesce, coalesce_reason = should_coalesce_startup_monitoring(
+            event_type=event_type,
+            detail=payload,
+            message=message,
+        )
+        if coalesce:
+            return RenderedNotification(
+                event_type=str(event_type).upper(),
+                category=event_category(event_type),
+                severity="INFO",
+                locale=locale,
+                title=title,
+                body=message,
+                short_body=message,
+                variables={},
+                original_payload=payload,
+                suppressed=True,
+                suppress_reason=coalesce_reason,
+            )
+        title, message, payload = build_user_facing_copy(
+            event_type=event_type,
+            title=title,
+            message=message,
+            detail=payload,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
     variables = normalize_variables(
         event_type=event_type,
         title=title,

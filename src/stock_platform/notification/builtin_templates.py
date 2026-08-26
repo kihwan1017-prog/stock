@@ -297,7 +297,10 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "category": "SYSTEM",
         "severity": "INFO",
         "title_template": "🟢 자동매매 서버 시작",
-        "body_template": "{message}",
+        "body_template": (
+            "서버가 정상적으로 시작되었습니다.\n"
+            "자동매매 상태를 복구했습니다."
+        ),
         "short_body_template": "서버 시작",
     },
     {
@@ -305,7 +308,10 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "category": "SYSTEM",
         "severity": "WARNING",
         "title_template": "🔴 자동매매 서버 중지",
-        "body_template": "{message}",
+        "body_template": (
+            "서버 종료 절차를 진행하고 있습니다.\n"
+            "자동매매는 안전을 위해 일시 해제됩니다."
+        ),
         "short_body_template": "서버 중지",
     },
     {
