@@ -220,6 +220,8 @@ class MarketDataPersistenceWorker:
                     trade_price=quote.trade_price,
                     quoted_at=quote.event_time,
                     source=quote.source_code,
+                    bid_price=quote.bid,
+                    ask_price=quote.ask,
                     change_price=quote.change_price,
                     change_rate=quote.change_rate,
                     volume=quote.accumulated_volume,

@@ -106,7 +106,8 @@ async def ensure_upbit_quote_feed_from_hub(
 
         status = await realtime_manager.start_upbit(
             symbols=symbols,
-            channels=channels or ["ticker", "trade"],
+            # orderbook 포함 — 체결 공백 OPEN 심볼 QuoteSnapshot 유지
+            channels=channels or ["ticker", "trade", "orderbook"],
             connect_timeout_seconds=connect_timeout_seconds,
         )
         result["started"] = True

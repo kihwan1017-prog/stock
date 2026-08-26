@@ -481,11 +481,22 @@ def _ensure_upbit_quote_symbols(symbols: list[str]) -> dict[str, Any]:
             if x
         ]
     missing = [s for s in desired if s not in current]
-    if client is not None and not missing:
+    # OPEN 보호: orderbook 채널 필수 (체결 공백 시 QuoteSnapshot freshness)
+    protective_channels = ["ticker", "trade", "orderbook"]
+    current_channels = {
+        str(c).lower()
+        for c in ((client.status().get("channels") or []) if client else [])
+        if c
+    }
+    missing_channels = [
+        c for c in protective_channels if c not in current_channels
+    ]
+    if client is not None and not missing and not missing_channels:
         return {
             "ok": True,
             "already_covering": True,
             "symbols": current,
+            "channels": sorted(current_channels),
         }
 
     union = list(dict.fromkeys([*current, *desired]))
@@ -495,7 +506,7 @@ def _ensure_upbit_quote_symbols(symbols: list[str]) -> dict[str, Any]:
         await realtime_manager.stop("UPBIT")
         return await realtime_manager.start_upbit(
             symbols=union,
-            channels=["ticker", "trade"],
+            channels=protective_channels,
             connect_timeout_seconds=5.0,
         )
 

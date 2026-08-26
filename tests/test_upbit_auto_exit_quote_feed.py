@@ -157,6 +157,74 @@ def test_quote_fresh_threshold() -> None:
     )
 
 
+def test_quote_snapshot_uses_updated_at_when_quoted_at_stale() -> None:
+    """적재는 최근인데 exchange timestamp만 오래면 false-stale 금지."""
+
+    from stock_platform.position.exit_monitor_live import (
+        quote_snapshot_is_fresh,
+    )
+
+    now = datetime.now(timezone.utc)
+    snap = SimpleNamespace(
+        quoted_at=now - timedelta(seconds=90),
+        updated_at=now - timedelta(seconds=5),
+        trade_price=Decimal("100"),
+    )
+    assert quote_snapshot_is_fresh(snap, stale_seconds=30) is True
+    snap_stale = SimpleNamespace(
+        quoted_at=now - timedelta(seconds=90),
+        updated_at=now - timedelta(seconds=45),
+        trade_price=Decimal("100"),
+    )
+    assert quote_snapshot_is_fresh(snap_stale, stale_seconds=30) is False
+
+
+def test_orderbook_and_trade_derive_quote_for_snapshot() -> None:
+    from stock_platform.realtime.manager import (
+        _quote_from_orderbook,
+        _quote_from_trade,
+    )
+    from stock_platform.realtime.models import (
+        MarketEventType,
+        RealtimeOrderbook,
+        RealtimeTrade,
+    )
+
+    now = datetime.now(timezone.utc)
+    book = RealtimeOrderbook(
+        exchange_code="UPBIT",
+        symbol="KRW-SUI",
+        bids=[{"price": "1000", "quantity": "1"}],
+        asks=[{"price": "1002", "quantity": "1"}],
+        captured_at=now,
+        received_at=now,
+        source_code="UPBIT_WEBSOCKET",
+    )
+    q = _quote_from_orderbook(book)
+    assert q is not None
+    assert q.symbol == "KRW-SUI"
+    assert q.trade_price == Decimal("1001")
+    assert q.source_code == "UPBIT_WEBSOCKET_ORDERBOOK"
+    assert q.event_time == now
+
+    trade = RealtimeTrade(
+        exchange_code="UPBIT",
+        symbol="KRW-XLM",
+        trade_id="t1",
+        price=Decimal("256"),
+        quantity=Decimal("10"),
+        side="BUY",
+        traded_at=now - timedelta(seconds=120),
+        received_at=now,
+        source_code="UPBIT_WEBSOCKET",
+        event_type=MarketEventType.TRADE,
+    )
+    tq = _quote_from_trade(trade)
+    assert tq is not None
+    assert tq.trade_price == Decimal("256")
+    assert tq.event_time == now  # 수신 시각 기준 freshness
+
+
 def test_stale_quote_no_false_exit() -> None:
     """stale이면 Exit loader가 price=None → ManagedPosition 미생성 (평가 없음)."""
     # evaluate_exit itself only runs with prices; HOLD when no trigger

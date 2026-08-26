@@ -1003,7 +1003,9 @@ def _evaluate_auto_exit_quote_freshness(
     from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
         collect_upbit_open_auto_position_symbols,
     )
-    from stock_platform.position.exit_monitor_live import quote_is_fresh
+    from stock_platform.position.exit_monitor_live import (
+        quote_snapshot_is_fresh,
+    )
 
     settings = get_settings()
     stale_limit = float(
@@ -1035,19 +1037,29 @@ def _evaluate_auto_exit_quote_freshness(
         except Exception:  # noqa: BLE001
             snap = None
         quoted_at = getattr(snap, "quoted_at", None) if snap else None
+        updated_at = getattr(snap, "updated_at", None) if snap else None
         price = getattr(snap, "trade_price", None) if snap else None
+        # age는 적재/거래 시각 중 최신 기준 (gate와 동일)
         age = None
-        if quoted_at is not None:
-            qa = quoted_at
+        moments: list[datetime] = []
+        for ts in (quoted_at, updated_at):
+            if ts is None:
+                continue
+            qa = ts
             if qa.tzinfo is None:
                 qa = qa.replace(tzinfo=timezone.utc)
-            age = max(0.0, (now - qa).total_seconds())
-        fresh = quote_is_fresh(quoted_at, stale_seconds=stale_limit)
+            moments.append(qa)
+        if moments:
+            age = max(0.0, (now - max(moments)).total_seconds())
+        fresh = quote_snapshot_is_fresh(snap, stale_seconds=stale_limit)
         row = {
             "symbol": sym,
             "price": str(price) if price is not None else None,
             "quoted_at": (
                 quoted_at.isoformat() if quoted_at is not None else None
+            ),
+            "updated_at": (
+                updated_at.isoformat() if updated_at is not None else None
             ),
             "age_seconds": age,
             "fresh": fresh,
