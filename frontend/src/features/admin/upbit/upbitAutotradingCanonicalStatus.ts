@@ -96,6 +96,13 @@ export function buildUpbitAutotradingAggregateStatus(input: {
 
   const readinessReady = readinessStatus === "READY_FOR_AUTO_TRADING";
 
+  const noTradeClass = String(rel.no_trade_classification ?? "").toUpperCase();
+  const waitingStarvation = rel.waiting_starvation as Record<string, unknown> | undefined;
+  const isWaitingStarvation =
+    noTradeClass === "WAITING_SLOT_STARVATION" ||
+    (noTradeClass === "PIPELINE_STALL" &&
+      waitingStarvation?.waiting_slot_starvation === true);
+
   if (rel.partial_restore === true || healthState === "BROKEN") {
     const firstZero = rel.first_zero_stage != null ? String(rel.first_zero_stage) : "—";
     return {
@@ -111,7 +118,34 @@ export function buildUpbitAutotradingAggregateStatus(input: {
     };
   }
 
-  if (healthState === "DEGRADED") {
+  if (healthState === "DEGRADED" || isWaitingStarvation) {
+    if (isWaitingStarvation) {
+      const wc = rel.waiting_count ?? "—";
+      const oldestMin =
+        rel.heartbeats != null &&
+        typeof rel.heartbeats === "object" &&
+        (rel.heartbeats as Record<string, unknown>).oldest_waiting_age_seconds != null
+          ? Math.round(
+              Number(
+                (rel.heartbeats as Record<string, unknown>)
+                  .oldest_waiting_age_seconds,
+              ) / 60,
+            )
+          : null;
+      return {
+        tier: "blocked",
+        headline: "🟡 UPBIT · 대기 슬롯 정체",
+        description: `${wc}/5 슬롯 WAITING · 유효 매수신호 0${
+          oldestMin != null ? ` · 최장 대기 ${oldestMin}분` : ""
+        }. 신규 후보 배정 제한 중 — 재검증/교체 진행.`,
+        blockers,
+        liveOn,
+        armOn,
+        readinessStatus,
+        entryEvaluatorState,
+        entryOrdersPermitted: false,
+      };
+    }
     return {
       tier: "blocked",
       headline: "🟡 자동매매 degraded",

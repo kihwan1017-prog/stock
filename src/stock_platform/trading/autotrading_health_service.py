@@ -9,6 +9,7 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from stock_platform.broker.live_transition_service import LiveTradingTransitionService
+from stock_platform.common.settings import get_settings
 from stock_platform.trading.account_models import UserBrokerAccount
 from stock_platform.trading.autotrading_health_slo import load_autotrading_health_slo
 from stock_platform.trading.autotrading_no_trade_classification import (
@@ -236,6 +237,16 @@ def _collect_heartbeats(
             ),
             {"uba": uba_id},
         )
+        oldest_wait = session.scalar(
+            text(
+                """
+                SELECT MIN(COALESCE(updated_at, created_at))
+                FROM operation.upbit_position_slot
+                WHERE user_broker_account_id = :uba AND status = 'WAITING_SIGNAL'
+                """
+            ),
+            {"uba": uba_id},
+        )
         last_ord = session.scalar(
             text(
                 """
@@ -251,6 +262,12 @@ def _collect_heartbeats(
         hb["waiting_last_updated_at"] = (
             aware_utc(last_wait).isoformat() if last_wait else None
         )
+        if oldest_wait is not None:
+            ow = aware_utc(oldest_wait)
+            if ow is not None:
+                hb["oldest_waiting_age_seconds"] = round(
+                    max(0.0, (now - ow).total_seconds()), 1
+                )
         hb["order_last_created_at"] = (
             aware_utc(last_ord).isoformat() if last_ord else None
         )
@@ -518,6 +535,9 @@ def build_trading_health_snapshot(
     first_zero_stage = None
     first_zero_reason = None
     no_trade: dict[str, Any] = {}
+    waiting_starvation: dict[str, Any] = {}
+    max_pos = 5
+    oldest_age: float | None = None
     if broker == "UPBIT":
         from stock_platform.trading.upbit_funnel_observability import (
             build_upbit_funnel_snapshot,
@@ -530,6 +550,52 @@ def build_trading_health_snapshot(
         )
         first_zero_stage = funnel.get("first_zero_stage")
         first_zero_reason = funnel.get("first_zero_reason")
+
+        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+            detect_waiting_slot_starvation,
+            load_waiting_lifecycle_policy,
+        )
+        from stock_platform.operation.upbit_full_market.entities import (
+            UpbitPortfolioPolicyEntity,
+        )
+
+        pol_row = session.scalar(
+            select(UpbitPortfolioPolicyEntity).where(
+                UpbitPortfolioPolicyEntity.user_broker_account_id == uba_id
+            )
+        )
+        rg = dict(getattr(pol_row, "risk_group_policy_json", None) or {})
+        wl_policy = load_waiting_lifecycle_policy(
+            settings=get_settings(),
+            risk_group_policy_json=rg,
+        )
+        max_pos = int(getattr(pol_row, "max_positions", None) or 5)
+        oldest_age = heartbeats.get("oldest_waiting_age_seconds")
+        if oldest_age is not None:
+            oldest_age = float(oldest_age)
+        waiting_starvation = detect_waiting_slot_starvation(
+            waiting_count=int(slots.get("waiting_count") or 0),
+            empty_count=int(slots.get("empty_count") or 0),
+            max_positions=max_pos,
+            quota_remaining=int(daily.get("remaining") or 0),
+            stack_ready=health_state == HEALTH_READY and not partial_restore,
+            oldest_waiting_age_seconds=oldest_age,
+            order_count_window=int((funnel or {}).get("stages", {}).get("ORDER", 0)),
+            candidate_or_selection_active=(
+                int((funnel or {}).get("stages", {}).get("CANDIDATE", 0)) > 0
+                or int((funnel or {}).get("stages", {}).get("SELECTION", 0)) > 0
+            ),
+            policy=wl_policy,
+        )
+        if waiting_starvation.get("waiting_slot_starvation"):
+            esc = str(waiting_starvation.get("escalation") or "NONE")
+            if esc == "BROKEN":
+                if health_state == HEALTH_READY:
+                    health_state = HEALTH_BROKEN
+                health_reasons.append("WAITING_SLOT_STARVATION_BROKEN")
+            elif esc == "DEGRADED" and health_state == HEALTH_READY:
+                health_state = HEALTH_DEGRADED
+                health_reasons.append("WAITING_SLOT_STARVATION")
     elif broker == "KIWOOM":
         from stock_platform.trading.kiwoom_funnel_observability import (
             build_kiwoom_funnel_snapshot,
@@ -548,14 +614,21 @@ def build_trading_health_snapshot(
         daily_blocking=bool(daily.get("blocking")),
         free_slots=int(slots.get("free_slot_count") or 0),
         waiting_count=int(slots.get("waiting_count") or 0),
+        max_positions=max_pos,
         selection_count_window=int((funnel or {}).get("stages", {}).get("SELECTION", 0)),
         candidate_count_window=int((funnel or {}).get("stages", {}).get("CANDIDATE", 0)),
         order_count_window=int((funnel or {}).get("stages", {}).get("ORDER", 0)),
+        admission_count_window=int((funnel or {}).get("stages", {}).get("ADMISSION", 0)),
         feed_healthy=feed_healthy,
         scanner_active=scanner_st == "RUNNING",
         pipeline_stall_minutes=slo.pipeline_stall_minutes,
         last_order_at=_parse_iso(heartbeats.get("order_last_created_at")),
         last_selection_at=_parse_iso(heartbeats.get("selection_last_created_at")),
+        waiting_slot_starvation=bool(
+            waiting_starvation.get("waiting_slot_starvation")
+        ),
+        starvation_escalation=str(waiting_starvation.get("escalation") or "NONE"),
+        oldest_waiting_age_seconds=oldest_age,
         now=now,
     )
 
@@ -591,7 +664,9 @@ def build_trading_health_snapshot(
         "daily_blocking": daily.get("blocking"),
         "open_count": slots.get("open_count"),
         "waiting_count": slots.get("waiting_count"),
+        "empty_count": slots.get("empty_count"),
         "free_slot_count": slots.get("free_slot_count"),
+        "waiting_starvation": waiting_starvation,
         "first_zero_stage": first_zero_stage,
         "first_zero_reason": first_zero_reason,
         "funnel": funnel,

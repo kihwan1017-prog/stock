@@ -26,6 +26,7 @@ REASON_SCORE_IMPROVEMENT = "SCORE_IMPROVEMENT"
 REASON_MAX_WAIT = "MAX_WAIT"
 REASON_STALE_CANDIDATE = "STALE_CANDIDATE"
 REASON_TECHNICAL_BLOCK_LONG = "TECHNICAL_BLOCK_LONG"
+REASON_SOFT_STALE_NO_SIGNAL = "SOFT_STALE_NO_ENTRY_SIGNAL"
 
 PROTECTED_STATUSES = frozenset(
     {SLOT_ENTRY_PENDING, SLOT_OPEN, SLOT_EXIT_PENDING}
@@ -54,6 +55,7 @@ class ReplacementPolicy:
         DEFAULT_PORTFOLIO_CANDIDATE_SWITCH_MIN_SCORE_DELTA
     )
     candidate_max_age_seconds: float = 1800.0
+    soft_stale_seconds: float = 1800.0
     # telemetry 기반 장기 BLOCK — hold 이후 + 최소 평가 횟수
     technical_block_min_evaluations: int = 20
 
@@ -76,6 +78,7 @@ class SlotScoreView:
     last_block_reason: str | None = None
     evaluation_count: int = 0
     last_decision: str | None = None
+    soft_stale_eligible: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,11 +161,18 @@ def load_replacement_policy(
     )
     # max_wait는 hold보다 짧을 수 없음
     max_wait = max(max_wait, hold)
+    soft_stale = _f(
+        "waiting_soft_stale_seconds",
+        "upbit_waiting_soft_stale_seconds",
+        1800.0,
+    )
+    soft_stale = min(soft_stale, max_wait)
     return ReplacementPolicy(
         hold_seconds=max(0.0, hold),
         max_wait_seconds=max(0.0, max_wait),
         switch_min_score_delta=max(0.0, delta),
         candidate_max_age_seconds=max(60.0, age),
+        soft_stale_seconds=max(60.0, soft_stale),
     )
 
 
@@ -245,6 +255,26 @@ def evaluate_slot_replacement(
             new_score=new_score,
             age_seconds=age,
             detail=base_detail,
+        )
+
+    # A0) soft stale — entry signal 없음 + hold 경과 → 더 좋은 후보로 교체
+    if (
+        slot.soft_stale_eligible
+        and age >= policy.soft_stale_seconds
+        and str(slot.last_decision or "").upper() not in {"BUY", "TECHNICAL_PASS"}
+        and new_score > old_score
+    ):
+        return ReplacementDecision(
+            replace=True,
+            reason=REASON_SOFT_STALE_NO_SIGNAL,
+            slot_id=slot.slot_id,
+            slot_no=slot.slot_no,
+            old_symbol=slot.symbol,
+            new_symbol=candidate.symbol,
+            old_score=old_score,
+            new_score=new_score,
+            age_seconds=age,
+            detail={**base_detail, "path": REASON_SOFT_STALE_NO_SIGNAL},
         )
 
     # A) 점수 개선 교체 (hold 이후)
@@ -399,5 +429,6 @@ def reason_ko(reason: str | None) -> str:
         REASON_MAX_WAIT: "매수 조건 장시간 미충족",
         REASON_STALE_CANDIDATE: "후보 신선도 만료",
         REASON_TECHNICAL_BLOCK_LONG: "기술적 진입 조건 장시간 미충족",
+        REASON_SOFT_STALE_NO_SIGNAL: "매수 신호 없음 soft stale",
     }
     return mapping.get(str(reason or ""), str(reason or "후보 교체"))

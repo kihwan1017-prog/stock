@@ -247,6 +247,13 @@ class Settings(BaseSettings):
     upbit_portfolio_candidate_switch_min_score_delta: float = 8.0
     # WAITING_SIGNAL 최대 대기(초). hold 이후 stale/장기 미진입 교체에 사용
     upbit_portfolio_candidate_max_wait_seconds: float = 10800.0
+    # WAITING lifecycle — slot starvation 방지 (전략 threshold 변경 없음)
+    upbit_waiting_revalidation_interval_seconds: float = 300.0
+    upbit_waiting_soft_stale_seconds: float = 1800.0
+    upbit_waiting_hard_expire_no_signal_seconds: float = 5400.0
+    upbit_waiting_consecutive_no_signal_threshold: int = 3
+    upbit_waiting_starvation_degraded_seconds: float = 900.0
+    upbit_waiting_starvation_broken_seconds: float = 3600.0
     # MA entry policy — CROSS_EVENT(기존 golden cross) | BULLISH_STATE(portfolio)
     # 실제 적용은 FULL_MARKET_PORTFOLIO + DB risk_group_policy_json.entry_signal_policy 우선
     upbit_portfolio_entry_signal_policy: str = "CROSS_EVENT"

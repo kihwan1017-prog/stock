@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 # market:uba_id -> last health state (edge-trigger telegram)
 _last_health_state: dict[str, str] = {}
+# market:uba_id -> last starvation alert escalation (edge-trigger)
+_last_starvation_escalation: dict[str, str] = {}
 # market:uba_id -> restore lock
 _restore_locks: dict[str, asyncio.Lock] = {}
 # market:uba_id -> backoff state
@@ -182,6 +184,71 @@ def _handle_health_transition(
         )
 
 
+def _handle_starvation_transition(
+    *,
+    market: str,
+    uba_id: int,
+    snapshot: dict[str, Any],
+) -> None:
+    """WAITING_SLOT_STARVATION — BROKEN threshold 1회 Telegram (반복 금지)."""
+
+    key = _market_key(market, uba_id)
+    starv = snapshot.get("waiting_starvation") or {}
+    if not isinstance(starv, dict):
+        return
+    esc = str(starv.get("escalation") or "NONE")
+    prev = _last_starvation_escalation.get(key, "NONE")
+    _last_starvation_escalation[key] = esc
+    if esc != "BROKEN" or prev == "BROKEN":
+        return
+    if market != "UPBIT":
+        return
+    wc = int(snapshot.get("waiting_count") or 0)
+    oldest = starv.get("oldest_waiting_age_seconds")
+    _emit_reliability_telegram(
+        market=market,
+        uba_id=uba_id,
+        event_type="UPBIT_WAITING_SLOT_STARVATION",
+        title="🟡 [업비트] 매수 대기 슬롯 정체",
+        message=(
+            f"현재: {wc}/{wc} 슬롯이 대기 상태입니다.\n"
+            "유효 매수신호: 0\n"
+            "자동 조치: 대기 후보를 재검증하고 있습니다."
+        ),
+        detail={
+            "waiting_count": wc,
+            "oldest_waiting_age_seconds": oldest,
+            "no_trade_classification": snapshot.get("no_trade_classification"),
+        },
+    )
+
+
+def _l1_waiting_self_heal(
+    session: Any, *, uba_id: int, actor: str
+) -> dict[str, Any]:
+    """Starvation self-heal — revalidation/release only (REAL order 금지)."""
+
+    try:
+        from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+            portfolio_entry_telemetry,
+        )
+        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+            revalidate_waiting_slots,
+        )
+
+        telem = portfolio_entry_telemetry.snapshot(uba_id) or {}
+        if not isinstance(telem, dict):
+            telem = {}
+        return revalidate_waiting_slots(
+            session,
+            user_broker_account_id=uba_id,
+            telemetry_by_symbol=telem,
+            actor=actor,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
+
 async def _l1_feed_reconnect(
     session: Any, *, uba_id: int, actor: str
 ) -> dict[str, Any]:
@@ -284,6 +351,9 @@ async def reconcile_market_health(
             current=current,
             snapshot=snap,
         )
+        _handle_starvation_transition(
+            market=market, uba_id=uba_id, snapshot=snap
+        )
         _last_health_state[key] = current
 
         if snap.get("partial_restore"):
@@ -308,8 +378,18 @@ async def reconcile_market_health(
 
         async with lock:
             actions: list[str] = []
-            # LEVEL 1 — feed / scanner (UPBIT only)
+            # LEVEL 1 — feed / scanner / waiting self-heal (UPBIT only)
             if market == "UPBIT":
+                starv = snap.get("waiting_starvation") or {}
+                if isinstance(starv, dict) and starv.get("waiting_slot_starvation"):
+                    l1w = _l1_waiting_self_heal(
+                        session, uba_id=uba_id, actor=actor
+                    )
+                    actions.append("L1_WAITING_REVALIDATE")
+                    outcome["l1_waiting"] = l1w
+                    if int(l1w.get("released") or 0) > 0:
+                        session.commit()
+
                 feed_st = str((snap.get("components") or {}).get("feed") or "")
                 if feed_st not in {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}:
                     l1f = await _l1_feed_reconnect(session, uba_id=uba_id, actor=actor)

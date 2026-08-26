@@ -69,4 +69,25 @@ describe("upbitAutotradingCanonicalStatus", () => {
       ),
     ).toEqual(expect.arrayContaining(["LIVE_OFF", "ARM_OFF_OR_EXPIRED"]));
   });
+
+  it("WAITING_SLOT_STARVATION — 슬롯 정체 headline", () => {
+    const agg = buildUpbitAutotradingAggregateStatus({
+      ops: {
+        live: "ON",
+        arm: "ON",
+        blockers: [],
+        reliability: {
+          health_state: "DEGRADED",
+          no_trade_classification: "WAITING_SLOT_STARVATION",
+          waiting_starvation: { waiting_slot_starvation: true },
+          waiting_count: 5,
+          heartbeats: { oldest_waiting_age_seconds: 7320 },
+        },
+      },
+      readiness: { status: "READY_FOR_AUTO_TRADING", blockers: [] },
+      entryEvaluatorState: "RUNNING",
+    });
+    expect(agg.headline).toContain("대기 슬롯 정체");
+    expect(agg.entryOrdersPermitted).toBe(false);
+  });
 });

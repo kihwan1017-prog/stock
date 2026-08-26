@@ -111,6 +111,12 @@ def _broker_card(ops: dict[str, Any], *, side: dict[str, int]) -> dict[str, Any]
     display_status = "정상"
     if health_state == "BROKEN" or rel.get("partial_restore"):
         display_status = "장애"
+    elif no_trade == "WAITING_SLOT_STARVATION":
+        display_status = "슬롯대기정체"
+    elif no_trade == "PIPELINE_STALL" and rel.get("waiting_starvation", {}).get(
+        "waiting_slot_starvation"
+    ):
+        display_status = "슬롯대기정체"
     elif no_trade == "NORMAL_NO_SIGNAL":
         display_status = "신호대기"
     elif no_trade == "NORMAL_POLICY_BLOCK":

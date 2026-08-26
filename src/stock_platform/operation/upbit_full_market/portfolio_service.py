@@ -1225,6 +1225,29 @@ class UpbitPortfolioService:
         except Exception as exc:  # noqa: BLE001
             out["lifecycle_reconcile_error"] = type(exc).__name__
 
+        # WAITING 주기 revalidation — release만 (주문 생성 없음)
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
+                portfolio_entry_telemetry,
+            )
+            from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+                revalidate_waiting_slots,
+            )
+
+            telem_snap = portfolio_entry_telemetry.snapshot(uba_id) or {}
+            if not isinstance(telem_snap, dict):
+                telem_snap = {}
+            wl = revalidate_waiting_slots(
+                self._session,
+                user_broker_account_id=uba_id,
+                telemetry_by_symbol=telem_snap,
+                actor="consume_top_k",
+            )
+            if wl.get("released") or wl.get("revalidated"):
+                out["waiting_lifecycle"] = wl
+        except Exception as exc:  # noqa: BLE001
+            out["waiting_lifecycle_error"] = type(exc).__name__
+
         # ENTRY_PENDING(실제 주문 단계) 고착만 timeout 복구 — WAITING_SIGNAL 제외
         stale_rec = self.recover_stale_entry_pending_without_order(uba_id)
         if int(stale_rec.get("released") or 0) > 0:
@@ -1782,6 +1805,10 @@ class UpbitPortfolioService:
             pick_best_replacement,
             reason_ko,
         )
+        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+            assess_waiting_slot,
+            load_waiting_lifecycle_policy,
+        )
 
         assignment = self._assignment.get_or_create(uba_id)
         policy = self.get_or_create_policy(uba_id)
@@ -1789,6 +1816,10 @@ class UpbitPortfolioService:
             settings=get_settings(),
             risk_group_policy_json=dict(policy.risk_group_policy_json or {}),
             candidate_max_age_seconds=int(policy.candidate_max_age_seconds),
+        )
+        wl_pol = load_waiting_lifecycle_policy(
+            settings=get_settings(),
+            risk_group_policy_json=dict(policy.risk_group_policy_json or {}),
         )
         out["replacement_policy"] = {
             "hold_seconds": repl_pol.hold_seconds,
@@ -1845,6 +1876,9 @@ class UpbitPortfolioService:
             telem = telem_map.get(sym) or {}
             if not isinstance(telem, dict):
                 telem = {}
+            wl_assess = assess_waiting_slot(
+                slot=slot, policy=wl_pol, telemetry=telem
+            )
             slot_views.append(
                 SlotScoreView(
                     slot_id=int(slot.slot_id),
@@ -1874,6 +1908,7 @@ class UpbitPortfolioService:
                     or telem.get("last_reason_code"),
                     evaluation_count=int(telem.get("evaluation_count") or 0),
                     last_decision=telem.get("last_decision"),
+                    soft_stale_eligible=wl_assess.replacement_eligible,
                 )
             )
 
