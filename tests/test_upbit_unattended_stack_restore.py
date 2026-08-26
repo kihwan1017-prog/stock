@@ -334,6 +334,12 @@ async def test_stack_restore_resumes_runtime_and_starts_worker() -> None:
             broker_code="UPBIT",
         ),
     )
+    exec_runner = MagicMock()
+    exec_runner.status.return_value = {
+        "running": True,
+        "mode": "LIVE",
+        "user_broker_account_id": 1380,
+    }
 
     with (
         patch(
@@ -367,8 +373,37 @@ async def test_stack_restore_resumes_runtime_and_starts_worker() -> None:
             "stock_platform.trading.upbit_24x7_control.exit_monitor_status",
             return_value={"status": "RUNNING"},
         ),
+        patch(
+            "stock_platform.realtime.runtime.realtime_execution_runner_manager"
+        ) as exec_mgr,
+        patch(
+            "stock_platform.operation.upbit_full_market.portfolio_runtime_sync.ensure_protective_quote_feed",
+            return_value={"ok": True},
+        ),
+        patch(
+            "stock_platform.realtime.upbit_quote_feed_restore.ensure_upbit_quote_feed_from_hub",
+            new=AsyncMock(
+                return_value={
+                    "started": True,
+                    "already_running": True,
+                    "symbols": ["KRW-SUI"],
+                }
+            ),
+        ),
+        patch(
+            "stock_platform.realtime.market_data_hub.get_realtime_market_data_hub"
+        ) as hub_factory,
+        patch(
+            "stock_platform.operation.upbit_full_market.portfolio_entry_signal.ensure_portfolio_entry_evaluator_for_uba",
+            return_value={"ok": True},
+        ),
     ):
-        worker.status.return_value = {"enabled": True, "running": False}
+        # start 이후 status().running=True 로 검증 통과
+        worker.status.side_effect = [
+            {"enabled": True, "running": False},
+            {"enabled": True, "running": True},
+            {"enabled": True, "running": True},
+        ]
         worker.start.return_value = {
             "started": True,
             "reason": "STARTED",
@@ -376,6 +411,10 @@ async def test_stack_restore_resumes_runtime_and_starts_worker() -> None:
         }
         mgr.list_entries.return_value = [paused]
         mgr.resume_runtime = AsyncMock(return_value=paused)
+        exec_mgr.get.return_value = exec_runner
+        hub = MagicMock()
+        hub.status.return_value = {"dispatch_running": True}
+        hub_factory.return_value = hub
 
         out = await restore_upbit_trading_stack(
             session, user_broker_account_id=1380

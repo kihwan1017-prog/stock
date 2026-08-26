@@ -764,7 +764,12 @@ def evaluate_uba_autotrading_ready(
             else:
                 warnings.append("LIVE_OUTBOX_WORKER_NOT_RUNNING")
         if str(ctrl.get("exit_monitor")) == "STOPPED":
-            warnings.append("EXIT_MONITOR_STOPPED")
+            # LIVE ON이면 Exit Monitor 미기동 = stack incomplete → READY 금지
+            if bool(getattr(uba, "live_order_enabled", False)):
+                if "EXIT_MONITOR_NOT_RUNNING" not in blockers:
+                    blockers.append("EXIT_MONITOR_NOT_RUNNING")
+            else:
+                warnings.append("EXIT_MONITOR_STOPPED")
     except Exception as exc:  # noqa: BLE001
         checks["upbit_24x7_control"] = {"error": type(exc).__name__}
 

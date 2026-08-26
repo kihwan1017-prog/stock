@@ -228,11 +228,35 @@ async def restore_upbit_trading_stack(
                     "scope_key": entry.scope.scope_key,
                 }
             else:
-                detail["runtime"] = {
-                    "resumed": False,
-                    "reason": "NO_PAUSED_RUNTIME",
-                    "hint": "operator START RUNTIME required if never started",
-                }
+                # STOPPED/미등록 — 공식 START RUNTIME (idempotent confirm path)
+                try:
+                    from stock_platform.trading.upbit_24x7_control import (
+                        CONFIRM_START_RUNTIME,
+                        start_upbit_strategy_runtime,
+                    )
+
+                    started = await start_upbit_strategy_runtime(
+                        session,
+                        user_broker_account_id=uba_id,
+                        strategy_id=int(strategy_id),
+                        actor=actor,
+                        confirmation_text=CONFIRM_START_RUNTIME,
+                    )
+                    detail["runtime"] = {
+                        "resumed": True,
+                        "reason": "STARTED",
+                        "start_result": {
+                            "started": started.get("started"),
+                            "reason": started.get("reason"),
+                        },
+                    }
+                except Exception as start_exc:  # noqa: BLE001
+                    detail["runtime"] = {
+                        "resumed": False,
+                        "reason": "NO_PAUSED_RUNTIME_START_FAILED",
+                        "error": type(start_exc).__name__,
+                        "message": str(start_exc)[:200],
+                    }
             detail["runtime_status"] = runtime_status_for_uba(
                 user_broker_account_id=uba_id,
                 strategy_id=int(strategy_id),
@@ -330,15 +354,190 @@ async def restore_upbit_trading_stack(
             "error": type(exec_exc).__name__,
         }
 
+    # 5) REAL Feed — OPEN 포지션 보호 + Hub subscription (idempotent)
+    try:
+        from stock_platform.operation.upbit_full_market.portfolio_runtime_sync import (
+            ensure_protective_quote_feed,
+        )
+        from stock_platform.realtime.upbit_quote_feed_restore import (
+            ensure_upbit_quote_feed_from_hub,
+        )
+
+        protective = ensure_protective_quote_feed(
+            session, user_broker_account_id=uba_id
+        )
+        hub_feed = await ensure_upbit_quote_feed_from_hub(
+            source=f"UNATTENDED_STACK_RESTORE:{actor}",
+            session=session,
+        )
+        detail["feed"] = {
+            "protective": protective,
+            "hub_restore": {
+                "started": hub_feed.get("started"),
+                "symbols": hub_feed.get("symbols"),
+                "already_running": hub_feed.get("already_running"),
+            },
+        }
+        try:
+            from stock_platform.realtime.market_data_hub import (
+                get_realtime_market_data_hub,
+            )
+
+            hub = get_realtime_market_data_hub()
+            if not bool((hub.status() or {}).get("dispatch_running")):
+                await hub.start_dispatch()
+            detail["feed"]["hub_dispatch"] = hub.status()
+        except Exception as hub_exc:  # noqa: BLE001
+            detail["feed"]["hub_dispatch_error"] = type(hub_exc).__name__
+    except Exception as feed_exc:  # noqa: BLE001
+        detail["feed"] = {
+            "ok": False,
+            "error": type(feed_exc).__name__,
+        }
+
+    # 6) 검증 + restore epoch + 실패 telemetry
+    from stock_platform.trading.upbit_24x7_control import (
+        exit_monitor_status,
+        runtime_status_for_uba as _runtime_status,
+    )
+    from stock_platform.trading.upbit_execution_restore_epoch import (
+        upbit_execution_restore_epoch,
+    )
+
+    worker_ok = bool(live_outbox_worker_runtime.status().get("running"))
+    exit_ok = str(exit_monitor_status().get("status") or "").upper() == "RUNNING"
+    runtime_ok = False
+    if strategy_id is not None:
+        runtime_ok = (
+            str(
+                _runtime_status(
+                    user_broker_account_id=uba_id,
+                    strategy_id=int(strategy_id),
+                ).get("status")
+                or ""
+            ).upper()
+            == "RUNNING"
+        )
+    runner_ok = bool(
+        ((detail.get("execution_runner") or {}).get("started"))
+        or ((detail.get("execution_runner") or {}).get("reason") == "ALREADY_RUNNING")
+    )
+    components = {
+        "worker": worker_ok,
+        "runtime": runtime_ok,
+        "exit_monitor": exit_ok,
+        "execution_runner": runner_ok,
+        "feed": False,
+    }
+    # feed started/already covering 모두 허용
+    feed_detail = detail.get("feed") or {}
+    if isinstance(feed_detail, dict):
+        hub_r = feed_detail.get("hub_restore") or {}
+        prot = feed_detail.get("protective") or {}
+        components["feed"] = bool(
+            hub_r.get("started")
+            or hub_r.get("already_running")
+            or (prot.get("ok") if isinstance(prot, dict) else False)
+        )
+    detail["component_ok"] = components
+    stack_ok = all(
+        [
+            components["worker"],
+            components["runtime"],
+            components["exit_monitor"],
+            components["execution_runner"],
+            components["feed"],
+        ]
+    )
+    detail["stack_ok"] = stack_ok
+
+    if stack_ok:
+        upbit_execution_restore_epoch.mark_restored(actor=actor)
+        detail["restore_epoch"] = upbit_execution_restore_epoch.snapshot()
+    else:
+        missing = [k for k, v in components.items() if not v]
+        detail["missing_components"] = missing
+        _emit_stack_restore_failed(
+            session,
+            uba_id=uba_id,
+            actor=actor,
+            missing=missing,
+            detail=detail,
+        )
+
     logger.info(
         "upbit_unattended_stack_restored",
         uba_id=uba_id,
         actor=actor,
+        stack_ok=stack_ok,
         worker_reason=(detail.get("worker") or {}).get("reason"),
         runtime_reason=(detail.get("runtime") or {}).get("reason"),
         execution_reason=(detail.get("execution_runner") or {}).get("reason"),
     )
-    return {"restored": True, "detail": detail}
+    return {"restored": stack_ok, "detail": detail}
+
+
+_RESTORE_FAIL_TELEGRAM_COOLDOWN_SEC = 900.0
+_last_restore_fail_telegram_at: dict[int, float] = {}
+
+
+def _emit_stack_restore_failed(
+    session: Session,
+    *,
+    uba_id: int,
+    actor: str,
+    missing: list[str],
+    detail: dict[str, Any],
+) -> None:
+    """부분 복구 실패 — READY로 오인되지 않게 audit + throttled telegram."""
+
+    import time
+
+    from stock_platform.order.live_safety_audit import (
+        emit_live_order_telegram,
+        emit_live_safety_audit,
+    )
+
+    payload = {
+        "user_broker_account_id": int(uba_id),
+        "missing_components": list(missing),
+        "component_ok": detail.get("component_ok"),
+        "actor": actor,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        emit_live_safety_audit(
+            session,
+            event_type="UPBIT_EXECUTION_STACK_RESTORE_FAILED",
+            actor=actor[:100],
+            run_id=None,
+            user_id=None,
+            account_id=int(uba_id),
+            strategy_id=None,
+            detail=payload,
+            commit=False,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    # UBA당 15분 쿨다운 — restore 재시도 flood 방지
+    now_mono = time.monotonic()
+    last = _last_restore_fail_telegram_at.get(int(uba_id), 0.0)
+    if (now_mono - last) < _RESTORE_FAIL_TELEGRAM_COOLDOWN_SEC:
+        return
+    _last_restore_fail_telegram_at[int(uba_id)] = now_mono
+    try:
+        emit_live_order_telegram(
+            event_type="UPBIT_EXECUTION_STACK_RESTORE_FAILED",
+            title="UPBIT execution stack restore failed",
+            message=(
+                f"UBA {uba_id} stack incomplete: {','.join(missing)}. "
+                "LIVE/ARM alone is NOT ready."
+            ),
+            detail=payload,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 async def restore_all_active_unattended_upbit_leases(

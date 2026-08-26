@@ -877,6 +877,31 @@ class OrderExecutionService:
                         f"/{_admission.get('limit')} (KST)"
                     ),
                 )
+            # WAITING restore-epoch / Exit / Feed — persist 직전 hard gate
+            try:
+                from stock_platform.operation.upbit_full_market.waiting_revalidation_gate import (
+                    evaluate_waiting_buy_revalidation_gate,
+                )
+
+                _wg = evaluate_waiting_buy_revalidation_gate(
+                    self._session,
+                    user_broker_account_id=int(uba_id or 0),
+                    symbol=str(command.symbol or ""),
+                    order_source=str(command.order_source or "MANUAL"),
+                    broker_code=str(command.broker_code or ""),
+                    side=side_text,
+                    is_risk_reducing=bool(command.is_risk_reducing),
+                )
+                if not _wg.get("allowed"):
+                    return self._blocked(
+                        str(_wg.get("reason") or "WAITING_REVALIDATION_REQUIRED"),
+                        message="waiting revalidation gate blocked BUY",
+                    )
+            except Exception:  # noqa: BLE001
+                return self._blocked(
+                    "WAITING_REVALIDATION_REQUIRED",
+                    message="waiting revalidation gate error",
+                )
             persist_stage = PERSIST_CREATE_ORDER
             try:
                 order = self._order_service.create(

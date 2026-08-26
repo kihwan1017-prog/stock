@@ -73,6 +73,7 @@ EVENT_CATEGORY_MAP: dict[str, str] = {
     "SCHEDULER_ERROR": "SCHEDULER",
     "TELEGRAM_FAILURE": "TELEGRAM",
     "MONITORING_ALERT": "SYSTEM",
+    "UPBIT_EXECUTION_STACK_RESTORE_FAILED": "SYSTEM",
 }
 
 
@@ -93,6 +94,7 @@ def map_severity_from_event(event_type: str) -> str:
         "DATABASE_ERROR",
         "BROKER_DISCONNECTED",
         "SCHEDULER_ERROR",
+        "UPBIT_EXECUTION_STACK_RESTORE_FAILED",
     }:
         return "CRITICAL"
     if upper in {

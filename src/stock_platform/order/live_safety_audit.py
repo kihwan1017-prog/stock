@@ -209,8 +209,9 @@ def emit_live_order_telegram(
             LIVE_DISABLED,
             LIVE_ARM_EXPIRED,
             ACTIVATION_EXPIRED,
+            "UPBIT_EXECUTION_STACK_RESTORE_FAILED",
         }:
-            # 세션/승인 만료는 주문 거부가 아님 — MONITORING_ALERT
+            # 세션/승인 만료·스택 복구 실패는 주문 거부가 아님 — MONITORING_ALERT
             mapped = NotificationEventType.MONITORING_ALERT.value
         elif event_type in {POSITION_MISMATCH, CASH_MISMATCH}:
             mapped = NotificationEventType.KILL_SWITCH.value

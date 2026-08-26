@@ -2419,6 +2419,42 @@ class UpbitPortfolioService:
                 uba_id=uba_id,
             )
 
+        # WAITING restore-epoch / Exit / Feed revalidation (daily와 독립)
+        try:
+            from stock_platform.operation.upbit_full_market.waiting_revalidation_gate import (
+                evaluate_waiting_buy_revalidation_gate,
+            )
+
+            waiting_gate = evaluate_waiting_buy_revalidation_gate(
+                self._session,
+                user_broker_account_id=uba_id,
+                symbol=str(symbol or "").upper(),
+                order_source="AUTO",
+                broker_code="UPBIT",
+                side="BUY",
+                waiting_updated_at=getattr(slot, "updated_at", None),
+            )
+            if not waiting_gate.get("allowed"):
+                return {
+                    "ok": False,
+                    "reason": str(
+                        waiting_gate.get("reason")
+                        or "WAITING_REVALIDATION_REQUIRED"
+                    ),
+                    "waiting_revalidation": waiting_gate,
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "waiting_revalidation_gate_error",
+                error=type(exc).__name__,
+                uba_id=uba_id,
+            )
+            return {
+                "ok": False,
+                "reason": "WAITING_REVALIDATION_REQUIRED",
+                "error": type(exc).__name__,
+            }
+
         score = float(scanner_score or 80.0)
         conf = float(ai_confidence or 0.8)
         if slot.candidate_selection_id is not None:

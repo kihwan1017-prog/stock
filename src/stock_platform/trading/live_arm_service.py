@@ -12,6 +12,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import structlog
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -60,6 +61,8 @@ LIVE_DISARM = ARM_OFF
 DEFAULT_ARM_TTL_SECONDS = 300
 # force_renew 시 이 미만 연장은 NOOP (15초 스캔 spam 방지)
 MIN_MEANINGFUL_ARM_EXTENSION_SECONDS = 60
+
+logger = structlog.get_logger(__name__)
 
 
 class LiveArmError(ValueError):
@@ -795,6 +798,33 @@ class LiveArmService:
         uba.live_order_enabled = False
         uba.live_approved_at = None
         uba.live_approved_by = None
+
+        # UPBIT: outage epoch + ACTIVE lease면 LIVE/ARM+stack 즉시 복구 스케줄
+        try:
+            if str(uba.broker_code or "").upper() == "UPBIT":
+                from stock_platform.trading.upbit_execution_restore_epoch import (
+                    upbit_execution_restore_epoch,
+                )
+
+                upbit_execution_restore_epoch.mark_outage("LIVE_ARM_EXPIRED")
+                from stock_platform.trading.live_unattended_authorization_service import (
+                    LiveUnattendedAuthorizationService,
+                    STATUS_ACTIVE,
+                )
+
+                unattended = LiveUnattendedAuthorizationService(self._session)
+                lease = unattended.get_active(int(uba.user_broker_account_id))
+                if (
+                    lease is not None
+                    and str(lease.status_code or "").upper() == STATUS_ACTIVE
+                ):
+                    _schedule_upbit_lease_restore_after_arm_expiry(
+                        int(uba.user_broker_account_id),
+                        actor="SYSTEM_ARM_EXPIRED_LEASE_RESTORE",
+                    )
+        except Exception:  # noqa: BLE001
+            pass
+
         self._session.add(
             LiveArmEvent(
                 user_broker_account_id=int(uba.user_broker_account_id),
@@ -864,3 +894,69 @@ class LiveArmService:
         if uba is None:
             raise LookupError("user broker account not found")
         return uba
+
+
+def _schedule_upbit_lease_restore_after_arm_expiry(
+    user_broker_account_id: int,
+    *,
+    actor: str,
+) -> None:
+    """ARM TTL 만료 직후 ACTIVE lease면 LIVE/ARM+stack 복구를 비동기 스케줄.
+
+    expire 트랜잭션 commit 이후에 동작하도록 짧게 delay한다.
+    """
+
+    import asyncio
+    import threading
+    import time
+
+    uba_id = int(user_broker_account_id)
+
+    async def _run() -> None:
+        # expire commit 플러시 대기
+        await asyncio.sleep(0.35)
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.trading.live_unattended_authorization_service import (
+            LiveUnattendedAuthorizationService,
+        )
+
+        sf = get_session_factory()
+        session = sf()
+        try:
+            result = LiveUnattendedAuthorizationService(
+                session
+            ).restore_from_active_lease(
+                uba_id,
+                actor=actor,
+                restore_stack=True,
+            )
+            session.commit()
+            logger.info(
+                "upbit_arm_expired_lease_restore",
+                uba_id=uba_id,
+                restored=result.get("restored"),
+                reason=result.get("reason"),
+            )
+        except Exception:  # noqa: BLE001
+            session.rollback()
+            logger.exception(
+                "upbit_arm_expired_lease_restore_failed", uba_id=uba_id
+            )
+        finally:
+            session.close()
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        def _thread_main() -> None:
+            time.sleep(0.35)
+            asyncio.run(_run())
+
+        threading.Thread(
+            target=_thread_main,
+            name=f"arm-expire-restore-{uba_id}",
+            daemon=True,
+        ).start()
+        return
+
+    loop.create_task(_run(), name=f"arm-expire-restore-{uba_id}")

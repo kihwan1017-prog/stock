@@ -2004,7 +2004,11 @@ class LiveUnattendedAuthorizationService:
                 "blockers": blockers,
             }
 
-        margin = int(row.renewal_margin_seconds)
+        margin = max(
+            int(row.renewal_margin_seconds),
+            # 24H UPBIT: TTL의 1/4 전부터 선제 renew (매시간 만료 miss 완화)
+            max(60, int(row.arm_lease_ttl_seconds) // 4),
+        )
         act = LiveTradingTransitionService(self._session).peek_active(
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=int(user_broker_account_id),
@@ -2019,6 +2023,7 @@ class LiveUnattendedAuthorizationService:
             "authorization_mode": mode,
             "activation_remaining": act_remaining,
             "arm_remaining": arm_remaining,
+            "effective_renewal_margin_seconds": margin,
         }
         did = False
 
