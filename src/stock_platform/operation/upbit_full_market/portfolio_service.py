@@ -1252,6 +1252,16 @@ class UpbitPortfolioService:
         out["daily_entry_usage"] = daily_usage
         if int(daily_usage["entry_count"]) >= daily_limit:
             out["reason"] = "PORTFOLIO_DAILY_ENTRY_LIMIT"
+            try:
+                from stock_platform.notification.telegram_policy import (
+                    maybe_emit_upbit_daily_limit_edge,
+                )
+
+                maybe_emit_upbit_daily_limit_edge(
+                    usage=daily_usage, uba_id=uba_id
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return out
 
         empty = list(

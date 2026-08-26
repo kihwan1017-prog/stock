@@ -55,16 +55,23 @@ class TelegramNotificationSender(NotificationSender):
             )
 
         if not self._bot_token or not self._chat_id:
-            self._failed_count += 1
-            self._last_error = (
-                "Telegram bot token or chat ID is missing"
-            )
-            return NotificationChannelResult(
-                channel=self.channel,
-                status=NotificationSendStatus.FAILED,
-                message=self._last_error,
-                sent_at=now,
-            )
+            # per-message chat override 가능 (시장별 routing)
+            override = ""
+            if isinstance(notification.detail, dict):
+                override = str(
+                    notification.detail.get("telegram_chat_id") or ""
+                ).strip()
+            if not self._bot_token or not (self._chat_id or override):
+                self._failed_count += 1
+                self._last_error = (
+                    "Telegram bot token or chat ID is missing"
+                )
+                return NotificationChannelResult(
+                    channel=self.channel,
+                    status=NotificationSendStatus.FAILED,
+                    message=self._last_error,
+                    sent_at=now,
+                )
 
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(
@@ -72,13 +79,20 @@ class TelegramNotificationSender(NotificationSender):
         )
 
         try:
+            chat_id = self._chat_id
+            if isinstance(notification.detail, dict):
+                override = str(
+                    notification.detail.get("telegram_chat_id") or ""
+                ).strip()
+                if override:
+                    chat_id = override
             response = await client.post(
                 (
                     "https://api.telegram.org/bot"
                     f"{self._bot_token}/sendMessage"
                 ),
                 json={
-                    "chat_id": self._chat_id,
+                    "chat_id": chat_id,
                     "text": self._format_message(
                         notification
                     ),

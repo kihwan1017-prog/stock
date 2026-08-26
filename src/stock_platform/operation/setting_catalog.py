@@ -520,8 +520,22 @@ SETTING_DEFINITIONS: tuple[SettingDefinition, ...] = (
         "telegram_chat_id",
         "environment",
         "string",
-        "Telegram Chat ID",
+        "Telegram Chat ID (fallback)",
         env_attr="telegram_chat_id",
+    ),
+    SettingDefinition(
+        "telegram_upbit_chat_id",
+        "environment",
+        "string",
+        "Telegram UPBIT Chat ID",
+        env_attr="telegram_upbit_chat_id",
+    ),
+    SettingDefinition(
+        "telegram_kiwoom_chat_id",
+        "environment",
+        "string",
+        "Telegram KIWOOM Chat ID",
+        env_attr="telegram_kiwoom_chat_id",
     ),
     SettingDefinition(
         "telegram_ops_enabled",

@@ -58,11 +58,29 @@ class TelegramCommandTestRequest(BaseModel):
 def get_telegram_ops_status(
     _: str = Depends(require_admin),
 ):
+    from stock_platform.notification.telegram_policy import (
+        build_telegram_routing_status,
+    )
+
     return {
         "settings": NotificationSettings.from_env().to_dict(),
         "poller": telegram_ops_poller.status(),
         "notification_service": notification_service.status(),
+        "market_routing": build_telegram_routing_status(),
     }
+
+
+@router.get("/status")
+def get_telegram_market_status(
+    _: str = Depends(require_admin),
+):
+    """시장별 Telegram destination / ANALYSIS suppression 상태 (secret 없음)."""
+
+    from stock_platform.notification.telegram_policy import (
+        build_telegram_routing_status,
+    )
+
+    return build_telegram_routing_status()
 
 
 @router.post("/webhook")

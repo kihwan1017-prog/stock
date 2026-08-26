@@ -4750,6 +4750,11 @@ export async function getNotificationStatus(): Promise<JsonValue> {
   return getJson("/notification/status");
 }
 
+/** 시장별 Telegram destination / ANALYSIS suppression (secret 없음) */
+export async function getTelegramMarketStatus(): Promise<JsonValue> {
+  return getJson("/telegram/status");
+}
+
 export async function testNotification(body?: {
   title?: string;
   message?: string;

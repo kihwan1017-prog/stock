@@ -1,0 +1,75 @@
+{
+  "task": "TELEGRAM_MARKET_ROUTING_AND_ANALYSIS_SUPPRESSION",
+  "generated_at": "2026-08-26T03:09:27+00:00",
+  "final_verdict": "TELEGRAM_ROUTING_READY_DESTINATION_CONFIG_PENDING",
+  "audit": {
+    "TELEGRAM_SEND_POINTS_COUNT": 62,
+    "UPBIT_SEND_POINTS": "via publisher + emit_live_order_telegram callers under operation/upbit*, broker/upbit*, trading/upbit*",
+    "KIWOOM_SEND_POINTS": "via emit_live_order_telegram in kiwoom_trading_day_lifecycle + shared live_* paths with broker_code",
+    "COMMON_SEND_POINTS": "notification/service → telegram_sender; monitoring; kill_switch; arm; lifecycle; risk",
+    "note": "All publisher/emit paths funnel through NotificationService.dispatch which applies TelegramNotificationPolicy"
+  },
+  "routing": {
+    "UPBIT_DESTINATION_CONFIGURED": false,
+    "KIWOOM_DESTINATION_CONFIGURED": false,
+    "FALLBACK_ENABLED": true,
+    "CROSS_MARKET_LEAK": false,
+    "env_keys": [
+      "TELEGRAM_UPBIT_CHAT_ID",
+      "TELEGRAM_KIWOOM_CHAT_ID",
+      "TELEGRAM_CHAT_ID"
+    ]
+  },
+  "categories": ["SYSTEM", "TRADING", "ANALYSIS", "CRITICAL"],
+  "live_status": {
+    "upbit": {
+      "DAILY_COUNT": 12,
+      "DAILY_LIMIT": 10,
+      "ANALYSIS_ALLOWED": false,
+      "SUPPRESSION_REASON": "DAILY_ENTRY_LIMIT_REACHED",
+      "SYSTEM_ALLOWED": true,
+      "TRADING_ALLOWED": true,
+      "CRITICAL_ALLOWED": true
+    },
+    "kiwoom": {
+      "MARKET_STATUS": "OPEN",
+      "LIVE": true,
+      "ARM": true,
+      "ACTIVATION": "TRADING_PHASE",
+      "RUNTIME": "STOPPED",
+      "ANALYSIS_ALLOWED": false,
+      "SUPPRESSION_REASON": "RUNTIME_STOPPED",
+      "SYSTEM_ALLOWED": true,
+      "CRITICAL_ALLOWED": true
+    }
+  },
+  "pipeline": {
+    "SCANNER_UNCHANGED": true,
+    "ANALYSIS_LLM_UNCHANGED": true,
+    "TRADING_SHADOW_UNCHANGED": true,
+    "RAG_UNCHANGED": true,
+    "CLEAN_COLLECTION_UNCHANGED": true,
+    "FORWARD_SHADOW_UNCHANGED": true
+  },
+  "status": {
+    "STATUS_API": "GET /api/v1/telegram/status",
+    "UI_AVAILABLE": true
+  },
+  "verify": {
+    "TESTS": "tests/test_telegram_market_routing_analysis_suppression.py PASS (15)",
+    "UPBIT_ROUTING_TEST": true,
+    "KIWOOM_ROUTING_TEST": true,
+    "SUPPRESSION_TEST": true,
+    "CRITICAL_BYPASS_TEST": true,
+    "DEDUP_TEST": true,
+    "NO_CROSS_MARKET_LEAK": true
+  },
+  "safety": {
+    "REAL_ORDER_MUTATION": 0,
+    "REAL_POLICY_MUTATION": 0,
+    "DAILY_LIMIT_CHANGE": 0,
+    "DAILY_COUNT_RESET": 0,
+    "LLM_REAL_GATE_MUTATION": 0
+  },
+  "next_action": "CONFIGURE_SEPARATE_TELEGRAM_DESTINATIONS_AND_OBSERVE_NATURAL_ALERTS"
+}

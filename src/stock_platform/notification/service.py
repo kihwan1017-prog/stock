@@ -72,6 +72,40 @@ class NotificationService:
             "event_type": event.event_type,
             **event.detail,
         }
+
+        # 시장 라우팅 + ANALYSIS suppression (Telegram output only)
+        try:
+            from stock_platform.notification.telegram_policy import (
+                evaluate_telegram_policy,
+                resolve_telegram_chat_id,
+            )
+
+            decision = evaluate_telegram_policy(
+                event_type=event.event_type,
+                detail=detail,
+            )
+            detail["telegram_market"] = decision.market
+            detail["telegram_category"] = decision.category
+            detail["telegram_chat_route"] = decision.chat_route
+            chat_id, _route = resolve_telegram_chat_id(decision.market)
+            if chat_id:
+                detail["telegram_chat_id"] = chat_id
+            if not decision.allowed:
+                logger.info(
+                    "telegram_policy_suppressed",
+                    event_type=event.event_type,
+                    market=decision.market,
+                    category=decision.category,
+                    reason=decision.reason,
+                )
+                return None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "telegram_policy_eval_failed",
+                event_type=event.event_type,
+                error=type(exc).__name__,
+            )
+
         rendered = self._render_korean(event.event_type, event.title, event.message, detail)
         if rendered is not None and rendered.suppressed:
             logger.info(

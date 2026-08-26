@@ -197,6 +197,21 @@ def try_final_admit_portfolio_daily_entry(
                 **base,
             },
         )
+        try:
+            from stock_platform.notification.telegram_policy import (
+                maybe_emit_upbit_daily_limit_edge,
+            )
+
+            maybe_emit_upbit_daily_limit_edge(
+                usage={
+                    "blocking": True,
+                    "entry_count": count_before,
+                    "entry_limit": limit,
+                },
+                uba_id=uba_id,
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return {
             **base,
             "allowed": False,
@@ -211,6 +226,21 @@ def try_final_admit_portfolio_daily_entry(
             **base,
         },
     )
+    try:
+        from stock_platform.notification.telegram_policy import (
+            maybe_emit_upbit_daily_limit_edge,
+        )
+
+        maybe_emit_upbit_daily_limit_edge(
+            usage={
+                "blocking": False,
+                "entry_count": count_before,
+                "entry_limit": limit,
+            },
+            uba_id=uba_id,
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return {
         **base,
         "allowed": True,

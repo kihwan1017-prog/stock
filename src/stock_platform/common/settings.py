@@ -376,6 +376,9 @@ class Settings(BaseSettings):
     telegram_enabled: bool = False
     telegram_bot_token: str = Field(default="")
     telegram_chat_id: str = Field(default="")
+    # 시장별 destination (비어 있으면 telegram_chat_id fallback)
+    telegram_upbit_chat_id: str = Field(default="")
+    telegram_kiwoom_chat_id: str = Field(default="")
     # STEP54 — Telegram Ops
     telegram_ops_enabled: bool = False
     telegram_ops_poll_interval_seconds: float = 3.0

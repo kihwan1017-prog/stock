@@ -37,6 +37,11 @@ export default function AdminTelegramPage() {
     queryFn: adminApi.getNotificationStatus,
   });
 
+  const telegramMarketQuery = useQuery({
+    queryKey: queryKeys.admin.telegramMarketStatus(),
+    queryFn: adminApi.getTelegramMarketStatus,
+  });
+
   const testNotification = useMutation({
     mutationFn: () =>
       adminApi.testNotification({
@@ -88,6 +93,107 @@ export default function AdminTelegramPage() {
         />
 
         <Row gutter={[16, 16]}>
+          <Col xs={24} lg={12}>
+            <Card
+              size="small"
+              title="UPBIT Telegram"
+              loading={telegramMarketQuery.isLoading}
+              extra={
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  GET /telegram/status
+                </Typography.Text>
+              }
+            >
+              {telegramMarketQuery.error ? (
+                <Alert
+                  type="error"
+                  showIcon
+                  title={toApiError(telegramMarketQuery.error).message}
+                />
+              ) : (
+                <Space orientation="vertical" size={4}>
+                  <Typography.Text>
+                    configured:{" "}
+                    {cell(
+                      asRecord(asRecord(telegramMarketQuery.data)?.upbit)
+                        ?.configured,
+                    )}
+                  </Typography.Text>
+                  <Typography.Text>
+                    chat:{" "}
+                    {cell(
+                      asRecord(asRecord(telegramMarketQuery.data)?.upbit)
+                        ?.chat_id_masked,
+                    )}
+                  </Typography.Text>
+                  <Typography.Text>
+                    Analysis:{" "}
+                    {asRecord(asRecord(telegramMarketQuery.data)?.upbit)
+                      ?.analysis_allowed ? (
+                      <Tag color="success">ON</Tag>
+                    ) : (
+                      <Tag color="default">OFF</Tag>
+                    )}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    Reason:{" "}
+                    {cell(
+                      asRecord(asRecord(telegramMarketQuery.data)?.upbit)
+                        ?.suppression_reason,
+                    ) || "-"}
+                  </Typography.Text>
+                </Space>
+              )}
+            </Card>
+          </Col>
+          <Col xs={24} lg={12}>
+            <Card
+              size="small"
+              title="KIWOOM Telegram"
+              loading={telegramMarketQuery.isLoading}
+            >
+              {telegramMarketQuery.error ? (
+                <Alert
+                  type="error"
+                  showIcon
+                  title={toApiError(telegramMarketQuery.error).message}
+                />
+              ) : (
+                <Space orientation="vertical" size={4}>
+                  <Typography.Text>
+                    configured:{" "}
+                    {cell(
+                      asRecord(asRecord(telegramMarketQuery.data)?.kiwoom)
+                        ?.configured,
+                    )}
+                  </Typography.Text>
+                  <Typography.Text>
+                    chat:{" "}
+                    {cell(
+                      asRecord(asRecord(telegramMarketQuery.data)?.kiwoom)
+                        ?.chat_id_masked,
+                    )}
+                  </Typography.Text>
+                  <Typography.Text>
+                    Analysis:{" "}
+                    {asRecord(asRecord(telegramMarketQuery.data)?.kiwoom)
+                      ?.analysis_allowed ? (
+                      <Tag color="success">ON</Tag>
+                    ) : (
+                      <Tag color="default">OFF</Tag>
+                    )}
+                  </Typography.Text>
+                  <Typography.Text type="secondary">
+                    Reason:{" "}
+                    {cell(
+                      asRecord(asRecord(telegramMarketQuery.data)?.kiwoom)
+                        ?.suppression_reason,
+                    ) || "-"}
+                  </Typography.Text>
+                </Space>
+              )}
+            </Card>
+          </Col>
           <Col xs={24} lg={24}>
             <Card
               size="small"

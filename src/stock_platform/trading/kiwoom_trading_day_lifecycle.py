@@ -603,8 +603,51 @@ class KiwoomTradingDayLifecycleService:
             event_type=event_type,
             title=title,
             message=message,
-            detail={"uba_id": uba_id, **(detail or {})},
+            detail={
+                "uba_id": uba_id,
+                "user_broker_account_id": uba_id,
+                "broker_code": "KIWOOM",
+                "telegram_market": "KIWOOM",
+                **(detail or {}),
+            },
         )
+        # ANALYSIS suppress edge — 명확한 장 개장/종료 전환에서만 1회
+        try:
+            from stock_platform.notification.telegram_policy import (
+                maybe_emit_kiwoom_market_edge,
+            )
+
+            phase = str(
+                (detail or {}).get("phase")
+                or (detail or {}).get("lifecycle_phase")
+                or ""
+            ).upper()
+            et = str(event_type or "").upper()
+            open_ready = phase == "TRADING" or et in {
+                "KIWOOM_TRADING_STARTED",
+                "KIWOOM_MARKET_OPEN",
+                "MARKET_OPEN_AND_READY",
+            }
+            closed = phase in {"SAFE_IDLE", "EOD", "CLOSED", "PREOPEN"} or et in {
+                "KIWOOM_MARKET_CLOSED",
+                "SAFE_IDLE",
+                "EOD_PROTECT",
+                "MARKET_CLOSED",
+            }
+            if open_ready and not closed:
+                maybe_emit_kiwoom_market_edge(
+                    ready=True,
+                    uba_id=int(uba_id),
+                    context={"lifecycle_phase": phase or None},
+                )
+            elif closed:
+                maybe_emit_kiwoom_market_edge(
+                    ready=False,
+                    uba_id=int(uba_id),
+                    context={"lifecycle_phase": phase or None},
+                )
+        except Exception:  # noqa: BLE001
+            pass
 
     # ------------------------------------------------------------------
     # Reauthorize MARKET_HOURS for trading day

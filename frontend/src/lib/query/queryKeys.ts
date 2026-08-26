@@ -191,6 +191,7 @@ export const queryKeys = {
     pipelineLatest: () => ["admin", "pipeline-latest"] as const,
     dailyReports: () => ["admin", "daily-reports"] as const,
     notificationStatus: () => ["admin", "notification-status"] as const,
+    telegramMarketStatus: () => ["admin", "telegram-market-status"] as const,
     notificationTemplates: (params?: object) =>
       ["admin", "notification-templates", params ?? {}] as const,
     notificationDeliveryLogs: (params?: object) =>
