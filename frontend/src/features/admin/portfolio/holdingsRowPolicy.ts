@@ -11,6 +11,15 @@ export function shouldIncludeHoldingPositionRow(
   return !isEffectivelyZero(positionQty);
 }
 
+/** 기본 화면: 실효 수량 0이면 숨김 */
+export function shouldShowHoldingByQuantity(
+  quantity: unknown,
+  includeZeroQuantity: boolean,
+): boolean {
+  if (includeZeroQuantity) return true;
+  return !isEffectivelyZero(quantity);
+}
+
 /** ownership 미등록 + qty 0 → UNKNOWN 오판 방지용 기본 owner */
 export function resolveHoldingOwner(
   ownershipOwner: string | null | undefined,

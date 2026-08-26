@@ -732,13 +732,18 @@ class OpsMonitoringDashboardService:
                     "broker_code": getattr(p, "broker_code", None),
                     "market": getattr(p, "symbol", None),
                     "symbol": getattr(p, "symbol", None),
+                    "name": getattr(p, "name", None),
                     "quantity": _dec_str(qty),
                     "average_price": _dec_str(avg),
                     "current_price": _dec_str(cur),
+                    "purchase_amount": _dec_str(
+                        getattr(p, "purchase_amount", None)
+                    ),
                     "evaluation_amount": _dec_str(eval_amt),
                     "unrealized_pnl": _dec_str(upnl),
                     "return_rate": _dec_str(
-                        getattr(p, "profit_loss_rate", None)
+                        getattr(p, "return_rate", None)
+                        or getattr(p, "profit_loss_rate", None)
                     ),
                     "snapshot_time": _iso(snap_at),
                     "price_source": "SNAPSHOT",

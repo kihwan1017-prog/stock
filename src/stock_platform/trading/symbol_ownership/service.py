@@ -59,6 +59,7 @@ class SymbolOwnershipResult:
     manual_open_orders: int = 0
     auto_position_qty: Decimal = ZERO
     auto_open_orders: int = 0
+    auto_entry_price: Decimal | None = None
     strategy_id: int | None = None
     deployment_id: int | None = None
     slot_id: int | None = None
@@ -73,6 +74,11 @@ class SymbolOwnershipResult:
         d = asdict(self)
         d["manual_position_qty"] = str(self.manual_position_qty)
         d["auto_position_qty"] = str(self.auto_position_qty)
+        d["auto_entry_price"] = (
+            str(self.auto_entry_price)
+            if self.auto_entry_price is not None
+            else None
+        )
         return d
 
 
@@ -121,12 +127,12 @@ class SymbolOwnershipService:
         user_excluded = self.is_user_excluded(uba, broker, sym)
         hold = self.get_active_hold(uba, broker, sym)
 
-        auto_qty, strategy_id, deployment_id = self._auto_binding_qty(
+        auto_qty, strategy_id, deployment_id, auto_entry = self._auto_binding_qty(
             uba, broker, sym, broker_qty_hint=None
         )
         broker_qty = self._broker_position_qty(uba, broker, sym)
         if auto_qty <= ZERO:
-            auto_qty, strategy_id, deployment_id = self._auto_binding_qty(
+            auto_qty, strategy_id, deployment_id, auto_entry = self._auto_binding_qty(
                 uba, broker, sym, broker_qty_hint=broker_qty
             )
         slot_id, slot_no, slot_active = self._auto_slot(uba, broker, sym)
@@ -162,6 +168,7 @@ class SymbolOwnershipService:
             manual_open_orders=int(manual_orders),
             auto_position_qty=decision.auto_position_qty,
             auto_open_orders=int(auto_orders),
+            auto_entry_price=auto_entry,
             strategy_id=strategy_id,
             deployment_id=deployment_id,
             slot_id=slot_id,
@@ -446,10 +453,12 @@ class SymbolOwnershipService:
         sym: str,
         *,
         broker_qty_hint: Decimal | None = None,
-    ) -> tuple[Decimal, int | None, int | None]:
+    ) -> tuple[Decimal, int | None, int | None, Decimal | None]:
         qty = ZERO
         strategy_id: int | None = None
         deployment_id: int | None = None
+        entry_price: Decimal | None = None
+        cost = ZERO
         broker_fallback = (
             broker_qty_hint
             if broker_qty_hint is not None
@@ -468,10 +477,23 @@ class SymbolOwnershipService:
             )
         )
         for row in rows:
-            qty += Decimal(str(row.owned_quantity or 0))
+            q = Decimal(str(row.owned_quantity or 0))
+            qty += q
             strategy_id = int(row.strategy_id)
             if row.deployment_id is not None:
                 deployment_id = int(row.deployment_id)
+            ep = getattr(row, "entry_price", None)
+            if ep is not None and q > ZERO:
+                try:
+                    ep_d = Decimal(str(ep))
+                    if ep_d > ZERO:
+                        cost += q * ep_d
+                        if entry_price is None:
+                            entry_price = ep_d
+                except Exception:  # noqa: BLE001
+                    pass
+        if qty > ZERO and cost > ZERO:
+            entry_price = cost / qty
         if broker == "UPBIT":
             try:
                 from stock_platform.operation.upbit_full_market.entities import (
@@ -502,7 +524,7 @@ class SymbolOwnershipService:
                         deployment_id = int(row.deployment_id)
             except Exception:  # noqa: BLE001
                 pass
-        return qty, strategy_id, deployment_id
+        return qty, strategy_id, deployment_id, entry_price
 
     def _auto_slot(
         self, uba: int, broker: str, sym: str
