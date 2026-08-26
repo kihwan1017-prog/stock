@@ -103,12 +103,17 @@ def _is_portfolio_entry_buy(order: Any) -> bool:
 def _is_auto_exit_sell(order: Any) -> bool:
     if str(getattr(order, "side_code", "") or "").upper() != "SELL":
         return False
-    if _order_source(order) != "AUTO":
-        return False
     meta = _order_meta(order)
+    src = str(meta.get("source") or "").upper()
+    o_src = _order_source(order)
     reason = str(
         meta.get("signal_reason") or meta.get("exit_reason") or ""
     ).upper()
+    # POSITION_EXIT_MONITOR (order_source=EXIT) 포함
+    if o_src == "EXIT" or src == "POSITION_EXIT_MONITOR":
+        return True
+    if o_src != "AUTO":
+        return False
     if reason in _EXIT_SIGNAL_REASONS:
         return True
     # AUTO SELL during managed slot lifecycle
@@ -132,7 +137,18 @@ def _load_auto_orders(
             .order_by(TradingOrderEntity.order_id.asc())
         )
     )
-    return [o for o in rows if _order_source(o) == "AUTO"]
+    # AUTO + EXIT(monitor) — protective exit도 slot reconcile SoT
+    out: list[Any] = []
+    for o in rows:
+        src = _order_source(o)
+        meta = _order_meta(o)
+        if src == "AUTO":
+            out.append(o)
+        elif src == "EXIT" or str(meta.get("source") or "").upper() == (
+            "POSITION_EXIT_MONITOR"
+        ):
+            out.append(o)
+    return out
 
 
 def _open_upbit_binding(

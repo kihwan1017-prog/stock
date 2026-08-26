@@ -412,6 +412,41 @@ class PositionExitMonitorService:
                 position.exchange_code
                 or ("KRX" if broker == "KIWOOM" else "UPBIT")
             ).upper()
+            # OPEN binding strategy_id stamp — fill sync binding close에 필요
+            strategy_id: int | None = None
+            try:
+                from stock_platform.risk_engine.strategy_owned_entities import (
+                    BINDING_STATUS_OPEN,
+                    StrategyPositionBindingEntity,
+                )
+                from sqlalchemy import select
+
+                open_binding = self._session.scalar(
+                    select(StrategyPositionBindingEntity)
+                    .where(
+                        StrategyPositionBindingEntity.user_broker_account_id
+                        == int(uba_id),
+                        StrategyPositionBindingEntity.broker_code == broker,
+                        StrategyPositionBindingEntity.symbol
+                        == str(position.symbol).upper(),
+                        StrategyPositionBindingEntity.status
+                        == BINDING_STATUS_OPEN,
+                    )
+                    .order_by(
+                        StrategyPositionBindingEntity.opened_at.desc()
+                    )
+                    .limit(1)
+                )
+                if open_binding is not None and open_binding.strategy_id is not None:
+                    strategy_id = int(open_binding.strategy_id)
+            except Exception:  # noqa: BLE001
+                strategy_id = None
+            exit_meta: dict = {
+                "source": SOURCE_EXIT_MONITOR,
+                "exit_reason": reason,
+            }
+            if strategy_id is not None:
+                exit_meta["strategy_id"] = strategy_id
             result = self._execution.submit(
                 OrderExecutionCommand(
                     account_id=None,
@@ -423,12 +458,10 @@ class PositionExitMonitorService:
                     quantity=position.quantity,
                     price=position.current_price,
                     skip_risk_checks=skip_risk_checks,
-                    metadata_payload={
-                        "source": SOURCE_EXIT_MONITOR,
-                        "exit_reason": reason,
-                    },
+                    metadata_payload=exit_meta,
                     actor="POSITION_EXIT_MONITOR",
                     order_source="EXIT",
+                    strategy_id=strategy_id,
                     is_risk_reducing=True,
                     user_id=position.owner_user_id,
                     owner_user_id=position.owner_user_id,

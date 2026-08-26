@@ -841,3 +841,70 @@ def admin_uba_research_collection_status(
         session,
         user_broker_account_id=int(user_broker_account_id),
     )
+
+
+@router.get("/uba/{user_broker_account_id}/filled-exit-open-binding")
+def admin_uba_filled_exit_open_binding(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Invariant FILLED_EXIT_WITH_OPEN_BINDING — READ ONLY."""
+
+    from stock_platform.broker.upbit.filled_exit_finalizer import (
+        detect_filled_exit_with_open_binding,
+        dry_run_ghost_reconciliation,
+    )
+
+    detected = detect_filled_exit_with_open_binding(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+    dry = dry_run_ghost_reconciliation(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+    return {"detected": detected, "dry_run": dry}
+
+
+@router.post("/uba/{user_broker_account_id}/filled-exit-open-binding/reconcile")
+def admin_uba_reconcile_filled_exit_open_binding(
+    user_broker_account_id: int,
+    dry_run: bool = True,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """SAFE_TO_CLOSE ghost binding만 canonical finalizer로 정리.
+
+    dry_run=true(기본): 주문/SQL 직접 UPDATE 없음.
+    dry_run=false: FILLED SELL 증거 있는 것만 binding close (브로커 주문 없음).
+    """
+
+    from stock_platform.broker.upbit.filled_exit_finalizer import (
+        reconcile_safe_ghost_bindings,
+    )
+
+    result = reconcile_safe_ghost_bindings(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        actor=f"ADMIN_RECONCILE:{user.username}",
+        dry_run=bool(dry_run),
+    )
+    if not dry_run:
+        session.commit()
+    return result
+
+
+@router.get("/uba/{user_broker_account_id}/kiwoom-funnel")
+def admin_uba_kiwoom_funnel(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """KIWOOM funnel + FIRST_ZERO_STAGE — READ ONLY."""
+
+    from stock_platform.trading.kiwoom_funnel_observability import (
+        build_kiwoom_funnel_snapshot,
+    )
+
+    return build_kiwoom_funnel_snapshot(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )

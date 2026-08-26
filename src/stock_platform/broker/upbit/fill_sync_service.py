@@ -157,6 +157,13 @@ class UpbitFillSyncService:
                 self._apply_strategy_owned_binding(
                     order=order, remote=remote, actor=actor
                 )
+                # EXIT monitor 등 strategy_id 누락 SELL도 finalizer로 복구
+                self._finalize_filled_exit_if_needed(
+                    order=order, remote=remote, actor=actor
+                )
+                self._reconcile_portfolio_slot_after_fill(
+                    order=order, actor=actor
+                )
             post_fill = False
             if target in {
                 OrderStatus.FILLED,
@@ -252,6 +259,13 @@ class UpbitFillSyncService:
             self._apply_strategy_owned_binding(
                 order=order, remote=remote, actor=actor
             )
+            if target == OrderStatus.FILLED:
+                self._finalize_filled_exit_if_needed(
+                    order=order, remote=remote, actor=actor
+                )
+                self._reconcile_portfolio_slot_after_fill(
+                    order=order, actor=actor
+                )
 
         post_fill = False
         if target in {OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED} and (
@@ -739,7 +753,38 @@ class UpbitFillSyncService:
         self._apply_strategy_owned_binding(
             order=order, remote=remote, actor=actor
         )
+        self._finalize_filled_exit_if_needed(
+            order=order, remote=remote, actor=actor
+        )
         self._reconcile_portfolio_slot_after_fill(order=order, actor=actor)
+
+    def _finalize_filled_exit_if_needed(
+        self,
+        *,
+        order: Any,
+        remote: dict[str, Any],
+        actor: str,
+    ) -> None:
+        """SELL FILLED → canonical binding/slot finalizer (멱등)."""
+
+        try:
+            from stock_platform.broker.upbit.filled_exit_finalizer import (
+                finalize_filled_exit,
+                is_protective_or_auto_exit_sell,
+            )
+
+            if not is_protective_or_auto_exit_sell(order):
+                return
+            if str(getattr(order, "status_code", "") or "").upper() != "FILLED":
+                return
+            finalize_filled_exit(
+                self._session,
+                order=order,
+                remote=remote if isinstance(remote, dict) else {},
+                actor=f"FILL_SYNC:{actor}",
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     def _reconcile_portfolio_slot_after_fill(
         self, *, order: Any, actor: str
@@ -794,6 +839,25 @@ class UpbitFillSyncService:
                     strategy_id = int(meta["strategy_id"])
                 except (TypeError, ValueError):
                     strategy_id = None
+        # EXIT monitor 등: OPEN binding에서 strategy_id 복구
+        if strategy_id is None and uba_id is not None:
+            try:
+                from stock_platform.broker.upbit.filled_exit_finalizer import (
+                    resolve_strategy_id_for_exit,
+                    stamp_strategy_id_on_order,
+                )
+
+                strategy_id = resolve_strategy_id_for_exit(
+                    self._session, order=order
+                )
+                if strategy_id is not None:
+                    stamp_strategy_id_on_order(
+                        self._session,
+                        order=order,
+                        strategy_id=int(strategy_id),
+                    )
+            except Exception:  # noqa: BLE001
+                strategy_id = None
         if uba_id is None or strategy_id is None:
             return
 
@@ -901,6 +965,39 @@ class UpbitFillSyncService:
                 ),
                 filled_at=filled_at,
             )
+            # research-only entry observation (REAL gate 미사용)
+            if side == "BUY" and binding is not None:
+                try:
+                    meta_o = dict(getattr(order, "metadata_payload", None) or {})
+                    meta_b = dict(binding.meta_json or {})
+                    entry_obs = dict(meta_b.get("entry_observation") or {})
+                    entry_obs.update(
+                        {
+                            "entry_order_id": int(order.order_id),
+                            "entry_reason": str(
+                                meta_o.get("signal_reason")
+                                or meta_o.get("entry_reason")
+                                or "NOT_RECORDED"
+                            ),
+                            "entry_price": float(px) if px > ZERO else None,
+                            "entry_at": filled_at.isoformat()
+                            if filled_at is not None
+                            and hasattr(filled_at, "isoformat")
+                            else None,
+                            "scanner_score": meta_o.get("scanner_score", "NOT_RECORDED"),
+                            "scanner_rank": meta_o.get("scanner_rank", "NOT_RECORDED"),
+                            "analysis_recommendation": meta_o.get(
+                                "analysis_recommendation", "NOT_RECORDED"
+                            ),
+                            "trading_shadow_recommendation": meta_o.get(
+                                "trading_shadow_recommendation", "NOT_RECORDED"
+                            ),
+                        }
+                    )
+                    meta_b["entry_observation"] = entry_obs
+                    binding.meta_json = meta_b
+                except Exception:  # noqa: BLE001
+                    pass
             svc.compute_and_persist(
                 user_broker_account_id=int(uba_id),
                 broker_code=BROKER_CODE,

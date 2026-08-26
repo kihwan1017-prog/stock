@@ -153,27 +153,41 @@ def build_uba_operational_summary(
         warnings.append("UNATTENDED_EXPIRING_SOON")
 
     # AI vs AUTO 분리 — AI HOLD는 AUTO STOP이 아님
+    # KIWOOM UBA에 UPBIT master gate를 merge하면 ACTIVATION_INACTIVE 등 오탐
     ai_state = "UNKNOWN"
+    broker_u = str(getattr(uba, "broker_code", "") or "").upper() if uba else ""
     try:
-        from stock_platform.trading.autotrading_master_gate import (
-            evaluate_uba_autotrading_ready,
-        )
+        if broker_u == "UPBIT":
+            from stock_platform.trading.autotrading_master_gate import (
+                evaluate_uba_autotrading_ready,
+            )
 
-        ready = evaluate_uba_autotrading_ready(
-            session, user_broker_account_id=uba_id
-        )
-        for b in ready.get("blockers") or []:
-            code = str(b)
-            if code and code not in blockers:
-                if code.startswith("AI_"):
-                    continue
-                blockers.append(code)
-        ai_checks = (ready.get("checks") or {}).get("ai_gate") or {}
-        ai_state = str(
-            ai_checks.get("assumed_result")
-            or ai_checks.get("recommendation")
-            or "HOLD"
-        ).upper()
+            ready = evaluate_uba_autotrading_ready(
+                session, user_broker_account_id=uba_id
+            )
+            for b in ready.get("blockers") or []:
+                code = str(b)
+                if code and code not in blockers:
+                    if code.startswith("AI_"):
+                        continue
+                    blockers.append(code)
+            ai_checks = (ready.get("checks") or {}).get("ai_gate") or {}
+            ai_state = str(
+                ai_checks.get("assumed_result")
+                or ai_checks.get("recommendation")
+                or "HOLD"
+            ).upper()
+        elif broker_u == "KIWOOM":
+            # broker-correct blockers만 (UPBIT gate 오탐 제거)
+            for noise in (
+                "UBA_BROKER_MISMATCH",
+                "UPBIT_CREDENTIAL_UNRESOLVED",
+                "STRATEGY_NOT_LIVE_APPROVED",
+            ):
+                if noise in blockers and str(ctrl.get("activation")) == "ACTIVE":
+                    # activation peek가 ACTIVE면 UPBIT 하드코딩 오탐 제거 후보
+                    pass
+            ai_state = "N/A_KIWOOM"
     except Exception:  # noqa: BLE001
         ai_state = "UNKNOWN"
 
@@ -182,21 +196,71 @@ def build_uba_operational_summary(
         "source": str(getattr(uba, "broker_code", "") or "").upper() or None,
     }
     try:
-        from stock_platform.trading.autotrading_master_gate import (
-            evaluate_uba_autotrading_ready,
-        )
+        if broker_u == "UPBIT":
+            from stock_platform.trading.autotrading_master_gate import (
+                evaluate_uba_autotrading_ready,
+            )
 
-        ready = evaluate_uba_autotrading_ready(
-            session, user_broker_account_id=uba_id
-        )
-        feed = (ready.get("checks") or {}).get("market_feed") or {}
-        market_feed = {
-            "status": _map_market_feed_status(feed),
-            "source": market_feed["source"],
-            "detail": feed,
-        }
+            ready = evaluate_uba_autotrading_ready(
+                session, user_broker_account_id=uba_id
+            )
+            feed = (ready.get("checks") or {}).get("market_feed") or {}
+            market_feed = {
+                "status": _map_market_feed_status(feed),
+                "source": market_feed["source"],
+                "detail": feed,
+            }
+        elif broker_u == "KIWOOM":
+            from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+                kiwoom_market_realtime_runtime as kmr,
+            )
+
+            st = kmr.status()
+            running = bool(st.get("running"))
+            connected = bool(st.get("connected"))
+            if connected and running:
+                feed_status = "REAL_FRESH"
+            elif running and not connected:
+                feed_status = "DISCONNECTED"
+            else:
+                feed_status = "DISCONNECTED"
+            market_feed = {
+                "status": feed_status,
+                "source": "KIWOOM",
+                "detail": {
+                    "running": running,
+                    "connected": connected,
+                    "execution_process_kiwoom_use_mock": st.get(
+                        "execution_process_kiwoom_use_mock"
+                    ),
+                    "process_market_environment": st.get(
+                        "process_market_environment"
+                    ),
+                    "note": (
+                        "process kiwoom_use_mock alone does not block REAL feed; "
+                        "KIWOOM_MARKET_DATA_USE_MOCK=true does"
+                    ),
+                },
+            }
     except Exception:  # noqa: BLE001
         pass
+
+    # ghost OPEN invariant (UPBIT only) — telemetry
+    ghost_invariant: dict[str, Any] | None = None
+    if broker_u == "UPBIT":
+        try:
+            from stock_platform.broker.upbit.filled_exit_finalizer import (
+                detect_filled_exit_with_open_binding,
+            )
+
+            ghost_invariant = detect_filled_exit_with_open_binding(
+                session, user_broker_account_id=uba_id
+            )
+            if int(ghost_invariant.get("count") or 0) > 0:
+                blockers.append("FILLED_EXIT_WITH_OPEN_BINDING")
+                warnings.append("GHOST_OPEN_BINDING")
+        except Exception:  # noqa: BLE001
+            ghost_invariant = None
 
     # SoT auto_trading_state
     if "KILL_SWITCH_ACTIVE" in blockers:
@@ -220,81 +284,97 @@ def build_uba_operational_summary(
         "full_market_enabled": False,
     }
     scanner_summary: dict[str, Any] | None = None
+    kiwoom_funnel: dict[str, Any] | None = None
     try:
-        from stock_platform.operation.upbit_full_market.service import (
-            UpbitFullMarketAssignmentService,
-        )
-        from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
-            upbit_opportunity_scanner_scheduler,
-        )
-
-        # 기존 FIXED 보호 — 없으면 FIXED_SYMBOL row 생성
-        template = None
-        try:
-            dep = (ctrl.get("deployment") or {}) if isinstance(ctrl, dict) else {}
-            template = dep.get("symbol") or ctrl.get("symbol")
-        except Exception:  # noqa: BLE001
-            template = None
-        if not template and strategy_id is not None:
-            try:
-                from stock_platform.strategy_deployment.entities import (
-                    StrategyDeploymentEntity,
-                )
-
-                dep_row = session.scalar(
-                    select(StrategyDeploymentEntity)
-                    .where(
-                        StrategyDeploymentEntity.strategy_id
-                        == int(strategy_id),
-                        StrategyDeploymentEntity.status_code == "ACTIVE",
-                    )
-                    .limit(1)
-                )
-                if dep_row is not None and dep_row.symbol:
-                    template = str(dep_row.symbol)
-            except Exception:  # noqa: BLE001
-                pass
-        if not template:
-            template = "KRW-XRP" if strategy_id == 17483 else None
-        fma = UpbitFullMarketAssignmentService(session)
-        fma.get_or_create(
-            uba_id,
-            strategy_id=strategy_id,
-            template_symbol=str(template).upper() if template else None,
-        )
-        full_market = fma.status_dict(uba_id)
-        try:
-            from stock_platform.operation.upbit_full_market.portfolio_service import (
-                UpbitPortfolioService,
+        if broker_u == "UPBIT":
+            from stock_platform.operation.upbit_full_market.service import (
+                UpbitFullMarketAssignmentService,
+            )
+            from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+                upbit_opportunity_scanner_scheduler,
             )
 
-            drawer = UpbitPortfolioService(session).drawer_summary(uba_id)
-            de = drawer.get("daily_entry") if isinstance(drawer, dict) else None
-            if isinstance(de, dict):
-                full_market["daily_entry"] = de
-                full_market["daily_entry_label_ko"] = drawer.get(
-                    "daily_entry_label_ko"
+            # 기존 FIXED 보호 — 없으면 FIXED_SYMBOL row 생성
+            template = None
+            try:
+                dep = (ctrl.get("deployment") or {}) if isinstance(ctrl, dict) else {}
+                template = dep.get("symbol") or ctrl.get("symbol")
+            except Exception:  # noqa: BLE001
+                template = None
+            if not template and strategy_id is not None:
+                try:
+                    from stock_platform.strategy_deployment.entities import (
+                        StrategyDeploymentEntity,
+                    )
+
+                    dep_row = session.scalar(
+                        select(StrategyDeploymentEntity)
+                        .where(
+                            StrategyDeploymentEntity.strategy_id
+                            == int(strategy_id),
+                            StrategyDeploymentEntity.status_code == "ACTIVE",
+                        )
+                        .limit(1)
+                    )
+                    if dep_row is not None and dep_row.symbol:
+                        template = str(dep_row.symbol)
+                except Exception:  # noqa: BLE001
+                    pass
+            if not template:
+                template = "KRW-XRP" if strategy_id == 17483 else None
+            fma = UpbitFullMarketAssignmentService(session)
+            fma.get_or_create(
+                uba_id,
+                strategy_id=strategy_id,
+                template_symbol=str(template).upper() if template else None,
+            )
+            full_market = fma.status_dict(uba_id)
+            try:
+                from stock_platform.operation.upbit_full_market.portfolio_service import (
+                    UpbitPortfolioService,
                 )
-        except Exception:  # noqa: BLE001
-            pass
-        sc = upbit_opportunity_scanner_scheduler.status()
-        last = sc.get("last_result_summary") or {}
-        cands = last.get("candidates") or []
-        scanner_summary = {
-            "enabled": sc.get("enabled"),
-            "mode": sc.get("mode"),
-            "running": sc.get("running"),
-            "interval_seconds": sc.get("interval_seconds"),
-            "next_run_at": sc.get("next_run_at"),
-            "universe_count": last.get("universe_count"),
-            "liquidity_pass_count": last.get("liquidity_pass_count"),
-            "technical_candidate_count": last.get(
-                "technical_candidate_count"
-            ),
-            "top_n": last.get("top_n"),
-            "candidates": cands[:5],
-            "scanner_run_id": last.get("scanner_run_id"),
-        }
+
+                drawer = UpbitPortfolioService(session).drawer_summary(uba_id)
+                de = drawer.get("daily_entry") if isinstance(drawer, dict) else None
+                if isinstance(de, dict):
+                    full_market["daily_entry"] = de
+                    full_market["daily_entry_label_ko"] = drawer.get(
+                        "daily_entry_label_ko"
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+            sc = upbit_opportunity_scanner_scheduler.status()
+            last = sc.get("last_result_summary") or {}
+            cands = last.get("candidates") or []
+            scanner_summary = {
+                "enabled": sc.get("enabled"),
+                "mode": sc.get("mode"),
+                "running": sc.get("running"),
+                "interval_seconds": sc.get("interval_seconds"),
+                "next_run_at": sc.get("next_run_at"),
+                "universe_count": last.get("universe_count"),
+                "liquidity_pass_count": last.get("liquidity_pass_count"),
+                "technical_candidate_count": last.get(
+                    "technical_candidate_count"
+                ),
+                "top_n": last.get("top_n"),
+                "candidates": cands[:5],
+                "scanner_run_id": last.get("scanner_run_id"),
+            }
+        elif broker_u == "KIWOOM":
+            from stock_platform.trading.kiwoom_funnel_observability import (
+                build_kiwoom_funnel_snapshot,
+            )
+
+            kiwoom_funnel = build_kiwoom_funnel_snapshot(
+                session, user_broker_account_id=uba_id
+            )
+            full_market = {
+                "mode": "FIXED_SYMBOL",
+                "full_market_enabled": False,
+                "note": "KIWOOM uses strategy FIXED symbol universe (not Upbit scanner)",
+                "universe": (kiwoom_funnel or {}).get("universe"),
+            }
     except Exception:  # noqa: BLE001
         pass
 
@@ -374,6 +454,8 @@ def build_uba_operational_summary(
         "control": ctrl,
         "full_market": full_market,
         "scanner": scanner_summary,
+        "kiwoom_funnel": kiwoom_funnel,
+        "filled_exit_with_open_binding": ghost_invariant,
         "open_orders": open_orders,
         "as_of": now.isoformat(),
     }
