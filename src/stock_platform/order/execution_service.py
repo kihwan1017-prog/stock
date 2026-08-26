@@ -838,8 +838,45 @@ class OrderExecutionService:
             )
 
         # 주문+Outbox를 한 트랜잭션에 묶어 orphan CREATED 방지
+        # UPBIT AUTO BUY: UBA+KST-day lock 구간에서 final daily admission 후 persist
+        from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+            REASON_PORTFOLIO_DAILY_ENTRY_LIMIT,
+            portfolio_daily_entry_buy_fence,
+        )
+
         persist_stage = PERSIST_CREATE_ORDER
+        _daily_fence = portfolio_daily_entry_buy_fence(
+            self._session,
+            side=side_text,
+            broker_code=str(command.broker_code or ""),
+            environment=environment,
+            order_source=str(command.order_source or "MANUAL"),
+            user_broker_account_id=uba_id,
+            is_risk_reducing=bool(command.is_risk_reducing),
+        )
+        _admit_daily_entry = _daily_fence.__enter__()
         try:
+            _admission = _admit_daily_entry(
+                symbol=str(command.symbol or "") or None,
+                candidate_id=(
+                    (command.metadata_payload or {}).get(
+                        "candidate_selection_id"
+                    )
+                    if isinstance(command.metadata_payload, dict)
+                    else None
+                ),
+            )
+            if not _admission.get("allowed"):
+                return self._blocked(
+                    str(
+                        _admission.get("reason")
+                        or REASON_PORTFOLIO_DAILY_ENTRY_LIMIT
+                    ),
+                    message=(
+                        f"daily entry {_admission.get('count_before')}"
+                        f"/{_admission.get('limit')} (KST)"
+                    ),
+                )
             persist_stage = PERSIST_CREATE_ORDER
             try:
                 order = self._order_service.create(
@@ -979,6 +1016,8 @@ class OrderExecutionService:
                 command=command,
                 client_order_id=client_order_id,
             )
+        finally:
+            _daily_fence.__exit__(None, None, None)
 
         if environment == "LIVE":
             try:

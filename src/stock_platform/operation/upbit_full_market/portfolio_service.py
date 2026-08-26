@@ -2370,6 +2370,42 @@ class UpbitPortfolioService:
         if str(policy.entry_state or "") == PORTFOLIO_ENTRY_PAUSED:
             return {"ok": False, "reason": "ENTRY_PAUSED"}
 
+        # BUY 직전 final admission의 fail-fast — WAITING은 quota 미소비.
+        # hard cap은 OrderExecutionService persist fence가 보장.
+        try:
+            from stock_platform.operation.upbit_full_market.constants import (
+                DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT,
+            )
+            from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
+                summarize_portfolio_daily_entries,
+            )
+
+            daily_limit = int(
+                getattr(
+                    policy,
+                    "portfolio_daily_entry_limit",
+                    DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT,
+                )
+                or DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT
+            )
+            daily_usage = summarize_portfolio_daily_entries(
+                self._session,
+                uba_id,
+                daily_limit=daily_limit,
+            )
+            if int(daily_usage["entry_count"]) >= daily_limit:
+                return {
+                    "ok": False,
+                    "reason": "PORTFOLIO_DAILY_ENTRY_LIMIT",
+                    "daily_entry_usage": daily_usage,
+                }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "portfolio_daily_entry_failfast_skipped",
+                error=type(exc).__name__,
+                uba_id=uba_id,
+            )
+
         score = float(scanner_score or 80.0)
         conf = float(ai_confidence or 0.8)
         if slot.candidate_selection_id is not None:
