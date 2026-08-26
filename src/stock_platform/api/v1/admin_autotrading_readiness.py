@@ -908,3 +908,49 @@ def admin_uba_kiwoom_funnel(
     return build_kiwoom_funnel_snapshot(
         session, user_broker_account_id=int(user_broker_account_id)
     )
+
+
+@router.get("/health")
+def admin_autotrading_health_overview(
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """UPBIT/KIWOOM canonical autotrading health overview."""
+
+    from stock_platform.trading.autotrading_health_service import (
+        build_autotrading_health_overview,
+    )
+    from stock_platform.trading.autotrading_reliability_watchdog import (
+        autotrading_reliability_watchdog,
+    )
+
+    out = build_autotrading_health_overview(session)
+    out["watchdog"] = autotrading_reliability_watchdog.status()
+    return out
+
+
+@router.get("/uba/{user_broker_account_id}/health")
+def admin_uba_autotrading_health(
+    user_broker_account_id: int,
+    strategy_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Per-UBA TradingHealthSnapshot — watchdog SoT."""
+
+    from stock_platform.trading.autotrading_health_service import (
+        build_trading_health_snapshot,
+    )
+    from stock_platform.trading.autotrading_reliability_watchdog import (
+        autotrading_reliability_watchdog,
+        get_stack_forensic,
+    )
+
+    uba_id = int(user_broker_account_id)
+    snap = build_trading_health_snapshot(
+        session, user_broker_account_id=uba_id, strategy_id=strategy_id
+    )
+    broker = str(snap.get("market") or "UPBIT")
+    snap["watchdog"] = autotrading_reliability_watchdog.status()
+    snap["stack_forensic"] = get_stack_forensic(market=broker, uba_id=uba_id)
+    return snap

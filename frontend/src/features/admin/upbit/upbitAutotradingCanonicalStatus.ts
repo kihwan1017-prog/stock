@@ -82,6 +82,9 @@ export function buildUpbitAutotradingAggregateStatus(input: {
 }): UpbitAutotradingAggregateStatus {
   const { liveOn, armOn } = parseOpsLiveArm(input.ops);
   const summary = buildOpsStatusSummary(input.ops);
+  const opsRoot = asRecordOrEmpty(input.ops);
+  const rel = asRecordOrEmpty(opsRoot.reliability);
+  const healthState = String(rel.health_state ?? "").toUpperCase();
   const readyRoot = asRecordOrEmpty(input.readiness);
   const readinessStatus = String(
     readyRoot.status ?? readyRoot.readiness ?? "—",
@@ -92,6 +95,35 @@ export function buildUpbitAutotradingAggregateStatus(input: {
   const blockers = mergeAutotradingBlockers(input.ops, input.readiness);
 
   const readinessReady = readinessStatus === "READY_FOR_AUTO_TRADING";
+
+  if (rel.partial_restore === true || healthState === "BROKEN") {
+    const firstZero = rel.first_zero_stage != null ? String(rel.first_zero_stage) : "—";
+    return {
+      tier: "blocked",
+      headline: "🔴 자동매매 실행 장애",
+      description: `실행 스택 불완전 (PARTIAL_RESTORE). FIRST_ZERO=${firstZero}. Watchdog 자동복구 중이거나 관리자 확인이 필요합니다.`,
+      blockers,
+      liveOn,
+      armOn,
+      readinessStatus,
+      entryEvaluatorState,
+      entryOrdersPermitted: false,
+    };
+  }
+
+  if (healthState === "DEGRADED") {
+    return {
+      tier: "blocked",
+      headline: "🟡 자동매매 degraded",
+      description: `운영 상태 degraded — ${String(rel.no_trade_classification ?? summary.primaryBlocker ?? "확인 필요")}`,
+      blockers,
+      liveOn,
+      armOn,
+      readinessStatus,
+      entryEvaluatorState,
+      entryOrdersPermitted: false,
+    };
+  }
 
   if (!liveOn || !armOn) {
     const gateBlockers = [

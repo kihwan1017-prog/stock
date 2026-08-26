@@ -229,6 +229,16 @@ class Settings(BaseSettings):
     live_outbox_worker_stale_seconds: float = 30.0
     # AUTO LIVE readiness — 시세 stale 임계(초). 초과 시 BLOCKER
     autotrading_market_feed_stale_seconds: float = 30.0
+    # Reliability watchdog (AutoTradingReliabilityWatchdog)
+    autotrading_reliability_watchdog_enabled: bool = True
+    autotrading_reliability_watchdog_interval_seconds: float = 30.0
+    autotrading_scanner_slo_multiplier: float = 2.0
+    autotrading_runner_heartbeat_slo_seconds: float = 30.0
+    autotrading_worker_heartbeat_slo_seconds: float = 30.0
+    autotrading_exit_heartbeat_slo_seconds: float = 30.0
+    autotrading_exit_eval_slo_seconds: float = 30.0
+    autotrading_pipeline_stall_minutes: float = 15.0
+    autotrading_funnel_window_minutes: float = 15.0
     # Portfolio: ENTRY_PENDING + entry_order_id null 고착 해제 (DB updated_at 기준)
     # 실제 reservation/주문 단계에만 적용 (WAITING_SIGNAL 제외)
     upbit_portfolio_entry_pending_timeout_seconds: float = 120.0

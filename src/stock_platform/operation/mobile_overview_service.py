@@ -105,10 +105,31 @@ def _broker_card(ops: dict[str, Any], *, side: dict[str, int]) -> dict[str, Any]
         # 장 세션 상세는 별도 calendar — 없으면 ops 기반 추정만
         market_status = "UNKNOWN"
 
+    rel = ops.get("reliability") if isinstance(ops.get("reliability"), dict) else {}
+    health_state = str(rel.get("health_state") or "").upper()
+    no_trade = str(rel.get("no_trade_classification") or "")
+    display_status = "정상"
+    if health_state == "BROKEN" or rel.get("partial_restore"):
+        display_status = "장애"
+    elif no_trade == "NORMAL_NO_SIGNAL":
+        display_status = "신호대기"
+    elif no_trade == "NORMAL_POLICY_BLOCK":
+        display_status = "정책대기"
+    elif health_state == "DEGRADED":
+        display_status = "확인필요"
+    elif broker == "KIWOOM" and market_status == "UNKNOWN":
+        display_status = "장마감"
+
     return {
         "uba_id": ops.get("user_broker_account_id"),
         "broker_code": broker or None,
         "market_status": market_status,
+        "health_display": display_status,
+        "health_state": health_state or None,
+        "partial_restore": bool(rel.get("partial_restore")),
+        "no_trade_classification": no_trade or None,
+        "first_zero_stage": rel.get("first_zero_stage"),
+        "auto_trading_ready": rel.get("auto_trading_ready"),
         "live": live,
         "arm": arm,
         "runtime": runtime,

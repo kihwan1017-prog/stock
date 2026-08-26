@@ -113,15 +113,32 @@ def build_uba_operational_summary(
             activation_expires_at = exp.isoformat() if exp else None
 
     live_on = bool(getattr(uba, "live_order_enabled", False)) if uba else False
+    broker_u_early = str(getattr(uba, "broker_code", "") or "").upper() if uba else ""
     rt = str(ctrl.get("strategy_runtime") or "STOPPED").upper()
-    rn = "RUNNING" if rt == "RUNNING" else rt
     wk = str(ctrl.get("outbox_worker") or "STOPPED").upper()
     ex = str(ctrl.get("exit_monitor") or "STOPPED").upper()
-    stack = [rt == "RUNNING", wk == "RUNNING", ex == "RUNNING"]
-    # Runner ≈ strategy runtime for UPBIT 24x7
-    runner_running = rt == "RUNNING"
+    # Runner — LIVE signal execution runner (canonical, runtime proxy 아님)
+    runner_label = "STOPPED"
+    try:
+        from stock_platform.trading.autotrading_health_service import (
+            _runner_status_for_uba,
+        )
+
+        runner_label, _runner_detail = _runner_status_for_uba(
+            uba_id=uba_id, broker=broker_u_early or "UPBIT"
+        )
+    except Exception:  # noqa: BLE001
+        runner_label = "RUNNING" if rt == "RUNNING" else "STOPPED"
+    runner_running = str(runner_label).upper() == "RUNNING"
+    rn = runner_label
     stack_running = sum(
-        1 for x in (rt == "RUNNING", runner_running, wk == "RUNNING", ex == "RUNNING")
+        1
+        for x in (
+            rt == "RUNNING",
+            runner_running,
+            wk == "RUNNING",
+            ex == "RUNNING",
+        )
         if x
     )
 
@@ -414,7 +431,7 @@ def build_uba_operational_summary(
     except Exception:  # noqa: BLE001
         open_orders = None
 
-    return {
+    out = {
         "user_broker_account_id": uba_id,
         "broker_code": (
             str(uba.broker_code).upper() if uba is not None else None
@@ -434,7 +451,7 @@ def build_uba_operational_summary(
         "activation_remaining_label": _remaining_label(activation_remaining),
         "unattended": unattended,
         "runtime": rt,
-        "runner": "RUNNING" if runner_running else "STOPPED",
+        "runner": rn,
         "outbox_worker": wk,
         "exit_monitor": ex,
         "runtime_stack": {
@@ -442,7 +459,7 @@ def build_uba_operational_summary(
             "total": 4,
             "label": f"{stack_running}/4 RUNNING",
             "runtime": rt,
-            "runner": "RUNNING" if runner_running else "STOPPED",
+            "runner": rn,
             "outbox_worker": wk,
             "exit_monitor": ex,
         },
@@ -459,3 +476,55 @@ def build_uba_operational_summary(
         "open_orders": open_orders,
         "as_of": now.isoformat(),
     }
+    # Canonical reliability health (watchdog SoT)
+    try:
+        from stock_platform.trading.autotrading_health_service import (
+            build_trading_health_snapshot,
+        )
+        from stock_platform.trading.autotrading_reliability_watchdog import (
+            autotrading_reliability_watchdog,
+        )
+
+        health = build_trading_health_snapshot(
+            session, user_broker_account_id=uba_id, strategy_id=strategy_id
+        )
+        comps = health.get("components") or {}
+        if comps:
+            out["runtime"] = str(comps.get("runtime") or out["runtime"])
+            out["runner"] = str(comps.get("runner") or out["runner"])
+            out["outbox_worker"] = str(comps.get("worker") or out["outbox_worker"])
+            out["exit_monitor"] = str(comps.get("exit_monitor") or out["exit_monitor"])
+            if health.get("feed_detail"):
+                out["market_feed"] = {
+                    "status": comps.get("feed") or out["market_feed"].get("status"),
+                    "source": out["market_feed"].get("source"),
+                    "detail": health.get("feed_detail"),
+                }
+            rs = out["runtime_stack"]
+            rs["runtime"] = out["runtime"]
+            rs["runner"] = out["runner"]
+            rs["outbox_worker"] = out["outbox_worker"]
+            rs["exit_monitor"] = out["exit_monitor"]
+            rs["running_count"] = sum(
+                1
+                for k in ("runtime", "runner", "outbox_worker", "exit_monitor")
+                if str(rs.get(k)).upper() == "RUNNING"
+            )
+            rs["label"] = f"{rs['running_count']}/4 RUNNING"
+        out["reliability"] = {
+            "health_state": health.get("health_state"),
+            "health_reasons": health.get("health_reasons"),
+            "partial_restore": health.get("partial_restore"),
+            "auto_trading_ready": health.get("auto_trading_ready"),
+            "first_zero_stage": health.get("first_zero_stage"),
+            "first_zero_reason": health.get("first_zero_reason"),
+            "no_trade_classification": health.get("no_trade_classification"),
+            "heartbeats": health.get("heartbeats"),
+            "invariants": health.get("invariants"),
+            "watchdog": autotrading_reliability_watchdog.status(),
+        }
+        out["auto_trading_ready"] = health.get("auto_trading_ready")
+    except Exception:  # noqa: BLE001
+        out["reliability"] = {"error": "HEALTH_SNAPSHOT_FAILED"}
+
+    return out

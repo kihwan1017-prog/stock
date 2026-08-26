@@ -548,6 +548,23 @@ class ApplicationLifecycle:
                 error=str(exc)[:300],
             )
 
+        # Autotrading reliability watchdog — PARTIAL_RESTORE 감지 + L1/L2 self-heal
+        try:
+            if bool(
+                getattr(settings, "autotrading_reliability_watchdog_enabled", True)
+            ):
+                from stock_platform.trading.autotrading_reliability_watchdog import (
+                    autotrading_reliability_watchdog,
+                )
+
+                wd_start = autotrading_reliability_watchdog.start()
+                logger.info("autotrading_reliability_watchdog_startup", **wd_start)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "autotrading_reliability_watchdog_start_failed",
+                error=str(exc)[:300],
+            )
+
         # 레거시 무필터 Outbox는 Paper/LIVE 전용 worker Flag ON일 때 보조 기동하지 않음
         # (중복 claim 방지 — paper_only / live_only 단일 경로)
         if not bool(getattr(settings, "paper_outbox_worker_enabled", False)):
@@ -779,6 +796,14 @@ class ApplicationLifecycle:
         await live_outbox_worker_runtime.shutdown()
         try:
             await live_session_expiry_runtime.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.trading.autotrading_reliability_watchdog import (
+                autotrading_reliability_watchdog,
+            )
+
+            await autotrading_reliability_watchdog.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await paper_fill_recovery_scheduler.shutdown()
