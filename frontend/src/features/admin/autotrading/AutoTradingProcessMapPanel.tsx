@@ -34,7 +34,7 @@ const { Text, Title, Paragraph } = Typography;
 function statusColor(status: string | undefined): string {
   const s = String(status || "UNKNOWN").toUpperCase();
   if (s === "OK" || s === "PASS" || s === "FILL") return "success";
-  if (s === "WAIT") return "warning";
+  if (s === "WAIT" || s === "CLOSED") return "warning";
   if (s === "ERROR" || s === "BLOCK") return "error";
   if (s === "UNREACHED") return "default";
   return "processing";
@@ -44,6 +44,7 @@ function statusLabel(status: string | undefined): string {
   const s = String(status || "UNKNOWN").toUpperCase();
   if (s === "OK") return "정상";
   if (s === "WAIT") return "대기";
+  if (s === "CLOSED") return "장 마감";
   if (s === "ERROR") return "장애";
   if (s === "BLOCK") return "차단";
   if (s === "UNREACHED") return "미도달";
@@ -191,18 +192,76 @@ export function AutoTradingProcessMapPanel() {
         {current?.first_zero ? (
           <Alert
             style={{ marginTop: 12 }}
-            type="warning"
+            type={
+              String(current.first_zero) === "FEED_DOWN"
+                ? "error"
+                : String(current.first_zero) === "MARKET_CLOSED"
+                  ? "info"
+                  : String(current.first_zero) === "NO_GOLDEN_CROSS_SIGNAL"
+                    ? "warning"
+                    : "info"
+            }
             showIcon
             title={`FIRST_ZERO: ${String(current.first_zero)}`}
+            description={
+              market === "KIWOOM" && summary.user_friendly_reason
+                ? String(summary.user_friendly_reason)
+                : undefined
+            }
           />
         ) : null}
-        {market === "KIWOOM" ? (
+        {market === "KIWOOM" &&
+        summary.pending_issue === "KIWOOM_MARKET_DATA_FAILURE" ? (
           <Alert
             style={{ marginTop: 12 }}
             type="error"
             showIcon
-            title="KIWOOM_MARKET_DATA_FAILURE_PENDING"
+            title="KIWOOM_MARKET_DATA_FAILURE"
             description="시세/Feed 단계에서 막힘. 이번 화면에서 Feed를 강제 기동하지 않습니다."
+          />
+        ) : null}
+        {market === "KIWOOM" && summary.universe_label ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="info"
+            showIcon
+            title="운영 Universe"
+            description={String(summary.universe_label)}
+          />
+        ) : null}
+        {market === "KIWOOM" && summary.market_status === "MARKET_CLOSED" ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="success"
+            showIcon
+            title="키움증권 · 장 마감"
+            description={
+              <div>
+                <div>시장: 장 마감 · 자동매매: 다음 장 대기</div>
+                <div>
+                  오늘 장중 마지막: 시세{" "}
+                  {String(
+                    (asRecord(summary.last_regular_snapshot) || {}).feed ?? "—",
+                  )}
+                  {" · "}
+                  REAL Tick{" "}
+                  {String(
+                    (asRecord(summary.last_regular_snapshot) || {})
+                      .real_tick_count ?? "—",
+                  )}
+                  {" · "}
+                  Scanner{" "}
+                  {String(
+                    (asRecord(summary.last_regular_snapshot) || {}).scanner ??
+                      "—",
+                  )}
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  매수하지 않은 이유: 시스템 장애가 아니라 신규 골든크로스 매수
+                  신호가 발생하지 않았습니다.
+                </div>
+              </div>
+            }
           />
         ) : null}
         {market === "UPBIT" && dailyQuota.label_ko ? (

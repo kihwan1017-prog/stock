@@ -87,6 +87,17 @@ COMPONENT_TYPES = (
 # Bootstrap from known commits (REAL semantics vs reliability vs research)
 BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
+        "git_commit": "TBD_KIWOOM_MAP_SOT",
+        "market": "KIWOOM",
+        "change_type": CHANGE_OBSERVABILITY,
+        "component": "MARKET_DATA",
+        "summary": "Kiwoom Process Map aligned to funnel/realtime health SoT",
+        "change_reason": "하드코딩 FEED_DOWN 제거 — CURRENT vs HISTORY 분리",
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_kiwoom_process_map_sot_alignment.json"],
+    },
+    {
         "git_commit": "e07fe4d",
         "change_type": CHANGE_RELIABILITY,
         "component": "MARKET_DATA",

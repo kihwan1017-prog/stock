@@ -238,7 +238,7 @@ def ensure_bootstrap(session: Session, *, commit: bool = True) -> dict[str, Any]
             continue
         session.add(
             AutoTradingProcessChangeEntity(
-                market="UPBIT",
+                market=str(item.get("market") or "UPBIT"),
                 change_type=str(item["change_type"]),
                 component=str(item.get("component") or "PROCESS"),
                 before_version_code="UNKNOWN",
@@ -652,7 +652,7 @@ def reconstruct_today_traces(
         )
         blocked_n += 1
 
-    # Kiwoom feed-down progress marker (definition vs runtime separated)
+    # Kiwoom daily status marker — CURRENT funnel SoT (FEED_DOWN 하드코딩 금지)
     k_exists = session.scalar(
         select(AutoTradingExecutionTraceEntity.trace_id).where(
             AutoTradingExecutionTraceEntity.market == "KIWOOM",
@@ -667,6 +667,39 @@ def reconstruct_today_traces(
                 AutoTradingProcessVersionEntity.status == STATUS_ACTIVE,
             )
         )
+        try:
+            from stock_platform.trading.kiwoom_funnel_observability import (
+                build_kiwoom_funnel_snapshot,
+            )
+
+            snap = build_kiwoom_funnel_snapshot(
+                session, user_broker_account_id=1381
+            )
+            fz = str(snap.get("FIRST_ZERO_STAGE") or "UNKNOWN")
+        except Exception:  # noqa: BLE001
+            fz = "UNKNOWN"
+            snap = {}
+        # FEED_DOWN only when funnel says so — MARKET_CLOSED / NO_SIGNAL 은 정상 표기
+        if fz == "FEED_DOWN":
+            classification = "MARKET_DATA_FAILURE"
+            stage = "MARKET_DATA"
+            event_status = "ERROR"
+            summary = "실시간 시세 단계에서 막힘 (FEED_DOWN)"
+        elif fz == "MARKET_CLOSED":
+            classification = "MARKET_CLOSED"
+            stage = "MARKET_DATA"
+            event_status = "CLOSED"
+            summary = "장 마감 — 시세 장애 아님"
+        elif fz == "NO_GOLDEN_CROSS_SIGNAL":
+            classification = "NORMAL_NO_SIGNAL"
+            stage = "ENTRY_SIGNAL"
+            event_status = "WAIT"
+            summary = "신규 골든크로스 없음 (정상 대기)"
+        else:
+            classification = str(fz)
+            stage = "MARKET_DATA"
+            event_status = "INFO"
+            summary = f"FIRST_ZERO={fz}"
         ktr = AutoTradingExecutionTraceEntity(
             market="KIWOOM",
             broker_code="KIWOOM",
@@ -677,8 +710,9 @@ def reconstruct_today_traces(
             outcome="NO_PROGRESS",
             started_at=_utc_now(),
             summary_json={
-                "first_zero": "FEED_DOWN",
-                "classification": "MARKET_DATA_FAILURE",
+                "first_zero": fz,
+                "classification": classification,
+                "source": "kiwoom_funnel_canonical",
             },
         )
         session.add(ktr)
@@ -688,12 +722,12 @@ def reconstruct_today_traces(
             trace_id=int(ktr.trace_id),
             market="KIWOOM",
             symbol="MARKET",
-            stage="MARKET_DATA",
-            event_type="ERROR",
+            stage=stage,
+            event_type=event_status,
             occurred_at=_utc_now(),
-            status="ERROR",
-            reason_code="FEED_DOWN",
-            summary="실시간 시세 단계에서 막힘 (FEED_DOWN)",
+            status=event_status,
+            reason_code=fz,
+            summary=summary,
             process_version_id=int(kpv.process_version_id) if kpv else None,
             source_refs={"source": "kiwoom-funnel"},
         )
@@ -881,19 +915,13 @@ def _runtime_overlay(
             daily_quota = None
         first_zero = None if open_n or waiting else "NONE"
     else:
-        for s in KIWOOM_STAGES:
-            node_status[s["id"]] = "UNREACHED"
-        node_status["MARKET_DATA"] = "ERROR"
-        node_detail["MARKET_DATA"] = {
-            "first_zero": "FEED_DOWN",
-            "note": "실시간 시세 단계에서 막힘",
-        }
-        first_zero = "FEED_DOWN"
-        summary = {
-            "autotrading_state": "시세 장애",
-            "current_location": "시세/Feed",
-            "pending_issue": "KIWOOM_MARKET_DATA_FAILURE_PENDING",
-        }
+        # KIWOOM — canonical funnel + realtime SoT (하드코딩 FEED_DOWN 금지)
+        uba = int(uba_id or 1381)
+        overlay_k = _kiwoom_runtime_overlay(session, uba_id=uba)
+        node_status = overlay_k["node_status"]
+        node_detail = overlay_k["node_detail"]
+        first_zero = overlay_k["first_zero"]
+        summary = overlay_k["summary"]
     return {
         "node_status": node_status,
         "node_detail": node_detail,
@@ -901,6 +929,262 @@ def _runtime_overlay(
         "summary": summary,
         "daily_quota": daily_quota,
     }
+
+
+def _kiwoom_runtime_overlay(session: Session, *, uba_id: int) -> dict[str, Any]:
+    """Kiwoom Process Map overlay — funnel/realtime SoT 재사용."""
+
+    from stock_platform.trading.kiwoom_funnel_observability import (
+        build_kiwoom_funnel_snapshot,
+    )
+
+    node_status: dict[str, str] = {}
+    node_detail: dict[str, Any] = {}
+    for s in KIWOOM_STAGES:
+        node_status[s["id"]] = "UNREACHED"
+
+    try:
+        funnel = build_kiwoom_funnel_snapshot(
+            session, user_broker_account_id=int(uba_id)
+        )
+    except Exception as exc:  # noqa: BLE001
+        node_status["MARKET_DATA"] = "ERROR"
+        node_detail["MARKET_DATA"] = {"error": type(exc).__name__}
+        return {
+            "node_status": node_status,
+            "node_detail": node_detail,
+            "first_zero": "FUNNEL_UNAVAILABLE",
+            "summary": {
+                "autotrading_state": "관측 불가",
+                "current_location": "funnel",
+                "user_friendly_reason": "키움 funnel 스냅샷을 읽지 못했습니다.",
+            },
+        }
+
+    if not funnel.get("ok", True) and funnel.get("reason") == "NOT_KIWOOM_UBA":
+        return {
+            "node_status": node_status,
+            "node_detail": {"MARKET_DATA": {"reason": "NOT_KIWOOM_UBA"}},
+            "first_zero": "NOT_KIWOOM_UBA",
+            "summary": {
+                "autotrading_state": "UBA 오류",
+                "current_location": "—",
+                "user_friendly_reason": "키움 UBA가 아닙니다.",
+            },
+        }
+
+    mh = funnel.get("market_hours") or {}
+    universe = funnel.get("universe") or {}
+    feed = funnel.get("feed") or {}
+    stages = funnel.get("funnel") or {}
+    lifecycle = funnel.get("lifecycle") or {}
+    first_zero = funnel.get("FIRST_ZERO_STAGE")
+    in_regular = bool(mh.get("in_regular_session"))
+    symbols = list(universe.get("symbols") or [])
+    uni_count = int(universe.get("UNIVERSE_SYMBOL_COUNT") or len(symbols) or 0)
+    only_034310 = bool(universe.get("034310_ONLY"))
+
+    # realtime in-process SoT (funnel feed 필드보다 connected/running/event 우선)
+    feed_running = bool(feed.get("running"))
+    feed_connected = bool(feed.get("connected"))
+    event_count = int(feed.get("REAL_TICK_COUNT") or 0)
+    try:
+        from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+            kiwoom_market_realtime_runtime as kmr,
+        )
+
+        rt = kmr.status()
+        if int(rt.get("user_broker_account_id") or 0) in {0, int(uba_id)}:
+            feed_running = bool(rt.get("running"))
+            feed_connected = bool(rt.get("connected"))
+            client = rt.get("client") if isinstance(rt.get("client"), dict) else {}
+            event_count = int(client.get("event_count") or 0)
+            node_detail["MARKET_DATA"] = {
+                "running": feed_running,
+                "connected": feed_connected,
+                "login_ack": client.get("login_ack"),
+                "reg_ack": client.get("reg_ack"),
+                "event_count": event_count,
+                "last_tick_at": rt.get("last_tick_at"),
+                "symbols": client.get("symbols"),
+                "source": "KIWOOM_MARKET_REALTIME",
+            }
+    except Exception:  # noqa: BLE001
+        node_detail["MARKET_DATA"] = {
+            "running": feed_running,
+            "connected": feed_connected,
+            "source": "FUNNEL_ONLY",
+        }
+
+    # MARKET_DATA node
+    if not in_regular:
+        node_status["MARKET_DATA"] = "CLOSED"
+        node_detail["MARKET_DATA"] = {
+            **(node_detail.get("MARKET_DATA") or {}),
+            "note": "장 마감 — 시세 장애 아님",
+            "market_status": "MARKET_CLOSED",
+        }
+    elif feed_running and feed_connected:
+        node_status["MARKET_DATA"] = "OK"
+        node_detail["MARKET_DATA"] = {
+            **(node_detail.get("MARKET_DATA") or {}),
+            "note": "실시간 시세 정상",
+        }
+    else:
+        node_status["MARKET_DATA"] = "ERROR"
+        node_detail["MARKET_DATA"] = {
+            **(node_detail.get("MARKET_DATA") or {}),
+            "note": "실시간 시세 수신 장애",
+            "first_zero": "FEED_DOWN",
+        }
+
+    # UNIVERSE
+    if uni_count > 0:
+        node_status["UNIVERSE"] = "OK"
+        strat_label = _kiwoom_universe_label(session, uba_id=uba_id, symbols=symbols)
+        node_detail["UNIVERSE"] = {
+            "count": uni_count,
+            "symbols": symbols,
+            "034310_ONLY": only_034310,
+            "classification": (
+                "A_INTENTIONAL_SINGLE_SYMBOL_STRATEGY"
+                if only_034310 or uni_count == 1
+                else "MULTI_SYMBOL"
+            ),
+            "label_ko": strat_label,
+        }
+    elif in_regular:
+        node_status["UNIVERSE"] = "ERROR"
+        node_detail["UNIVERSE"] = {"note": "유니버스 비어 있음"}
+
+    # SCANNER / CANDIDATE
+    if uni_count > 0 and (
+        node_status["MARKET_DATA"] in {"OK", "CLOSED"}
+        or bool(lifecycle.get("runtime") == "RUNNING")
+    ):
+        node_status["SCANNER"] = "OK"
+        node_detail["SCANNER"] = {
+            "source": "KIWOOM_FIXED_SYMBOL_MA",
+            "scanned": int(stages.get("SCANNED") or 0),
+        }
+        if int(stages.get("CANDIDATE") or 0) > 0:
+            node_status["CANDIDATE"] = "OK"
+            node_detail["CANDIDATE"] = {"count": stages.get("CANDIDATE")}
+
+    # ENTRY_SIGNAL
+    if first_zero in {"NO_GOLDEN_CROSS_SIGNAL", "MARKET_CLOSED"}:
+        if first_zero == "NO_GOLDEN_CROSS_SIGNAL":
+            node_status["ENTRY_SIGNAL"] = "WAIT"
+            node_detail["ENTRY_SIGNAL"] = {
+                "note": "신규 골든크로스 없음",
+                "NEW_CROSS_REQUIRED": True,
+            }
+        else:
+            node_status["ENTRY_SIGNAL"] = "CLOSED"
+            node_detail["ENTRY_SIGNAL"] = {"note": "장 마감 — 다음 장 대기"}
+    elif int(stages.get("SIGNAL") or 0) > 0:
+        node_status["ENTRY_SIGNAL"] = "OK"
+
+    if bool(lifecycle.get("runtime") == "RUNNING"):
+        node_status["WATCHDOG"] = "OK"
+
+    # User-facing summary (CURRENT — historical FEED_DOWN 과 분리)
+    if not in_regular:
+        auto_state = "장 마감"
+        location = "다음 장 대기"
+        reason = (
+            "장 마감 후입니다. 시스템 시세 장애가 아닙니다. "
+            "다음 정규장에서 자동매매가 재개됩니다."
+        )
+        pending = None
+    elif first_zero == "FEED_DOWN" or node_status.get("MARKET_DATA") == "ERROR":
+        auto_state = "시세 장애"
+        location = "시세/Feed"
+        reason = "실시간 시세 수신이 끊겼습니다. Feed 상태를 확인하세요."
+        pending = "KIWOOM_MARKET_DATA_FAILURE"
+    elif first_zero == "NO_GOLDEN_CROSS_SIGNAL":
+        auto_state = "매수신호 대기"
+        location = "Entry Signal"
+        reason = (
+            "시스템 장애가 아니라 신규 골든크로스 매수 신호가 발생하지 않았습니다."
+        )
+        pending = None
+    else:
+        auto_state = "운용 중"
+        location = str(first_zero or "pipeline")
+        reason = f"FIRST_ZERO={first_zero}"
+        pending = None
+
+    uni_label = (node_detail.get("UNIVERSE") or {}).get("label_ko") or (
+        f"{symbols[0]} · 단일 종목 전략" if len(symbols) == 1 else f"{uni_count}종목"
+    )
+
+    summary: dict[str, Any] = {
+        "autotrading_state": auto_state,
+        "current_location": location,
+        "user_friendly_reason": reason,
+        "market_status": "REGULAR" if in_regular else "MARKET_CLOSED",
+        "universe_label": uni_label,
+        "universe_count": uni_count,
+        "symbols": symbols,
+        "034310_ONLY": only_034310,
+        "last_regular_snapshot": {
+            "feed": "OK" if feed_running and feed_connected else "DOWN",
+            "real_tick_count": event_count,
+            "universe": uni_count,
+            "scanner": node_status.get("SCANNER"),
+            "signal": int(stages.get("SIGNAL") or 0),
+            "first_zero_during_session_hint": first_zero,
+        },
+        "pending_issue": pending,
+        "canonical_feed_sot": "kiwoom_funnel + kiwoom_market_realtime_runtime.status",
+        "historical_feed_down_separated": True,
+    }
+    return {
+        "node_status": node_status,
+        "node_detail": node_detail,
+        "first_zero": first_zero,
+        "summary": summary,
+    }
+
+
+def _kiwoom_universe_label(
+    session: Session, *, uba_id: int, symbols: list[str]
+) -> str:
+    """단일 종목 전략 표시용 라벨."""
+
+    name = None
+    try:
+        from stock_platform.strategy_deployment.definition_entities import (
+            AccountStrategyLinkEntity,
+            StrategyDefinitionEntity,
+        )
+
+        link = session.scalar(
+            select(AccountStrategyLinkEntity)
+            .where(
+                AccountStrategyLinkEntity.user_broker_account_id == int(uba_id),
+                AccountStrategyLinkEntity.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        if link is not None:
+            definition = session.get(
+                StrategyDefinitionEntity, int(link.strategy_id)
+            )
+            name = getattr(definition, "name", None) if definition else None
+    except Exception:  # noqa: BLE001
+        name = None
+
+    if name and symbols:
+        if len(symbols) == 1:
+            return f"{name} · 단일 종목 전략"
+        return f"{name} · {len(symbols)}종목"
+    if len(symbols) == 1:
+        return f"{symbols[0]} · 단일 종목 전략"
+    if symbols:
+        return f"운영 Universe {len(symbols)}종목"
+    return "운영 Universe"
 
 
 def _recovery_layer(
