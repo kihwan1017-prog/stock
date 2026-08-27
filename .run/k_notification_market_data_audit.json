@@ -1,0 +1,56 @@
+{
+  "FINAL_VERDICT": "NOTIFICATION_CLEANUP_AND_MARKET_DATA_AUDIT_COMPLETE",
+  "CURRENT_KST": "2026-08-28T00:31:36.655301+09:00",
+  "NOTIFICATION": {
+    "TITLE_PREFIX": {
+      "UPBIT": "[업비트]",
+      "KIWOOM": "[키움]",
+      "SYSTEM": "[시스템]"
+    },
+    "DELETED_NOTIFICATION_TYPES": 0,
+    "DISABLED_DB_COUNT": 17,
+    "ACTIVE_TEMPLATE_COUNT": 21,
+    "MECHANISM": "TELEGRAM_OPERATIONAL_ALLOWLIST + message_template.enabled=false",
+    "DUPLICATE_ALERT_REGRESSION": "SELL closed = POSITION_CLOSED only; REALIZED_PNL not allowlisted"
+  },
+  "UPBIT_MARKET_DATA": {
+    "COLLECTION_STATUS": "PARTIALLY_COLLECTING",
+    "MASTER_TABLE": "market.instrument",
+    "TICK_TABLE": "market.trade_tick",
+    "MINUTE_TABLE": "market.candle_minute",
+    "DAY_TABLE": "market.price_daily",
+    "SYMBOL_COUNT_MASTER": 285,
+    "DAY_ROW_COUNT": 178446,
+    "DAY_LAST": "2026-08-18",
+    "MINUTE_LAST": "2026-08-27",
+    "USER_UI": "PARTIAL",
+    "ROUTE": [
+      "/user/markets/crypto",
+      "/admin/upbit/markets"
+    ]
+  },
+  "KIWOOM_MARKET_DATA": {
+    "COLLECTION_STATUS": "PARTIALLY_COLLECTING",
+    "TRADING_UNIVERSE": "STRATEGY_FIXED (often 034310)",
+    "MARKET_DATA_COLLECTION_UNIVERSE": "KRX active STOCK/ETF batch",
+    "MASTER_TABLE": "market.instrument",
+    "DAY_TABLE": "market.price_daily",
+    "TICK_KRX_ROWS": 0,
+    "MINUTE_KRX_ROWS": 0,
+    "SYMBOL_COUNT_MASTER": 4299,
+    "DAY_ROW_COUNT": 770685,
+    "DAY_LAST": "2026-08-18",
+    "SAMPLE_034310_DAYS": 282,
+    "USER_UI": "PARTIAL",
+    "ROUTE": [
+      "/user/markets/stocks"
+    ]
+  },
+  "NEXT_RECOMMENDATION": "BUILD_UNIFIED_MARKET_DATA_EXPLORER",
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "HISTORICAL_DATA_DELETE": 0,
+    "PROCESS_VERSION_CHANGED": false,
+    "DELETED_NOTIFICATION_TYPES": 0
+  }
+}

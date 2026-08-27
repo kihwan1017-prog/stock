@@ -76,6 +76,7 @@ class NotificationService:
         # 시장 라우팅 + ANALYSIS suppression (Telegram output only)
         try:
             from stock_platform.notification.telegram_policy import (
+                ensure_market_title_prefix,
                 evaluate_telegram_policy,
                 resolve_telegram_chat_id,
             )
@@ -105,6 +106,8 @@ class NotificationService:
                 event_type=event.event_type,
                 error=type(exc).__name__,
             )
+            decision = None  # type: ignore[assignment]
+            ensure_market_title_prefix = None  # type: ignore[assignment]
 
         rendered = self._render_korean(event.event_type, event.title, event.message, detail)
         if rendered is not None and rendered.suppressed:
@@ -115,8 +118,24 @@ class NotificationService:
             )
             return None
 
+        # TITLE 시장 prefix 강제 ([업비트]/[키움]/[시스템])
+        display_title = (
+            rendered.title if rendered is not None else event.title
+        )
+        try:
+            from stock_platform.notification.telegram_policy import (
+                ensure_market_title_prefix as _pfx,
+            )
+
+            mkt = detail.get("telegram_market") or "COMMON"
+            display_title = _pfx(display_title, market=str(mkt))
+            if rendered is not None:
+                rendered.title = display_title
+        except Exception:  # noqa: BLE001
+            pass
+
         send_kwargs: dict[str, Any] = {
-            "title": event.title,
+            "title": display_title,
             "message": event.message,
             "detail": detail,
         }

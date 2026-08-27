@@ -94,6 +94,96 @@ _CRITICAL_EVENTS = frozenset(
     }
 )
 
+# 운영 활성 알림 allowlist — 여기 없으면 Telegram 전송 억제 (삭제 아님)
+# UPBIT/KIWOOM: 서버시작·매수·매도·시스템 / SYSTEM: AI판단·슬롯·후보·Shadow·시스템
+TELEGRAM_OPERATIONAL_ALLOWLIST = frozenset(
+    {
+        # 서버 시작/중지
+        "SYSTEM_START",
+        "SYSTEM_STOP",
+        "SYSTEM_RESTART",
+        # 매수·매도 체결 (REALIZED_PNL은 POSITION_CLOSED와 중복 → 제외)
+        "ORDER_FILLED",
+        "POSITION_CLOSED",
+        "STOP_LOSS",
+        "TAKE_PROFIT",
+        "TRAILING_STOP",
+        "MA_EXIT",
+        "MA_DEAD_CROSS",
+        "MA_DEAD_CROSS_EXIT",
+        # 시스템 알림
+        "MONITORING_ALERT",
+        "KILL_SWITCH",
+        "DAILY_LOSS",
+        "BROKER_DISCONNECTED",
+        "BROKER_RECONNECTED",
+        "RECOVERY_FAILED",
+        "RECONCILIATION_MISMATCH",
+        "UPBIT_SCANNER_FAILURE",
+        "ORDER_REJECTED",
+        "TEST_NOTIFICATION",
+        # AI / 슬롯 / 후보 / Shadow
+        "AI_GATE_RECOMMENDATION_CHANGED",
+        "UPBIT_PORTFOLIO_SLOT_ASSIGNED",
+        "UPBIT_SCANNER_CANDIDATE",
+        "UPBIT_SCANNER_SHADOW_OPENED",
+        "UPBIT_SCANNER_SHADOW_RESULT",
+    }
+)
+
+_TITLE_PREFIX_UPBIT = "[업비트]"
+_TITLE_PREFIX_KIWOOM = "[키움]"
+_TITLE_PREFIX_SYSTEM = "[시스템]"
+_KNOWN_TITLE_PREFIXES = (
+    _TITLE_PREFIX_UPBIT,
+    _TITLE_PREFIX_KIWOOM,
+    _TITLE_PREFIX_SYSTEM,
+    "[키움증권]",
+    "[UPBIT]",
+    "[KIWOOM]",
+    "[SYSTEM]",
+)
+
+
+def is_telegram_event_allowlisted(event_type: str) -> bool:
+    return str(event_type or "").strip().upper() in TELEGRAM_OPERATIONAL_ALLOWLIST
+
+
+def market_title_prefix(market: TelegramMarket | str) -> str:
+    m = str(market or "").upper()
+    if m == TelegramMarket.UPBIT.value or m == "UPBIT":
+        return _TITLE_PREFIX_UPBIT
+    if m == TelegramMarket.KIWOOM.value or m == "KIWOOM":
+        return _TITLE_PREFIX_KIWOOM
+    return _TITLE_PREFIX_SYSTEM
+
+
+def ensure_market_title_prefix(
+    title: str,
+    *,
+    market: TelegramMarket | str,
+) -> str:
+    """시장 종속 TITLE 앞에 [업비트]/[키움]/[시스템] 강제."""
+
+    raw = str(title or "").strip()
+    if not raw:
+        return f"{market_title_prefix(market)}"
+    # 이미 표준 prefix면 유지 (키움증권→키움 정규화)
+    if raw.startswith(_TITLE_PREFIX_UPBIT):
+        return raw
+    if raw.startswith(_TITLE_PREFIX_KIWOOM):
+        return raw
+    if raw.startswith(_TITLE_PREFIX_SYSTEM):
+        return raw
+    stripped = raw
+    for old in _KNOWN_TITLE_PREFIXES:
+        if stripped.startswith(old):
+            stripped = stripped[len(old) :].lstrip(" -:|")
+            break
+    prefix = market_title_prefix(market)
+    return f"{prefix} {stripped}".strip()
+
+
 
 @dataclass(frozen=True, slots=True)
 class TelegramDecision:
@@ -293,6 +383,16 @@ def evaluate_telegram_policy(
     market = resolve_telegram_market(event_type=event_type, detail=d)
     category = map_telegram_category(event_type)
     _, route = resolve_telegram_chat_id(market)
+
+    # 운영 allowlist 밖은 삭제하지 않고 Telegram만 억제
+    if not is_telegram_event_allowlisted(event_type):
+        return TelegramDecision(
+            allowed=False,
+            reason="EVENT_NOT_ALLOWLISTED",
+            market=market.value,
+            category=category.value,
+            chat_route=route,
+        )
 
     # CRITICAL / TRADING / SYSTEM — ANALYSIS suppress와 무관하게 허용
     if category in {

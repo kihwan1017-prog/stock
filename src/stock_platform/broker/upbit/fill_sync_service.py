@@ -1055,29 +1055,44 @@ class UpbitFillSyncService:
                 or ""
             ).upper()
 
-            emit_live_order_telegram(
-                event_type="ORDER_FILLED",
-                title="✅ 자동매매 체결 완료",
-                message=(
-                    f"거래소: 업비트\n종목: {symbol.replace('KRW-', '')}\n"
-                    f"구분: {'매도' if side == 'SELL' else '매수'}\n"
-                    f"수량: {qty}\n체결가: {avg}원\n수수료: {fee}원"
-                ),
-                detail={
-                    "order_id": oid,
-                    "symbol": symbol,
-                    "side": side,
-                    "filled_qty": qty,
-                    "avg_fill_price": avg,
-                    "fee": fee,
-                    "broker_order_id": order.broker_order_id,
-                    "actor": actor,
-                    "dedupe_key": f"ORDER_FILLED:{oid}",
-                },
+            binding_closed = (
+                side == "SELL"
+                and binding is not None
+                and str(getattr(binding, "status", "")).upper() == "CLOSED"
             )
+            # SELL+CLOSED는 POSITION_CLOSED 한 통으로 (ORDER_FILLED 중복 방지)
+            if not binding_closed:
+                emit_live_order_telegram(
+                    event_type="ORDER_FILLED",
+                    title=("매수 체결" if side == "BUY" else "매도 체결"),
+                    message=(
+                        f"유형: {'매수' if side == 'BUY' else '매도'}\n"
+                        f"내용: 자동매매 체결\n"
+                        f"종목: {symbol or '-'}\n"
+                        + (
+                            f"매수가: {avg}원\n"
+                            if side == "BUY"
+                            else f"매도가: {avg}원\n"
+                        )
+                        + f"수량: {qty or '-'}\n"
+                        + f"수수료: {fee or '-'}원"
+                    ),
+                    detail={
+                        "order_id": oid,
+                        "symbol": symbol,
+                        "side": side,
+                        "filled_qty": qty,
+                        "avg_fill_price": avg,
+                        "fee": fee,
+                        "broker_code": "UPBIT",
+                        "market": "UPBIT",
+                        "broker_order_id": order.broker_order_id,
+                        "actor": actor,
+                        "dedupe_key": f"ORDER_FILLED:{oid}",
+                    },
+                )
 
-            if side == "SELL" and binding is not None:
-                if str(getattr(binding, "status", "")).upper() == "CLOSED":
+            if binding_closed:
                     realized = Decimal(
                         str(getattr(binding, "realized_pnl", 0) or 0)
                     )
@@ -1143,17 +1158,18 @@ class UpbitFillSyncService:
                     sign = "+" if net >= ZERO else ""
                     emit_live_order_telegram(
                         event_type="POSITION_CLOSED",
-                        title="📥 자동매매 청산 완료",
+                        title="매도 체결",
                         message=(
-                            f"거래소: 업비트\n"
-                            f"종목: {symbol.replace('KRW-', '')}\n"
-                            f"매수가: {entry}원\n"
-                            f"매도가: {avg}원\n"
-                            f"수량: {qty}\n"
+                            f"유형: 매도\n"
+                            f"내용: 자동매매 청산\n"
+                            f"종목: {symbol or '-'}\n"
+                            f"매수가: {entry if entry > ZERO else '-'}원\n"
+                            f"매도가: {avg or '-'}원\n"
+                            f"수량: {qty or '-'}\n"
                             f"순손익: {sign}{net:.2f}원 "
                             f"({sign}{pct:.2f}%)\n"
-                            f"수수료: {fees_b}원\n"
-                            f"청산사유: {reason_ko}\n"
+                            f"수수료: {fees_b if fees_b is not None else '-'}원\n"
+                            f"청산사유: {signal_reason or reason_ko or '-'}\n"
                             f"보유시간: {_hold_ko(hold_sec)}"
                         ),
                         detail={
@@ -1162,6 +1178,8 @@ class UpbitFillSyncService:
                                 binding, "binding_id", None
                             ),
                             "symbol": symbol,
+                            "broker_code": "UPBIT",
+                            "market": "UPBIT",
                             "entry_price": str(entry),
                             "exit_price": str(avg),
                             "filled_qty": qty,
@@ -1174,28 +1192,7 @@ class UpbitFillSyncService:
                             "dedupe_key": f"POSITION_CLOSED:{oid}",
                         },
                     )
-                    emit_live_order_telegram(
-                        event_type="REALIZED_PNL",
-                        title="💰 자동매매 실현손익",
-                        message=(
-                            f"거래소: 업비트\n"
-                            f"종목: {symbol.replace('KRW-', '')}\n"
-                            f"실현손익: {sign}{net:.2f}원 "
-                            f"({sign}{pct:.2f}%)\n"
-                            f"청산사유: {reason_ko}\n"
-                            f"보유시간: {_hold_ko(hold_sec)}"
-                        ),
-                        detail={
-                            "order_id": oid,
-                            "binding_id": getattr(
-                                binding, "binding_id", None
-                            ),
-                            "realized_pnl": str(net),
-                            "realized_pnl_pct": str(pct),
-                            "holding_seconds": hold_sec,
-                            "dedupe_key": f"REALIZED_PNL:{oid}",
-                        },
-                    )
+                    # REALIZED_PNL 별도 알림은 allowlist에서 제외 — POSITION_CLOSED에 포함
 
             meta["fill_lifecycle_notified"] = True
             order.metadata_payload = meta
