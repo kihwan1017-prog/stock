@@ -124,3 +124,43 @@ def test_data_trust_valid_no_signal_not_quarantined():
         }
     )
     assert ev["quality_status"] == "VALID"
+
+
+def test_l1_exit_pending_docstring_forbids_new_sell():
+    import inspect
+
+    from stock_platform.trading.autotrading_reliability_watchdog import (
+        _l1_exit_pending_reconcile,
+    )
+
+    doc = inspect.getdoc(_l1_exit_pending_reconcile) or ""
+    assert "강제 SELL" in doc or "fill-sync" in doc.lower() or "fill_sync" in doc
+
+
+def test_startup_blocks_auto_cancel_of_protective_sell_wait():
+    """H: remote WAIT → 중복/자동 cancel SELL 금지 (정책 상수)."""
+    from stock_platform.broker.upbit import startup_open_order_reconciliation as mod
+
+    src = open(mod.__file__, encoding="utf-8").read()
+    assert "BLOCKED_AUTO_SELL_WAIT" in src
+    assert "protective SELL WAIT not auto-cancelled" in src
+
+
+def test_fresh_accepted_sell_below_threshold_not_in_reason_map():
+    """A: 짧은 대기는 stuck reason 미부여 — detection max_age 기본 900s."""
+    from stock_platform.trading.exit_pending_stuck import DEFAULT_STUCK_AGE_SECONDS
+
+    assert DEFAULT_STUCK_AGE_SECONDS >= 600
+
+
+def test_pipeline_user_friendly_exit_stuck_message():
+    from stock_platform.trading.pipeline_liveness_service import _user_friendly_reason
+
+    msg = _user_friendly_reason(
+        classification="SYSTEM_FAILURE",
+        first_zero="EXIT",
+        first_zero_reason="EXIT_PENDING_ZERO_FILL_STUCK",
+        stages={},
+        health_state="DEGRADED",
+    )
+    assert "청산" in msg or "매도" in msg

@@ -64,11 +64,6 @@ def _user_friendly_reason(
     stages: dict[str, Any],
     health_state: str,
 ) -> str:
-    if classification == "SYSTEM_FAILURE":
-        return (
-            "자동매매 실행 스택에 장애가 있습니다. "
-            "자동 복구를 시도하거나 관리자 확인이 필요합니다."
-        )
     if first_zero == "ENTRY_PENDING" or first_zero_reason == "ENTRY_PENDING_ZERO_FILL_STUCK":
         return (
             "진입 대기(ENTRY_PENDING) 슬롯이 취소된 주문에 고착되어 있습니다. "
@@ -76,8 +71,13 @@ def _user_friendly_reason(
         )
     if first_zero == "EXIT" or first_zero_reason == "EXIT_PENDING_ZERO_FILL_STUCK":
         return (
-            "청산(EXIT_PENDING) 주문이 체결되지 않은 채 고착되어 있습니다. "
+            "매도 주문 체결 대기 이상(EXIT_PENDING)이 감지되었습니다. "
             "시세 동기화 후 자동 복구를 시도합니다. 강제 매도는 하지 않습니다."
+        )
+    if classification == "SYSTEM_FAILURE":
+        return (
+            "자동매매 실행 스택에 장애가 있습니다. "
+            "자동 복구를 시도하거나 관리자 확인이 필요합니다."
         )
     if classification in {"PIPELINE_STALL", "WAITING_SLOT_STARVATION"}:
         return (

@@ -1,0 +1,138 @@
+{
+  "order_id": 1926,
+  "uba": 1380,
+  "local": {
+    "order_id": 1926,
+    "symbol": "KRW-ADA",
+    "side_code": "SELL",
+    "status_code": "ACCEPTED",
+    "order_type_code": "LIMIT",
+    "filled_quantity": "0E-8",
+    "remaining_quantity": "33.33333333",
+    "order_quantity": "33.33333333",
+    "broker_order_id": "21faa6e6-02e2-4c31-b0e3-a5d38105ab67",
+    "client_order_id": "ORD-20260827172950-AB9CE28EAA",
+    "created_at": "2026-08-28T02:29:50.092432+09:00",
+    "updated_at": "2026-08-28T02:29:51.997203+09:00",
+    "filled_at": null,
+    "accepted_at": "2026-08-28T02:29:51.997203+09:00",
+    "sent_at": null,
+    "reject_message": null,
+    "failure_message": null,
+    "created_at_kst": "2026-08-28T02:29:50.092432+09:00",
+    "updated_at_kst": "2026-08-28T02:29:51.997203+09:00",
+    "filled_at_kst": null,
+    "accepted_at_kst": "2026-08-28T02:29:51.997203+09:00",
+    "sent_at_kst": null
+  },
+  "slot": {
+    "slot_id": 4,
+    "symbol": "KRW-ADA",
+    "status": "EXIT_PENDING",
+    "entry_order_id": 1925,
+    "position_binding_id": 60,
+    "opened_at": "2026-08-28T02:25:19.406195+09:00",
+    "updated_at": "2026-08-28T02:31:45.306949+09:00",
+    "allocated_amount_krw": 10000.0
+  },
+  "bindings": [
+    {
+      "binding_id": 60,
+      "user_broker_account_id": 1380,
+      "strategy_id": 17483,
+      "deployment_id": 868,
+      "selection_id": 213,
+      "symbol": "KRW-ADA",
+      "status": "OPEN",
+      "entry_order_id": 1925,
+      "opened_at": "2026-08-28T02:25:19.394081+09:00",
+      "closed_at": null,
+      "meta_json": {
+        "exit_reason": "MA_DEAD_CROSS",
+        "exit_order_id": 1926
+      },
+      "slot_id": 4
+    }
+  ],
+  "lease": {
+    "authorization_id": 6,
+    "status_code": "ACTIVE",
+    "authorized_until": "2026-08-28T07:45:59.609010+09:00",
+    "arm_lease_ttl_seconds": 3600
+  },
+  "restore_gates": {
+    "ok": true,
+    "blockers": [],
+    "checks": {
+      "broker": "UPBIT",
+      "authorization_mode": "HOURS_24",
+      "live": "OFF",
+      "arm": "OFF",
+      "live_config": {
+        "allowed": true,
+        "code": "UPBIT_FLAGS_OK",
+        "status": "HEALTHY"
+      },
+      "execution_env": "REAL",
+      "connection": "CONNECTED",
+      "credential": "VERIFIED",
+      "recovery": "SUCCESS",
+      "trading_paused_recovery": false,
+      "trading_paused_uba": false,
+      "high_critical_conflict_count": 0,
+      "kill_switch": "OFF",
+      "activation": "ACTIVE",
+      "activation_id": 84,
+      "activation_expires_at": "2026-08-28T07:22:14.641899+09:00",
+      "risk": "PASS",
+      "account_safety": "PASS",
+      "risk_detail": {
+        "account_paused": false,
+        "arm_ttl_seconds": 300
+      }
+    },
+    "live": "OFF",
+    "arm": "OFF",
+    "activation_id": 84,
+    "activation_expires_at": "2026-08-28T07:22:14.641899+09:00",
+    "execution_env": "REAL"
+  },
+  "activation": {
+    "id": 84,
+    "enabled": true,
+    "arm_expires_at": null,
+    "expires_at": "2026-08-28T07:22:14.641899+09:00"
+  },
+  "exit_pending_stuck": {
+    "stuck": true,
+    "count": 1,
+    "items": [
+      {
+        "slot_id": 4,
+        "symbol": "KRW-ADA",
+        "order_id": 1926,
+        "order_status": "ACCEPTED",
+        "age_seconds": 16438.2
+      }
+    ],
+    "max_age_seconds": 900,
+    "reason": "EXIT_PENDING_ZERO_FILL_STUCK"
+  },
+  "remote": {
+    "ok": true,
+    "state": "wait",
+    "side": "ask",
+    "ord_type": "limit",
+    "executed_volume": "0",
+    "remaining_volume": "33.33333333",
+    "volume": "33.33333333",
+    "price": "299",
+    "created_at": "2026-08-28T02:29:51+09:00"
+  },
+  "LOCAL_REMOTE_DIVERGENCE": {
+    "local": "ACCEPTED",
+    "remote": "wait",
+    "expected_local_for_remote": "ACCEPTED",
+    "divergent": false
+  }
+}
