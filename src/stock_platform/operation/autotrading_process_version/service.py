@@ -871,22 +871,89 @@ def _runtime_overlay(
         )
         waiting = int(slots.get("WAITING_SIGNAL", 0))
         open_n = int(slots.get("OPEN", 0))
+        empty_n = int(slots.get("EMPTY", 0))
+        entry_pending = int(slots.get("ENTRY_PENDING", 0))
         for s in UPBIT_STAGES:
             node_status[s["id"]] = "OK"
+
+        # canonical funnel / liveness SoT (하드코딩 금지)
+        live = None
+        try:
+            from stock_platform.trading.pipeline_liveness_service import (
+                build_pipeline_liveness_snapshot,
+            )
+
+            live = build_pipeline_liveness_snapshot(
+                session, user_broker_account_id=int(uba)
+            )
+        except Exception as exc:  # noqa: BLE001
+            live = {"ok": False, "error": type(exc).__name__}
+
+        stages_f = (live or {}).get("stages") or {}
+        fz = (live or {}).get("first_zero_stage")
+        classification = str((live or {}).get("classification") or "")
+        friendly = (live or {}).get("user_friendly_reason")
+
         if waiting > 0:
             node_status["WAITING"] = "WAIT"
-            node_status["ENTRY_SIGNAL"] = "WAIT"
             node_detail["WAITING"] = {"count": waiting}
-            node_detail["ENTRY_SIGNAL"] = {"note": "진입신호 대기"}
+        elif empty_n > 0 and open_n == 0:
+            node_status["WAITING"] = "UNREACHED"
+            node_detail["WAITING"] = {"count": 0, "note": "EMPTY 슬롯 대기 배정 가능"}
+
+        if fz == "ENTRY_SIGNAL" or classification == "NORMAL_NO_SIGNAL":
+            node_status["ENTRY_SIGNAL"] = "WAIT"
+            node_detail["ENTRY_SIGNAL"] = {
+                "note": "진입 조건 미충족 (정상 대기)",
+                "top_block": (live or {}).get("first_zero_reason"),
+                "eval": stages_f.get("ENTRY_EVALUATION"),
+                "pass": stages_f.get("ENTRY_PASS"),
+            }
+        elif int(stages_f.get("ENTRY_PASS") or 0) > 0:
+            node_status["ENTRY_SIGNAL"] = "OK"
+
+        if int(stages_f.get("ENTRY_PENDING_STUCK") or 0) > 0:
+            node_status["ORDER"] = "ERROR"
+            node_detail["ORDER"] = {
+                "note": "ENTRY_PENDING zero-fill 고착",
+                "stuck": stages_f.get("ENTRY_PENDING_STUCK"),
+            }
+        elif entry_pending > 0:
+            node_status["ORDER"] = "WAIT"
+            node_detail["ORDER"] = {"entry_pending": entry_pending}
+
+        if classification == "SYSTEM_FAILURE":
+            node_status["WATCHDOG"] = "ERROR"
+        else:
+            node_status["WATCHDOG"] = "OK"
+
         node_status["TRADING_LLM"] = "OK"
         node_detail["TRADING_LLM"] = {"mode": "SHADOW", "real_gate": False}
-        node_status["WATCHDOG"] = "OK"
+
+        last_trade = (live or {}).get("last_trade") or {}
         summary = {
-            "autotrading_state": "정상",
-            "current_location": "진입신호 대기" if waiting else "대기/운용",
+            "autotrading_state": (
+                "파이프라인 장애"
+                if classification == "SYSTEM_FAILURE"
+                else (
+                    "흐름 정체"
+                    if classification in {"PIPELINE_STALL", "WAITING_SLOT_STARVATION"}
+                    else "매수신호 대기"
+                )
+            ),
+            "current_location": str(fz or "pipeline"),
+            "user_friendly_reason": friendly
+            or ("시스템은 정상입니다. 진입 신호 대기 중." if waiting or fz == "ENTRY_SIGNAL" else "운용 중"),
             "waiting": waiting,
             "open": open_n,
-            "daily_note": "ops-status로 상세 확인",
+            "empty": empty_n,
+            "entry_pending": entry_pending,
+            "last_trade": last_trade,
+            "classification": classification,
+            "first_zero_stage": fz,
+            "first_zero_reason": (live or {}).get("first_zero_reason"),
+            "pipeline_health_state": (live or {}).get("pipeline_health_state"),
+            "recommended_action": (live or {}).get("recommended_action"),
         }
         daily_quota = None
         try:
@@ -913,7 +980,7 @@ def _runtime_overlay(
             }
         except Exception:  # noqa: BLE001
             daily_quota = None
-        first_zero = None if open_n or waiting else "NONE"
+        first_zero = fz
     else:
         # KIWOOM — canonical funnel + realtime SoT (하드코딩 FEED_DOWN 금지)
         uba = int(uba_id or 1381)

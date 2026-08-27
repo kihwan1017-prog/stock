@@ -299,6 +299,37 @@ def _l1_waiting_self_heal(
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
 
+def _l1_entry_pending_reconcile(
+    session: Any, *, uba_id: int, actor: str
+) -> dict[str, Any]:
+    """ENTRY_PENDING + zero-fill CANCEL 고착 — lifecycle reconcile만 (강제 BUY 금지)."""
+
+    try:
+        from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+            reconcile_portfolio_slot_lifecycle,
+        )
+
+        result = reconcile_portfolio_slot_lifecycle(
+            session,
+            user_broker_account_id=int(uba_id),
+            actor=f"L1_ENTRY_PENDING:{actor}",
+        )
+        transitions = list(result.get("transitions") or [])
+        released = sum(
+            1
+            for t in transitions
+            if "ENTRY_PENDING_ZERO_FILL_RELEASED" in (t.get("changes") or [])
+        )
+        return {
+            "ok": bool(result.get("ok", True)),
+            "released": released,
+            "transitions": len(transitions),
+            "detail": result,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
+
 async def _l1_feed_reconnect(
     session: Any, *, uba_id: int, actor: str
 ) -> dict[str, Any]:
@@ -462,7 +493,7 @@ async def reconcile_market_health(
 
         async with lock:
             actions: list[str] = []
-            # LEVEL 1 — feed / scanner / waiting self-heal
+            # LEVEL 1 — feed / scanner / waiting / entry_pending self-heal
             if market == "UPBIT":
                 starv = snap.get("waiting_starvation") or {}
                 if isinstance(starv, dict) and starv.get("waiting_slot_starvation"):
@@ -472,6 +503,21 @@ async def reconcile_market_health(
                     actions.append("L1_WAITING_REVALIDATE")
                     outcome["l1_waiting"] = l1w
                     if int(l1w.get("released") or 0) > 0:
+                        session.commit()
+
+                # ENTRY_PENDING + zero-fill CANCEL 고착 해제
+                reasons = snap.get("health_reasons") or []
+                funnel_st = (snap.get("funnel") or {}).get("stages") or {}
+                if (
+                    "ENTRY_PENDING_ZERO_FILL_STUCK" in reasons
+                    or int(funnel_st.get("ENTRY_PENDING_STUCK") or 0) > 0
+                ):
+                    l1ep = _l1_entry_pending_reconcile(
+                        session, uba_id=uba_id, actor=actor
+                    )
+                    actions.append("L1_ENTRY_PENDING_RECONCILE")
+                    outcome["l1_entry_pending"] = l1ep
+                    if int(l1ep.get("released") or 0) > 0:
                         session.commit()
 
                 feed_st = str((snap.get("components") or {}).get("feed") or "")

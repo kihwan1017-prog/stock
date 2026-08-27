@@ -84,6 +84,50 @@ def _is_open(order: Any) -> bool:
     return _order_status(order) in _OPEN_ORDER_STATUSES
 
 
+_TERMINAL_ZERO_FILL_STATUSES = frozenset(
+    {
+        "CANCELLED",
+        "CANCELED",
+        "FAILED",
+        "REJECTED",
+        "EXPIRED",
+    }
+)
+
+
+def _filled_qty(order: Any) -> float:
+    try:
+        return float(getattr(order, "filled_quantity", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _is_terminal_zero_fill(order: Any) -> bool:
+    """체결 없는 종료 BUY — ENTRY_PENDING 슬롯 해제 대상."""
+    if _filled_qty(order) > 0:
+        return False
+    return _order_status(order) in _TERMINAL_ZERO_FILL_STATUSES
+
+
+def _release_entry_pending_slot(slot: UpbitPositionSlotEntity) -> None:
+    """ENTRY_PENDING → EMPTY (주문/히스토리 삭제 없음)."""
+    slot.status = SLOT_EMPTY
+    slot.symbol = None
+    slot.candidate_selection_id = None
+    slot.scanner_run_id = None
+    slot.ai_analysis_id = None
+    slot.entry_order_id = None
+    slot.position_binding_id = None
+    slot.reserved_amount_krw = None
+    slot.allocated_amount_krw = None
+    slot.opened_at = None
+    slot.closed_at = None
+    slot.cooldown_until = None
+    slot.version = int(slot.version or 1) + 1
+    slot.updated_at = _now()
+
+
+
 def _order_source(order: Any) -> str:
     direct = str(getattr(order, "order_source", "") or "").upper()
     if direct:
@@ -514,6 +558,23 @@ def _reconcile_one_slot(
     entry_order_id = (
         int(slot.entry_order_id) if slot.entry_order_id is not None else None
     )
+
+    # ENTRY_PENDING + zero-fill 종료 BUY → EMPTY (고착 방지)
+    if prior_status == SLOT_ENTRY_PENDING and entry_buy is not None:
+        if _is_terminal_zero_fill(entry_buy):
+            _release_entry_pending_slot(slot)
+            changes.append("ENTRY_PENDING_ZERO_FILL_RELEASED")
+            return {
+                "slot_id": int(slot.slot_id),
+                "symbol": sym,
+                "from": prior_status,
+                "to": SLOT_EMPTY,
+                "changes": changes,
+                "entry_order_id": int(getattr(entry_buy, "order_id", 0) or 0) or None,
+                "exit_order_id": None,
+                "release_reason": _order_status(entry_buy),
+            }
+
     exit_sell = _pick_exit_sell(orders, entry_order_id=entry_order_id)
 
     binding = _open_upbit_binding(

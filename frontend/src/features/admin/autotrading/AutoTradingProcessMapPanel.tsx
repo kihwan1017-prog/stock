@@ -206,7 +206,9 @@ export function AutoTradingProcessMapPanel() {
             description={
               market === "KIWOOM" && summary.user_friendly_reason
                 ? String(summary.user_friendly_reason)
-                : undefined
+                : market === "UPBIT" && summary.user_friendly_reason
+                  ? String(summary.user_friendly_reason)
+                  : undefined
             }
           />
         ) : null}
@@ -260,6 +262,33 @@ export function AutoTradingProcessMapPanel() {
                   매수하지 않은 이유: 시스템 장애가 아니라 신규 골든크로스 매수
                   신호가 발생하지 않았습니다.
                 </div>
+              </div>
+            }
+          />
+        ) : null}
+        {market === "UPBIT" && summary.user_friendly_reason ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type={
+              String(summary.classification) === "SYSTEM_FAILURE"
+                ? "error"
+                : String(summary.classification) === "PIPELINE_STALL" ||
+                    String(summary.classification) === "WAITING_SLOT_STARVATION"
+                  ? "warning"
+                  : "success"
+            }
+            showIcon
+            title="현재 거래가 없는 이유"
+            description={
+              <div>
+                <div>{String(summary.user_friendly_reason)}</div>
+                {summary.last_trade ? (
+                  <div style={{ marginTop: 4 }}>
+                    최근 체결: {String((asRecord(summary.last_trade) || {}).symbol ?? "—")}{" "}
+                    {String((asRecord(summary.last_trade) || {}).side ?? "")} ·{" "}
+                    {String((asRecord(summary.last_trade) || {}).at ?? "")}
+                  </div>
+                ) : null}
               </div>
             }
           />

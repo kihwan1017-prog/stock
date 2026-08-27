@@ -910,6 +910,23 @@ def admin_uba_kiwoom_funnel(
     )
 
 
+@router.get("/uba/{user_broker_account_id}/pipeline-liveness")
+def admin_uba_pipeline_liveness(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Pipeline liveness + FIRST_ZERO + classification — READ ONLY SoT."""
+
+    from stock_platform.trading.pipeline_liveness_service import (
+        build_pipeline_liveness_snapshot,
+    )
+
+    return build_pipeline_liveness_snapshot(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+
+
 @router.get("/health")
 def admin_autotrading_health_overview(
     session: Session = Depends(get_db_session),

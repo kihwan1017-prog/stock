@@ -724,6 +724,53 @@ def build_trading_health_snapshot(
         oldest_waiting_age_seconds=oldest_age,
         now=now,
     )
+    if broker == "UPBIT" and isinstance(funnel, dict):
+        from stock_platform.trading.pipeline_liveness_service import (
+            classify_with_entry_signal_context,
+        )
+
+        stg = funnel.get("stages") or {}
+        no_trade = classify_with_entry_signal_context(
+            base_kwargs={
+                "health_state": health_state,
+                "partial_restore": partial_restore,
+                "stack_components_down": stack_down,
+                "daily_blocking": bool(daily.get("blocking")),
+                "free_slots": int(slots.get("free_slot_count") or 0),
+                "waiting_count": int(slots.get("waiting_count") or 0),
+                "max_positions": max_pos,
+                "selection_count_window": int(stg.get("SELECTION") or 0),
+                "candidate_count_window": int(stg.get("CANDIDATE") or 0),
+                "order_count_window": int(stg.get("ORDER") or 0),
+                "admission_count_window": int(stg.get("ADMISSION") or 0),
+                "feed_healthy": feed_healthy,
+                "scanner_active": scanner_st == "RUNNING",
+                "pipeline_stall_minutes": slo.pipeline_stall_minutes,
+                "last_order_at": _parse_iso(heartbeats.get("order_last_created_at")),
+                "last_selection_at": _parse_iso(
+                    heartbeats.get("selection_last_created_at")
+                ),
+                "waiting_slot_starvation": bool(
+                    waiting_starvation.get("waiting_slot_starvation")
+                ),
+                "starvation_escalation": str(
+                    waiting_starvation.get("escalation") or "NONE"
+                ),
+                "oldest_waiting_age_seconds": oldest_age,
+                "now": now,
+            },
+            entry_eval_count=int(stg.get("ENTRY_EVALUATION") or 0),
+            entry_pass_count=int(stg.get("ENTRY_PASS") or 0),
+            entry_pending_stuck=int(stg.get("ENTRY_PENDING_STUCK") or 0),
+            top_block_reason=funnel.get("top_entry_block_reason"),
+        )
+        # stuck pending은 health도 DEGRADED 이상으로
+        if int(stg.get("ENTRY_PENDING_STUCK") or 0) > 0:
+            if health_state == HEALTH_READY:
+                health_state = HEALTH_DEGRADED
+            if "ENTRY_PENDING_ZERO_FILL_STUCK" not in health_reasons:
+                health_reasons.append("ENTRY_PENDING_ZERO_FILL_STUCK")
+
 
     auto_trading_ready = (
         health_state == HEALTH_READY
