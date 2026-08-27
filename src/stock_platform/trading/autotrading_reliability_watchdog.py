@@ -439,6 +439,60 @@ def _l1_entry_pending_reconcile(
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
 
+def _l1_exit_pending_reconcile(
+    session: Any, *, uba_id: int, actor: str
+) -> dict[str, Any]:
+    """EXIT_PENDING + ACCEPTED zero-fill — fill-sync + lifecycle만 (강제 SELL 금지)."""
+
+    try:
+        from stock_platform.broker.upbit.fill_sync_service import UpbitFillSyncService
+        from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
+            reconcile_portfolio_slot_lifecycle,
+        )
+        from stock_platform.trading.exit_pending_stuck import (
+            detect_exit_pending_zero_fill_stuck,
+        )
+
+        stuck = detect_exit_pending_zero_fill_stuck(
+            session, user_broker_account_id=int(uba_id)
+        )
+        synced: list[dict[str, Any]] = []
+        sync = UpbitFillSyncService(session)
+        for item in stuck.get("items") or []:
+            oid = int(item.get("order_id") or 0)
+            if oid <= 0:
+                continue
+            try:
+                result = sync.sync_by_order_id(
+                    oid, actor=f"L1_EXIT_PENDING:{actor}"
+                )
+                synced.append(
+                    {
+                        "order_id": oid,
+                        "ok": True,
+                        "detail": getattr(result, "detail", None) or str(result)[:200],
+                    }
+                )
+            except Exception as exc:  # noqa: BLE001
+                synced.append(
+                    {"order_id": oid, "ok": False, "error": type(exc).__name__}
+                )
+        life = reconcile_portfolio_slot_lifecycle(
+            session,
+            user_broker_account_id=int(uba_id),
+            actor=f"L1_EXIT_PENDING:{actor}",
+        )
+        return {
+            "ok": True,
+            "stuck_count": int(stuck.get("count") or 0),
+            "synced": synced,
+            "lifecycle_transitions": len(list(life.get("transitions") or [])),
+            "note": "fill_sync_only_no_forced_sell",
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
+
 async def _l1_feed_reconnect(
     session: Any, *, uba_id: int, actor: str
 ) -> dict[str, Any]:
@@ -646,6 +700,15 @@ async def reconcile_market_health(
                     actions.append("L1_ENTRY_PENDING_RECONCILE")
                     outcome["l1_entry_pending"] = l1ep
                     if int(l1ep.get("released") or 0) > 0:
+                        session.commit()
+
+                if "EXIT_PENDING_ZERO_FILL_STUCK" in reasons:
+                    l1ex = _l1_exit_pending_reconcile(
+                        session, uba_id=uba_id, actor=actor
+                    )
+                    actions.append("L1_EXIT_PENDING_RECONCILE")
+                    outcome["l1_exit_pending"] = l1ex
+                    if l1ex.get("ok"):
                         session.commit()
 
                 feed_st = str((snap.get("components") or {}).get("feed") or "")

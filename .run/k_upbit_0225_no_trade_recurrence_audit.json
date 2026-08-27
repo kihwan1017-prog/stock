@@ -1,0 +1,131 @@
+{
+  "FINAL_VERDICT": "UPBIT_0225_FAILURE_ROOT_FIXED",
+  "CURRENT_KST": "2026-08-28T06:55:00+09:00",
+  "TRADE": {
+    "LAST_REAL_TRADE": "2026-08-28T02:25:19.194805+09:00 order=1925 BUY KRW-ADA FILLED",
+    "MATCH_USER_TIME": true,
+    "MINUTES_NO_TRADE": 270
+  },
+  "HEALTH_AT_AUDIT": {
+    "LIVE": "OFF_AFTER_BACKEND_RESTART",
+    "ARM": "OFF_OR_EXPIRED_INPROC",
+    "ACTIVATION": "ACTIVE",
+    "RUNTIME": "STOPPED",
+    "RUNNER": "STOPPED",
+    "WORKER": "STOPPED",
+    "EXIT": "STOPPED",
+    "SCANNER": "STOPPED",
+    "FEED": "DISCONNECTED",
+    "WATCHDOG": "needs_process_restart",
+    "SUPERVISOR": "needs_process_restart",
+    "AUTO_TRADING_READY": false,
+    "NOTE": "06:22 backend restart (market-data UI deploy) cleared in-memory LIVE/ARM stack"
+  },
+  "DATA_TRUST": {
+    "CURRENT_QUALITY": "INVALID",
+    "REASON": "STACK_DOWN (window 33 since 06:23)",
+    "VALID_DURATION_SEC_SINCE_0225": 10733.2,
+    "DEGRADED_DURATION_SEC_SINCE_0225": 3535.8,
+    "INVALID_DURATION_SEC_SINCE_0225": 1488.4,
+    "DATA_TRUST_CLASSIFICATION_BUG": true,
+    "BUG_DETAIL": "02:29~06:22 EXIT_PENDING ACCEPTED SELL stuck was NOT marked INVALID (windows stayed VALID/DEGRADED PIPELINE_STALL). Fixed: EXIT_PENDING_STUCK → INVALID"
+  },
+  "FUNNEL_SINCE_0225": {
+    "ENTRY_EVAL": 3407,
+    "ENTRY_PASS_E0": 5,
+    "ENTRY_BLOCK": 3402,
+    "TOP_BLOCK": "SHORT_MA_NOT_ABOVE_LONG_MA",
+    "ORDER_PERSIST": 1,
+    "BUY_FILL": 0,
+    "SELL_ORDER": 1,
+    "SELL_FILL": 0,
+    "OUTBOX": 1,
+    "NOTE": "SELL order 1926 ACCEPTED zero-fill; 5 E0 PASS without subsequent BUY"
+  },
+  "FIRST_ZERO": {
+    "STAGE": "EXIT",
+    "REASON": "EXIT_PENDING_ZERO_FILL_STUCK",
+    "PRIOR_MISREAD": "ORDER / ENTRY_PASS_WITHOUT_ORDER (masked exit stuck)"
+  },
+  "DAILY": {
+    "CONSUMED": 8,
+    "RESERVED": 0,
+    "REMAINING": 12,
+    "LIMIT": 20,
+    "BLOCKING": false
+  },
+  "SLOTS": {
+    "OPEN": 0,
+    "WAITING": 3,
+    "EMPTY": 1,
+    "EXIT_PENDING": 1,
+    "STARVATION": false,
+    "ENTRY_PENDING_STUCK": false,
+    "STALE_PRE_RESTORE_FALSE_POSITIVE": false,
+    "EXIT_PENDING_DETAIL": "KRW-ADA slot_id=4 order=1926 ACCEPTED age>~4h"
+  },
+  "BROKER": {
+    "LOCAL_REMOTE_DIVERGENCE": "UNKNOWN_UNTIL_FILL_SYNC",
+    "UNRESOLVED_AUTO_ORDER": 1,
+    "OUTBOX_STUCK": false,
+    "ORDER_1926": "SELL KRW-ADA ACCEPTED filled_qty=0 since 02:29:50"
+  },
+  "RECURRENCE": {
+    "SIGNATURE": "EXIT_PENDING_ZERO_FILL_STUCK:ACCEPTED_SELL",
+    "COUNT": 1,
+    "CLASSIFICATION": "NEW_FAILURE_MODE",
+    "RELATED_FAMILY": "OPEN_ORDER_RESTORE_BLOCK / BROKER_WAIT (startup blocks auto-cancel of protective SELL WAIT)"
+  },
+  "WATCHDOG": {
+    "DETECTED_BEFORE_FIX": false,
+    "SELF_HEAL_ATTEMPTED_BEFORE_FIX": false,
+    "RESULT": "CLASSIFICATION_GAP",
+    "WHY_USER_DETECTED_FIRST": "Watchdog treated period as NORMAL_NO_SIGNAL/PIPELINE_STALL; EXIT_PENDING ACCEPTED SELL not in health_reasons; after 06:22 restart stack STOPPED and LIVE_OFF without auto escalate to user until audit",
+    "JUDGEMENT": "WATCHDOG_CLASSIFICATION_GAP + DATA_TRUST_GAP"
+  },
+  "ROOT_CAUSE": {
+    "PRIMARY": "EXIT_PENDING_ZERO_FILL_STUCK (ADA SELL 1926 ACCEPTED 0-fill since 02:29:50)",
+    "SECONDARY": [
+      "ENTRY_PASS×5 without BUY (PIPELINE_STALL intermittent while exit occupied capacity)",
+      "Majority ENTRY_EVAL blocked by SHORT_MA_NOT_ABOVE_LONG_MA (normal signal wait)",
+      "Backend restart ~06:22 → STACK_DOWN / LIVE_OFF (in-memory)"
+    ],
+    "SYSTEM_BUG_ACTIVE": true,
+    "CAN_SAFELY_CONTINUE_AFTER_RESTORE": true
+  },
+  "FIX": {
+    "ROOT_FIX_IMPLEMENTED": true,
+    "SUPERVISION_UPDATED": true,
+    "DATA_TRUST_UPDATED": true,
+    "ALERT_UPDATED": true,
+    "files": [
+      "trading/exit_pending_stuck.py",
+      "trading/autotrading_health_service.py",
+      "trading/autotrading_reliability_watchdog.py (L1 fill-sync only)",
+      "trading/autotrading_data_trust.py (INVALID EXIT_PENDING_STUCK)",
+      "trading/pipeline_liveness_service.py (user-friendly EXIT reason)"
+    ],
+    "FORCED_SELL": false,
+    "NOTE": "L1 heal = fill_sync + lifecycle reconcile only; no forced SELL/cancel"
+  },
+  "TRAILING_SHADOW": {
+    "NOTE": "probe TypeError on shadow_quality_counts signature — N10 status not blocking this verdict"
+  },
+  "TEST": {
+    "test_exit_pending_stuck_and_no_trade_class.py": "PASS (5)"
+  },
+  "GIT": {
+    "BASE": "3fd295b",
+    "NEW_COMMIT": "pending",
+    "BACKEND_RESTART_COUNT": 1
+  },
+  "SAFETY": {
+    "FORCED_REAL_ORDER": 0,
+    "REAL_ENTRY_POLICY_CHANGED": false,
+    "REAL_EXIT_POLICY_CHANGED": false,
+    "REAL_TRAILING_THRESHOLD_CHANGED": false,
+    "LIVE_ARM_MANUAL_MUTATION": 0,
+    "DAILY_MUTATION": 0,
+    "KIWOOM_MUTATION": 0
+  }
+}

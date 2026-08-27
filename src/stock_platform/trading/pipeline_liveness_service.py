@@ -74,6 +74,11 @@ def _user_friendly_reason(
             "진입 대기(ENTRY_PENDING) 슬롯이 취소된 주문에 고착되어 있습니다. "
             "자동 복구로 슬롯을 비웁니다."
         )
+    if first_zero == "EXIT" or first_zero_reason == "EXIT_PENDING_ZERO_FILL_STUCK":
+        return (
+            "청산(EXIT_PENDING) 주문이 체결되지 않은 채 고착되어 있습니다. "
+            "시세 동기화 후 자동 복구를 시도합니다. 강제 매도는 하지 않습니다."
+        )
     if classification in {"PIPELINE_STALL", "WAITING_SLOT_STARVATION"}:
         return (
             "후보/대기 슬롯은 있으나 진입·주문 단계로 진행되지 못하고 있습니다."

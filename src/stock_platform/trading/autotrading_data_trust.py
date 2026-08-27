@@ -25,6 +25,7 @@ INVALID_REASONS = {
     "EXIT_DOWN_WITH_OPEN",
     "BROKER_DIVERGENCE",
     "ENTRY_PENDING_STUCK",
+    "EXIT_PENDING_STUCK",
     "CRITICAL_INVARIANT",
 }
 
@@ -88,6 +89,11 @@ def evaluate_data_trust_from_health(health: dict[str, Any]) -> dict[str, Any]:
         (health.get("stages") or {}).get("ENTRY_PENDING_STUCK") or 0
     ) > 0:
         status, reason = QUALITY_INVALID, "ENTRY_PENDING_STUCK"
+    elif (
+        "EXIT_PENDING_ZERO_FILL_STUCK" in (health.get("health_reasons") or [])
+        or int((health.get("exit_pending_stuck") or {}).get("count") or 0) > 0
+    ):
+        status, reason = QUALITY_INVALID, "EXIT_PENDING_STUCK"
     elif classification == "SYSTEM_FAILURE":
         status, reason = QUALITY_INVALID, "STACK_DOWN"
     elif classification in {"WAITING_SLOT_STARVATION", "PIPELINE_STALL"}:

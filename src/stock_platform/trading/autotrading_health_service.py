@@ -771,6 +771,35 @@ def build_trading_health_snapshot(
             if "ENTRY_PENDING_ZERO_FILL_STUCK" not in health_reasons:
                 health_reasons.append("ENTRY_PENDING_ZERO_FILL_STUCK")
 
+    exit_pending_stuck: dict[str, Any] = {"stuck": False, "count": 0, "items": []}
+    if broker == "UPBIT":
+        try:
+            from stock_platform.trading.exit_pending_stuck import (
+                detect_exit_pending_zero_fill_stuck,
+            )
+
+            exit_pending_stuck = detect_exit_pending_zero_fill_stuck(
+                session, user_broker_account_id=uba_id, now=now
+            )
+            if exit_pending_stuck.get("stuck"):
+                if health_state == HEALTH_READY:
+                    health_state = HEALTH_DEGRADED
+                if "EXIT_PENDING_ZERO_FILL_STUCK" not in health_reasons:
+                    health_reasons.append("EXIT_PENDING_ZERO_FILL_STUCK")
+                # 청산 고착은 시스템 장애로 승격 (거래 없음 ≠ NORMAL)
+                no_trade = {
+                    "classification": "SYSTEM_FAILURE",
+                    "detail": {
+                        "reason": "EXIT_PENDING_ZERO_FILL_STUCK",
+                        "items": exit_pending_stuck.get("items") or [],
+                    },
+                    "evaluated_at": now.isoformat(),
+                }
+                if first_zero_stage in (None, "ORDER", "ENTRY_SIGNAL"):
+                    first_zero_stage = "EXIT"
+                    first_zero_reason = "EXIT_PENDING_ZERO_FILL_STUCK"
+        except Exception:  # noqa: BLE001
+            exit_pending_stuck = {"stuck": False, "count": 0, "error": True}
 
     auto_trading_ready = (
         health_state == HEALTH_READY
@@ -814,6 +843,7 @@ def build_trading_health_snapshot(
         "no_trade_detail": no_trade,
         "health_state": health_state,
         "health_reasons": health_reasons,
+        "exit_pending_stuck": exit_pending_stuck,
         "partial_restore": partial_restore,
         "auto_trading_ready": auto_trading_ready,
         "blockers": blockers,
