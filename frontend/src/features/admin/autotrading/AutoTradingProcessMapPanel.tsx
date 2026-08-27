@@ -101,6 +101,8 @@ export function AutoTradingProcessMapPanel() {
   }, [current]);
   const summary = asRecord(current?.summary) ?? {};
   const research = asRecord(current?.research_layers) ?? {};
+  const recoveryLayer = asRecord(current?.recovery_layer) ?? {};
+  const dailyQuota = asRecord(current?.daily_quota) ?? {};
   const changes = Array.isArray(asRecord(changesQ.data)?.items)
     ? (asRecord(changesQ.data)!.items as unknown[])
     : [];
@@ -203,7 +205,56 @@ export function AutoTradingProcessMapPanel() {
             description="시세/Feed 단계에서 막힘. 이번 화면에서 Feed를 강제 기동하지 않습니다."
           />
         ) : null}
+        {market === "UPBIT" && dailyQuota.label_ko ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="info"
+            showIcon
+            title="일일 진입 quota"
+            description={String(dailyQuota.label_ko)}
+          />
+        ) : null}
+        {market === "UPBIT" && recoveryLayer.visible ? (
+          <Alert
+            style={{ marginTop: 12 }}
+            type={
+              recoveryLayer.status === "BLOCKED"
+                ? "error"
+                : recoveryLayer.status === "RECONCILING"
+                  ? "warning"
+                  : "success"
+            }
+            showIcon
+            title={`Recovery: ${String(recoveryLayer.label_ko ?? "—")}`}
+            description={String(recoveryLayer.note ?? "")}
+          />
+        ) : null}
       </Card>
+
+      {market === "UPBIT" && recoveryLayer.visible ? (
+        <Card size="small" title="Recovery Layer (서버 시작 → READY)">
+          <Paragraph type="secondary">
+            정상 거래 main path와 별도 — restart 후 미체결 AUTO 주문 reconcile → lease
+            restore → stack READY
+          </Paragraph>
+          <Timeline
+            items={(Array.isArray(recoveryLayer.stages)
+              ? recoveryLayer.stages
+              : []
+            ).map((s: unknown) => {
+              const st = asRecord(s) ?? {};
+              return {
+                color: "green",
+                children: (
+                  <span>
+                    <Text strong>{String(st.label ?? st.id ?? "—")}</Text>
+                  </span>
+                ),
+              };
+            })}
+          />
+        </Card>
+      ) : null}
 
       <Tabs
         items={[

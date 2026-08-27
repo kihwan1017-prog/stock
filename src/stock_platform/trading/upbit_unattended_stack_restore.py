@@ -552,6 +552,46 @@ async def restore_all_active_unattended_upbit_leases(
                     }
                 )
                 continue
+
+            # STARTUP_OPEN_ORDER_RECONCILIATION — lease restore 전 AUTO open 정리
+            from stock_platform.broker.upbit.startup_open_order_reconciliation import (
+                UpbitStartupOpenOrderReconciliationService,
+            )
+
+            pre_recon = UpbitStartupOpenOrderReconciliationService(
+                session
+            ).reconcile_for_uba(
+                uba_id,
+                actor=f"{actor}_PRE_RESTORE",
+                capture_trace=True,
+            )
+            session.flush()
+
+            if not pre_recon.ok:
+                results.append(
+                    {
+                        "user_broker_account_id": uba_id,
+                        "skipped": True,
+                        "reason": "STARTUP_OPEN_ORDER_RECONCILIATION_BLOCKED",
+                        "pre_reconciliation": {
+                            "ok": pre_recon.ok,
+                            "auto_open_before": pre_recon.auto_open_before,
+                            "auto_open_after": pre_recon.auto_open_after,
+                            "manual_open_skipped": pre_recon.manual_open_skipped,
+                            "blockers": pre_recon.blockers,
+                        },
+                        "lease_restore": {
+                            "restored": False,
+                            "reason": "AUTO_OPEN_UNRESOLVED",
+                        },
+                        "stack_restore": {
+                            "restored": False,
+                            "reason": "SKIPPED",
+                        },
+                    }
+                )
+                continue
+
             lease_restore = svc.restore_from_active_lease(
                 uba_id, actor=actor, restore_stack=False
             )
@@ -571,6 +611,12 @@ async def restore_all_active_unattended_upbit_leases(
             results.append(
                 {
                     "user_broker_account_id": uba_id,
+                    "pre_reconciliation": {
+                        "ok": pre_recon.ok,
+                        "auto_open_before": pre_recon.auto_open_before,
+                        "auto_open_after": pre_recon.auto_open_after,
+                        "manual_open_skipped": pre_recon.manual_open_skipped,
+                    },
                     "lease_restore": lease_restore,
                     "stack_restore": stack,
                 }

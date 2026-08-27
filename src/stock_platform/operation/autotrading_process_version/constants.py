@@ -87,6 +87,36 @@ COMPONENT_TYPES = (
 # Bootstrap from known commits (REAL semantics vs reliability vs research)
 BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
+        "git_commit": "fc46ccb",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "RECOVERY",
+        "summary": "Safe recovery cancel for existing Upbit open orders",
+        "change_reason": "LIVE OFF 상태에서 기존 WAIT 주문 cancel-only",
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_upbit_order1896_safe_resolution_recovery.json"],
+    },
+    {
+        "git_commit": "TBD_STARTUP_RECON",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "RECOVERY",
+        "summary": "Startup open-order reconciliation before unattended restore",
+        "change_reason": "PROD restart 시 db_open gate 선행 reconcile",
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_upbit_startup_reconciliation_daily_quota.json"],
+    },
+    {
+        "git_commit": "TBD_DAILY_QUOTA",
+        "change_type": CHANGE_LOGIC,
+        "component": "ADMISSION",
+        "summary": "Daily entry quota — consumed/reserved vs zero-fill cancel",
+        "change_reason": "#1896 0-fill CANCELLED가 quota 소비하던 문제",
+        "real_policy_changed": True,
+        "research_only": False,
+        "evidence": [".run/k_upbit_startup_reconciliation_daily_quota.json"],
+    },
+    {
         "git_commit": "c7eab49",
         "change_type": CHANGE_LOGIC,
         "component": "ADMISSION",

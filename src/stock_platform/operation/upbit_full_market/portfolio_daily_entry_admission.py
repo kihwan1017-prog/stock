@@ -186,7 +186,7 @@ def try_final_admit_portfolio_daily_entry(
         "binding_id": binding_id,
         "candidate_id": candidate_id,
         "timezone": "Asia/Seoul",
-        "count_source": "REAL_AUTO_BUY_ORDER_DISTINCT",
+        "count_source": "REAL_AUTO_BUY_CONSUMED_OR_RESERVED",
     }
 
     if count_before >= limit:

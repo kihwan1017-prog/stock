@@ -322,6 +322,7 @@ def get_current_process(
     )
     stages = UPBIT_STAGES if market_u == "UPBIT" else KIWOOM_STAGES
     overlay = _runtime_overlay(session, market=market_u, uba_id=uba_id)
+    recovery = _recovery_layer(session, market=market_u, uba_id=uba_id)
     return {
         "market": market_u,
         "process_version": _pv_dict(pv) if pv else None,
@@ -336,6 +337,8 @@ def get_current_process(
         ],
         "summary": overlay.get("summary") or {},
         "first_zero": overlay.get("first_zero"),
+        "recovery_layer": recovery,
+        "daily_quota": overlay.get("daily_quota"),
         "research_layers": {
             "entry_shadow": "entry_signal_shadow_v1",
             "ma_exit_shadow": "ma_dead_cross_confirm2_v1",
@@ -818,6 +821,7 @@ def _runtime_overlay(
     node_detail: dict[str, Any] = {}
     first_zero = None
     summary: dict[str, Any] = {}
+    daily_quota: dict[str, Any] | None = None
     if market == "UPBIT":
         uba = uba_id or 1380
         slots = dict(
@@ -850,6 +854,31 @@ def _runtime_overlay(
             "open": open_n,
             "daily_note": "ops-status로 상세 확인",
         }
+        daily_quota = None
+        try:
+            from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+                resolve_portfolio_daily_entry_limit,
+            )
+            from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
+                summarize_portfolio_daily_entries,
+            )
+
+            lim = resolve_portfolio_daily_entry_limit(session, uba)
+            daily_quota = summarize_portfolio_daily_entries(
+                session, uba, daily_limit=lim
+            )
+            node_detail["ADMISSION"] = {
+                "entry_count": daily_quota.get("entry_count"),
+                "entry_limit": daily_quota.get("entry_limit"),
+                "consumed_count": daily_quota.get("consumed_count"),
+                "reserved_count": daily_quota.get("reserved_count"),
+                "zero_fill_cancelled_count": daily_quota.get(
+                    "zero_fill_cancelled_count"
+                ),
+                "label_ko": daily_quota.get("label_ko"),
+            }
+        except Exception:  # noqa: BLE001
+            daily_quota = None
         first_zero = None if open_n or waiting else "NONE"
     else:
         for s in KIWOOM_STAGES:
@@ -870,7 +899,195 @@ def _runtime_overlay(
         "node_detail": node_detail,
         "first_zero": first_zero,
         "summary": summary,
+        "daily_quota": daily_quota,
     }
+
+
+def _recovery_layer(
+    session: Session, *, market: str, uba_id: int | None
+) -> dict[str, Any]:
+    """Startup recovery 경로 — main trade path와 분리 표시."""
+
+    if market != "UPBIT":
+        return {"visible": False}
+    uba = int(uba_id or 1380)
+    try:
+        from stock_platform.broker.recovery_conflict_service import (
+            BrokerRecoveryConflictService,
+        )
+
+        blocking = BrokerRecoveryConflictService(
+            session
+        ).count_blocking_orders_for_uba(
+            uba, exclude_auto_protective_exits=True
+        )
+        auto_open = int(blocking.get("db_open") or 0)
+    except Exception:  # noqa: BLE001
+        auto_open = -1
+
+    # 최근 recovery audit
+    last_event = session.execute(
+        text(
+            """
+            SELECT event_type, created_at, detail
+            FROM operation.audit_event
+            WHERE event_type IN (
+              'UPBIT_STARTUP_OPEN_ORDER_RECONCILIATION',
+              'UPBIT_RECOVERY_ORDER_CANCEL',
+              'UPBIT_STARTUP_RESTORE_BLOCKED'
+            )
+            AND (
+              (detail->>'account_id')::bigint = :uba
+              OR (detail->>'user_broker_account_id')::bigint = :uba
+            )
+            ORDER BY created_at DESC LIMIT 1
+            """
+        ),
+        {"uba": uba},
+    ).mappings().first()
+
+    if auto_open > 0:
+        status = "BLOCKED"
+        label = "🔴 자동매매 복구 차단"
+        note = f"미해결 AUTO open {auto_open}건"
+    elif last_event and "RECONCILIATION" in str(last_event.get("event_type") or ""):
+        status = "RECONCILING"
+        label = "🟡 미체결 주문 정리 완료/최근"
+        note = "startup reconciliation"
+    else:
+        status = "OK"
+        label = "🟢 Recovery 완료"
+        note = "AUTO open=0"
+
+    stages = [
+        {"id": "RESTART", "label": "서버 시작"},
+        {"id": "OPEN_ORDER_SCAN", "label": "미체결 AUTO 확인"},
+        {"id": "REMOTE_SYNC", "label": "Remote 동기화"},
+        {"id": "TERMINAL_RECONCILE", "label": "체결/취소 reconcile"},
+        {"id": "SAFE_CANCEL", "label": "stale WAIT safe cancel"},
+        {"id": "DB_OPEN_ZERO", "label": "db_open=0"},
+        {"id": "LEASE_RESTORE", "label": "24H Lease 복구"},
+        {"id": "LIVE_ARM", "label": "LIVE / ARM"},
+        {"id": "STACK_READY", "label": "Execution Stack READY"},
+    ]
+    return {
+        "visible": True,
+        "status": status,
+        "label_ko": label,
+        "note": note,
+        "auto_open_count": auto_open,
+        "stages": stages,
+        "last_event": dict(last_event) if last_event else None,
+    }
+
+
+def capture_operational_recovery_trace(
+    session: Session,
+    *,
+    uba_id: int,
+    result: Any,
+    actor: str,
+) -> dict[str, Any]:
+    """OPERATIONAL_RECOVERY trace — REAL trade trace와 분리."""
+
+    from stock_platform.operation.autotrading_process_version.entities import (
+        AutoTradingExecutionTraceEntity,
+        AutoTradingTraceEventEntity,
+    )
+
+    pv = session.scalar(
+        select(AutoTradingProcessVersionEntity).where(
+            AutoTradingProcessVersionEntity.market == "UPBIT",
+            AutoTradingProcessVersionEntity.status == STATUS_ACTIVE,
+        )
+    )
+    now = _utc_now()
+    symbol = "RECOVERY"
+    for action in getattr(result, "actions", []) or []:
+        if getattr(action, "order_id", None):
+            symbol = f"ORDER:{action.order_id}"
+            break
+
+    trace = AutoTradingExecutionTraceEntity(
+        market="UPBIT",
+        broker_code="UPBIT",
+        user_broker_account_id=int(uba_id),
+        symbol=symbol[:40],
+        process_version_id=int(pv.process_version_id) if pv else None,
+        completeness=TRACE_PARTIAL,
+        outcome="OPERATIONAL_RECOVERY",
+        started_at=now,
+        closed_at=now,
+        summary_json={
+            "actor": actor,
+            "ok": bool(getattr(result, "ok", False)),
+            "auto_open_before": getattr(result, "auto_open_before", None),
+            "auto_open_after": getattr(result, "auto_open_after", None),
+            "manual_open_skipped": getattr(result, "manual_open_skipped", None),
+            "blockers": list(getattr(result, "blockers", []) or []),
+        },
+    )
+    session.add(trace)
+    session.flush()
+    tid = int(trace.trace_id)
+
+    stage_events = [
+        ("RESTART", "STARTUP", "서버 시작"),
+        ("OPEN_ORDER_SCAN", "SCAN", "AUTO open orders scanned"),
+        ("REMOTE_SYNC", "SYNC", "Remote status refresh"),
+        ("TERMINAL_RECONCILE", "RECONCILE", "Terminal reconcile"),
+        ("SAFE_CANCEL", "CANCEL", "Safe recovery cancel"),
+        ("DB_OPEN_ZERO", "GATE", "db_open recount"),
+        ("LEASE_RESTORE", "RESTORE", "Lease restore eligible"),
+        ("STACK_READY", "READY", "Stack restore"),
+    ]
+    for stage, etype, summary in stage_events:
+        session.add(
+            AutoTradingTraceEventEntity(
+                trace_id=tid,
+                market="UPBIT",
+                symbol=symbol[:40],
+                stage=stage,
+                event_type=etype,
+                occurred_at=now,
+                status="OK" if getattr(result, "ok", False) else "BLOCK",
+                reason_code=None,
+                summary=summary,
+                process_version_id=int(pv.process_version_id) if pv else None,
+                input_snapshot_json={},
+                output_snapshot_json={},
+                source_refs_json={"uba_id": int(uba_id), "actor": actor},
+            )
+        )
+    for action in getattr(result, "actions", []) or []:
+        session.add(
+            AutoTradingTraceEventEntity(
+                trace_id=tid,
+                market="UPBIT",
+                symbol=str(getattr(action, "side", "BUY") or "BUY")[:40],
+                stage="ORDER_ACTION",
+                event_type=str(getattr(action, "action", "ACTION")),
+                occurred_at=now,
+                status="OK",
+                reason_code=None,
+                summary=(
+                    f"order {getattr(action, 'order_id', '?')} "
+                    f"{getattr(action, 'action', '')}"
+                ),
+                process_version_id=int(pv.process_version_id) if pv else None,
+                input_snapshot_json={},
+                output_snapshot_json={
+                    "remote_before": getattr(action, "remote_state_before", None),
+                    "remote_after": getattr(action, "remote_state_after", None),
+                    "local_after": getattr(action, "local_status_after", None),
+                },
+                source_refs_json={
+                    "order_id": getattr(action, "order_id", None),
+                    "owner": getattr(action, "owner", None),
+                },
+            )
+        )
+    return {"trace_id": tid, "outcome": "OPERATIONAL_RECOVERY"}
 
 
 def _friendly_diff(r: AutoTradingProcessChangeEntity) -> dict[str, str]:
