@@ -2,11 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Alert,
   App,
   Button,
   Card,
-  Divider,
-  Drawer,
+  Collapse,
   Form,
   Input,
   InputNumber,
@@ -23,6 +23,8 @@ import * as adminApi from "@/features/admin/api/adminApi";
 import { resolveOrderTradingKind } from "@/features/admin/autotrading/orderOwnership";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { OrderFillDetailDrawer } from "@/features/admin/orders/OrderFillDetailDrawer";
+import { OrderFillMonitoringDashboard } from "@/features/admin/orders/OrderFillMonitoringDashboard";
 import {
   canShowResolveNotSubmittedButton,
   outboxStatusForOrder,
@@ -104,11 +106,6 @@ export default function AdminOrdersPage() {
     queryKey: queryKeys.admin.orders(filters),
     queryFn: () => adminApi.listOrders(filters),
   });
-  const detail = useQuery({
-    queryKey: queryKeys.admin.orderDetail(detailId ?? 0),
-    queryFn: () => adminApi.getOrder(detailId!),
-    enabled: detailId !== null,
-  });
   const outbox = useQuery({
     queryKey: queryKeys.admin.orderOutbox(),
     queryFn: adminApi.getOrderOutbox,
@@ -122,6 +119,9 @@ export default function AdminOrdersPage() {
     void queryClient.invalidateQueries({ queryKey: queryKeys.admin.orders({}) });
     void queryClient.invalidateQueries({ queryKey: queryKeys.admin.orderOutbox() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.admin.paperOrders() });
+    void queryClient.invalidateQueries({
+      queryKey: ["admin", "autotrading-performance"],
+    });
   };
 
   const submit = useMutation({
@@ -270,7 +270,7 @@ export default function AdminOrdersPage() {
   return (
     <AdminPageShell
       title="주문·체결"
-      description="진행/체결/취소·거부 통합 · AUTO/MANUAL provenance 표시 (strategy_id 미노출 시 strategy_code 휴리스틱)"
+      description="자동매매 주문·체결 모니터링 · 오늘 AUTO 기본 · 수동/Paper는 운영 도구"
       extra={
         <Space wrap>
           <Tag color={killActive ? "error" : "success"}>
@@ -283,442 +283,551 @@ export default function AdminOrdersPage() {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
-        <Tabs
-          activeKey={listTab}
-          onChange={(k) => setListTab(k as OrderListTab)}
-          items={(
-            Object.keys(ORDER_LIST_TAB_LABELS) as OrderListTab[]
-          ).map((key) => ({
-            key,
-            label: ORDER_LIST_TAB_LABELS[key],
-          }))}
-        />
-        <Card title="주문 등록 (POST /order-execution/submit)" size="small">
-          <Form
-            layout="inline"
-            onFinish={(v) =>
-              submit.mutate({
-                account_id: v.account_id,
-                broker_code: v.broker_code,
-                exchange_code: v.exchange_code,
-                environment: v.environment,
-                symbol: v.symbol,
-                side: v.side,
-                order_type: v.order_type,
-                quantity: v.quantity,
-                price: v.price,
-                account_number: v.account_number || undefined,
-                strategy_code: v.strategy_code || undefined,
-              })
-            }
-            initialValues={{
-              account_id: DEFAULT_PAPER_ACCOUNT_ID,
-              broker_code: "KIWOOM",
-              exchange_code: "KRX",
-              environment: "PAPER",
-              side: "BUY",
-              order_type: "LIMIT",
-              quantity: 1,
-            }}
-          >
-            <Form.Item name="account_id" label="account_id" rules={[{ required: true }]}>
-              <InputNumber min={1} />
-            </Form.Item>
-            <Form.Item name="account_number" label="account_number">
-              <Input placeholder="Risk 계좌번호" style={{ width: 140 }} />
-            </Form.Item>
-            <Form.Item name="broker_code" label="broker" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { value: "KIWOOM", label: "KIWOOM" },
-                  { value: "UPBIT", label: "UPBIT" },
-                ]}
-                style={{ width: 110 }}
-              />
-            </Form.Item>
-            <Form.Item name="exchange_code" label="exchange" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { value: "KRX", label: "KRX" },
-                  { value: "UPBIT", label: "UPBIT" },
-                ]}
-                style={{ width: 110 }}
-              />
-            </Form.Item>
-            <Form.Item name="environment" label="env">
-              <Select
-                options={[
-                  { value: "PAPER", label: "PAPER" },
-                  { value: "LIVE", label: "LIVE" },
-                ]}
-                style={{ width: 100 }}
-              />
-            </Form.Item>
-            <Form.Item name="symbol" label="symbol" rules={[{ required: true }]}>
-              <Input placeholder="005930 / KRW-BTC" style={{ width: 120 }} />
-            </Form.Item>
-            <Form.Item name="side" label="side" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { value: "BUY", label: "BUY" },
-                  { value: "SELL", label: "SELL" },
-                ]}
-                style={{ width: 90 }}
-              />
-            </Form.Item>
-            <Form.Item name="order_type" label="type">
-              <Select
-                options={[
-                  { value: "LIMIT", label: "LIMIT" },
-                  { value: "MARKET", label: "MARKET" },
-                ]}
-                style={{ width: 110 }}
-              />
-            </Form.Item>
-            <Form.Item name="quantity" label="qty" rules={[{ required: true }]}>
-              <InputNumber min={0.0001} />
-            </Form.Item>
-            <Form.Item name="price" label="price" rules={[{ required: true }]}>
-              <InputNumber min={0.01} />
-            </Form.Item>
-            <Form.Item name="strategy_code" label="strategy">
-              <Input allowClear style={{ width: 120 }} />
-            </Form.Item>
-            <PermissionButton
-              permission="trading:write"
-              type="primary"
-              htmlType="submit"
-              loading={submit.isPending}
-            >
-              주문 등록
-            </PermissionButton>
-          </Form>
-        </Card>
+        <OrderFillMonitoringDashboard onOpenDetail={setDetailId} />
 
-        <Form
-          layout="inline"
-          initialValues={filters}
-          onFinish={(v) =>
-            setFilters({
-              account_id: v.account_id,
-              symbol: v.symbol || undefined,
-              exchange_code: v.exchange_code || undefined,
-              broker_code: v.broker_code || undefined,
-              limit: v.limit ?? 50,
-              offset: v.offset ?? 0,
-            })
-          }
-        >
-          <Form.Item name="account_id" label="account_id">
-            <InputNumber min={1} />
-          </Form.Item>
-          <Form.Item name="broker_code" label="broker">
-            <Select
-              allowClear
-              options={[
-                { value: "KIWOOM", label: "KIWOOM" },
-                { value: "UPBIT", label: "UPBIT" },
-              ]}
-              style={{ width: 110 }}
-            />
-          </Form.Item>
-          <Form.Item name="exchange_code" label="exchange">
-            <Select
-              allowClear
-              options={[
-                { value: "KRX", label: "KRX" },
-                { value: "UPBIT", label: "UPBIT" },
-              ]}
-              style={{ width: 110 }}
-            />
-          </Form.Item>
-          <Form.Item name="symbol" label="symbol">
-            <Input allowClear placeholder="005930 / KRW-BTC" style={{ width: 140 }} />
-          </Form.Item>
-          <Form.Item label="AUTO/MANUAL">
-            <Select
-              value={ownershipFilter}
-              onChange={(v) => setOwnershipFilter(v)}
-              options={[
-                { value: "ALL", label: "전체" },
-                { value: "AUTO", label: "자동매매" },
-                { value: "MANUAL", label: "일반매매" },
-                { value: "UNKNOWN", label: "확인 필요" },
-              ]}
-              style={{ width: 120 }}
-            />
-          </Form.Item>
-          <Form.Item name="limit" label="limit">
-            <InputNumber min={1} max={500} />
-          </Form.Item>
-          <Form.Item name="offset" label="offset">
-            <InputNumber min={0} />
-          </Form.Item>
-          <Button type="primary" htmlType="submit">
-            검색
-          </Button>
-        </Form>
+        <Collapse
+          items={[
+            {
+              key: "ops",
+              label: "운영 도구",
+              children: (
+                <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+                  <Alert
+                    type="warning"
+                    showIcon
+                    title="수동 주문은 자동매매 외 운영 작업입니다."
+                    description="실계좌 수동주문은 기존 LIVE Gate · Risk · Kill Switch를 그대로 적용합니다."
+                  />
 
-        <AdminDataTable
-          title={`주문 목록 (${ORDER_LIST_TAB_LABELS[listTab]})`}
-          loading={list.isLoading}
-          error={list.error ? toApiError(list.error) : null}
-          rowKey={(r) => cell(r.order_id ?? r.id ?? JSON.stringify(r))}
-          columns={[
-            // M6-B: COMMON_READ + Admin-only broker + actions (순서 유지)
-            ...buildOrderReadColumns(ADMIN_ORDER_READ_PREFIX, {
-              titles: ADMIN_ORDER_READ_TITLES,
-              sorters: { order_id: true },
-            }),
-            { title: "거래소/증권사", dataIndex: "broker_code" },
-            {
-              title: "자동/수동",
-              key: "ownership",
-              width: 110,
-              render: (_: unknown, row: OrderRow) => {
-                const hint = resolveOrderTradingKind(row);
-                return (
-                  <Tag
-                    color={
-                      hint.kind === "AUTO"
-                        ? "processing"
-                        : hint.kind === "MANUAL"
-                          ? "default"
-                          : "warning"
-                    }
-                    title={hint.reason}
-                  >
-                    {hint.labelKo}
-                    {hint.confidence === "low" ? "*" : ""}
-                  </Tag>
-                );
-              },
-            },
-            ...buildOrderReadColumns(ADMIN_ORDER_READ_SUFFIX, {
-              titles: ADMIN_ORDER_READ_TITLES,
-              sorters: { symbol: true },
-            }),
-            {
-              title: "체결수량",
-              dataIndex: "filled_quantity",
-              render: (v: unknown) => cell(v),
-            },
-            {
-              title: "전략",
-              dataIndex: "strategy_code",
-              render: (v: unknown) => cell(v),
-            },
-            {
-              title: "거래소 UUID",
-              dataIndex: "broker_order_id",
-              render: (v: unknown) => cell(v),
-            },
-            {
-              title: "주문시각",
-              dataIndex: "created_at",
-              render: (v: unknown) => cell(v),
-            },
-            {
-              title: "취소",
-              render: (_, row) => (
-                <Space size={4} wrap>
-                  <PermissionButton
-                    permission="trading:write"
-                    size="small"
-                    danger
-                    loading={cancelTrading.isPending}
-                    onClick={() =>
-                      cancelTrading.mutate(Number(row.order_id ?? row.id))
-                    }
-                  >
-                    취소
-                  </PermissionButton>
-                  {(() => {
-                    const oid = Number(row.order_id ?? row.id);
-                    const ox = Number.isFinite(oid)
-                      ? outboxStatusForOrder(oid, outboxRows)
-                      : null;
-                    const showResolve = canShowResolveNotSubmittedButton(
-                      row,
-                      ox,
-                    );
-                    const showRetire =
-                      !showResolve && canShowUnsubmittedRetireButton(row);
-                    return (
-                      <>
-                        {showResolve ? (
-                          <PermissionButton
-                            permission="trading:write"
-                            size="small"
-                            danger
-                            onClick={() => void openResolveModal(row)}
+                  <Card title="수동 주문" size="small">
+                    <Typography.Paragraph type="secondary">
+                      기술 경로: 주문 실행 제출 API (관리자 전용)
+                    </Typography.Paragraph>
+                    <Form
+                      layout="inline"
+                      onFinish={(v) =>
+                        submit.mutate({
+                          account_id: v.account_id,
+                          broker_code: v.broker_code,
+                          exchange_code: v.exchange_code,
+                          environment: v.environment,
+                          symbol: v.symbol,
+                          side: v.side,
+                          order_type: v.order_type,
+                          quantity: v.quantity,
+                          price: v.price,
+                          account_number: v.account_number || undefined,
+                          strategy_code: v.strategy_code || undefined,
+                        })
+                      }
+                      initialValues={{
+                        account_id: DEFAULT_PAPER_ACCOUNT_ID,
+                        broker_code: "KIWOOM",
+                        exchange_code: "KRX",
+                        environment: "PAPER",
+                        side: "BUY",
+                        order_type: "LIMIT",
+                        quantity: 1,
+                      }}
+                    >
+                      <Form.Item
+                        name="account_id"
+                        label="account_id"
+                        rules={[{ required: true }]}
+                      >
+                        <InputNumber min={1} />
+                      </Form.Item>
+                      <Form.Item name="account_number" label="account_number">
+                        <Input placeholder="Risk 계좌번호" style={{ width: 140 }} />
+                      </Form.Item>
+                      <Form.Item
+                        name="broker_code"
+                        label="broker"
+                        rules={[{ required: true }]}
+                      >
+                        <Select
+                          options={[
+                            { value: "KIWOOM", label: "KIWOOM" },
+                            { value: "UPBIT", label: "UPBIT" },
+                          ]}
+                          style={{ width: 110 }}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="exchange_code"
+                        label="exchange"
+                        rules={[{ required: true }]}
+                      >
+                        <Select
+                          options={[
+                            { value: "KRX", label: "KRX" },
+                            { value: "UPBIT", label: "UPBIT" },
+                          ]}
+                          style={{ width: 110 }}
+                        />
+                      </Form.Item>
+                      <Form.Item name="environment" label="env">
+                        <Select
+                          options={[
+                            { value: "PAPER", label: "PAPER" },
+                            { value: "LIVE", label: "LIVE" },
+                          ]}
+                          style={{ width: 100 }}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="symbol"
+                        label="symbol"
+                        rules={[{ required: true }]}
+                      >
+                        <Input
+                          placeholder="005930 / KRW-BTC"
+                          style={{ width: 120 }}
+                        />
+                      </Form.Item>
+                      <Form.Item name="side" label="side" rules={[{ required: true }]}>
+                        <Select
+                          options={[
+                            { value: "BUY", label: "BUY" },
+                            { value: "SELL", label: "SELL" },
+                          ]}
+                          style={{ width: 90 }}
+                        />
+                      </Form.Item>
+                      <Form.Item name="order_type" label="type">
+                        <Select
+                          options={[
+                            { value: "LIMIT", label: "LIMIT" },
+                            { value: "MARKET", label: "MARKET" },
+                          ]}
+                          style={{ width: 110 }}
+                        />
+                      </Form.Item>
+                      <Form.Item
+                        name="quantity"
+                        label="qty"
+                        rules={[{ required: true }]}
+                      >
+                        <InputNumber min={0.0001} />
+                      </Form.Item>
+                      <Form.Item name="price" label="price" rules={[{ required: true }]}>
+                        <InputNumber min={0.01} />
+                      </Form.Item>
+                      <Form.Item name="strategy_code" label="strategy">
+                        <Input allowClear style={{ width: 120 }} />
+                      </Form.Item>
+                      <PermissionButton
+                        permission="trading:write"
+                        type="primary"
+                        htmlType="submit"
+                        loading={submit.isPending}
+                      >
+                        수동 주문
+                      </PermissionButton>
+                    </Form>
+                  </Card>
+
+                  <Collapse
+                    items={[
+                      {
+                        key: "paper",
+                        label: "Paper 주문 테스트",
+                        children: (
+                          <Space
+                            orientation="vertical"
+                            size={12}
+                            style={{ width: "100%" }}
                           >
-                            미전송 확인 후 폐기
-                          </PermissionButton>
-                        ) : null}
-                        {showRetire ? (
-                          <PermissionButton
-                            permission="trading:write"
-                            size="small"
-                            onClick={() => void openRetireModal(row)}
+                            <Typography.Paragraph type="secondary">
+                              기술 경로: Paper 주문 API · Risk+Kill Switch
+                            </Typography.Paragraph>
+                            <Form
+                              layout="inline"
+                              onFinish={(v) =>
+                                createPaper.mutate({
+                                  exchange_code: v.exchange_code,
+                                  symbol: v.symbol,
+                                  side: v.side,
+                                  order_type: v.order_type,
+                                  quantity: v.quantity,
+                                  price: v.price,
+                                  account_id: v.account_id,
+                                  account_number: v.account_number || undefined,
+                                })
+                              }
+                              initialValues={{
+                                account_id: DEFAULT_PAPER_ACCOUNT_ID,
+                                exchange_code: "KRX",
+                                side: "BUY",
+                                order_type: "LIMIT",
+                                quantity: 1,
+                                price: 70000,
+                              }}
+                            >
+                              <Form.Item name="account_id" label="paper account_id">
+                                <InputNumber min={1} />
+                              </Form.Item>
+                              <Form.Item name="account_number" label="account_number">
+                                <Input allowClear style={{ width: 140 }} />
+                              </Form.Item>
+                              <Form.Item
+                                name="exchange_code"
+                                label="exchange"
+                                rules={[{ required: true }]}
+                              >
+                                <Input style={{ width: 90 }} />
+                              </Form.Item>
+                              <Form.Item
+                                name="symbol"
+                                label="symbol"
+                                rules={[{ required: true }]}
+                              >
+                                <Input style={{ width: 100 }} />
+                              </Form.Item>
+                              <Form.Item
+                                name="side"
+                                label="side"
+                                rules={[{ required: true }]}
+                              >
+                                <Select
+                                  options={[
+                                    { value: "BUY", label: "BUY" },
+                                    { value: "SELL", label: "SELL" },
+                                  ]}
+                                  style={{ width: 90 }}
+                                />
+                              </Form.Item>
+                              <Form.Item name="order_type" label="type">
+                                <Select
+                                  options={[
+                                    { value: "LIMIT", label: "LIMIT" },
+                                    { value: "MARKET", label: "MARKET" },
+                                  ]}
+                                  style={{ width: 110 }}
+                                />
+                              </Form.Item>
+                              <Form.Item
+                                name="quantity"
+                                label="qty"
+                                rules={[{ required: true }]}
+                              >
+                                <InputNumber min={0.0001} />
+                              </Form.Item>
+                              <Form.Item
+                                name="price"
+                                label="price"
+                                rules={[{ required: true }]}
+                              >
+                                <InputNumber min={0.01} />
+                              </Form.Item>
+                              <PermissionButton
+                                permission="trading:write"
+                                type="primary"
+                                htmlType="submit"
+                                loading={createPaper.isPending}
+                              >
+                                Paper 주문
+                              </PermissionButton>
+                            </Form>
+                            <AdminDataTable
+                              title="모의거래 주문"
+                              loading={paperOrders.isLoading}
+                              error={
+                                paperOrders.error
+                                  ? toApiError(paperOrders.error)
+                                  : null
+                              }
+                              rowKey={(r) =>
+                                cell(r.order_id ?? JSON.stringify(r))
+                              }
+                              columns={[
+                                { title: "주문번호", dataIndex: "order_id" },
+                                { title: "종목", dataIndex: "symbol" },
+                                { title: "매수/매도", dataIndex: "side" },
+                                { title: "상태", dataIndex: "status_code" },
+                                {
+                                  title: "수량",
+                                  dataIndex: "requested_quantity",
+                                },
+                                {
+                                  title: "취소",
+                                  render: (_, row) => (
+                                    <PermissionButton
+                                      permission="trading:write"
+                                      size="small"
+                                      danger
+                                      loading={cancelPaper.isPending}
+                                      onClick={() =>
+                                        cancelPaper.mutate(Number(row.order_id))
+                                      }
+                                    >
+                                      취소
+                                    </PermissionButton>
+                                  ),
+                                },
+                              ]}
+                              dataSource={paperRows}
+                            />
+                          </Space>
+                        ),
+                      },
+                      {
+                        key: "legacy-list",
+                        label: "전체 주문 검색 · 미전송 폐기",
+                        children: (
+                          <Space
+                            orientation="vertical"
+                            size={12}
+                            style={{ width: "100%" }}
                           >
-                            미전송 주문 폐기
-                          </PermissionButton>
-                        ) : null}
-                      </>
-                    );
-                  })()}
+                            <Tabs
+                              activeKey={listTab}
+                              onChange={(k) => setListTab(k as OrderListTab)}
+                              items={(
+                                Object.keys(ORDER_LIST_TAB_LABELS) as OrderListTab[]
+                              ).map((key) => ({
+                                key,
+                                label: ORDER_LIST_TAB_LABELS[key],
+                              }))}
+                            />
+                            <Form
+                              layout="inline"
+                              initialValues={filters}
+                              onFinish={(v) =>
+                                setFilters({
+                                  account_id: v.account_id,
+                                  symbol: v.symbol || undefined,
+                                  exchange_code: v.exchange_code || undefined,
+                                  broker_code: v.broker_code || undefined,
+                                  limit: v.limit ?? 50,
+                                  offset: v.offset ?? 0,
+                                })
+                              }
+                            >
+                              <Form.Item name="account_id" label="account_id">
+                                <InputNumber min={1} />
+                              </Form.Item>
+                              <Form.Item name="broker_code" label="broker">
+                                <Select
+                                  allowClear
+                                  options={[
+                                    { value: "KIWOOM", label: "KIWOOM" },
+                                    { value: "UPBIT", label: "UPBIT" },
+                                  ]}
+                                  style={{ width: 110 }}
+                                />
+                              </Form.Item>
+                              <Form.Item name="exchange_code" label="exchange">
+                                <Select
+                                  allowClear
+                                  options={[
+                                    { value: "KRX", label: "KRX" },
+                                    { value: "UPBIT", label: "UPBIT" },
+                                  ]}
+                                  style={{ width: 110 }}
+                                />
+                              </Form.Item>
+                              <Form.Item name="symbol" label="symbol">
+                                <Input
+                                  allowClear
+                                  placeholder="005930 / KRW-BTC"
+                                  style={{ width: 140 }}
+                                />
+                              </Form.Item>
+                              <Form.Item label="AUTO/MANUAL">
+                                <Select
+                                  value={ownershipFilter}
+                                  onChange={(v) => setOwnershipFilter(v)}
+                                  options={[
+                                    { value: "ALL", label: "전체" },
+                                    { value: "AUTO", label: "자동매매" },
+                                    { value: "MANUAL", label: "일반매매" },
+                                    { value: "UNKNOWN", label: "확인 필요" },
+                                  ]}
+                                  style={{ width: 120 }}
+                                />
+                              </Form.Item>
+                              <Form.Item name="limit" label="limit">
+                                <InputNumber min={1} max={500} />
+                              </Form.Item>
+                              <Form.Item name="offset" label="offset">
+                                <InputNumber min={0} />
+                              </Form.Item>
+                              <Button type="primary" htmlType="submit">
+                                검색
+                              </Button>
+                            </Form>
+
+                            <AdminDataTable
+                              title={`주문 목록 (${ORDER_LIST_TAB_LABELS[listTab]})`}
+                              loading={list.isLoading}
+                              error={list.error ? toApiError(list.error) : null}
+                              rowKey={(r) =>
+                                cell(r.order_id ?? r.id ?? JSON.stringify(r))
+                              }
+                              columns={[
+                                ...buildOrderReadColumns(ADMIN_ORDER_READ_PREFIX, {
+                                  titles: ADMIN_ORDER_READ_TITLES,
+                                  sorters: { order_id: true },
+                                }),
+                                { title: "거래소/증권사", dataIndex: "broker_code" },
+                                {
+                                  title: "자동/수동",
+                                  key: "ownership",
+                                  width: 110,
+                                  render: (_: unknown, row: OrderRow) => {
+                                    const hint = resolveOrderTradingKind(row);
+                                    return (
+                                      <Tag
+                                        color={
+                                          hint.kind === "AUTO"
+                                            ? "processing"
+                                            : hint.kind === "MANUAL"
+                                              ? "default"
+                                              : "warning"
+                                        }
+                                        title={hint.reason}
+                                      >
+                                        {hint.labelKo}
+                                        {hint.confidence === "low" ? "*" : ""}
+                                      </Tag>
+                                    );
+                                  },
+                                },
+                                ...buildOrderReadColumns(ADMIN_ORDER_READ_SUFFIX, {
+                                  titles: ADMIN_ORDER_READ_TITLES,
+                                  sorters: { symbol: true },
+                                }),
+                                {
+                                  title: "체결수량",
+                                  dataIndex: "filled_quantity",
+                                  render: (v: unknown) => cell(v),
+                                },
+                                {
+                                  title: "전략",
+                                  dataIndex: "strategy_code",
+                                  render: (v: unknown) => cell(v),
+                                },
+                                {
+                                  title: "거래소 UUID",
+                                  dataIndex: "broker_order_id",
+                                  render: (v: unknown) => cell(v),
+                                },
+                                {
+                                  title: "주문시각",
+                                  dataIndex: "created_at",
+                                  render: (v: unknown) => cell(v),
+                                },
+                                {
+                                  title: "취소",
+                                  render: (_, row) => (
+                                    <Space size={4} wrap>
+                                      <PermissionButton
+                                        permission="trading:write"
+                                        size="small"
+                                        danger
+                                        loading={cancelTrading.isPending}
+                                        onClick={() =>
+                                          cancelTrading.mutate(
+                                            Number(row.order_id ?? row.id),
+                                          )
+                                        }
+                                      >
+                                        취소
+                                      </PermissionButton>
+                                      {(() => {
+                                        const oid = Number(row.order_id ?? row.id);
+                                        const ox = Number.isFinite(oid)
+                                          ? outboxStatusForOrder(oid, outboxRows)
+                                          : null;
+                                        const showResolve =
+                                          canShowResolveNotSubmittedButton(row, ox);
+                                        const showRetire =
+                                          !showResolve &&
+                                          canShowUnsubmittedRetireButton(row);
+                                        return (
+                                          <>
+                                            {showResolve ? (
+                                              <PermissionButton
+                                                permission="trading:write"
+                                                size="small"
+                                                danger
+                                                onClick={() =>
+                                                  void openResolveModal(row)
+                                                }
+                                              >
+                                                미전송 확인 후 폐기
+                                              </PermissionButton>
+                                            ) : null}
+                                            {showRetire ? (
+                                              <PermissionButton
+                                                permission="trading:write"
+                                                size="small"
+                                                onClick={() =>
+                                                  void openRetireModal(row)
+                                                }
+                                              >
+                                                미전송 주문 폐기
+                                              </PermissionButton>
+                                            ) : null}
+                                          </>
+                                        );
+                                      })()}
+                                    </Space>
+                                  ),
+                                },
+                                {
+                                  title: "상세",
+                                  render: (_, row) => (
+                                    <Button
+                                      size="small"
+                                      onClick={() =>
+                                        setDetailId(Number(row.order_id ?? row.id))
+                                      }
+                                    >
+                                      보기
+                                    </Button>
+                                  ),
+                                },
+                              ]}
+                              dataSource={filteredRows}
+                              pagination={{
+                                pageSize: filters.limit,
+                                current:
+                                  Math.floor(filters.offset / filters.limit) + 1,
+                                onChange: (page, pageSize) =>
+                                  setFilters((prev) => ({
+                                    ...prev,
+                                    limit: pageSize,
+                                    offset: (page - 1) * pageSize,
+                                  })),
+                              }}
+                            />
+
+                            <AdminJsonCard
+                              title="주문 대기열(Outbox)"
+                              loading={outbox.isLoading}
+                              error={
+                                outbox.error ? toApiError(outbox.error) : null
+                              }
+                              data={outbox.data}
+                            />
+                          </Space>
+                        ),
+                      },
+                    ]}
+                  />
                 </Space>
               ),
             },
-            {
-              title: "상세",
-              render: (_, row) => (
-                <Button
-                  size="small"
-                  onClick={() => setDetailId(Number(row.order_id ?? row.id))}
-                >
-                  보기
-                </Button>
-              ),
-            },
           ]}
-          dataSource={filteredRows}
-          pagination={{
-            pageSize: filters.limit,
-            current: Math.floor(filters.offset / filters.limit) + 1,
-            onChange: (page, pageSize) =>
-              setFilters((prev) => ({
-                ...prev,
-                limit: pageSize,
-                offset: (page - 1) * pageSize,
-              })),
-          }}
-        />
-
-        <Divider />
-
-        <Card title="Paper Trading (POST /paper-orders · Risk+Kill Switch)" size="small">
-          <Form
-            layout="inline"
-            onFinish={(v) =>
-              createPaper.mutate({
-                exchange_code: v.exchange_code,
-                symbol: v.symbol,
-                side: v.side,
-                order_type: v.order_type,
-                quantity: v.quantity,
-                price: v.price,
-                account_id: v.account_id,
-                account_number: v.account_number || undefined,
-              })
-            }
-            initialValues={{
-              account_id: DEFAULT_PAPER_ACCOUNT_ID,
-              exchange_code: "KRX",
-              side: "BUY",
-              order_type: "LIMIT",
-              quantity: 1,
-              price: 70000,
-            }}
-          >
-            <Form.Item name="account_id" label="paper account_id">
-              <InputNumber min={1} />
-            </Form.Item>
-            <Form.Item name="account_number" label="account_number">
-              <Input allowClear style={{ width: 140 }} />
-            </Form.Item>
-            <Form.Item name="exchange_code" label="exchange" rules={[{ required: true }]}>
-              <Input style={{ width: 90 }} />
-            </Form.Item>
-            <Form.Item name="symbol" label="symbol" rules={[{ required: true }]}>
-              <Input style={{ width: 100 }} />
-            </Form.Item>
-            <Form.Item name="side" label="side" rules={[{ required: true }]}>
-              <Select
-                options={[
-                  { value: "BUY", label: "BUY" },
-                  { value: "SELL", label: "SELL" },
-                ]}
-                style={{ width: 90 }}
-              />
-            </Form.Item>
-            <Form.Item name="order_type" label="type">
-              <Select
-                options={[
-                  { value: "LIMIT", label: "LIMIT" },
-                  { value: "MARKET", label: "MARKET" },
-                ]}
-                style={{ width: 110 }}
-              />
-            </Form.Item>
-            <Form.Item name="quantity" label="qty" rules={[{ required: true }]}>
-              <InputNumber min={0.0001} />
-            </Form.Item>
-            <Form.Item name="price" label="price" rules={[{ required: true }]}>
-              <InputNumber min={0.01} />
-            </Form.Item>
-            <PermissionButton
-              permission="trading:write"
-              type="primary"
-              htmlType="submit"
-              loading={createPaper.isPending}
-            >
-              Paper 주문
-            </PermissionButton>
-          </Form>
-        </Card>
-
-        <AdminDataTable
-          title="모의거래 주문"
-          loading={paperOrders.isLoading}
-          error={paperOrders.error ? toApiError(paperOrders.error) : null}
-          rowKey={(r) => cell(r.order_id ?? JSON.stringify(r))}
-          columns={[
-            { title: "주문번호", dataIndex: "order_id" },
-            { title: "종목", dataIndex: "symbol" },
-            { title: "매수/매도", dataIndex: "side" },
-            { title: "상태", dataIndex: "status_code" },
-            { title: "수량", dataIndex: "requested_quantity" },
-            {
-              title: "취소",
-              render: (_, row) => (
-                <PermissionButton
-                  permission="trading:write"
-                  size="small"
-                  danger
-                  loading={cancelPaper.isPending}
-                  onClick={() => cancelPaper.mutate(Number(row.order_id))}
-                >
-                  취소
-                </PermissionButton>
-              ),
-            },
-          ]}
-          dataSource={paperRows}
-        />
-
-        <AdminJsonCard
-          title="주문 대기열(Outbox)"
-          loading={outbox.isLoading}
-          error={outbox.error ? toApiError(outbox.error) : null}
-          data={outbox.data}
         />
       </Space>
 
-      <Drawer
-        title={`주문 상세 #${detailId}`}
-        open={detailId !== null}
+      <OrderFillDetailDrawer
+        orderId={detailId}
         onClose={() => setDetailId(null)}
-        size={480}
-      >
-        <AdminJsonCard
-          title="GET /orders/{id}"
-          loading={detail.isLoading}
-          error={detail.error ? toApiError(detail.error) : null}
-          data={detail.data}
-        />
-      </Drawer>
+      />
 
       <Modal
         title="미전송 LIVE 주문을 내부 폐기하시겠습니까?"
@@ -746,55 +855,29 @@ export default function AdminOrdersPage() {
         }}
         destroyOnHidden
       >
-        <Space orientation="vertical" size="small" style={{ width: "100%" }}>
-          <Typography.Text>
-            Order ID: {cell(retirePreview?.order_id ?? retireRow?.order_id)}
-          </Typography.Text>
-          <Typography.Text>
-            UBA: {cell(retirePreview?.user_broker_account_id)}
-          </Typography.Text>
-          <Typography.Text>
-            종목: {cell(retirePreview?.symbol ?? retireRow?.symbol)}
-          </Typography.Text>
-          <Typography.Text>
-            방향: {cell(retirePreview?.side ?? retireRow?.side_code)}
-          </Typography.Text>
-          <Typography.Text>
-            주문금액:{" "}
-            {cell(
-              retirePreview?.estimated_amount ??
-                (retireRow?.order_quantity != null &&
-                retireRow?.order_price != null
-                  ? Number(retireRow.order_quantity) *
-                    Number(retireRow.order_price)
-                  : null),
-            )}
-          </Typography.Text>
-          <Typography.Text type="secondary">
-            broker UUID 없음 · submission attempt 0
-          </Typography.Text>
-          <Typography.Text type="warning">
-            업비트에는 취소 요청을 보내지 않습니다.
-          </Typography.Text>
-          <Input.TextArea
-            rows={3}
-            value={retireReason}
-            onChange={(e) => setRetireReason(e.target.value)}
-            placeholder="폐기 사유 (필수)"
-            maxLength={2000}
-          />
-        </Space>
+        <Typography.Paragraph type="secondary">
+          Upbit API를 호출하지 않습니다. 내부 주문/outbox만 정리합니다.
+        </Typography.Paragraph>
+        {retirePreview ? (
+          <AdminJsonCard title="미리보기" data={retirePreview} />
+        ) : null}
+        <Input.TextArea
+          rows={3}
+          value={retireReason}
+          onChange={(e) => setRetireReason(e.target.value)}
+          placeholder="폐기 사유 (필수)"
+        />
       </Modal>
 
       <Modal
-        title="미전송 확인 후 폐기 (CONFIRMED_NOT_SUBMITTED)"
+        title="미전송 확인 후 폐기"
         open={resolveRow != null}
         onCancel={() => {
           setResolveRow(null);
           setResolvePreview(null);
           setResolveReason("");
         }}
-        okText="미전송 확인 후 폐기"
+        okText="확인 후 폐기"
         okButtonProps={{
           danger: true,
           disabled: resolveReason.trim().length < 1,
@@ -812,35 +895,16 @@ export default function AdminOrdersPage() {
         }}
         destroyOnHidden
       >
-        <Space orientation="vertical" size="small" style={{ width: "100%" }}>
-          <Typography.Text type="warning">{RESOLVE_WARNING}</Typography.Text>
-          <Typography.Text>
-            Order ID: {cell(resolvePreview?.order_id ?? resolveRow?.order_id)}
-          </Typography.Text>
-          <Typography.Text>
-            Outbox: {cell(resolvePreview?.outbox_id)} (
-            {cell(resolvePreview?.outbox_status)})
-          </Typography.Text>
-          <Typography.Text>
-            UBA: {cell(resolvePreview?.user_broker_account_id)}
-          </Typography.Text>
-          <Typography.Text>
-            identifier: {cell(resolvePreview?.identifier)}
-          </Typography.Text>
-          <Typography.Text type="secondary">
-            로컬 실패 증거: {cell(resolvePreview?.local_failure_evidence)}
-          </Typography.Text>
-          <Typography.Text type="secondary">
-            일반 미전송 폐기는 계속 BLOCK · POST /v1/orders 없음
-          </Typography.Text>
-          <Input.TextArea
-            rows={3}
-            value={resolveReason}
-            onChange={(e) => setResolveReason(e.target.value)}
-            placeholder="확인·폐기 사유 (필수)"
-            maxLength={2000}
-          />
-        </Space>
+        <Alert type="warning" showIcon title={RESOLVE_WARNING} />
+        {resolvePreview ? (
+          <AdminJsonCard title="미리보기" data={resolvePreview} />
+        ) : null}
+        <Input.TextArea
+          rows={3}
+          value={resolveReason}
+          onChange={(e) => setResolveReason(e.target.value)}
+          placeholder="사유 (필수)"
+        />
       </Modal>
     </AdminPageShell>
   );

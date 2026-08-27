@@ -1003,6 +1003,16 @@ export async function getAdminAutotradingProcessVersions(
   return getJson("/admin/autotrading/process-versions", { market });
 }
 
+export async function getAdminUbaPipelineLiveness(
+  ubaId: number,
+  params?: { window_minutes?: number },
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/autotrading/uba/${ubaId}/pipeline-liveness`,
+    params,
+  );
+}
+
 export async function getAdminAutotradingProcessChanges(
   market?: string,
 ): Promise<JsonValue> {
