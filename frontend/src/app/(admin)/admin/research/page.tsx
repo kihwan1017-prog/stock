@@ -20,6 +20,7 @@ import {
 import { useStrategyMarketFromUrl } from "@/features/admin/strategy-analysis/MarketSelector";
 import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/UpbitResearchCollectionStatusPanel";
 import { UpbitMaExitForwardShadowPanel } from "@/features/admin/upbit/UpbitMaExitForwardShadowPanel";
+import { UpbitEntrySignalShadowPanel } from "@/features/admin/upbit/UpbitEntrySignalShadowPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
@@ -88,6 +89,11 @@ function ResearchWorkspaceBody() {
         key: "exit-forward-shadow",
         label: "Exit Forward Shadow",
         children: <UpbitMaExitForwardShadowPanel ubaId={ubaId} />,
+      },
+      {
+        key: "entry-signal-shadow",
+        label: "Entry Signal Shadow",
+        children: <UpbitEntrySignalShadowPanel ubaId={ubaId} />,
       },
       {
         key: "experiments",

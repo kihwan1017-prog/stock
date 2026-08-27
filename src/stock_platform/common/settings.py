@@ -345,6 +345,8 @@ class Settings(BaseSettings):
     upbit_scanner_shadow_evaluator_interval_seconds: float = 180.0
     # MA exit forward shadow — Confirm2 vs REAL baseline (연구용, REAL 정책 0 변경)
     upbit_ma_exit_forward_shadow_enabled: bool = True
+    upbit_entry_signal_shadow_enabled: bool = True
+    upbit_entry_signal_shadow_interval_seconds: float = 120.0
     upbit_ma_exit_forward_shadow_deployed_at: str = ""
     upbit_ma_exit_forward_shadow_interval_seconds: float = 60.0
     upbit_scanner_shadow_mismatch_watch_enabled: bool = True

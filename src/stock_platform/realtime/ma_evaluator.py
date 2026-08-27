@@ -623,6 +623,23 @@ class MovingAverageStrategyEvaluator:
                     reason_code=None,
                     snapshot=detail,
                 )
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.hooks import (
+                        maybe_enroll_entry_signal_shadow,
+                    )
+
+                    maybe_enroll_entry_signal_shadow(
+                        uba_id=int(uba_id),
+                        symbol=event.symbol.upper(),
+                        short_ma=short_avg,
+                        long_ma=long_avg,
+                        snap=snap,
+                        decision="BLOCK",
+                        block_reason=block,
+                        detail=detail,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             return None
         signal = self._emit(
             event,
@@ -657,6 +674,26 @@ class MovingAverageStrategyEvaluator:
                     reason_code=REASON_BULLISH,
                     snapshot=detail,
                 )
+            # RESEARCH_ONLY forward shadow — REAL path 불변 / fail-open
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.hooks import (
+                    maybe_enroll_entry_signal_shadow,
+                )
+
+                maybe_enroll_entry_signal_shadow(
+                    uba_id=int(uba_id),
+                    symbol=event.symbol.upper(),
+                    short_ma=short_avg,
+                    long_ma=long_avg,
+                    snap=snap,
+                    decision="BUY" if signal is not None else "TECHNICAL_PASS",
+                    block_reason=(
+                        None if signal is not None else "SIGNAL_EMIT_SUPPRESSED"
+                    ),
+                    detail=detail,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         return signal
 
     def reset(self, symbol: str | None = None) -> None:

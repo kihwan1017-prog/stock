@@ -743,6 +743,22 @@ export async function getAdminUpbitResearchMaExitForwardShadowRows(
   return getJson("/admin/upbit/research/ma-exit-forward-shadow/rows", params);
 }
 
+/** Entry Signal Shadow E0–E4 — RESEARCH_ONLY (READ ONLY) */
+export async function getAdminUpbitResearchEntrySignalShadowSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/entry-signal-shadow/summary", {
+    uba_id: ubaId ?? 1380,
+    include_replay: true,
+  });
+}
+
+export async function getAdminUpbitResearchEntrySignalShadowRows(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/entry-signal-shadow/rows", params);
+}
+
 export async function getAdminUpbitResearchMarketContext(
   params?: Params,
 ): Promise<JsonValue> {

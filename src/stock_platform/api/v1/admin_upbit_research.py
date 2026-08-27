@@ -206,3 +206,37 @@ def list_ma_exit_forward_shadow_rows(
         page=page,
         page_size=page_size,
     )
+
+
+@router.get("/entry-signal-shadow/summary")
+def get_entry_signal_shadow_summary(
+    uba_id: int = Query(default=1380, ge=1),
+    include_replay: bool = Query(default=True),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Entry Signal Shadow E0–E4 — RESEARCH_ONLY, REAL policy unchanged."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.summary import (
+        summarize_entry_signal_shadow,
+    )
+
+    return summarize_entry_signal_shadow(
+        session,
+        user_broker_account_id=uba_id,
+        include_replay=include_replay,
+    )
+
+
+@router.get("/entry-signal-shadow/rows")
+def list_entry_signal_shadow_rows_api(
+    uba_id: int = Query(default=1380, ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.summary import (
+        list_entry_signal_shadow_rows,
+    )
+
+    return list_entry_signal_shadow_rows(
+        session, user_broker_account_id=uba_id, limit=limit
+    )
