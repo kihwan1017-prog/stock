@@ -57,6 +57,8 @@ export const adminRoutes = {
   kiwoom: "/admin/kiwoom",
   upbit: "/admin/upbit",
   upbitMarkets: "/admin/upbit/markets",
+  /** 통합 시장 데이터 Explorer */
+  marketData: "/admin/market-data",
   /** UPBIT 자동매매 설정 워크스페이스 (6탭) */
   upbitAutotrading: "/admin/upbit/autotrading",
   /** 단일 운영자 — Broker Workspace canonical */
@@ -228,6 +230,7 @@ const adminTitles: Record<string, string> = {
   [adminRoutes.kiwoom]: "키움 계좌",
   [adminRoutes.upbit]: "업비트 계좌",
   [adminRoutes.upbitMarkets]: "업비트 시세",
+  [adminRoutes.marketData]: "시장 데이터",
   [adminRoutes.upbitAutotrading]: "업비트 자동매매",
   [adminRoutes.autotradingUpbit]: "업비트 자동매매",
   [adminRoutes.autotradingProcess]: "프로세스·버전",

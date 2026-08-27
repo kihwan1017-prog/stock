@@ -119,4 +119,14 @@ def build_job_registry(
         handler=handlers.run_indicator_daily_batch,
     )
 
+    registry.register(
+        name="kiwoom_krx_daily_sync",
+        group="MARKET",
+        description=(
+            "KRX 활성 STOCK/ETF 일봉을 동기화합니다. "
+            "trading universe와 collection universe를 분리 유지합니다."
+        ),
+        handler=handlers.run_kiwoom_krx_daily_sync,
+    )
+
     return registry

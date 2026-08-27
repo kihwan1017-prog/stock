@@ -25,6 +25,19 @@ from stock_platform.collectors.upbit.instrument_sync_service import (
 from stock_platform.collectors.upbit.sync_service import (
     UpbitDailySyncService,
 )
+from stock_platform.collectors.kiwoom.client_factory import (
+    build_kiwoom_market_data_client,
+)
+from stock_platform.collectors.kiwoom.daily_batch_sync_service import (
+    KiwoomDailyBatchSyncService,
+    SCREENER_LOOKBACK_DAYS,
+)
+from stock_platform.collectors.kiwoom.daily_collector import (
+    KiwoomDailyCollector,
+)
+from stock_platform.collectors.kiwoom.sync_service import (
+    KiwoomDailySyncService,
+)
 from stock_platform.common.settings import get_settings
 from stock_platform.markets.repository import (
     InstrumentRepository,
@@ -357,5 +370,58 @@ class SchedulerHandlers:
                 else None
             ),
         )
+        return result.to_dict()
+
+    async def run_kiwoom_krx_daily_sync(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """KRX 활성 종목 일봉 배치 동기화."""
+
+        instrument_service = InstrumentService(
+            InstrumentRepository(self._session)
+        )
+        price_service = PriceDailyService(
+            PriceDailyRepository(self._session),
+            instrument_service=instrument_service,
+        )
+
+        start_date = (
+            date.fromisoformat(str(payload["start_date"]))
+            if payload.get("start_date")
+            else None
+        )
+        end_date = (
+            date.fromisoformat(str(payload["end_date"]))
+            if payload.get("end_date")
+            else None
+        )
+        symbol_limit = payload.get("symbol_limit")
+
+        async with build_kiwoom_market_data_client(
+            use_real_rest=bool(payload.get("use_real_rest", True)),
+        ) as client:
+            result = await KiwoomDailyBatchSyncService(
+                daily_sync=KiwoomDailySyncService(
+                    collector=KiwoomDailyCollector(client),
+                    price_service=price_service,
+                    instrument_service=instrument_service,
+                ),
+                instrument_service=instrument_service,
+            ).sync(
+                start_date=start_date,
+                end_date=end_date,
+                lookback_days=int(
+                    payload.get("lookback_days", SCREENER_LOOKBACK_DAYS)
+                ),
+                resume=bool(payload.get("resume", True)),
+                symbol_limit=(
+                    int(symbol_limit) if symbol_limit is not None else None
+                ),
+                batch_size=int(payload.get("batch_size", 20)),
+                delay_seconds=float(payload.get("delay_seconds", 0.2)),
+                max_retries=int(payload.get("max_retries", 2)),
+            )
+
         return result.to_dict()
 

@@ -1,0 +1,69 @@
+{
+  "FINAL_VERDICT": "UNIFIED_MARKET_DATA_EXPLORER_COMPLETE",
+  "CURRENT_UTC": "2026-08-27T16:00:37.412353+00:00",
+  "ROOT_CAUSE": {
+    "UPBIT_DAILY_STALE_ROOT": "upbit_krw_daily_sync는 JobRegistry에만 등록되어 있고 AutomaticScheduler cron에 없음. 2026-08-01 이후 batch 실행 없음. 자동매매 관심 ~11종목만 per-symbol resume 동기화(2026-08-18), 나머지 ~269종목은 2026-07-31에서 정지.",
+    "KIWOOM_DAILY_STALE_ROOT": "KiwoomDailyBatchSyncService가 수동 API만 있었고 scheduler 미등록이었음. 이번 STEP에서 JobRegistry + AutomaticScheduler cron 등록. 2026-08-18 이후 자동 batch 없어 STALE."
+  },
+  "UPBIT": {
+    "DAILY_COLLECTION": "SCHEDULER_GAP + PARTIAL_MANUAL_SYMBOL_SYNC",
+    "LATEST_DATE": "2026-08-19",
+    "EXPECTED_DATE": "2026-08-28",
+    "LAG": 9,
+    "SYMBOLS": 285,
+    "GAPS": 285,
+    "QUALITY": "BROKEN"
+  },
+  "KIWOOM": {
+    "DAILY_COLLECTION": "NO_SCHEDULER + MANUAL_BATCH_ONLY (FIXED_IN_THIS_STEP)",
+    "LATEST_DATE": "2026-08-19",
+    "EXPECTED_DATE": "2026-08-28",
+    "LAG": 9,
+    "SYMBOLS": 4243,
+    "GAPS": 4243,
+    "QUALITY": "BROKEN"
+  },
+  "SCHEDULER": {
+    "UPBIT_DAILY_JOB_REGISTERED": true,
+    "KIWOOM_DAILY_JOB_REGISTERED": true,
+    "AUTOMATIC_CRON": [
+      "ai_orchestration_daily",
+      "candidate_screening_daily",
+      "kiwoom_krx_daily_sync_daily",
+      "portfolio_equity_snapshot_daily",
+      "position_planning_daily",
+      "upbit_krw_daily_sync_daily"
+    ]
+  },
+  "EXPLORER": {
+    "ROUTE": "/admin/market-data",
+    "API": [
+      "/api/v1/admin/market-data/symbols",
+      "/api/v1/admin/market-data/candles",
+      "/api/v1/admin/market-data/status",
+      "/api/v1/admin/market-data/quality"
+    ]
+  },
+  "KIWOOM_INTRADAY_POLICY": {
+    "CURRENT": "KRX minute/tick=0 — historical intraday 미수집 정책",
+    "RECOMMENDED": "Option C + E: trading universe minute + realtime feed",
+    "ESTIMATED_STORAGE": {
+      "krx_symbol_count": 4243,
+      "minute_1d_rows": 1654770,
+      "minute_1y_rows": 417002040,
+      "minute_1y_gb": 46.6,
+      "tick_1d_rows": 21215000,
+      "tick_1y_gb": 597.48
+    }
+  },
+  "REGRESSION": {
+    "PROCESS_VERSION_CHANGED": false,
+    "MARKET_DATA_COLLECTION_CHANGE": true
+  },
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "REAL_POLICY_MUTATION": 0,
+    "LIVE_ARM_MANUAL_MUTATION": 0,
+    "HISTORICAL_DATA_DELETE": 0
+  }
+}

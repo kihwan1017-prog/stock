@@ -649,6 +649,12 @@ class Settings(BaseSettings):
     # STEP66 — 장후 자산 스냅샷 (기본 15:40 KST)
     scheduler_equity_snapshot_hour: int = 15
     scheduler_equity_snapshot_minute: int = 40
+    # Market data daily collection (AutomaticScheduler cron)
+    scheduler_upbit_daily_hour: int = 2
+    scheduler_upbit_daily_minute: int = 10
+    scheduler_kiwoom_daily_hour: int = 18
+    scheduler_kiwoom_daily_minute: int = 30
+    market_data_backfill_batch_size: int = 20
 
     # STEP 8-5-3 — Broker Recovery Scheduler
     recovery_scheduler_enabled: bool = True

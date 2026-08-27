@@ -6091,3 +6091,43 @@ export async function executeMemberCleanup(body: {
 }): Promise<JsonValue> {
   return postJson("/admin/member-cleanup/execute", body);
 }
+
+/** Admin Market Data Explorer */
+export async function getMarketDataSymbols(params: {
+  market: string;
+  q?: string;
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/market-data/symbols", params);
+}
+
+export async function getMarketDataCandles(params: {
+  market: string;
+  symbol: string;
+  timeframe?: string;
+  from?: string;
+  to?: string;
+  year?: number;
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/market-data/candles", params);
+}
+
+export async function getMarketDataSymbolInfo(params: {
+  market: string;
+  symbol: string;
+}): Promise<JsonValue> {
+  return getJson(
+    `/admin/market-data/symbols/${encodeURIComponent(params.market)}/${encodeURIComponent(params.symbol)}/info`,
+  );
+}
+
+export async function getMarketDataStatus(): Promise<JsonValue> {
+  return getJson("/admin/market-data/status");
+}
+
+export async function getMarketDataQuality(params?: {
+  market?: string;
+}): Promise<JsonValue> {
+  return getJson("/admin/market-data/quality", params);
+}

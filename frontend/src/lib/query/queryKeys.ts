@@ -199,6 +199,15 @@ export const queryKeys = {
     auditEvents: (params?: object) =>
       ["admin", "audit-events", params ?? {}] as const,
     upbitMarkets: () => ["admin", "upbit-markets"] as const,
+    marketDataSymbols: (market: string) =>
+      ["admin", "market-data", "symbols", market] as const,
+    marketDataCandles: (params: object) =>
+      ["admin", "market-data", "candles", params] as const,
+    marketDataSymbolInfo: (market: string, symbol: string) =>
+      ["admin", "market-data", "symbol-info", market, symbol] as const,
+    marketDataStatus: () => ["admin", "market-data", "status"] as const,
+    marketDataQuality: (market: string) =>
+      ["admin", "market-data", "quality", market] as const,
     upbitAccountStatus: () => ["admin", "upbit-account-status"] as const,
     upbitAccountSnapshot: () => ["admin", "upbit-account-snapshot"] as const,
     upbitRateLimits: () => ["admin", "upbit-rate-limits"] as const,

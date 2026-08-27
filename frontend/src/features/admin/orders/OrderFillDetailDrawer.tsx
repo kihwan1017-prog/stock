@@ -248,6 +248,17 @@ export function OrderFillDetailDrawer({ orderId, onClose }: Props) {
         ) : null}
 
         <Space wrap>
+          {detail.symbol ? (
+            <Link
+              href={`${adminRoutes.marketData}?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(String(detail.symbol))}${
+                detail.filled_at || detail.created_at
+                  ? `&date=${encodeURIComponent(String(detail.filled_at ?? detail.created_at).slice(0, 10))}`
+                  : ""
+              }`}
+            >
+              시장 데이터 보기
+            </Link>
+          ) : null}
           <Link href={adminRoutes.autotradingProcess}>프로세스·버전 화면</Link>
           {Number.isFinite(pvId) && pvId > 0 ? (
             <Link

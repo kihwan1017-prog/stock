@@ -187,10 +187,19 @@ export const adminMenuItems: AdminMenuItem[] = [
         permission: "menu:upbit",
         matchPaths: [
           adminRoutes.marketAnalysis,
+          adminRoutes.marketData,
           adminRoutes.upbitMarkets,
           adminRoutes.indicators,
           adminRoutes.aiMarketAnalyses,
         ],
+      },
+      {
+        key: "market-data",
+        label: "시장 데이터",
+        path: adminRoutes.marketData,
+        icon: <BarChartOutlined />,
+        enabled: true,
+        permission: "menu:upbit",
       },
       {
         key: "news-disclosures",

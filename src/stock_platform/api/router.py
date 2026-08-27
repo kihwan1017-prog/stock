@@ -230,6 +230,7 @@ from stock_platform.api.v1.live_trading_transition import (
     router as live_trading_transition_router,
 )
 from stock_platform.api.v1.market_data_router import router as market_data_router
+from stock_platform.api.v1.admin_market_data import router as admin_market_data_router
 from stock_platform.api.v1.market_quality import (
     router as market_quality_router,
 )
@@ -522,6 +523,7 @@ _ROUTER_GROUPS = (
     docs_cms_router,
     prices_router,
     market_data_router,
+    admin_market_data_router,
     market_quality_router,
     kiwoom_router,
     upbit_router,

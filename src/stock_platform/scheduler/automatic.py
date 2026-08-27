@@ -50,6 +50,8 @@ class AutomaticScheduler:
             "ai_orchestration_daily",
             "position_planning_daily",
             "portfolio_equity_snapshot_daily",
+            "upbit_krw_daily_sync_daily",
+            "kiwoom_krx_daily_sync_daily",
         }
     )
 
@@ -139,6 +141,37 @@ class AutomaticScheduler:
             coalesce=True,
             misfire_grace_time=1800,
         )
+
+        self._scheduler.add_job(
+            self._run_upbit_krw_daily_sync,
+            trigger=CronTrigger(
+                hour=self._settings.scheduler_upbit_daily_hour,
+                minute=self._settings.scheduler_upbit_daily_minute,
+                timezone=self._settings.scheduler_timezone,
+            ),
+            id="upbit_krw_daily_sync_daily",
+            name="Upbit KRW daily sync",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+        )
+
+        self._scheduler.add_job(
+            self._run_kiwoom_krx_daily_sync,
+            trigger=CronTrigger(
+                day_of_week="mon-fri",
+                hour=self._settings.scheduler_kiwoom_daily_hour,
+                minute=self._settings.scheduler_kiwoom_daily_minute,
+                timezone=self._settings.scheduler_timezone,
+            ),
+            id="kiwoom_krx_daily_sync_daily",
+            name="Kiwoom KRX daily sync",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+        )
         self._configured = True
 
     def start(self) -> None:
@@ -186,6 +219,8 @@ class AutomaticScheduler:
             "portfolio_equity_snapshot": (
                 lambda: self._run_portfolio_equity_snapshot(force=True)
             ),
+            "upbit_krw_daily_sync": self._run_upbit_krw_daily_sync,
+            "kiwoom_krx_daily_sync": self._run_kiwoom_krx_daily_sync,
         }
 
         try:
@@ -517,6 +552,48 @@ class AutomaticScheduler:
             payload={
                 "snapshot_date": date.today().isoformat(),
                 "include_live": True,
+            },
+        )
+
+    async def _run_upbit_krw_daily_sync(
+        self,
+    ) -> dict[str, Any]:
+        return await self._execute_registered_job(
+            job_name="upbit_krw_daily_sync",
+            payload={
+                "resume": True,
+                "lookback_years": 1,
+                "sync_instruments": True,
+            },
+        )
+
+    async def _run_kiwoom_krx_daily_sync(
+        self,
+    ) -> dict[str, Any]:
+        from stock_platform.operation.calendar_repository import (
+            TradingCalendarRepository,
+        )
+        from stock_platform.operation.calendar_service import (
+            TradingCalendarService,
+        )
+
+        session = get_session_factory()()
+        try:
+            if not TradingCalendarService(
+                TradingCalendarRepository(session)
+            ).is_trading_day("KRX", date.today()):
+                return {
+                    "status": "SKIPPED_NON_TRADING_DAY",
+                    "job_name": "kiwoom_krx_daily_sync",
+                }
+        finally:
+            session.close()
+
+        return await self._execute_registered_job(
+            job_name="kiwoom_krx_daily_sync",
+            payload={
+                "resume": True,
+                "lookback_days": 30,
             },
         )
 
