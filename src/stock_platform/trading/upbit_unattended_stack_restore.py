@@ -450,6 +450,14 @@ async def restore_upbit_trading_stack(
                 "ok": False,
                 "error": type(nudge_exc).__name__,
             }
+    elif bool(verify.get("core_restored")):
+        # feed만 pending — mark_restored 보류. Watchdog L0 가 feed fresh 후 완료.
+        # process_started_at cutoff 데드락은 L0 ensure 가 해소한다.
+        detail["restore_epoch_deferred"] = {
+            "reason": "FEED_OR_VERIFY_PENDING",
+            "missing_components": verify.get("missing_components") or [],
+            "core_restored": True,
+        }
     else:
         missing = verify.get("missing_components") or []
         detail["missing_components"] = missing

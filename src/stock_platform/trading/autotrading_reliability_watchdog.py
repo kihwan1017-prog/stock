@@ -307,6 +307,12 @@ def _l1_waiting_self_heal(
 
         nudge = {"ok": False}
         epoch = upbit_execution_restore_epoch.snapshot()
+        # restored_at 없으면 process_started_at cutoff 로 WAITING 영구 STALE
+        if not epoch.get("restored_at"):
+            upbit_execution_restore_epoch.mark_restored(
+                actor=f"{actor}:epoch_bootstrap"
+            )
+            epoch = upbit_execution_restore_epoch.snapshot()
         if epoch.get("restored_at"):
             nudge = force_waiting_revalidation_after_restore(
                 session,
@@ -328,10 +334,79 @@ def _l1_waiting_self_heal(
         )
         if isinstance(result, dict):
             result["waiting_nudge"] = nudge
+            result["restore_epoch"] = epoch
         return result
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
+
+def _ensure_restore_epoch_when_stack_healthy(
+    session: Any,
+    *,
+    uba_id: int,
+    actor: str,
+    components: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """startup partial(feed pending) 이후 restored_at 미기록이면 STALE 데드락.
+
+    core RUNNING + feed REAL_FRESH 이면 mark_restored + WAITING nudge.
+    REAL 주문/정책 mutation 없음.
+    """
+
+    comps = components or {}
+    core_ok = all(
+        str(comps.get(k) or "").upper() == "RUNNING"
+        for k in ("runtime", "runner", "worker", "exit_monitor")
+    )
+    feed_ok = str(comps.get("feed") or "").upper() in {
+        "REAL_FRESH",
+        "FRESH",
+        "CONNECTED",
+        "HEALTHY",
+        "OK",
+    }
+    if not (core_ok and feed_ok):
+        return {
+            "ok": False,
+            "action": "WAIT_HEALTHY",
+            "core_ok": core_ok,
+            "feed_ok": feed_ok,
+        }
+
+    try:
+        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+            force_waiting_revalidation_after_restore,
+        )
+        from stock_platform.trading.upbit_execution_restore_epoch import (
+            upbit_execution_restore_epoch,
+        )
+
+        epoch = upbit_execution_restore_epoch.snapshot()
+        already = bool(epoch.get("restored_at")) and not bool(
+            epoch.get("outage_active")
+        )
+        if already:
+            return {
+                "ok": True,
+                "action": "ALREADY_RESTORED",
+                "restore_epoch": epoch,
+            }
+        upbit_execution_restore_epoch.mark_restored(
+            actor=f"{actor}:healthy_stack_epoch"
+        )
+        nudge = force_waiting_revalidation_after_restore(
+            session,
+            user_broker_account_id=int(uba_id),
+            actor=f"{actor}:healthy_stack_nudge",
+        )
+        return {
+            "ok": True,
+            "action": "MARKED_RESTORED",
+            "nudge": nudge,
+            "restore_epoch": upbit_execution_restore_epoch.snapshot(),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
 def _l1_entry_pending_reconcile(
     session: Any, *, uba_id: int, actor: str
@@ -521,17 +596,42 @@ async def reconcile_market_health(
 
         async with lock:
             actions: list[str] = []
+            # LEVEL 0 — restore epoch 데드락 해제 (startup feed-pending 후 healthy)
+            if market == "UPBIT":
+                epoch_fix = _ensure_restore_epoch_when_stack_healthy(
+                    session,
+                    uba_id=uba_id,
+                    actor=actor,
+                    components=snap.get("components") or {},
+                )
+                outcome["restore_epoch_ensure"] = epoch_fix
+                if epoch_fix.get("ok"):
+                    actions.append("L0_RESTORE_EPOCH_ENSURE")
+                    if epoch_fix.get("action") == "MARKED_RESTORED":
+                        session.commit()
+
             # LEVEL 1 — feed / scanner / waiting / entry_pending
             # backoff와 무관하게 항상 시도 (feed warm-up 레이스 대응)
             if market == "UPBIT":
                 starv = snap.get("waiting_starvation") or {}
-                if isinstance(starv, dict) and starv.get("waiting_slot_starvation"):
+                # PIPELINE_STALL(ENTRY_PASS>0) 이어도 STALE WAITING 이면 nudge 필요
+                cls = str(snap.get("no_trade_classification") or "")
+                need_waiting_heal = bool(
+                    isinstance(starv, dict) and starv.get("waiting_slot_starvation")
+                ) or cls in {
+                    "PIPELINE_STALL",
+                    "WAITING_SLOT_STARVATION",
+                }
+                if need_waiting_heal:
                     l1w = _l1_waiting_self_heal(
                         session, uba_id=uba_id, actor=actor
                     )
                     actions.append("L1_WAITING_REVALIDATE")
                     outcome["l1_waiting"] = l1w
-                    if int(l1w.get("released") or 0) > 0:
+                    if int(l1w.get("released") or 0) > 0 or (
+                        (l1w.get("waiting_nudge") or {}).get("nudged_waiting_slots")
+                        or 0
+                    ) > 0:
                         session.commit()
 
                 reasons = snap.get("health_reasons") or []

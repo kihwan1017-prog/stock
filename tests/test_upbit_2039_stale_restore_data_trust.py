@@ -329,3 +329,68 @@ def test_quarantined_excluded_from_promotion_filter() -> None:
     assert out["VALID_SAMPLES"] == 3
     assert out["QUARANTINED"] == 2
     assert out["raw_data_deleted"] is False
+
+def test_process_started_cutoff_blocks_old_waiting_until_mark_restored() -> None:
+    """restart 직후 restored_at 미기록이면 process_started_at cutoff 로 STALE."""
+
+    ep = UpbitExecutionRestoreEpoch()
+    old = datetime.now(timezone.utc) - timedelta(minutes=5)
+    assert ep.is_pre_or_during_outage_waiting(old) is True
+    ep.mark_restored(actor="test")
+    assert ep.is_pre_or_during_outage_waiting(old) is True
+    fresh = datetime.now(timezone.utc) + timedelta(seconds=1)
+    assert ep.is_pre_or_during_outage_waiting(fresh) is False
+
+
+def test_ensure_restore_epoch_helper_marks_when_healthy(monkeypatch) -> None:
+    """L0 ensure: healthy stack + restored_at 없음 → mark_restored."""
+
+    from stock_platform.trading import autotrading_reliability_watchdog as wd
+
+    ep = UpbitExecutionRestoreEpoch()
+    monkeypatch.setattr(
+        "stock_platform.trading.upbit_execution_restore_epoch.upbit_execution_restore_epoch",
+        ep,
+    )
+    calls: list[int] = []
+
+    def _fake_nudge(session, *, user_broker_account_id, actor="x"):
+        calls.append(int(user_broker_account_id))
+        return {"ok": True, "nudged_waiting_slots": 4}
+
+    monkeypatch.setattr(
+        "stock_platform.operation.upbit_full_market.waiting_lifecycle.force_waiting_revalidation_after_restore",
+        _fake_nudge,
+    )
+
+    out = wd._ensure_restore_epoch_when_stack_healthy(
+        MagicMock(),
+        uba_id=1380,
+        actor="test",
+        components={
+            "runtime": "RUNNING",
+            "runner": "RUNNING",
+            "worker": "RUNNING",
+            "exit_monitor": "RUNNING",
+            "feed": "REAL_FRESH",
+        },
+    )
+    assert out["ok"] is True
+    assert out["action"] == "MARKED_RESTORED"
+    assert ep.snapshot().get("restored_at")
+    assert calls == [1380]
+
+    out2 = wd._ensure_restore_epoch_when_stack_healthy(
+        MagicMock(),
+        uba_id=1380,
+        actor="test",
+        components={
+            "runtime": "RUNNING",
+            "runner": "RUNNING",
+            "worker": "RUNNING",
+            "exit_monitor": "RUNNING",
+            "feed": "REAL_FRESH",
+        },
+    )
+    assert out2["action"] == "ALREADY_RESTORED"
+    assert len(calls) == 1
