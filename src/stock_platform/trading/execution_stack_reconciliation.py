@@ -271,8 +271,13 @@ def verify_stack_restored(
         missing.append("feed")
 
     restore_succeeded = all(verified.values())
+    core_keys = ("runtime", "runner", "worker", "exit_monitor", "scanner")
+    core_restored = all(bool(verified.get(k)) for k in core_keys)
+    feed_pending = bool(core_restored and not feed_ok)
     return {
         "restore_succeeded": restore_succeeded,
+        "core_restored": core_restored,
+        "feed_pending": feed_pending,
         "verified": verified,
         "missing_components": missing,
         "stale_heartbeats": stale,

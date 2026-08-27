@@ -66,7 +66,24 @@ def shadow_enabled(settings: Any | None = None) -> bool:
     )
 
 
-def deployment_epoch(settings: Any | None = None) -> datetime:
+def deployment_epoch(
+    settings: Any | None = None,
+    session: Any | None = None,
+) -> datetime:
+    """고정 deploy epoch — enroll 호출 시 now() 금지.
+
+    우선순위:
+    1) settings.upbit_trailing_forward_shadow_deployed_at
+    2) DB operation.research_feature_epoch (get-or-create seed)
+    3) FEATURE_DEPLOY_EPOCH 상수 (5519e85)
+    """
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+        FEATURE_DEPLOY_EPOCH,
+        FEATURE_DEPLOY_EPOCH_SOURCE,
+        FEATURE_KEY,
+    )
+
     settings = settings or get_settings()
     raw = str(
         getattr(settings, "upbit_trailing_forward_shadow_deployed_at", "")
@@ -79,7 +96,87 @@ def deployment_epoch(settings: Any | None = None) -> datetime:
             return datetime.fromisoformat(raw).astimezone(timezone.utc)
         except ValueError:
             pass
-    return _utc_now()
+
+    if session is not None:
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.epoch import (
+                get_or_create_feature_epoch,
+            )
+
+            epoch, _src = get_or_create_feature_epoch(
+                session,
+                feature_key=FEATURE_KEY,
+                seed_epoch=FEATURE_DEPLOY_EPOCH,
+                seed_source=FEATURE_DEPLOY_EPOCH_SOURCE,
+            )
+            return _as_utc(epoch) or FEATURE_DEPLOY_EPOCH
+        except Exception:  # noqa: BLE001
+            pass
+    return FEATURE_DEPLOY_EPOCH
+
+
+def deployment_epoch_meta(
+    settings: Any | None = None,
+    session: Any | None = None,
+) -> dict[str, Any]:
+    """보고서용 source/epoch."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+        FEATURE_DEPLOY_EPOCH,
+        FEATURE_DEPLOY_EPOCH_SOURCE,
+        FEATURE_KEY,
+    )
+
+    settings = settings or get_settings()
+    raw = str(
+        getattr(settings, "upbit_trailing_forward_shadow_deployed_at", "")
+        or ""
+    ).strip()
+    if raw:
+        try:
+            if raw.endswith("Z"):
+                raw = raw[:-1] + "+00:00"
+            epoch = datetime.fromisoformat(raw).astimezone(timezone.utc)
+            return {
+                "SHADOW_DEPLOY_EPOCH": epoch.isoformat(),
+                "SHADOW_DEPLOY_EPOCH_SOURCE": "settings.upbit_trailing_forward_shadow_deployed_at",
+                "IMMUTABLE": True,
+                "RESTART_SAFE": True,
+            }
+        except ValueError:
+            pass
+    if session is not None:
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.epoch import (
+                get_or_create_feature_epoch,
+            )
+
+            epoch, src = get_or_create_feature_epoch(
+                session,
+                feature_key=FEATURE_KEY,
+                seed_epoch=FEATURE_DEPLOY_EPOCH,
+                seed_source=FEATURE_DEPLOY_EPOCH_SOURCE,
+            )
+            return {
+                "SHADOW_DEPLOY_EPOCH": (_as_utc(epoch) or FEATURE_DEPLOY_EPOCH).isoformat(),
+                "SHADOW_DEPLOY_EPOCH_SOURCE": f"db:{src}",
+                "IMMUTABLE": True,
+                "RESTART_SAFE": True,
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "SHADOW_DEPLOY_EPOCH": FEATURE_DEPLOY_EPOCH.isoformat(),
+                "SHADOW_DEPLOY_EPOCH_SOURCE": FEATURE_DEPLOY_EPOCH_SOURCE,
+                "IMMUTABLE": True,
+                "RESTART_SAFE": True,
+                "db_fallback_error": type(exc).__name__,
+            }
+    return {
+        "SHADOW_DEPLOY_EPOCH": FEATURE_DEPLOY_EPOCH.isoformat(),
+        "SHADOW_DEPLOY_EPOCH_SOURCE": FEATURE_DEPLOY_EPOCH_SOURCE,
+        "IMMUTABLE": True,
+        "RESTART_SAFE": True,
+    }
 
 
 def variant_specs() -> dict[str, dict[str, Any]]:
@@ -193,7 +290,7 @@ def enroll_on_position_open(
             "shadow_row_id": int(existing.shadow_row_id),
         }
 
-    deploy = deployment_epoch(settings)
+    deploy = deployment_epoch(settings, session=session)
     opened = _as_utc(entry_at) or _utc_now()
     status = STATUS_ACTIVE
     if opened < deploy:

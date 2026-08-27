@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 RULE_VERSION = "trailing_forward_shadow_v1"
 MARKET_UPBIT = "UPBIT"
 RESEARCH_ONLY_LABEL = "RESEARCH_ONLY"
@@ -36,3 +38,8 @@ SAMPLE_TARGET_NEXT = 25
 SAMPLE_TARGET_PRIMARY = 50
 
 HISTORICAL_TRAILING_REPLAY_AVAILABLE = False
+
+# 5519e85 trailing shadow feature deploy (UTC) — enroll now() fallback 금지
+FEATURE_KEY = "upbit_trailing_forward_shadow"
+FEATURE_DEPLOY_EPOCH = datetime(2026, 8, 27, 11, 12, 0, tzinfo=timezone.utc)
+FEATURE_DEPLOY_EPOCH_SOURCE = "feature_commit_5519e85_deploy_utc"

@@ -598,10 +598,18 @@ class ApplicationLifecycle:
             ):
                 from stock_platform.trading.autotrading_reliability_watchdog import (
                     autotrading_reliability_watchdog,
+                    watchdog_supervisor,
                 )
 
                 wd_start = autotrading_reliability_watchdog.start()
                 logger.info("autotrading_reliability_watchdog_startup", **wd_start)
+                try:
+                    sup_start = watchdog_supervisor.start()
+                    logger.info(
+                        "autotrading_watchdog_supervisor_startup", **sup_start
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("autotrading_watchdog_supervisor_start_failed")
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "autotrading_reliability_watchdog_start_failed",
@@ -844,8 +852,13 @@ class ApplicationLifecycle:
         try:
             from stock_platform.trading.autotrading_reliability_watchdog import (
                 autotrading_reliability_watchdog,
+                watchdog_supervisor,
             )
 
+            try:
+                await watchdog_supervisor.shutdown()
+            except Exception:  # noqa: BLE001
+                logger.exception("watchdog_supervisor_shutdown_failed")
             await autotrading_reliability_watchdog.shutdown()
         except Exception:  # noqa: BLE001
             pass

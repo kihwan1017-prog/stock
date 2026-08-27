@@ -95,6 +95,8 @@ def first_stack_failure(*, market: str, uba_id: int) -> dict[str, Any] | None:
 
 
 def _backoff_allowed(key: str) -> tuple[bool, float]:
+    """L2 stack restore 전용 backoff. L1(feed/scanner)은 막지 않는다."""
+
     st = _restore_backoff.get(key) or {}
     attempts = int(st.get("attempts") or 0)
     last_at = float(st.get("last_attempt_mono") or 0.0)
@@ -108,11 +110,21 @@ def _backoff_allowed(key: str) -> tuple[bool, float]:
     return True, 0.0
 
 
-def _record_restore_attempt(key: str, *, success: bool) -> None:
+def _record_restore_attempt(
+    key: str,
+    *,
+    success: bool,
+    soft_pending: bool = False,
+) -> None:
+    """success → reset. soft_pending(core OK·feed만 대기) → attempts 유지/증가 금지."""
+
     st = _restore_backoff.setdefault(key, {"attempts": 0, "last_attempt_mono": 0.0})
     if success:
         st["attempts"] = 0
         st["last_success_mono"] = time.monotonic()
+    elif soft_pending:
+        # feed warm-up 레이스를 hard failure로 세지 않음 — L1 계속
+        st["last_soft_pending_mono"] = time.monotonic()
     else:
         st["attempts"] = min(
             MAX_RESTORE_ATTEMPTS_PER_WINDOW, int(st.get("attempts") or 0) + 1
@@ -224,11 +236,17 @@ def _handle_health_transition(
             reason=str(snapshot.get("health_reasons")),
         )
     elif current == HEALTH_READY and prev == HEALTH_BROKEN:
+        recovered_title = (
+            "🟢 자동매매 실행 스택 복구 완료"
+            if market == "UPBIT"
+            else f"[{market}] 자동매매 자동 복구 완료"
+        )
+        _last_stack_restore_fail_alert.pop(key, None)
         _emit_reliability_telegram(
             market=market,
             uba_id=uba_id,
             event_type="AUTOTRADING_RELIABILITY_RECOVERED",
-            title=f"[{market}] 자동매매 자동 복구 완료",
+            title=recovered_title,
             message="Runtime/Worker/Exit/Feed 정상 복구.",
             detail={"health_state": current, "components": snapshot.get("components")},
         )
@@ -480,12 +498,6 @@ async def reconcile_market_health(
                 reason=str(stack_need.get("down_components")),
             )
 
-        allowed, wait_sec = _backoff_allowed(key)
-        if not allowed:
-            outcome["restore_skipped"] = "BACKOFF"
-            outcome["backoff_wait_seconds"] = round(wait_sec, 1)
-            return outcome
-
         lock = _get_lock(key)
         if lock.locked():
             outcome["restore_skipped"] = "RESTORE_IN_PROGRESS"
@@ -493,7 +505,8 @@ async def reconcile_market_health(
 
         async with lock:
             actions: list[str] = []
-            # LEVEL 1 — feed / scanner / waiting / entry_pending self-heal
+            # LEVEL 1 — feed / scanner / waiting / entry_pending
+            # backoff와 무관하게 항상 시도 (feed warm-up 레이스 대응)
             if market == "UPBIT":
                 starv = snap.get("waiting_starvation") or {}
                 if isinstance(starv, dict) and starv.get("waiting_slot_starvation"):
@@ -505,7 +518,6 @@ async def reconcile_market_health(
                     if int(l1w.get("released") or 0) > 0:
                         session.commit()
 
-                # ENTRY_PENDING + zero-fill CANCEL 고착 해제
                 reasons = snap.get("health_reasons") or []
                 funnel_st = (snap.get("funnel") or {}).get("stages") or {}
                 if (
@@ -521,7 +533,7 @@ async def reconcile_market_health(
                         session.commit()
 
                 feed_st = str((snap.get("components") or {}).get("feed") or "")
-                if feed_st not in {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}:
+                if feed_st not in {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK", "CONNECTING"}:
                     l1f = await _l1_feed_reconnect(session, uba_id=uba_id, actor=actor)
                     actions.append("L1_FEED")
                     outcome["l1_feed"] = l1f
@@ -549,11 +561,15 @@ async def reconcile_market_health(
                     actions.append("L1_KIWOOM_FEED")
                     outcome["l1_feed"] = l1f
 
-            # LEVEL 2 — FULL/PARTIAL stack down (LIVE/ARM/Activation valid)
+            # LEVEL 2 — FULL/PARTIAL stack (backoff는 L2만)
             need_l2 = bool(stack_need.get("needs_restore")) and (
                 market != "KIWOOM" or snap.get("kiwoom_stack_slo_active")
             )
-            if need_l2:
+            allowed, wait_sec = _backoff_allowed(key)
+            if need_l2 and not allowed:
+                outcome["l2_skipped"] = "BACKOFF"
+                outcome["backoff_wait_seconds"] = round(wait_sec, 1)
+            elif need_l2:
                 outcome["restore_attempted"] = True
                 outcome["restore_trigger"] = stack_need.get("restore_kind") or "WATCHDOG"
                 started = time.monotonic()
@@ -564,29 +580,38 @@ async def reconcile_market_health(
                 outcome["restore_duration_seconds"] = round(
                     time.monotonic() - started, 2
                 )
-                # heartbeat 기반 최종 판정 (return success만 믿지 않음)
                 verify = verify_stack_restored(
                     session, user_broker_account_id=uba_id
                 )
                 outcome["verify"] = verify
                 restored = bool(verify.get("restore_succeeded"))
+                feed_pending = bool(verify.get("feed_pending"))
+                core_ok = bool(verify.get("core_restored"))
                 outcome["restore_succeeded"] = restored
+                outcome["core_restored"] = core_ok
+                outcome["feed_pending"] = feed_pending
                 st = _restore_backoff.setdefault(
                     key, {"attempts": 0, "last_attempt_mono": 0.0}
                 )
-                _record_restore_attempt(key, success=restored)
-                _handle_restore_fail_edge(
-                    market=market,
-                    uba_id=uba_id,
-                    verify=verify,
-                    attempts=int(st.get("attempts") or 0),
-                )
                 if restored:
+                    _record_restore_attempt(key, success=True)
                     _last_stack_restore_fail_alert.pop(key, None)
+                elif feed_pending:
+                    # core OK — feed warm-up만 대기: hard backoff 금지
+                    _record_restore_attempt(key, success=False, soft_pending=True)
+                    outcome["restore_partial"] = "CORE_OK_FEED_PENDING"
+                else:
+                    _record_restore_attempt(key, success=False)
+                    _handle_restore_fail_edge(
+                        market=market,
+                        uba_id=uba_id,
+                        verify=verify,
+                        attempts=int(st.get("attempts") or 0),
+                    )
                 actions.append("L2_STACK")
                 session.commit()
 
-                if not restored:
+                if not restored and not feed_pending:
                     missing = verify.get("missing_components") or []
                     if missing:
                         _emit_reliability_telegram(
@@ -598,21 +623,23 @@ async def reconcile_market_health(
                             detail={"missing": missing, "l2": l2, "verify": verify},
                         )
             elif stack_need.get("desired", {}).get("desired_execution_running"):
-                # desired RUNNING + actual OK — backoff reset
                 verify_ok = verify_stack_restored(
                     session, user_broker_account_id=uba_id
                 )
-                _record_restore_attempt(
-                    key, success=bool(verify_ok.get("restore_succeeded"))
-                )
                 if verify_ok.get("restore_succeeded"):
+                    _record_restore_attempt(key, success=True)
                     _last_stack_restore_fail_alert.pop(key, None)
+                elif verify_ok.get("feed_pending"):
+                    _record_restore_attempt(key, success=False, soft_pending=True)
+                else:
+                    _record_restore_attempt(
+                        key, success=bool(verify_ok.get("restore_succeeded"))
+                    )
             else:
                 _record_restore_attempt(key, success=True)
 
             outcome["actions"] = actions
 
-            # post-restore snapshot
             snap2 = build_trading_health_snapshot(
                 session, user_broker_account_id=uba_id
             )
@@ -707,6 +734,16 @@ class AutoTradingReliabilityWatchdog:
         self._running = True
         return {"started": True, **self.status()}
 
+    def ensure_running(self) -> dict[str, Any]:
+        """외부 supervisor용 — task missing/done이면 정확히 1개만 재생성."""
+
+        if self._task is not None and not self._task.done():
+            return {"ensured": False, "reason": "ALREADY_RUNNING", **self.status()}
+        return {"ensured": True, **self.start()}
+
+    def is_task_alive(self) -> bool:
+        return self._task is not None and not self._task.done()
+
     async def shutdown(self) -> None:
         if self._stopping is not None:
             self._stopping.set()
@@ -783,8 +820,10 @@ class AutoTradingReliabilityWatchdog:
                 logger.exception("watchdog_tick_failed")
 
     def status(self) -> dict[str, Any]:
+        task_alive = self.is_task_alive()
         return {
-            "running": self._running,
+            "running": self._running and task_alive,
+            "task_alive": task_alive,
             "last_run_at": (
                 self._last_run_at.isoformat() if self._last_run_at else None
             ),
@@ -793,4 +832,72 @@ class AutoTradingReliabilityWatchdog:
         }
 
 
+class WatchdogSupervisor:
+    """Watchdog task liveness만 감시 — 동일 task 자기복구 금지, 중복 task 금지."""
+
+    def __init__(self) -> None:
+        self._task: asyncio.Task | None = None
+        self._stopping: asyncio.Event | None = None
+        self._last_ensure_at: datetime | None = None
+        self._ensure_count = 0
+
+    def start(self) -> dict[str, Any]:
+        if self._task is not None and not self._task.done():
+            return {"started": False, "reason": "ALREADY_RUNNING"}
+        self._stopping = asyncio.Event()
+        self._task = asyncio.create_task(
+            self._run(), name="autotrading-watchdog-supervisor"
+        )
+        return {"started": True}
+
+    async def shutdown(self) -> None:
+        if self._stopping is not None:
+            self._stopping.set()
+        task = self._task
+        if task is not None and not task.done():
+            try:
+                await asyncio.wait_for(task, timeout=5.0)
+            except (TimeoutError, asyncio.CancelledError):
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                    pass
+        self._task = None
+        self._stopping = None
+
+    async def _run(self) -> None:
+        interval = 60.0
+        while self._stopping is not None and not self._stopping.is_set():
+            try:
+                await asyncio.wait_for(self._stopping.wait(), timeout=interval)
+                break
+            except TimeoutError:
+                pass
+            if self._stopping is None or self._stopping.is_set():
+                break
+            try:
+                result = autotrading_reliability_watchdog.ensure_running()
+                self._last_ensure_at = datetime.now(timezone.utc)
+                if result.get("ensured"):
+                    self._ensure_count += 1
+                    logger.warning(
+                        "watchdog_supervisor_recreated_watchdog",
+                        ensure_count=self._ensure_count,
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("watchdog_supervisor_tick_failed")
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "running": self._task is not None and not self._task.done(),
+            "last_ensure_at": (
+                self._last_ensure_at.isoformat() if self._last_ensure_at else None
+            ),
+            "ensure_count": self._ensure_count,
+            "watchdog": autotrading_reliability_watchdog.status(),
+        }
+
+
 autotrading_reliability_watchdog = AutoTradingReliabilityWatchdog()
+watchdog_supervisor = WatchdogSupervisor()
