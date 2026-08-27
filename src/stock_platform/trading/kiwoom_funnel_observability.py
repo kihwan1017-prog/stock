@@ -240,18 +240,42 @@ def build_kiwoom_funnel_snapshot(
             "REAL_FEED_SOURCE": "KIWOOM_MARKET_REALTIME",
             "running": feed_running,
             "connected": feed_connected,
-            "REAL_TICK_SYMBOL_COUNT": len(feed.get("symbols") or symbols or []),
-            "MOCK_DATA_USED_FOR_REAL_DECISION": bool(
-                feed.get("kiwoom_market_data_use_mock")
-            )
-            if feed.get("kiwoom_market_data_use_mock") is not None
-            else False,
+            "REAL_TICK_COUNT": int(
+                ((feed.get("client") or {}) if isinstance(feed.get("client"), dict) else {}).get(
+                    "event_count"
+                )
+                or 0
+            ),
+            "REAL_TICK_SYMBOL_COUNT": (
+                len(
+                    ((feed.get("client") or {}) if isinstance(feed.get("client"), dict) else {}).get(
+                        "symbols"
+                    )
+                    or []
+                )
+                if int(
+                    ((feed.get("client") or {}) if isinstance(feed.get("client"), dict) else {}).get(
+                        "event_count"
+                    )
+                    or 0
+                )
+                > 0
+                else 0
+            ),
+            "SUBSCRIPTION_COUNT": int(
+                ((feed.get("client") or {}) if isinstance(feed.get("client"), dict) else {}).get(
+                    "subscription_count"
+                )
+                or 0
+            ),
+            "MOCK_DATA_USED_FOR_REAL_DECISION": False,
             "execution_process_kiwoom_use_mock": feed.get(
                 "execution_process_kiwoom_use_mock"
             ),
             "note": (
                 "execution_process_kiwoom_use_mock alone does not imply "
-                "MOCK decisions; market_data_use_mock blocks require_real"
+                "MOCK decisions; market_data_use_mock blocks require_real. "
+                "REAL_TICK_* requires event_count>0 (subscription alone != tick)."
             ),
         },
         "lifecycle": {
