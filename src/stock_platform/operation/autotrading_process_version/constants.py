@@ -87,7 +87,7 @@ COMPONENT_TYPES = (
 # Bootstrap from known commits (REAL semantics vs reliability vs research)
 BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
-        "git_commit": "TBD_KIWOOM_FEED",
+        "git_commit": "e07fe4d",
         "change_type": CHANGE_RELIABILITY,
         "component": "MARKET_DATA",
         "summary": "Kiwoom REAL feed auto-restore + start race/self-heal",
