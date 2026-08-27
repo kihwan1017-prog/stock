@@ -31,7 +31,12 @@ export function formatPriceResearch(value: unknown): string {
   return formatPriceKo(value);
 }
 
-export function formatNumResearch(value: unknown): string {
+export function formatNumResearch(
+  value: unknown,
+  digitsOrRecord?: number | Record<string, unknown>,
+): string {
+  // Table render(value, record) 와 formatNumResearch(v, digits) 모두 수용
+  void digitsOrRecord;
   return formatDecimalKo(value);
 }
 

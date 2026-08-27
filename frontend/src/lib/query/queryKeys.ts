@@ -208,6 +208,12 @@ export const queryKeys = {
     marketDataStatus: () => ["admin", "market-data", "status"] as const,
     marketDataQuality: (market: string) =>
       ["admin", "market-data", "quality", market] as const,
+    marketDataDailyStatus: (params: object) =>
+      ["admin", "market-data", "daily-status", params] as const,
+    marketDataDailyMissing: (market: string, tradeDate: string) =>
+      ["admin", "market-data", "daily-missing", market, tradeDate] as const,
+    marketAnalysisSummary: () =>
+      ["admin", "market-analysis", "summary"] as const,
     upbitAccountStatus: () => ["admin", "upbit-account-status"] as const,
     upbitAccountSnapshot: () => ["admin", "upbit-account-snapshot"] as const,
     upbitRateLimits: () => ["admin", "upbit-rate-limits"] as const,

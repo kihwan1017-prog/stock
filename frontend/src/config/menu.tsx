@@ -187,7 +187,6 @@ export const adminMenuItems: AdminMenuItem[] = [
         permission: "menu:upbit",
         matchPaths: [
           adminRoutes.marketAnalysis,
-          adminRoutes.marketData,
           adminRoutes.upbitMarkets,
           adminRoutes.indicators,
           adminRoutes.aiMarketAnalyses,
@@ -200,6 +199,7 @@ export const adminMenuItems: AdminMenuItem[] = [
         icon: <BarChartOutlined />,
         enabled: true,
         permission: "menu:upbit",
+        matchPaths: [adminRoutes.marketData],
       },
       {
         key: "news-disclosures",

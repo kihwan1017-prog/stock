@@ -6131,3 +6131,27 @@ export async function getMarketDataQuality(params?: {
 }): Promise<JsonValue> {
   return getJson("/admin/market-data/quality", params);
 }
+
+export async function getMarketDataDailyStatus(params: {
+  market?: string;
+  from: string;
+  to: string;
+  status?: string;
+}): Promise<JsonValue> {
+  return getJson("/admin/market-data/daily-status", params);
+}
+
+export async function getMarketDataDailyMissing(params: {
+  market: string;
+  trade_date: string;
+  limit?: number;
+}): Promise<JsonValue> {
+  return getJson(
+    `/admin/market-data/daily-status/${encodeURIComponent(params.trade_date)}/missing`,
+    { market: params.market, limit: params.limit ?? 100 },
+  );
+}
+
+export async function getMarketAnalysisSummary(): Promise<JsonValue> {
+  return getJson("/admin/market-analysis/summary");
+}

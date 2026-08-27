@@ -32,6 +32,7 @@ import {
   YAxis,
 } from "recharts";
 
+import { DailyCollectionStatusTab } from "@/features/admin/market-data/DailyCollectionStatusTab";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { cell } from "@/features/admin/utils/dataHelpers";
@@ -64,14 +65,18 @@ function parseMarketKey(raw: string | null): MarketKey {
 }
 
 /** Recharts custom shape — OHLC Candlestick (심지+몸통) */
-function CandlestickBar(props: Record<string, unknown>) {
-  const x = Number(props.x ?? 0);
-  const width = Number(props.width ?? 0);
-  const payload = props.payload as
+function CandlestickBar(props: unknown) {
+  const p = (props && typeof props === "object" ? props : {}) as Record<
+    string,
+    unknown
+  >;
+  const x = Number(p.x ?? 0);
+  const width = Number(p.width ?? 0);
+  const payload = p.payload as
     | { open: number; high: number; low: number; close: number }
     | undefined;
-  const yAxis = props.yAxis as { scale?: (v: number) => number } | undefined;
-  if (!payload || width <= 0 || !yAxis?.scale) return null;
+  const yAxis = p.yAxis as { scale?: (v: number) => number } | undefined;
+  if (!payload || width <= 0 || !yAxis?.scale) return <g />;
 
   const openY = yAxis.scale(payload.open);
   const closeY = yAxis.scale(payload.close);
@@ -392,13 +397,13 @@ export function MarketDataExplorerView() {
           items={[
             {
               key: "chart",
-              label: "시세 조회",
+              label: "종목별 시세",
               children: (
                 <Spin spinning={candlesQuery.isFetching}>
                   {!symbol ? (
                     <Empty description="종목을 선택하세요" />
                   ) : candleBody?.policy_message ? (
-                    <Alert type="info" showIcon message={candleBody.policy_message} />
+                    <Alert type="info" showIcon title={candleBody.policy_message} />
                   ) : chartRows.length === 0 ? (
                     <Empty description="선택 기간에 데이터가 없습니다" />
                   ) : (
@@ -460,15 +465,20 @@ export function MarketDataExplorerView() {
                     <Alert
                       type="error"
                       showIcon
-                      message={toApiError(candlesQuery.error).message}
+                      title={toApiError(candlesQuery.error).message}
                     />
                   ) : null}
                 </Spin>
               ),
             },
             {
+              key: "daily",
+              label: "일자별 수집현황",
+              children: <DailyCollectionStatusTab />,
+            },
+            {
               key: "collection",
-              label: "수집 현황",
+              label: "수집 상태",
               children: (
                 <Spin spinning={statusQuery.isLoading}>
                   {statusQuery.data ? (
@@ -476,7 +486,7 @@ export function MarketDataExplorerView() {
                       <Alert
                         type="info"
                         showIcon
-                        message="Root Cause (확정)"
+                        title="Root Cause (확정)"
                         description={
                           <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>
                             {JSON.stringify(

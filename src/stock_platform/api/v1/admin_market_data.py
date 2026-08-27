@@ -13,6 +13,9 @@ from stock_platform.database.session import get_db_session
 from stock_platform.markets.collection_status_service import (
     MarketDataCollectionStatusService,
 )
+from stock_platform.markets.daily_collection_calendar_service import (
+    DailyCollectionCalendarService,
+)
 from stock_platform.markets.gap_detection_service import MarketDataGapDetectionService
 from stock_platform.markets.models import ALLOWED_MINUTE_TIMEFRAMES
 from stock_platform.markets.repository import (
@@ -275,6 +278,37 @@ def data_quality(
         "items": [asdict(row) for row in rows],
         "checked_at": date.today().isoformat(),
     }
+
+
+@router.get("/daily-status")
+def daily_collection_status(
+    market: str | None = Query(default=None),
+    from_date: date = Query(..., alias="from"),
+    to_date: date = Query(..., alias="to"),
+    status: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+):
+    rows = DailyCollectionCalendarService(session).list_days(
+        market=market,
+        start_date=from_date,
+        end_date=to_date,
+        status_filter=status,
+    )
+    return {"items": rows, "total": len(rows)}
+
+
+@router.get("/daily-status/{trade_date}/missing")
+def daily_collection_missing(
+    trade_date: date,
+    market: str = Query(...),
+    limit: int = Query(default=100, ge=1, le=500),
+    session: Session = Depends(get_db_session),
+):
+    return DailyCollectionCalendarService(session).missing_symbols(
+        market=market,
+        trade_date=trade_date,
+        limit=limit,
+    )
 
 
 @router.get("/gaps")

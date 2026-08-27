@@ -1,0 +1,52 @@
+{
+  "FINAL_VERDICT": "MARKET_DATA_MENU_AND_USER_MARKET_ANALYSIS_COMPLETE",
+  "MENU": {
+    "MARKET_DATA_MENU_VISIBLE": true,
+    "MARKET_DATA_ROUTE": "/admin/market-data"
+  },
+  "MARKET_DATA": {
+    "DAILY_STATUS_TAB": true,
+    "DATE_FILTER": true,
+    "YEAR_FILTER": true,
+    "MARKET_FILTER": true,
+    "MISSING_SYMBOL_DRAWER": true
+  },
+  "MARKET_ANALYSIS": {
+    "USER_SUMMARY": true,
+    "KIWOOM_SUMMARY": true,
+    "UPBIT_SUMMARY": true,
+    "MARKET_TREND_CHARTS": true,
+    "AUTOTRADING_CONTEXT": true,
+    "USER_FRIENDLY_REASON": true,
+    "TECHNICAL_DETAIL_COLLAPSED": true
+  },
+  "DATA_QUALITY": {
+    "REALTIME_STATUS": true,
+    "HISTORICAL_STATUS": true,
+    "STALE_WARNING": true
+  },
+  "VERIFY": {
+    "TYPECHECK": "PASS",
+    "VITEST_FOCUSED": "18_passed",
+    "ANTD_COMPAT": "PASS",
+    "PYTEST_FRIENDLY_REASON": "PASS",
+    "API_SMOKE": "PASS",
+    "MARKET_ANALYSIS_BROWSER": "PASS",
+    "MARKET_DATA_BROWSER": "PASS",
+    "CONSOLE_ERRORS": 0,
+    "CONSOLE_WARNINGS": 0,
+    "404": 0,
+    "500": 0
+  },
+  "SAFETY": {
+    "REAL_ORDER_MUTATION": 0,
+    "REAL_POLICY_MUTATION": 0,
+    "LIVE_ARM_MUTATION": 0,
+    "PROCESS_VERSION_CHANGED": false,
+    "BACKEND_RESTART": 1
+  },
+  "GIT": {
+    "COMMIT": "pending",
+    "UNRELATED_WIP_PRESERVED": true
+  }
+}
