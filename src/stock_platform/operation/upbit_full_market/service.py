@@ -790,6 +790,23 @@ class UpbitFullMarketAssignmentService:
                 entry_quantity=entry_qty,
                 entry_fee=entry_fee,
             )
+            # Trailing forward shadow (동일 entry provenance)
+            from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.hooks import (
+                enroll_binding_on_open as enroll_trailing_shadow,
+            )
+
+            enroll_trailing_shadow(
+                self._session,
+                user_broker_account_id=uba_id,
+                binding_id=int(binding.binding_id),
+                symbol=sym,
+                strategy_id=assignment.strategy_id,
+                entry_order_id=entry_order_id,
+                entry_at=binding.opened_at,
+                entry_price=entry_px,
+                entry_quantity=entry_qty,
+                entry_fee=entry_fee,
+            )
         except Exception:  # noqa: BLE001
             pass
         # OPEN binding → protective quote feed (slot 없어도 GEOD 등 구독)
@@ -872,6 +889,17 @@ class UpbitFullMarketAssignmentService:
                                 )
                 if exit_px is not None:
                     finalize_binding_on_close(
+                        self._session,
+                        binding_id=int(b.binding_id),
+                        exit_reason=exit_reason,
+                        exit_at=now,
+                        exit_price=exit_px,
+                    )
+                    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.hooks import (
+                        finalize_binding_on_close as finalize_trailing_shadow,
+                    )
+
+                    finalize_trailing_shadow(
                         self._session,
                         binding_id=int(b.binding_id),
                         exit_reason=exit_reason,

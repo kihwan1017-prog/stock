@@ -227,6 +227,26 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "research_only": True,
         "evidence": [".run/k_upbit_entry_signal_shadow_research.json"],
     },
+    {
+        "git_commit": "PENDING_TRAILING_DEDUPE",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "EXIT_MONITOR",
+        "summary": "Dedupe trailing exit alerts + OPEN binding gate",
+        "change_reason": "EXIT_RELIABILITY_CHANGE — submit-success telegram once; no tick spam",
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_upbit_trailing_state_dedupe_shadow.json"],
+    },
+    {
+        "git_commit": "PENDING_TRAILING_DEDUPE",
+        "change_type": CHANGE_RESEARCH,
+        "component": "EXIT_MONITOR",
+        "summary": "Trailing forward shadow T0-T4 research",
+        "change_reason": "REAL T0 unchanged; T1~T4 virtual observation only",
+        "real_policy_changed": False,
+        "research_only": True,
+        "evidence": [".run/k_upbit_trailing_state_dedupe_shadow.json"],
+    },
 ]
 
 CURRENT_UPBIT_CONFIG_SNAPSHOT = {
@@ -243,6 +263,8 @@ CURRENT_UPBIT_CONFIG_SNAPSHOT = {
     "trading_llm_mode": "SHADOW",
     "entry_shadow_research": "entry_signal_shadow_v1",
     "ma_exit_shadow_research": "ma_dead_cross_confirm2_v1",
+    "trailing_shadow_research": "trailing_forward_shadow_v1",
+    "trailing_real_t0": {"activation": "peak>entry", "trail_pct": 3.0},
     "waiting_age_sot": "waiting_started_at",
 }
 

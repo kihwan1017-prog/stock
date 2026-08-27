@@ -342,6 +342,13 @@ def get_current_process(
         "research_layers": {
             "entry_shadow": "entry_signal_shadow_v1",
             "ma_exit_shadow": "ma_dead_cross_confirm2_v1",
+            "trailing_shadow": "trailing_forward_shadow_v1",
+            "trailing_real": {
+                "T0_activation": "peak>entry",
+                "T0_distance_pct": 3.0,
+                "REAL_APPLIED": "T0",
+                "shadow_variants": ["T1", "T2", "T3", "T4"],
+            },
             "real_entry": "PORTFOLIO_BULLISH_STATE_ENTRY",
             "trading_llm_real_gate": False,
         },
@@ -546,17 +553,43 @@ def reconstruct_today_traces(
             session.add(trace)
             session.flush()
             tid = int(trace.trace_id)
+            exit_u = str(exit_reason or "").upper()
             events = [
                 ("SELECTION", "PASS", "후보 선정/진입 경로", bt, None),
                 ("ENTRY_SIGNAL", "PASS", str(entry_reason), bt, str(entry_reason)),
                 ("ORDER", "CREATE", f"BUY order {b['order_id']}", bt, None),
                 ("FILL", "FILL", "BUY filled", bt, None),
                 ("POSITION", "PASS", "OPEN", bt, None),
-                ("EXIT_SIGNAL", "EMIT", str(exit_reason), st, str(exit_reason)),
-                ("SELL_ORDER", "CREATE", f"SELL order {o['order_id']}", st, None),
-                ("FILL", "FILL", "SELL filled", st, None),
-                ("PNL", "CLOSE", f"net_est={round(net, 2)}", st, None),
             ]
+            if exit_u == "TRAILING_STOP":
+                peak = meta_s.get("peak_price")
+                trig = meta_s.get("trigger_price")
+                events.extend(
+                    [
+                        (
+                            "EXIT_MONITOR",
+                            "ARMED",
+                            f"Trailing armed peak={peak}",
+                            st,
+                            "TRAILING_ARMED",
+                        ),
+                        (
+                            "EXIT_MONITOR",
+                            "TRIGGER",
+                            f"Trailing trigger={trig}",
+                            st,
+                            "TRAILING_TRIGGERED",
+                        ),
+                    ]
+                )
+            events.extend(
+                [
+                    ("EXIT_SIGNAL", "EMIT", str(exit_reason), st, str(exit_reason)),
+                    ("SELL_ORDER", "CREATE", f"SELL order {o['order_id']}", st, None),
+                    ("FILL", "FILL", "SELL filled", st, None),
+                    ("PNL", "CLOSE", f"net_est={round(net, 2)}", st, None),
+                ]
+            )
             for stage, status, summary, at, reason in events:
                 _append_event(
                     session,
@@ -929,6 +962,20 @@ def _runtime_overlay(
 
         node_status["TRADING_LLM"] = "OK"
         node_detail["TRADING_LLM"] = {"mode": "SHADOW", "real_gate": False}
+        node_detail["EXIT_MONITOR"] = {
+            "real_trailing": {
+                "activation": "peak>entry (no min profit %)",
+                "trail_distance_pct": 3.0,
+                "policy": "T0",
+            },
+            "shadow": {
+                "enabled": True,
+                "variants": ["T1", "T2", "T3", "T4"],
+                "real_orders": 0,
+            },
+            "alert_policy": "submit_success_once_edge_dedupe",
+            "note_ko": "REAL Trailing 3% · Shadow T1~T4 연구 · 알림 중복 억제",
+        }
 
         last_trade = (live or {}).get("last_trade") or {}
         summary = {

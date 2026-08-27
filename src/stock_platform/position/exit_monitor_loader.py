@@ -276,6 +276,7 @@ class PositionExitMonitorLoader:
                     snapshot_synchronized_at=(
                         item.snapshot_synchronized_at
                     ),
+                    binding_id=item.binding_id,
                 )
                 for item in positions
             ]
@@ -501,6 +502,44 @@ class PositionExitMonitorLoader:
             qty = Decimal(str(row.quantity or 0))
             if qty <= ZERO:
                 continue
+            # OPEN binding 필수 — CLOSED 후 trailing/telegram spam 방지
+            from stock_platform.position.exit_monitor_live import (
+                has_blocking_live_exit_sell,
+                is_live_exit_eligible,
+                load_open_strategy_binding,
+            )
+
+            open_binding = load_open_strategy_binding(
+                self._session,
+                user_broker_account_id=uba_id,
+                symbol=symbol,
+                broker_code="UPBIT",
+            )
+            blocking = has_blocking_live_exit_sell(
+                self._session,
+                user_broker_account_id=uba_id,
+                symbol=symbol,
+                snapshot_synchronized_at=getattr(
+                    row, "synchronized_at", None
+                ),
+            )
+            eligible, skip_reason = is_live_exit_eligible(
+                quantity=qty,
+                binding=open_binding,
+                has_active_exit_order=blocking,
+            )
+            if not eligible:
+                skipped.append(
+                    f"TRAILING_EVALUATION_SKIPPED:{skip_reason}"
+                    f":LIVE:{uba_id}/{symbol}"
+                )
+                continue
+            binding_id = (
+                int(open_binding.binding_id)
+                if open_binding is not None
+                and getattr(open_binding, "binding_id", None) is not None
+                else None
+            )
             positions.append(
                 ManagedPosition(
                     account_id=0,
@@ -524,6 +563,7 @@ class PositionExitMonitorLoader:
                     snapshot_synchronized_at=getattr(
                         row, "synchronized_at", None
                     ),
+                    binding_id=binding_id,
                 )
             )
         return positions, skipped
@@ -635,6 +675,7 @@ class PositionExitMonitorLoader:
                     owner_user_id=None,
                     environment="LIVE",
                     snapshot_synchronized_at=None,
+                    binding_id=int(binding.binding_id),
                 )
             )
         return positions, skipped

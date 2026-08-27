@@ -106,6 +106,32 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 "ma_exit_forward_shadow_scheduler_configure_failed",
                 error=str(exc)[:200],
             )
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.scheduler import (
+                UpbitEntrySignalShadowOutcomeScheduler,
+            )
+
+            UpbitEntrySignalShadowOutcomeScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "entry_signal_shadow_outcome_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.scheduler import (
+                UpbitTrailingForwardShadowScheduler,
+            )
+
+            UpbitTrailingForwardShadowScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "trailing_forward_shadow_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
+
+    def start(self) -> None:
+        """lifecycle 진입점 — configure 후 AsyncIOScheduler 기동."""
+
         allowed, reason = self.automation_allowed()
         if not allowed:
             logger.info(
@@ -126,6 +152,7 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                     180,
                 ),
                 mode=SCANNER_MODE_SHADOW_ONLY,
+                job_ids=[j.id for j in self._scheduler.get_jobs()],
             )
 
     async def shutdown(self) -> None:

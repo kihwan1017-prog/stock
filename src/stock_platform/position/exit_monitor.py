@@ -48,6 +48,8 @@ class ManagedPosition:
     owner_user_id: int | None = None
     environment: str = "PAPER"
     snapshot_synchronized_at: datetime | None = None
+    # LIVE strategy-owned OPEN binding (없으면 LIVE exit 평가 skip)
+    binding_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +153,11 @@ class PositionExitMonitorService:
             trigger_price = decision.trigger_price
             should_exit = decision.should_exit
 
+        env_u = str(position.environment or "PAPER").upper()
         if not should_exit:
+            # LIVE: 조건 해제 시 trigger cycle 리셋 (새 edge만 허용)
+            if env_u == "LIVE" and position.user_broker_account_id:
+                self._clear_live_trigger_cycle_if_needed(position)
             return PositionExitAction(
                 symbol=position.symbol,
                 reason=reason,
@@ -169,11 +175,11 @@ class PositionExitMonitorService:
                 if trigger_price is not None
                 else None
             ),
-            environment=str(position.environment or "PAPER").upper(),
+            environment=env_u,
             user_broker_account_id=position.user_broker_account_id,
+            binding_id=position.binding_id,
         )
 
-        env_u = str(position.environment or "PAPER").upper()
         if env_u == "LIVE":
             return self._submit_live_exit(
                 position,
@@ -292,18 +298,14 @@ class PositionExitMonitorService:
         trigger_price: Decimal | None,
         skip_risk_checks: bool,
     ) -> PositionExitAction:
-        """LIVE EXIT (UPBIT/KIWOOM) — OES만 사용. adapter 직접 호출 금지."""
+        """LIVE EXIT (UPBIT/KIWOOM) — OES만 사용. adapter 직접 호출 금지.
+
+        Telegram/event: submit 성공 시에만 1회 (tick spam 금지).
+        """
 
         uba_id = position.user_broker_account_id
         if uba_id is None:
-            self._publish_exit_event(
-                reason=reason,
-                position=position,
-                trigger_price=trigger_price,
-                submitted=False,
-                order_id=None,
-                error="UBA_REQUIRED",
-            )
+            # UBA 없으면 주문 불가 — alert spam 금지
             return PositionExitAction(
                 symbol=position.symbol,
                 reason=reason,
@@ -314,11 +316,67 @@ class PositionExitMonitorService:
 
         from stock_platform.position.exit_monitor_live import (
             SOURCE_EXIT_MONITOR,
+            STATE_EXIT_ORDER_PENDING,
+            STATE_EXIT_SUBMITTED,
+            STATE_TRAILING_TRIGGERED,
+            already_notified_exit_submit,
+            exit_cycle_key,
             has_blocking_live_exit_sell,
+            load_broker_position_snapshot,
+            load_open_strategy_binding,
+            persist_exit_lifecycle,
+            read_exit_lifecycle,
         )
         from stock_platform.position.smoke_exit_isolation import (
             SUPPRESS_EVENT,
             is_exit_submission_suppressed_for_smoke,
+        )
+
+        broker = str(position.broker_code or "UPBIT").upper()
+        # OPEN binding gate — closed/MA-exited 포지션 trailing 재평가 금지
+        open_binding = load_open_strategy_binding(
+            self._session,
+            user_broker_account_id=int(uba_id),
+            symbol=position.symbol,
+            broker_code=broker,
+        )
+        binding_id = (
+            int(open_binding.binding_id)
+            if open_binding is not None
+            and getattr(open_binding, "binding_id", None) is not None
+            else position.binding_id
+        )
+        if open_binding is None:
+            logger.info(
+                "position_exit_skipped_no_open_binding",
+                symbol=position.symbol,
+                user_broker_account_id=int(uba_id),
+                reason=reason,
+            )
+            return PositionExitAction(
+                symbol=position.symbol,
+                reason="TRAILING_EVALUATION_SKIPPED",
+                trigger_price=trigger_price,
+                order_id=None,
+                submitted=False,
+            )
+
+        snap = None
+        if broker == "UPBIT":
+            snap = load_broker_position_snapshot(
+                self._session,
+                user_broker_account_id=int(uba_id),
+                symbol=position.symbol,
+            )
+        lifecycle = (
+            read_exit_lifecycle(getattr(snap, "raw_data", None))
+            if snap is not None
+            else {}
+        )
+        cycle = exit_cycle_key(
+            uba_id=int(uba_id),
+            binding_id=binding_id,
+            reason=reason,
         )
 
         suppress_lease = is_exit_submission_suppressed_for_smoke(
@@ -370,14 +428,29 @@ class PositionExitMonitorService:
                     user_broker_account_id=int(uba_id),
                     symbol=position.symbol,
                 )
-            self._publish_exit_event(
-                reason=reason,
-                position=position,
-                trigger_price=trigger_price,
-                submitted=False,
-                order_id=None,
-                error=SUPPRESS_EVENT,
-            )
+            # smoke suppress: Telegram 0 (이전 tick spam 경로 제거)
+            if snap is not None:
+                from datetime import datetime, timezone
+
+                life = dict(lifecycle)
+                life.update(
+                    {
+                        "state": STATE_EXIT_ORDER_PENDING,
+                        "reason": reason,
+                        "binding_id": binding_id,
+                        "trigger_price": (
+                            str(trigger_price)
+                            if trigger_price is not None
+                            else None
+                        ),
+                        "triggered_at": life.get("triggered_at")
+                        or datetime.now(timezone.utc).isoformat(),
+                        "cycle_key": cycle,
+                        "suppress": SUPPRESS_EVENT,
+                        "peak_price": str(position.highest_price),
+                    }
+                )
+                persist_exit_lifecycle(snap, life)
             return PositionExitAction(
                 symbol=position.symbol,
                 reason=reason,
@@ -406,47 +479,76 @@ class PositionExitMonitorService:
                 submitted=False,
             )
 
+        # edge: 동일 cycle 이미 submit 성공 알림 보냈으면 재발행 금지
+        if (
+            str(lifecycle.get("state") or "") == STATE_EXIT_SUBMITTED
+            and str(lifecycle.get("cycle_key") or "") == cycle
+            and already_notified_exit_submit(lifecycle)
+        ):
+            return PositionExitAction(
+                symbol=position.symbol,
+                reason=reason,
+                trigger_price=trigger_price,
+                order_id=(
+                    int(lifecycle["exit_order_id"])
+                    if lifecycle.get("exit_order_id") is not None
+                    else None
+                ),
+                submitted=True,
+            )
+
+        # first edge → TRAILING_TRIGGERED (아직 Telegram 없음)
+        if snap is not None and str(lifecycle.get("cycle_key") or "") != cycle:
+            from datetime import datetime, timezone
+
+            life = dict(lifecycle)
+            life.update(
+                {
+                    "state": STATE_TRAILING_TRIGGERED,
+                    "reason": reason,
+                    "binding_id": binding_id,
+                    "entry_price": str(position.entry_price),
+                    "peak_price": str(position.highest_price),
+                    "peak_at": life.get("peak_at"),
+                    "trailing_armed_at": life.get("trailing_armed_at"),
+                    "trigger_price": (
+                        str(trigger_price)
+                        if trigger_price is not None
+                        else None
+                    ),
+                    "triggered_at": datetime.now(timezone.utc).isoformat(),
+                    "cycle_key": cycle,
+                    "telegram_submitted_sent": False,
+                    "exit_rule_version": "exit_reliability_v1",
+                }
+            )
+            persist_exit_lifecycle(snap, life)
+            lifecycle = life
+
         try:
-            broker = str(position.broker_code or "UPBIT").upper()
             exchange = str(
                 position.exchange_code
                 or ("KRX" if broker == "KIWOOM" else "UPBIT")
             ).upper()
-            # OPEN binding strategy_id stamp — fill sync binding close에 필요
             strategy_id: int | None = None
-            try:
-                from stock_platform.risk_engine.strategy_owned_entities import (
-                    BINDING_STATUS_OPEN,
-                    StrategyPositionBindingEntity,
-                )
-                from sqlalchemy import select
-
-                open_binding = self._session.scalar(
-                    select(StrategyPositionBindingEntity)
-                    .where(
-                        StrategyPositionBindingEntity.user_broker_account_id
-                        == int(uba_id),
-                        StrategyPositionBindingEntity.broker_code == broker,
-                        StrategyPositionBindingEntity.symbol
-                        == str(position.symbol).upper(),
-                        StrategyPositionBindingEntity.status
-                        == BINDING_STATUS_OPEN,
-                    )
-                    .order_by(
-                        StrategyPositionBindingEntity.opened_at.desc()
-                    )
-                    .limit(1)
-                )
-                if open_binding is not None and open_binding.strategy_id is not None:
-                    strategy_id = int(open_binding.strategy_id)
-            except Exception:  # noqa: BLE001
-                strategy_id = None
+            if open_binding is not None and open_binding.strategy_id is not None:
+                strategy_id = int(open_binding.strategy_id)
             exit_meta: dict = {
                 "source": SOURCE_EXIT_MONITOR,
                 "exit_reason": reason,
+                "exit_cycle_key": cycle,
             }
+            if binding_id is not None:
+                exit_meta["binding_id"] = int(binding_id)
             if strategy_id is not None:
                 exit_meta["strategy_id"] = strategy_id
+            # peak provenance for Telegram/Trace
+            if lifecycle.get("peak_price"):
+                exit_meta["peak_price"] = lifecycle.get("peak_price")
+            else:
+                exit_meta["peak_price"] = str(position.highest_price)
+            if trigger_price is not None:
+                exit_meta["trigger_price"] = str(trigger_price)
             result = self._execution.submit(
                 OrderExecutionCommand(
                     account_id=None,
@@ -484,14 +586,18 @@ class PositionExitMonitorService:
                 error=str(exc),
                 user_broker_account_id=int(uba_id),
             )
-            self._publish_exit_event(
-                reason=reason,
-                position=position,
-                trigger_price=trigger_price,
-                submitted=False,
-                order_id=None,
-                error=str(exc),
-            )
+            if snap is not None:
+                life = dict(lifecycle)
+                life.update(
+                    {
+                        "state": STATE_EXIT_ORDER_PENDING,
+                        "reason": reason,
+                        "cycle_key": cycle,
+                        "last_error": str(exc)[:200],
+                    }
+                )
+                persist_exit_lifecycle(snap, life)
+            # submit 실패 — Telegram 재발송 금지
             return PositionExitAction(
                 symbol=position.symbol,
                 reason=reason,
@@ -508,6 +614,34 @@ class PositionExitMonitorService:
                 order_id=result.order_id,
                 user_broker_account_id=int(uba_id),
             )
+            if snap is not None:
+                life = dict(lifecycle)
+                life.update(
+                    {
+                        "state": STATE_EXIT_SUBMITTED,
+                        "reason": reason,
+                        "cycle_key": cycle,
+                        "exit_order_id": result.order_id,
+                        "binding_id": binding_id,
+                        "telegram_submitted_sent": True,
+                    }
+                )
+                persist_exit_lifecycle(snap, life)
+            # Policy A: submit 성공 시에만 1회 알림
+            self._publish_exit_event(
+                reason=reason,
+                position=position,
+                trigger_price=trigger_price,
+                submitted=True,
+                order_id=result.order_id,
+                error=None,
+                peak_price=str(
+                    lifecycle.get("peak_price")
+                    or position.highest_price
+                ),
+                binding_id=binding_id,
+                dedupe_key=f"TG:{cycle}:SUBMIT",
+            )
         else:
             logger.warning(
                 "position_exit_order_failed",
@@ -516,26 +650,57 @@ class PositionExitMonitorService:
                 blocked_reason=result.reason_code,
                 user_broker_account_id=int(uba_id),
             )
+            if snap is not None:
+                life = dict(lifecycle)
+                life.update(
+                    {
+                        "state": STATE_EXIT_ORDER_PENDING,
+                        "reason": reason,
+                        "cycle_key": cycle,
+                        "last_block_reason": str(result.reason_code or "")[
+                            :120
+                        ],
+                    }
+                )
+                persist_exit_lifecycle(snap, life)
+            # blocked retry — Telegram 0
 
-        self._publish_exit_event(
-            reason=reason,
-            position=position,
-            trigger_price=trigger_price,
-            submitted=result.allowed,
-            order_id=result.order_id,
-            error=(
-                None
-                if result.allowed
-                else result.reason_code
-            ),
-        )
         return PositionExitAction(
             symbol=position.symbol,
             reason=reason,
             trigger_price=trigger_price,
-            order_id=result.order_id,
-            submitted=result.allowed,
+            order_id=result.order_id if result.allowed else None,
+            submitted=bool(result.allowed),
         )
+
+    def _clear_live_trigger_cycle_if_needed(
+        self,
+        position: ManagedPosition,
+    ) -> None:
+        uba_id = position.user_broker_account_id
+        if uba_id is None:
+            return
+        if str(position.broker_code or "").upper() != "UPBIT":
+            return
+        try:
+            from stock_platform.position.exit_monitor_live import (
+                clear_exit_trigger_cycle,
+                load_broker_position_snapshot,
+            )
+
+            snap = load_broker_position_snapshot(
+                self._session,
+                user_broker_account_id=int(uba_id),
+                symbol=position.symbol,
+            )
+            if snap is not None:
+                clear_exit_trigger_cycle(snap)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "clear_exit_trigger_cycle_failed",
+                symbol=position.symbol,
+                exc_info=True,
+            )
 
     def _publish_exit_event(
         self,
@@ -546,6 +711,9 @@ class PositionExitMonitorService:
         submitted: bool,
         order_id: int | None,
         error: str | None,
+        peak_price: str | None = None,
+        binding_id: int | None = None,
+        dedupe_key: str | None = None,
     ) -> None:
         title = f"Position exit: {reason}"
         message = (
@@ -553,34 +721,53 @@ class PositionExitMonitorService:
             f"qty={position.quantity} "
             f"submitted={submitted}"
         )
+        detail: dict = {
+            "account_id": position.account_id,
+            "user_broker_account_id": (
+                position.user_broker_account_id
+            ),
+            "environment": str(
+                position.environment or "PAPER"
+            ).upper(),
+            "exchange_code": position.exchange_code,
+            "broker_code": position.broker_code,
+            "market": (
+                "UPBIT"
+                if str(position.broker_code or "").upper() == "UPBIT"
+                else "KIWOOM"
+            ),
+            "symbol": position.symbol,
+            "symbol_display": position.symbol,
+            "quantity": str(position.quantity),
+            "entry_price": str(position.entry_price),
+            "current_price": str(
+                position.current_price
+            ),
+            "avg_price": str(position.current_price),
+            "trigger_price": (
+                str(trigger_price)
+                if trigger_price is not None
+                else None
+            ),
+            "peak_price": peak_price
+            or str(position.highest_price),
+            "binding_id": binding_id or position.binding_id,
+            "order_id": order_id,
+            "submitted": submitted,
+            "error": error,
+            "status_label": (
+                "매도 주문 제출 완료"
+                if submitted
+                else "제출 실패/차단"
+            ),
+        }
+        if dedupe_key:
+            detail["dedupe_key"] = dedupe_key
         self._publisher.publish(
             event_type=reason,
             title=title,
             message=message,
-            detail={
-                "account_id": position.account_id,
-                "user_broker_account_id": (
-                    position.user_broker_account_id
-                ),
-                "environment": str(
-                    position.environment or "PAPER"
-                ).upper(),
-                "exchange_code": position.exchange_code,
-                "symbol": position.symbol,
-                "quantity": str(position.quantity),
-                "entry_price": str(position.entry_price),
-                "current_price": str(
-                    position.current_price
-                ),
-                "trigger_price": (
-                    str(trigger_price)
-                    if trigger_price is not None
-                    else None
-                ),
-                "order_id": order_id,
-                "submitted": submitted,
-                "error": error,
-            },
+            detail=detail,
         )
 
     @property

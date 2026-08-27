@@ -117,13 +117,16 @@ BUILTIN_TEMPLATES: list[dict[str, Any]] = [
         "event_type": "TRAILING_STOP",
         "category": "TRADE",
         "severity": "WARNING",
-        "title_template": "⚠️ 트레일링 스탑",
+        "title_template": "🟠 [업비트] 트레일링 스탑 청산",
         "body_template": (
             "종목: {symbol_display}\n"
-            "체결금액: {amount_krw}\n"
-            "체결가: {avg_price}"
+            "진입가: {entry_price}\n"
+            "최고가: {peak_price}\n"
+            "트리거가: {trigger_price}\n"
+            "청산가: {avg_price}\n"
+            "상태: {status_label}"
         ),
-        "short_body_template": "{symbol_display} 트레일링 스탑",
+        "short_body_template": "{symbol_display} 트레일링 스탑 · {status_label}",
     },
     {
         "event_type": "AI_GATE_RECOMMENDATION_CHANGED",

@@ -349,6 +349,10 @@ class Settings(BaseSettings):
     upbit_entry_signal_shadow_interval_seconds: float = 120.0
     upbit_ma_exit_forward_shadow_deployed_at: str = ""
     upbit_ma_exit_forward_shadow_interval_seconds: float = 60.0
+    # Trailing forward shadow — T0 REAL 유지, T1~T4 가상만 (REAL threshold 0 변경)
+    upbit_trailing_forward_shadow_enabled: bool = True
+    upbit_trailing_forward_shadow_deployed_at: str = ""
+    upbit_trailing_forward_shadow_interval_seconds: float = 60.0
     upbit_scanner_shadow_mismatch_watch_enabled: bool = True
     upbit_scanner_shadow_mismatch_tolerance: float = 5e-4
     upbit_scanner_shadow_cohort_milestone_watch_enabled: bool = True

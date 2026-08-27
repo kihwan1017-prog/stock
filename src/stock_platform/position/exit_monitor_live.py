@@ -29,6 +29,27 @@ from stock_platform.trading.account_models import UserBrokerAccount
 ZERO = Decimal("0")
 HIGH_WATER_KEY = "exit_monitor_high_water"
 SOURCE_EXIT_MONITOR = "POSITION_EXIT_MONITOR"
+EXIT_RULE_VERSION = "exit_reliability_v1"
+
+# Exit lifecycle (snapshot raw_data — parallel SoT 금지)
+STATE_OPEN_MONITORING = "OPEN_MONITORING"
+STATE_TRAILING_ARMED = "TRAILING_ARMED"
+STATE_TRAILING_TRIGGERED = "TRAILING_TRIGGERED"
+STATE_EXIT_ORDER_PENDING = "EXIT_ORDER_PENDING"
+STATE_EXIT_SUBMITTED = "EXIT_SUBMITTED"
+STATE_EXIT_FILLED = "EXIT_FILLED"
+STATE_CLOSED = "CLOSED"
+
+# 제출 실패 후 재시도는 허용하되, Telegram/event는 억제
+_TRIGGERED_OR_PENDING = frozenset(
+    {
+        STATE_TRAILING_TRIGGERED,
+        STATE_EXIT_ORDER_PENDING,
+        STATE_EXIT_SUBMITTED,
+        STATE_EXIT_FILLED,
+        STATE_CLOSED,
+    }
+)
 
 # FILLED 직후 스냅샷 미반영 race — 이 상태면 새 EXIT 금지
 _INFLIGHT_OR_DONE_EXIT_STATUSES = PENDING_SELL_STATUSES + (
@@ -106,7 +127,197 @@ def resolve_trailing_high_water(
     new_high = max(persisted, observed)
     if new_high > persisted:
         persist_high_water(row, high_water=new_high)
+        # peak 갱신 시 trailing armed provenance (가벼운 write)
+        mark_trailing_armed(
+            row,
+            peak_price=new_high,
+            binding_id=None,
+        )
     return new_high, True
+
+
+def _exit_monitor_nested(raw_data: object) -> dict[str, Any]:
+    if not isinstance(raw_data, dict):
+        return {}
+    nested = raw_data.get("exit_monitor")
+    return dict(nested) if isinstance(nested, dict) else {}
+
+
+def read_exit_lifecycle(raw_data: object) -> dict[str, Any]:
+    """snapshot raw_data의 exit lifecycle (없으면 빈 dict)."""
+
+    nested = _exit_monitor_nested(raw_data)
+    life = nested.get("lifecycle")
+    return dict(life) if isinstance(life, dict) else {}
+
+
+def persist_exit_lifecycle(
+    row: BrokerPositionSnapshotEntity,
+    lifecycle: dict[str, Any],
+) -> None:
+    """exit lifecycle을 snapshot raw_data에 병합 저장."""
+
+    payload: dict[str, Any] = {}
+    current = getattr(row, "raw_data", None)
+    if isinstance(current, dict):
+        payload = dict(current)
+    nested = dict(payload.get("exit_monitor") or {})
+    nested["lifecycle"] = dict(lifecycle)
+    nested["updated_at"] = datetime.now(timezone.utc).isoformat()
+    payload["exit_monitor"] = nested
+    row.raw_data = payload
+    try:
+        flag_modified(row, "raw_data")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def mark_trailing_armed(
+    row: BrokerPositionSnapshotEntity,
+    *,
+    peak_price: Decimal,
+    binding_id: int | None,
+) -> None:
+    """peak > entry 구간 — TRAILING_ARMED provenance (alert 없음)."""
+
+    life = read_exit_lifecycle(getattr(row, "raw_data", None))
+    state = str(life.get("state") or STATE_OPEN_MONITORING)
+    if state in _TRIGGERED_OR_PENDING:
+        # trigger 이후 peak 갱신은 peak만 반영
+        life["peak_price"] = str(peak_price)
+        life["peak_at"] = datetime.now(timezone.utc).isoformat()
+        persist_exit_lifecycle(row, life)
+        return
+    now_iso = datetime.now(timezone.utc).isoformat()
+    life.update(
+        {
+            "state": STATE_TRAILING_ARMED,
+            "peak_price": str(peak_price),
+            "peak_at": now_iso,
+            "trailing_armed_at": life.get("trailing_armed_at") or now_iso,
+            "binding_id": binding_id
+            if binding_id is not None
+            else life.get("binding_id"),
+            "exit_rule_version": EXIT_RULE_VERSION,
+        }
+    )
+    persist_exit_lifecycle(row, life)
+
+
+def clear_exit_trigger_cycle(
+    row: BrokerPositionSnapshotEntity,
+) -> None:
+    """조건 해제 시 새 edge cycle 허용 — submitted/filled는 유지."""
+
+    life = read_exit_lifecycle(getattr(row, "raw_data", None))
+    state = str(life.get("state") or "")
+    if state in {
+        STATE_EXIT_SUBMITTED,
+        STATE_EXIT_FILLED,
+        STATE_CLOSED,
+    }:
+        return
+    if state not in {
+        STATE_TRAILING_TRIGGERED,
+        STATE_EXIT_ORDER_PENDING,
+        STATE_TRAILING_ARMED,
+    }:
+        return
+    peak = life.get("peak_price")
+    persist_exit_lifecycle(
+        row,
+        {
+            "state": STATE_OPEN_MONITORING,
+            "peak_price": peak,
+            "peak_at": life.get("peak_at"),
+            "trailing_armed_at": life.get("trailing_armed_at"),
+            "binding_id": life.get("binding_id"),
+            "exit_rule_version": EXIT_RULE_VERSION,
+            "cleared_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def already_notified_exit_submit(lifecycle: dict[str, Any]) -> bool:
+    return bool(lifecycle.get("telegram_submitted_sent"))
+
+
+def exit_cycle_key(
+    *,
+    uba_id: int,
+    binding_id: int | None,
+    reason: str,
+) -> str:
+    bind = int(binding_id) if binding_id is not None else 0
+    return f"EXIT:{int(uba_id)}:{bind}:{str(reason).upper()}:{EXIT_RULE_VERSION}"
+
+
+def load_open_strategy_binding(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    symbol: str,
+    broker_code: str = "UPBIT",
+) -> Any | None:
+    """OPEN strategy binding — trailing/exit eligibility SoT."""
+
+    from stock_platform.risk_engine.strategy_owned_entities import (
+        BINDING_STATUS_OPEN,
+        StrategyPositionBindingEntity,
+    )
+
+    return session.scalar(
+        select(StrategyPositionBindingEntity)
+        .where(
+            StrategyPositionBindingEntity.user_broker_account_id
+            == int(user_broker_account_id),
+            StrategyPositionBindingEntity.broker_code
+            == str(broker_code).upper(),
+            StrategyPositionBindingEntity.symbol == str(symbol).upper(),
+            StrategyPositionBindingEntity.status == BINDING_STATUS_OPEN,
+        )
+        .order_by(StrategyPositionBindingEntity.opened_at.desc())
+        .limit(1)
+    )
+
+
+def load_broker_position_snapshot(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    symbol: str,
+) -> BrokerPositionSnapshotEntity | None:
+    return session.scalar(
+        select(BrokerPositionSnapshotEntity).where(
+            BrokerPositionSnapshotEntity.user_broker_account_id
+            == int(user_broker_account_id),
+            BrokerPositionSnapshotEntity.broker_code == "UPBIT",
+            BrokerPositionSnapshotEntity.symbol == str(symbol).upper(),
+            BrokerPositionSnapshotEntity.snapshot_status
+            == BrokerSnapshotStatus.ACTIVE.value,
+        )
+    )
+
+
+def is_live_exit_eligible(
+    *,
+    quantity: Decimal,
+    binding: Any | None,
+    has_active_exit_order: bool,
+) -> tuple[bool, str]:
+    """Trailing/SL/TP 평가 전 canonical eligibility."""
+
+    if binding is None:
+        return False, "NO_OPEN_BINDING"
+    qty = Decimal(str(getattr(binding, "owned_quantity", 0) or 0))
+    if qty <= ZERO and quantity <= ZERO:
+        return False, "ZERO_QUANTITY"
+    if has_active_exit_order:
+        return False, "ACTIVE_EXIT_ORDER"
+    status = str(getattr(binding, "status", "") or "").upper()
+    if status != "OPEN":
+        return False, "BINDING_NOT_OPEN"
+    return True, "OK"
 
 
 def quote_is_fresh(quoted_at: datetime | None, *, stale_seconds: float) -> bool:
