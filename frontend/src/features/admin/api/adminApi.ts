@@ -986,6 +986,54 @@ export async function getAdminUbaOpsStatus(
   return getJson(`/admin/autotrading/uba/${ubaId}/ops-status${qs}`);
 }
 
+/** Process Version / Trace / Visual Map — observability READ */
+export async function getAdminAutotradingProcessCurrent(
+  market: string,
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/autotrading/process-current", {
+    market,
+    user_broker_account_id: ubaId,
+  });
+}
+
+export async function getAdminAutotradingProcessVersions(
+  market?: string,
+): Promise<JsonValue> {
+  return getJson("/admin/autotrading/process-versions", { market });
+}
+
+export async function getAdminAutotradingProcessChanges(
+  market?: string,
+): Promise<JsonValue> {
+  return getJson("/admin/autotrading/process-changes", { market });
+}
+
+export async function getAdminAutotradingTraces(
+  market?: string,
+  limit = 50,
+): Promise<JsonValue> {
+  return getJson("/admin/autotrading/traces", { market, limit });
+}
+
+export async function getAdminAutotradingTrace(
+  traceId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/traces/${traceId}`);
+}
+
+export async function getAdminAutotradingProcessPerformance(
+  processVersionId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/autotrading/process-versions/${processVersionId}/performance`,
+  );
+}
+
+export async function postAdminAutotradingProcessBootstrap(): Promise<JsonValue> {
+  return postJson("/admin/autotrading/process-bootstrap", {});
+}
+
 export async function getAdminUbaFullMarketStatus(
   ubaId: number,
 ): Promise<JsonValue> {

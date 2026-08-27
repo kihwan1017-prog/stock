@@ -136,8 +136,8 @@
 | Fill/Position | PARTIAL | COMMITTED_BASELINE | Upbit OK / Kiwoom GAP / Paper GAP | PARTIALLY_VERIFIED | P0-5 | P0-2 | P0-2,P0-5 | fill sync, paper | Fill 파이프라인 |
 | Settlement/PnL | PARTIAL | WORKTREE FK | PARTIAL | PARTIALLY_VERIFIED | PARTIAL | PARTIAL | P0-4 | settlement/ | FK 커밋 |
 | Recovery/Reconcile | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | Upbit>Kiwoom | PARTIALLY_VERIFIED | OK | PARTIAL | P0-2 | recovery/ | Kiwoom reconcile |
-| Frontend | COMPLETE_WITH_LIMITATIONS | **MENU_CONSOLIDATION_CLOSE=YES**; COV coverage remediation CLOSED (FE 미변경); Ambiguous/rowKey WIP residual | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | SHADOW 52 PRECHECK · News 누적 · WIP 별도 |
-| Ops/Telegram | COMPLETE_WITH_LIMITATIONS | COMMITTED_BASELINE | RO 명령 | PARTIALLY_VERIFIED | OK | 제한 | — | telegram/ | — |
+| Frontend | COMPLETE_WITH_LIMITATIONS | **MENU_CONSOLIDATION_CLOSE=YES**; Process Version Map UI (`/admin/autotrading/process`) WT→commit; COV coverage remediation CLOSED (FE 미변경); Ambiguous/rowKey WIP residual | PARTIAL stubs | PARTIALLY_VERIFIED | UI | UI | — | frontend/ | SHADOW 52 PRECHECK · News 누적 · WIP 별도 |
+| Ops/Telegram | COMPLETE_WITH_LIMITATIONS | Process Version provenance (`operation.autotrading_process_*`) + Trace · COMMITTED after this STEP | RO 명령 | PARTIALLY_VERIFIED | OK | 제한 | — | telegram/ · autotrading_process_version/ | — |
 | Docs Canonical | COMPLETE (PHASE2) | NEW | — | link check | — | — | — | docs/* | PHASE3 archive |
 
 ---

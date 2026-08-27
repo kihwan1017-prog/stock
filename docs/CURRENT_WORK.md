@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-25 (UPBIT+KIWOOM Dual LLM RAG isolation READY)
+**최종 갱신:** 2026-08-27 (Process Version + Decision Trace + Visual Map)
 
 ---
 
@@ -15,10 +15,11 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | Prod AI Gate 312s latency | **UPBIT_PROD_AI_GATE_LATENCY_FIXED** | OBSERVE_UPBIT_5MIN_SCANNER_WITH_FAST_PROD_AI_GATE (manual backend restart if ghost PID) |
-| **U** | Scanner 5min latency optimization | **UPBIT_SCANNER_5MIN_OPTIMIZED** | superseded by AI Gate model/reuse fix |
+| **SHARED** | AutoTrading Process Version / Trace / Map | **AUTOTRADING_PROCESS_VERSION_TRACE_VISUAL_MAP_COMPLETE** | Separate: KIWOOM feed + health/ops perf |
+| **U** | Entry Shadow research | **ENTRY_THRESHOLD_RELAXATION_NOT_PROMISING** | REAL entry 변경 금지 · 관측 유지 |
+| **U** | Prod AI Gate 312s latency | **UPBIT_PROD_AI_GATE_LATENCY_FIXED** | OBSERVE_UPBIT_5MIN_SCANNER_WITH_FAST_PROD_AI_GATE |
 | **SHARED** | UPBIT+KIWOOM CLEAN RAG Feedback | **READY_NOT_NATURALLY_OBSERVED** | COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE |
-| **K** | Next Trading Day Auto Start | **ENABLED_READY** | OBSERVE_NEXT_KRX_SESSION_AUTO_START |
+| **K** | Next Trading Day Auto Start | **ENABLED_READY** | OBSERVE_NEXT_KRX_SESSION_AUTO_START · FEED_DOWN pending |
 
 ---
 
@@ -50,7 +51,19 @@
 
 ---
 
+## SHARED — Process Version + Decision Trace + Visual Map (2026-08-27)
+
+- OBSERVABILITY ONLY — REAL entry/exit/policy/LIVE/ARM 변경 없음
+- Tables: `operation.autotrading_process_*` + `execution_trace` / `trace_event`
+- Admin UI: `/admin/autotrading/process`
+- Baseline: `UPBIT_AUTO_V1` / `KIWOOM_AUTO_V1` · today PARTIAL traces (5 RT + blocked + Kiwoom FEED_DOWN)
+- Evidence: `.run/k_autotrading_process_version_trace_visual_map.{json,md}`
+- Pending separate: `KIWOOM_MARKET_DATA_FAILURE`, `HEALTH_OPS_PERFORMANCE_ISSUE`
+- Note: PROD restart 후 in-memory STOPPED 가능 — LIVE/ARM 복구는 Admin 기존 제어로
+
+---
+
 ## Next Gate
 
-**SHARED:** COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE  
-**K:** OBSERVE_NEXT_KRX_SESSION_AUTO_START
+**SHARED:** Restore UPBIT stack via Admin if needed · COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE  
+**K:** KIWOOM_MARKET_DATA_FAILURE (별도) · OBSERVE_NEXT_KRX_SESSION_AUTO_START

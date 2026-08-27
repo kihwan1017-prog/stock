@@ -169,6 +169,9 @@
 | P4-2 | Full autotrading runbook (Paper vs LIVE) | `docs/operations/` | OPEN |
 | P4-3 | Outbox/fill/runner metrics | dashboard | OPEN |
 | P4-4 | Kill Switch / Recovery conflict 알림 확장 | telegram events | OPEN |
+| P4-5 | AutoTrading Process Version + Decision Trace + Visual Map | Admin `/admin/autotrading/process` · migration `pv1a2b3c4d5e` | **DONE** (2026-08-27 · OBSERVABILITY) |
+
+**Ops note (2026-08-27):** Process provenance UI COMPLETE. Separate pending: `KIWOOM_MARKET_DATA_FAILURE`, `HEALTH_OPS_PERFORMANCE_ISSUE`.
 
 **UPBIT [C] MAINTENANCE / OPTIONAL** (완료 blocker 아님, 완료율을 낮추지 않음): Runtime heartbeat observability · `/health/ops` 표현 · Worker START API polish · Telegram/UI/audit · AI Gate LIVE · Scanner LIVE 연결 · AUTO RE-ARM. 세션 갱신은 운영 runbook만: [trading/UPBIT_UBA1380_24X7_SESSION_RENEWAL.md](trading/UPBIT_UBA1380_24X7_SESSION_RENEWAL.md).
 

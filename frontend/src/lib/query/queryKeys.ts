@@ -230,6 +230,18 @@ export const queryKeys = {
       ["admin", "upbit-research-entry-signal-shadow-summary", ubaId ?? null] as const,
     upbitResearchEntrySignalShadowRows: (ubaId?: number) =>
       ["admin", "upbit-research-entry-signal-shadow-rows", ubaId ?? null] as const,
+    autotradingProcessCurrent: (market: string, ubaId?: number) =>
+      ["admin", "autotrading-process-current", market, ubaId ?? null] as const,
+    autotradingProcessVersions: (market?: string) =>
+      ["admin", "autotrading-process-versions", market ?? null] as const,
+    autotradingProcessChanges: (market?: string) =>
+      ["admin", "autotrading-process-changes", market ?? null] as const,
+    autotradingTraces: (market?: string) =>
+      ["admin", "autotrading-traces", market ?? null] as const,
+    autotradingTrace: (traceId: number) =>
+      ["admin", "autotrading-trace", traceId] as const,
+    autotradingProcessPerformance: (processVersionId: number) =>
+      ["admin", "autotrading-process-performance", processVersionId] as const,
     upbitDualLlmStatus: () => ["admin", "upbit-dual-llm-status"] as const,
     upbitDualLlmRecent: (params?: object) =>
       ["admin", "upbit-dual-llm-recent", params ?? {}] as const,

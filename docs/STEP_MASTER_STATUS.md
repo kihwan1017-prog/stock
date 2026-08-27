@@ -2,7 +2,8 @@
 
 **역할:** STEP 관리의 **유일한** Source of Truth.  
 **규칙:** 같은 숫자라도 네임스페이스가 다르면 **합치지 않는다.** 과거 번호를 삭제·재부여하지 않고 Mapping만 제공한다.  
-**최종 갱신:** 2026-08-21 (KIWOOM SETTLEMENT-AWARE DAILY LOSS)  
+**최종 갱신:** 2026-08-27 (Process Version + Trace + Visual Map)  
+**Ops note (2026-08-27):** SHARED `AUTOTRADING_PROCESS_VERSION_TRACE_VISUAL_MAP_COMPLETE`. Route `/admin/autotrading/process`. Migration `pv1a2b3c4d5e`. REAL policy mutation 0. Pending separate: KIWOOM_MARKET_DATA_FAILURE · HEALTH_OPS_PERFORMANCE_ISSUE.  
 **Ops note (2026-08-21):** TRACK K `KIWOOM_SETTLEMENT_AWARE_DAILY_LOSS_IMPLEMENTED`. V2 equity generic; today baseline V1 mid-day safe; ENTRY still BLOCKED. Next=`APPLY MIGRATION + RELOAD ON NEXT KRX DAY (V2 BASELINE); DO NOT REWRITE TODAY BASELINE`.
 **Ops note (2026-08-21 SUPERSEDED):** SHARED `STRATEGY_CANDIDATE_UX_CONSOLIDATION_COMPLETE` @ `74c78d4`. Admin 전략·후보 leaf 5 Workspace. UBA1380 Runtime READ-ONLY 불변. Destructive cleanup 없음.
 **Ops note (2026-08-20 SUPERSEDED):** TRACK U `UPBIT_FULL_MARKET_AUTOTRADING_READY_TO_ENABLE`. Next exactly one: **ENABLE UBA1380 FULL MARKET AUTO MODE FROM ADMIN UI**. FIXED_SYMBOL default · Enable 0 · REAL Δ0 · UBA1381 0.

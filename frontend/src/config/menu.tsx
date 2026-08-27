@@ -127,9 +127,19 @@ export const adminMenuItems: AdminMenuItem[] = [
         matchPaths: [
           adminRoutes.autotradingUpbit,
           adminRoutes.upbitAutotrading,
+          adminRoutes.autotradingProcess,
           adminRoutes.operationsPreflight,
           adminRoutes.operationsDashboard,
         ],
+      },
+      {
+        key: "autotrading-process",
+        label: "프로세스·버전",
+        path: adminRoutes.autotradingProcess,
+        icon: <ApartmentOutlined />,
+        enabled: true,
+        permission: "menu:upbit",
+        matchPaths: [adminRoutes.autotradingProcess],
       },
       {
         key: "orders",
