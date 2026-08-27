@@ -248,7 +248,7 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "evidence": [".run/k_upbit_trailing_state_dedupe_shadow.json"],
     },
     {
-        "git_commit": "PENDING",
+        "git_commit": "1771087",
         "change_type": CHANGE_RELIABILITY,
         "component": "EXIT_ORDER",
         "summary": "EXIT WAIT self-heal supervisor + cancelled exit reopen",
