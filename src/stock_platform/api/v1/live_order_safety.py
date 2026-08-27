@@ -625,6 +625,102 @@ def admin_order_fill_sync(
     }
 
 
+class RecoveryCancelExistingOrderBody(BaseModel):
+    """기존 remote WAIT 주문 recovery cancel — 신규 REAL 주문 생성 없음."""
+
+    user_broker_account_id: int = Field(gt=0)
+    expected_broker_order_id: str | None = Field(default=None, max_length=64)
+
+
+@admin_router.post("/orders/{order_id}/recovery-cancel")
+def admin_recovery_cancel_existing_order(
+    order_id: int,
+    body: RecoveryCancelExistingOrderBody,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """LIVE OFF 상태에서도 기존 Upbit OPEN 주문 1건만 cancel (recovery 전용).
+
+    신규 submit/replace/amend/LIVE transition gate 없음.
+    remote SoT 재조회 + fill-sync 로 terminal 확정.
+    """
+
+    from stock_platform.broker.upbit.recovery_order_cancel_service import (
+        UpbitRecoveryOrderCancelError,
+        UpbitRecoveryOrderCancelService,
+    )
+    from stock_platform.order.entities import TradingOrderEntity
+
+    order = session.get(TradingOrderEntity, int(order_id))
+    if order is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="ORDER_NOT_FOUND"
+        )
+    assert_broker_account_access(
+        user, int(body.user_broker_account_id), session
+    )
+    try:
+        result = UpbitRecoveryOrderCancelService(
+            session
+        ).cancel_existing_order_for_recovery(
+            int(order_id),
+            user_broker_account_id=int(body.user_broker_account_id),
+            expected_broker_order_id=body.expected_broker_order_id,
+            actor=user.username,
+        )
+        session.commit()
+    except UpbitRecoveryOrderCancelError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": exc.code,
+                "message": exc.message,
+                "detail": exc.detail,
+            },
+        ) from exc
+    except Exception as exc:  # noqa: BLE001
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{type(exc).__name__}:{exc}",
+        ) from exc
+
+    audit.record(
+        event_type="ADMIN_UPBIT_RECOVERY_ORDER_CANCEL",
+        actor=user.username,
+        detail={
+            "order_id": int(order_id),
+            "user_broker_account_id": int(body.user_broker_account_id),
+            "action": result.action,
+            "cancel_requested": result.cancel_requested,
+            "cancel_accepted": result.cancel_accepted,
+            "remote_status_before": result.remote_status_before,
+            "remote_status_after": result.remote_status_after,
+            "local_status_after": result.local_status_after,
+            "idempotent": result.idempotent,
+        },
+    )
+    session.commit()
+    return {
+        "order_id": result.order_id,
+        "user_broker_account_id": result.user_broker_account_id,
+        "broker_order_id": result.broker_order_id,
+        "action": result.action,
+        "cancel_requested": result.cancel_requested,
+        "cancel_accepted": result.cancel_accepted,
+        "remote_status_before": result.remote_status_before,
+        "remote_status_after": result.remote_status_after,
+        "local_status_before": result.local_status_before,
+        "local_status_after": result.local_status_after,
+        "executed_volume": result.executed_volume,
+        "remaining_volume": result.remaining_volume,
+        "idempotent": result.idempotent,
+        "detail": result.detail,
+    }
+
+
 @admin_router.post("/orders/{order_id}/post-fill/retry")
 def admin_retry_order_post_fill(
     order_id: int,
