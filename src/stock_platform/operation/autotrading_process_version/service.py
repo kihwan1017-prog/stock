@@ -1129,12 +1129,21 @@ def _kiwoom_runtime_overlay(session: Session, *, uba_id: int) -> dict[str, Any]:
         "symbols": symbols,
         "034310_ONLY": only_034310,
         "last_regular_snapshot": {
-            "feed": "OK" if feed_running and feed_connected else "DOWN",
+            # 장 마감 후 in-memory feed 재시작은 CURRENT 장애가 아님
+            "feed": (
+                "OK"
+                if feed_running and feed_connected
+                else ("SESSION_ENDED" if not in_regular else "DOWN")
+            ),
             "real_tick_count": event_count,
             "universe": uni_count,
             "scanner": node_status.get("SCANNER"),
             "signal": int(stages.get("SIGNAL") or 0),
-            "first_zero_during_session_hint": first_zero,
+            "first_zero_during_session_hint": (
+                "NO_GOLDEN_CROSS_SIGNAL"
+                if not in_regular
+                else first_zero
+            ),
         },
         "pending_issue": pending,
         "canonical_feed_sot": "kiwoom_funnel + kiwoom_market_realtime_runtime.status",
