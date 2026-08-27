@@ -228,6 +228,19 @@ async def test_l2_restore_on_partial_restore() -> None:
             return_value={"restored": True, "detail": {"component_ok": {}}},
         ),
         patch(
+            "stock_platform.trading.autotrading_reliability_watchdog.execution_stack_needs_restore",
+            return_value={
+                "needs_restore": True,
+                "restore_kind": "PARTIAL_RESTORE",
+                "down_components": ["worker"],
+                "desired": {"desired_execution_running": True},
+            },
+        ),
+        patch(
+            "stock_platform.trading.autotrading_reliability_watchdog.verify_stack_restored",
+            return_value={"restore_succeeded": True, "missing_components": []},
+        ),
+        patch(
             "stock_platform.trading.autotrading_reliability_watchdog._emit_reliability_telegram"
         ),
     ):
@@ -238,9 +251,24 @@ async def test_l2_restore_on_partial_restore() -> None:
         out = await reconcile_market_health(market="UPBIT", uba_id=1380)
 
     assert out["restore_attempted"] is True
-    assert out["restore_trigger"] == "WATCHDOG"
+    assert out["restore_trigger"] == "PARTIAL_RESTORE"
     assert out["restore_succeeded"] is True
     assert "L2_STACK" in (out.get("actions") or [])
+
+
+def test_watchdog_restore_fail_telegram_edge_dedup() -> None:
+    import stock_platform.trading.autotrading_reliability_watchdog as wd_mod
+
+    wd_mod._last_stack_restore_fail_alert.clear()
+    with patch.object(wd_mod, "_emit_reliability_telegram") as tg:
+        verify = {"missing_components": ["worker"], "verified": {"worker": False}}
+        wd_mod._handle_restore_fail_edge(
+            market="UPBIT", uba_id=1380, verify=verify, attempts=2
+        )
+        wd_mod._handle_restore_fail_edge(
+            market="UPBIT", uba_id=1380, verify=verify, attempts=3
+        )
+    assert tg.call_count == 1
 
 
 def test_backoff_increases_on_failure() -> None:
@@ -254,6 +282,17 @@ def test_backoff_increases_on_failure() -> None:
     allowed2, wait = _backoff_allowed(key)
     assert allowed2 is False
     assert wait > 0
+
+
+def test_backoff_resets_on_success() -> None:
+    key = "UPBIT:1380"
+    import stock_platform.trading.autotrading_reliability_watchdog as wd_mod
+
+    wd_mod._restore_backoff[key] = {"attempts": 3, "last_attempt_mono": 0.0}
+    _record_restore_attempt(key, success=True)
+    allowed, _ = _backoff_allowed(key)
+    assert allowed is True
+    assert wd_mod._restore_backoff[key]["attempts"] == 0
 
 
 def test_stack_forensic_ring_buffer() -> None:

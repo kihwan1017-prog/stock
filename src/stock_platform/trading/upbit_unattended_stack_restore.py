@@ -395,67 +395,47 @@ async def restore_upbit_trading_stack(
             "error": type(feed_exc).__name__,
         }
 
-    # 6) 검증 + restore epoch + 실패 telemetry
-    from stock_platform.trading.upbit_24x7_control import (
-        exit_monitor_status,
-        runtime_status_for_uba as _runtime_status,
+    # 6) Scanner — canonical L1 (idempotent)
+    try:
+        from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+            upbit_opportunity_scanner_scheduler,
+        )
+
+        sc_before = upbit_opportunity_scanner_scheduler.status()
+        if bool(sc_before.get("started")) or bool(sc_before.get("running")):
+            detail["scanner"] = {
+                "started": True,
+                "reason": "ALREADY_STARTED",
+                "idempotent": True,
+            }
+        else:
+            detail["scanner"] = upbit_opportunity_scanner_scheduler.start()
+    except Exception as sc_exc:  # noqa: BLE001
+        detail["scanner"] = {
+            "started": False,
+            "error": type(sc_exc).__name__,
+        }
+
+    # 7) heartbeat 기반 검증 + restore epoch + 실패 telemetry
+    from stock_platform.trading.execution_stack_reconciliation import (
+        verify_stack_restored,
     )
     from stock_platform.trading.upbit_execution_restore_epoch import (
         upbit_execution_restore_epoch,
     )
 
-    worker_ok = bool(live_outbox_worker_runtime.status().get("running"))
-    exit_ok = str(exit_monitor_status().get("status") or "").upper() == "RUNNING"
-    runtime_ok = False
-    if strategy_id is not None:
-        runtime_ok = (
-            str(
-                _runtime_status(
-                    user_broker_account_id=uba_id,
-                    strategy_id=int(strategy_id),
-                ).get("status")
-                or ""
-            ).upper()
-            == "RUNNING"
-        )
-    runner_ok = bool(
-        ((detail.get("execution_runner") or {}).get("started"))
-        or ((detail.get("execution_runner") or {}).get("reason") == "ALREADY_RUNNING")
-    )
-    components = {
-        "worker": worker_ok,
-        "runtime": runtime_ok,
-        "exit_monitor": exit_ok,
-        "execution_runner": runner_ok,
-        "feed": False,
-    }
-    # feed started/already covering 모두 허용
-    feed_detail = detail.get("feed") or {}
-    if isinstance(feed_detail, dict):
-        hub_r = feed_detail.get("hub_restore") or {}
-        prot = feed_detail.get("protective") or {}
-        components["feed"] = bool(
-            hub_r.get("started")
-            or hub_r.get("already_running")
-            or (prot.get("ok") if isinstance(prot, dict) else False)
-        )
+    verify = verify_stack_restored(session, user_broker_account_id=uba_id)
+    detail["verify"] = verify
+    components = verify.get("verified") or {}
     detail["component_ok"] = components
-    stack_ok = all(
-        [
-            components["worker"],
-            components["runtime"],
-            components["exit_monitor"],
-            components["execution_runner"],
-            components["feed"],
-        ]
-    )
+    stack_ok = bool(verify.get("restore_succeeded"))
     detail["stack_ok"] = stack_ok
 
     if stack_ok:
         upbit_execution_restore_epoch.mark_restored(actor=actor)
         detail["restore_epoch"] = upbit_execution_restore_epoch.snapshot()
     else:
-        missing = [k for k, v in components.items() if not v]
+        missing = verify.get("missing_components") or []
         detail["missing_components"] = missing
         _emit_stack_restore_failed(
             session,

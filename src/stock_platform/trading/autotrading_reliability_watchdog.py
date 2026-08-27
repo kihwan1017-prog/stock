@@ -15,6 +15,10 @@ from stock_platform.trading.autotrading_health_service import (
     HEALTH_READY,
     build_trading_health_snapshot,
 )
+from stock_platform.trading.execution_stack_reconciliation import (
+    execution_stack_needs_restore,
+    verify_stack_restored,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +32,20 @@ _restore_locks: dict[str, asyncio.Lock] = {}
 _restore_backoff: dict[str, dict[str, Any]] = {}
 # forensic — component transitions
 _stack_forensic: dict[str, list[dict[str, Any]]] = {}
+# market:uba_id — stack restore fail CRITICAL telegram edge (반복 금지)
+_last_stack_restore_fail_alert: dict[str, bool] = {}
 
 BACKOFF_SCHEDULE_SEC = (30.0, 60.0, 300.0, 600.0)
 MAX_RESTORE_ATTEMPTS_PER_WINDOW = 8
+
+
+def reset_startup_restore_backoff(*, market: str | None = None, uba_id: int | None = None) -> None:
+    """Startup 직후 최초 restore가 과거 backoff에 막히지 않게 초기화."""
+
+    if market is not None and uba_id is not None:
+        _restore_backoff.pop(_market_key(market, uba_id), None)
+        return
+    _restore_backoff.clear()
 
 
 def _market_key(market: str, uba_id: int) -> str:
@@ -129,6 +144,41 @@ def _emit_reliability_telegram(
         )
     except Exception:  # noqa: BLE001
         logger.exception("reliability_telegram_failed", extra={"market": market})
+
+
+def _handle_restore_fail_edge(
+    *,
+    market: str,
+    uba_id: int,
+    verify: dict[str, Any],
+    attempts: int,
+) -> None:
+    """canonical restore 반복 실패 — UPBIT SYSTEM/CRITICAL edge-trigger 1회."""
+
+    key = _market_key(market, uba_id)
+    if attempts < 2:
+        _last_stack_restore_fail_alert.pop(key, None)
+        return
+    if _last_stack_restore_fail_alert.get(key):
+        return
+    _last_stack_restore_fail_alert[key] = True
+    missing = verify.get("missing_components") or []
+    _emit_reliability_telegram(
+        market=market,
+        uba_id=uba_id,
+        event_type="UPBIT_EXECUTION_STACK_RESTORE_FAILED",
+        title="🔴 [업비트] 자동매매 실행 스택 복구 실패",
+        message=(
+            "LIVE/ARM은 활성 상태이나\n"
+            "실행 구성요소가 정상 기동되지 않았습니다.\n\n"
+            "자동매매 신규 주문은 차단됩니다."
+        ),
+        detail={
+            "missing_components": missing,
+            "restore_attempts": attempts,
+            "verified": verify.get("verified"),
+        },
+    )
 
 
 def _handle_health_transition(
@@ -365,6 +415,23 @@ async def reconcile_market_health(
                 reason=str(snap.get("health_reasons")),
             )
 
+        stack_need = execution_stack_needs_restore(
+            session, user_broker_account_id=uba_id, snapshot=snap
+        )
+        outcome["stack_need"] = {
+            "needs_restore": stack_need.get("needs_restore"),
+            "restore_kind": stack_need.get("restore_kind"),
+            "down_components": stack_need.get("down_components"),
+        }
+        if stack_need.get("restore_kind") == "FULL_EXECUTION_STACK_DOWN":
+            record_stack_forensic(
+                market=market,
+                uba_id=uba_id,
+                component="stack",
+                event="FULL_EXECUTION_STACK_DOWN",
+                reason=str(stack_need.get("down_components")),
+            )
+
         allowed, wait_sec = _backoff_allowed(key)
         if not allowed:
             outcome["restore_skipped"] = "BACKOFF"
@@ -404,16 +471,13 @@ async def reconcile_market_health(
                     actions.append("L1_SCANNER")
                     outcome["l1_scanner"] = l1s
 
-            # LEVEL 2 — partial restore or broken stack (LIVE/ARM valid only)
-            need_l2 = bool(snap.get("partial_restore")) or (
-                current == HEALTH_BROKEN
-                and snap.get("live") == "ON"
-                and snap.get("arm") == "ON"
-                and snap.get("activation") == "ACTIVE"
+            # LEVEL 2 — FULL/PARTIAL stack down (LIVE/ARM/Activation valid)
+            need_l2 = bool(stack_need.get("needs_restore")) and (
+                market != "KIWOOM" or snap.get("kiwoom_stack_slo_active")
             )
-            if need_l2 and (market != "KIWOOM" or snap.get("kiwoom_stack_slo_active")):
+            if need_l2:
                 outcome["restore_attempted"] = True
-                outcome["restore_trigger"] = "WATCHDOG"
+                outcome["restore_trigger"] = stack_need.get("restore_kind") or "WATCHDOG"
                 started = time.monotonic()
                 l2 = await _l2_stack_restore(
                     session, uba_id=uba_id, market=market, actor=actor
@@ -422,14 +486,30 @@ async def reconcile_market_health(
                 outcome["restore_duration_seconds"] = round(
                     time.monotonic() - started, 2
                 )
-                restored = bool(l2.get("restored"))
+                # heartbeat 기반 최종 판정 (return success만 믿지 않음)
+                verify = verify_stack_restored(
+                    session, user_broker_account_id=uba_id
+                )
+                outcome["verify"] = verify
+                restored = bool(verify.get("restore_succeeded"))
                 outcome["restore_succeeded"] = restored
+                st = _restore_backoff.setdefault(
+                    key, {"attempts": 0, "last_attempt_mono": 0.0}
+                )
                 _record_restore_attempt(key, success=restored)
+                _handle_restore_fail_edge(
+                    market=market,
+                    uba_id=uba_id,
+                    verify=verify,
+                    attempts=int(st.get("attempts") or 0),
+                )
+                if restored:
+                    _last_stack_restore_fail_alert.pop(key, None)
                 actions.append("L2_STACK")
                 session.commit()
 
                 if not restored:
-                    missing = (l2.get("detail") or {}).get("missing_components")
+                    missing = verify.get("missing_components") or []
                     if missing:
                         _emit_reliability_telegram(
                             market=market,
@@ -437,8 +517,18 @@ async def reconcile_market_health(
                             event_type="AUTOTRADING_RELIABILITY_RESTORE_FAILED",
                             title=f"[{market}] 자동매매 자동 복구 실패",
                             message="관리자 확인 필요.",
-                            detail={"missing": missing, "l2": l2},
+                            detail={"missing": missing, "l2": l2, "verify": verify},
                         )
+            elif stack_need.get("desired", {}).get("desired_execution_running"):
+                # desired RUNNING + actual OK — backoff reset
+                verify_ok = verify_stack_restored(
+                    session, user_broker_account_id=uba_id
+                )
+                _record_restore_attempt(
+                    key, success=bool(verify_ok.get("restore_succeeded"))
+                )
+                if verify_ok.get("restore_succeeded"):
+                    _last_stack_restore_fail_alert.pop(key, None)
             else:
                 _record_restore_attempt(key, success=True)
 
@@ -561,6 +651,28 @@ class AutoTradingReliabilityWatchdog:
         self._last_run_at = datetime.now(timezone.utc)
         self._last_summary = summary
         self._last_error = None
+        # tick 관측 — self-heal proof용 (민감정보 제외)
+        try:
+            compact = []
+            for r in summary.get("results") or []:
+                if not isinstance(r, dict):
+                    continue
+                compact.append(
+                    {
+                        "uba": r.get("user_broker_account_id"),
+                        "health": (r.get("snapshot") or {}).get("health_state"),
+                        "restore_needed": (r.get("stack_need") or {}).get("needs_restore"),
+                        "restore_kind": (r.get("stack_need") or {}).get("restore_kind"),
+                        "restore_attempted": r.get("restore_attempted"),
+                        "restore_succeeded": r.get("restore_succeeded"),
+                    }
+                )
+            logger.info(
+                "autotrading_watchdog_tick",
+                extra={"count": summary.get("count"), "results": compact},
+            )
+        except Exception:  # noqa: BLE001
+            pass
         return summary
 
     async def _run(self) -> None:

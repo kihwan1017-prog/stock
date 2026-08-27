@@ -226,6 +226,10 @@ class ApplicationLifecycle:
                 "scheduler startup",
                 self._start_schedulers,
             )
+            await self._run_optional(
+                "execution stack reconciliation",
+                self._startup_execution_stack_reconciliation,
+            )
             from stock_platform.operation.runtime_info import (
                 mark_lifecycle_started,
             )
@@ -337,6 +341,26 @@ class ApplicationLifecycle:
             actor="SYSTEM_UNATTENDED_STARTUP_RESTORE",
         )
         logger.info("unattended_upbit_stack_restore_startup", **result)
+
+    async def _startup_execution_stack_reconciliation(self) -> None:
+        """Scheduler 기동 후 canonical desired-state reconciliation.
+
+        unattended restore는 scanner/feed보다 먼저 실행되므로
+        startup 완료 시점에 heartbeat verify까지 수행한다.
+        """
+
+        from stock_platform.trading.autotrading_reliability_watchdog import (
+            reset_startup_restore_backoff,
+        )
+        from stock_platform.trading.execution_stack_reconciliation import (
+            reconcile_all_active_unattended_leases,
+        )
+
+        reset_startup_restore_backoff()
+        result = await reconcile_all_active_unattended_leases(
+            actor="STARTUP_EXECUTION_STACK_RECONCILE",
+        )
+        logger.info("execution_stack_reconciliation_startup", **result)
 
     async def _startup_release_validation(self) -> None:
         """Release v1.2 — Configuration / Fail-Closed / Lifecycle 검증."""
