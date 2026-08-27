@@ -1,7 +1,10 @@
 """프로세스 전역 KIWOOM 시세 WS 런타임.
 
-기동 시 자동 start 금지. Admin/운영 API가 명시 START 할 때만 연결한다.
+Admin/운영/stack-restore/watchdog L1 가 명시 START 할 때만 연결한다.
+기동 시 무조건부 auto_start flag는 기본 OFF (settings).
 REAL 주문 경로와 MOCK 시세를 섞지 않는다 (Fail Closed).
+
+동시 start race 로 자기 task 를 cancel 하지 않도록 asyncio.Lock 으로 직렬화한다.
 """
 
 from __future__ import annotations
@@ -25,6 +28,9 @@ from stock_platform.realtime.models import RealtimeQuote
 
 logger = structlog.get_logger(__name__)
 
+# handshake 대기 (초) — restore thrash 방지용 최소 연결 확인
+_CONNECT_WAIT_SECONDS = 3.0
+
 
 class KiwoomMarketRealtimeRuntime:
     """UBA credential 기반 시세 WS. account/strategy 하드코딩 없음."""
@@ -35,24 +41,33 @@ class KiwoomMarketRealtimeRuntime:
         self._uba_id: int | None = None
         self._require_real: bool = True
         self._started_at: datetime | None = None
+        self._lock = asyncio.Lock()
 
     def bind(self, client: KiwoomMarketRealtimeClient | None) -> None:
         """테스트/probe용 수동 바인딩."""
 
         self._client = client
 
+    def _task_running(self) -> bool:
+        return bool(self._task is not None and not self._task.done())
+
     def status(self) -> dict[str, Any]:
         settings = get_settings()
         client_status = (
             self._client.status() if self._client is not None else None
         )
-        task_running = bool(self._task is not None and not self._task.done())
-        connected = bool(client_status and client_status.get("connected"))
+        task_running = self._task_running()
+        # task 가 죽었으면 connected stale 금지 (과거 connected=true/running=false)
+        connected = bool(
+            task_running
+            and client_status
+            and client_status.get("connected")
+        )
         last_event_at = None
         feed_age = None
         if isinstance(client_status, dict):
             last_event_at = client_status.get("last_event_at")
-            if last_event_at:
+            if last_event_at and task_running:
                 try:
                     dt = datetime.fromisoformat(
                         str(last_event_at).replace("Z", "+00:00")
@@ -73,7 +88,7 @@ class KiwoomMarketRealtimeRuntime:
             "started_at": (
                 self._started_at.isoformat() if self._started_at else None
             ),
-            "last_tick_at": last_event_at,
+            "last_tick_at": last_event_at if task_running else None,
             "feed_age_seconds": feed_age,
             "process_market_environment": (
                 "MOCK" if settings.kiwoom_market_data_is_mock else "REAL"
@@ -93,9 +108,26 @@ class KiwoomMarketRealtimeRuntime:
         user_broker_account_id: int,
         symbols: list[str],
         require_real: bool = True,
+        connect_wait_seconds: float = _CONNECT_WAIT_SECONDS,
     ) -> dict[str, Any]:
         """시세 WS START. 다른 UBA/Upbit runner는 건드리지 않는다."""
 
+        async with self._lock:
+            return await self._start_locked(
+                user_broker_account_id=user_broker_account_id,
+                symbols=symbols,
+                require_real=require_real,
+                connect_wait_seconds=connect_wait_seconds,
+            )
+
+    async def _start_locked(
+        self,
+        *,
+        user_broker_account_id: int,
+        symbols: list[str],
+        require_real: bool,
+        connect_wait_seconds: float,
+    ) -> dict[str, Any]:
         uba_id = int(user_broker_account_id)
         cleaned = sorted(
             {
@@ -112,7 +144,6 @@ class KiwoomMarketRealtimeRuntime:
         settings = get_settings()
         # 프로세스 KIWOOM_USE_MOCK 단독으로는 REAL lifecycle feed를 막지 않는다.
         # 명시적 KIWOOM_MARKET_DATA_USE_MOCK=true 만 require_real 경로를 차단.
-        # Canonical SoT: UBA credential REAL + for_real_host() (아래 vault resolve).
         if require_real and settings.kiwoom_market_data_use_mock is True:
             return {
                 "started": False,
@@ -121,10 +152,9 @@ class KiwoomMarketRealtimeRuntime:
                 "note": "explicit KIWOOM_MARKET_DATA_USE_MOCK=true",
             }
 
-        # 동일 UBA에서 이미 RUNNING이면 심볼만 합집합 추가
+        # 동일 UBA에서 이미 RUNNING이면 심볼만 합집합 (stop 금지 — thrash 방지)
         if (
-            self._task is not None
-            and not self._task.done()
+            self._task_running()
             and self._client is not None
             and self._uba_id == uba_id
         ):
@@ -137,15 +167,11 @@ class KiwoomMarketRealtimeRuntime:
             }
 
         # 다른 UBA가 돌고 있으면 교체 (시세 WS는 프로세스당 1개)
-        if self._task is not None and not self._task.done():
-            await self.stop()
+        if self._task_running() and self._uba_id != uba_id:
+            await self._stop_locked()
 
         def _resolve_real_feed_client() -> dict[str, Any]:
-            """Vault/credential resolve는 sync — event loop 블로킹 방지용.
-
-            시세 feed는 last_used_at write-lock이 불필요 (touch_last_used=False).
-            단계별 monotonic timing만 기록 — secret 미포함.
-            """
+            """Vault/credential resolve는 sync — event loop 블로킹 방지용."""
 
             import time
 
@@ -171,7 +197,6 @@ class KiwoomMarketRealtimeRuntime:
             _mark("db_acquire_ms", t0)
             try:
                 t1 = time.monotonic()
-                # LOCAL_CREDENTIAL_RESOLVE only — token HTTP는 WS run_forever에서
                 resolved = resolve_uba_credential(
                     session,
                     uba_id,
@@ -230,7 +255,21 @@ class KiwoomMarketRealtimeRuntime:
             finally:
                 session.close()
 
+        # credential resolve 중 다른 start 가 이미 task 를 띄웠을 수 있음
         resolved_parts = await asyncio.to_thread(_resolve_real_feed_client)
+        if (
+            self._task_running()
+            and self._client is not None
+            and self._uba_id == uba_id
+        ):
+            self._client.subscribe_symbols(cleaned)
+            return {
+                "started": True,
+                "already_running": True,
+                "user_broker_account_id": uba_id,
+                "note": "RACE_LOST_TO_PEER_START",
+                **self.status(),
+            }
         if not resolved_parts.get("ok"):
             return {
                 "started": False,
@@ -241,6 +280,10 @@ class KiwoomMarketRealtimeRuntime:
             }
         token_cache = resolved_parts["token_cache"]
         ws_cfg = resolved_parts["ws_cfg"]
+
+        # 죽은 task 잔여 정리 (cancel 없이 참조만 교체)
+        if self._task is not None and self._task.done():
+            self._task = None
 
         client = KiwoomMarketRealtimeClient(
             config=ws_cfg,
@@ -256,15 +299,42 @@ class KiwoomMarketRealtimeRuntime:
             client.run_forever(),
             name=f"kiwoom-market-realtime-{uba_id}",
         )
-        # 연결 handshake까지 짧게 양보
-        await asyncio.sleep(0.2)
+
+        # handshake 대기 — running 유지 여부 확인 (connected 는 선택)
+        wait_budget = max(0.2, float(connect_wait_seconds or 0.2))
+        deadline = asyncio.get_event_loop().time() + wait_budget
+        while asyncio.get_event_loop().time() < deadline:
+            if not self._task_running():
+                break
+            st = self.status()
+            if st.get("connected"):
+                break
+            await asyncio.sleep(0.15)
+
+        still_running = self._task_running()
+        st = self.status()
         logger.info(
             "kiwoom_market_realtime_started",
             uba_id=uba_id,
             symbols=cleaned,
             environment=ws_cfg.environment,
             require_real=require_real,
+            running=still_running,
+            connected=bool(st.get("connected")),
+            last_error=(st.get("client") or {}).get("last_error")
+            if isinstance(st.get("client"), dict)
+            else None,
         )
+        if not still_running:
+            return {
+                "started": False,
+                "already_running": False,
+                "reason": "FEED_TASK_EXITED",
+                "user_broker_account_id": uba_id,
+                "symbols": cleaned,
+                "environment": ws_cfg.environment,
+                **st,
+            }
         return {
             "started": True,
             "already_running": False,
@@ -274,12 +344,16 @@ class KiwoomMarketRealtimeRuntime:
             "source_code": SOURCE_WEBSOCKET_REAL
             if ws_cfg.environment == "REAL"
             else None,
-            **self.status(),
+            **st,
         }
 
     async def stop(self) -> dict[str, Any]:
         """시세 WS STOP. Upbit/다른 runner는 유지."""
 
+        async with self._lock:
+            return await self._stop_locked()
+
+    async def _stop_locked(self) -> dict[str, Any]:
         client = self._client
         task = self._task
         if client is not None:

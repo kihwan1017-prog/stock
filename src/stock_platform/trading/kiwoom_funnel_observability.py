@@ -18,17 +18,57 @@ from stock_platform.trading.account_models import UserBrokerAccount
 def _resolve_fixed_symbols(
     session: Session, *, user_broker_account_id: int
 ) -> list[str]:
-    """Strategy FIXED deployment symbols (보통 034310 단일)."""
+    """Strategy FIXED deployment symbols (보통 034310 단일).
 
+    strategy_id=None 로 호출하면 settings fallback 만 보고 UNIVERSE=0 오탐이
+    나므로 ACTIVE account_strategy_link 를 먼저 조회한다.
+    """
+
+    from stock_platform.strategy_deployment.definition_entities import (
+        AccountStrategyLinkEntity,
+    )
     from stock_platform.trading.kiwoom_unattended_stack_restore import (
         _resolve_kiwoom_stack_feed_symbols,
     )
 
     try:
+        uba_id = int(user_broker_account_id)
+        link = session.scalar(
+            select(AccountStrategyLinkEntity)
+            .where(
+                AccountStrategyLinkEntity.user_broker_account_id == uba_id,
+                AccountStrategyLinkEntity.is_active.is_(True),
+            )
+            .limit(1)
+        )
+        strategy_id = int(link.strategy_id) if link is not None else None
+
+        # runtime feed 가 이미 구독 중이면 SoT 보조
+        try:
+            from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+                kiwoom_market_realtime_runtime as kmr,
+            )
+
+            st = kmr.status()
+            if (
+                int(st.get("user_broker_account_id") or 0) == uba_id
+                and bool(st.get("running"))
+            ):
+                client = st.get("client") or {}
+                live_syms = [
+                    str(s).strip().upper()
+                    for s in (client.get("symbols") or [])
+                    if str(s or "").strip()
+                ]
+                if live_syms:
+                    return sorted(set(live_syms))
+        except Exception:  # noqa: BLE001
+            pass
+
         symbols = _resolve_kiwoom_stack_feed_symbols(
             session,
-            user_broker_account_id=int(user_broker_account_id),
-            strategy_id=None,
+            user_broker_account_id=uba_id,
+            strategy_id=strategy_id,
             symbols=None,
         )
         return [str(s).upper() for s in (symbols or []) if s]

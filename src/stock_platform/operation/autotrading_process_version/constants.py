@@ -87,6 +87,16 @@ COMPONENT_TYPES = (
 # Bootstrap from known commits (REAL semantics vs reliability vs research)
 BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
+        "git_commit": "TBD_KIWOOM_FEED",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "MARKET_DATA",
+        "summary": "Kiwoom REAL feed auto-restore + start race/self-heal",
+        "change_reason": "connected!=running thrash; REGULAR session startup reconcile; L1 feed",
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_kiwoom_market_data_failure_fix.json"],
+    },
+    {
         "git_commit": "fc46ccb",
         "change_type": CHANGE_RELIABILITY,
         "component": "RECOVERY",
@@ -97,7 +107,7 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "evidence": [".run/k_upbit_order1896_safe_resolution_recovery.json"],
     },
     {
-        "git_commit": "TBD_STARTUP_RECON",
+        "git_commit": "6530743",
         "change_type": CHANGE_RELIABILITY,
         "component": "RECOVERY",
         "summary": "Startup open-order reconciliation before unattended restore",
@@ -107,7 +117,7 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "evidence": [".run/k_upbit_startup_reconciliation_daily_quota.json"],
     },
     {
-        "git_commit": "TBD_DAILY_QUOTA",
+        "git_commit": "6530743",
         "change_type": CHANGE_LOGIC,
         "component": "ADMISSION",
         "summary": "Daily entry quota — consumed/reserved vs zero-fill cancel",

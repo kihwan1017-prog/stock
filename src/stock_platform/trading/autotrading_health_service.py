@@ -417,43 +417,106 @@ def build_trading_health_snapshot(
     )
     activation_active = act is not None
 
-    # Feed — master gate (canonical for AUTO LIVE)
+    # Feed — broker별 SoT (KIWOOM: market realtime runtime / UPBIT: master gate)
     feed_status = "UNKNOWN"
     feed_detail: dict[str, Any] = {}
     blockers: list[str] = []
     try:
-        from stock_platform.trading.autotrading_master_gate import (
-            evaluate_uba_autotrading_ready,
-        )
-        from stock_platform.trading.uba_operational_summary import (
-            _map_market_feed_status,
-        )
+        if broker == "KIWOOM":
+            from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+                kiwoom_market_realtime_runtime as kmr,
+            )
 
-        ready = evaluate_uba_autotrading_ready(
-            session, user_broker_account_id=uba_id
-        )
-        feed_detail = (ready.get("checks") or {}).get("market_feed") or {}
-        feed_status = _map_market_feed_status(feed_detail)
-        for b in ready.get("blockers") or []:
-            code = str(b)
-            if code and code not in blockers:
-                blockers.append(code)
+            st = kmr.status()
+            running = bool(st.get("running"))
+            connected = bool(st.get("connected"))
+            age = st.get("feed_age_seconds")
+            feed_detail = {
+                "ok": bool(running and connected),
+                "running": running,
+                "connected": connected,
+                "age_seconds": age,
+                "last_received_at": st.get("last_tick_at"),
+                "symbols": ((st.get("client") or {}) or {}).get("symbols"),
+                "subscription_count": ((st.get("client") or {}) or {}).get(
+                    "subscription_count"
+                ),
+                "last_error": ((st.get("client") or {}) or {}).get("last_error"),
+                "process_market_environment": st.get(
+                    "process_market_environment"
+                ),
+                "execution_process_kiwoom_use_mock": st.get(
+                    "execution_process_kiwoom_use_mock"
+                ),
+                "source": "KIWOOM_MARKET_REALTIME",
+                "policy": "BLOCK_IF_UNHEALTHY_FOR_AUTO_LIVE",
+                "evaluator_path": "KiwoomMarketWS→QuoteBus→MovingAverageStrategyEvaluator",
+            }
+            if running and connected:
+                if age is not None and float(age) > slo.feed_max_age_seconds:
+                    feed_status = "STALE"
+                    feed_detail["ok"] = False
+                    feed_detail["reason"] = "TICK_STALE"
+                else:
+                    feed_status = "REAL_FRESH"
+                    feed_detail["reason"] = "OK"
+            elif running and not connected:
+                feed_status = "CONNECTING"
+                feed_detail["reason"] = "RUNNING_NOT_CONNECTED"
+            else:
+                feed_status = "DISCONNECTED"
+                feed_detail["reason"] = "FEED_NOT_RUNNING"
+            if not feed_detail.get("ok"):
+                blockers.append("MARKET_FEED_UNHEALTHY")
+        else:
+            from stock_platform.trading.autotrading_master_gate import (
+                evaluate_uba_autotrading_ready,
+            )
+            from stock_platform.trading.uba_operational_summary import (
+                _map_market_feed_status,
+            )
+
+            ready = evaluate_uba_autotrading_ready(
+                session, user_broker_account_id=uba_id
+            )
+            feed_detail = (ready.get("checks") or {}).get("market_feed") or {}
+            feed_status = _map_market_feed_status(feed_detail)
+            for b in ready.get("blockers") or []:
+                code = str(b)
+                if code and code not in blockers:
+                    blockers.append(code)
     except Exception as exc:  # noqa: BLE001
         feed_detail = {"error": type(exc).__name__}
 
-    # Scanner
+    # Scanner — UPBIT opportunity scanner / KIWOOM 은 runtime MA path 가 scanner 역할
     scanner_st = "STOPPED"
     scanner_detail: dict[str, Any] = {}
     try:
-        from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
-            upbit_opportunity_scanner_scheduler,
-        )
+        if broker == "KIWOOM":
+            # FIXED-symbol MA evaluator 는 runtime 에 종속 (Upbit scanner 혼용 금지)
+            if runtime_st == "RUNNING":
+                scanner_st = "RUNNING"
+                scanner_detail = {
+                    "mode": "KIWOOM_FIXED_SYMBOL_MA",
+                    "note": "Upbit opportunity scanner not used",
+                    "running": True,
+                }
+            else:
+                scanner_detail = {
+                    "mode": "KIWOOM_FIXED_SYMBOL_MA",
+                    "running": False,
+                    "reason": "RUNTIME_NOT_RUNNING",
+                }
+        else:
+            from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+                upbit_opportunity_scanner_scheduler,
+            )
 
-        scanner_detail = upbit_opportunity_scanner_scheduler.status()
-        if bool(scanner_detail.get("running")) or bool(
-            scanner_detail.get("started")
-        ):
-            scanner_st = "RUNNING"
+            scanner_detail = upbit_opportunity_scanner_scheduler.status()
+            if bool(scanner_detail.get("running")) or bool(
+                scanner_detail.get("started")
+            ):
+                scanner_st = "RUNNING"
     except Exception:  # noqa: BLE001
         pass
 
@@ -536,6 +599,16 @@ def build_trading_health_snapshot(
         health_state = HEALTH_BROKEN
         health_reasons.append("EXECUTION_STACK_DOWN")
     elif not feed_healthy and broker == "UPBIT":
+        health_state = HEALTH_BROKEN
+        health_reasons.append("FEED_UNHEALTHY")
+    elif (
+        not feed_healthy
+        and broker == "KIWOOM"
+        and kiwoom_stack_slo
+        and live_on
+        and arm_on
+        and activation_active
+    ):
         health_state = HEALTH_BROKEN
         health_reasons.append("FEED_UNHEALTHY")
     elif blockers:

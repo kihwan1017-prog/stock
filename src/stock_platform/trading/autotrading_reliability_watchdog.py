@@ -303,6 +303,23 @@ async def _l1_feed_reconnect(
     session: Any, *, uba_id: int, actor: str
 ) -> dict[str, Any]:
     try:
+        from stock_platform.trading.account_models import UserBrokerAccount
+
+        uba = session.get(UserBrokerAccount, int(uba_id))
+        broker = str(getattr(uba, "broker_code", "") or "").upper() if uba else ""
+        if broker == "KIWOOM":
+            from stock_platform.trading.kiwoom_unattended_stack_restore import (
+                restore_kiwoom_trading_stack,
+            )
+
+            # L1: feed-first stack restore (idempotent; running 이면 no-op recreate)
+            result = await restore_kiwoom_trading_stack(
+                session,
+                user_broker_account_id=int(uba_id),
+                actor=f"L1_KIWOOM_FEED:{actor}",
+            )
+            return {"ok": bool(result.get("restored")), "feed": result, "market": "KIWOOM"}
+
         from stock_platform.realtime.upbit_quote_feed_restore import (
             ensure_upbit_quote_feed_from_hub,
         )
@@ -317,7 +334,7 @@ async def _l1_feed_reconnect(
         hub = get_realtime_market_data_hub()
         if not bool((hub.status() or {}).get("dispatch_running")):
             await hub.start_dispatch()
-        return {"ok": True, "feed": result}
+        return {"ok": True, "feed": result, "market": "UPBIT"}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
@@ -445,7 +462,7 @@ async def reconcile_market_health(
 
         async with lock:
             actions: list[str] = []
-            # LEVEL 1 — feed / scanner / waiting self-heal (UPBIT only)
+            # LEVEL 1 — feed / scanner / waiting self-heal
             if market == "UPBIT":
                 starv = snap.get("waiting_starvation") or {}
                 if isinstance(starv, dict) and starv.get("waiting_slot_starvation"):
@@ -470,6 +487,21 @@ async def reconcile_market_health(
                     l1s = _l1_scanner_restore(actor=actor)
                     actions.append("L1_SCANNER")
                     outcome["l1_scanner"] = l1s
+            elif market == "KIWOOM" and snap.get("kiwoom_stack_slo_active"):
+                feed_st = str((snap.get("components") or {}).get("feed") or "")
+                if feed_st not in {
+                    "REAL_FRESH",
+                    "FRESH",
+                    "CONNECTED",
+                    "HEALTHY",
+                    "OK",
+                    "CONNECTING",
+                }:
+                    l1f = await _l1_feed_reconnect(
+                        session, uba_id=uba_id, actor=actor
+                    )
+                    actions.append("L1_KIWOOM_FEED")
+                    outcome["l1_feed"] = l1f
 
             # LEVEL 2 — FULL/PARTIAL stack down (LIVE/ARM/Activation valid)
             need_l2 = bool(stack_need.get("needs_restore")) and (

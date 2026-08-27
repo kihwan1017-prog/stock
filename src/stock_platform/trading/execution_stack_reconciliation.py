@@ -28,8 +28,10 @@ from stock_platform.trading.live_unattended_authorization_service import (
     LiveUnattendedAuthorizationService,
 )
 
-# Feed — health SoT와 동일
-_FEED_OK = frozenset({"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"})
+# Feed — health SoT와 동일 (CONNECTING=receive loop up, handshake 중)
+_FEED_OK = frozenset(
+    {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK", "CONNECTING"}
+)
 _STACK_COMPONENTS = ("runtime", "runner", "worker", "exit_monitor", "scanner", "feed")
 
 

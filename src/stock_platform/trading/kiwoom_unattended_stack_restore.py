@@ -328,11 +328,12 @@ async def restore_kiwoom_trading_stack(
         )
 
         st = kiwoom_market_realtime_runtime.status()
-        already = bool(st.get("running") and st.get("connected"))
+        # running 만으로 idempotent — connected 대기 중 thrash/self-cancel 방지
+        already = bool(st.get("running"))
         same_uba = int(st.get("user_broker_account_id") or 0) == uba_id
         if already and same_uba:
             if feed_symbols:
-                # 이미 연결 중이면 scope 심볼만 합집합 구독
+                # 이미 receive loop 중이면 심볼만 합집합 구독
                 await kiwoom_market_realtime_runtime.start(
                     user_broker_account_id=uba_id,
                     symbols=feed_symbols,
@@ -342,6 +343,7 @@ async def restore_kiwoom_trading_stack(
                 "started": True,
                 "idempotent": True,
                 "reason": "ALREADY_RUNNING",
+                "connected": bool(st.get("connected")),
             }
         else:
             if not feed_symbols:
@@ -529,3 +531,84 @@ async def restore_kiwoom_trading_stack(
         "actor": actor,
         "upbit_untouched": True,
     }
+
+
+async def restore_all_active_unattended_kiwoom_leases(
+    *,
+    actor: str = "SYSTEM_UNATTENDED_STARTUP_RESTORE",
+) -> dict[str, Any]:
+    """Startup: ACTIVE KIWOOM lease 전수 → stack restore (REGULAR only).
+
+    CLOSED/HOLIDAY 에서는 feed 강제 start 하지 않는다.
+    """
+
+    from stock_platform.database.session import get_session_factory
+    from stock_platform.trading.live_unattended_entities import (
+        LiveUnattendedAuthorizationEntity,
+    )
+    from stock_platform.trading.market_hours_authorization import (
+        krx_market_hours_state,
+    )
+
+    sf = get_session_factory()
+    session = sf()
+    results: list[dict[str, Any]] = []
+    try:
+        mh = krx_market_hours_state(session)
+        in_regular = bool(mh.get("in_regular_session"))
+        if not in_regular:
+            return {
+                "ok": True,
+                "skipped": True,
+                "reason": "NOT_REGULAR_SESSION",
+                "market_hours": mh,
+                "count": 0,
+                "results": [],
+            }
+
+        rows = list(
+            session.scalars(
+                select(LiveUnattendedAuthorizationEntity).where(
+                    LiveUnattendedAuthorizationEntity.enabled.is_(True),
+                    LiveUnattendedAuthorizationEntity.status_code
+                    == STATUS_ACTIVE,
+                )
+            )
+        )
+        for row in rows:
+            uba_id = int(row.user_broker_account_id)
+            uba = session.get(UserBrokerAccount, uba_id)
+            if uba is None or str(uba.broker_code or "").upper() != "KIWOOM":
+                results.append(
+                    {
+                        "user_broker_account_id": uba_id,
+                        "skipped": True,
+                        "reason": "NOT_KIWOOM",
+                    }
+                )
+                continue
+            stack = await restore_kiwoom_trading_stack(
+                session,
+                user_broker_account_id=uba_id,
+                actor=actor,
+            )
+            results.append(
+                {
+                    "user_broker_account_id": uba_id,
+                    "stack_restore": stack,
+                }
+            )
+            logger.info(
+                "kiwoom_stack_restore_done",
+                uba_id=uba_id,
+                restored=bool(stack.get("restored")),
+                reason=stack.get("reason"),
+            )
+        return {
+            "ok": True,
+            "count": len(results),
+            "results": results,
+            "market_hours": mh,
+        }
+    finally:
+        session.close()

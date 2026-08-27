@@ -222,6 +222,10 @@ class ApplicationLifecycle:
                 "unattended upbit lease/stack restore",
                 self._startup_unattended_upbit_stack_restore,
             )
+            await self._run_optional(
+                "unattended kiwoom lease/stack restore",
+                self._startup_unattended_kiwoom_stack_restore,
+            )
             await self._run_phase(
                 "scheduler startup",
                 self._start_schedulers,
@@ -341,6 +345,21 @@ class ApplicationLifecycle:
             actor="SYSTEM_UNATTENDED_STARTUP_RESTORE",
         )
         logger.info("unattended_upbit_stack_restore_startup", **result)
+
+    async def _startup_unattended_kiwoom_stack_restore(self) -> None:
+        """ACTIVE MARKET_HOURS lease + REGULAR 이면 Kiwoom feed/runtime/runner 복구.
+
+        CLOSED 에서는 skip. REAL 주문 강제 생성 없음.
+        """
+
+        from stock_platform.trading.kiwoom_unattended_stack_restore import (
+            restore_all_active_unattended_kiwoom_leases,
+        )
+
+        result = await restore_all_active_unattended_kiwoom_leases(
+            actor="SYSTEM_UNATTENDED_STARTUP_RESTORE",
+        )
+        logger.info("unattended_kiwoom_stack_restore_startup", **result)
 
     async def _startup_execution_stack_reconciliation(self) -> None:
         """Scheduler 기동 후 canonical desired-state reconciliation.
