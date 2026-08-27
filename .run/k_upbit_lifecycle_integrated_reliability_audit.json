@@ -157,7 +157,7 @@
   },
   "GIT": {
     "BASE": "1771087",
-    "NEW_COMMIT": "PENDING",
+    "NEW_COMMIT": "79fdf16",
     "BACKEND_RESTART_COUNT": 1
   },
   "SAFETY": {

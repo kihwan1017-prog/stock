@@ -261,7 +261,7 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "evidence": [".run/k_upbit_exit_wait_selfheal_recovery.json"],
     },
     {
-        "git_commit": "PENDING",
+        "git_commit": "79fdf16",
         "change_type": CHANGE_RELIABILITY,
         "component": "LIFECYCLE",
         "summary": "Lifecycle reliability audit + EXIT/ENTRY L1 blind-spot fixes",
