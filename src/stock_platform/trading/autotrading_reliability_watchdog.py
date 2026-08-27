@@ -442,13 +442,13 @@ def _l1_entry_pending_reconcile(
 def _l1_exit_pending_reconcile(
     session: Any, *, uba_id: int, actor: str
 ) -> dict[str, Any]:
-    """EXIT_PENDING + ACCEPTED zero-fill — fill-sync + lifecycle만 (강제 SELL 금지)."""
+    """EXIT_PENDING stuck — ExitOrderSupervisor (fill-sync/stale safe-cancel).
+
+    신규 SELL/BUY 생성 금지. MANUAL/UNKNOWN cancel 금지.
+    """
 
     try:
-        from stock_platform.broker.upbit.fill_sync_service import UpbitFillSyncService
-        from stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync import (
-            reconcile_portfolio_slot_lifecycle,
-        )
+        from stock_platform.trading.exit_order_supervisor import ExitOrderSupervisor
         from stock_platform.trading.exit_pending_stuck import (
             detect_exit_pending_zero_fill_stuck,
         )
@@ -456,38 +456,21 @@ def _l1_exit_pending_reconcile(
         stuck = detect_exit_pending_zero_fill_stuck(
             session, user_broker_account_id=int(uba_id)
         )
-        synced: list[dict[str, Any]] = []
-        sync = UpbitFillSyncService(session)
-        for item in stuck.get("items") or []:
-            oid = int(item.get("order_id") or 0)
-            if oid <= 0:
-                continue
-            try:
-                result = sync.sync_by_order_id(
-                    oid, actor=f"L1_EXIT_PENDING:{actor}"
-                )
-                synced.append(
-                    {
-                        "order_id": oid,
-                        "ok": True,
-                        "detail": getattr(result, "detail", None) or str(result)[:200],
-                    }
-                )
-            except Exception as exc:  # noqa: BLE001
-                synced.append(
-                    {"order_id": oid, "ok": False, "error": type(exc).__name__}
-                )
-        life = reconcile_portfolio_slot_lifecycle(
-            session,
-            user_broker_account_id=int(uba_id),
-            actor=f"L1_EXIT_PENDING:{actor}",
+        supervised = ExitOrderSupervisor(session).supervise_uba(
+            int(uba_id),
+            actor=f"L1_EXIT_ORDER_SUPERVISOR:{actor}",
+            allow_safe_cancel=True,
         )
         return {
-            "ok": True,
+            "ok": bool(supervised.get("ok")),
             "stuck_count": int(stuck.get("count") or 0),
-            "synced": synced,
-            "lifecycle_transitions": len(list(life.get("transitions") or [])),
-            "note": "fill_sync_only_no_forced_sell",
+            "supervisor": supervised,
+            "remote_cancel_request_count": int(
+                supervised.get("remote_cancel_request_count") or 0
+            ),
+            "new_real_buy": int(supervised.get("new_real_buy") or 0),
+            "new_real_sell": int(supervised.get("new_real_sell") or 0),
+            "note": "exit_order_supervisor_no_new_orders",
         }
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}

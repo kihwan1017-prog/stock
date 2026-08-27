@@ -71,9 +71,18 @@ def _user_friendly_reason(
         )
     if first_zero == "EXIT" or first_zero_reason == "EXIT_PENDING_ZERO_FILL_STUCK":
         return (
-            "매도 주문 체결 대기 이상(EXIT_PENDING)이 감지되었습니다. "
-            "시세 동기화 후 자동 복구를 시도합니다. 강제 매도는 하지 않습니다."
+            "🔴 매도 주문 체결 지연 — 자동 복구를 시도합니다. "
+            "강제 매도/신규 주문은 하지 않습니다."
         )
+    if first_zero_reason == "OPEN_ORDER_REMOTE_WAIT_STUCK":
+        return "🔴 매도 주문 체결 지연 — 원격 대기(WAIT)가 장시간 유지 중입니다."
+    if first_zero_reason == "EXIT_ORDER_RECOVERING":
+        return "🟠 주문 상태 자동 복구 중"
+    if first_zero_reason == "EXIT_ORDER_RECOVERED":
+        return "🟢 주문 상태 정상화"
+    if classification == "NORMAL_NO_SIGNAL" and first_zero == "ENTRY_SIGNAL":
+        # 아래 NORMAL_NO_SIGNAL 분기로 이어짐
+        pass
     if classification == "SYSTEM_FAILURE":
         return (
             "자동매매 실행 스택에 장애가 있습니다. "
@@ -97,13 +106,11 @@ def _user_friendly_reason(
             )
         if waiting > 0:
             return (
-                f"시스템은 정상입니다. 현재 {waiting}개 후보가 "
+                f"🟡 매수 조건 대기 — 현재 {waiting}개 후보가 "
                 "진입 신호를 기다리고 있습니다."
             )
-        return (
-            "시스템은 정상입니다. 현재 신규 골든/진입 신호가 없어 "
-            "매수가 발생하지 않았습니다."
-        )
+        return "🟡 매수 조건 대기 — 현재 신규 진입 신호가 없습니다."
+
     return f"FIRST_ZERO={first_zero} reason={first_zero_reason} health={health_state}"
 
 
@@ -241,12 +248,13 @@ def build_pipeline_liveness_snapshot(
         "empty_count": health.get("empty_count"),
         "self_heal_policy": {
             "LEVEL_0": "NORMAL_NO_SIGNAL — no action",
-            "LEVEL_1": "feed/scanner/entry_pending reconcile",
+            "LEVEL_1": "feed/scanner/entry_pending/exit_order supervisor",
             "LEVEL_2": "execution stack restore",
             "LEVEL_3": "AUTO open-order startup reconciliation",
             "LEVEL_4": "fail-closed + CRITICAL telegram",
             "forbidden": [
                 "FORCED_BUY",
+                "FORCED_SELL",
                 "THRESHOLD_RELAX",
                 "DAILY_LIMIT_BYPASS",
                 "MANUAL_ORDER_CANCEL",
@@ -257,6 +265,52 @@ def build_pipeline_liveness_snapshot(
             "updated_at": health.get("updated_at"),
         },
     }
+    # EXIT / open-order WAIT supervision 노출 (FIRST_ZERO 전에 사용자가 발견하지 않도록)
+    try:
+        exit_stuck = health.get("exit_pending_stuck") or {}
+        items = list(exit_stuck.get("items") or [])
+        primary = items[0] if items else {}
+        out["open_order_supervision"] = {
+            "STAGE": "EXIT" if items else first_zero,
+            "ORDER_ID": primary.get("order_id"),
+            "SYMBOL": primary.get("symbol"),
+            "LOCAL_STATUS": primary.get("order_status"),
+            "REMOTE_STATUS": primary.get("remote_status"),
+            "FILLED": primary.get("filled_quantity"),
+            "WAIT_AGE": primary.get("age_seconds"),
+            "SELF_HEAL_STATUS": (
+                "INCIDENT_ACTIVE"
+                if exit_stuck.get("stuck")
+                else "IDLE"
+            ),
+            "INCIDENT": exit_stuck.get("reason"),
+            "INCIDENT_ACTIVE": bool(exit_stuck.get("stuck")),
+        }
+        if classification == "SYSTEM_FAILURE" and not items:
+            out["user_status"] = "🔴 자동매매 스택 장애"
+        elif exit_stuck.get("stuck"):
+            age_m = None
+            try:
+                age_m = round(float(primary.get("age_seconds") or 0) / 60.0, 1)
+            except (TypeError, ValueError):
+                age_m = None
+            out["user_status"] = (
+                f"🔴 매도 주문 체결 지연\n"
+                f"{primary.get('symbol') or ''}\n"
+                f"주문 #{primary.get('order_id')}\n"
+                f"대기시간 {age_m}분"
+                if primary
+                else "🔴 매도 주문 체결 지연"
+            )
+        elif classification == "NORMAL_NO_SIGNAL":
+            out["user_status"] = "🟡 매수 조건 대기"
+        elif health.get("auto_trading_ready"):
+            out["user_status"] = "🟢 자동매매 정상"
+        else:
+            out["user_status"] = friendly
+    except Exception:  # noqa: BLE001
+        out["open_order_supervision"] = None
+        out["user_status"] = friendly
     try:
         from stock_platform.trading.autotrading_data_trust import (
             current_data_trust_summary,

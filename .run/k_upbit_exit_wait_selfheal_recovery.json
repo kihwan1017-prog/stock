@@ -1,0 +1,529 @@
+{
+  "CURRENT_KST": "2026-08-28 07:40:32 KST",
+  "FINAL_VERDICT": "UPBIT_EXIT_WAIT_SELF_HEAL_AND_OPERATION_RECOVERED",
+  "BASE_COMMIT": "6b06dc1",
+  "ORDER_1926": {
+    "PRE_REMOTE": "wait",
+    "CANCEL_ACTION": "SAFE_CANCEL",
+    "POST_REMOTE": "cancel",
+    "LOCAL_STATUS": "CANCELLED",
+    "FILLED": "0E-8",
+    "REMAINING": "33.33333333",
+    "REMOTE_CANCEL_REQUEST_COUNT": 1
+  },
+  "ADA_POSITION": {
+    "BROKER_QTY": "33.33333333",
+    "LOCAL_QTY": "33.33333333",
+    "POSITION_STATUS": "OPEN",
+    "EXIT_PENDING": false,
+    "BINDING_STATUS": "OPEN",
+    "BINDING_META": {
+      "last_cancelled_exit_order_id": 1926
+    }
+  },
+  "RECOVERY": {
+    "LEASE_REUSED": true,
+    "NEW_LEASE_CREATED": false,
+    "LEASE_ID": 6,
+    "LEASE_STATUS": "ACTIVE",
+    "LIVE": true,
+    "ARM": true,
+    "STACK": {
+      "runtime": "RUNNING",
+      "runner": "RUNNING",
+      "worker": "RUNNING",
+      "exit_monitor": "RUNNING",
+      "scanner": "RUNNING",
+      "feed": "REAL_FRESH"
+    },
+    "FEED": "REAL_FRESH",
+    "AUTO_TRADING_READY": true,
+    "HEALTH_STATE": "READY",
+    "CLASSIFICATION": "NORMAL_POLICY_BLOCK"
+  },
+  "SUPERVISOR": {
+    "IMPLEMENTED": true,
+    "MODULE": "stock_platform.trading.exit_order_supervisor.ExitOrderSupervisor",
+    "STALE_WAIT_DETECTION": true,
+    "AUTO_CANCEL_POLICY": "STALE only via UpbitRecoveryOrderCancelService; NORMAL_WAIT hold",
+    "PARTIAL_FILL_SAFE": true,
+    "MANUAL_PROTECTED": true,
+    "UNKNOWN_PROTECTED": true,
+    "IDEMPOTENT": true,
+    "STALE_THRESHOLD_CANONICAL": "upbit_portfolio_entry_pending_timeout_seconds"
+  },
+  "PIPELINE": {
+    "FIRST_ZERO": "ENTRY_SIGNAL",
+    "INCIDENT_ACTIVE": false,
+    "OPEN_ORDER_SUPERVISION": {
+      "STAGE": "ENTRY_SIGNAL",
+      "ORDER_ID": null,
+      "SYMBOL": null,
+      "LOCAL_STATUS": null,
+      "REMOTE_STATUS": null,
+      "FILLED": null,
+      "WAIT_AGE": null,
+      "SELF_HEAL_STATUS": "IDLE",
+      "INCIDENT": null,
+      "INCIDENT_ACTIVE": false
+    },
+    "USER_STATUS": "🟢 자동매매 정상"
+  },
+  "DATA_TRUST": {
+    "quality_status": "VALID",
+    "reason_code": "NORMAL_POLICY_BLOCK",
+    "first_zero_stage": "ENTRY_SIGNAL",
+    "runtime_ok": true,
+    "runner_ok": true,
+    "worker_ok": true,
+    "exit_ok": true,
+    "feed_ok": true,
+    "scanner_ok": true,
+    "watchdog_ok": true,
+    "broker_sync_ok": true,
+    "slot_invariant_ok": true,
+    "data_freshness_ok": true,
+    "classification": "NORMAL_POLICY_BLOCK"
+  },
+  "UI": {
+    "USER_STATUS": "🟢 자동매매 정상"
+  },
+  "TELEGRAM": {
+    "DUPLICATE_ALERTS": 0,
+    "EDGE_TRIGGER": true
+  },
+  "TEST": {
+    "RESULT": "PASS",
+    "FOCUSED": [
+      "tests/test_exit_order_supervisor.py",
+      "tests/test_upbit_startup_open_order_reconciliation.py",
+      "tests/test_exit_pending_stuck_and_no_trade_class.py",
+      "tests/test_portfolio_slot_lifecycle_sync.py"
+    ]
+  },
+  "NATURAL_PROOF_TICKS": [
+    {
+      "i": 0,
+      "state": "READY",
+      "ready": true,
+      "components": {
+        "runtime": "RUNNING",
+        "runner": "RUNNING",
+        "worker": "RUNNING",
+        "exit_monitor": "RUNNING",
+        "scanner": "RUNNING",
+        "feed": "REAL_FRESH"
+      },
+      "exit_stuck": 0,
+      "reasons": [],
+      "class": "NORMAL_POLICY_BLOCK",
+      "watchdog": {
+        "running": true,
+        "task_alive": true,
+        "last_run_at": "2026-08-27T22:36:09.360673+00:00",
+        "last_error": null,
+        "last_summary": {
+          "ok": true,
+          "count": 1,
+          "results": [
+            {
+              "market": "UPBIT",
+              "user_broker_account_id": 1380,
+              "restore_trigger": null,
+              "restore_attempted": false,
+              "restore_succeeded": false,
+              "snapshot": {
+                "health_state": "READY",
+                "partial_restore": false,
+                "components": {
+                  "runtime": "RUNNING",
+                  "runner": "RUNNING",
+                  "worker": "RUNNING",
+                  "exit_monitor": "RUNNING",
+                  "scanner": "RUNNING",
+                  "feed": "REAL_FRESH"
+                },
+                "no_trade_classification": "NORMAL_POLICY_BLOCK",
+                "first_zero_stage": "ENTRY_SIGNAL"
+              },
+              "stack_need": {
+                "needs_restore": false,
+                "restore_kind": null,
+                "down_components": []
+              },
+              "restore_epoch_ensure": {
+                "ok": true,
+                "action": "ALREADY_RESTORED",
+                "restore_epoch": {
+                  "outage_active": false,
+                  "outage_started_at": null,
+                  "restored_at": "2026-08-27T22:35:38.157969+00:00",
+                  "last_outage_reason": null,
+                  "last_restore_actor": "SYSTEM_UNATTENDED_STARTUP_RESTORE_STACK",
+                  "process_started_at": "2026-08-27T22:35:37.991968+00:00"
+                }
+              },
+              "actions": [
+                "L0_RESTORE_EPOCH_ENSURE"
+              ],
+              "post_snapshot": {
+                "health_state": "READY",
+                "auto_trading_ready": true,
+                "components": {
+                  "runtime": "RUNNING",
+                  "runner": "RUNNING",
+                  "worker": "RUNNING",
+                  "exit_monitor": "RUNNING",
+                  "scanner": "RUNNING",
+                  "feed": "REAL_FRESH"
+                }
+              },
+              "data_trust": {
+                "quality_status": "VALID",
+                "reason_code": "NORMAL_POLICY_BLOCK",
+                "window_id": 34,
+                "action": "CONTINUE"
+              },
+              "data_trust_summary": {
+                "current": {
+                  "window_id": 34,
+                  "quality_status": "VALID",
+                  "reason_code": "NORMAL_POLICY_BLOCK",
+                  "first_zero_stage": "ENTRY_SIGNAL",
+                  "started_at": "2026-08-28T07:30:42.664739+09:00",
+                  "ended_at": null
+                },
+                "today_by_status": {
+                  "INVALID": {
+                    "quality_status": "INVALID",
+                    "cnt": 3,
+                    "duration_sec": 4117.387709
+                  },
+                  "DEGRADED": {
+                    "quality_status": "DEGRADED",
+                    "cnt": 11,
+                    "duration_sec": 4663.083372
+                  },
+                  "VALID": {
+                    "quality_status": "VALID",
+                    "cnt": 13,
+                    "duration_sec": 18327.926198
+                  }
+                },
+                "valid_duration_percent": 67.6,
+                "schema": "autotrading_data_trust_v1"
+              }
+            }
+          ],
+          "at": "2026-08-27T22:36:09.360673+00:00"
+        }
+      },
+      "data_trust": {
+        "quality_status": "VALID",
+        "reason_code": "NORMAL_POLICY_BLOCK",
+        "first_zero_stage": "ENTRY_SIGNAL",
+        "runtime_ok": true,
+        "runner_ok": true,
+        "worker_ok": true,
+        "exit_ok": true,
+        "feed_ok": true,
+        "scanner_ok": true,
+        "watchdog_ok": true,
+        "broker_sync_ok": true,
+        "slot_invariant_ok": true,
+        "data_freshness_ok": true,
+        "classification": "NORMAL_POLICY_BLOCK"
+      },
+      "user_status": "🟢 자동매매 정상"
+    },
+    {
+      "i": 1,
+      "state": "READY",
+      "ready": true,
+      "components": {
+        "runtime": "RUNNING",
+        "runner": "RUNNING",
+        "worker": "RUNNING",
+        "exit_monitor": "RUNNING",
+        "scanner": "RUNNING",
+        "feed": "REAL_FRESH"
+      },
+      "exit_stuck": 0,
+      "reasons": [],
+      "class": "NORMAL_POLICY_BLOCK",
+      "watchdog": {
+        "running": true,
+        "task_alive": true,
+        "last_run_at": "2026-08-27T22:36:09.360673+00:00",
+        "last_error": null,
+        "last_summary": {
+          "ok": true,
+          "count": 1,
+          "results": [
+            {
+              "market": "UPBIT",
+              "user_broker_account_id": 1380,
+              "restore_trigger": null,
+              "restore_attempted": false,
+              "restore_succeeded": false,
+              "snapshot": {
+                "health_state": "READY",
+                "partial_restore": false,
+                "components": {
+                  "runtime": "RUNNING",
+                  "runner": "RUNNING",
+                  "worker": "RUNNING",
+                  "exit_monitor": "RUNNING",
+                  "scanner": "RUNNING",
+                  "feed": "REAL_FRESH"
+                },
+                "no_trade_classification": "NORMAL_POLICY_BLOCK",
+                "first_zero_stage": "ENTRY_SIGNAL"
+              },
+              "stack_need": {
+                "needs_restore": false,
+                "restore_kind": null,
+                "down_components": []
+              },
+              "restore_epoch_ensure": {
+                "ok": true,
+                "action": "ALREADY_RESTORED",
+                "restore_epoch": {
+                  "outage_active": false,
+                  "outage_started_at": null,
+                  "restored_at": "2026-08-27T22:35:38.157969+00:00",
+                  "last_outage_reason": null,
+                  "last_restore_actor": "SYSTEM_UNATTENDED_STARTUP_RESTORE_STACK",
+                  "process_started_at": "2026-08-27T22:35:37.991968+00:00"
+                }
+              },
+              "actions": [
+                "L0_RESTORE_EPOCH_ENSURE"
+              ],
+              "post_snapshot": {
+                "health_state": "READY",
+                "auto_trading_ready": true,
+                "components": {
+                  "runtime": "RUNNING",
+                  "runner": "RUNNING",
+                  "worker": "RUNNING",
+                  "exit_monitor": "RUNNING",
+                  "scanner": "RUNNING",
+                  "feed": "REAL_FRESH"
+                }
+              },
+              "data_trust": {
+                "quality_status": "VALID",
+                "reason_code": "NORMAL_POLICY_BLOCK",
+                "window_id": 34,
+                "action": "CONTINUE"
+              },
+              "data_trust_summary": {
+                "current": {
+                  "window_id": 34,
+                  "quality_status": "VALID",
+                  "reason_code": "NORMAL_POLICY_BLOCK",
+                  "first_zero_stage": "ENTRY_SIGNAL",
+                  "started_at": "2026-08-28T07:30:42.664739+09:00",
+                  "ended_at": null
+                },
+                "today_by_status": {
+                  "INVALID": {
+                    "quality_status": "INVALID",
+                    "cnt": 3,
+                    "duration_sec": 4117.387709
+                  },
+                  "DEGRADED": {
+                    "quality_status": "DEGRADED",
+                    "cnt": 11,
+                    "duration_sec": 4663.083372
+                  },
+                  "VALID": {
+                    "quality_status": "VALID",
+                    "cnt": 13,
+                    "duration_sec": 18327.926198
+                  }
+                },
+                "valid_duration_percent": 67.6,
+                "schema": "autotrading_data_trust_v1"
+              }
+            }
+          ],
+          "at": "2026-08-27T22:36:09.360673+00:00"
+        }
+      },
+      "data_trust": {
+        "quality_status": "VALID",
+        "reason_code": "NORMAL_POLICY_BLOCK",
+        "first_zero_stage": "ENTRY_SIGNAL",
+        "runtime_ok": true,
+        "runner_ok": true,
+        "worker_ok": true,
+        "exit_ok": true,
+        "feed_ok": true,
+        "scanner_ok": true,
+        "watchdog_ok": true,
+        "broker_sync_ok": true,
+        "slot_invariant_ok": true,
+        "data_freshness_ok": true,
+        "classification": "NORMAL_POLICY_BLOCK"
+      },
+      "user_status": "🟢 자동매매 정상"
+    },
+    {
+      "i": 2,
+      "state": "READY",
+      "ready": true,
+      "components": {
+        "runtime": "RUNNING",
+        "runner": "RUNNING",
+        "worker": "RUNNING",
+        "exit_monitor": "RUNNING",
+        "scanner": "RUNNING",
+        "feed": "REAL_FRESH"
+      },
+      "exit_stuck": 0,
+      "reasons": [],
+      "class": "NORMAL_POLICY_BLOCK",
+      "watchdog": {
+        "running": true,
+        "task_alive": true,
+        "last_run_at": "2026-08-27T22:36:09.360673+00:00",
+        "last_error": null,
+        "last_summary": {
+          "ok": true,
+          "count": 1,
+          "results": [
+            {
+              "market": "UPBIT",
+              "user_broker_account_id": 1380,
+              "restore_trigger": null,
+              "restore_attempted": false,
+              "restore_succeeded": false,
+              "snapshot": {
+                "health_state": "READY",
+                "partial_restore": false,
+                "components": {
+                  "runtime": "RUNNING",
+                  "runner": "RUNNING",
+                  "worker": "RUNNING",
+                  "exit_monitor": "RUNNING",
+                  "scanner": "RUNNING",
+                  "feed": "REAL_FRESH"
+                },
+                "no_trade_classification": "NORMAL_POLICY_BLOCK",
+                "first_zero_stage": "ENTRY_SIGNAL"
+              },
+              "stack_need": {
+                "needs_restore": false,
+                "restore_kind": null,
+                "down_components": []
+              },
+              "restore_epoch_ensure": {
+                "ok": true,
+                "action": "ALREADY_RESTORED",
+                "restore_epoch": {
+                  "outage_active": false,
+                  "outage_started_at": null,
+                  "restored_at": "2026-08-27T22:35:38.157969+00:00",
+                  "last_outage_reason": null,
+                  "last_restore_actor": "SYSTEM_UNATTENDED_STARTUP_RESTORE_STACK",
+                  "process_started_at": "2026-08-27T22:35:37.991968+00:00"
+                }
+              },
+              "actions": [
+                "L0_RESTORE_EPOCH_ENSURE"
+              ],
+              "post_snapshot": {
+                "health_state": "READY",
+                "auto_trading_ready": true,
+                "components": {
+                  "runtime": "RUNNING",
+                  "runner": "RUNNING",
+                  "worker": "RUNNING",
+                  "exit_monitor": "RUNNING",
+                  "scanner": "RUNNING",
+                  "feed": "REAL_FRESH"
+                }
+              },
+              "data_trust": {
+                "quality_status": "VALID",
+                "reason_code": "NORMAL_POLICY_BLOCK",
+                "window_id": 34,
+                "action": "CONTINUE"
+              },
+              "data_trust_summary": {
+                "current": {
+                  "window_id": 34,
+                  "quality_status": "VALID",
+                  "reason_code": "NORMAL_POLICY_BLOCK",
+                  "first_zero_stage": "ENTRY_SIGNAL",
+                  "started_at": "2026-08-28T07:30:42.664739+09:00",
+                  "ended_at": null
+                },
+                "today_by_status": {
+                  "INVALID": {
+                    "quality_status": "INVALID",
+                    "cnt": 3,
+                    "duration_sec": 4117.387709
+                  },
+                  "DEGRADED": {
+                    "quality_status": "DEGRADED",
+                    "cnt": 11,
+                    "duration_sec": 4663.083372
+                  },
+                  "VALID": {
+                    "quality_status": "VALID",
+                    "cnt": 13,
+                    "duration_sec": 18327.926198
+                  }
+                },
+                "valid_duration_percent": 67.6,
+                "schema": "autotrading_data_trust_v1"
+              }
+            }
+          ],
+          "at": "2026-08-27T22:36:09.360673+00:00"
+        }
+      },
+      "data_trust": {
+        "quality_status": "VALID",
+        "reason_code": "NORMAL_POLICY_BLOCK",
+        "first_zero_stage": "ENTRY_SIGNAL",
+        "runtime_ok": true,
+        "runner_ok": true,
+        "worker_ok": true,
+        "exit_ok": true,
+        "feed_ok": true,
+        "scanner_ok": true,
+        "watchdog_ok": true,
+        "broker_sync_ok": true,
+        "slot_invariant_ok": true,
+        "data_freshness_ok": true,
+        "classification": "NORMAL_POLICY_BLOCK"
+      },
+      "user_status": "🟢 자동매매 정상"
+    }
+  ],
+  "GIT": {
+    "BASE": "6b06dc1",
+    "NEW_COMMIT": "PENDING",
+    "BACKEND_RESTART_COUNT": 1
+  },
+  "SAFETY": {
+    "NEW_REAL_BUY": 0,
+    "NEW_REAL_SELL": 0,
+    "FORCED_REAL_ORDER": 0,
+    "MANUAL_ORDER_CANCELLED": 0,
+    "LIVE_ARM_MANUAL_MUTATION": 0,
+    "REAL_ENTRY_POLICY_CHANGED": false,
+    "REAL_EXIT_POLICY_CHANGED": false,
+    "DAILY_MUTATION": false,
+    "KIWOOM_MUTATION": false,
+    "REMOTE_CANCEL_REQUEST_COUNT": 1
+  },
+  "SYSTEM_BUG_ACTIVE": false,
+  "CAN_SAFELY_CONTINUE": true,
+  "CHANGE_HISTORY": "EXIT_ORDER_RECOVERY_RELIABILITY_CHANGE",
+  "PROCESS_VERSION_CHANGED": false
+}

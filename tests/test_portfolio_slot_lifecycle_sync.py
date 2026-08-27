@@ -77,7 +77,11 @@ def _portfolio_assignment() -> SimpleNamespace:
 
 
 def _scalars_cycle(session: MagicMock, slot: SimpleNamespace, orders: list) -> None:
-    session.scalars = MagicMock(side_effect=itertools.cycle([[slot], orders]))
+    # reconcile 1회당 scalars 3회: slots / orders / open_syms
+    seq = itertools.cycle(
+        [[slot], orders, [getattr(slot, "symbol", None)]]
+    )
+    session.scalars = MagicMock(side_effect=lambda *_a, **_k: next(seq))
 
 
 @pytest.fixture
@@ -148,7 +152,7 @@ def test_buy_filled_and_sell_accepted_to_exit_pending(session: MagicMock) -> Non
         entry_order_id=1806,
         meta_json={},
     )
-    session.scalars = MagicMock(side_effect=[[slot], orders])
+    _scalars_cycle(session, slot, orders)
     session.scalar = MagicMock(return_value=binding)
     fm = MagicMock()
     fm.get_or_create.return_value = _portfolio_assignment()
@@ -177,7 +181,7 @@ def test_sell_filled_closes_slot(session: MagicMock) -> None:
         entry_order_id=1806,
         meta_json={},
     )
-    session.scalars = MagicMock(side_effect=[[slot], orders])
+    _scalars_cycle(session, slot, orders)
     session.scalar = MagicMock(return_value=binding)
     fm = MagicMock()
     fm.get_or_create.return_value = _portfolio_assignment()
@@ -226,7 +230,7 @@ def test_restart_while_sell_accepted_exit_pending(session: MagicMock) -> None:
     binding = SimpleNamespace(
         binding_id=1, status="OPEN", slot_id=7, entry_order_id=1806, meta_json={}
     )
-    session.scalars = MagicMock(side_effect=[[slot], orders])
+    _scalars_cycle(session, slot, orders)
     session.scalar = MagicMock(return_value=binding)
     fm = MagicMock()
     fm.get_or_create.return_value = _portfolio_assignment()
@@ -236,6 +240,38 @@ def test_restart_while_sell_accepted_exit_pending(session: MagicMock) -> None:
     ):
         out = reconcile_portfolio_slot_lifecycle(session, user_broker_account_id=1380)
     assert slot.status == SLOT_EXIT_PENDING
+
+
+def test_exit_pending_cancelled_zero_fill_reopens(session: MagicMock) -> None:
+    """J: SELL CANCELLED(0 fill) → EXIT_PENDING에서 OPEN 복귀 (보유 유지)."""
+    slot = _slot(status=SLOT_EXIT_PENDING, entry_order_id=1925, binding_id=60)
+    orders = [
+        _order(1925, side="BUY", status="FILLED", signal_reason="PORTFOLIO_BULLISH_STATE_ENTRY"),
+        _order(1926, side="SELL", status="CANCELLED", signal_reason="MA_DEAD_CROSS"),
+    ]
+    binding = SimpleNamespace(
+        binding_id=60,
+        status="OPEN",
+        slot_id=4,
+        entry_order_id=1925,
+        meta_json={"exit_order_id": 1926, "exit_reason": "MA_DEAD_CROSS"},
+    )
+    _scalars_cycle(session, slot, orders)
+    session.scalar = MagicMock(return_value=binding)
+    fm = MagicMock()
+    fm.get_or_create.return_value = _portfolio_assignment()
+    with patch(
+        "stock_platform.operation.upbit_full_market.portfolio_lifecycle_sync.UpbitFullMarketAssignmentService",
+        return_value=fm,
+    ):
+        out = reconcile_portfolio_slot_lifecycle(session, user_broker_account_id=1380)
+    assert slot.status == SLOT_OPEN
+    assert any(
+        "EXIT_PENDING_CANCELLED_REOPEN" in (t.get("changes") or [])
+        for t in (out.get("transitions") or [])
+    )
+    assert binding.meta_json.get("exit_order_id") is None
+    assert binding.meta_json.get("last_cancelled_exit_order_id") == 1926
 
 
 def test_stale_entry_pending_with_filled_buy_reconciles_not_release() -> None:
@@ -302,7 +338,7 @@ def test_duplicate_reconcile_idempotent(session: MagicMock) -> None:
         entry_order_id=1806,
         meta_json={"exit_order_id": 1807},
     )
-    session.scalars = MagicMock(side_effect=itertools.cycle([[slot], orders]))
+    _scalars_cycle(session, slot, orders)
     session.scalar = MagicMock(return_value=binding)
     fm = MagicMock()
     fm.get_or_create.return_value = _portfolio_assignment()
@@ -321,7 +357,7 @@ def test_duplicate_reconcile_idempotent(session: MagicMock) -> None:
 def test_manual_symbol_unaffected(session: MagicMock) -> None:
     """MANUAL 주문은 AUTO 필터로 reconcile 대상 아님."""
     slot = _slot(symbol="KRW-BTC")
-    session.scalars = MagicMock(side_effect=[[slot], []])
+    _scalars_cycle(session, slot, [])
     fm = MagicMock()
     fm.get_or_create.return_value = _portfolio_assignment()
     with patch(
@@ -344,7 +380,7 @@ def test_no_duplicate_sell_creation(session: MagicMock) -> None:
     binding = SimpleNamespace(
         binding_id=4, status="OPEN", slot_id=7, entry_order_id=1806, meta_json={}
     )
-    session.scalars = MagicMock(side_effect=[[slot], orders])
+    _scalars_cycle(session, slot, orders)
     session.scalar = MagicMock(return_value=binding)
     fm = MagicMock()
     fm.get_or_create.return_value = _portfolio_assignment()

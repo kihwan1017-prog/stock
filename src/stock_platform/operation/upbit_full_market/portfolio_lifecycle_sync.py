@@ -647,6 +647,31 @@ def _reconcile_one_slot(
                     meta["exit_reason"] = exit_reason
                 binding.meta_json = meta
 
+    # EXIT_PENDING + zero-fill 종료 SELL → OPEN 복귀 (보유 수량 유지, 청산 아님)
+    open_exit_sells = [
+        o for o in orders if _is_auto_exit_sell(o) and _is_open(o)
+    ]
+    if (
+        str(slot.status) == SLOT_EXIT_PENDING
+        and not open_exit_sells
+        and exit_sell is not None
+        and _is_terminal_zero_fill(exit_sell)
+        and entry_buy is not None
+        and _is_filled(entry_buy)
+    ):
+        slot.status = SLOT_OPEN
+        slot.version = int(slot.version or 1) + 1
+        slot.updated_at = _now()
+        changes.append("EXIT_PENDING_CANCELLED_REOPEN")
+        if binding is not None:
+            bmeta = dict(binding.meta_json or {})
+            # 취소된 exit 주문 참조만 정리 — binding/수량 삭제 금지
+            if int(bmeta.get("exit_order_id") or 0) == int(exit_sell.order_id):
+                bmeta.pop("exit_order_id", None)
+                bmeta.pop("exit_reason", None)
+                bmeta["last_cancelled_exit_order_id"] = int(exit_sell.order_id)
+                binding.meta_json = bmeta
+
     # FILLED SELL → CLOSED / slot release
     if exit_sell is not None and _is_filled(exit_sell):
         if str(slot.status) in {SLOT_OPEN, SLOT_EXIT_PENDING, SLOT_ENTRY_PENDING}:

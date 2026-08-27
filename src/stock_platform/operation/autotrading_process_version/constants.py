@@ -247,6 +247,19 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "research_only": True,
         "evidence": [".run/k_upbit_trailing_state_dedupe_shadow.json"],
     },
+    {
+        "git_commit": "PENDING",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "EXIT_ORDER",
+        "summary": "EXIT WAIT self-heal supervisor + cancelled exit reopen",
+        "change_reason": (
+            "EXIT_ORDER_RECOVERY_RELIABILITY_CHANGE — stale AUTO SELL WAIT "
+            "safe-cancel; EXIT_PENDING→OPEN on zero-fill cancel; no new orders"
+        ),
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_upbit_exit_wait_selfheal_recovery.json"],
+    },
 ]
 
 CURRENT_UPBIT_CONFIG_SNAPSHOT = {

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -82,10 +83,14 @@ def test_stale_wait_triggers_safe_cancel_path() -> None:
     assert _is_stale_auto_wait(fresh) is False
 
 
-def test_auto_sell_wait_not_cancelled() -> None:
+def test_auto_sell_fresh_wait_not_cancelled() -> None:
+    """A: NORMAL_WAIT SELL — cancel 안 함."""
     session = MagicMock()
     svc = UpbitStartupOpenOrderReconciliationService(session)
-    sell = _auto_order(side="SELL")
+    sell = _auto_order(
+        side="SELL",
+        created_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
     client = MagicMock()
     client.get_order.return_value = {
         "state": "wait",
@@ -100,6 +105,41 @@ def test_auto_sell_wait_not_cancelled() -> None:
     )
     assert action.action == "BLOCKED_AUTO_SELL_WAIT"
     client.cancel_order.assert_not_called()
+
+
+def test_auto_sell_stale_wait_safe_cancel() -> None:
+    """B/H: stale zero-fill AUTO SELL → SAFE_CANCEL (idempotent path)."""
+    session = MagicMock()
+    svc = UpbitStartupOpenOrderReconciliationService(session)
+    sell = _auto_order(side="SELL")  # 30분 전 → stale
+    client = MagicMock()
+    client.get_order.return_value = {
+        "state": "wait",
+        "executed_volume": "0",
+    }
+    cancel_result = SimpleNamespace(
+        action="SAFE_CANCEL",
+        remote_status_before="wait",
+        remote_status_after="cancel",
+        local_status_after="CANCELLED",
+    )
+
+    with patch(
+        "stock_platform.broker.upbit.startup_open_order_reconciliation."
+        "UpbitRecoveryOrderCancelService"
+    ) as cancel_cls:
+        cancel_cls.return_value.cancel_existing_order_for_recovery.return_value = (
+            cancel_result
+        )
+        action = svc._reconcile_auto_order(
+            order=sell,
+            uba_id=1380,
+            client=client,
+            actor="TEST",
+        )
+
+    assert action.action == "SAFE_CANCEL"
+    cancel_cls.return_value.cancel_existing_order_for_recovery.assert_called_once()
 
 
 def test_remote_done_reconcile_no_cancel() -> None:

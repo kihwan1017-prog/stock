@@ -359,25 +359,30 @@ class UpbitStartupOpenOrderReconciliationService:
             )
 
         if remote_state in _REMOTE_WAIT:
-            # SELL protective WAIT — cancel 금지, reconcile만 시도 후 blocker
-            if side == "SELL":
-                return StartupOrderReconcileAction(
-                    order_id=order_id,
-                    owner=OWNER_AUTO,
-                    side=side,
-                    action="BLOCKED_AUTO_SELL_WAIT",
-                    remote_state_before=remote_state,
-                    detail={"note": "protective SELL WAIT not auto-cancelled"},
-                )
+            # NORMAL WAIT(신선) — BUY/SELL 모두 cancel 금지 (stale 만 SAFE_CANCEL)
             if not _is_stale_auto_wait(order):
+                # 하위 호환: fresh protective SELL 은 명시 액션 유지
+                action_code = (
+                    "BLOCKED_AUTO_SELL_WAIT"
+                    if side == "SELL"
+                    else "BLOCKED_FRESH_AUTO_WAIT"
+                )
                 return StartupOrderReconcileAction(
                     order_id=order_id,
                     owner=OWNER_AUTO,
                     side=side,
-                    action="BLOCKED_FRESH_AUTO_WAIT",
+                    action=action_code,
                     remote_state_before=remote_state,
-                    detail={"note": "WAIT not stale — startup restore blocked"},
+                    detail={
+                        "note": (
+                            "protective SELL WAIT not auto-cancelled (fresh)"
+                            if side == "SELL"
+                            else "WAIT not stale — startup restore blocked"
+                        ),
+                        "wait_class": "NORMAL_WAIT",
+                    },
                 )
+            # STALE zero/partial WAIT — 기존 recovery-cancel canonical (신규 주문 없음)
             try:
                 cancel_result = UpbitRecoveryOrderCancelService(
                     self._session,
@@ -396,7 +401,11 @@ class UpbitStartupOpenOrderReconciliationService:
                     remote_state_before=cancel_result.remote_status_before,
                     remote_state_after=cancel_result.remote_status_after,
                     local_status_after=cancel_result.local_status_after,
-                    detail={"cancel": cancel_result.action},
+                    detail={
+                        "cancel": cancel_result.action,
+                        "wait_class": "STALE_WAIT",
+                        "side": side,
+                    },
                 )
             except UpbitRecoveryOrderCancelError as exc:
                 return StartupOrderReconcileAction(

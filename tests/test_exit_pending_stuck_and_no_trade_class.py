@@ -137,13 +137,14 @@ def test_l1_exit_pending_docstring_forbids_new_sell():
     assert "강제 SELL" in doc or "fill-sync" in doc.lower() or "fill_sync" in doc
 
 
-def test_startup_blocks_auto_cancel_of_protective_sell_wait():
-    """H: remote WAIT → 중복/자동 cancel SELL 금지 (정책 상수)."""
+def test_startup_blocks_fresh_auto_sell_wait_only():
+    """A: fresh protective SELL WAIT — 자동 cancel 금지 (stale 은 SAFE_CANCEL)."""
     from stock_platform.broker.upbit import startup_open_order_reconciliation as mod
 
     src = open(mod.__file__, encoding="utf-8").read()
     assert "BLOCKED_AUTO_SELL_WAIT" in src
-    assert "protective SELL WAIT not auto-cancelled" in src
+    assert "protective SELL WAIT not auto-cancelled (fresh)" in src
+    assert "STALE_WAIT" in src
 
 
 def test_fresh_accepted_sell_below_threshold_not_in_reason_map():
