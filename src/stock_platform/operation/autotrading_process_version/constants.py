@@ -228,7 +228,7 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "evidence": [".run/k_upbit_entry_signal_shadow_research.json"],
     },
     {
-        "git_commit": "PENDING_TRAILING_DEDUPE",
+        "git_commit": "5519e85",
         "change_type": CHANGE_RELIABILITY,
         "component": "EXIT_MONITOR",
         "summary": "Dedupe trailing exit alerts + OPEN binding gate",
@@ -238,7 +238,7 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "evidence": [".run/k_upbit_trailing_state_dedupe_shadow.json"],
     },
     {
-        "git_commit": "PENDING_TRAILING_DEDUPE",
+        "git_commit": "5519e85",
         "change_type": CHANGE_RESEARCH,
         "component": "EXIT_MONITOR",
         "summary": "Trailing forward shadow T0-T4 research",
