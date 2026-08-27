@@ -194,6 +194,20 @@ def enroll_on_position_open(
             "risk_delayed": False,
         },
     )
+    try:
+        from stock_platform.trading.autotrading_data_trust import (
+            resolve_open_window_attribution,
+        )
+
+        attr = resolve_open_window_attribution(
+            session, market="UPBIT", uba_id=int(user_broker_account_id)
+        )
+        row.data_quality_status = attr["data_quality_status"]
+        row.included_in_research_metrics = attr["included_in_research_metrics"]
+        row.quarantine_reason = attr["quarantine_reason"]
+        row.quality_window_id = attr["quality_window_id"]
+    except Exception:
+        pass
     session.add(row)
     session.flush()
 

@@ -74,6 +74,8 @@ def summarize_entry_signal_shadow(
                 FROM operation.upbit_entry_signal_shadow
                 WHERE user_broker_account_id = :uba
                   AND source = :src AND variant = :var
+                  AND COALESCE(included_in_research_metrics, true) = true
+                  AND COALESCE(data_quality_status, 'UNKNOWN') <> 'INVALID'
                 """
             ),
             {"uba": uba, "src": SOURCE_FORWARD, "var": code},
@@ -129,7 +131,21 @@ def summarize_entry_signal_shadow(
         },
         "target_forward_samples": FORWARD_SAMPLE_TARGET,
         "e0_code": VARIANT_E0,
+        "data_quality": _entry_shadow_quality_counts(session, uba_id=uba),
+        "PROMOTION_SAMPLE_BASIS": "VALID_ONLY",
+        "raw_data_deleted": False,
     }
+
+
+def _entry_shadow_quality_counts(session: Session, *, uba_id: int) -> dict[str, Any]:
+    try:
+        from stock_platform.trading.autotrading_data_trust import shadow_quality_counts
+
+        return shadow_quality_counts(
+            session, uba_id=uba_id, table="upbit_entry_signal_shadow"
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"TOTAL": 0, "VALID_SAMPLES": 0, "QUARANTINED": 0, "error": type(exc).__name__}
 
 
 def list_entry_signal_shadow_rows(

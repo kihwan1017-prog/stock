@@ -123,8 +123,10 @@ class UpbitExecutionRestoreEpoch:
             # restore 미기록(콜드스타트)이면 프로세스 기동 시각을 기준점으로 사용
             cutoff = restored if restored is not None else self._process_started_at
             if waiting is None:
-                # cutoff 이력이 있는데 슬롯 시각 없음 → fail-closed (BUY 경로)
-                return restored is not None
+                # WAITING 시각이 없으면 epoch 비교 불가.
+                # outage 진행 중만 차단하고, restored_at 단독 fail-closed 금지
+                # (ENTRY_PENDING persist 경로 false positive 방지).
+                return bool(self._state.outage_active)
             return waiting <= cutoff
 
 

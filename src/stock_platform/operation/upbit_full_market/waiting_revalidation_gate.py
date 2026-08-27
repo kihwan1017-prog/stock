@@ -165,11 +165,6 @@ def evaluate_waiting_buy_revalidation_gate(
         waiting_at.isoformat() if waiting_at else None
     )
 
-    if waiting_at is None and skip_if_not_waiting:
-        # WAITING 슬롯이 아니면(이미 ENTRY_PENDING 등) restore-epoch만 약하게 적용
-        # begin_entry 단계에서 WAITING→PENDING 전이 직전이 주 대상
-        pass
-
     # 1) Exit Monitor
     exit_ok, exit_st = _exit_monitor_running()
     detail["exit_monitor"] = {
@@ -193,24 +188,28 @@ def evaluate_waiting_buy_revalidation_gate(
             "detail": detail,
         }
 
-    # 3) Restore epoch — pre/during outage WAITING
+    # 3) Restore epoch — WAITING_SIGNAL 에만 적용.
+    # ENTRY_PENDING 등(waiting_at=None)에서 restored_at 만으로
+    # STALE_PRE_RESTORE_WAITING 을 강제하면 begin_entry 성공 후
+    # persist 가 100% 차단된다 (2026-08-27 20:39+ no-trade root).
     from stock_platform.trading.upbit_execution_restore_epoch import (
         upbit_execution_restore_epoch,
     )
 
     epoch = upbit_execution_restore_epoch.snapshot()
     detail["restore_epoch"] = epoch
-    if waiting_at is not None or epoch.get("restored_at") or epoch.get(
-        "outage_active"
+    if waiting_at is None and skip_if_not_waiting:
+        detail["restore_epoch_skipped"] = "NOT_WAITING_SLOT"
+        return {"allowed": True, "reason": None, "detail": detail}
+
+    if upbit_execution_restore_epoch.is_pre_or_during_outage_waiting(
+        waiting_at
     ):
-        if upbit_execution_restore_epoch.is_pre_or_during_outage_waiting(
-            waiting_at
-        ):
-            detail["classification"] = "STALE_PRE_RESTORE_WAITING"
-            return {
-                "allowed": False,
-                "reason": REASON_STALE_PRE_RESTORE_WAITING,
-                "detail": detail,
-            }
+        detail["classification"] = "STALE_PRE_RESTORE_WAITING"
+        return {
+            "allowed": False,
+            "reason": REASON_STALE_PRE_RESTORE_WAITING,
+            "detail": detail,
+        }
 
     return {"allowed": True, "reason": None, "detail": detail}

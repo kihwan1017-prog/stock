@@ -108,6 +108,21 @@ def enroll_forward_observation(
             fee_rt_pct=Decimal(str(FEE_RT_PCT)),
             outcome_status=STATUS_PENDING,
         )
+        # Data Trust: INVALID open window → quarantine (raw 유지)
+        try:
+            from stock_platform.trading.autotrading_data_trust import (
+                resolve_open_window_attribution,
+            )
+
+            attr = resolve_open_window_attribution(
+                session, market="UPBIT", uba_id=int(uba_id)
+            )
+            row.data_quality_status = attr["data_quality_status"]
+            row.included_in_research_metrics = attr["included_in_research_metrics"]
+            row.quarantine_reason = attr["quarantine_reason"]
+            row.quality_window_id = attr["quality_window_id"]
+        except Exception:
+            pass
         session.add(row)
         created += 1
     if commit:
@@ -129,13 +144,17 @@ def mature_pending_outcomes(
     limit: int = 200,
     commit: bool = True,
 ) -> dict[str, Any]:
-    """Fill future returns for PENDING rows older than 60m."""
+    """Fill future returns for PENDING rows older than 60m.
+
+    PASS/BLOCK 모두 성숙시킨다 — historical replay와 동일하게
+    block observation의 counterfactual outcome이 필요하다.
+    REAL order/slot/daily 경로는 절대 건드리지 않는다.
+    """
 
     cutoff = _utc_now() - timedelta(minutes=max(OUTCOME_WINDOWS_MIN))
     q = select(UpbitEntrySignalShadowEntity).where(
         UpbitEntrySignalShadowEntity.outcome_status == STATUS_PENDING,
         UpbitEntrySignalShadowEntity.observed_at <= cutoff,
-        UpbitEntrySignalShadowEntity.shadow_decision == "PASS",
     )
     if uba_id is not None:
         q = q.where(

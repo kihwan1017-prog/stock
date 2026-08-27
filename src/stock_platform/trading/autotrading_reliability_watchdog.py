@@ -297,22 +297,38 @@ def _l1_waiting_self_heal(
     """Starvation self-heal — revalidation/release only (REAL order 금지)."""
 
     try:
+        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+            force_waiting_revalidation_after_restore,
+            revalidate_waiting_slots,
+        )
+        from stock_platform.trading.upbit_execution_restore_epoch import (
+            upbit_execution_restore_epoch,
+        )
+
+        nudge = {"ok": False}
+        epoch = upbit_execution_restore_epoch.snapshot()
+        if epoch.get("restored_at"):
+            nudge = force_waiting_revalidation_after_restore(
+                session,
+                user_broker_account_id=int(uba_id),
+                actor=f"{actor}:stale_nudge",
+            )
         from stock_platform.operation.upbit_full_market.portfolio_entry_signal import (
             portfolio_entry_telemetry,
-        )
-        from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
-            revalidate_waiting_slots,
         )
 
         telem = portfolio_entry_telemetry.snapshot(uba_id) or {}
         if not isinstance(telem, dict):
             telem = {}
-        return revalidate_waiting_slots(
+        result = revalidate_waiting_slots(
             session,
             user_broker_account_id=uba_id,
             telemetry_by_symbol=telem,
             actor=actor,
         )
+        if isinstance(result, dict):
+            result["waiting_nudge"] = nudge
+        return result
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
@@ -648,6 +664,60 @@ async def reconcile_market_health(
                 "auto_trading_ready": snap2.get("auto_trading_ready"),
                 "components": snap2.get("components"),
             }
+            # Data Trust window + incident ledger (주문 mutation 없음)
+            try:
+                from stock_platform.trading.autotrading_data_trust import (
+                    QUALITY_INVALID,
+                    current_data_trust_summary,
+                    record_incident,
+                    sync_data_quality_window,
+                )
+
+                trust = sync_data_quality_window(
+                    session,
+                    market=market,
+                    uba_id=uba_id,
+                    health={
+                        **snap2,
+                        "watchdog": {"running": True, "task_alive": True},
+                    },
+                )
+                outcome["data_trust"] = {
+                    "quality_status": trust.get("quality_status"),
+                    "reason_code": trust.get("reason_code"),
+                    "window_id": trust.get("window_id"),
+                    "action": trust.get("action"),
+                }
+                cls = str(snap2.get("no_trade_classification") or "")
+                # incident ledger — INVALID만 (PIPELINE_STALL/대기 오탐 스팸 금지)
+                if trust.get("quality_status") == QUALITY_INVALID:
+                    sig = (
+                        f"{cls or trust.get('reason_code')}"
+                        f":{snap2.get('first_zero_stage') or 'NA'}"
+                        f":{trust.get('reason_code') or 'NA'}"
+                    )
+                    inc = record_incident(
+                        session,
+                        market=market,
+                        uba_id=uba_id,
+                        signature=sig,
+                        classification=cls or "SYSTEM_FAILURE",
+                        first_zero_stage=snap2.get("first_zero_stage"),
+                        root_cause=trust.get("reason_code"),
+                        data_quality_impact=trust.get("quality_status"),
+                        evidence={"post_snapshot": outcome["post_snapshot"]},
+                        self_heal_level=("L2" if outcome.get("restore_attempted") else "L1"),
+                    )
+                    outcome["incident"] = inc
+                outcome["data_trust_summary"] = current_data_trust_summary(
+                    session, market=market, uba_id=uba_id
+                )
+                session.commit()
+            except Exception as trust_exc:  # noqa: BLE001
+                logger.warning(
+                    "data_trust_sync_failed",
+                    extra={"market": market, "uba": uba_id, "err": type(trust_exc).__name__},
+                )
             return outcome
     except Exception as exc:  # noqa: BLE001
         session.rollback()

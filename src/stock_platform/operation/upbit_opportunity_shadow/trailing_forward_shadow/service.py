@@ -322,6 +322,20 @@ def enroll_on_position_open(
             "historical_replay_available": HISTORICAL_TRAILING_REPLAY_AVAILABLE,
         },
     )
+    try:
+        from stock_platform.trading.autotrading_data_trust import (
+            resolve_open_window_attribution,
+        )
+
+        attr = resolve_open_window_attribution(
+            session, market="UPBIT", uba_id=int(user_broker_account_id)
+        )
+        row.data_quality_status = attr["data_quality_status"]
+        row.included_in_research_metrics = attr["included_in_research_metrics"]
+        row.quarantine_reason = attr["quarantine_reason"]
+        row.quality_window_id = attr["quality_window_id"]
+    except Exception:
+        pass
     session.add(row)
     session.flush()
     sid = getattr(row, "shadow_row_id", None)
@@ -519,7 +533,22 @@ def summarize_cohort(
     rows = list(session.scalars(q))
     active = [r for r in rows if r.status == STATUS_ACTIVE]
     completed = [r for r in rows if r.status == STATUS_COMPLETED]
-    sample_n = len(completed)
+    # promotion 기본: VALID only (INVALID quarantine 제외, raw 유지)
+    completed_valid = [
+        r
+        for r in completed
+        if bool(getattr(r, "included_in_research_metrics", True))
+        and str(getattr(r, "data_quality_status", "UNKNOWN") or "UNKNOWN").upper()
+        != "INVALID"
+    ]
+    quarantined = [
+        r
+        for r in rows
+        if (not bool(getattr(r, "included_in_research_metrics", True)))
+        or str(getattr(r, "data_quality_status", "UNKNOWN") or "UNKNOWN").upper()
+        == "INVALID"
+    ]
+    sample_n = len(completed_valid)
     target = SAMPLE_TARGET_INITIAL
     if sample_n >= SAMPLE_TARGET_NEXT:
         target = SAMPLE_TARGET_PRIMARY
@@ -530,7 +559,7 @@ def summarize_cohort(
     for key in variant_specs():
         nets: list[float] = []
         exits = 0
-        for r in completed:
+        for r in completed_valid:
             v = (r.variants_json or {}).get(key) or {}
             if v.get("trigger_at"):
                 exits += 1
@@ -549,11 +578,25 @@ def summarize_cohort(
             "SAMPLE_WITH_NET": len(nets),
         }
 
+    n10_valid_ready = sample_n >= 10
     return {
         "schema": RULE_VERSION,
         "enabled": shadow_enabled(),
         "SAMPLE_COUNT": sample_n,
+        "SAMPLE_COUNT_RAW_COMPLETED": len(completed),
         "ACTIVE_COUNT": len(active),
+        "TOTAL_COHORTS": len(rows),
+        "VALID_COHORTS": len(
+            [
+                r
+                for r in rows
+                if bool(getattr(r, "included_in_research_metrics", True))
+                and str(getattr(r, "data_quality_status", "UNKNOWN") or "").upper()
+                != "INVALID"
+            ]
+        ),
+        "QUARANTINED": len(quarantined),
+        "N10_VALID_READY": n10_valid_ready,
         "TARGET": target,
         "TARGETS": {
             "initial": SAMPLE_TARGET_INITIAL,
@@ -566,4 +609,6 @@ def summarize_cohort(
         "per_variant": per_variant,
         "REAL_POLICY_CHANGED": False,
         "promotion": "AUTO_PROMOTION_FORBIDDEN",
+        "PROMOTION_SAMPLE_BASIS": "VALID_ONLY",
+        "raw_data_deleted": False,
     }

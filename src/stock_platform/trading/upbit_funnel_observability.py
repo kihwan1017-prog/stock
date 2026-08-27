@@ -160,6 +160,7 @@ def build_upbit_funnel_snapshot(
             """
             SELECT COUNT(*) FROM operation.upbit_entry_signal_shadow
             WHERE user_broker_account_id = :uba AND observed_at >= :ws
+              AND variant = 'E0'
             """
         ),
         {"uba": uba_id, "ws": window_start},
@@ -169,7 +170,12 @@ def build_upbit_funnel_snapshot(
             """
             SELECT COUNT(*) FROM operation.upbit_entry_signal_shadow
             WHERE user_broker_account_id = :uba AND observed_at >= :ws
+              AND variant = 'E0'
               AND UPPER(COALESCE(baseline_decision,'')) = 'PASS'
+              AND COALESCE(
+                    (indicator_snapshot->>'emit_suppressed')::boolean,
+                    false
+                  ) = false
             """
         ),
         {"uba": uba_id, "ws": window_start},
@@ -180,6 +186,7 @@ def build_upbit_funnel_snapshot(
             SELECT baseline_block_reason, COUNT(*) AS cnt
             FROM operation.upbit_entry_signal_shadow
             WHERE user_broker_account_id = :uba AND observed_at >= :ws
+              AND variant = 'E0'
               AND UPPER(COALESCE(baseline_decision,'')) = 'BLOCK'
             GROUP BY baseline_block_reason
             ORDER BY cnt DESC

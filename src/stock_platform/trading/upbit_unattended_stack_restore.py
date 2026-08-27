@@ -434,6 +434,22 @@ async def restore_upbit_trading_stack(
     if stack_ok:
         upbit_execution_restore_epoch.mark_restored(actor=actor)
         detail["restore_epoch"] = upbit_execution_restore_epoch.snapshot()
+        # restore 직후 WAITING 이 STALE 로 고착되지 않게 재검증 interval 해제
+        try:
+            from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+                force_waiting_revalidation_after_restore,
+            )
+
+            detail["waiting_nudge"] = force_waiting_revalidation_after_restore(
+                session,
+                user_broker_account_id=uba_id,
+                actor=str(actor or "stack_restore"),
+            )
+        except Exception as nudge_exc:  # noqa: BLE001
+            detail["waiting_nudge"] = {
+                "ok": False,
+                "error": type(nudge_exc).__name__,
+            }
     else:
         missing = verify.get("missing_components") or []
         detail["missing_components"] = missing

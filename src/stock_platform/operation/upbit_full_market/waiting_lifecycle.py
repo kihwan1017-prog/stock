@@ -386,6 +386,49 @@ def record_waiting_revalidation(
     )
 
 
+def force_waiting_revalidation_after_restore(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    actor: str = "restore_epoch",
+) -> dict[str, Any]:
+    """mark_restored 직후 WAITING 슬롯의 revalidation interval 을 해제한다.
+
+    updated_at / last_revalidated_at 이 restored_at 이전이면
+    STALE_PRE_RESTORE_WAITING 으로 BUY 가 영구 차단될 수 있다.
+    REAL 주문은 생성하지 않고 meta 만 갱신한다.
+    """
+
+    uba_id = int(user_broker_account_id)
+    slots = session.scalars(
+        select(UpbitPositionSlotEntity).where(
+            UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+            UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+        )
+    ).all()
+    nudged = 0
+    now = _now()
+    for slot in slots:
+        meta = _slot_meta(slot)
+        meta["force_revalidate_after_restore"] = True
+        meta["force_revalidate_at"] = now.isoformat()
+        meta["force_revalidate_actor"] = str(actor or "")[:80]
+        # interval 스킵 해제 — 다음 revalidate_waiting_slots 가 즉시 평가
+        meta.pop("last_revalidated_at", None)
+        _write_slot_meta(slot, meta)
+        # restore cutoff 이후 updated_at 확보 — BUY gate 즉시 통과 가능
+        slot.updated_at = now
+        nudged += 1
+    if nudged:
+        session.flush()
+    return {
+        "ok": True,
+        "uba_id": uba_id,
+        "nudged_waiting_slots": nudged,
+        "real_order_mutation": 0,
+    }
+
+
 def release_waiting_slot_to_empty(
     session: Session,
     slot: UpbitPositionSlotEntity,

@@ -201,6 +201,32 @@ export function OrderFillMonitoringDashboard({ onOpenDetail }: Props) {
     return map;
   }, [perf.round_trips, perf.recent_closed_trades]);
 
+  // 오늘 데이터 신뢰 — UPBIT pipeline SoT 우선 (시장 ALL일 때도 대표 표시)
+  const dataTrustQs = useMemo(() => {
+    const src =
+      market === "KIWOOM" ? rec(pipeKiwoomQ.data) : rec(pipeUpbitQ.data);
+    const dt = rec(src.data_trust);
+    return String(dt.quality_status || "").toUpperCase();
+  }, [market, pipeKiwoomQ.data, pipeUpbitQ.data]);
+  const dataTrustLabel =
+    dataTrustQs === "VALID"
+      ? "오늘 데이터 신뢰: 정상"
+      : dataTrustQs === "DEGRADED"
+        ? "오늘 데이터 신뢰: 주의"
+        : dataTrustQs === "INVALID"
+          ? "오늘 데이터 신뢰: 분석 제외"
+          : dataTrustQs === "UNKNOWN"
+            ? "오늘 데이터 신뢰: 미확정"
+            : null;
+  const dataTrustColor =
+    dataTrustQs === "VALID"
+      ? "success"
+      : dataTrustQs === "DEGRADED"
+        ? "warning"
+        : dataTrustQs === "INVALID"
+          ? "error"
+          : "default";
+
   /** pipeline-liveness stages만 표시 — 없는 단계는 "—" (추정 금지) */
   const pipelineCard = (label: string, marketCode: "UPBIT" | "KIWOOM", raw: unknown) => {
     const p = rec(raw);
@@ -313,6 +339,9 @@ export function OrderFillMonitoringDashboard({ onOpenDetail }: Props) {
           ]}
         />
         <Typography.Text type="secondary">기본: 오늘 · 자동매매</Typography.Text>
+        {dataTrustLabel ? (
+          <Tag color={dataTrustColor}>{dataTrustLabel}</Tag>
+        ) : null}
       </Space>
 
       <Row gutter={[12, 12]}>

@@ -209,7 +209,7 @@ def build_pipeline_liveness_snapshot(
         health_state=str(health.get("health_state") or ""),
     )
 
-    return {
+    out = {
         "ok": True,
         "schema": "pipeline_liveness_v1",
         "market": market,
@@ -252,6 +252,51 @@ def build_pipeline_liveness_snapshot(
             "updated_at": health.get("updated_at"),
         },
     }
+    try:
+        from stock_platform.trading.autotrading_data_trust import (
+            current_data_trust_summary,
+            evaluate_data_trust_from_health,
+        )
+
+        ev = evaluate_data_trust_from_health(
+            {
+                **health,
+                "stages": stages,
+                "classification": classification,
+                "no_trade_classification": classification,
+                "first_zero_stage": first_zero,
+                "watchdog": {"running": True},
+            }
+        )
+        out["data_trust"] = ev
+        # open window를 평가와 동기화 (읽기 경로에서 경량 sync — 주문 mutation 없음)
+        try:
+            from stock_platform.trading.autotrading_data_trust import (
+                sync_data_quality_window,
+            )
+
+            sync_data_quality_window(
+                session,
+                market=market,
+                uba_id=uba_id,
+                health={
+                    **health,
+                    "stages": stages,
+                    "classification": classification,
+                    "no_trade_classification": classification,
+                    "first_zero_stage": first_zero,
+                    "watchdog": {"running": True},
+                },
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+        out["data_trust_summary"] = current_data_trust_summary(
+            session, market=market, uba_id=uba_id
+        )
+    except Exception:
+        out["data_trust"] = {"quality_status": "UNKNOWN"}
+    return out
 
 
 def classify_with_entry_signal_context(

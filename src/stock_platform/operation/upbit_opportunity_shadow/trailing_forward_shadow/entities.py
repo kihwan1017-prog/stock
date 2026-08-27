@@ -72,6 +72,15 @@ class UpbitTrailingForwardShadowEntity(Base):
     )
     context_as_of: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Data Trust — INVALID 구간 표본 quarantine (삭제 금지)
+    data_quality_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'UNKNOWN'")
+    )
+    included_in_research_metrics: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    quarantine_reason: Mapped[str | None] = mapped_column(String(80))
+    quality_window_id: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

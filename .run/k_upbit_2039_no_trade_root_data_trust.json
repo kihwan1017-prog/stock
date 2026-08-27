@@ -1,0 +1,180 @@
+{
+  "FINAL_VERDICT": "UPBIT_RECURRING_FAILURE_ROOT_FIXED_DATA_TRUST_ENABLED",
+  "CURRENT_KST": "2026-08-27T23:28:04.297769+09:00",
+  "CURRENT_INCIDENT": {
+    "LAST_REAL_TRADE_BEFORE": "2026-08-27T20:38:58+09:00 order=1904 SELL KRW-RE FILLED",
+    "INCIDENT_START": "2026-08-27T20:38:58+09:00",
+    "FIRST_POST_FIX_BUY": "2026-08-27T23:23:04+09:00 order=1905 BUY KRW-DRV FILLED",
+    "FIRST_POST_FIX_SELL": "2026-08-27T23:23:10+09:00 order=1906 SELL KRW-DRV FILLED",
+    "MINUTES_NO_TRADE": 164.1,
+    "FIRST_ZERO_STAGE": "ENTRY_SIGNAL",
+    "FIRST_ZERO_REASON": "SHORT_MA_NOT_ABOVE_LONG_MA",
+    "PRIMARY_ROOT_CAUSE": "STALE_PRE_RESTORE_WAITING false-positive on ENTRY_PENDING persist (waiting_at=None treated as stale after restore epoch)",
+    "SECONDARY_CAUSES": [
+      "restore-epoch WAITING lock without force revalidation nudge",
+      "funnel ENTRY_PASS counted all E0-E4 variants (5x inflate) \u2192 false PIPELINE_STALL",
+      "Watchdog L1 waiting heal insufficient vs persist-gate STALE"
+    ],
+    "CLASSIFICATION_AT_INCIDENT": "SYSTEM_FAILURE / NEW_FAILURE_MODE (STALE_PRE_RESTORE)",
+    "CLASSIFICATION_NOW": "NORMAL_NO_SIGNAL"
+  },
+  "HEALTH": {
+    "LIVE": true,
+    "ARM": "2026-08-28T00:22:14.698446+09:00",
+    "ACTIVATION": "ACTIVE",
+    "components": {
+      "runtime": "RUNNING",
+      "runner": "RUNNING",
+      "worker": "RUNNING",
+      "exit_monitor": "RUNNING",
+      "scanner": "RUNNING",
+      "feed": "REAL_FRESH"
+    },
+    "health_state": "READY",
+    "auto_trading_ready": true,
+    "runner_status": {
+      "uba": 1380,
+      "broker": "UPBIT",
+      "running": true,
+      "mode": "LIVE",
+      "account_id": 1,
+      "broker_code": "UPBIT",
+      "user_broker_account_id": 1380,
+      "started_at": "2026-08-27T14:22:14.758651+00:00",
+      "heartbeat": "2026-08-27T14:26:15.201910+00:00",
+      "signal_subscriber_count": 1,
+      "order_amount": "100000",
+      "processed_count": 5,
+      "executed_count": 2,
+      "blocked_count": 3,
+      "failed_count": 0,
+      "daily_realized_loss": "0",
+      "last_error": null
+    }
+  },
+  "FUNNEL": {
+    "FEED": 0,
+    "SCANNER": 1,
+    "CANDIDATE": 0,
+    "ANALYSIS": 0,
+    "SELECTION": 1,
+    "WAITING": 3,
+    "ENTRY_EVALUATION": 1330,
+    "ENTRY_PASS": 0,
+    "ENTRY_PENDING": 0,
+    "ENTRY_PENDING_STUCK": 0,
+    "ADMISSION": 0,
+    "ORDER": 2,
+    "FILL": 2
+  },
+  "WHY_REPEATED": {
+    "RECURRENCE_SIGNATURE": "STALE_PRE_RESTORE_WAITING:ENTRY_PENDING_PERSIST",
+    "RECURRENCE_COUNT": "historical_family>=1 (ARM_EXPIRED/STACK/WAITING/FEED separate signatures)",
+    "WHY_PREVIOUS_PREVENTION_MISSED": "Watchdog treated stack healthy + misread ENTRY_PASS_WITHOUT_ORDER; did not detect persist-gate STALE on begin_entry\u2192None waiting_at"
+  },
+  "FIX": {
+    "ROOT_FIX_IMPLEMENTED": true,
+    "files": [
+      "waiting_revalidation_gate.py (NOT_WAITING_SLOT skip)",
+      "upbit_execution_restore_epoch.py (None waiting only blocks if outage_active)",
+      "waiting_lifecycle.force_waiting_revalidation_after_restore",
+      "upbit_funnel_observability E0-only ENTRY_PASS",
+      "autotrading_data_trust + migration dq1a2b3c4d5e"
+    ]
+  },
+  "DATA_TRUST": {
+    "IMPLEMENTED": true,
+    "CURRENT": {
+      "quality_status": "VALID",
+      "reason_code": "NORMAL_NO_SIGNAL",
+      "first_zero_stage": "ENTRY_SIGNAL",
+      "runtime_ok": true,
+      "runner_ok": true,
+      "worker_ok": true,
+      "exit_ok": true,
+      "feed_ok": true,
+      "scanner_ok": true,
+      "watchdog_ok": true,
+      "broker_sync_ok": true,
+      "slot_invariant_ok": true,
+      "data_freshness_ok": true,
+      "classification": "NORMAL_NO_SIGNAL"
+    },
+    "SUMMARY": {
+      "current": {
+        "window_id": 2,
+        "quality_status": "VALID",
+        "reason_code": "NORMAL_NO_SIGNAL",
+        "first_zero_stage": "ENTRY_SIGNAL",
+        "started_at": "2026-08-27T23:23:16.513023+09:00",
+        "ended_at": null
+      },
+      "today_by_status": {
+        "DEGRADED": {
+          "quality_status": "DEGRADED",
+          "cnt": 1,
+          "duration_sec": 60.517625
+        },
+        "VALID": {
+          "quality_status": "VALID",
+          "cnt": 1,
+          "duration_sec": 287.875053
+        }
+      },
+      "valid_duration_percent": 82.6,
+      "schema": "autotrading_data_trust_v1"
+    },
+    "WINDOWS_DB": [
+      {
+        "id": 1,
+        "status": "DEGRADED",
+        "reason": "WAITING_SLOT_STARVATION",
+        "ended": true
+      },
+      {
+        "id": 2,
+        "status": "VALID",
+        "reason": "NORMAL_NO_SIGNAL",
+        "ended": false
+      }
+    ],
+    "RAW_DATA_DELETED": false
+  },
+  "PROCESS_MAP": {
+    "DATA_TRUST_VISIBLE": true,
+    "FIRST_ZERO_VISIBLE": true,
+    "summary_classification": "NORMAL_NO_SIGNAL",
+    "research_data_quality": {
+      "market": "UPBIT"
+    }
+  },
+  "SHADOW": {
+    "market": "UPBIT"
+  },
+  "DEPLOY": {
+    "MIGRATION": "dq1a2b3c4d5e",
+    "BACKEND_RESTART_COUNT": 1,
+    "MODE": "PROD",
+    "UVICORN_RELOAD": false,
+    "NATURAL_PROOF_ORDERS": [
+      1905,
+      1906
+    ]
+  },
+  "SAFETY": {
+    "FORCED_REAL_ORDER": 0,
+    "REAL_ENTRY_POLICY_CHANGED": false,
+    "REAL_EXIT_POLICY_CHANGED": false,
+    "REAL_TRAILING_THRESHOLD_CHANGED": false,
+    "DAILY_LIMIT_CHANGE": 0,
+    "DAILY_COUNT_RESET": 0,
+    "LIVE_ARM_MANUAL_MUTATION": 0,
+    "KIWOOM_MUTATION": 0,
+    "RAW_TRADE_DATA_MUTATION": 0,
+    "SYSTEM_BUG_ACTIVE": false,
+    "CAN_SAFELY_CONTINUE": true
+  },
+  "TEST": {
+    "CURRENT_ROOT_CAUSE_TESTS": "tests/test_upbit_2039_stale_restore_data_trust.py PASS 13"
+  }
+}

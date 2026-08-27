@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-27 (Process Version + Decision Trace + Visual Map)
+**최종 갱신:** 2026-08-27 (UPBIT 20:39 no-trade root + Data Trust)
 
 ---
 
@@ -15,11 +15,23 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
+| **U** | 20:39+ no-trade + Data Trust | **UPBIT_RECURRING_FAILURE_ROOT_FIXED_DATA_TRUST_ENABLED** | OBSERVE_VALID_WINDOW · Trailing N10 VALID_ONLY |
 | **SHARED** | AutoTrading Process Version / Trace / Map | **AUTOTRADING_PROCESS_VERSION_TRACE_VISUAL_MAP_COMPLETE** | Separate: KIWOOM feed + health/ops perf |
 | **U** | Entry Shadow research | **ENTRY_THRESHOLD_RELAXATION_NOT_PROMISING** | REAL entry 변경 금지 · 관측 유지 |
 | **U** | Prod AI Gate 312s latency | **UPBIT_PROD_AI_GATE_LATENCY_FIXED** | OBSERVE_UPBIT_5MIN_SCANNER_WITH_FAST_PROD_AI_GATE |
 | **SHARED** | UPBIT+KIWOOM CLEAN RAG Feedback | **READY_NOT_NATURALLY_OBSERVED** | COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE |
 | **K** | Next Trading Day Auto Start | **ENABLED_READY** | OBSERVE_NEXT_KRX_SESSION_AUTO_START · FEED_DOWN pending |
+
+---
+
+## U — 20:39+ no-trade root + Data Trust (2026-08-27 night)
+
+- Root: `STALE_PRE_RESTORE_WAITING` false-positive after `begin_entry` (waiting_at=None)
+- Fix: NOT_WAITING_SLOT skip · restore-epoch None only if outage_active · waiting nudge · funnel E0-only
+- Data Trust: quality window + incident ledger + shadow quarantine (`dq1a2b3c4d5e`)
+- Natural proof: orders **1905/1906** FILLED (not forced)
+- Evidence: `.run/k_upbit_2039_no_trade_root_data_trust.*`
+- REAL entry/exit/trailing/daily policy 변경 없음
 
 ---
 

@@ -351,9 +351,44 @@ def get_current_process(
             },
             "real_entry": "PORTFOLIO_BULLISH_STATE_ENTRY",
             "trading_llm_real_gate": False,
+            "data_quality": _research_data_quality(session, market=market_u, uba_id=uba_id),
         },
         "HISTORICAL_TRADE_VERSION_IMMUTABLE": True,
     }
+
+
+def _research_data_quality(
+    session: Session, *, market: str, uba_id: int | None
+) -> dict[str, Any]:
+    """Process Map용 Shadow Valid/Quarantined + trust summary."""
+
+    out: dict[str, Any] = {"market": market}
+    if uba_id is None:
+        return out
+    try:
+        from stock_platform.trading.autotrading_data_trust import (
+            current_data_trust_summary,
+            shadow_quality_counts,
+        )
+
+        out["trust_summary"] = current_data_trust_summary(
+            session, market=market, uba_id=int(uba_id)
+        )
+        if market == "UPBIT":
+            out["entry_shadow"] = shadow_quality_counts(
+                session, uba_id=int(uba_id), table="upbit_entry_signal_shadow"
+            )
+            out["ma_exit_shadow"] = shadow_quality_counts(
+                session, uba_id=int(uba_id), table="upbit_ma_exit_forward_shadow"
+            )
+            out["trailing_shadow"] = shadow_quality_counts(
+                session, uba_id=int(uba_id), table="upbit_trailing_forward_shadow"
+            )
+            trail = out["trailing_shadow"]
+            out["N10_VALID_READY"] = int(trail.get("VALID_SAMPLES") or 0) >= 10
+    except Exception as exc:  # noqa: BLE001
+        out["error"] = type(exc).__name__
+    return out
 
 
 def list_changes(session: Session, *, market: str | None = None) -> list[dict[str, Any]]:
@@ -1001,6 +1036,8 @@ def _runtime_overlay(
             "first_zero_reason": (live or {}).get("first_zero_reason"),
             "pipeline_health_state": (live or {}).get("pipeline_health_state"),
             "recommended_action": (live or {}).get("recommended_action"),
+            "data_trust": (live or {}).get("data_trust"),
+            "data_trust_summary": (live or {}).get("data_trust_summary"),
         }
         daily_quota = None
         try:

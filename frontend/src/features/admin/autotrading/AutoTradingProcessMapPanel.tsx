@@ -212,6 +212,32 @@ export function AutoTradingProcessMapPanel() {
             }
           />
         ) : null}
+        {(() => {
+          const dt = asRecord(summary.data_trust) || asRecord(current?.data_trust);
+          const qs = String(dt?.quality_status || "").toUpperCase();
+          if (!qs) return null;
+          const type =
+            qs === "INVALID" ? "error" : qs === "DEGRADED" ? "warning" : "success";
+          const label =
+            qs === "INVALID"
+              ? "데이터 품질: INVALID — 성과/Shadow 연구에서 제외"
+              : qs === "DEGRADED"
+                ? "데이터 품질: DEGRADED — 정책 대기/정체 (거래 없음 ≠ 장애)"
+                : "데이터 품질: VALID — 정상 표본 구간";
+          return (
+            <Alert
+              style={{ marginTop: 12 }}
+              type={type}
+              showIcon
+              title={label}
+              description={
+                dt?.reason_code
+                  ? `reason=${String(dt.reason_code)}`
+                  : undefined
+              }
+            />
+          );
+        })()}
         {market === "KIWOOM" &&
         summary.pending_issue === "KIWOOM_MARKET_DATA_FAILURE" ? (
           <Alert
@@ -333,7 +359,7 @@ export function AutoTradingProcessMapPanel() {
               const st = asRecord(s) ?? {};
               return {
                 color: "green",
-                children: (
+                content: (
                   <span>
                     <Text strong>{String(st.label ?? st.id ?? "—")}</Text>
                   </span>
@@ -392,6 +418,36 @@ export function AutoTradingProcessMapPanel() {
                     Trading LLM REAL gate:{" "}
                     <Tag>{String(research.trading_llm_real_gate ?? false)}</Tag> (SHADOW)
                   </Paragraph>
+                  {(() => {
+                    const dq = asRecord(research.data_quality) ?? {};
+                    const trail = asRecord(dq.trailing_shadow) ?? {};
+                    const entry = asRecord(dq.entry_shadow) ?? {};
+                    if (!trail.TOTAL && !entry.TOTAL && dq.N10_VALID_READY == null) {
+                      return null;
+                    }
+                    return (
+                      <Paragraph>
+                        Data Trust samples — Entry valid{" "}
+                        <Tag color="success">
+                          {String(entry.VALID_SAMPLES ?? 0)}
+                        </Tag>
+                        / quarantine{" "}
+                        <Tag color="error">{String(entry.QUARANTINED ?? 0)}</Tag>
+                        {" · "}
+                        Trailing valid{" "}
+                        <Tag color="success">
+                          {String(trail.VALID_SAMPLES ?? 0)}
+                        </Tag>
+                        / quarantine{" "}
+                        <Tag color="error">{String(trail.QUARANTINED ?? 0)}</Tag>
+                        {" · "}
+                        N10_VALID_READY={" "}
+                        <Tag color={dq.N10_VALID_READY ? "success" : "default"}>
+                          {String(Boolean(dq.N10_VALID_READY))}
+                        </Tag>
+                      </Paragraph>
+                    );
+                  })()}
                 </Card>
               </Card>
             ),
