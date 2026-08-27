@@ -1,0 +1,177 @@
+{
+  "CURRENT_KST": "2026-08-28T08:00:00+09:00",
+  "FINAL_VERDICT": "UPBIT_LIFECYCLE_BLIND_SPOTS_FIXED",
+  "BASE_COMMIT": "1771087",
+  "CHANGE_HISTORY": "AUTOTRADING_LIFECYCLE_RELIABILITY_AUDIT",
+  "PROCESS_VERSION_CHANGED": false,
+  "SUPERVISOR_DECISION": {
+    "CURRENT_GRAPH_SUFFICIENT": true,
+    "UNIFIED_SUPERVISOR_REQUIRED": false,
+    "IMPLEMENTED": false,
+    "REASON": "ExitOrderSupervisor+Watchdog L0-L2+StartupRecon+DataTrust cover AUTO lifecycle; remaining gaps are observability/ghost/external-order, not a new daemon"
+  },
+  "CURRENT": {
+    "LIVE": true,
+    "ARM": true,
+    "ACTIVATION": "ACTIVE_VIA_LEASE",
+    "LEASE_ID": 6,
+    "LEASE_STATUS": "ACTIVE",
+    "STACK": {
+      "runtime": "RUNNING",
+      "runner": "RUNNING",
+      "worker": "RUNNING",
+      "exit_monitor": "RUNNING",
+      "scanner": "RUNNING",
+      "feed": "REAL_FRESH"
+    },
+    "FEED": "REAL_FRESH",
+    "AUTO_TRADING_READY": true,
+    "HEALTH_STATE": "READY",
+    "CLASSIFICATION": "NORMAL_POLICY_BLOCK",
+    "USER_STATUS": "🟢 자동매매 정상",
+    "DATA_TRUST": "VALID"
+  },
+  "LIFECYCLE": {
+    "TOTAL_STAGES": 18,
+    "COVERED_STAGES": 17,
+    "UNCOVERED_STAGES": ["ADMISSION_FUNNEL_HARDCODE_OBS"],
+    "MAP": [
+      "MARKET_DATA", "SCANNER", "CANDIDATE", "AI_SELECTION", "SLOT", "WAITING",
+      "ENTRY_EVALUATION", "ENTRY_PASS", "ADMISSION", "ORDER_INTENT", "ORDER_PERSIST",
+      "OUTBOX", "BROKER_SUBMIT", "BROKER_WAIT", "BUY_FILL", "POSITION_OPEN",
+      "EXIT_MONITOR", "EXIT_SIGNAL", "SELL_ORDER", "SELL_WAIT", "SELL_FILL_OR_CANCEL",
+      "POSITION_CLOSE_OR_OPEN_RECOVERY"
+    ]
+  },
+  "ORPHAN_AUDIT": {
+    "ORPHAN_TYPES_CHECKED": 10,
+    "CURRENT_ORPHANS": {
+      "waiting_without_symbol": 0,
+      "entry_pending_no_buy": 0,
+      "entry_pending_terminal_buy": 0,
+      "open_without_binding": 0,
+      "binding_open_without_slot_open": 0,
+      "exit_pending_no_open_sell": 0,
+      "exit_pending_terminal_sell": 0,
+      "accepted_no_broker_id": 0,
+      "broker_open_no_local": 4,
+      "local_auto_open": 0
+    },
+    "AUTO_RECOVERY_GAPS": [
+      "GHOST_OPEN_BINDING_DETECT_ONLY",
+      "EXTERNAL_BROKER_SELL_NO_LOCAL_OBS"
+    ]
+  },
+  "WAITING": {
+    "STARVATION_DETECTED": true,
+    "REVALIDATION_STALL_DETECTED": true,
+    "RELEASE_STALL_DETECTED": true,
+    "NOTE": "slot full alone is not failure; progress stall is"
+  },
+  "ENTRY": {
+    "ENTRY_PASS_NO_PROGRESS": "FUNNEL_FIRST_ZERO",
+    "ENTRY_PENDING_STUCK": "DETECT+L1",
+    "ENTRY_PENDING_WITHOUT_ORDER": "L1_ADDED",
+    "OUTBOX_STALL": "STACK_L2",
+    "BROKER_SUBMIT_STALL": "STACK_L2"
+  },
+  "EXIT": {
+    "EXIT_SIGNAL_NO_PROGRESS": "EXIT_MONITOR+HEALTH",
+    "EXIT_PENDING_STUCK": "DETECT+SUPERVISOR+TELEGRAM",
+    "REMOTE_WAIT_SUPERVISION": true,
+    "TERMINAL_RECONCILIATION": true,
+    "ORDER_1926_REGRESSION": "CANCELLED_ZERO_FILL_REOPEN_OPEN",
+    "STUCK_AGE_SECONDS_CANONICAL": 120
+  },
+  "STACK": {
+    "RESTORE": true,
+    "PARTIAL_RESTORE": true,
+    "FEED_RECOVERY": true,
+    "CHICKEN_EGG_REMAINING": [
+      "UNKNOWN_OWNERSHIP_BLOCKS_RESTORE_FAIL_CLOSED",
+      "ACTIVE_LEASE_REQUIRED_FOR_WATCHDOG_TARGET"
+    ]
+  },
+  "WATCHDOG": {
+    "FAILURE_MODES": 12,
+    "COVERED": 12,
+    "BLIND_SPOTS_FIXED_THIS_STEP": [
+      "EXIT_STUCK_AGE_900_TO_120",
+      "EXIT_SUPERVISOR_ONLY_AFTER_15M",
+      "EXIT_STUCK_NO_TELEGRAM",
+      "ENTRY_PENDING_WITHOUT_ORDER_NO_L1"
+    ],
+    "RESIDUAL_BLIND_SPOTS": [
+      "GHOST_BINDING_NO_HEAL",
+      "ADMISSION_FUNNEL_ZERO",
+      "BROKER_DIVERGENCE_TRUST_UNUSED"
+    ]
+  },
+  "SELF_HEAL": {
+    "IDEMPOTENT": true,
+    "DUPLICATE_ORDER_RISK": false,
+    "FORCE_TRADE_RISK": false
+  },
+  "DATA_TRUST": {
+    "NORMAL_SIGNAL_WAIT": "VALID",
+    "NORMAL_POLICY_BLOCK": "VALID",
+    "SYSTEM_FAILURE": "INVALID",
+    "EXIT_PENDING_STUCK": "INVALID",
+    "MISCLASSIFICATION_GAPS": ["ADMISSION_FUNNEL_SKEW"]
+  },
+  "SHADOW": {
+    "ENTRY_VALID": 40000,
+    "ENTRY_DEGRADED": 4950,
+    "ENTRY_QUARANTINED": 185,
+    "ENTRY_UNKNOWN": 78060,
+    "TRAILING_VALID": 8,
+    "TRAILING_DEGRADED": 3,
+    "TRAILING_QUARANTINED": 0,
+    "TRAILING_N10_READY": false,
+    "TRAILING_VALIDISH": 13,
+    "MA_EXIT_VALID": 8
+  },
+  "INCIDENT": {
+    "DEDUPE": true,
+    "RECOVERY_EDGE": true,
+    "USER_FIRST_DETECTION_GAPS": [
+      "EXTERNAL_BROKER_SELL_UI_ONLY",
+      "GHOST_BINDING"
+    ]
+  },
+  "TEST": {
+    "RESULT": "PASS",
+    "COUNT": 21,
+    "SUITES": [
+      "tests/test_exit_pending_stuck_and_no_trade_class.py",
+      "tests/test_exit_order_supervisor.py",
+      "tests/test_upbit_startup_open_order_reconciliation.py"
+    ]
+  },
+  "PROD": {
+    "WATCHDOG_TICKS": 3,
+    "SUPERVISOR_TICKS": 3,
+    "PIPELINE_ALIVE": true,
+    "FEED_FRESH": true,
+    "TICKS": "see .run/_lifecycle_audit_ticks.json"
+  },
+  "GIT": {
+    "BASE": "1771087",
+    "NEW_COMMIT": "PENDING",
+    "BACKEND_RESTART_COUNT": 1
+  },
+  "SAFETY": {
+    "FORCED_REAL_ORDER": 0,
+    "NEW_REAL_BUY": 0,
+    "NEW_REAL_SELL": 0,
+    "REAL_ENTRY_POLICY_CHANGED": false,
+    "REAL_EXIT_POLICY_CHANGED": false,
+    "REAL_TRAILING_CHANGED": false,
+    "LIVE_ARM_MANUAL_MUTATION": 0,
+    "DAILY_MUTATION": 0,
+    "KIWOOM_MUTATION": 0,
+    "PROCESS_VERSION_CHANGED": false
+  },
+  "SYSTEM_BUG_ACTIVE": false,
+  "CAN_SAFELY_CONTINUE": true
+}

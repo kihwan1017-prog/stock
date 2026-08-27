@@ -148,10 +148,14 @@ def test_startup_blocks_fresh_auto_sell_wait_only():
 
 
 def test_fresh_accepted_sell_below_threshold_not_in_reason_map():
-    """A: 짧은 대기는 stuck reason 미부여 — detection max_age 기본 900s."""
-    from stock_platform.trading.exit_pending_stuck import DEFAULT_STUCK_AGE_SECONDS
+    """A: 짧은 대기는 stuck reason 미부여 — detection max_age = canonical timeout."""
+    from stock_platform.trading.exit_pending_stuck import (
+        DEFAULT_STUCK_AGE_SECONDS,
+        _canonical_stuck_age_seconds,
+    )
 
-    assert DEFAULT_STUCK_AGE_SECONDS >= 600
+    assert DEFAULT_STUCK_AGE_SECONDS >= 60
+    assert _canonical_stuck_age_seconds() >= 60
 
 
 def test_pipeline_user_friendly_exit_stuck_message():

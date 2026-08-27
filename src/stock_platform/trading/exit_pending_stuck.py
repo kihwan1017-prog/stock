@@ -11,8 +11,27 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-# 기본 15분 — ACCEPTED SELL이 체결/취소 없이 유지되면 stuck
-DEFAULT_STUCK_AGE_SECONDS = 15 * 60
+# 기본 stuck age — SoT: upbit_portfolio_entry_pending_timeout_seconds (canonical)
+DEFAULT_STUCK_AGE_SECONDS = 120
+
+
+def _canonical_stuck_age_seconds() -> int:
+    try:
+        from stock_platform.common.settings import get_settings
+
+        settings = get_settings()
+        return int(
+            float(
+                getattr(
+                    settings,
+                    "upbit_portfolio_entry_pending_timeout_seconds",
+                    DEFAULT_STUCK_AGE_SECONDS,
+                )
+                or DEFAULT_STUCK_AGE_SECONDS
+            )
+        )
+    except Exception:  # noqa: BLE001
+        return int(DEFAULT_STUCK_AGE_SECONDS)
 
 
 def detect_exit_pending_zero_fill_stuck(
@@ -20,10 +39,12 @@ def detect_exit_pending_zero_fill_stuck(
     *,
     user_broker_account_id: int,
     now: datetime | None = None,
-    max_age_seconds: int = DEFAULT_STUCK_AGE_SECONDS,
+    max_age_seconds: int | None = None,
 ) -> dict[str, Any]:
     """EXIT_PENDING 슬롯에 zero-fill open SELL이 max_age 초과면 stuck."""
 
+    if max_age_seconds is None:
+        max_age_seconds = _canonical_stuck_age_seconds()
     now = now or datetime.now(timezone.utc)
     cutoff = now - timedelta(seconds=int(max_age_seconds))
     rows = session.execute(

@@ -23,6 +23,8 @@ from stock_platform.trading.execution_stack_reconciliation import (
 logger = logging.getLogger(__name__)
 
 # market:uba_id -> last health state (edge-trigger telegram)
+_last_exit_stuck_alert: dict[str, bool] = {}
+
 _last_health_state: dict[str, str] = {}
 # market:uba_id -> last starvation alert escalation (edge-trigger)
 _last_starvation_escalation: dict[str, str] = {}
@@ -439,6 +441,79 @@ def _l1_entry_pending_reconcile(
         return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
 
 
+
+def _handle_exit_stuck_transition(
+    *,
+    market: str,
+    uba_id: int,
+    stuck: bool,
+    snapshot: dict[str, Any],
+    supervisor: dict[str, Any] | None = None,
+) -> None:
+    """EXIT_PENDING zero-fill stuck — edge telegram (tick spam 금지)."""
+
+    if market != "UPBIT":
+        return
+    key = _market_key(market, uba_id)
+    prev = bool(_last_exit_stuck_alert.get(key))
+    if stuck and not prev:
+        _last_exit_stuck_alert[key] = True
+        items = ((snapshot.get("exit_pending_stuck") or {}).get("items") or [])
+        primary = items[0] if items else {}
+        _emit_reliability_telegram(
+            market=market,
+            uba_id=uba_id,
+            event_type="UPBIT_EXIT_PENDING_ZERO_FILL_STUCK",
+            title="🔴 [업비트] 자동매매 장애",
+            message=(
+                "매도 주문 체결 지연이 감지되었습니다.\n"
+                f"{primary.get('symbol') or ''}\n"
+                f"주문 #{primary.get('order_id') or '-'}\n"
+                "자동 복구를 시도합니다. 강제 매도는 하지 않습니다."
+            ),
+            detail={
+                "order_id": primary.get("order_id"),
+                "symbol": primary.get("symbol"),
+                "age_seconds": primary.get("age_seconds"),
+            },
+        )
+    elif (not stuck) and prev:
+        _last_exit_stuck_alert[key] = False
+        items = ((supervisor or {}).get("items") or [{}])
+        heal = (items[0] if items else {}).get("self_heal_status")
+        _emit_reliability_telegram(
+            market=market,
+            uba_id=uba_id,
+            event_type="UPBIT_EXIT_ORDER_RECOVERED",
+            title="🟢 [업비트] 자동매매 복구 완료",
+            message="매도 주문 상태가 정상화되었습니다. 포지션 감시를 재개합니다.",
+            detail={"self_heal_status": heal},
+        )
+
+
+def _l1_entry_pending_without_order(
+    session: Any, *, uba_id: int, actor: str
+) -> dict[str, Any]:
+    """ENTRY_PENDING + entry_order_id null — 기존 portfolio recover 경로."""
+
+    try:
+        from stock_platform.operation.upbit_full_market.portfolio_service import (
+            UpbitPortfolioService,
+        )
+
+        result = UpbitPortfolioService(session).recover_stale_entry_pending_without_order(
+            int(uba_id),
+            actor=f"L1_ENTRY_PENDING_NO_ORDER:{actor}",
+        )
+        return {
+            "ok": bool(result.get("ok", True)),
+            "released": int(result.get("released") or 0),
+            "detail": result,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:200]}
+
+
 def _l1_exit_pending_reconcile(
     session: Any, *, uba_id: int, actor: str
 ) -> dict[str, Any]:
@@ -685,12 +760,53 @@ async def reconcile_market_health(
                     if int(l1ep.get("released") or 0) > 0:
                         session.commit()
 
-                if "EXIT_PENDING_ZERO_FILL_STUCK" in reasons:
+                # ENTRY_PENDING without BUY — 기존 portfolio recover (삭제 없음)
+                l1epo = _l1_entry_pending_without_order(
+                    session, uba_id=uba_id, actor=actor
+                )
+                if int(l1epo.get("released") or 0) > 0:
+                    actions.append("L1_ENTRY_PENDING_WITHOUT_ORDER")
+                    outcome["l1_entry_pending_without_order"] = l1epo
+                    session.commit()
+
+                # ExitOrderSupervisor: stuck 또는 open AUTO SELL 존재 시
+                need_exit_sup = "EXIT_PENDING_ZERO_FILL_STUCK" in reasons
+                if not need_exit_sup:
+                    try:
+                        from stock_platform.trading.exit_order_supervisor import (
+                            ExitOrderSupervisor,
+                        )
+
+                        need_exit_sup = (
+                            len(
+                                ExitOrderSupervisor(session).list_open_sells(
+                                    int(uba_id)
+                                )
+                            )
+                            > 0
+                        )
+                    except Exception:  # noqa: BLE001
+                        need_exit_sup = False
+                if need_exit_sup:
                     l1ex = _l1_exit_pending_reconcile(
                         session, uba_id=uba_id, actor=actor
                     )
-                    actions.append("L1_EXIT_PENDING_RECONCILE")
+                    actions.append("L1_EXIT_ORDER_SUPERVISOR")
                     outcome["l1_exit_pending"] = l1ex
+                    _handle_exit_stuck_transition(
+                        market=market,
+                        uba_id=uba_id,
+                        stuck=bool(
+                            (snap.get("exit_pending_stuck") or {}).get("stuck")
+                        )
+                        or ("EXIT_PENDING_ZERO_FILL_STUCK" in reasons),
+                        snapshot=snap,
+                        supervisor=(
+                            l1ex.get("supervisor")
+                            if isinstance(l1ex, dict)
+                            else None
+                        ),
+                    )
                     if l1ex.get("ok"):
                         session.commit()
 

@@ -260,6 +260,20 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "research_only": False,
         "evidence": [".run/k_upbit_exit_wait_selfheal_recovery.json"],
     },
+    {
+        "git_commit": "PENDING",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "LIFECYCLE",
+        "summary": "Lifecycle reliability audit + EXIT/ENTRY L1 blind-spot fixes",
+        "change_reason": (
+            "AUTOTRADING_LIFECYCLE_RELIABILITY_AUDIT — align EXIT stuck age to "
+            "canonical timeout; ExitOrderSupervisor on open SELL; EXIT telegram; "
+            "ENTRY_PENDING without-order L1; no unified supervisor"
+        ),
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_upbit_lifecycle_integrated_reliability_audit.json"],
+    },
 ]
 
 CURRENT_UPBIT_CONFIG_SNAPSHOT = {
