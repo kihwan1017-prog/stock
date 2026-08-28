@@ -122,6 +122,8 @@ TELEGRAM_OPERATIONAL_ALLOWLIST = frozenset(
         "UPBIT_SCANNER_FAILURE",
         "ORDER_REJECTED",
         "TEST_NOTIFICATION",
+        # 일일 운영보고 (23:30 KST scheduler) — inbox dedupe 유지, Telegram만 allow
+        "AUTOTRADING_DAILY_REPORT",
         # AI / 슬롯 / 후보 / Shadow
         "AI_GATE_RECOMMENDATION_CHANGED",
         "UPBIT_PORTFOLIO_SLOT_ASSIGNED",

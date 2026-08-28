@@ -20,8 +20,24 @@ def test_allowlist_includes_core_ops() -> None:
         "UPBIT_PORTFOLIO_SLOT_ASSIGNED",
         "UPBIT_SCANNER_CANDIDATE",
         "UPBIT_SCANNER_SHADOW_OPENED",
+        "AUTOTRADING_DAILY_REPORT",
     ):
         assert is_telegram_event_allowlisted(et)
+
+
+def test_daily_report_telegram_policy_allows() -> None:
+    """23:30 Daily Report — allowlist + SYSTEM category, dedupe key 유지."""
+
+    d = evaluate_telegram_policy(
+        event_type="AUTOTRADING_DAILY_REPORT",
+        detail={
+            "report_date": "2026-08-28",
+            "dedupe_key": "DAILY_TRADING_REPORT:2026-08-28",
+        },
+    )
+    assert d.allowed is True
+    assert d.reason != "EVENT_NOT_ALLOWLISTED"
+    assert d.category == "SYSTEM"
 
 
 def test_allowlist_excludes_noise() -> None:
