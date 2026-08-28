@@ -397,7 +397,17 @@ def force_waiting_revalidation_after_restore(
     updated_at / last_revalidated_at 이 restored_at 이전이면
     STALE_PRE_RESTORE_WAITING 으로 BUY 가 영구 차단될 수 있다.
     REAL 주문은 생성하지 않고 meta 만 갱신한다.
+
+    중요: mark_restored 와 같은 OS clock tick 에서 _now() 가 동일 시각을
+    반환하면 updated_at == restored_at 이 되어 과거 <= 비교에서 고착됐다.
+    restored_at 보다 엄격히 이후 updated_at 을 강제한다.
     """
+
+    from datetime import timedelta
+
+    from stock_platform.trading.upbit_execution_restore_epoch import (
+        upbit_execution_restore_epoch,
+    )
 
     uba_id = int(user_broker_account_id)
     slots = session.scalars(
@@ -408,6 +418,11 @@ def force_waiting_revalidation_after_restore(
     ).all()
     nudged = 0
     now = _now()
+    # restore cutoff 엄격 이후 — equal timestamp STALE 고착 방지
+    epoch = upbit_execution_restore_epoch.snapshot()
+    restored = _parse_iso(epoch.get("restored_at"))
+    if restored is not None and now <= restored:
+        now = restored + timedelta(microseconds=1)
     for slot in slots:
         meta = _slot_meta(slot)
         meta["force_revalidate_after_restore"] = True
@@ -426,6 +441,8 @@ def force_waiting_revalidation_after_restore(
         "uba_id": uba_id,
         "nudged_waiting_slots": nudged,
         "real_order_mutation": 0,
+        "nudge_updated_at": now.isoformat(),
+        "restore_cutoff": restored.isoformat() if restored else None,
     }
 
 

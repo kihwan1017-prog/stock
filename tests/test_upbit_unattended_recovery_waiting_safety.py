@@ -289,3 +289,118 @@ async def test_stack_restore_idempotent_when_already_running() -> None:
         "idempotent"
     ) is True
     worker.start.assert_not_called()
+
+def test_restore_epoch_equal_timestamp_not_stale_after_nudge() -> None:
+    """mark_restored 와 동일 시각 updated_at 은 restore-boundary 로 통과."""
+
+    epoch = UpbitExecutionRestoreEpoch()
+    epoch.mark_restored(actor="TEST")
+    restored = epoch._state.restored_at
+    assert restored is not None
+    assert epoch.is_pre_or_during_outage_waiting(restored) is False
+    assert epoch.is_pre_or_during_outage_waiting(
+        restored - timedelta(microseconds=1)
+    ) is True
+    assert epoch.is_pre_or_during_outage_waiting(
+        restored + timedelta(microseconds=1)
+    ) is False
+
+
+def test_force_waiting_nudge_strictly_after_restored_at() -> None:
+    """nudge updated_at 은 restored_at 보다 엄격히 이후여야 한다."""
+
+    from stock_platform.operation.upbit_full_market.waiting_lifecycle import (
+        force_waiting_revalidation_after_restore,
+    )
+    from stock_platform.trading.upbit_execution_restore_epoch import (
+        upbit_execution_restore_epoch,
+    )
+
+    upbit_execution_restore_epoch.mark_restored(actor="TEST_NUDGE")
+    restored = upbit_execution_restore_epoch._state.restored_at
+    assert restored is not None
+
+    slot = MagicMock()
+    slot.status = "WAITING_SIGNAL"
+    slot.clamp_reasons = {"capital_clamps": []}
+    slot.updated_at = restored - timedelta(hours=1)
+
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = [slot]
+
+    # _now() 가 restored_at 과 동일해도 epsilon 으로 밀어냄
+    with patch(
+        "stock_platform.operation.upbit_full_market.waiting_lifecycle._now",
+        return_value=restored,
+    ):
+        out = force_waiting_revalidation_after_restore(
+            session,
+            user_broker_account_id=1380,
+            actor="TEST_NUDGE",
+        )
+
+    assert out["ok"] is True
+    assert out["nudged_waiting_slots"] == 1
+    assert slot.updated_at > restored
+    assert upbit_execution_restore_epoch.is_pre_or_during_outage_waiting(
+        slot.updated_at
+    ) is False
+
+
+def test_waiting_gate_allows_equal_restore_boundary(monkeypatch) -> None:
+    """복구 boundary 동일 시각 WAITING 은 STALE_PRE_RESTORE 가 아님."""
+
+    from stock_platform.operation.upbit_full_market import waiting_revalidation_gate as g
+    from stock_platform.trading.upbit_execution_restore_epoch import (
+        upbit_execution_restore_epoch,
+    )
+
+    monkeypatch.setattr(g, "_exit_monitor_running", lambda: (True, {"status": "RUNNING"}))
+    monkeypatch.setattr(
+        g, "_feed_real_fresh", lambda session, uba_id: (True, {"status": "REAL_FRESH"})
+    )
+
+    upbit_execution_restore_epoch.mark_restored(actor="TEST_EQ")
+    restored = upbit_execution_restore_epoch._state.restored_at
+    assert restored is not None
+
+    result = evaluate_waiting_buy_revalidation_gate(
+        MagicMock(),
+        user_broker_account_id=1380,
+        symbol="KRW-CHIP",
+        order_source="AUTO",
+        broker_code="UPBIT",
+        side="BUY",
+        waiting_updated_at=restored,
+    )
+    assert result["allowed"] is True
+    assert result.get("reason") != REASON_STALE_PRE_RESTORE_WAITING
+
+
+def test_waiting_gate_rejects_strict_pre_restore(monkeypatch) -> None:
+    from stock_platform.operation.upbit_full_market import waiting_revalidation_gate as g
+    from stock_platform.trading.upbit_execution_restore_epoch import (
+        upbit_execution_restore_epoch,
+    )
+
+    monkeypatch.setattr(g, "_exit_monitor_running", lambda: (True, {"status": "RUNNING"}))
+    monkeypatch.setattr(
+        g, "_feed_real_fresh", lambda session, uba_id: (True, {"status": "REAL_FRESH"})
+    )
+
+    upbit_execution_restore_epoch.mark_restored(actor="TEST_PRE")
+    restored = upbit_execution_restore_epoch._state.restored_at
+    assert restored is not None
+    pre = restored - timedelta(seconds=1)
+
+    result = evaluate_waiting_buy_revalidation_gate(
+        MagicMock(),
+        user_broker_account_id=1380,
+        symbol="KRW-XPL",
+        order_source="AUTO",
+        broker_code="UPBIT",
+        side="BUY",
+        waiting_updated_at=pre,
+    )
+    assert result["allowed"] is False
+    assert result["reason"] == REASON_STALE_PRE_RESTORE_WAITING

@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-27 (UPBIT 20:39 no-trade root + Data Trust)
+**최종 갱신:** 2026-08-28 (UPBIT STALE_PRE_RESTORE equal-epoch waiting fix)
 
 ---
 
@@ -16,11 +16,22 @@
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
 | **U** | 20:39+ no-trade + Data Trust | **UPBIT_RECURRING_FAILURE_ROOT_FIXED_DATA_TRUST_ENABLED** | OBSERVE_VALID_WINDOW · Trailing N10 VALID_ONLY |
+| **U** | STALE_PRE_RESTORE equal-epoch | **UPBIT_WAITING_RESTORE_ENTRY_RELIABILITY_FIX** | NATURAL: BEGIN_ENTRY without false STALE |
 | **SHARED** | AutoTrading Process Version / Trace / Map | **AUTOTRADING_PROCESS_VERSION_TRACE_VISUAL_MAP_COMPLETE** | Separate: KIWOOM feed + health/ops perf |
 | **U** | Entry Shadow research | **ENTRY_THRESHOLD_RELAXATION_NOT_PROMISING** | REAL entry 변경 금지 · 관측 유지 |
 | **U** | Prod AI Gate 312s latency | **UPBIT_PROD_AI_GATE_LATENCY_FIXED** | OBSERVE_UPBIT_5MIN_SCANNER_WITH_FAST_PROD_AI_GATE |
 | **SHARED** | UPBIT+KIWOOM CLEAN RAG Feedback | **READY_NOT_NATURALLY_OBSERVED** | COLLECT_UPBIT_AND_KIWOOM_RAG_FEEDBACK_CLEAN_SAMPLE |
 | **K** | Next Trading Day Auto Start | **ENABLED_READY** | OBSERVE_NEXT_KRX_SESSION_AUTO_START · FEED_DOWN pending |
+
+---
+
+## U — STALE_PRE_RESTORE equal-epoch (2026-08-28)
+
+- Root: restore nudge `updated_at == restored_at` + gate `waiting <= cutoff` → false STALE
+- Fix: `waiting < cutoff` · nudge forces `updated_at > restored_at`
+- Change History: **UPBIT_WAITING_RESTORE_ENTRY_RELIABILITY_FIX**
+- Evidence: `.run/k_upbit_stale_pre_restore_waiting_audit.*`
+- TTL/MA/portfolio/daily 변경 없음 · Process Version bump=false
 
 ---
 

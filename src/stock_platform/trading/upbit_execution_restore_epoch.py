@@ -110,8 +110,9 @@ class UpbitExecutionRestoreEpoch:
         """WAITING이 outage 이전·도중·복구 이전이면 True.
 
         - outage_active: WAITING BUY 금지
-        - restored_at 이전(포함) updated_at: 복구 직후 재검증 전 금지
-        - restored_at 이후 신규된 WAITING만 통과 가능
+        - restored_at 미만 updated_at: 복구 전 WAITING → 금지
+        - restored_at 이상(동일 포함): restore nudge/터치로 통과 가능
+          (mark_restored 직후 nudge 가 같은 시각을 쓰면 <= 고착 방지)
         """
 
         _ = now
@@ -127,7 +128,8 @@ class UpbitExecutionRestoreEpoch:
                 # outage 진행 중만 차단하고, restored_at 단독 fail-closed 금지
                 # (ENTRY_PENDING persist 경로 false positive 방지).
                 return bool(self._state.outage_active)
-            return waiting <= cutoff
+            # strict <: equal 은 restore-boundary nudge 로 간주
+            return waiting < cutoff
 
 
 upbit_execution_restore_epoch = UpbitExecutionRestoreEpoch()
