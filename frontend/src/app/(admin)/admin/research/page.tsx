@@ -116,6 +116,12 @@ function ResearchWorkspaceBody() {
 
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+      <Alert
+        type="info"
+        showIcon
+        title="연구 데이터 — 실제 주문에 사용되지 않음"
+        description="Shadow/실험 결과입니다. LIVE·ARM·실주문 경로와 분리되어 있습니다."
+      />
       <StrategyAnalysisToolbar
         market={market}
         purposeKo="연구·검증용 데이터만 모읍니다. 실주문·LIVE/ARM과는 분리됩니다."

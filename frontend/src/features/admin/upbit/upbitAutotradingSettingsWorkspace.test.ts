@@ -37,11 +37,11 @@ describe("UPBIT autotrading settings workspace", () => {
   it("6개 탭 키·라벨이 존재한다", () => {
     expect(UPBIT_AUTOTRADING_TAB_ORDER).toHaveLength(6);
     expect(UPBIT_AUTOTRADING_TAB_LABELS.market).toBe("현황");
-    expect(UPBIT_AUTOTRADING_TAB_LABELS.capital).toBe("자금 · 포지션");
-    expect(UPBIT_AUTOTRADING_TAB_LABELS.entry).toBe("진입 · 후보 정책");
-    expect(UPBIT_AUTOTRADING_TAB_LABELS.exit).toBe("청산 규칙");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.capital).toBe("포지션·자금");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.entry).toBe("매수 설정");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.exit).toBe("매도 설정");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.ai).toBe("AI");
-    expect(UPBIT_AUTOTRADING_TAB_LABELS.safety).toBe("안전 · 손실 제한");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.safety).toBe("안전");
     const cfg = config();
     const ws = workspace();
     for (const key of UPBIT_AUTOTRADING_TAB_ORDER) {
@@ -79,12 +79,16 @@ describe("UPBIT autotrading settings workspace", () => {
     expect(isPortfolioMode("FIXED_SYMBOL")).toBe(false);
   });
 
-  it("page는 AdminPageShell + Workspace + ubaId 쿼리를 사용한다", () => {
-    const p = page();
+  it("canonical page는 AdminPageShell + Workspace + ubaId 쿼리를 사용한다", () => {
+    const p = readRel("app/(admin)/admin/autotrading/upbit/page.tsx");
     expect(p).toMatch(/AdminPageShell/);
     expect(p).toMatch(/UpbitAutotradingSettingsWorkspace/);
     expect(p).toMatch(/ubaId/);
     expect(p).toMatch(/DEFAULT_UPBIT_AUTOTRADING_UBA_ID/);
+    // legacy alias는 redirect만
+    const legacy = page();
+    expect(legacy).toMatch(/redirect/);
+    expect(legacy).toMatch(/autotradingUpbit/);
   });
 
   it("route·menu leaf·permission", () => {
@@ -94,7 +98,7 @@ describe("UPBIT autotrading settings workspace", () => {
     const item = flat.find(
       (i) => i.path === adminRoutes.autotradingUpbit,
     );
-    expect(item?.label).toBe("업비트 자동매매");
+    expect(item?.label).toBe("업비트");
     expect(item?.permission).toBe("menu:upbit");
   });
 

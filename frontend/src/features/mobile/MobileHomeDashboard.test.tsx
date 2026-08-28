@@ -108,7 +108,7 @@ describe("mobile read-only guarantee", () => {
         React.createElement(MobileHomeDashboard),
       ),
     );
-    expect(html).toContain("자동매매");
+    expect(html).toContain("오늘 운영");
     expect(html).toContain("정상 운영");
     expect(html).toContain("UPBIT");
     expect(html).toContain("KIWOOM");

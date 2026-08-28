@@ -50,6 +50,22 @@ export function boolOnOff(v: unknown): string {
     : "OFF";
 }
 
+/** LIVE/ARM 조합 → 사용자 문구 (모바일 자동매매 탭) */
+export function formatLiveArmLabel(live: unknown, arm: unknown): string {
+  const liveOn =
+    live === true ||
+    String(live).toUpperCase() === "ON" ||
+    String(live).toUpperCase() === "TRUE";
+  const armOn =
+    arm === true ||
+    String(arm).toUpperCase() === "ON" ||
+    String(arm).toUpperCase() === "TRUE";
+  if (liveOn && armOn) return "자동매매 실행 가능";
+  if (liveOn && !armOn) return "LIVE만 켜짐 — ARM 필요";
+  if (!liveOn && armOn) return "ARM만 켜짐 — LIVE 필요";
+  return "자동매매 중지";
+}
+
 export function formatClock(iso: string | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);

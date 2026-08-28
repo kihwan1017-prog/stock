@@ -12,6 +12,11 @@ import styles from "./mobile-shell.module.css";
 const NAV = [
   { href: "/mobile", label: "홈", match: (p: string) => p === "/mobile" },
   {
+    href: "/mobile/autotrading",
+    label: "자동매매",
+    match: (p: string) => p.startsWith("/mobile/autotrading"),
+  },
+  {
     href: "/mobile/orders",
     label: "주문",
     match: (p: string) => p.startsWith("/mobile/orders"),

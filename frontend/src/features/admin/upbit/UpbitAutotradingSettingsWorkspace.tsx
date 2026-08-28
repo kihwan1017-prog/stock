@@ -777,7 +777,7 @@ export function UpbitAutotradingSettingsWorkspace({
                   confirmSavePolicy(values);
                 }}
               >
-                자금 · 포지션 저장
+                포지션·자금 저장
               </Button>
             </Space>
             <Typography.Text strong>자동매매 후보 슬롯</Typography.Text>

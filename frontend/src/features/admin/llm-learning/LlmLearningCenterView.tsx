@@ -209,13 +209,14 @@ export function LlmLearningCenterView({ market }: Props) {
   const exportMarket = market === "KIWOOM" ? "kiwoom" : "upbit";
 
   const sampleRows: Record<string, unknown>[] = [];
-  if (market === "ALL" || market === "UPBIT") {
+  if (market === "ALL") {
     sampleRows.push({ key: "UPBIT", market: "UPBIT", ...upbitSamples });
-  }
-  if (market === "ALL" || market === "KIWOOM") {
     sampleRows.push({ key: "KIWOOM", market: "KIWOOM", ...kiwoomSamples });
-  }
-  if (market !== "ALL") {
+  } else if (market === "UPBIT") {
+    sampleRows.push({ key: "UPBIT", market: "UPBIT", ...upbitSamples });
+  } else if (market === "KIWOOM") {
+    sampleRows.push({ key: "KIWOOM", market: "KIWOOM", ...kiwoomSamples });
+  } else {
     sampleRows.push({ key: market, market, ...samples });
   }
   const tableRows =
@@ -347,6 +348,7 @@ export function LlmLearningCenterView({ market }: Props) {
             <Table
               size="small"
               pagination={false}
+              rowKey="key"
               dataSource={tableRows}
               columns={[
                 { title: "Market", dataIndex: "market", key: "market" },

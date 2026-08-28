@@ -31,11 +31,11 @@ export const UPBIT_AUTOTRADING_TAB_LABELS: Record<
   string
 > = {
   market: "현황",
-  capital: "자금 · 포지션",
-  entry: "진입 · 후보 정책",
-  exit: "청산 규칙",
+  capital: "포지션·자금",
+  entry: "매수 설정",
+  exit: "매도 설정",
   ai: "AI",
-  safety: "안전 · 손실 제한",
+  safety: "안전",
 };
 
 /** 폼에만 채우는 보수적 기본값 (자동 저장·Enable 없음) */

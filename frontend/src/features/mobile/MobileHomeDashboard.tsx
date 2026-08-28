@@ -70,7 +70,7 @@ export function MobileHomeDashboard() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>자동매매</h1>
+          <h1 className={styles.title}>오늘 운영</h1>
           <p className={styles.overall}>
             {overallEmoji(overall?.status)} {overall?.label_hint || "확인 중"}
           </p>

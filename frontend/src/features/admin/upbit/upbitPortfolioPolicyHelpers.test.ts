@@ -59,6 +59,6 @@ describe("UpbitPortfolioPolicyPanel wiring", () => {
     );
     expect(ws).toContain("UpbitPortfolioPolicyPanel");
     expect(ws).toContain("설정 저장");
-    expect(cfg).toContain("진입 · 후보 정책");
+    expect(cfg).toContain("매수 설정");
   });
 });

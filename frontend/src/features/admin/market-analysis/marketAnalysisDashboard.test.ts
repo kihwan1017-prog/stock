@@ -5,8 +5,8 @@ import { adminRoutes } from "@/config/routes";
 import { friendlyReasonKo } from "@/features/admin/market-analysis/userFriendlyReasons";
 
 describe("market data menu + analysis", () => {
-  it("전략·분석에 시장 데이터 leaf 노출", () => {
-    const grp = adminMenuItems.find((i) => i.key === "strategy-analysis");
+  it("분석 그룹에 시장 데이터 leaf 노출", () => {
+    const grp = adminMenuItems.find((i) => i.key === "analysis");
     const keys = grp?.children?.map((c) => c.key) ?? [];
     expect(keys).toEqual(
       expect.arrayContaining([
@@ -14,7 +14,6 @@ describe("market data menu + analysis", () => {
         "market-analysis",
         "market-data",
         "news-disclosures",
-        "llm-learning",
       ]),
     );
     const md = grp?.children?.find((c) => c.key === "market-data");

@@ -32,7 +32,7 @@ function duplicatePaths(paths: Array<string | undefined>): string[] {
   return duplicates;
 }
 
-describe("single admin operator menu", () => {
+describe("single admin operator menu — ops-centric IA (WRK-008)", () => {
   it("USER 사이드바는 비어 있다", () => {
     expect(userMenuItems).toHaveLength(0);
     expect(flattenMenuItems(userMenuItems)).toHaveLength(0);
@@ -61,42 +61,54 @@ describe("single admin operator menu", () => {
     expect(keys).not.toContain("profile");
   });
 
-  it("최종 top-level 구조", () => {
+  it("최종 top-level 구조 (운영자 중심)", () => {
     expect(adminMenuItems.map((i) => i.key)).toEqual([
       "dashboard",
-      "accounts-assets",
       "autotrading",
-      "strategy-analysis",
-      "risk-safety",
-      "notifications-group",
-      "system",
+      "analysis",
+      "settings",
+      "ops-safety",
+      "advanced",
     ]);
   });
 
-  it("자동매매 leaf: 일일보고/키움/업비트/프로세스/주문·체결", () => {
+  it("자동매매 leaf: 업비트/키움/주문/보유/일일보고/알림", () => {
     const auto = adminMenuItems.find((i) => i.key === "autotrading");
     expect(auto?.children?.map((c) => c.key)).toEqual([
-      "autotrading-report",
-      "autotrading-kiwoom",
       "autotrading-upbit",
-      "autotrading-process",
+      "autotrading-kiwoom",
       "orders",
-    ]);
-    expect(auto?.children?.map((c) => c.path)).toEqual([
-      adminRoutes.autotradingReport,
-      adminRoutes.autotradingKiwoom,
-      adminRoutes.autotradingUpbit,
-      adminRoutes.autotradingProcess,
-      adminRoutes.orders,
+      "portfolio",
+      "autotrading-report",
+      "notifications",
     ]);
   });
 
-  it("계좌는 단일 현황 leaf + portfolio", () => {
-    const grp = adminMenuItems.find((i) => i.key === "accounts-assets");
+  it("설정에 계좌·리스크·AI 설정", () => {
+    const grp = adminMenuItems.find((i) => i.key === "settings");
     expect(grp?.children?.map((c) => c.key)).toEqual([
       "accounts",
-      "portfolio",
+      "risk",
+      "ai-config",
     ]);
+  });
+
+  it("고급 관리에 프로세스·검증·시스템 도구", () => {
+    const adv = adminMenuItems.find((i) => i.key === "advanced");
+    const keys = adv?.children?.map((c) => c.key) ?? [];
+    expect(keys).toEqual(
+      expect.arrayContaining([
+        "autotrading-process",
+        "llm-learning",
+        "strategy-validation",
+        "schedule-batch",
+        "logs-audit",
+        "data-api",
+        "env-settings",
+        "ai-infra",
+        "docs",
+      ]),
+    );
   });
 
   it("사이드바 path 중복 없음", () => {
@@ -137,8 +149,8 @@ describe("single admin operator menu", () => {
     );
   });
 
-  it("전략·분석에 연구 데이터·AI 분석 leaf 포함", () => {
-    const grp = adminMenuItems.find((i) => i.key === "strategy-analysis");
+  it("분석 그룹에 연구·AI·시장 데이터 포함", () => {
+    const grp = adminMenuItems.find((i) => i.key === "analysis");
     const keys = grp?.children?.map((c) => c.key) ?? [];
     expect(keys).toEqual(
       expect.arrayContaining([
@@ -147,22 +159,11 @@ describe("single admin operator menu", () => {
         "market-data",
         "news-disclosures",
         "ai-analysis",
-        "ai-config",
-        "strategy-validation",
         "research-data",
       ]),
     );
-    expect(grp?.children?.find((c) => c.key === "market-data")?.path).toBe(
-      adminRoutes.marketData,
-    );
-    expect(grp?.children?.find((c) => c.key === "market-data")?.label).toBe(
-      "시장 데이터",
-    );
-    expect(grp?.children?.find((c) => c.key === "research-data")?.path).toBe(
-      adminRoutes.researchData,
-    );
-    expect(grp?.children?.find((c) => c.key === "ai-analysis")?.path).toBe(
-      adminRoutes.aiAnalysis,
-    );
+    expect(keys).not.toContain("llm-learning");
+    expect(keys).not.toContain("ai-config");
+    expect(keys).not.toContain("strategy-validation");
   });
 });

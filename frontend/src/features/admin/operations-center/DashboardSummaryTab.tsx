@@ -2,7 +2,9 @@
 
 import { Alert, Card, Col, Row, Segmented, Space, Statistic, Table, Tag, Typography } from "antd";
 
+import { adminRoutes } from "@/config/routes";
 import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
+import { SummaryLinkCard } from "@/features/admin/ops-ux";
 
 import {
   formatKrw,
@@ -88,7 +90,7 @@ export function DashboardSummaryTab({
                 brokerOps.upbitCard.blocker ? "warning" : "success"
               }
             >
-              UPBIT · {brokerStatusLabel(brokerOps.upbitCard)}
+              업비트 · {brokerStatusLabel(brokerOps.upbitCard)}
             </Tag>
           ) : null}
           {showKiwoom ? (
@@ -97,7 +99,7 @@ export function DashboardSummaryTab({
                 brokerOps.kiwoomCard.blocker ? "warning" : "default"
               }
             >
-              KIWOOM · {brokerStatusLabel(brokerOps.kiwoomCard)}
+              키움 · {brokerStatusLabel(brokerOps.kiwoomCard)}
             </Tag>
           ) : null}
         </Space>
@@ -106,19 +108,54 @@ export function DashboardSummaryTab({
             type="warning"
             showIcon
             style={{ marginTop: 12 }}
-            title="주요 차단"
+            title="지금 확인할 일"
             description={brokerOps.blockers.slice(0, 2).join(" · ")}
           />
         ) : (
           <Typography.Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-            ✅ 현재 안전 차단 없음
+            현재 안전 차단 없음 — 자동매매가 조건에 따라 동작합니다.
           </Typography.Text>
         )}
       </Card>
 
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={12} md={6}>
+          <SummaryLinkCard
+            title="업비트 자동매매"
+            value={brokerStatusLabel(brokerOps.upbitCard)}
+            href={adminRoutes.autotradingUpbit}
+            hint="슬롯·미거래 사유"
+          />
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <SummaryLinkCard
+            title="키움 자동매매"
+            value={brokerStatusLabel(brokerOps.kiwoomCard)}
+            href={adminRoutes.autotradingKiwoom}
+            hint="장 상태·보유"
+          />
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <SummaryLinkCard
+            title="주문·체결"
+            value="오늘 주문 확인"
+            href={adminRoutes.orders}
+            hint="전체 시장 SoT"
+          />
+        </Col>
+        <Col xs={24} sm={12} md={6}>
+          <SummaryLinkCard
+            title="보유·손익"
+            value={`${summary.openPositionCount}종목`}
+            href={adminRoutes.portfolio}
+            hint="평가·실현 손익"
+          />
+        </Col>
+      </Row>
+
       <Card
         size="small"
-        title="AUTO 성과 KPI"
+        title="오늘 손익·거래 (AUTO)"
         loading={perfQ.isLoading && !perfQ.data}
       >
         <Row gutter={[12, 12]}>

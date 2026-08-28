@@ -270,11 +270,11 @@ export default function AdminOrdersPage() {
   return (
     <AdminPageShell
       title="주문·체결"
-      description="자동매매 주문·체결 모니터링 · 오늘 AUTO 기본 · 수동/Paper는 운영 도구"
+      description="오늘 자동매매 주문·체결의 기준 화면입니다. 대시보드·업비트/키움에는 요약만 두고 상세는 여기서 확인합니다. 수동 REAL 주문은 아래 운영 도구에 분리되어 있습니다."
       extra={
         <Space wrap>
           <Tag color={killActive ? "error" : "success"}>
-            Kill Switch {killActive ? "ACTIVE" : "OFF"}
+            긴급 중지 {killActive ? "켜짐" : "꺼짐"}
           </Tag>
           <Typography.Text type="secondary">
             실거래는 LIVE Gate + 명시 승인 시에만
@@ -289,14 +289,14 @@ export default function AdminOrdersPage() {
           items={[
             {
               key: "ops",
-              label: "운영 도구",
+              label: "운영 도구 / 고급 (수동 주문 · Paper)",
               children: (
                 <Space orientation="vertical" size={16} style={{ width: "100%" }}>
                   <Alert
                     type="warning"
                     showIcon
                     title="수동 주문은 자동매매 외 운영 작업입니다."
-                    description="실계좌 수동주문은 기존 LIVE Gate · Risk · Kill Switch를 그대로 적용합니다."
+                    description="실계좌 수동주문은 기존 LIVE Gate · Risk · Kill Switch를 그대로 적용합니다. 실수 방지를 위해 기본 운영 화면과 분리되어 있습니다."
                   />
 
                   <Card title="수동 주문" size="small">

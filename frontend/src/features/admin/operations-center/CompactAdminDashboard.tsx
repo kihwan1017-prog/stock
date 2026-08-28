@@ -80,7 +80,7 @@ export function CompactAdminDashboard({
           type="secondary"
           style={{ display: "block", marginTop: 12, fontSize: 12 }}
         >
-          Read-only · 탭별 lazy load · 공통 거래소 필터
+          조회 전용 · 탭별 지연 로드 · 상세는 자동매매·설정 메뉴로 이동
         </Typography.Text>
       </Card>
     </Space>

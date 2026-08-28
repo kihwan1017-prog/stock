@@ -26,6 +26,14 @@ import { useMemo, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
+import {
+  OpsFunnelSteps,
+  formatOverallHealth,
+  formatWhyNoTradeReason,
+  type FunnelStep,
+} from "@/features/admin/ops-ux";
+import { adminRoutes } from "@/config/routes";
+import Link from "next/link";
 
 function rec(v: unknown): Record<string, unknown> {
   return asRecord(v) ?? {};
@@ -37,6 +45,41 @@ function fmtKrw(v: unknown): string {
   return `${Math.round(n).toLocaleString("ko-KR")}원`;
 }
 
+function pipelineToFunnel(pipeline: Record<string, unknown>): FunnelStep[] {
+  const order: Array<{ key: string; label: string }> = [
+    { key: "CANDIDATE_SELECTED", label: "후보" },
+    { key: "TECHNICAL_PASS", label: "기술 통과" },
+    { key: "SIGNAL_EMITTED", label: "신호" },
+    { key: "EXECUTOR_RECEIVED", label: "실행기" },
+    { key: "ORDER_CREATED", label: "주문" },
+    { key: "BUY_FILLED", label: "체결" },
+  ];
+  const altKeys: Record<string, string[]> = {
+    CANDIDATE_SELECTED: ["candidate", "candidates", "CANDIDATE"],
+    TECHNICAL_PASS: ["technical_pass", "ENTRY_PASS"],
+    SIGNAL_EMITTED: ["signal_emitted", "signals"],
+    EXECUTOR_RECEIVED: ["executor_received", "executor"],
+    ORDER_CREATED: ["order_created", "orders", "ORDER_PERSISTED"],
+    BUY_FILLED: ["buy_filled", "fills", "FILLED"],
+  };
+  return order
+    .map(({ key, label }) => {
+      let count = Number(pipeline[key]);
+      if (!Number.isFinite(count)) {
+        for (const alt of altKeys[key] ?? []) {
+          const n = Number(pipeline[alt]);
+          if (Number.isFinite(n)) {
+            count = n;
+            break;
+          }
+        }
+      }
+      if (!Number.isFinite(count)) return null;
+      return { key, label, count };
+    })
+    .filter((s): s is FunnelStep => s != null);
+}
+
 type MarketSectionProps = {
   title: string;
   data: Record<string, unknown> | null;
@@ -45,12 +88,14 @@ type MarketSectionProps = {
 function MarketDailyCard({ title, data }: MarketSectionProps) {
   if (!data) return null;
   const ts = rec(data.trading_summary);
-  const why = Array.isArray(data.why_no_trade)
+  const whyRaw = Array.isArray(data.why_no_trade)
     ? (data.why_no_trade as string[])
     : [];
+  const why = whyRaw.map((w) => formatWhyNoTradeReason(w));
   const positions = extractRows(data.open_positions);
   const pipeline = rec(data.pipeline);
   const dailyEntry = rec(data.daily_entry);
+  const funnel = pipelineToFunnel(pipeline);
 
   const posColumns: ColumnsType<Record<string, unknown>> = [
     { title: "종목", dataIndex: "symbol", key: "symbol" },
@@ -71,10 +116,10 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
           <Descriptions.Item label="자동매매">
             {String(data.auto_trading_state ?? "—")}
           </Descriptions.Item>
-          <Descriptions.Item label="Feed">
+          <Descriptions.Item label="시세">
             {String(data.feed_status ?? "—")}
           </Descriptions.Item>
-          <Descriptions.Item label="Data Trust">
+          <Descriptions.Item label="데이터 신뢰">
             {String(rec(data.data_trust).quality_status ?? "—")}
           </Descriptions.Item>
           <Descriptions.Item label="LIVE">
@@ -86,11 +131,6 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
           {"market_session" in data ? (
             <Descriptions.Item label="시장">
               {String(data.market_session ?? "—")}
-            </Descriptions.Item>
-          ) : null}
-          {"ma_state" in data && data.ma_state ? (
-            <Descriptions.Item label="MA 상태">
-              {String(data.ma_state)}
             </Descriptions.Item>
           ) : null}
         </Descriptions>
@@ -126,17 +166,24 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
           <Alert
             type="info"
             showIcon
-            title="Daily Entry"
+            title="오늘 신규 진입"
             description={`${dailyEntry.consumed ?? dailyEntry.entry_count ?? "—"} / ${dailyEntry.limit ?? dailyEntry.daily_limit ?? "—"} (잔여 ${dailyEntry.remaining ?? "—"})`}
           />
         ) : null}
 
         {why.length > 0 ? (
-          <Alert type="warning" showIcon title="미거래 사유" description={why.join(" ")} />
+          <Alert
+            type="warning"
+            showIcon
+            title="왜 거래하지 않았나요?"
+            description={why.join(" · ")}
+          />
         ) : null}
 
-        {Object.keys(pipeline).length > 0 ? (
-          <Card size="small" title="파이프라인 (unique opportunity)">
+        {funnel.length > 0 ? (
+          <OpsFunnelSteps title={`${title} 거래 흐름 (오늘 누적)`} steps={funnel} />
+        ) : Object.keys(pipeline).length > 0 ? (
+          <Card size="small" title="파이프라인 (고급)">
             <Descriptions size="small" column={2}>
               {Object.entries(pipeline).map(([k, v]) => (
                 <Descriptions.Item key={k} label={k}>
@@ -153,7 +200,7 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
           columns={posColumns}
           dataSource={positions}
           pagination={false}
-          locale={{ emptyText: "현재 포지션 없음" }}
+          locale={{ emptyText: "현재 보유 중인 종목이 없습니다." }}
         />
       </Space>
     </Card>
@@ -209,18 +256,30 @@ export function AutotradingDailyReportView() {
       {!reportQ.isLoading && !reportQ.isError ? (
         <>
           <Alert
-            type="info"
+            type={
+              String(data.overall_health_code ?? "").toUpperCase() === "RED"
+                ? "error"
+                : String(data.overall_health_code ?? "").toUpperCase() === "ORANGE"
+                  ? "warning"
+                  : "success"
+            }
             showIcon
-            title={`전체 상태: ${String(data.overall_health_label ?? "—")}`}
-            description={`보고일 ${String(data.report_date_kst ?? dateStr)} · 생성 ${String(data.generated_at ?? "").slice(0, 19)}`}
+            title={`오늘 운영 상태: ${formatOverallHealth(data.overall_health_code).label}`}
+            description={`보고일 ${String(data.report_date_kst ?? dateStr)} · ${String(data.overall_health_label ?? "")} · 조회 전용`}
           />
 
-          <MarketDailyCard title="UPBIT" data={rec(data.upbit)} />
-          <MarketDailyCard title="KIWOOM" data={rec(data.kiwoom)} />
+          <Space wrap>
+            <Link href={adminRoutes.autotradingUpbit}>업비트 자세히 →</Link>
+            <Link href={adminRoutes.autotradingKiwoom}>키움 자세히 →</Link>
+            <Link href={adminRoutes.orders}>주문·체결 →</Link>
+          </Space>
+
+          <MarketDailyCard title="업비트" data={rec(data.upbit)} />
+          <MarketDailyCard title="키움" data={rec(data.kiwoom)} />
 
           <Card title="시스템 장애 (당일)" size="small">
             {incidentItems.length === 0 ? (
-              <Empty description="당일 기록된 장애 없음" />
+              <Empty description="당일 기록된 장애가 없습니다." />
             ) : (
               <Table
                 size="small"
@@ -229,7 +288,7 @@ export function AutotradingDailyReportView() {
                 pagination={false}
                 columns={[
                   { title: "시장", dataIndex: "market", width: 80 },
-                  { title: "signature", dataIndex: "signature" },
+                  { title: "내용", dataIndex: "signature" },
                   {
                     title: "시작",
                     dataIndex: "started_at",
@@ -245,27 +304,27 @@ export function AutotradingDailyReportView() {
             )}
           </Card>
 
-          <Card title="자동매매 학습 현황 (Shadow)" size="small">
+          <Card title="연구·Shadow (실주문 아님)" size="small">
             <Typography.Paragraph type="secondary">{researchNote}</Typography.Paragraph>
             <Row gutter={16}>
               <Col xs={24} md={12}>
-                <Typography.Text strong>UPBIT</Typography.Text>
+                <Typography.Text strong>업비트</Typography.Text>
                 <Descriptions size="small" column={1}>
-                  <Descriptions.Item label="Natural Pool">
+                  <Descriptions.Item label="자연 기회 풀">
                     {String(upbitResearch.NATURAL_OPPORTUNITY_POOL ?? "—")}
                   </Descriptions.Item>
-                  <Descriptions.Item label="E0 VALID">
+                  <Descriptions.Item label="E0 유효 표본">
                     {String(upbitE0.VALID_SAMPLE ?? "—")}
                   </Descriptions.Item>
-                  <Descriptions.Item label="E2 VALID">
+                  <Descriptions.Item label="E2 유효 표본">
                     {String(upbitE2.VALID_SAMPLE ?? "—")}
                   </Descriptions.Item>
                 </Descriptions>
               </Col>
               <Col xs={24} md={12}>
-                <Typography.Text strong>KIWOOM</Typography.Text>
+                <Typography.Text strong>키움</Typography.Text>
                 <Descriptions size="small" column={1}>
-                  <Descriptions.Item label="K0 samples">
+                  <Descriptions.Item label="K0 표본">
                     {String(kiwoomK0.VALID_SAMPLE ?? "—")}
                   </Descriptions.Item>
                 </Descriptions>

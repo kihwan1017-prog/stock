@@ -6,7 +6,7 @@
  * UPBIT: Dual LLM (ANALYSIS + TRADING SHADOW) 패널.
  */
 
-import { Card, Space, Typography } from "antd";
+import { Card, Space, Typography, Alert } from "antd";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -81,8 +81,21 @@ export default function AdminAiAnalysisHubPage() {
   return (
     <AdminPageShell
       title="AI 분석"
-      description="분석 결과 조회 — Dual LLM SHADOW · 설정과 분리 · 주문 지시 아님"
+      description="연구·분석 결과 조회 화면입니다. 업비트 자동매매 > AI 탭의 runtime gate 설정과 다릅니다."
     >
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        title="AI 분석 ≠ 자동매매 AI gate"
+        description={
+          <>
+            이 화면은 분석 대상·판단·근거를 조회합니다. 실제 주문 허용 AI gate는{" "}
+            <Link href={adminRoutes.autotradingUpbit}>업비트 자동매매 → AI</Link>
+            에서 설정합니다. Raw JSON은 각 상세 패널의 고급 영역에서 확인하세요.
+          </>
+        }
+      />
       <Suspense fallback={<Card size="small" loading />}>
         <Body />
       </Suspense>

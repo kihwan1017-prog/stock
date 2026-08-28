@@ -5,7 +5,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { Space, Tag, Typography } from "antd";
+import { Alert, Space, Tag, Typography } from "antd";
 import { Suspense, useEffect, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
@@ -59,16 +59,32 @@ function OperationsCenterDashboardBody({ refreshMs = 20000 }: Props) {
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Space wrap style={{ justifyContent: "space-between", width: "100%" }}>
         <Space wrap>
-          <Tag color="blue">Read-only</Tag>
+          <Tag color="blue">조회 전용</Tag>
           <Typography.Text type="secondary">
-            마지막 갱신: {lastRefresh}
+            오늘 운영 한눈에 보기 · 마지막 갱신: {lastRefresh}
             {summaryQuery.isFetching ? " (갱신 중…)" : ""}
           </Typography.Text>
         </Space>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          Health: {String(system.health ?? "—")}
+          시스템: {String(system.health ?? "—")}
         </Typography.Text>
       </Space>
+
+      <Alert
+        type={kill.active ? "error" : "info"}
+        showIcon
+        title={
+          kill.active
+            ? "조치 필요 — Kill Switch 활성"
+            : "5초 체크: 자동매매가 돌아가는가? 손익은? 해야 할 일이 있는가?"
+        }
+        description={
+          kill.active
+            ? "신규 매수가 차단된 상태입니다. 안전 제어·계좌 화면에서 원인을 확인하세요."
+            : "상세 주문·슬롯·리스크는 자동매매 / 설정 메뉴의 대표 화면에서 확인합니다."
+        }
+        style={{ marginBottom: 0 }}
+      />
 
       <CompactAdminDashboard
         refreshMs={typeof interval === "number" ? interval : 0}

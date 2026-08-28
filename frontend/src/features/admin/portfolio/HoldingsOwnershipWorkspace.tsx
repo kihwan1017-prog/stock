@@ -22,8 +22,10 @@ import {
   theme,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
+import { adminRoutes } from "@/config/routes";
 import {
   ownershipBadgeColor,
   ownershipLabelKo,
@@ -31,6 +33,7 @@ import {
   type HoldingsOwnerFilter,
 } from "@/features/admin/accounts/symbolOwnershipLabels";
 import * as adminApi from "@/features/admin/api/adminApi";
+import { SummaryLinkCard } from "@/features/admin/ops-ux";
 import {
   assetDisplayName,
   dataQualityLabelKo,
@@ -547,6 +550,33 @@ export function HoldingsOwnershipWorkspace() {
         title="실제 보유자산과 자동매매 포지션을 구분합니다"
         description="Broker snapshot(일반 보유)과 Strategy binding(자동매매)을 분리 표시합니다. 평균단가가 없으면 평가손익을 0원으로 위장하지 않습니다."
       />
+
+      <Row gutter={[12, 12]}>
+        <Col xs={24} sm={12} md={8}>
+          <SummaryLinkCard
+            title="계좌 · LIVE/ARM"
+            value="연결·거래 가능"
+            href={adminRoutes.accounts}
+            hint="보유와 분리된 기준 화면"
+          />
+        </Col>
+        <Col xs={24} sm={12} md={8}>
+          <SummaryLinkCard
+            title="업비트 자동매매"
+            value="슬롯·자금"
+            href={adminRoutes.autotradingUpbit}
+            hint="런타임 상세"
+          />
+        </Col>
+        <Col xs={24} sm={12} md={8}>
+          <SummaryLinkCard
+            title="주문·체결"
+            value="오늘 거래"
+            href={adminRoutes.orders}
+            hint="체결·거절 SoT"
+          />
+        </Col>
+      </Row>
 
       <div>
         <Typography.Text type="secondary">시장</Typography.Text>

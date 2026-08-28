@@ -223,8 +223,8 @@ export default function AdminAccountsPage() {
 
   return (
     <AdminPageShell
-      title="계좌관리"
-      description="Paper CRUD + UPBIT LIVE UBA CRUD / Credential (실주문·ARM 없음)"
+      title="계좌"
+      description="브로커 연결 · LIVE/ARM · 거래 가능 상태의 기준 화면입니다. 주문·손익 상세는 각 PRIMARY 화면에서 확인하세요."
       extra={
         <Space wrap>
           <Space size={4}>

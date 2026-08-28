@@ -1,0 +1,320 @@
+{
+  "WORK_ID": "WRK-20260829-008-ADMIN-UX-IA-FULL-REDESIGN",
+  "work_type": "ADMIN_UX_INFORMATION_ARCHITECTURE_REDESIGN",
+  "title": "Admin Menu-by-Menu User-Centric UX/UI Redesign",
+  "FINAL_VERDICT": "ADMIN_UX_IA_REDESIGN_IMPLEMENTED",
+  "BASE_COMMIT": "4fabeb9",
+  "RESULT_COMMIT": "469829f",
+  "parent_inventory": {
+    "work_id": "WRK-20260828-005-CURRENT-FULL-MENU-INVENTORY",
+    "evidence": [
+      ".run/k_current_full_menu_inventory.json",
+      ".run/k_current_full_menu_inventory.md"
+    ],
+    "reused": true,
+    "full_reinventory": false
+  },
+  "before_menu": {
+    "TOP_MENU": 7,
+    "LEAF_MENU": 28,
+    "groups": [
+      "대시보드",
+      "계좌·자산",
+      "자동매매",
+      "전략·분석",
+      "리스크·안전",
+      "알림",
+      "시스템"
+    ],
+    "MAJOR_UX_PROBLEMS": [
+      "기능/개발자 중심 그룹으로 일상 운영 흐름이 분산",
+      "LIVE/ARM·런타임·주문·손익 정보가 여러 화면에 FULL 중복",
+      "기술 상태코드(ENTRY_PENDING 등)가 1차 노출",
+      "프로세스·스케줄·로그가 일반 운영 메뉴와 혼재",
+      "대시보드가 세부 테이블 성격에 가깝고 PRIMARY 링크 약함"
+    ]
+  },
+  "after_menu": {
+    "TOP_MENU": 6,
+    "LEAF_MENU": 28,
+    "tree": {
+      "대시보드": [
+        "/admin/dashboard"
+      ],
+      "자동매매": [
+        "업비트 → /admin/autotrading/upbit",
+        "키움 → /admin/autotrading/kiwoom",
+        "주문·체결 → /admin/orders",
+        "보유자산·손익 → /admin/portfolio",
+        "일일 운영보고 → /admin/autotrading/report",
+        "알림 → /admin/notifications"
+      ],
+      "분석": [
+        "전략·후보",
+        "시장 분석",
+        "시장 데이터",
+        "뉴스·공시",
+        "AI 분석",
+        "연구 데이터"
+      ],
+      "설정": [
+        "계좌",
+        "리스크",
+        "AI 설정"
+      ],
+      "운영·안전": [
+        "안전 제어",
+        "장애·복구",
+        "시스템 상태"
+      ],
+      "고급 관리": [
+        "프로세스·버전",
+        "LLM 학습센터",
+        "전략 검증",
+        "스케줄·배치",
+        "로그·감사",
+        "데이터·API",
+        "환경 설정",
+        "AI 인프라",
+        "문서"
+      ]
+    }
+  },
+  "screen_classification": {
+    "KEEP": [
+      "시스템 상태 (이미 한글 그룹 UI)",
+      "주문·체결 모니터링 차트",
+      "업비트 Why No Trade 핵심",
+      "모바일 /mobile/* 셸"
+    ],
+    "REDESIGN": [
+      "사이드바 IA (menu.tsx)",
+      "대시보드 SummaryLink",
+      "일일 운영보고 funnel/labels",
+      "리스크 한도 시각화",
+      "계좌/복구/주문/포트폴리오 카피",
+      "AI 분석 vs runtime AI 구분",
+      "연구 데이터 배너",
+      "업비트 탭 라벨",
+      "모바일 하단 네비 + 자동매매 탭"
+    ],
+    "MERGE": [
+      "계좌·자산 → 설정/계좌 + 자동매매/보유",
+      "알림 단독 그룹 → 자동매매/알림",
+      "시스템 도구 → 고급 관리"
+    ],
+    "MOVE": [
+      "프로세스·버전 → 고급 관리",
+      "LLM/전략검증/스케줄/로그/API/env/ollama/docs → 고급 관리",
+      "AI 설정 → 설정",
+      "리스크 → 설정"
+    ],
+    "SUMMARY_ONLY": [
+      "대시보드의 업비트/키움/주문/보유 카드",
+      "보유자산의 계좌·런타임 링크",
+      "일일보고의 상세 링크"
+    ],
+    "ADVANCED": [
+      "주문 수동/Paper Collapse",
+      "리스크 raw JSON AdminJsonCard",
+      "시스템 DeveloperRawCollapse",
+      "업비트 pipeline raw"
+    ],
+    "HIDE": [
+      "회원/권한/내정보 (기존 WRK-005와 동일, 사이드바 없음)",
+      "Paper/테스트 계좌 (스위치로 기본 숨김 유지)"
+    ],
+    "DEPRECATED": [
+      "/admin/upbit/autotrading → redirect canonical",
+      "/user/* layout blocked (변경 없음, 충돌 없음)"
+    ]
+  },
+  "duplicate_matrix": [
+    {
+      "INFORMATION": "LIVE/ARM",
+      "PRIMARY_SCREEN": "계좌",
+      "SECONDARY_SCREEN": "업비트/키움 현황",
+      "BEFORE_DUPLICATION": "FULL",
+      "AFTER_BEHAVIOR": "PRIMARY 계좌 + 시장 화면 요약/상태 + 링크"
+    },
+    {
+      "INFORMATION": "Orders/Fills",
+      "PRIMARY_SCREEN": "주문·체결",
+      "SECONDARY_SCREEN": "Dashboard/UPBIT/일일보고",
+      "BEFORE_DUPLICATION": "FULL",
+      "AFTER_BEHAVIOR": "SUMMARY+LINK"
+    },
+    {
+      "INFORMATION": "Portfolio/PnL",
+      "PRIMARY_SCREEN": "보유자산·손익",
+      "SECONDARY_SCREEN": "업비트 포지션·자금",
+      "BEFORE_DUPLICATION": "PARTIAL",
+      "AFTER_BEHAVIOR": "PRIMARY 보유 + 업비트는 슬롯/자금 정책"
+    },
+    {
+      "INFORMATION": "Risk limits",
+      "PRIMARY_SCREEN": "리스크",
+      "SECONDARY_SCREEN": "업비트 안전",
+      "BEFORE_DUPLICATION": "PARTIAL",
+      "AFTER_BEHAVIOR": "PRIMARY 리스크 시각화 + 안전 탭 요약"
+    },
+    {
+      "INFORMATION": "Why no trade",
+      "PRIMARY_SCREEN": "업비트 현황 / 일일 운영보고",
+      "SECONDARY_SCREEN": "대시보드",
+      "BEFORE_DUPLICATION": "MIXED",
+      "AFTER_BEHAVIOR": "PRIMARY 유지 + 사용자 라벨"
+    },
+    {
+      "INFORMATION": "System health",
+      "PRIMARY_SCREEN": "시스템 상태",
+      "SECONDARY_SCREEN": "대시보드/모바일 홈",
+      "BEFORE_DUPLICATION": "PARTIAL",
+      "AFTER_BEHAVIOR": "SUMMARY+LINK"
+    },
+    {
+      "INFORMATION": "AI analysis vs AI gate",
+      "PRIMARY_SCREEN": "AI 분석 / 업비트 AI",
+      "SECONDARY_SCREEN": "서로 혼동 가능",
+      "BEFORE_DUPLICATION": "CONFUSING",
+      "AFTER_BEHAVIOR": "배너로 역할 분리"
+    },
+    {
+      "INFORMATION": "Research vs live trading",
+      "PRIMARY_SCREEN": "연구 데이터",
+      "SECONDARY_SCREEN": "일일보고/런타임",
+      "BEFORE_DUPLICATION": "CONFUSING",
+      "AFTER_BEHAVIOR": "연구 배너 명시"
+    }
+  ],
+  "primary_screen_mapping": {
+    "Accounts": "/admin/accounts",
+    "Portfolio": "/admin/portfolio",
+    "Orders": "/admin/orders",
+    "Upbit Runtime": "/admin/autotrading/upbit",
+    "Kiwoom Runtime": "/admin/autotrading/kiwoom",
+    "Risk": "/admin/risk",
+    "Daily Report": "/admin/autotrading/report",
+    "Notifications": "/admin/notifications",
+    "System Health": "/admin/monitoring"
+  },
+  "visualization_matrix": [
+    {
+      "SCREEN": "일일 운영보고",
+      "CHART_TYPE": "Funnel/Steps (OpsFunnelSteps)",
+      "PURPOSE": "후보→주문→체결 전환 이해"
+    },
+    {
+      "SCREEN": "주문·체결",
+      "CHART_TYPE": "Bar/Line (기존 Recharts 유지)",
+      "PURPOSE": "시간별 주문/체결 추세"
+    },
+    {
+      "SCREEN": "리스크",
+      "CHART_TYPE": "Progress (MetricProgress)",
+      "PURPOSE": "한도 사용/잔여 직관화"
+    },
+    {
+      "SCREEN": "대시보드",
+      "CHART_TYPE": "KPI + SummaryLinkCard",
+      "PURPOSE": "오늘 운영 상황 5초 파악"
+    },
+    {
+      "SCREEN": "보유자산·손익",
+      "CHART_TYPE": "KPI Statistic cards",
+      "PURPOSE": "시장별 평가/손익"
+    }
+  ],
+  "removed_hidden_items": [
+    {
+      "item": "사이드바 계좌·자산 / 알림 / 시스템 단독 그룹",
+      "reason": "운영 흐름 기준으로 재그룹 (route 삭제 없음)"
+    },
+    {
+      "item": "프로세스·버전을 자동매매 일상 메뉴에서 제거",
+      "reason": "고급 관리로 이동"
+    },
+    {
+      "item": "개발자 상태 코드 1차 노출 완화",
+      "reason": "사용자 라벨 + raw는 tooltip/고급"
+    }
+  ],
+  "route_mapping": {
+    "canonical_upbit": "/admin/autotrading/upbit",
+    "legacy_upbit": "/admin/upbit/autotrading → redirect",
+    "mobile_autotrading": "/mobile/autotrading (new)",
+    "user_routes": "unchanged blocked"
+  },
+  "mobile": {
+    "BOTTOM_NAV": [
+      "홈",
+      "자동매매",
+      "주문",
+      "포지션",
+      "알림"
+    ],
+    "RESPONSIVE_CHANGES": [
+      "홈 제목: 오늘 운영",
+      "자동매매 탭: 시장별 LIVE/ARM/준비 상태",
+      "데스크톱 상세 링크 유지"
+    ]
+  },
+  "changed_files": [
+    "frontend/src/config/menu.tsx",
+    "frontend/src/config/menu.test.ts",
+    "frontend/src/config/routes.ts",
+    "frontend/src/features/admin/ops-ux/*",
+    "frontend/src/features/admin/operations-center/*",
+    "frontend/src/features/admin/autotrading/AutotradingDailyReportView.tsx",
+    "frontend/src/features/admin/upbit/upbitAutotradingSettingsConfig.ts",
+    "frontend/src/features/admin/portfolio/HoldingsOwnershipWorkspace.tsx",
+    "frontend/src/app/(admin)/admin/risk/page.tsx",
+    "frontend/src/app/(admin)/admin/accounts/page.tsx",
+    "frontend/src/app/(admin)/admin/orders/page.tsx",
+    "frontend/src/app/(admin)/admin/recovery/page.tsx",
+    "frontend/src/app/(admin)/admin/ai-analysis/page.tsx",
+    "frontend/src/app/(admin)/admin/research/page.tsx",
+    "frontend/src/app/(admin)/admin/portfolio/page.tsx",
+    "frontend/src/app/(mobile)/layout.tsx",
+    "frontend/src/app/(mobile)/mobile/autotrading/page.tsx",
+    "frontend/src/features/mobile/*"
+  ],
+  "tests": {
+    "antd_compat": "PASS",
+    "typecheck": "PASS (tsc --noEmit)",
+    "vitest_focused": "42 passed (menu, ops-ux, upbit tabs, market-analysis, mobile)",
+    "dead_links": "menu.test page existence checks PASS",
+    "console_errors": "not browser-probed this run (static/unit only)",
+    "console_warnings": "not browser-probed this run (static/unit only)"
+  },
+  "screens_verified": [
+    "menu IA unit",
+    "upbit tab labels unit",
+    "ops-ux labels unit",
+    "mobile home render unit",
+    "legacy upbit redirect still present"
+  ],
+  "deployment": {
+    "frontend": "UI-only source change; Next hot-reload / restart as needed",
+    "backend_restart_count": 0
+  },
+  "safety": {
+    "REAL_TRADING_LOGIC_CHANGED": false,
+    "STRATEGY_CHANGED": false,
+    "RISK_POLICY_CHANGED": false,
+    "PORTFOLIO_POLICY_CHANGED": false,
+    "LIVE_ARM_MUTATION": false,
+    "FORCED_ORDER": 0,
+    "TEST_ORDER": 0,
+    "MANUAL_CANCEL": 0,
+    "API_SEMANTICS_CHANGED": false
+  },
+  "remaining_issues": [
+    "시장 분석/뉴스 Chart 심화는 데이터 밀도에 따라 후속 개선 여지",
+    "전략·후보 lifecycle Timeline 시각화는 부분적 — Workspace 구조 유지",
+    "브라우저 console.error/warn 전수 검증은 배포 후 수동 확인 권장",
+    "키움 single-scroll 레이아웃 대규모 탭화는 억지로 하지 않음 (의도적)"
+  ],
+  "root_cause": "기능 중심 IA로 인해 운영 정보가 여러 화면에 중복되고 기술 상태가 사용자 핵심 정보보다 우선 노출됨",
+  "generated_at_kst": "2026-08-29T01:06:59.049519+09:00"
+}

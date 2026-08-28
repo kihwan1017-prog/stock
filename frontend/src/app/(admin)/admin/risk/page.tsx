@@ -11,6 +11,7 @@ import {
   Space,
   Switch,
   Tag,
+  Typography,
 } from "antd";
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -20,6 +21,7 @@ import { adminRoutes } from "@/config/routes";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { MetricProgress, StatusSummaryCard } from "@/features/admin/ops-ux";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
@@ -204,44 +206,114 @@ export default function AdminRiskPage() {
     asRecord(liveAccounts.data)?.accounts ?? liveAccounts.data,
   );
 
+  const killActive =
+    String(asRecord(kill.data)?.status ?? "").toUpperCase() === "ACTIVE";
+  const dailyRec = asRecord(daily.data);
+  const dailyUsed = Number(dailyRec?.used_loss ?? dailyRec?.current_loss ?? 0);
+  const dailyLimit = Number(
+    dailyRec?.limit ?? dailyRec?.max_loss ?? systemResolved?.daily_max_order_amount ?? 0,
+  );
+  const maxOrder = Number(systemResolved?.max_order_amount ?? 0);
+  const maxPos = Number(systemResolved?.max_position_count ?? 0);
+  const maxInvest = Number(systemResolved?.max_total_investment_amount ?? 0);
+
   return (
     <AdminPageShell
-      title="리스크 관리"
-      description="긴급 중지(Kill Switch) · 시스템/회원 리스크 설정의 유일한 변경 화면. 다른 화면은 조회 요약과 이 페이지 링크만 제공합니다."
+      title="리스크"
+      description="현재 위험 상태와 한도를 먼저 확인한 뒤, 아래에서 정책 값을 변경합니다. LIVE/ARM 제어는 계좌·안전 제어 화면이 PRIMARY입니다."
       extra={
         <Space wrap>
           <Button danger loading={activate.isPending} onClick={() => activate.mutate()}>
-            긴급 중지(Kill Switch) ON
+            긴급 중지 켜기
           </Button>
           <Button loading={deactivate.isPending} onClick={() => deactivate.mutate()}>
-            긴급 중지(Kill Switch) OFF
+            긴급 중지 끄기
           </Button>
-          <Link href={adminRoutes.liveValidationUpbit}>안전 제어</Link>
-          <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
+          <Link href={adminRoutes.liveValidationUpbit}>안전 제어 →</Link>
+          <Link href={adminRoutes.accounts}>계좌 →</Link>
         </Space>
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <StatusSummaryCard
+          title="긴급 중지"
+          statusLabel={killActive ? "거래 차단 중" : "정상 (꺼짐)"}
+          tone={killActive ? "error" : "success"}
+          description={
+            killActive
+              ? "Kill Switch가 켜져 있어 신규 주문이 차단될 수 있습니다."
+              : "Kill Switch가 꺼진 상태입니다. 실제 주문은 LIVE·ARM·계좌 상태를 함께 확인하세요."
+          }
+          href={adminRoutes.liveValidationUpbit}
+          linkLabel="안전 제어에서 거래 가능 여부 확인 →"
+        />
+
+        <Card size="small" title="현재 한도 (시스템 정책)">
+          <Space orientation="vertical" size={8} style={{ width: "100%" }}>
+            {dailyLimit > 0 ? (
+              <MetricProgress
+                label="일일 손실 한도"
+                used={Number.isFinite(dailyUsed) ? Math.abs(dailyUsed) : 0}
+                limit={dailyLimit}
+                formatValue={(n) => `${Math.round(n).toLocaleString("ko-KR")}원`}
+              />
+            ) : (
+              <Alert
+                type="info"
+                showIcon
+                title="일일 손실 사용량"
+                description="일일 손실 한도 수치가 아직 없습니다. 아래 정책에서 설정값을 확인하세요."
+              />
+            )}
+            <MetricProgress
+              label="1회 최대 주문"
+              used={0}
+              limit={maxOrder > 0 ? maxOrder : 1}
+              formatValue={(n) =>
+                maxOrder > 0 ? `${Math.round(n).toLocaleString("ko-KR")}원` : "—"
+              }
+            />
+            <MetricProgress
+              label="최대 투자금액"
+              used={0}
+              limit={maxInvest > 0 ? maxInvest : 1}
+              formatValue={(n) =>
+                maxInvest > 0 ? `${Math.round(n).toLocaleString("ko-KR")}원` : "—"
+              }
+            />
+            <MetricProgress
+              label="최대 보유 종목 수"
+              used={0}
+              limit={maxPos > 0 ? maxPos : 1}
+              formatValue={(n) => (maxPos > 0 ? String(n) : "—")}
+            />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              사용량은 가능한 API 값만 표시합니다. 잔여 한도·실시간 exposure는 자동매매·보유자산
+              화면에서 확인하세요.
+            </Typography.Text>
+          </Space>
+        </Card>
+
         <Alert
           type="info"
           showIcon
           title="계좌 안전 vs 전략 자동매매"
-          description="계좌 일일 최대 손실(계좌 전체 평가)과 전략 일일 손실(자동매매 소유만)은 분리됩니다. 신규 매수(ENTRY)는 전략 일일 손실 + 계좌 하드 안전(긴급 중지 등) 모두 통과해야 합니다."
+          description="계좌 일일 최대 손실(계좌 전체 평가)과 전략 일일 손실(자동매매 소유만)은 분리됩니다. 신규 매수는 전략 일일 손실 + 계좌 하드 안전(긴급 중지 등) 모두 통과해야 합니다."
         />
         <AdminJsonCard
-          title="긴급 중지(Kill Switch) 상태"
+          title="긴급 중지 상세 (고급)"
           loading={kill.isLoading}
           error={kill.error ? toApiError(kill.error) : null}
           data={kill.data}
         />
         <AdminJsonCard
-          title="GET /risk/daily-loss/status"
+          title="일일 손실 상태 상세 (고급)"
           loading={daily.isLoading}
           error={daily.error ? toApiError(daily.error) : null}
           data={daily.data}
         />
 
-        <Card title="시스템 기본 리스크 정책" size="small">
+        <Card title="시스템 기본 리스크 정책 설정" size="small">
           <Form
             key={`system-risk-${systemRisk.dataUpdatedAt}`}
             form={systemForm}

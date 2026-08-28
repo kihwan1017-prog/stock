@@ -113,15 +113,15 @@ export default function AdminRecoveryPage() {
 
   return (
     <AdminPageShell
-      title="장애 복구"
-      description="Broker Recovery · Conflict · Lock 제어 전용 화면입니다. 시스템 운영 허브와 거래 운영 현황은 조회/이동만 제공합니다."
+      title="장애·복구"
+      description="현재 장애 · 자동 복구 · 조치 필요를 구분합니다. 과거 복구 완료 건은 현재 장애로 보이지 않도록 이력을 별도 확인하세요."
       extra={
         <Space wrap>
           <Link href={adminRoutes.operations}>
             <Button>시스템 운영</Button>
           </Link>
-          <Link href={adminRoutes.operationsDashboard}>
-            <Button>거래 운영 현황</Button>
+          <Link href={adminRoutes.monitoring}>
+            <Button>시스템 상태</Button>
           </Link>
         </Space>
       }
@@ -130,8 +130,8 @@ export default function AdminRecoveryPage() {
         <Alert
           type="info"
           showIcon
-          title="STEP 8-4 통합 Recovery"
-          description="계좌별 Lock·실패 격리·거래 일시차단. Secret/계좌번호 원문은 표시하지 않습니다. Scheduler는 Startup Recovery 이후 기동됩니다."
+          title="복구 상태 보는 법"
+          description="현재 장애 → 자동 복구 중 → 복구 완료 → 사용자 조치 필요. 이미 복구된(recovered) 이슈는 현재 장애처럼 취급하지 마세요. Secret/계좌번호 원문은 표시하지 않습니다."
         />
 
         <RecoverySchedulerPanel />
