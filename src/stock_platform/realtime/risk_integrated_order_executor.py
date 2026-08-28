@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -56,6 +57,20 @@ def resolve_execution_environment(
         # Scope가 실계좌인데 mode가 PAPER면 LIVE enqueue 금지 — PAPER 유지
         return "PAPER"
     return "PAPER"
+
+
+def resolve_portfolio_order_amount_krw(begin: dict[str, Any]) -> Decimal | None:
+    """begin_entry_from_signal 결과 → Risk-compatible executable KRW."""
+
+    portfolio_amount_krw = (
+        begin.get("approved_amount_krw")
+        or begin.get("final_order_amount_krw")
+        or begin.get("reserved_amount_krw")
+        or begin.get("allocated_amount_krw")
+    )
+    if portfolio_amount_krw is None:
+        return None
+    return Decimal(str(portfolio_amount_krw))
 
 
 class RiskIntegratedRealtimeOrderExecutor:
@@ -312,10 +327,9 @@ class RiskIntegratedRealtimeOrderExecutor:
                             signal,
                             f"PORTFOLIO_{begin.get('reason') or 'BEGIN_ENTRY_FAILED'}",
                         )
-                    if begin.get("approved_amount_krw") is not None:
-                        portfolio_approved_amount = Decimal(
-                            str(begin["approved_amount_krw"])
-                        )
+                    portfolio_approved_amount = resolve_portfolio_order_amount_krw(
+                        begin
+                    )
             except Exception:  # noqa: BLE001
                 return self._skipped(signal, "FULL_MARKET_GATE_FAILED")
 

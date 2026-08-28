@@ -2363,6 +2363,12 @@ class UpbitPortfolioService:
                 )
             )
             if existing is not None:
+                # already 경로 — executor가 portfolio sizing을 쓰도록 approved 금액 포함
+                approved_krw = (
+                    existing.allocated_amount_krw
+                    if existing.allocated_amount_krw is not None
+                    else existing.reserved_amount_krw
+                )
                 return _finish(
                     {
                         "ok": True,
@@ -2370,6 +2376,8 @@ class UpbitPortfolioService:
                         "slot_id": int(existing.slot_id),
                         "status": SLOT_ENTRY_PENDING,
                         "reserved_amount_krw": existing.reserved_amount_krw,
+                        "approved_amount_krw": approved_krw,
+                        "allocated_amount_krw": existing.allocated_amount_krw,
                     },
                     existing,
                 )

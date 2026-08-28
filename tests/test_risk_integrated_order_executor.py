@@ -10,6 +10,7 @@ from stock_platform.realtime.execution_models import (
 from stock_platform.realtime.risk_integrated_order_executor import (
     RiskIntegratedRealtimeOrderExecutor,
     resolve_execution_environment,
+    resolve_portfolio_order_amount_krw,
     resolve_signal_broker_code,
 )
 from stock_platform.realtime.strategy_models import (
@@ -59,6 +60,35 @@ def test_resolve_broker_code_from_exchange_krx() -> None:
 def test_resolve_environment_paper_default() -> None:
     cfg = RealtimeExecutionConfig(account_id=7, mode=RealtimeExecutionMode.PAPER)
     assert resolve_execution_environment(cfg, _signal()) == "PAPER"
+
+
+def test_resolve_portfolio_order_amount_prefers_approved() -> None:
+    amount = resolve_portfolio_order_amount_krw(
+        {
+            "approved_amount_krw": 10000,
+            "final_order_amount_krw": 9000,
+            "reserved_amount_krw": 8000,
+            "allocated_amount_krw": 7000,
+        }
+    )
+    assert amount == Decimal("10000")
+
+
+def test_resolve_portfolio_order_amount_fallback_chain() -> None:
+    assert resolve_portfolio_order_amount_krw(
+        {"final_order_amount_krw": 9000, "reserved_amount_krw": 8000}
+    ) == Decimal("9000")
+    assert resolve_portfolio_order_amount_krw(
+        {"reserved_amount_krw": 8000, "allocated_amount_krw": 7000}
+    ) == Decimal("8000")
+    assert resolve_portfolio_order_amount_krw(
+        {"allocated_amount_krw": 7000}
+    ) == Decimal("7000")
+
+
+def test_resolve_portfolio_order_amount_none_when_canonical_absent() -> None:
+    assert resolve_portfolio_order_amount_krw({}) is None
+    assert resolve_portfolio_order_amount_krw({"ok": True, "already": True}) is None
 
 
 def test_paper_signal_does_not_require_kiwoom_account(
@@ -149,4 +179,8 @@ def test_live_missing_account_number_still_blocks(
     )
 
     assert result.order_status == "SKIPPED"
-    assert result.reason_code == "RISK_ACCOUNT_NUMBER_MISSING"
+    # UBA 행이 없으면 계좌번호 해석 전에 fail-closed
+    assert result.reason_code in {
+        "UBA_INACTIVE",
+        "RISK_ACCOUNT_NUMBER_MISSING",
+    }

@@ -82,6 +82,14 @@ def test_begin_entry_from_signal_reserves() -> None:
         patch(
             "stock_platform.trading.symbol_ownership.SymbolOwnershipService"
         ) as ownership_cls,
+        patch(
+            "stock_platform.operation.upbit_full_market.waiting_revalidation_gate.evaluate_waiting_buy_revalidation_gate",
+            return_value={"allowed": True},
+        ),
+        patch(
+            "stock_platform.operation.upbit_full_market.portfolio_daily_entry_count.summarize_portfolio_daily_entries",
+            return_value={"entry_count": 0},
+        ),
     ):
         ownership = MagicMock()
         ownership.entry_gate.return_value = (
@@ -102,6 +110,26 @@ def test_begin_entry_from_signal_reserves() -> None:
     assert float(out["final_order_amount_krw"]) <= 10000.0
     assert slot.status == SLOT_ENTRY_PENDING
     assert float(slot.reserved_amount_krw or 0) > 0
+
+
+def test_begin_entry_already_entry_pending_includes_approved_amount() -> None:
+    """ENTRY_PENDING 재시도 — executor가 Risk 한도 내 approved 금액을 받아야 한다."""
+
+    session = MagicMock()
+    existing = _slot(
+        status=SLOT_ENTRY_PENDING,
+        symbol="KRW-ONDO",
+        reserved=10000.0,
+        selection_id=290,
+    )
+    svc = UpbitPortfolioService(session)
+    svc.pending_entry_count = MagicMock(return_value=1)  # type: ignore[method-assign]
+    session.scalar = MagicMock(return_value=existing)
+    out = svc.begin_entry_from_signal(1380, symbol="KRW-ONDO")
+    assert out["ok"] is True
+    assert out.get("already") is True
+    assert float(out["approved_amount_krw"]) == 10000.0
+    assert float(out["reserved_amount_krw"]) == 10000.0
 
 
 def test_begin_entry_max_pending_blocks_second_symbol() -> None:
