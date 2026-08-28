@@ -41,6 +41,7 @@ class KiwoomMarketRealtimeRuntime:
         self._uba_id: int | None = None
         self._require_real: bool = True
         self._started_at: datetime | None = None
+        self._generation: int = 0
         self._lock = asyncio.Lock()
 
     def bind(self, client: KiwoomMarketRealtimeClient | None) -> None:
@@ -85,8 +86,14 @@ class KiwoomMarketRealtimeRuntime:
             "connected": connected,
             "user_broker_account_id": self._uba_id,
             "require_real": self._require_real,
+            "generation_id": self._generation,
             "started_at": (
                 self._started_at.isoformat() if self._started_at else None
+            ),
+            "lifecycle": (
+                (client_status or {}).get("lifecycle")
+                if isinstance(client_status, dict)
+                else None
             ),
             "last_tick_at": last_event_at if task_running else None,
             "feed_age_seconds": feed_age,
@@ -285,10 +292,14 @@ class KiwoomMarketRealtimeRuntime:
         if self._task is not None and self._task.done():
             self._task = None
 
+        self._generation += 1
+        generation_id = self._generation
+
         client = KiwoomMarketRealtimeClient(
             config=ws_cfg,
             token_cache=token_cache,
             quote_handler=self._handle_quote,
+            generation_id=generation_id,
         )
         client.subscribe_symbols(cleaned)
         self._client = client
@@ -296,8 +307,8 @@ class KiwoomMarketRealtimeRuntime:
         self._require_real = bool(require_real)
         self._started_at = datetime.now(timezone.utc)
         self._task = asyncio.create_task(
-            client.run_forever(),
-            name=f"kiwoom-market-realtime-{uba_id}",
+            self._run_feed_task(client, generation_id),
+            name=f"kiwoom-market-realtime-{uba_id}-g{generation_id}",
         )
 
         # handshake 대기 — running 유지 여부 확인 (connected 는 선택)
@@ -347,6 +358,30 @@ class KiwoomMarketRealtimeRuntime:
             **st,
         }
 
+    async def _run_feed_task(
+        self,
+        client: KiwoomMarketRealtimeClient,
+        generation_id: int,
+    ) -> None:
+        """generation-aware feed task — old cleanup 이 new state 덮어쓰기 방지."""
+
+        try:
+            await client.run_forever()
+        except asyncio.CancelledError:
+            client.note_exit_reason("TASK_CANCELLED")
+            raise
+        except Exception as exc:  # noqa: BLE001
+            client.note_exit_reason(type(exc).__name__)
+            raise
+        finally:
+            if generation_id == self._generation:
+                logger.info(
+                    "kiwoom_market_realtime_task_exit",
+                    generation_id=generation_id,
+                    uba_id=self._uba_id,
+                    lifecycle=(client.status().get("lifecycle") or {}),
+                )
+
     async def stop(self) -> dict[str, Any]:
         """시세 WS STOP. Upbit/다른 runner는 유지."""
 
@@ -354,9 +389,11 @@ class KiwoomMarketRealtimeRuntime:
             return await self._stop_locked()
 
     async def _stop_locked(self) -> dict[str, Any]:
+        stop_generation = self._generation
         client = self._client
         task = self._task
         if client is not None:
+            client.note_exit_reason("CLIENT_SHUTDOWN")
             await client.shutdown()
         if task is not None and not task.done():
             task.cancel()
@@ -364,11 +401,13 @@ class KiwoomMarketRealtimeRuntime:
                 await asyncio.wait_for(task, timeout=2.0)
             except (asyncio.CancelledError, TimeoutError):
                 pass
-        self._task = None
-        self._client = None
-        self._uba_id = None
-        self._started_at = None
-        return {"stopped": True, **self.status()}
+        # 새 generation start 가 이미 올라갔으면 state 유지
+        if self._generation == stop_generation:
+            self._task = None
+            self._client = None
+            self._uba_id = None
+            self._started_at = None
+        return {"stopped": True, "generation_id": stop_generation, **self.status()}
 
     async def _handle_quote(self, quote: RealtimeQuote) -> None:
         """Hub/cache/persistence 공통 경로로 시세 주입."""

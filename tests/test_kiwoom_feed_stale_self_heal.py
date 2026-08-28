@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -52,18 +52,37 @@ def test_runtime_stale_when_age_past_threshold() -> None:
     )
 
 
-def test_runtime_connected_no_ticks_is_stale() -> None:
+def test_runtime_connected_no_ticks_is_stale_after_warmup() -> None:
+    old_start = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
     assert (
         kiwoom_runtime_feed_is_stale(
             {
                 "running": True,
                 "connected": True,
                 "feed_age_seconds": None,
+                "started_at": old_start,
                 "client": {"event_count": 0},
             },
             slo=_slo(),
         )
         is True
+    )
+
+
+def test_runtime_connected_no_ticks_not_stale_during_warmup() -> None:
+    recent = datetime.now(timezone.utc).isoformat()
+    assert (
+        kiwoom_runtime_feed_is_stale(
+            {
+                "running": True,
+                "connected": True,
+                "feed_age_seconds": None,
+                "started_at": recent,
+                "client": {"event_count": 0},
+            },
+            slo=_slo(),
+        )
+        is False
     )
 
 
@@ -342,19 +361,50 @@ def test_data_trust_invalid_during_stale() -> None:
 def test_kiwoom_feed_needs_l1_disconnected() -> None:
     from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
 
-    assert kiwoom_feed_needs_l1_recovery({"components": {"feed": "DISCONNECTED"}})
+    with patch(
+        "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime"
+    ) as kmr:
+        kmr.status.return_value = {"running": False}
+        assert kiwoom_feed_needs_l1_recovery({"components": {"feed": "DISCONNECTED"}})
 
 
-def test_kiwoom_feed_needs_l1_unhealthy_connecting() -> None:
+def test_kiwoom_feed_needs_l1_unhealthy_connecting_after_warmup() -> None:
     from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
 
-    assert kiwoom_feed_needs_l1_recovery(
-        {
-            "components": {"feed": "CONNECTING"},
-            "feed_detail": {"ok": False, "reason": "NO_REAL_TICK_YET"},
-            "heartbeats": {},
+    old_start = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    with patch(
+        "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime"
+    ) as kmr:
+        kmr.status.return_value = {
+            "running": True,
+            "started_at": old_start,
         }
-    )
+        assert kiwoom_feed_needs_l1_recovery(
+            {
+                "components": {"feed": "CONNECTING"},
+                "feed_detail": {"ok": False, "reason": "NO_REAL_TICK_YET"},
+                "heartbeats": {},
+            }
+        )
+
+
+def test_kiwoom_feed_needs_l1_false_during_warmup_connecting() -> None:
+    from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
+
+    with patch(
+        "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime"
+    ) as kmr:
+        kmr.status.return_value = {
+            "running": True,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }
+        assert not kiwoom_feed_needs_l1_recovery(
+            {
+                "components": {"feed": "CONNECTING"},
+                "feed_detail": {"ok": False, "reason": "NO_REAL_TICK_YET"},
+                "heartbeats": {},
+            }
+        )
 
 
 def test_kiwoom_feed_needs_l1_false_for_real_fresh() -> None:

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import structlog
@@ -21,6 +22,9 @@ from stock_platform.trading.autotrading_health_slo import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# LOGIN/REG/handshake 후 첫 REAL tick 대기 — 이 구간 L1 hard reconnect 금지
+FEED_WARMUP_GRACE_SECONDS = 90.0
 
 _FEED_FRESH = frozenset(
     {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}
@@ -38,22 +42,82 @@ _UNHEALTHY_CONNECTING_REASONS = frozenset(
 )
 
 
+def _parse_iso_utc(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def kiwoom_feed_task_age_seconds(runtime_status: dict[str, Any]) -> float | None:
+    """현재 feed task 기동 후 경과 초."""
+
+    started = _parse_iso_utc(runtime_status.get("started_at"))
+    if started is None:
+        lifecycle = runtime_status.get("lifecycle") or {}
+        started = _parse_iso_utc(lifecycle.get("connect_at"))
+    if started is None:
+        return None
+    return (datetime.now(timezone.utc) - started).total_seconds()
+
+
+def kiwoom_feed_in_warmup_grace(
+    runtime_status: dict[str, Any],
+    *,
+    grace_seconds: float = FEED_WARMUP_GRACE_SECONDS,
+) -> bool:
+    """handshake/첫 tick warm-up 중 — watchdog L1이 WS를 죽이면 안 됨."""
+
+    if not bool(runtime_status.get("running")):
+        return False
+    if runtime_status.get("feed_age_seconds") is not None:
+        return False
+    client = runtime_status.get("client") if isinstance(runtime_status.get("client"), dict) else {}
+    if int((client or {}).get("event_count") or 0) > 0:
+        return False
+    age = kiwoom_feed_task_age_seconds(runtime_status)
+    if age is None:
+        return False
+    return float(age) < float(grace_seconds)
+
+
 def kiwoom_feed_needs_l1_recovery(
     health_snapshot: dict[str, Any],
     *,
     slo: AutotradingHealthSlo | None = None,
 ) -> bool:
-    """Watchdog L1 — DISCONNECTED/STALE 및 tick 없는 CONNECTING 포함."""
+    """Watchdog L1 — DISCONNECTED/STALE; CONNECTING은 warm-up 이후만."""
+
+    from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+        kiwoom_market_realtime_runtime,
+    )
 
     slo = slo or load_autotrading_health_slo()
+    runtime_st = kiwoom_market_realtime_runtime.status()
     feed_st = str((health_snapshot.get("components") or {}).get("feed") or "").upper()
+    detail = health_snapshot.get("feed_detail") or {}
+    reason = str(detail.get("reason") or "").upper()
+
+    # task 죽음 — 즉시 L1 (warm-up 무관)
+    if not bool(runtime_st.get("running")):
+        return feed_st in {"DISCONNECTED", "STALE", "DOWN", "UNHEALTHY", "CONNECTING"}
+
+    # warm-up 중: hard reconnect/L1 억제 (자연 handshake 보호)
+    if kiwoom_feed_in_warmup_grace(runtime_st):
+        if feed_st in {"STALE", "DOWN", "UNHEALTHY"} and reason == "TICK_STALE":
+            return True
+        return False
+
     if feed_st in {"DISCONNECTED", "STALE", "DOWN", "UNHEALTHY"}:
         return True
     if feed_st in _FEED_FRESH:
         return kiwoom_health_feed_is_stale(health_snapshot, slo=slo)
     if feed_st == "CONNECTING":
-        detail = health_snapshot.get("feed_detail") or {}
-        reason = str(detail.get("reason") or "").upper()
         if reason in _UNHEALTHY_CONNECTING_REASONS:
             return True
         if not bool(detail.get("ok")):
@@ -152,9 +216,13 @@ def kiwoom_runtime_feed_is_stale(
     if not connected:
         return True
     if age is None:
-        # connected but never received tick during REGULAR — stale treat
         event_count = int((client or {}).get("event_count") or 0)
-        return event_count <= 0
+        if event_count <= 0:
+            # handshake 후 첫 tick 대기 — warm-up 중 hard reconnect 금지
+            if kiwoom_feed_in_warmup_grace(runtime_status):
+                return False
+            return True
+        return False
     try:
         return float(age) > float(slo.feed_max_age_seconds)
     except (TypeError, ValueError):
@@ -241,16 +309,26 @@ async def ensure_kiwoom_feed_fresh(
     }
 
     if stale and running and same_uba:
-        logger.info(
-            "kiwoom_feed_stale_hard_reconnect",
-            uba_id=uba_id,
-            actor=actor,
-            feed_age=st_before.get("feed_age_seconds"),
-            last_error=(client_before or {}).get("last_error"),
-        )
-        await kiwoom_market_realtime_runtime.stop()
-        result["hard_reconnect"] = True
-        running = False
+        if kiwoom_feed_in_warmup_grace(st_before):
+            logger.info(
+                "kiwoom_feed_warmup_grace_skip_hard_reconnect",
+                uba_id=uba_id,
+                actor=actor,
+                task_age_seconds=kiwoom_feed_task_age_seconds(st_before),
+            )
+            stale = False
+            result["warmup_grace"] = True
+        else:
+            logger.info(
+                "kiwoom_feed_stale_hard_reconnect",
+                uba_id=uba_id,
+                actor=actor,
+                feed_age=st_before.get("feed_age_seconds"),
+                last_error=(client_before or {}).get("last_error"),
+            )
+            await kiwoom_market_realtime_runtime.stop()
+            result["hard_reconnect"] = True
+            running = False
 
     if not symbols:
         result.update({"started": False, "reason": "SYMBOLS_REQUIRED"})
