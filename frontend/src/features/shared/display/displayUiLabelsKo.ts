@@ -19,6 +19,8 @@ export const UI_LABEL_KO = {
   entryDecision: "매수 판단",
   blockReason: "차단 사유",
   reservedKrw: "예약 금액",
+  expectedOrderKrw: "예상 주문금액",
+  recommendedKrw: "권장 주문금액",
   orderId: "주문번호",
   order: "주문",
   autoPositions: "자동매매 보유 포지션",
@@ -119,7 +121,10 @@ export const UI_TOOLTIP_KO = {
   arm: "실제 주문을 제출할 수 있도록 일정 시간 동안 승인된 상태입니다.",
   readiness:
     "LIVE, ARM, Runtime, 시세, Risk 등 실제 자동매매에 필요한 조건을 종합한 상태입니다.",
-  reservedKrw: "매수 주문을 위해 포트폴리오 슬롯에 임시로 확보한 금액입니다.",
+  reservedKrw:
+    "ENTRY_PENDING 등에서 매수 주문을 위해 슬롯에 실제로 확보한 금액입니다. 값이 없으면 예약이 아닙니다.",
+  expectedOrderKrw:
+    "아직 예약되지 않은 예상/권장 주문금액입니다. 실제 자금 확보(예약)와 다릅니다.",
   mfe: "진입 후 가장 유리했던 최대 수익률입니다.",
   mae: "진입 후 가장 불리했던 최대 손실률입니다.",
   forward:

@@ -687,6 +687,22 @@ def _reconcile_one_slot(
                 bmeta.pop("exit_reason", None)
                 bmeta["last_cancelled_exit_order_id"] = int(exit_sell.order_id)
                 binding.meta_json = bmeta
+        # WRK-014: durable exit intent → COOLDOWN (no historical create)
+        try:
+            from stock_platform.operation.upbit_exit_intent.hooks import (
+                on_exit_sell_terminal_cancel,
+            )
+
+            filled_q = getattr(exit_sell, "filled_quantity", None)
+            on_exit_sell_terminal_cancel(
+                order_id=int(exit_sell.order_id),
+                user_broker_account_id=int(slot.user_broker_account_id),
+                symbol=sym,
+                filled_quantity=filled_q,
+                remaining_quantity=None,  # service uses broker snapshot
+            )
+        except Exception:  # noqa: BLE001
+            pass
 
     # FILLED SELL → CLOSED / slot release
     if exit_sell is not None and _is_filled(exit_sell):
@@ -696,6 +712,20 @@ def _reconcile_one_slot(
             )
             if closed.get("ok"):
                 changes.append("POSITION_CLOSED")
+                # WRK-014: full fill → COMPLETED
+                try:
+                    from stock_platform.operation.upbit_exit_intent.hooks import (
+                        on_exit_sell_full_fill,
+                    )
+
+                    on_exit_sell_full_fill(
+                        user_broker_account_id=int(
+                            slot.user_broker_account_id
+                        ),
+                        symbol=sym,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
                 # mark_position_closed → COOLDOWN; entry_order_id는 cooldown tick에서 정리
                 refreshed = session.get(UpbitPositionSlotEntity, int(slot.slot_id))
                 if refreshed is not None:

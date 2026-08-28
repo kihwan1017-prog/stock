@@ -445,12 +445,52 @@ export function UpbitOpsStatusPanel({
               },
               {
                 title: (
-                  <Tooltip title={UI_TOOLTIP_KO.reservedKrw}>
-                    <span>{UI_LABEL_KO.reservedKrw}</span>
+                  <Tooltip title={UI_TOOLTIP_KO.expectedOrderKrw}>
+                    <span>{UI_LABEL_KO.expectedOrderKrw}</span>
                   </Tooltip>
                 ),
-                dataIndex: "reserved_amount_krw",
-                render: (v) => formatKrwKo(v),
+                key: "order_amount_display",
+                render: (_: unknown, row) => {
+                  const o = rec(row);
+                  const reserved = o.reserved_amount_krw;
+                  const recommended = o.recommended_amount_krw;
+                  const allocated = o.allocated_amount_krw;
+                  const st = String(o.status ?? "").toUpperCase();
+                  // 실제 예약만 "예약" — null이면 예약 금액으로 표시 금지
+                  if (reserved != null && Number.isFinite(Number(reserved))) {
+                    return (
+                      <Tooltip title={UI_TOOLTIP_KO.reservedKrw}>
+                        <span>
+                          {UI_LABEL_KO.reservedKrw} {formatKrwKo(reserved)}
+                        </span>
+                      </Tooltip>
+                    );
+                  }
+                  if (
+                    st === "OPEN" &&
+                    allocated != null &&
+                    Number.isFinite(Number(allocated))
+                  ) {
+                    return (
+                      <Tooltip title="체결·배정 기준 금액 (예약 아님)">
+                        <span>
+                          {UI_LABEL_KO.allocated} {formatKrwKo(allocated)}
+                        </span>
+                      </Tooltip>
+                    );
+                  }
+                  if (
+                    recommended != null &&
+                    Number.isFinite(Number(recommended))
+                  ) {
+                    return (
+                      <Tooltip title={UI_TOOLTIP_KO.expectedOrderKrw}>
+                        <span>{formatKrwKo(recommended)}</span>
+                      </Tooltip>
+                    );
+                  }
+                  return "—";
+                },
               },
               {
                 title: UI_LABEL_KO.orderId,
@@ -461,6 +501,27 @@ export function UpbitOpsStatusPanel({
           />
         </div>
       </Card>
+
+      {slots.some((row) => {
+        const raw = String(
+          rec(row as Record<string, unknown>).last_entry_block_reason ??
+            rec(row as Record<string, unknown>).entry_block_reason ??
+            "",
+        ).toUpperCase();
+        return raw === "MAX_OPEN_POSITIONS_REACHED";
+      }) ? (
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 0 }}
+          title="신규 자동매수 제한"
+          description={
+            "거래소 보유 종목이 안전 한도(5/5, 수동 보유 포함)에 도달해 " +
+            "기술조건이 통과해도 신규 자동매수가 제한됩니다. " +
+            "자동매매 OPEN 슬롯 수와는 별개입니다."
+          }
+        />
+      ) : null}
 
       <Card size="small" title={UI_LABEL_KO.entryBlockSummary}>
         {reasonTotal === 0 ? (
@@ -505,9 +566,36 @@ export function UpbitOpsStatusPanel({
             style={{ marginBottom: 12 }}
             title="보유 중 이유 · 손익"
             description={
-              (openSlots[0] as { why_still_holding_ko?: string })
-                ?.why_still_holding_ko ||
-              "전략 청산(MA_DEAD_CROSS)이 체결되기 전까지 보유합니다. 수량·진입가·현재가·손익은 브로커 스냅샷 READ 값입니다."
+              (() => {
+                const first = openSlots[0] as {
+                  why_still_holding_ko?: string;
+                  exit_intent?: {
+                    status_label_ko?: string;
+                    retry_display?: string;
+                    next_retry_at?: string | null;
+                    why_still_holding_ko?: string;
+                  };
+                };
+                const intent = first?.exit_intent;
+                if (intent?.status_label_ko) {
+                  const bits = [intent.status_label_ko];
+                  if (intent.retry_display) {
+                    bits.push(`재시도 ${intent.retry_display}`);
+                  }
+                  if (intent.next_retry_at) {
+                    bits.push(`다음 재검증 ${intent.next_retry_at}`);
+                  }
+                  return (
+                    intent.why_still_holding_ko ||
+                    first?.why_still_holding_ko ||
+                    bits.join(" · ")
+                  );
+                }
+                return (
+                  first?.why_still_holding_ko ||
+                  "전략 청산(MA_DEAD_CROSS)이 체결되기 전까지 보유합니다. 수량·진입가·현재가·손익은 브로커 스냅샷 READ 값입니다."
+                );
+              })()
             }
           />
         )}

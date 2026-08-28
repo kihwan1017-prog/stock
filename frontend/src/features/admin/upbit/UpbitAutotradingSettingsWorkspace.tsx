@@ -855,9 +855,21 @@ export function UpbitAutotradingSettingsWorkspace({
                   render: (v) => (v == null ? "—" : String(v)),
                 },
                 {
-                  title: "예약 금액",
-                  dataIndex: "reserved_amount_krw",
-                  render: (v) => (v == null ? "—" : String(v)),
+                  title: "예상/예약 금액",
+                  key: "amount_display",
+                  render: (_: unknown, row) => {
+                    const o = asObj(row);
+                    const reserved = o.reserved_amount_krw;
+                    const recommended = o.recommended_amount_krw;
+                    const st = String(o.status ?? "").toUpperCase();
+                    if (reserved != null) return `예약 ${String(reserved)}`;
+                    if (st === "WAITING_SIGNAL" || st === "ENTRY_PENDING") {
+                      if (recommended != null) {
+                        return `예상 ${String(recommended)}`;
+                      }
+                    }
+                    return "—";
+                  },
                 },
                 {
                   title: "Cooldown",
@@ -1363,8 +1375,10 @@ export function UpbitAutotradingSettingsWorkspace({
         <Descriptions.Item label="Pending Orders">
           {numOrDash(summary.pending_orders ?? 0)}
         </Descriptions.Item>
-        <Descriptions.Item label="예약 금액">
-          {numOrDash(summary.reserved_krw ?? 0)}
+        <Descriptions.Item label="예약 금액(실제)">
+          {summary.reserved_krw == null || Number(summary.reserved_krw) === 0
+            ? "없음"
+            : numOrDash(summary.reserved_krw)}
         </Descriptions.Item>
       </Descriptions>
 

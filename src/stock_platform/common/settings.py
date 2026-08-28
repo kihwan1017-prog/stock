@@ -265,6 +265,10 @@ class Settings(BaseSettings):
     upbit_portfolio_exit_min_ma_separation_pct: float = 0.03
     upbit_portfolio_ma_exit_min_holding_seconds: int = 180
     upbit_portfolio_estimated_fee_rate: float = 0.0005
+    # WRK-014 durable exit intent + bounded retry (승인 정책)
+    upbit_exit_intent_retry_enabled: bool = True
+    upbit_exit_intent_retry_cooldown_seconds: int = 60
+    upbit_exit_intent_max_retries: int = 3
     # MA Signal → AI Gate (기본 OFF). LIVE Gate는 별도 플래그(기본 OFF)
     autotrading_ai_signal_gate_enabled: bool = False
     autotrading_ai_signal_gate_live_enabled: bool = False

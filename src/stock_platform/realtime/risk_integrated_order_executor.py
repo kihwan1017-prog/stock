@@ -582,6 +582,17 @@ class RiskIntegratedRealtimeOrderExecutor:
             ),
             "order_source": "AUTO",
         }
+        # WRK-014 exit intent lineage
+        sig_meta = getattr(signal, "metadata", None) or {}
+        if isinstance(sig_meta, dict):
+            for k in (
+                "exit_intent_id",
+                "exit_attempt_kind",
+                "exit_attempt_index",
+                "exit_intent_retry",
+            ):
+                if sig_meta.get(k) is not None:
+                    meta[k] = sig_meta.get(k)
         for key in (
             "execution_trace_id",
             "candidate_selection_id",
@@ -646,6 +657,30 @@ class RiskIntegratedRealtimeOrderExecutor:
 
         if not result.allowed:
             self._trace_executor_rejected(signal, result.reason_code)
+            # WRK-014: retry 거부 시 intent BLOCKED (retry_count 미증가)
+            if (
+                str(signal.action.value).upper() == "SELL"
+                and str(getattr(signal, "reason_code", "") or "").upper()
+                == "MA_DEAD_CROSS"
+            ):
+                try:
+                    from stock_platform.operation.upbit_exit_intent.hooks import (
+                        mark_intent_blocked,
+                    )
+
+                    sig_meta = getattr(signal, "metadata", None) or {}
+                    iid = (
+                        sig_meta.get("exit_intent_id")
+                        if isinstance(sig_meta, dict)
+                        else None
+                    )
+                    if iid is not None:
+                        mark_intent_blocked(
+                            exit_intent_id=int(iid),
+                            reason=str(result.reason_code or "EXECUTOR_REJECTED"),
+                        )
+                except Exception:  # noqa: BLE001
+                    pass
             return self._skipped(
                 signal,
                 result.reason_code,
@@ -658,6 +693,44 @@ class RiskIntegratedRealtimeOrderExecutor:
                 order_id=int(result.order_id),
                 outbox_id=getattr(result, "outbox_id", None),
             )
+            # WRK-014: link SELL order to durable exit intent
+            if (
+                str(signal.action.value).upper() == "SELL"
+                and str(getattr(signal, "reason_code", "") or "").upper()
+                == "MA_DEAD_CROSS"
+            ):
+                try:
+                    from stock_platform.operation.upbit_exit_intent.hooks import (
+                        link_order_to_intent,
+                    )
+
+                    sig_meta = getattr(signal, "metadata", None) or {}
+                    intent_id = None
+                    is_retry = False
+                    if isinstance(sig_meta, dict):
+                        intent_id = sig_meta.get("exit_intent_id")
+                        is_retry = bool(
+                            sig_meta.get("exit_intent_retry")
+                            or str(sig_meta.get("exit_attempt_kind") or "")
+                            .upper()
+                            == "RETRY"
+                        )
+                    link_order_to_intent(
+                        exit_intent_id=(
+                            int(intent_id) if intent_id is not None else None
+                        ),
+                        user_broker_account_id=(
+                            int(user_broker_account_id)
+                            if user_broker_account_id is not None
+                            else None
+                        ),
+                        symbol=str(signal.symbol or ""),
+                        order_id=int(result.order_id),
+                        signal_id=getattr(signal, "signal_id", None),
+                        is_retry=is_retry,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
 
         # Portfolio BUY: 주문 생성 직후 ENTRY_PENDING slot에 entry_order_id 연결
         if (

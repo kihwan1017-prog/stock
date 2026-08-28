@@ -970,12 +970,64 @@ class UpbitPortfolioService:
                 except Exception:  # noqa: BLE001
                     pass
             why_still_holding = None
+            last_cancelled_exit_order_id = None
+            exit_intent_public = None
             if status_u == "OPEN":
-                why_still_holding = (
-                    "현재 전략 청산(MA_DEAD_CROSS) 조건이 충족·체결되지 않아 "
-                    "보유 중입니다. Stop Loss/Take Profit/Trailing이 비어 있어도 "
-                    "Protective Exit 모니터 경로는 유지됩니다."
-                )
+                # WRK-014 durable exit intent READ (우선)
+                try:
+                    from stock_platform.operation.upbit_exit_intent.service import (
+                        UpbitExitIntentService,
+                    )
+
+                    uei = UpbitExitIntentService(self._session)
+                    active = uei.get_active(
+                        user_broker_account_id=int(
+                            user_broker_account_id
+                        ),
+                        symbol=sym,
+                    )
+                    if active is not None:
+                        exit_intent_public = uei.to_public(active)
+                        why_still_holding = (
+                            exit_intent_public or {}
+                        ).get("why_still_holding_ko")
+                except Exception:  # noqa: BLE001
+                    exit_intent_public = None
+                # binding meta — 최근 미체결 청산 취소 (READ only)
+                try:
+                    if s.position_binding_id is not None:
+                        from stock_platform.operation.upbit_full_market.entities import (
+                            UpbitStrategyPositionBindingEntity,
+                        )
+
+                        bind_row = self._session.get(
+                            UpbitStrategyPositionBindingEntity,
+                            int(s.position_binding_id),
+                        )
+                        if bind_row is not None:
+                            bmeta = dict(bind_row.meta_json or {})
+                            raw_cancel = bmeta.get(
+                                "last_cancelled_exit_order_id"
+                            )
+                            if raw_cancel is not None:
+                                last_cancelled_exit_order_id = int(raw_cancel)
+                except Exception:  # noqa: BLE001
+                    last_cancelled_exit_order_id = None
+                if why_still_holding is None:
+                    if last_cancelled_exit_order_id is not None:
+                        why_still_holding = (
+                            f"최근 청산 주문 #{last_cancelled_exit_order_id}이 "
+                            "미체결 취소된 뒤, 새로운 MA_DEAD_CROSS(데드크로스 "
+                            "재교차) 조건이 다시 확정·체결되지 않아 보유 중입니다. "
+                            "Stop Loss/Take Profit/Trailing이 비어 있어도 "
+                            "Protective Exit 모니터 경로는 유지됩니다."
+                        )
+                    else:
+                        why_still_holding = (
+                            "현재 전략 청산(MA_DEAD_CROSS) 조건이 충족·체결되지 않아 "
+                            "보유 중입니다. Stop Loss/Take Profit/Trailing이 비어 있어도 "
+                            "Protective Exit 모니터 경로는 유지됩니다."
+                        )
             out.append(
                 {
                     "slot_id": int(s.slot_id),
@@ -1018,7 +1070,10 @@ class UpbitPortfolioService:
                     "current_price": mark_px,
                     "evaluation_amount_krw": eval_amt,
                     "unrealized_pnl_krw": unrealized,
-                    "return_rate_pct": return_rate,                    "why_still_holding_ko": why_still_holding,
+                    "return_rate_pct": return_rate,
+                    "why_still_holding_ko": why_still_holding,
+                    "last_cancelled_exit_order_id": last_cancelled_exit_order_id,
+                    "exit_intent": exit_intent_public,
                     "last_entry_decision": ev.get("last_decision"),
                     "last_entry_block_reason": ev.get("last_block_reason"),
                     "last_entry_evaluated_at": ev.get("last_evaluated_at"),

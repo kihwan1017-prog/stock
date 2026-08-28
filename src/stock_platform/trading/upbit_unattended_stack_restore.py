@@ -478,6 +478,20 @@ async def restore_upbit_trading_stack(
         runtime_reason=(detail.get("runtime") or {}).get("reason"),
         execution_reason=(detail.get("execution_runner") or {}).get("reason"),
     )
+    # WRK-014: ACTIVE exit intent reconcile (no forced SELL)
+    try:
+        from stock_platform.operation.upbit_exit_intent.hooks import (
+            recover_intents_after_restore,
+        )
+
+        detail["exit_intent_recovery"] = recover_intents_after_restore(
+            user_broker_account_id=int(uba_id) if uba_id else None
+        )
+    except Exception as exc:  # noqa: BLE001
+        detail["exit_intent_recovery"] = {
+            "ok": False,
+            "error": type(exc).__name__,
+        }
     return {"restored": stack_ok, "detail": detail}
 
 

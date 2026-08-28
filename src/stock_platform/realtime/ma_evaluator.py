@@ -403,6 +403,28 @@ class MovingAverageStrategyEvaluator:
                 event, state, SignalType.BUY, "MA_GOLDEN_CROSS", short_avg, long_avg
             )
         # MA_DEAD_CROSS — anti-churn gate (보호 SL/TP는 위에서 이미 즉시 처리)
+        # WRK-014: durable intent cooldown → STATE 재검증 후 bounded retry (edge 불필요)
+        if position.quantity > ZERO and allow_signal:
+            retry_sig = self._maybe_emit_durable_exit_retry(
+                event,
+                state,
+                position=position,
+                short_avg=short_avg,
+                long_avg=long_avg,
+            )
+            if retry_sig is not None:
+                self._observe_forward_shadow(
+                    event,
+                    position,
+                    signal=retry_sig,
+                    state=state,
+                    short_avg=short_avg,
+                    long_avg=long_avg,
+                    prev_short=prev_s,
+                    prev_long=prev_l,
+                )
+                return retry_sig
+
         raw_dead_cross = (
             position.quantity > ZERO
             and prev_s >= prev_l
@@ -477,6 +499,58 @@ class MovingAverageStrategyEvaluator:
             )
         except Exception:  # noqa: BLE001
             return
+
+    def _maybe_emit_durable_exit_retry(
+        self,
+        event: RealtimeMarketEvent,
+        state: ScopeStrategyState,
+        *,
+        position: RealtimePositionState,
+        short_avg: Decimal | None,
+        long_avg: Decimal | None,
+    ) -> StrategySignal | None:
+        """WRK-014: durable intent due → STATE 재검증 → bounded retry SELL."""
+
+        try:
+            from stock_platform.operation.upbit_exit_intent.hooks import (
+                prepare_durable_retry,
+            )
+
+            uba = int(getattr(self.scope, "account_id", 0) or 0)
+            if not uba:
+                return None
+            prep = prepare_durable_retry(
+                user_broker_account_id=uba,
+                symbol=str(event.symbol),
+                short_ma=short_avg,
+                long_ma=long_avg,
+            )
+            if prep.get("action") != "emit_retry":
+                return None
+            intent_id = prep.get("exit_intent_id")
+            retry_before = int(prep.get("retry_count_before") or 0)
+            # opportunity_id로 fingerprint 충돌·중복 억제
+            opp = f"exit_intent:{intent_id}:retry:{retry_before + 1}"
+            return self._emit(
+                event,
+                state,
+                SignalType.SELL,
+                "MA_DEAD_CROSS",
+                short_avg,
+                long_avg,
+                opportunity_id=opp,
+                extra_metadata={
+                    "ma_exit_confirmation": "REVALIDATED_STATE",
+                    "exit_intent_id": intent_id,
+                    "exit_attempt_kind": "RETRY",
+                    "exit_attempt_index": retry_before + 1,
+                    "exit_intent_retry": True,
+                    "condition": prep.get("condition"),
+                    "profit_only_gate": False,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            return None
 
     def _ma_exit_thresholds(self):
         """config에 붙은 MA exit 임계값 (attach 시 policy에서 patch)."""
@@ -553,6 +627,26 @@ class MovingAverageStrategyEvaluator:
             state.ma_exit_confirming = False
             first_at = state.first_dead_cross_at
             state.first_dead_cross_at = None
+            # WRK-014: durable intent BEFORE initial SELL (idempotent)
+            intent_id = None
+            try:
+                from stock_platform.operation.upbit_exit_intent.hooks import (
+                    create_intent_on_ma_emit,
+                )
+
+                uba = int(getattr(self.scope, "account_id", 0) or 0)
+                intent_id = create_intent_on_ma_emit(
+                    user_broker_account_id=uba,
+                    symbol=str(event.symbol),
+                    signal_id=None,
+                    strategy_id=getattr(self.scope, "strategy_id", None),
+                    strategy_version=getattr(
+                        self.scope, "strategy_version", None
+                    ),
+                    quantity=position.quantity,
+                )
+            except Exception:  # noqa: BLE001
+                intent_id = None
             return self._emit(
                 event,
                 state,
@@ -578,6 +672,9 @@ class MovingAverageStrategyEvaluator:
                     ),
                     "fee_aware": gate.get("fee_aware"),
                     "profit_only_gate": False,
+                    "exit_intent_id": intent_id,
+                    "exit_attempt_kind": "INITIAL",
+                    "exit_attempt_index": 0,
                 },
             )
         # CONFIRMING / HOLD — 주문 없음
