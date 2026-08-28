@@ -764,6 +764,11 @@ export async function getAdminUpbitResearchShortTermTurnoverSummary(): Promise<J
   return getJson("/admin/upbit/research/short-term-turnover/summary");
 }
 
+/** WRK-016 positive-edge entry discovery — READ ONLY evidence */
+export async function getAdminUpbitResearchPositiveEdgeEntrySummary(): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/positive-edge-entry/summary");
+}
+
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
 export async function getAdminAutotradingResearchStatus(
   params?: Params,

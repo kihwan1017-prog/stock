@@ -247,6 +247,8 @@ export const queryKeys = {
       ["admin", "upbit-research-entry-signal-shadow-rows", ubaId ?? null] as const,
     upbitResearchShortTermTurnoverSummary: () =>
       ["admin", "upbit-research-short-term-turnover-summary"] as const,
+    upbitResearchPositiveEdgeEntrySummary: () =>
+      ["admin", "upbit-research-positive-edge-entry-summary"] as const,
     autotradingResearchStatus: (upbitUbaId?: number, kiwoomUbaId?: number) =>
       [
         "admin",

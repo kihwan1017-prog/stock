@@ -1,0 +1,626 @@
+{
+  "WORK_ID": "WRK-20260829-016-UPBIT-POSITIVE-EDGE-ENTRY-DISCOVERY",
+  "FINAL_VERDICT": "UPBIT_POSITIVE_EDGE_ENTRY_DISCOVERY_COMPLETE",
+  "BASE_COMMIT": "5fedea2",
+  "RESULT_COMMIT": null,
+  "DATA": {
+    "WINDOW": "21d_available",
+    "DAYS": 21.02,
+    "START": "2026-08-08T08:20:00+09:00",
+    "END": "2026-08-29T08:51:00+09:00",
+    "CANDIDATE_SAMPLE": 5005,
+    "MARKET_SAMPLE": 56056,
+    "SAMPLE_TIMES": 2002,
+    "SYMBOLS": [
+      "KRW-ADA",
+      "KRW-BCH",
+      "KRW-BTC",
+      "KRW-CAP",
+      "KRW-DOS",
+      "KRW-ENA",
+      "KRW-ETH",
+      "KRW-EUL",
+      "KRW-GAS",
+      "KRW-GRVT",
+      "KRW-HOME",
+      "KRW-LINK",
+      "KRW-META2",
+      "KRW-MOVE",
+      "KRW-NEAR",
+      "KRW-ONG",
+      "KRW-PRL",
+      "KRW-PUMP",
+      "KRW-RE",
+      "KRW-SHIB",
+      "KRW-SOL",
+      "KRW-STX",
+      "KRW-SUI",
+      "KRW-TRUMP",
+      "KRW-WLD",
+      "KRW-WLFI",
+      "KRW-XLM",
+      "KRW-XRP"
+    ],
+    "SYMBOL_COUNT": 28,
+    "DATA_QUALITY": "LIMITED_SPAN_UNDER_90D",
+    "CANDLE_ROWS": 531114,
+    "SAMPLE_EVERY_MIN": 15,
+    "TOP_N_CROSS": 3,
+    "PRIMARY_HORIZON_MIN": 30,
+    "NOTE": "Canonical store shorter than 90d — use full available span"
+  },
+  "COST": {
+    "BUY_FEE": 0.0005,
+    "SELL_FEE": 0.0005,
+    "SLIPPAGE_BPS_EACH_SIDE": 2.0,
+    "NOTIONAL_KRW": 10000.0,
+    "SLIPPAGE_SENSITIVITY": {
+      "1.0bps": {
+        "n": 788,
+        "opportunities_day": 37.49,
+        "trades_day": 37.49,
+        "win_rate": 49.9,
+        "pf": 1.022,
+        "avg_net_trade": 1.13,
+        "median_net_trade": -0.39,
+        "total_net": 894.2,
+        "mdd": 3785.1,
+        "best_regime": null,
+        "confidence": "MEDIUM_HIGH"
+      },
+      "2.0bps": {
+        "n": 788,
+        "opportunities_day": 37.49,
+        "trades_day": 37.49,
+        "win_rate": 49.4,
+        "pf": 0.984,
+        "avg_net_trade": -0.87,
+        "median_net_trade": -2.39,
+        "total_net": -681.8,
+        "mdd": 3873.1,
+        "best_regime": null,
+        "confidence": "MEDIUM_HIGH"
+      },
+      "5.0bps": {
+        "n": 788,
+        "opportunities_day": 37.49,
+        "trades_day": 37.49,
+        "win_rate": 48.2,
+        "pf": 0.878,
+        "avg_net_trade": -6.87,
+        "median_net_trade": -8.39,
+        "total_net": -5409.8,
+        "mdd": 5985.2,
+        "best_regime": null,
+        "confidence": "MEDIUM_HIGH"
+      }
+    }
+  },
+  "CURRENT": {
+    "CURRENT_MA_TPD": 63.42,
+    "CURRENT_MA_PF": 0.849,
+    "CURRENT_MA_NET": -11154.0,
+    "CURRENT_MA_N": 1333,
+    "NOTE": "Research M0 = market-wide MA hits (no AI/risk/slot); not production fill rate. WRK-015 production BUY fills ≈2.13/day, PF≈0.20.",
+    "PRODUCTION_FILL_TPD_WRK015": 2.13,
+    "PRODUCTION_PF_WRK015": 0.2
+  },
+  "REGIME": {
+    "BULL": 190,
+    "BEAR": 223,
+    "SIDEWAYS": 819,
+    "HIGH_VOL": 396,
+    "LOW_VOL": 374,
+    "vol_thresholds": {
+      "high": 0.05525612642501498,
+      "low": 0.027566812410581384
+    }
+  },
+  "ENTRY_FAMILY_RESULTS": {
+    "M0_CURRENT": {
+      "n": 1333,
+      "opportunities_day": 63.42,
+      "trades_day": 63.42,
+      "win_rate": 41.3,
+      "pf": 0.849,
+      "avg_net_trade": -8.37,
+      "median_net_trade": -14.0,
+      "total_net": -11154.0,
+      "mdd": 14463.2,
+      "best_regime": "SIDEWAYS",
+      "confidence": "MEDIUM_HIGH"
+    },
+    "MOMENTUM": {
+      "n": 1189,
+      "opportunities_day": 56.57,
+      "trades_day": 56.57,
+      "win_rate": 44.4,
+      "pf": 1.029,
+      "avg_net_trade": 1.59,
+      "median_net_trade": -14.0,
+      "total_net": 1888.2,
+      "mdd": 5039.7,
+      "best_regime": "SIDEWAYS",
+      "confidence": "MEDIUM_HIGH"
+    },
+    "BREAKOUT": {
+      "n": 571,
+      "opportunities_day": 27.16,
+      "trades_day": 27.16,
+      "win_rate": 38.7,
+      "pf": 0.832,
+      "avg_net_trade": -9.4,
+      "median_net_trade": -14.0,
+      "total_net": -5368.0,
+      "mdd": 5409.3,
+      "best_regime": "BEAR_TREND",
+      "confidence": "MEDIUM_HIGH"
+    },
+    "VOLUME_SURGE": {
+      "n": 1091,
+      "opportunities_day": 51.9,
+      "trades_day": 51.9,
+      "win_rate": 39.7,
+      "pf": 0.826,
+      "avg_net_trade": -9.83,
+      "median_net_trade": -14.0,
+      "total_net": -10728.7,
+      "mdd": 12117.6,
+      "best_regime": "SIDEWAYS",
+      "confidence": "MEDIUM_HIGH"
+    },
+    "PULLBACK": {
+      "n": 33,
+      "opportunities_day": 1.57,
+      "trades_day": 1.57,
+      "win_rate": 30.3,
+      "pf": 0.588,
+      "avg_net_trade": -38.31,
+      "median_net_trade": -36.42,
+      "total_net": -1264.1,
+      "mdd": 2222.5,
+      "best_regime": "SIDEWAYS",
+      "confidence": "LOW"
+    },
+    "MEAN_REVERSION": {
+      "n": 788,
+      "opportunities_day": 37.49,
+      "trades_day": 37.49,
+      "win_rate": 49.4,
+      "pf": 0.984,
+      "avg_net_trade": -0.87,
+      "median_net_trade": -2.39,
+      "total_net": -681.8,
+      "mdd": 3873.1,
+      "best_regime": "BULL_TREND",
+      "confidence": "MEDIUM_HIGH"
+    },
+    "BEST_MULTI_STRATEGY": {
+      "n": 0,
+      "opportunities_day": 0.0,
+      "trades_day": 0.0,
+      "win_rate": null,
+      "pf": null,
+      "avg_net_trade": null,
+      "median_net_trade": null,
+      "total_net": 0.0,
+      "mdd": 0.0,
+      "best_regime": null,
+      "confidence": "VERY_LOW"
+    }
+  },
+  "FIXED_HORIZON": {
+    "M0_CURRENT": {
+      "NET_15M": -14529.5,
+      "AVG_15M": -10.9,
+      "N_15M": 1333,
+      "NET_30M": -11154.0,
+      "AVG_30M": -8.37,
+      "N_30M": 1333,
+      "NET_60M": -1164.0,
+      "AVG_60M": -0.87,
+      "N_60M": 1333,
+      "NET_120M": 4589.7,
+      "AVG_120M": 3.45,
+      "N_120M": 1331
+    },
+    "MOMENTUM": {
+      "NET_15M": -3734.4,
+      "AVG_15M": -3.14,
+      "N_15M": 1189,
+      "NET_30M": 1888.2,
+      "AVG_30M": 1.59,
+      "N_30M": 1189,
+      "NET_60M": 4861.8,
+      "AVG_60M": 4.09,
+      "N_60M": 1189,
+      "NET_120M": 14397.8,
+      "AVG_120M": 12.14,
+      "N_120M": 1186
+    },
+    "BREAKOUT": {
+      "NET_15M": -4802.0,
+      "AVG_15M": -8.41,
+      "N_15M": 571,
+      "NET_30M": -5368.0,
+      "AVG_30M": -9.4,
+      "N_30M": 571,
+      "NET_60M": -5961.9,
+      "AVG_60M": -10.44,
+      "N_60M": 571,
+      "NET_120M": 2900.8,
+      "AVG_120M": 5.09,
+      "N_120M": 570
+    },
+    "VOLUME_SURGE": {
+      "NET_15M": -14049.6,
+      "AVG_15M": -12.88,
+      "N_15M": 1091,
+      "NET_30M": -10728.7,
+      "AVG_30M": -9.83,
+      "N_30M": 1091,
+      "NET_60M": -12451.2,
+      "AVG_60M": -11.41,
+      "N_60M": 1091,
+      "NET_120M": 10746.2,
+      "AVG_120M": 9.87,
+      "N_120M": 1089
+    },
+    "PULLBACK": {
+      "NET_15M": -816.6,
+      "AVG_15M": -24.74,
+      "N_15M": 33,
+      "NET_30M": -1264.1,
+      "AVG_30M": -38.31,
+      "N_30M": 33,
+      "NET_60M": -246.3,
+      "AVG_60M": -7.46,
+      "N_60M": 33,
+      "NET_120M": 1869.8,
+      "AVG_120M": 56.66,
+      "N_120M": 33
+    },
+    "MEAN_REVERSION": {
+      "NET_15M": -6116.8,
+      "AVG_15M": -7.76,
+      "N_15M": 788,
+      "NET_30M": -681.8,
+      "AVG_30M": -0.87,
+      "N_30M": 788,
+      "NET_60M": -2942.7,
+      "AVG_60M": -3.73,
+      "N_60M": 788,
+      "NET_120M": 2186.0,
+      "AVG_120M": 2.78,
+      "N_120M": 786
+    }
+  },
+  "AI_PREDICTIVE_VALUE": {
+    "ALLOW_NET": null,
+    "REDUCE_NET": null,
+    "CONFIDENCE_CORRELATION": null,
+    "AI_HAS_EDGE": null,
+    "distribution": {
+      "": 43440,
+      "REDUCE": 25272,
+      "ALLOW": 79999
+    },
+    "note": "Trace AI labels lack paired future returns in this run; distribution only. WRK-015: AI not primary bottleneck."
+  },
+  "WALK_FORWARD": {
+    "TRAIN": "60%",
+    "VALIDATION": "20%",
+    "TEST": "20%",
+    "detail": {
+      "M0_CURRENT": {
+        "train": {
+          "n": 799,
+          "opportunities_day": 63.42,
+          "trades_day": 63.42,
+          "win_rate": 42.9,
+          "pf": 0.83,
+          "avg_net_trade": -9.77,
+          "median_net_trade": -14.0,
+          "total_net": -7809.0,
+          "mdd": 8690.8,
+          "best_regime": null,
+          "confidence": "MEDIUM_HIGH"
+        },
+        "validation": {
+          "n": 267,
+          "opportunities_day": 63.42,
+          "trades_day": 63.42,
+          "win_rate": 37.8,
+          "pf": 0.615,
+          "avg_net_trade": -21.78,
+          "median_net_trade": -31.95,
+          "total_net": -5814.7,
+          "mdd": 6767.7,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        },
+        "test": {
+          "n": 267,
+          "opportunities_day": 63.42,
+          "trades_day": 63.42,
+          "win_rate": 39.7,
+          "pf": 1.192,
+          "avg_net_trade": 9.25,
+          "median_net_trade": -14.0,
+          "total_net": 2469.7,
+          "mdd": 2898.0,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        }
+      },
+      "MOMENTUM": {
+        "train": {
+          "n": 713,
+          "opportunities_day": 56.57,
+          "trades_day": 56.57,
+          "win_rate": 47.4,
+          "pf": 1.068,
+          "avg_net_trade": 3.94,
+          "median_net_trade": -14.0,
+          "total_net": 2806.0,
+          "mdd": 5039.7,
+          "best_regime": null,
+          "confidence": "MEDIUM_HIGH"
+        },
+        "validation": {
+          "n": 238,
+          "opportunities_day": 56.57,
+          "trades_day": 56.57,
+          "win_rate": 42.9,
+          "pf": 1.081,
+          "avg_net_trade": 4.0,
+          "median_net_trade": -14.0,
+          "total_net": 951.9,
+          "mdd": 4789.8,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        },
+        "test": {
+          "n": 238,
+          "opportunities_day": 56.57,
+          "trades_day": 56.57,
+          "win_rate": 37.0,
+          "pf": 0.852,
+          "avg_net_trade": -7.86,
+          "median_net_trade": -29.44,
+          "total_net": -1869.7,
+          "mdd": 3141.4,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        }
+      },
+      "BREAKOUT": {
+        "train": {
+          "n": 342,
+          "opportunities_day": 27.16,
+          "trades_day": 27.16,
+          "win_rate": 40.4,
+          "pf": 0.856,
+          "avg_net_trade": -8.37,
+          "median_net_trade": -14.0,
+          "total_net": -2863.2,
+          "mdd": 4892.3,
+          "best_regime": null,
+          "confidence": "MEDIUM_HIGH"
+        },
+        "validation": {
+          "n": 114,
+          "opportunities_day": 27.16,
+          "trades_day": 27.16,
+          "win_rate": 39.5,
+          "pf": 1.058,
+          "avg_net_trade": 2.78,
+          "median_net_trade": -14.0,
+          "total_net": 316.8,
+          "mdd": 1592.5,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        },
+        "test": {
+          "n": 115,
+          "opportunities_day": 27.16,
+          "trades_day": 27.16,
+          "win_rate": 33.0,
+          "pf": 0.572,
+          "avg_net_trade": -24.53,
+          "median_net_trade": -14.0,
+          "total_net": -2821.5,
+          "mdd": 3306.3,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        }
+      },
+      "VOLUME_SURGE": {
+        "train": {
+          "n": 654,
+          "opportunities_day": 51.9,
+          "trades_day": 51.9,
+          "win_rate": 41.0,
+          "pf": 0.778,
+          "avg_net_trade": -13.55,
+          "median_net_trade": -14.0,
+          "total_net": -8859.1,
+          "mdd": 10076.4,
+          "best_regime": null,
+          "confidence": "MEDIUM_HIGH"
+        },
+        "validation": {
+          "n": 218,
+          "opportunities_day": 51.9,
+          "trades_day": 51.9,
+          "win_rate": 39.0,
+          "pf": 0.943,
+          "avg_net_trade": -2.8,
+          "median_net_trade": -15.49,
+          "total_net": -610.6,
+          "mdd": 4544.5,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        },
+        "test": {
+          "n": 219,
+          "opportunities_day": 51.9,
+          "trades_day": 51.9,
+          "win_rate": 36.5,
+          "pf": 0.888,
+          "avg_net_trade": -5.75,
+          "median_net_trade": -19.85,
+          "total_net": -1259.0,
+          "mdd": 4367.2,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        }
+      },
+      "PULLBACK": {
+        "train": {
+          "n": 19,
+          "opportunities_day": 1.57,
+          "trades_day": 1.57,
+          "win_rate": 21.1,
+          "pf": 0.203,
+          "avg_net_trade": -82.86,
+          "median_net_trade": -29.31,
+          "total_net": -1574.3,
+          "mdd": 1574.3,
+          "best_regime": null,
+          "confidence": "VERY_LOW"
+        },
+        "validation": {
+          "n": 7,
+          "opportunities_day": 1.57,
+          "trades_day": 1.57,
+          "win_rate": 28.6,
+          "pf": 0.641,
+          "avg_net_trade": -33.81,
+          "median_net_trade": -117.45,
+          "total_net": -236.7,
+          "mdd": 648.2,
+          "best_regime": null,
+          "confidence": "VERY_LOW"
+        },
+        "test": {
+          "n": 7,
+          "opportunities_day": 1.57,
+          "trades_day": 1.57,
+          "win_rate": 57.1,
+          "pf": 2.267,
+          "avg_net_trade": 78.12,
+          "median_net_trade": 79.7,
+          "total_net": 546.8,
+          "mdd": 327.9,
+          "best_regime": null,
+          "confidence": "VERY_LOW"
+        }
+      },
+      "MEAN_REVERSION": {
+        "train": {
+          "n": 472,
+          "opportunities_day": 37.49,
+          "trades_day": 37.49,
+          "win_rate": 49.4,
+          "pf": 1.019,
+          "avg_net_trade": 1.09,
+          "median_net_trade": -8.7,
+          "total_net": 513.9,
+          "mdd": 3410.4,
+          "best_regime": null,
+          "confidence": "MEDIUM_HIGH"
+        },
+        "validation": {
+          "n": 158,
+          "opportunities_day": 37.49,
+          "trades_day": 37.49,
+          "win_rate": 53.2,
+          "pf": 1.261,
+          "avg_net_trade": 9.43,
+          "median_net_trade": 14.62,
+          "total_net": 1489.5,
+          "mdd": 741.4,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        },
+        "test": {
+          "n": 158,
+          "opportunities_day": 37.49,
+          "trades_day": 37.49,
+          "win_rate": 45.6,
+          "pf": 0.715,
+          "avg_net_trade": -17.0,
+          "median_net_trade": -14.0,
+          "total_net": -2685.2,
+          "mdd": 3873.1,
+          "best_regime": null,
+          "confidence": "MEDIUM"
+        }
+      }
+    },
+    "BEST_TEST_STRATEGY": "MEAN_REVERSION",
+    "TEST_N": 158,
+    "TEST_PF": 0.715,
+    "TEST_NET": -2685.2,
+    "TEST_MDD": 3873.1,
+    "VAL_PF_USED_FOR_SELECTION": 1.261
+  },
+  "MULTI_STRATEGY": {
+    "COMPONENTS": [],
+    "DUPLICATES_REMOVED": 0,
+    "COMBINED_TRADES_DAY": 0.0,
+    "COMBINED_PF": null,
+    "COMBINED_NET": 0.0,
+    "COMBINED_MDD": 0.0,
+    "COMBINED_N": 0
+  },
+  "AUTO_SLOT": {
+    "POSITIVE_STRATEGY_FOUND": false,
+    "BROKER_ALL_RESULT": "n/a — no production apply",
+    "AUTO_ONLY_RESULT": "deferred until positive edge confirmed",
+    "AUTO_ONLY_RECOMMENDED": false,
+    "note": "WRK-015: AUTO_ONLY without edge increases loss trades"
+  },
+  "RECOMMENDATION": {
+    "CLASSIFICATION": "B_PROMISING_BUT_MORE_DATA_REQUIRED",
+    "RECOMMENDED_ENTRY": null,
+    "REGIME": null,
+    "EXPECTED_TRADES_DAY": null,
+    "EXPECTED_PF": null,
+    "EXPECTED_NET": null,
+    "EXPECTED_MDD": null,
+    "CONFIDENCE": "MEDIUM",
+    "RATIONALE": "No family cleared cost-aware TEST promotion bar; do not force trades/day target"
+  },
+  "PRODUCTION": {
+    "REAL_POLICY_CHANGED": false,
+    "REAL_ORDER_CREATED_BY_RESEARCH": 0,
+    "LIVE_ARM_MUTATION": false,
+    "RUNTIME_IMPORT_SAFE": true
+  },
+  "REMAINING": "Extend candle history to 60–90d and re-run families; do not relax M0 thresholds or apply AUTO_ONLY until TEST edge>0",
+  "LIMITATIONS": [
+    "Available candle span ~21.0d (<90d target)",
+    "Exact-minute grid may miss sparse symbols",
+    "AI future-return pairing incomplete",
+    "Cross-section top-3 may still overtrade chop"
+  ],
+  "NEAR_MISS": {
+    "MOMENTUM_FULL_SAMPLE_PF": 1.029,
+    "MOMENTUM_FULL_SAMPLE_NET": 1888.2,
+    "note": "Closest family but PF<1.1 and not selected on VAL→TEST promotion"
+  },
+  "DEPLOYMENT": {
+    "BACKEND_RESTART": false,
+    "REASON": "LIVE ON — skip restart; research API after next natural restart",
+    "HTTP_OPS": {
+      "LIVE": "ON",
+      "ARM": "ON",
+      "LEASE": "ACTIVE",
+      "STACK": "4/4 RUNNING",
+      "FEED": "REAL_FRESH",
+      "AUTO_TRADING_READY": true
+    }
+  }
+}
