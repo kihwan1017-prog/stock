@@ -89,6 +89,20 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
         "git_commit": "WORKTREE",
         "market": "KIWOOM",
+        "change_type": CHANGE_RELIABILITY,
+        "component": "MARKET_DATA",
+        "summary": "KIWOOM_REALTIME_FEED_STALE_SELF_HEAL_REPAIR",
+        "change_reason": (
+            "STALE running feed hard reconnect; REAL tick verify after L1; "
+            "watchdog idempotent no-op blind spot fix"
+        ),
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_kiwoom_feed_stale_self_heal_repair.json"],
+    },
+    {
+        "git_commit": "WORKTREE",
+        "market": "KIWOOM",
         "change_type": CHANGE_OBSERVABILITY,
         "component": "RUNTIME_CONTROL",
         "summary": "KIWOOM_RUNTIME_CONTROL_SOT_RECONCILIATION_FIX",

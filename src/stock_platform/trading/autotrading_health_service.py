@@ -453,10 +453,27 @@ def build_trading_health_snapshot(
                 "evaluator_path": "KiwoomMarketWS→QuoteBus→MovingAverageStrategyEvaluator",
             }
             if running and connected:
+                client_ev = (
+                    (st.get("client") or {})
+                    if isinstance(st.get("client"), dict)
+                    else {}
+                )
+                event_count = int(client_ev.get("event_count") or 0)
+                last_at = st.get("last_tick_at") or feed_detail.get(
+                    "last_received_at"
+                )
                 if age is not None and float(age) > slo.feed_max_age_seconds:
                     feed_status = "STALE"
                     feed_detail["ok"] = False
                     feed_detail["reason"] = "TICK_STALE"
+                elif last_at is None and event_count <= 0:
+                    feed_status = "CONNECTING"
+                    feed_detail["ok"] = False
+                    feed_detail["reason"] = "NO_REAL_TICK_YET"
+                elif last_at is None and event_count > 0:
+                    feed_status = "STALE"
+                    feed_detail["ok"] = False
+                    feed_detail["reason"] = "TICK_TIMESTAMP_MISSING"
                 else:
                     feed_status = "REAL_FRESH"
                     feed_detail["reason"] = "OK"

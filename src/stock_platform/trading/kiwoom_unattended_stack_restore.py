@@ -323,69 +323,42 @@ async def restore_kiwoom_trading_stack(
     # 1) Kiwoom market realtime WS (idempotent)
     # market_realtime_auto_start=false 여도 이 공식 restore 경로는 명시 start 호출.
     try:
-        from stock_platform.realtime.kiwoom_market_realtime_runtime import (
-            kiwoom_market_realtime_runtime,
+        from stock_platform.trading.kiwoom_feed_recovery import (
+            ensure_kiwoom_feed_fresh,
         )
 
-        st = kiwoom_market_realtime_runtime.status()
-        # running 만으로 idempotent — connected 대기 중 thrash/self-cancel 방지
-        already = bool(st.get("running"))
-        same_uba = int(st.get("user_broker_account_id") or 0) == uba_id
-        if already and same_uba:
-            if feed_symbols:
-                # 이미 receive loop 중이면 심볼만 합집합 구독
-                await kiwoom_market_realtime_runtime.start(
-                    user_broker_account_id=uba_id,
-                    symbols=feed_symbols,
-                    require_real=True,
-                )
+        if not feed_symbols:
             detail["feed"] = {
-                "started": True,
-                "idempotent": True,
-                "reason": "ALREADY_RUNNING",
-                "connected": bool(st.get("connected")),
+                "started": False,
+                "reason": "SYMBOLS_REQUIRED",
             }
-        else:
-            if not feed_symbols:
-                detail["feed"] = {
-                    "started": False,
-                    "reason": "SYMBOLS_REQUIRED",
-                }
-                return {
-                    "restored": False,
-                    "reason": "FEED_START_FAILED",
-                    "detail": detail,
-                    "actor": actor,
-                }
-            started = await kiwoom_market_realtime_runtime.start(
-                user_broker_account_id=uba_id,
-                symbols=feed_symbols,
-                require_real=True,
+            return {
+                "restored": False,
+                "reason": "FEED_START_FAILED",
+                "detail": detail,
+                "actor": actor,
+            }
+
+        feed_recover = await ensure_kiwoom_feed_fresh(
+            session,
+            user_broker_account_id=uba_id,
+            symbols=feed_symbols,
+            actor=actor,
+        )
+        detail["feed"] = feed_recover
+        if feed_recover.get("hard_reconnect"):
+            detail["feed"]["note"] = (
+                "STALE_RUNNING_HARD_RECONNECT — idempotent no-op 방지"
             )
-            detail["feed"] = {
-                "started": bool(started.get("started")),
-                "result": {
-                    k: started.get(k)
-                    for k in (
-                        "started",
-                        "reason",
-                        "already_running",
-                        "user_broker_account_id",
-                        "environment",
-                        "symbols",
-                    )
-                    if k in started
-                },
+        if not feed_recover.get("started") and not feed_recover.get(
+            "already_running"
+        ):
+            return {
+                "restored": False,
+                "reason": "FEED_START_FAILED",
+                "detail": detail,
+                "actor": actor,
             }
-            if not started.get("started") and not started.get(
-                "already_running"
-            ):
-                return {
-                    "restored": False,
-                    "reason": "FEED_START_FAILED",
-                    "detail": detail,
-                    "actor": actor,
-                }
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "kiwoom_stack_feed_failed",

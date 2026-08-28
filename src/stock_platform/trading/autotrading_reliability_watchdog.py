@@ -560,17 +560,33 @@ async def _l1_feed_reconnect(
         uba = session.get(UserBrokerAccount, int(uba_id))
         broker = str(getattr(uba, "broker_code", "") or "").upper() if uba else ""
         if broker == "KIWOOM":
+            from stock_platform.trading.kiwoom_feed_recovery import (
+                verify_kiwoom_feed_recovery,
+            )
             from stock_platform.trading.kiwoom_unattended_stack_restore import (
                 restore_kiwoom_trading_stack,
             )
 
-            # L1: feed-first stack restore (idempotent; running 이면 no-op recreate)
+            # L1: feed-first stack restore (STALE 시 hard reconnect 포함)
             result = await restore_kiwoom_trading_stack(
                 session,
                 user_broker_account_id=int(uba_id),
                 actor=f"L1_KIWOOM_FEED:{actor}",
             )
-            return {"ok": bool(result.get("restored")), "feed": result, "market": "KIWOOM"}
+            feed_detail = (result.get("detail") or {}).get("feed") or {}
+            event_before = int(feed_detail.get("event_count_before") or 0)
+            verify = await verify_kiwoom_feed_recovery(
+                session,
+                user_broker_account_id=int(uba_id),
+                event_count_before=event_before,
+            )
+            return {
+                "ok": bool(verify.get("verified")),
+                "feed": result,
+                "market": "KIWOOM",
+                "feed_verify": verify,
+                "real_tick_verified": bool(verify.get("verified")),
+            }
 
         from stock_platform.realtime.upbit_quote_feed_restore import (
             ensure_upbit_quote_feed_from_hub,
@@ -838,6 +854,17 @@ async def reconcile_market_health(
                     )
                     actions.append("L1_KIWOOM_FEED")
                     outcome["l1_feed"] = l1f
+                    outcome["watchdog_feed_recovery"] = {
+                        "stale_detected": True,
+                        "recovery_attempted": True,
+                        "recovery_succeeded": bool(l1f.get("real_tick_verified")),
+                        "hard_reconnect": bool(
+                            ((l1f.get("feed") or {}).get("detail") or {})
+                            .get("feed", {})
+                            .get("hard_reconnect")
+                        ),
+                        "feed_verify": l1f.get("feed_verify"),
+                    }
 
             # LEVEL 1.5 — runtime control vs execution runner SoT
             from stock_platform.trading.execution_stack_reconciliation import (

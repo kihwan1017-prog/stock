@@ -267,6 +267,10 @@ async def test_kiwoom_restore_blocks_runner_when_runtime_not_running() -> None:
             return_value=["034310"],
         ),
         patch(
+            "stock_platform.trading.kiwoom_feed_recovery.ensure_kiwoom_feed_fresh",
+            AsyncMock(return_value={"started": True, "idempotent": True}),
+        ),
+        patch(
             "stock_platform.trading.execution_stack_reconciliation.verify_stack_restored",
             return_value={"restore_succeeded": False},
         ),
