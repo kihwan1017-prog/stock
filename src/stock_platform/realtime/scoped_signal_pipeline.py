@@ -111,7 +111,9 @@ async def publish_scoped_signal(signal: StrategySignal) -> dict[str, Any]:
             "realtime_scope_less_signal_blocked",
             symbol=signal.symbol,
         )
-        return {"published": False, "reason": "SCOPE_REQUIRED"}
+        out = {"published": False, "reason": "SCOPE_REQUIRED"}
+        _trace_publish_outcome(signal, out)
+        return out
 
     if _fingerprint_seen(signal.fingerprint):
         logger.info(
@@ -119,11 +121,15 @@ async def publish_scoped_signal(signal: StrategySignal) -> dict[str, Any]:
             scope_key=signal.scope_key[:40],
             fingerprint=signal.fingerprint,
         )
-        return {"published": False, "reason": "DUPLICATE_FINGERPRINT"}
+        out = {"published": False, "reason": "DUPLICATE_FINGERPRINT"}
+        _trace_publish_outcome(signal, out)
+        return out
 
     # Recovery / Calendar / Rate Limit 가드
     if not _guards_allow(signal):
-        return {"published": False, "reason": "GUARD_BLOCKED"}
+        out = {"published": False, "reason": "GUARD_BLOCKED"}
+        _trace_publish_outcome(signal, out)
+        return out
 
     from stock_platform.realtime.runtime import realtime_signal_bus
 
@@ -143,11 +149,76 @@ async def publish_scoped_signal(signal: StrategySignal) -> dict[str, Any]:
             error=type(exc).__name__,
         )
 
-    return {
+    out = {
         "published": True,
         "signal_id": signal.signal_id,
         "scope_key": signal.scope_key,
     }
+    _trace_publish_outcome(signal, out)
+    return out
+
+
+def _trace_publish_outcome(
+    signal: StrategySignal, outcome: dict[str, Any]
+) -> None:
+    """BUY entry provenance가 있으면 publish 성공/실패를 durable trace로 남긴다."""
+
+    meta = getattr(signal, "metadata", None) or {}
+    if not isinstance(meta, dict):
+        return
+    trace_id = meta.get("execution_trace_id")
+    if not trace_id:
+        return
+    if str(getattr(signal, "signal_type", "") or "").upper() != "BUY":
+        return
+    uba = getattr(signal, "account_id", None)
+    if uba is None:
+        return
+    try:
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.operation.upbit_entry_execution_trace.constants import (
+            DECISION_PASS,
+            DECISION_REJECT,
+            STAGE_SIGNAL_PUBLISHED,
+            STAGE_SIGNAL_PUBLISH_FAILED,
+        )
+        from stock_platform.operation.upbit_entry_execution_trace.service import (
+            append_stage_fail_open,
+        )
+
+        published = bool(outcome.get("published"))
+        session = get_session_factory()()
+        try:
+            append_stage_fail_open(
+                session,
+                execution_trace_id=str(trace_id),
+                user_broker_account_id=int(uba),
+                symbol=str(signal.symbol or "").upper(),
+                stage=(
+                    STAGE_SIGNAL_PUBLISHED
+                    if published
+                    else STAGE_SIGNAL_PUBLISH_FAILED
+                ),
+                decision=DECISION_PASS if published else DECISION_REJECT,
+                reason_code=(
+                    None
+                    if published
+                    else str(outcome.get("reason") or "PUBLISH_FAILED")[:80]
+                ),
+                selection_id=_int_or_none(meta.get("selection_id") or meta.get("candidate_selection_id")),
+                candidate_id=_int_or_none(meta.get("candidate_id")),
+                waiting_id=_int_or_none(meta.get("waiting_id")),
+                strategy_id=getattr(signal, "strategy_id", None),
+                lifecycle_kind=str(meta.get("lifecycle_kind") or "INITIAL"),
+                signal_id=getattr(signal, "signal_id", None),
+                detail={"publish": dict(outcome)},
+                commit=True,
+            )
+            session.commit()
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        return
 
 
 def _guards_allow(signal: StrategySignal) -> bool:
