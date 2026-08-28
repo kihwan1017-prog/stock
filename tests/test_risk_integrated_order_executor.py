@@ -91,6 +91,18 @@ def test_resolve_portfolio_order_amount_none_when_canonical_absent() -> None:
     assert resolve_portfolio_order_amount_krw({"ok": True, "already": True}) is None
 
 
+def test_qty_price_dust_can_exceed_exact_max_order_notional() -> None:
+    """ONDO-class: approved==max_order여도 qty*price dust로 BLOCK 가능 → quote_amount 필요."""
+
+    order_amount = Decimal("10000")
+    price = Decimal("513")
+    quantity = (order_amount / price).quantize(Decimal("0.00000001"))
+    reconstructed = quantity * price
+    assert reconstructed > order_amount
+    # quote_amount를 쓰면 Risk MaximumOrderAmountRule가 의도 KRW로 비교한다
+    assert order_amount <= Decimal("10000")
+
+
 def test_paper_signal_does_not_require_kiwoom_account(
     monkeypatch,
 ) -> None:

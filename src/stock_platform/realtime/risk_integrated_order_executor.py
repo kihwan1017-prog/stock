@@ -330,6 +330,12 @@ class RiskIntegratedRealtimeOrderExecutor:
                     portfolio_approved_amount = resolve_portfolio_order_amount_krw(
                         begin
                     )
+                    # begin 성공 후 approved 없으면 100k config fallback 금지 (fail-closed)
+                    if portfolio_approved_amount is None:
+                        return self._skipped(
+                            signal,
+                            "PORTFOLIO_APPROVED_AMOUNT_MISSING",
+                        )
             except Exception:  # noqa: BLE001
                 return self._skipped(signal, "FULL_MARKET_GATE_FAILED")
 
@@ -493,6 +499,9 @@ class RiskIntegratedRealtimeOrderExecutor:
                 signal.action.value.upper() == "SELL"
             ),
             environment=environment,
+            # UPBIT MARKET BUY: qty*price 재계산 dust로 max_order 초과 방지
+            quote_amount=order_amount,
+            reference_unit_price=signal.signal_price,
         )
         risk_allowed = risk_result.allowed
         risk_blocked = risk_result.blocked_reason
