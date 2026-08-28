@@ -2,7 +2,7 @@
   "WORK_ID": "WRK-20260829-015-UPBIT-SHORT-TERM-TURNOVER-RESEARCH",
   "FINAL_VERDICT": "UPBIT_SHORT_TERM_TURNOVER_RESEARCH_COMPLETE",
   "BASE_COMMIT": "82088dd",
-  "RESULT_COMMIT": null,
+  "RESULT_COMMIT": "0ca2d0b",
   "DATA": {
     "WINDOW": "30d",
     "DAYS": 30,
@@ -705,5 +705,17 @@
     "All compared profiles net-negative on this sample",
     "Slippage assumed 2bps/side",
     "Walk-forward is chronological holdout of exits, not re-tuned params"
-  ]
+  ],
+  "DEPLOYMENT": {
+    "BACKEND_RESTART": false,
+    "REASON": "LIVE ON — skip restart per DO_NOT_DISTURB; research API/UI after next natural restart",
+    "HTTP_OPS": {
+      "LIVE": "ON",
+      "ARM": "ON",
+      "LEASE": "ACTIVE",
+      "STACK": "4/4 RUNNING",
+      "FEED": "REAL_FRESH",
+      "AUTO_TRADING_READY": true
+    }
+  }
 }

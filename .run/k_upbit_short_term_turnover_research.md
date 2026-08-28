@@ -28,4 +28,7 @@
 
 `REAL_POLICY_CHANGED=false`
 
+RESULT_COMMIT=`0ca2d0b`
+BACKEND_RESTART=false (LIVE protect)
+
 STOP.
