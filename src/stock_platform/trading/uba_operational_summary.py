@@ -74,8 +74,19 @@ def build_uba_operational_summary(
     *,
     user_broker_account_id: int,
     strategy_id: int | None = None,
+    projection: str = "full",
 ) -> dict[str, Any]:
+    """UBA 운영 상태 aggregate.
+
+    projection:
+      - full: Admin /ops-status SoT (기본, 의미 변경 금지)
+      - daily_report: 일일보고용 slim READ — open-order remote·get_or_create·
+        scanner·ghost·master_gate 선행 호출을 생략하고 health snapshot 1회로
+        feed/reliability를 채운다. trading gate 자체를 완화하지 않음.
+    """
+
     uba_id = int(user_broker_account_id)
+    slim = str(projection or "full").strip().lower() == "daily_report"
     uba = session.get(UserBrokerAccount, uba_id)
     ctrl = combined_control_status(
         session,
@@ -171,29 +182,35 @@ def build_uba_operational_summary(
 
     # AI vs AUTO 분리 — AI HOLD는 AUTO STOP이 아님
     # KIWOOM UBA에 UPBIT master gate를 merge하면 ACTIVATION_INACTIVE 등 오탐
+    # daily_report slim: master_gate는 health snapshot 내부에서 1회만 실행
     ai_state = "UNKNOWN"
     broker_u = str(getattr(uba, "broker_code", "") or "").upper() if uba else ""
+    ready: dict[str, Any] | None = None
     try:
         if broker_u == "UPBIT":
-            from stock_platform.trading.autotrading_master_gate import (
-                evaluate_uba_autotrading_ready,
-            )
+            if not slim:
+                from stock_platform.trading.autotrading_master_gate import (
+                    evaluate_uba_autotrading_ready,
+                )
 
-            ready = evaluate_uba_autotrading_ready(
-                session, user_broker_account_id=uba_id
-            )
-            for b in ready.get("blockers") or []:
-                code = str(b)
-                if code and code not in blockers:
-                    if code.startswith("AI_"):
-                        continue
-                    blockers.append(code)
-            ai_checks = (ready.get("checks") or {}).get("ai_gate") or {}
-            ai_state = str(
-                ai_checks.get("assumed_result")
-                or ai_checks.get("recommendation")
-                or "HOLD"
-            ).upper()
+                # master_gate는 비용이 큼 — blockers/feed에 1회만 호출해 재사용
+                ready = evaluate_uba_autotrading_ready(
+                    session, user_broker_account_id=uba_id
+                )
+                for b in ready.get("blockers") or []:
+                    code = str(b)
+                    if code and code not in blockers:
+                        if code.startswith("AI_"):
+                            continue
+                        blockers.append(code)
+                ai_checks = (ready.get("checks") or {}).get("ai_gate") or {}
+                ai_state = str(
+                    ai_checks.get("assumed_result")
+                    or ai_checks.get("recommendation")
+                    or "HOLD"
+                ).upper()
+            else:
+                ai_state = "DEFERRED_TO_HEALTH"
         elif broker_u == "KIWOOM":
             # broker-correct blockers만 (UPBIT gate 오탐 제거)
             for noise in (
@@ -213,21 +230,22 @@ def build_uba_operational_summary(
         "source": str(getattr(uba, "broker_code", "") or "").upper() or None,
     }
     try:
-        if broker_u == "UPBIT":
-            from stock_platform.trading.autotrading_master_gate import (
-                evaluate_uba_autotrading_ready,
-            )
+        if broker_u == "UPBIT" and not slim:
+            if ready is None:
+                from stock_platform.trading.autotrading_master_gate import (
+                    evaluate_uba_autotrading_ready,
+                )
 
-            ready = evaluate_uba_autotrading_ready(
-                session, user_broker_account_id=uba_id
-            )
+                ready = evaluate_uba_autotrading_ready(
+                    session, user_broker_account_id=uba_id
+                )
             feed = (ready.get("checks") or {}).get("market_feed") or {}
             market_feed = {
                 "status": _map_market_feed_status(feed),
                 "source": market_feed["source"],
                 "detail": feed,
             }
-        elif broker_u == "KIWOOM":
+        elif broker_u == "KIWOOM" and not slim:
             from stock_platform.realtime.kiwoom_market_realtime_runtime import (
                 kiwoom_market_realtime_runtime as kmr,
             )
@@ -263,8 +281,9 @@ def build_uba_operational_summary(
         pass
 
     # ghost OPEN invariant (UPBIT only) — telemetry
+    # daily_report slim: health invariants가 동일 검사를 수행하므로 중복 생략
     ghost_invariant: dict[str, Any] | None = None
-    if broker_u == "UPBIT":
+    if broker_u == "UPBIT" and not slim:
         try:
             from stock_platform.broker.upbit.filled_exit_finalizer import (
                 detect_filled_exit_with_open_binding,
@@ -278,7 +297,6 @@ def build_uba_operational_summary(
                 warnings.append("GHOST_OPEN_BINDING")
         except Exception:  # noqa: BLE001
             ghost_invariant = None
-
     # SoT auto_trading_state
     if "KILL_SWITCH_ACTIVE" in blockers:
         auto_state = "BLOCKED"
@@ -340,11 +358,13 @@ def build_uba_operational_summary(
             if not template:
                 template = "KRW-XRP" if strategy_id == 17483 else None
             fma = UpbitFullMarketAssignmentService(session)
-            fma.get_or_create(
-                uba_id,
-                strategy_id=strategy_id,
-                template_symbol=str(template).upper() if template else None,
-            )
+            # daily_report: UI SoT용 get_or_create(write) 생략 — status READ만
+            if not slim:
+                fma.get_or_create(
+                    uba_id,
+                    strategy_id=strategy_id,
+                    template_symbol=str(template).upper() if template else None,
+                )
             full_market = fma.status_dict(uba_id)
             try:
                 from stock_platform.operation.upbit_full_market.portfolio_service import (
@@ -360,77 +380,87 @@ def build_uba_operational_summary(
                     )
             except Exception:  # noqa: BLE001
                 pass
-            sc = upbit_opportunity_scanner_scheduler.status()
-            last = sc.get("last_result_summary") or {}
-            cands = last.get("candidates") or []
-            scanner_summary = {
-                "enabled": sc.get("enabled"),
-                "mode": sc.get("mode"),
-                "running": sc.get("running"),
-                "interval_seconds": sc.get("interval_seconds"),
-                "next_run_at": sc.get("next_run_at"),
-                "universe_count": last.get("universe_count"),
-                "liquidity_pass_count": last.get("liquidity_pass_count"),
-                "technical_candidate_count": last.get(
-                    "technical_candidate_count"
-                ),
-                "top_n": last.get("top_n"),
-                "candidates": cands[:5],
-                "scanner_run_id": last.get("scanner_run_id"),
-            }
+            if not slim:
+                sc = upbit_opportunity_scanner_scheduler.status()
+                last = sc.get("last_result_summary") or {}
+                cands = last.get("candidates") or []
+                scanner_summary = {
+                    "enabled": sc.get("enabled"),
+                    "mode": sc.get("mode"),
+                    "running": sc.get("running"),
+                    "interval_seconds": sc.get("interval_seconds"),
+                    "next_run_at": sc.get("next_run_at"),
+                    "universe_count": last.get("universe_count"),
+                    "liquidity_pass_count": last.get("liquidity_pass_count"),
+                    "technical_candidate_count": last.get(
+                        "technical_candidate_count"
+                    ),
+                    "top_n": last.get("top_n"),
+                    "candidates": cands[:5],
+                    "scanner_run_id": last.get("scanner_run_id"),
+                }
         elif broker_u == "KIWOOM":
-            from stock_platform.trading.kiwoom_funnel_observability import (
-                build_kiwoom_funnel_snapshot,
-            )
+            if slim:
+                # funnel은 health snapshot reliability에서 채움
+                full_market = {
+                    "mode": "FIXED_SYMBOL",
+                    "full_market_enabled": False,
+                    "note": "KIWOOM uses strategy FIXED symbol universe (not Upbit scanner)",
+                }
+            else:
+                from stock_platform.trading.kiwoom_funnel_observability import (
+                    build_kiwoom_funnel_snapshot,
+                )
 
-            kiwoom_funnel = build_kiwoom_funnel_snapshot(
-                session, user_broker_account_id=uba_id
-            )
-            full_market = {
-                "mode": "FIXED_SYMBOL",
-                "full_market_enabled": False,
-                "note": "KIWOOM uses strategy FIXED symbol universe (not Upbit scanner)",
-                "universe": (kiwoom_funnel or {}).get("universe"),
-            }
+                kiwoom_funnel = build_kiwoom_funnel_snapshot(
+                    session, user_broker_account_id=uba_id
+                )
+                full_market = {
+                    "mode": "FIXED_SYMBOL",
+                    "full_market_enabled": False,
+                    "note": "KIWOOM uses strategy FIXED symbol universe (not Upbit scanner)",
+                    "universe": (kiwoom_funnel or {}).get("universe"),
+                }
     except Exception:  # noqa: BLE001
         pass
 
     open_orders: dict[str, Any] | None = None
-    try:
-        from stock_platform.order.live_open_order_exposure import (
-            evaluate_live_open_order_exposure,
-        )
-        from stock_platform.risk_engine.resolved_policy import (
-            ResolvedRiskPolicyResolver,
-        )
-
-        broker = str(uba.broker_code or "").upper() if uba else "UPBIT"
-        if broker in {"UPBIT", "KIWOOM"}:
-            exp = evaluate_live_open_order_exposure(
-                session,
-                uba_id=uba_id,
-                broker_code=broker,
-                environment="LIVE",
+    # daily_report 화면은 open-order remote exposure를 쓰지 않음
+    if not slim:
+        try:
+            from stock_platform.order.live_open_order_exposure import (
+                evaluate_live_open_order_exposure,
             )
-            max_open = 1
-            if uba is not None:
-                pol = ResolvedRiskPolicyResolver(session).resolve(
-                    user_id=int(uba.user_id),
-                    user_broker_account_id=uba_id,
-                )
-                max_open = int(pol.max_open_orders)
-            open_orders = {
-                "total_open_orders": exp.total_open_count,
-                "manual_open_orders": exp.manual_open_count,
-                "auto_open_orders": exp.auto_open_count,
-                "unknown_open_orders": exp.unknown_open_count,
-                "auto_open_order_limit": max_open,
-                "remote_open_state": exp.remote_state,
-                "source": exp.source,
-            }
-    except Exception:  # noqa: BLE001
-        open_orders = None
+            from stock_platform.risk_engine.resolved_policy import (
+                ResolvedRiskPolicyResolver,
+            )
 
+            broker = str(uba.broker_code or "").upper() if uba else "UPBIT"
+            if broker in {"UPBIT", "KIWOOM"}:
+                exp = evaluate_live_open_order_exposure(
+                    session,
+                    uba_id=uba_id,
+                    broker_code=broker,
+                    environment="LIVE",
+                )
+                max_open = 1
+                if uba is not None:
+                    pol = ResolvedRiskPolicyResolver(session).resolve(
+                        user_id=int(uba.user_id),
+                        user_broker_account_id=uba_id,
+                    )
+                    max_open = int(pol.max_open_orders)
+                open_orders = {
+                    "total_open_orders": exp.total_open_count,
+                    "manual_open_orders": exp.manual_open_count,
+                    "auto_open_orders": exp.auto_open_count,
+                    "unknown_open_orders": exp.unknown_open_count,
+                    "auto_open_order_limit": max_open,
+                    "remote_open_state": exp.remote_state,
+                    "source": exp.source,
+                }
+        except Exception:  # noqa: BLE001
+            open_orders = None
     out = {
         "user_broker_account_id": uba_id,
         "broker_code": (
@@ -525,10 +555,45 @@ def build_uba_operational_summary(
             "empty_count": health.get("empty_count"),
             "heartbeats": health.get("heartbeats"),
             "invariants": health.get("invariants"),
+            "funnel": health.get("funnel"),
             "watchdog": autotrading_reliability_watchdog.status(),
         }
         out["auto_trading_ready"] = health.get("auto_trading_ready")
+        # slim KIWOOM: funnel을 ops 루트에도 복사 (장후 분류용)
+        if slim and broker_u == "KIWOOM" and isinstance(health.get("funnel"), dict):
+            out["kiwoom_funnel"] = health.get("funnel")
+        if slim:
+            out["projection"] = "daily_report"
+            # health 컴포넌트에서 AI 상태 보강 (master_gate 선행 생략 시)
+            if broker_u == "UPBIT" and out.get("ai_state") == "DEFERRED_TO_HEALTH":
+                ai_gate = (health.get("checks") or {}).get("ai_gate") if isinstance(
+                    health.get("checks"), dict
+                ) else None
+                if not ai_gate and isinstance(health.get("ai_gate"), dict):
+                    ai_gate = health.get("ai_gate")
+                if isinstance(ai_gate, dict):
+                    out["ai_state"] = str(
+                        ai_gate.get("assumed_result")
+                        or ai_gate.get("recommendation")
+                        or "HOLD"
+                    ).upper()
     except Exception:  # noqa: BLE001
         out["reliability"] = {"error": "HEALTH_SNAPSHOT_FAILED"}
 
     return out
+
+
+def build_uba_daily_report_ops_projection(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    strategy_id: int | None = None,
+) -> dict[str, Any]:
+    """일일보고 전용 ops projection — /ops-status full SoT와 분리."""
+
+    return build_uba_operational_summary(
+        session,
+        user_broker_account_id=user_broker_account_id,
+        strategy_id=strategy_id,
+        projection="daily_report",
+    )

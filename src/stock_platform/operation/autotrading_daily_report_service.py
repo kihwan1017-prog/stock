@@ -16,12 +16,13 @@ from stock_platform.operation.autotrading_performance_service import (
     AutotradingPerformanceService,
 )
 from stock_platform.operation.autotrading_research.status import (
-    build_cross_market_research_status,
+    build_cross_market_research_status_for_daily_report,
 )
 from stock_platform.order.entities import TradingOrderEntity
 from stock_platform.trading.autotrading_data_trust import current_data_trust_summary
-from stock_platform.trading.uba_operational_summary import build_uba_operational_summary
-
+from stock_platform.trading.uba_operational_summary import (
+    build_uba_daily_report_ops_projection,
+)
 _KST = ZoneInfo("Asia/Seoul")
 MarketFilter = Literal["ALL", "UPBIT", "KIWOOM"]
 
@@ -401,9 +402,13 @@ def _market_section(
     end_utc: datetime,
     include_current_ops: bool,
 ) -> dict[str, Any]:
-    ops = build_uba_operational_summary(
-        session, user_broker_account_id=int(uba_id)
-    ) if include_current_ops else {}
+    ops = (
+        build_uba_daily_report_ops_projection(
+            session, user_broker_account_id=int(uba_id)
+        )
+        if include_current_ops
+        else {}
+    )
     order_stats = _order_day_stats(
         session, uba_id=uba_id, start_utc=start_utc, end_utc=end_utc
     )
@@ -534,10 +539,9 @@ def build_autotrading_daily_report(
         i for i in incidents_today if i.get("recovered")
     ]
 
-    research = build_cross_market_research_status(
+    research = build_cross_market_research_status_for_daily_report(
         session, upbit_uba_id=upbit_uba, kiwoom_uba_id=kiwoom_uba
     )
-
     overall = "YELLOW"
     codes = [
         (upbit or {}).get("health_code"),

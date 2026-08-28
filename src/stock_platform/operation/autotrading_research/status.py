@@ -603,3 +603,59 @@ def build_cross_market_research_status(
         "KIWOOM": kiwoom,
         "change_history_tag": "CROSS_MARKET_SHADOW_RESEARCH_OUTCOME_OBSERVABILITY",
     }
+
+
+def build_cross_market_research_status_for_daily_report(
+    session: Session,
+    *,
+    upbit_uba_id: int = 1380,
+    kiwoom_uba_id: int | None = None,
+) -> dict[str, Any]:
+    """일일보고용 research slim projection.
+
+    Admin research SoT(전체 horizon/outcomes)는 변경하지 않는다.
+    Daily Report UI가 쓰는 sample count + NATURAL_OPPORTUNITY_POOL만 조회.
+    """
+
+    uba = int(upbit_uba_id)
+    samples = _sample_counts_upbit(session, uba_id=uba)
+    e0_unique = int((samples.get(VARIANT_E0) or {}).get("UNIQUE_SAMPLE") or 0)
+    upbit = {
+        "market": "UPBIT",
+        "research_only": True,
+        "REAL_POLICY_PROMOTION": False,
+        "NATURAL_OPPORTUNITY_POOL": e0_unique,
+        "samples": samples,
+        "projection": "daily_report_slim_v1",
+    }
+
+    kiwoom: dict[str, Any] | None = None
+    if kiwoom_uba_id is not None and int(kiwoom_uba_id) > 0:
+        fwd = kiwoom_forward_status(session, uba_id=int(kiwoom_uba_id))
+        k0_valid = int(fwd.get("VALID_SAMPLE_COUNT") or 0)
+        k0_total = int(fwd.get("FORWARD_SAMPLE_COUNT") or 0)
+        kiwoom = {
+            "market": "KIWOOM",
+            "research_only": True,
+            "REAL_POLICY_PROMOTION": False,
+            "K0_VALID_SAMPLE": k0_valid,
+            "K0_SAMPLE": k0_total,
+            "samples": {
+                VARIANT_K0: {
+                    "UNIQUE_SAMPLE": k0_total,
+                    "VALID_SAMPLE": k0_valid,
+                }
+            },
+            "projection": "daily_report_slim_v1",
+        }
+
+    return {
+        "schema": "cross_market_shadow_research_daily_report_v1",
+        "research_only": True,
+        "RESEARCH_CAN_AFFECT_REAL_ORDER": False,
+        "REAL_POLICY_PROMOTION": False,
+        "UPBIT": upbit,
+        "KIWOOM": kiwoom,
+        "projection": "daily_report_slim_v1",
+        "change_history_tag": "DAILY_REPORT_RESEARCH_SAMPLE_PROJECTION",
+    }
