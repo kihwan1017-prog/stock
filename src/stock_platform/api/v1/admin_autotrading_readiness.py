@@ -910,6 +910,30 @@ def admin_uba_kiwoom_funnel(
     )
 
 
+@router.get("/uba/{user_broker_account_id}/why-no-trade")
+def admin_uba_why_no_trade(
+    user_broker_account_id: int,
+    selection_id: int | None = None,
+    symbol: str | None = None,
+    execution_trace_id: str | None = None,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """selection/symbol 기준 canonical ENTRY→ORDER trace (READ ONLY)."""
+
+    from stock_platform.operation.upbit_entry_execution_trace.service import (
+        build_why_no_trade,
+    )
+
+    return build_why_no_trade(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        selection_id=selection_id,
+        symbol=symbol,
+        execution_trace_id=execution_trace_id,
+    )
+
+
 @router.get("/uba/{user_broker_account_id}/pipeline-liveness")
 def admin_uba_pipeline_liveness(
     user_broker_account_id: int,

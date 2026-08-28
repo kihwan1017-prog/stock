@@ -1038,6 +1038,33 @@ async def run_watchdog_cycle(*, actor: str = "AUTOTRADING_RELIABILITY_WATCHDOG")
         res = await reconcile_market_health(
             market=market, uba_id=uba_id, actor=actor
         )
+        if market.upper() == "UPBIT":
+            try:
+                sf = get_session_factory()
+                gap_sess = sf()
+                try:
+                    from stock_platform.operation.upbit_entry_execution_trace.service import (
+                        detect_silent_gaps,
+                    )
+
+                    gaps = detect_silent_gaps(
+                        gap_sess, user_broker_account_id=int(uba_id)
+                    )
+                    for gap in gaps:
+                        record_stack_forensic(
+                            market=market,
+                            uba_id=int(uba_id),
+                            component="ENTRY_EXECUTION_TRACE",
+                            event="SILENT_GAP",
+                            reason=str(gap.get("gap_type")),
+                            detail=gap,
+                        )
+                    if gaps:
+                        res["entry_trace_gaps"] = gaps
+                finally:
+                    gap_sess.close()
+            except Exception:  # noqa: BLE001
+                pass
         results.append(res)
     return {
         "ok": True,

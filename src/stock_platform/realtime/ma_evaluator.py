@@ -11,6 +11,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Any
 
 from stock_platform.realtime.hub_constants import (
     ConsumerWarmupStatus,
@@ -610,6 +611,58 @@ class MovingAverageStrategyEvaluator:
             snap=snap,
             thresholds=thresholds,
         )
+        selection_id = int(snap.selection_id) if snap and snap.selection_id else None
+        strategy_id = getattr(self.scope, "strategy_id", None)
+        trace_id: str | None = None
+        emit_prov: dict[str, Any] | None = None
+        if uba_id:
+            try:
+                from stock_platform.database.session import get_session_factory
+                from stock_platform.operation.upbit_entry_execution_trace.hooks import (
+                    trace_bullish_evaluation,
+                )
+                from stock_platform.operation.upbit_entry_execution_trace.service import (
+                    build_provenance,
+                    new_execution_trace_id,
+                    resolve_lifecycle_kind,
+                )
+
+                _sf = get_session_factory()
+                _sess = _sf()
+                try:
+                    if not ok:
+                        trace_bullish_evaluation(
+                            _sess,
+                            user_broker_account_id=int(uba_id),
+                            symbol=event.symbol.upper(),
+                            strategy_id=strategy_id,
+                            selection_id=selection_id,
+                            technical_ok=False,
+                            block_reason=block,
+                            signal_emitted=False,
+                            detail=detail,
+                        )
+                        _sess.commit()
+                    else:
+                        trace_id = new_execution_trace_id()
+                        lifecycle = resolve_lifecycle_kind(
+                            _sess,
+                            user_broker_account_id=int(uba_id),
+                            selection_id=selection_id,
+                        )
+                        emit_prov = build_provenance(
+                            _sess,
+                            user_broker_account_id=int(uba_id),
+                            symbol=event.symbol.upper(),
+                            strategy_id=strategy_id,
+                            selection_id=selection_id,
+                            execution_trace_id=trace_id,
+                            lifecycle_kind=lifecycle,
+                        )
+                finally:
+                    _sess.close()
+            except Exception:  # noqa: BLE001
+                pass
         # decision=BUY는 StrategySignal 생성(_emit) 성공 후에만 기록.
         # 기술적 조건만 통과하고 emit이 막히면 TECHNICAL_PASS로 구분해
         # UI에서 실주문 BUY와 혼동하지 않게 한다.
@@ -648,7 +701,38 @@ class MovingAverageStrategyEvaluator:
             REASON_BULLISH,
             short_avg,
             long_avg,
+            extra_metadata=emit_prov,
         )
+        if uba_id and ok:
+            try:
+                from stock_platform.database.session import get_session_factory
+                from stock_platform.operation.upbit_entry_execution_trace.hooks import (
+                    trace_bullish_evaluation,
+                )
+
+                _sf = get_session_factory()
+                _sess = _sf()
+                try:
+                    trace_bullish_evaluation(
+                        _sess,
+                        user_broker_account_id=int(uba_id),
+                        symbol=event.symbol.upper(),
+                        strategy_id=strategy_id,
+                        selection_id=selection_id,
+                        technical_ok=True,
+                        block_reason=None,
+                        signal_emitted=signal is not None,
+                        signal_id=(
+                            str(signal.signal_id) if signal is not None else None
+                        ),
+                        detail=detail,
+                        execution_trace_id=trace_id,
+                    )
+                    _sess.commit()
+                finally:
+                    _sess.close()
+            except Exception:  # noqa: BLE001
+                pass
         if uba_id:
             if signal is None:
                 detail = {

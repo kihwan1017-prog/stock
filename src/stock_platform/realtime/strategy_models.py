@@ -84,3 +84,9 @@ class RealtimeSignal:
     market_type: str | None = None
     user_broker_account_id: int | None = None
     source_code: str | None = None
+    # OBSERVABILITY — provenance (trading semantics unchanged)
+    execution_trace_id: str | None = None
+    candidate_selection_id: int | None = None
+    candidate_id: int | None = None
+    waiting_id: int | None = None
+    lifecycle_kind: str | None = None

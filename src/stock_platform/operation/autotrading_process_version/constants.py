@@ -87,6 +87,20 @@ COMPONENT_TYPES = (
 # Bootstrap from known commits (REAL semantics vs reliability vs research)
 BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
+        "git_commit": "WORKTREE",
+        "market": "UPBIT",
+        "change_type": CHANGE_OBSERVABILITY,
+        "component": "ENTRY_EXECUTION_TRACE",
+        "summary": "UPBIT_ENTRY_EXECUTION_PROVENANCE_OBSERVABILITY_HARDENING",
+        "change_reason": (
+            "Append-only operation.upbit_entry_execution_trace; "
+            "selection_id lineage MaEvaluator→executor→order; why-no-trade API"
+        ),
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_upbit_entry_execution_provenance_hardening.json"],
+    },
+    {
         "git_commit": "9be7922",
         "market": "KIWOOM",
         "change_type": CHANGE_OBSERVABILITY,

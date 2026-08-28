@@ -64,7 +64,25 @@ def strategy_signal_to_realtime(signal: StrategySignal) -> RealtimeSignal:
         source_code=(
             str(signal.metadata.get("source_code") or "").strip() or None
         ),
+        execution_trace_id=(
+            str(signal.metadata.get("execution_trace_id") or "").strip() or None
+        ),
+        candidate_selection_id=_int_or_none(signal.metadata.get("candidate_selection_id")),
+        candidate_id=_int_or_none(signal.metadata.get("candidate_id")),
+        waiting_id=_int_or_none(signal.metadata.get("waiting_id")),
+        lifecycle_kind=(
+            str(signal.metadata.get("lifecycle_kind") or "").strip() or None
+        ),
     )
+
+
+def _int_or_none(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _fingerprint_seen(fingerprint: str) -> bool:

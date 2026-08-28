@@ -856,6 +856,17 @@ class OrderExecutionService:
         )
         _admit_daily_entry = _daily_fence.__enter__()
         try:
+            from stock_platform.operation.upbit_entry_execution_trace.order_hooks import (
+                trace_admission_attempt,
+                trace_admission_result,
+            )
+
+            trace_admission_attempt(
+                self._session,
+                metadata=metadata,
+                uba_id=int(uba_id or 0),
+                symbol=str(command.symbol or ""),
+            )
             _admission = _admit_daily_entry(
                 symbol=str(command.symbol or "") or None,
                 candidate_id=(
@@ -867,6 +878,17 @@ class OrderExecutionService:
                 ),
             )
             if not _admission.get("allowed"):
+                trace_admission_result(
+                    self._session,
+                    metadata=metadata,
+                    uba_id=int(uba_id or 0),
+                    symbol=str(command.symbol or ""),
+                    allowed=False,
+                    reason_code=str(
+                        _admission.get("reason")
+                        or REASON_PORTFOLIO_DAILY_ENTRY_LIMIT
+                    ),
+                )
                 return self._blocked(
                     str(
                         _admission.get("reason")
@@ -902,6 +924,13 @@ class OrderExecutionService:
                     "WAITING_REVALIDATION_REQUIRED",
                     message="waiting revalidation gate error",
                 )
+            trace_admission_result(
+                self._session,
+                metadata=metadata,
+                uba_id=int(uba_id or 0),
+                symbol=str(command.symbol or ""),
+                allowed=True,
+            )
             persist_stage = PERSIST_CREATE_ORDER
             try:
                 order = self._order_service.create(
@@ -947,6 +976,9 @@ class OrderExecutionService:
             )
             if signal_fp:
                 order.source_signal_fingerprint = str(signal_fp)[:64]
+            signal_id_meta = metadata.get("signal_id")
+            if signal_id_meta and getattr(order, "source_signal_id", None) is None:
+                order.source_signal_id = str(signal_id_meta)[:100]
             strategy_id_meta = metadata.get("strategy_id")
             if strategy_id_meta is not None and getattr(
                 order, "strategy_id", None

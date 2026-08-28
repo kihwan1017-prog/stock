@@ -2309,8 +2309,50 @@ class UpbitPortfolioService:
 
         uba_id = int(user_broker_account_id)
         sym = str(symbol or "").upper()
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.hooks import (
+                trace_begin_entry_attempt,
+                trace_begin_entry_result as _trace_begin_entry_result,
+            )
+
+            trace_begin_entry_attempt(
+                self._session, user_broker_account_id=uba_id, symbol=sym
+            )
+        except Exception:  # noqa: BLE001
+
+            def _trace_begin_entry_result(*_a: Any, **_k: Any) -> None:
+                return None
+
+        def _finish(
+            payload: dict[str, Any],
+            slot_entity: UpbitPositionSlotEntity | None = None,
+        ) -> dict[str, Any]:
+            try:
+                sel_id = (
+                    int(slot_entity.candidate_selection_id)
+                    if slot_entity is not None
+                    and slot_entity.candidate_selection_id is not None
+                    else None
+                )
+                wid = (
+                    int(slot_entity.slot_id)
+                    if slot_entity is not None
+                    else payload.get("slot_id")
+                )
+                _trace_begin_entry_result(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    symbol=sym,
+                    result=payload,
+                    waiting_id=wid,
+                    selection_id=sel_id,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            return payload
+
         if not sym:
-            return {"ok": False, "reason": "SYMBOL_REQUIRED"}
+            return _finish({"ok": False, "reason": "SYMBOL_REQUIRED"})
         if self.pending_entry_count(uba_id) >= 1:
             # max_pending_entries=1 — 다른 심볼이 이미 주문 단계면 대기
             existing = self._session.scalar(
@@ -2321,14 +2363,17 @@ class UpbitPortfolioService:
                 )
             )
             if existing is not None:
-                return {
-                    "ok": True,
-                    "already": True,
-                    "slot_id": int(existing.slot_id),
-                    "status": SLOT_ENTRY_PENDING,
-                    "reserved_amount_krw": existing.reserved_amount_krw,
-                }
-            return {"ok": False, "reason": "PENDING_ENTRY_LIMIT"}
+                return _finish(
+                    {
+                        "ok": True,
+                        "already": True,
+                        "slot_id": int(existing.slot_id),
+                        "status": SLOT_ENTRY_PENDING,
+                        "reserved_amount_krw": existing.reserved_amount_krw,
+                    },
+                    existing,
+                )
+            return _finish({"ok": False, "reason": "PENDING_ENTRY_LIMIT"})
 
         slot = self._session.scalar(
             select(UpbitPositionSlotEntity)
@@ -2340,7 +2385,7 @@ class UpbitPortfolioService:
             .with_for_update()
         )
         if slot is None:
-            return {"ok": False, "reason": "NO_WAITING_SIGNAL_SLOT"}
+            return _finish({"ok": False, "reason": "NO_WAITING_SIGNAL_SLOT"})
 
         # WAITING_SIGNAL + 수동 보유(바인딩 없음) → ENTRY 금지 + slot 안전 해제
         if self._assignment._has_preexisting_holding(uba_id, sym):
@@ -2359,12 +2404,15 @@ class UpbitPortfolioService:
                 slot.version = int(slot.version or 1) + 1
                 self._session.flush()
                 released = True
-            return {
-                "ok": False,
-                "reason": "MANUAL_SYMBOL_EXCLUDED",
-                "slot_released": released,
-                "detail": "WAITING_SIGNAL_PREEXISTING_HOLDING",
-            }
+            return _finish(
+                {
+                    "ok": False,
+                    "reason": "MANUAL_SYMBOL_EXCLUDED",
+                    "slot_released": released,
+                    "detail": "WAITING_SIGNAL_PREEXISTING_HOLDING",
+                },
+                slot,
+            )
 
         # Symbol Ownership — exclusion/hold/unknown (AUTO_ALREADY_MANAGED는 이 slot 자체)
         try:
@@ -2413,26 +2461,32 @@ class UpbitPortfolioService:
                     slot.version = int(slot.version or 1) + 1
                     self._session.flush()
                     released = True
-                return {
-                    "ok": False,
-                    "reason": skip_reason or "SYMBOL_OWNERSHIP_BLOCKED",
-                    "owner": ownership.owner,
-                    "ownership_reasons": ownership.reasons,
-                    "slot_released": released,
-                    "expected_owner_for_entry": OWNER_FREE,
-                }
+                return _finish(
+                    {
+                        "ok": False,
+                        "reason": skip_reason or "SYMBOL_OWNERSHIP_BLOCKED",
+                        "owner": ownership.owner,
+                        "ownership_reasons": ownership.reasons,
+                        "slot_released": released,
+                        "expected_owner_for_entry": OWNER_FREE,
+                    },
+                    slot,
+                )
         except Exception as exc:  # noqa: BLE001
-            return {
-                "ok": False,
-                "reason": "SYMBOL_OWNERSHIP_UNKNOWN",
-                "error": type(exc).__name__,
-            }
+            return _finish(
+                {
+                    "ok": False,
+                    "reason": "SYMBOL_OWNERSHIP_UNKNOWN",
+                    "error": type(exc).__name__,
+                },
+                slot,
+            )
 
         policy = self.get_or_create_policy(uba_id)
         if not policy.enabled:
-            return {"ok": False, "reason": "POLICY_DISABLED"}
+            return _finish({"ok": False, "reason": "POLICY_DISABLED"}, slot)
         if str(policy.entry_state or "") == PORTFOLIO_ENTRY_PAUSED:
-            return {"ok": False, "reason": "ENTRY_PAUSED"}
+            return _finish({"ok": False, "reason": "ENTRY_PAUSED"}, slot)
 
         # BUY 직전 final admission의 fail-fast — WAITING은 quota 미소비.
         # hard cap은 OrderExecutionService persist fence가 보장.
@@ -2458,11 +2512,14 @@ class UpbitPortfolioService:
                 daily_limit=daily_limit,
             )
             if int(daily_usage["entry_count"]) >= daily_limit:
-                return {
-                    "ok": False,
-                    "reason": "PORTFOLIO_DAILY_ENTRY_LIMIT",
-                    "daily_entry_usage": daily_usage,
-                }
+                return _finish(
+                    {
+                        "ok": False,
+                        "reason": "PORTFOLIO_DAILY_ENTRY_LIMIT",
+                        "daily_entry_usage": daily_usage,
+                    },
+                    slot,
+                )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "portfolio_daily_entry_failfast_skipped",
@@ -2486,25 +2543,31 @@ class UpbitPortfolioService:
                 waiting_updated_at=getattr(slot, "updated_at", None),
             )
             if not waiting_gate.get("allowed"):
-                return {
-                    "ok": False,
-                    "reason": str(
-                        waiting_gate.get("reason")
-                        or "WAITING_REVALIDATION_REQUIRED"
-                    ),
-                    "waiting_revalidation": waiting_gate,
-                }
+                return _finish(
+                    {
+                        "ok": False,
+                        "reason": str(
+                            waiting_gate.get("reason")
+                            or "WAITING_REVALIDATION_REQUIRED"
+                        ),
+                        "waiting_revalidation": waiting_gate,
+                    },
+                    slot,
+                )
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "waiting_revalidation_gate_error",
                 error=type(exc).__name__,
                 uba_id=uba_id,
             )
-            return {
-                "ok": False,
-                "reason": "WAITING_REVALIDATION_REQUIRED",
-                "error": type(exc).__name__,
-            }
+            return _finish(
+                {
+                    "ok": False,
+                    "reason": "WAITING_REVALIDATION_REQUIRED",
+                    "error": type(exc).__name__,
+                },
+                slot,
+            )
 
         score = float(scanner_score or 80.0)
         conf = float(ai_confidence or 0.8)
@@ -2538,16 +2601,19 @@ class UpbitPortfolioService:
             ),
         )
         if alloc.skipped or float(alloc.approved_amount_krw) <= 0:
-            return {
-                "ok": False,
-                "reason": alloc.skip_reason or "ALLOCATION_SKIPPED",
-                "allocation": {
-                    "recommended": str(alloc.recommended_amount_krw),
-                    "approved": str(alloc.approved_amount_krw),
-                    "clamp_reasons": alloc.clamp_reasons,
+            return _finish(
+                {
+                    "ok": False,
+                    "reason": alloc.skip_reason or "ALLOCATION_SKIPPED",
+                    "allocation": {
+                        "recommended": str(alloc.recommended_amount_krw),
+                        "approved": str(alloc.approved_amount_krw),
+                        "clamp_reasons": alloc.clamp_reasons,
+                    },
+                    "sizing": sizing,
                 },
-                "sizing": sizing,
-            }
+                slot,
+            )
 
         slot.status = SLOT_ENTRY_PENDING
         slot.recommended_amount_krw = float(alloc.recommended_amount_krw)
@@ -2556,22 +2622,25 @@ class UpbitPortfolioService:
         slot.clamp_reasons = list(alloc.clamp_reasons)
         slot.version = int(slot.version or 1) + 1
         self._session.flush()
-        return {
-            "ok": True,
-            "slot_id": int(slot.slot_id),
-            "status": SLOT_ENTRY_PENDING,
-            "reserved_amount_krw": float(alloc.approved_amount_krw),
-            "approved_amount_krw": float(alloc.approved_amount_krw),
-            "requested_amount_krw": sizing.get("requested_amount_krw"),
-            "final_order_amount_krw": sizing.get("final_order_amount_krw"),
-            "effective_max_order_amount_krw": sizing.get(
-                "effective_max_order_amount_krw"
-            ),
-            "clamped_by": sizing.get("clamped_by"),
-            "clamp_reasons": list(alloc.clamp_reasons),
-            "sizing": sizing,
-            "orders_created": 0,
-        }
+        return _finish(
+            {
+                "ok": True,
+                "slot_id": int(slot.slot_id),
+                "status": SLOT_ENTRY_PENDING,
+                "reserved_amount_krw": float(alloc.approved_amount_krw),
+                "approved_amount_krw": float(alloc.approved_amount_krw),
+                "requested_amount_krw": sizing.get("requested_amount_krw"),
+                "final_order_amount_krw": sizing.get("final_order_amount_krw"),
+                "effective_max_order_amount_krw": sizing.get(
+                    "effective_max_order_amount_krw"
+                ),
+                "clamped_by": sizing.get("clamped_by"),
+                "clamp_reasons": list(alloc.clamp_reasons),
+                "sizing": sizing,
+                "orders_created": 0,
+            },
+            slot,
+        )
 
     def align_legacy_reserved_entry_pending(
         self,

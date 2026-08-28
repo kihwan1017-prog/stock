@@ -12,6 +12,11 @@ from stock_platform.operation.idempotency_repository import (
 from stock_platform.order.outbox_dispatcher import (
     OrderOutboxDispatcher,
 )
+from stock_platform.order.outbox_dispatch_safety import (
+    OutboxDispatchSafetyError,
+    assert_live_outbox_dispatch_safety,
+    emit_outbox_dispatch_safety_rejection,
+)
 from stock_platform.order.outbox_fencing import (
     OutboxAmbiguousError,
     OutboxFencingError,
@@ -163,6 +168,16 @@ class OrderOutboxWorker:
                         session.commit()
                         continue
 
+                    # LIVE safety: intent 전에 차단 (자동 RETRY/AMBIGUOUS 방지)
+                    self._assert_live_dispatch_allowed(
+                        session,
+                        payload,
+                        outbox_id=int(outbox_id),
+                        outbox_idempotency_key=getattr(
+                            entity, "idempotency_key", None
+                        ),
+                    )
+
                     request_hash = stable_request_hash(payload)
                     # Dispatch Intent 영속화 → Commit 후에만 Broker
                     repository.create_dispatch_intent(
@@ -175,16 +190,6 @@ class OrderOutboxWorker:
                     entity = repository.get(outbox_id)
                     if entity is None:
                         continue
-
-                    # LIVE safety: intent 후에도 재확인 (전송 직전)
-                    self._assert_live_dispatch_allowed(
-                        session,
-                        payload,
-                        outbox_id=int(outbox_id),
-                        outbox_idempotency_key=getattr(
-                            entity, "idempotency_key", None
-                        ),
-                    )
 
                     from stock_platform.order.live_dry_run import (
                         dry_run_block_dispatch_result,
@@ -283,6 +288,7 @@ class OrderOutboxWorker:
                             payload=payload,
                             idempotency_key=entity.idempotency_key,
                             session=session,
+                            outbox_id=int(outbox_id),
                         )
                     except TimeoutError as exc:
                         raise OutboxAmbiguousError(
@@ -363,6 +369,54 @@ class OrderOutboxWorker:
                     session.commit()
                     mock_fill_order_id = int(entity.order_id)
                     mock_fill_payload = dict(payload)
+                except OutboxDispatchSafetyError as exc:
+                    mock_fill_order_id = None
+                    mock_fill_payload = None
+                    session.rollback()
+                    with self._session_factory() as fail_session:
+                        fail_repository = OrderOutboxRepository(
+                            fail_session
+                        )
+                        fail_entity = fail_repository.get(outbox_id)
+                        if fail_entity is None:
+                            continue
+                        fail_payload = dict(
+                            fail_entity.payload_json or {}
+                        )
+                        fail_payload.setdefault(
+                            "order_id", int(fail_entity.order_id)
+                        )
+                        emit_outbox_dispatch_safety_rejection(
+                            fail_session,
+                            reason_code=exc.reason_code,
+                            payload=fail_payload,
+                            outbox_id=int(outbox_id),
+                            worker_id=self._worker_id,
+                            trading_order_id=int(fail_entity.order_id),
+                        )
+                        fail_repository.mark_failed(
+                            entity=fail_entity,
+                            error_message=str(exc.reason_code),
+                            fencing_token=fencing_token,
+                            worker_id=self._worker_id,
+                        )
+                        self._fail_open_order(
+                            session=fail_session,
+                            order_id=fail_entity.order_id,
+                            error_message=str(exc.reason_code),
+                            event_type=fail_entity.event_type,
+                            reason_code=exc.reason_code,
+                        )
+                        self._finalize_smoke_one_shot_if_needed(
+                            fail_session,
+                            order_id=int(fail_entity.order_id),
+                            outbox_id=int(outbox_id),
+                            outcome="SAFETY_REJECTED",
+                            worker_id=self._worker_id,
+                        )
+                        failed += 1
+                        fail_session.commit()
+                    continue
                 except OutboxFencingError as exc:
                     mock_fill_order_id = None
                     mock_fill_payload = None
@@ -588,126 +642,12 @@ class OrderOutboxWorker:
         outbox_id: int | None = None,
         outbox_idempotency_key: str | None = None,
     ) -> None:
-        env = str(payload.get("environment") or "PAPER").upper()
-        if env != "LIVE":
-            return
-        from stock_platform.broker.live_config_gate import (
-            evaluate_live_flag_consistency,
+        assert_live_outbox_dispatch_safety(
+            session,
+            payload,
+            outbox_id=outbox_id,
+            outbox_idempotency_key=outbox_idempotency_key,
         )
-        from stock_platform.broker.live_transition_guard import (
-            LiveTradingTransitionGuard,
-        )
-        from stock_platform.operation.live_health_gate import (
-            assert_live_orders_allowed,
-        )
-
-        cfg = evaluate_live_flag_consistency()
-        if cfg.code in {
-            "LIVE_MOCK_CONFLICT",
-            "LIVE_FLAG_MISMATCH_KIWOOM",
-        }:
-            raise PermissionError(cfg.code)
-        assert_live_orders_allowed(session)
-
-        # STEP 8-7 — UBA/broker 먼저 확정 후 Activation scope 검사
-        uba_raw = payload.get("user_broker_account_id")
-        if uba_raw is None:
-            raise PermissionError("UBA_REQUIRED")
-        from stock_platform.trading.account_models import UserBrokerAccount
-
-        uba = session.get(UserBrokerAccount, int(uba_raw))
-        if uba is None or not bool(uba.is_active):
-            raise PermissionError("ACCOUNT_INACTIVE")
-        expected_broker = str(payload.get("broker_code") or "").upper()
-        uba_broker = str(uba.broker_code).upper()
-        if expected_broker and uba_broker != expected_broker:
-            raise PermissionError("UBA_BROKER_MISMATCH")
-        dispatch_broker = expected_broker or uba_broker
-        LiveTradingTransitionGuard(session).require_active(
-            broker_code=dispatch_broker,
-            user_broker_account_id=int(uba_raw),
-        )
-        owner_raw = payload.get("owner_user_id")
-        if owner_raw not in (None, "") and int(uba.user_id) != int(owner_raw):
-            raise PermissionError("UBA_OWNERSHIP_MISMATCH")
-
-        live_on = bool(getattr(uba, "live_order_enabled", False))
-        from stock_platform.trading.live_arm_service import LiveArmService
-
-        # ARM 만료 시 LIVE OFF — 일반 경로 차단 (one-shot은 grant deadline 사용)
-        expired = LiveArmService(session).expire_if_needed(int(uba_raw))
-        uba = session.get(UserBrokerAccount, int(uba_raw))
-        if uba is None:
-            raise PermissionError("ACCOUNT_INACTIVE")
-        # expire 후 플래그 재평가 (DISARM 반영)
-        live_on = bool(getattr(uba, "live_order_enabled", False))
-        armed = bool(getattr(uba, "live_armed", False))
-
-        if live_on and armed and not expired:
-            return
-
-        # 설계 B — Smoke one-shot: LIVE/ARM OFF 여도 해당 outbox 1건만 허용
-        if outbox_id is None:
-            if not live_on:
-                raise PermissionError("LIVE_ORDER_DISABLED")
-            if expired or not armed:
-                raise PermissionError(
-                    "LIVE_ARM_EXPIRED" if expired else "LIVE_NOT_ARMED"
-                )
-            return
-
-        from stock_platform.order.live_safety_audit import (
-            emit_live_safety_audit,
-        )
-        from stock_platform.trading.smoke_one_shot_dispatch_grant import (
-            SmokeOneShotGrantError,
-            assert_smoke_one_shot_dispatch_allowed,
-        )
-        from stock_platform.trading.upbit_live_smoke_constants import (
-            UPBIT_LIVE_SMOKE_ONE_SHOT_DISPATCH_ALLOWED,
-        )
-
-        try:
-            grant = assert_smoke_one_shot_dispatch_allowed(
-                session,
-                payload,
-                outbox_id=int(outbox_id),
-                outbox_idempotency_key=outbox_idempotency_key,
-            )
-        except SmokeOneShotGrantError as exc:
-            if not live_on:
-                raise PermissionError(
-                    f"LIVE_ORDER_DISABLED:{exc}"
-                ) from exc
-            raise PermissionError(
-                f"{'LIVE_ARM_EXPIRED' if expired else 'LIVE_NOT_ARMED'}:{exc}"
-            ) from exc
-
-        try:
-            emit_live_safety_audit(
-                session,
-                event_type=UPBIT_LIVE_SMOKE_ONE_SHOT_DISPATCH_ALLOWED,
-                actor="OUTBOX_WORKER",
-                run_id=str(grant.get("run_id") or ""),
-                user_id=int(grant.get("owner_user_id") or 0) or None,
-                account_id=int(uba_raw),
-                strategy_id=None,
-                order_id=int(payload.get("order_id") or 0) or None,
-                detail={
-                    "outbox_id": int(outbox_id),
-                    "order_id": grant.get("order_id"),
-                    "run_id": grant.get("run_id"),
-                    "arm_deadline_at": grant.get("arm_deadline_at"),
-                    "dispatch_expires_at": grant.get("dispatch_expires_at"),
-                    "live_on": live_on,
-                    "armed": armed,
-                    "activation_broker": dispatch_broker,
-                    "activation_uba": int(uba_raw),
-                },
-                commit=False,
-            )
-        except Exception:  # noqa: BLE001
-            pass
 
     @staticmethod
     def _record_submission_attempt(
@@ -805,6 +745,14 @@ class OrderOutboxWorker:
                     commit=False,
                 )
                 status = OrderStatus.SENT
+                try:
+                    from stock_platform.operation.upbit_entry_execution_trace.order_hooks import (
+                        trace_broker_submit,
+                    )
+
+                    trace_broker_submit(session, order)
+                except Exception:  # noqa: BLE001
+                    pass
             if status == OrderStatus.SUBMITTING:
                 # claim_submitting 이후 ACCEPTED로 승격
                 order = repository.change_status(
@@ -844,6 +792,27 @@ class OrderOutboxWorker:
                     # 체결 동기화 실패가 submit 성공을 롤백하지 않음
                     # Reconcile/Tracker가 후속 처리
                     pass
+            try:
+                from stock_platform.operation.upbit_entry_execution_trace.order_hooks import (
+                    trace_broker_accept,
+                    trace_buy_fill,
+                )
+
+                refreshed = repository.get(order_id)
+                if refreshed is not None:
+                    trace_broker_accept(session, refreshed)
+                    filled_qty = float(refreshed.filled_quantity or 0)
+                    order_qty = float(refreshed.order_quantity or 0)
+                    if filled_qty > 0:
+                        trace_buy_fill(
+                            session,
+                            refreshed,
+                            partial=(
+                                order_qty > 0 and filled_qty < order_qty
+                            ),
+                        )
+            except Exception:  # noqa: BLE001
+                pass
 
             # P0-5 — Paper Outbox ACCEPTED → Paper 원장 auto-fill (LIVE 혼입 금지)
             # Kiwoom MOCK fill은 Outbox DONE commit 이후에 별도 세션으로 수행
@@ -955,6 +924,7 @@ class OrderOutboxWorker:
         order_id: int,
         error_message: str,
         event_type: str,
+        reason_code: str = "OUTBOX_EXHAUSTED",
     ) -> None:
         from stock_platform.order.models import OrderStatus
         from stock_platform.order.outbox_models import OutboxEventType
@@ -975,7 +945,7 @@ class OrderOutboxWorker:
             entity=order,
             new_status=OrderStatus.FAILED,
             actor="OUTBOX_WORKER",
-            reason_code="OUTBOX_EXHAUSTED",
+            reason_code=str(reason_code or "OUTBOX_EXHAUSTED")[:80],
             message=error_message[:500],
             commit=False,
         )

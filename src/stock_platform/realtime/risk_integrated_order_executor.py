@@ -83,6 +83,7 @@ class RiskIntegratedRealtimeOrderExecutor:
         environment = resolve_execution_environment(
             self._execution_config, signal
         )
+        self._set_entry_trace_context(signal)
 
         # STEP 8-5-9 — Signal Scope 계좌 우선 (환경변수 기본 계좌 우회 금지)
         exec_account_id = self._execution_config.account_id
@@ -108,6 +109,15 @@ class RiskIntegratedRealtimeOrderExecutor:
         signal_uba = resolve_signal_user_broker_account_id(signal)
         if signal_uba is not None and account_kind == "USER_BROKER":
             user_broker_account_id = int(signal_uba)
+
+        if (
+            environment == "LIVE"
+            and broker_code == "UPBIT"
+            and str(signal.action.value).upper() == "BUY"
+            and user_broker_account_id
+            and getattr(signal, "execution_trace_id", None)
+        ):
+            self._trace_executor_received(signal, user_broker_account_id)
 
         cfg_uba = getattr(
             self._execution_config, "user_broker_account_id", None
@@ -549,6 +559,18 @@ class RiskIntegratedRealtimeOrderExecutor:
             ),
             "order_source": "AUTO",
         }
+        for key in (
+            "execution_trace_id",
+            "candidate_selection_id",
+            "candidate_id",
+            "waiting_id",
+            "lifecycle_kind",
+        ):
+            val = getattr(signal, key, None)
+            if val is not None:
+                meta[key] = val
+        if getattr(signal, "execution_trace_id", None):
+            self._trace_order_intent(signal, user_broker_account_id)
         if environment == "LIVE" and is_live_dry_run_mode():
             meta["dry_run"] = True
             meta["dry_run_mode"] = "LIVE_DRY_RUN"
@@ -600,9 +622,18 @@ class RiskIntegratedRealtimeOrderExecutor:
         )
 
         if not result.allowed:
+            self._trace_executor_rejected(signal, result.reason_code)
             return self._skipped(
                 signal,
                 result.reason_code,
+            )
+
+        if result.order_id is not None:
+            self._trace_order_persisted(
+                signal,
+                user_broker_account_id,
+                order_id=int(result.order_id),
+                outbox_id=getattr(result, "outbox_id", None),
             )
 
         # Portfolio BUY: 주문 생성 직후 ENTRY_PENDING slot에 entry_order_id 연결
@@ -688,11 +719,165 @@ class RiskIntegratedRealtimeOrderExecutor:
 
         return f"PAPER-{int(paper_account_id)}"
 
+    def _set_entry_trace_context(self, signal: RealtimeSignal) -> None:
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.context import (
+                clear_current,
+                set_current,
+            )
+            from stock_platform.operation.upbit_entry_execution_trace.service import (
+                provenance_from_signal,
+            )
+
+            prov = provenance_from_signal(signal)
+            if prov.get("execution_trace_id"):
+                set_current(prov)
+            else:
+                clear_current()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _trace_base(self, signal: RealtimeSignal, uba_id: int | None) -> dict:
+        return {
+            "execution_trace_id": getattr(signal, "execution_trace_id", None),
+            "user_broker_account_id": int(uba_id or getattr(signal, "user_broker_account_id", 0) or 0),
+            "symbol": str(signal.symbol or "").upper(),
+            "selection_id": getattr(signal, "candidate_selection_id", None),
+            "candidate_id": getattr(signal, "candidate_id", None),
+            "waiting_id": getattr(signal, "waiting_id", None),
+            "strategy_id": getattr(signal, "strategy_id", None),
+            "lifecycle_kind": getattr(signal, "lifecycle_kind", None) or "INITIAL",
+            "signal_id": getattr(signal, "signal_id", None),
+        }
+
+    def _trace_executor_received(
+        self, signal: RealtimeSignal, uba_id: int | None
+    ) -> None:
+        tid = getattr(signal, "execution_trace_id", None)
+        if not tid or not uba_id:
+            return
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.constants import (
+                DECISION_PASS,
+                STAGE_EXECUTOR_RECEIVED,
+            )
+            from stock_platform.operation.upbit_entry_execution_trace.service import (
+                append_stage_fail_open,
+            )
+
+            append_stage_fail_open(
+                self._session,
+                **self._trace_base(signal, uba_id),
+                stage=STAGE_EXECUTOR_RECEIVED,
+                decision=DECISION_PASS,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _trace_executor_rejected(
+        self, signal: RealtimeSignal, reason_code: str | None
+    ) -> None:
+        tid = getattr(signal, "execution_trace_id", None)
+        if not tid:
+            return
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.constants import (
+                DECISION_REJECT,
+                STAGE_EXECUTOR_REJECTED,
+            )
+            from stock_platform.operation.upbit_entry_execution_trace.service import (
+                append_stage_fail_open,
+            )
+
+            append_stage_fail_open(
+                self._session,
+                **self._trace_base(signal, None),
+                stage=STAGE_EXECUTOR_REJECTED,
+                decision=DECISION_REJECT,
+                reason_code=str(reason_code or "EXECUTOR_REJECTED"),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _trace_order_intent(
+        self, signal: RealtimeSignal, uba_id: int | None
+    ) -> None:
+        tid = getattr(signal, "execution_trace_id", None)
+        if not tid:
+            return
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.constants import (
+                DECISION_PASS,
+                STAGE_ORDER_INTENT_CREATED,
+            )
+            from stock_platform.operation.upbit_entry_execution_trace.service import (
+                append_stage_fail_open,
+            )
+
+            append_stage_fail_open(
+                self._session,
+                **self._trace_base(signal, uba_id),
+                stage=STAGE_ORDER_INTENT_CREATED,
+                decision=DECISION_PASS,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _trace_order_persisted(
+        self,
+        signal: RealtimeSignal,
+        uba_id: int | None,
+        *,
+        order_id: int,
+        outbox_id: int | None,
+    ) -> None:
+        tid = getattr(signal, "execution_trace_id", None)
+        if not tid:
+            return
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.constants import (
+                DECISION_PASS,
+                STAGE_ORDER_PERSISTED,
+                STAGE_OUTBOX_ENQUEUED,
+            )
+            from stock_platform.operation.upbit_entry_execution_trace.service import (
+                append_stage_fail_open,
+            )
+
+            base = self._trace_base(signal, uba_id)
+            append_stage_fail_open(
+                self._session,
+                **base,
+                stage=STAGE_ORDER_PERSISTED,
+                decision=DECISION_PASS,
+                order_id=int(order_id),
+            )
+            if outbox_id is not None:
+                append_stage_fail_open(
+                    self._session,
+                    **base,
+                    stage=STAGE_OUTBOX_ENQUEUED,
+                    decision=DECISION_PASS,
+                    order_id=int(order_id),
+                    outbox_id=int(outbox_id),
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
     def _skipped(
         self,
         signal: RealtimeSignal,
         reason_code: str,
     ) -> RealtimeExecutionResult:
+        self._trace_executor_rejected(signal, reason_code)
+        try:
+            from stock_platform.operation.upbit_entry_execution_trace.context import (
+                clear_current,
+            )
+
+            clear_current()
+        except Exception:  # noqa: BLE001
+            pass
         executor = RealtimePaperOrderExecutor.__new__(
             RealtimePaperOrderExecutor
         )
