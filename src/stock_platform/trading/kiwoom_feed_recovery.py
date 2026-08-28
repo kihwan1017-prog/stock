@@ -26,6 +26,109 @@ _FEED_FRESH = frozenset(
     {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}
 )
 
+_UNHEALTHY_CONNECTING_REASONS = frozenset(
+    {
+        "NO_REAL_TICK_YET",
+        "TICK_STALE",
+        "TICK_TIMESTAMP_MISSING",
+        "FEED_NOT_RUNNING",
+        "RUNNING_NOT_CONNECTED",
+        "QUOTE_STALE",
+    }
+)
+
+
+def kiwoom_feed_needs_l1_recovery(
+    health_snapshot: dict[str, Any],
+    *,
+    slo: AutotradingHealthSlo | None = None,
+) -> bool:
+    """Watchdog L1 — DISCONNECTED/STALE 및 tick 없는 CONNECTING 포함."""
+
+    slo = slo or load_autotrading_health_slo()
+    feed_st = str((health_snapshot.get("components") or {}).get("feed") or "").upper()
+    if feed_st in {"DISCONNECTED", "STALE", "DOWN", "UNHEALTHY"}:
+        return True
+    if feed_st in _FEED_FRESH:
+        return kiwoom_health_feed_is_stale(health_snapshot, slo=slo)
+    if feed_st == "CONNECTING":
+        detail = health_snapshot.get("feed_detail") or {}
+        reason = str(detail.get("reason") or "").upper()
+        if reason in _UNHEALTHY_CONNECTING_REASONS:
+            return True
+        if not bool(detail.get("ok")):
+            return True
+        hb_age = (health_snapshot.get("heartbeats") or {}).get("feed_age_seconds")
+        if hb_age is None and not detail.get("last_received_at"):
+            return True
+        if hb_age is not None:
+            try:
+                return float(hb_age) > float(slo.feed_max_age_seconds)
+            except (TypeError, ValueError):
+                return True
+        return False
+    return kiwoom_health_feed_is_stale(health_snapshot, slo=slo)
+
+
+async def recover_kiwoom_feed_l1(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    actor: str,
+    health_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """L1 feed-only — stack restore 없이 ensure + REAL tick verify."""
+
+    from stock_platform.trading.kiwoom_unattended_stack_restore import (
+        _resolve_kiwoom_stack_feed_symbols,
+        evaluate_kiwoom_stack_restore_gates,
+    )
+
+    uba_id = int(user_broker_account_id)
+    gates = evaluate_kiwoom_stack_restore_gates(
+        session, user_broker_account_id=uba_id
+    )
+    if not gates.get("ok"):
+        return {
+            "ok": False,
+            "market": "KIWOOM",
+            "reason": "STACK_GATES_FAILED",
+            "blockers": gates.get("blockers"),
+        }
+
+    link_meta = (gates.get("checks") or {}).get("strategy_link") or {}
+    strategy_id = link_meta.get("strategy_id")
+    symbols = _resolve_kiwoom_stack_feed_symbols(
+        session,
+        user_broker_account_id=uba_id,
+        strategy_id=int(strategy_id) if strategy_id is not None else None,
+        symbols=None,
+    )
+    snap = health_snapshot or build_trading_health_snapshot(
+        session, user_broker_account_id=uba_id
+    )
+    feed_recover = await ensure_kiwoom_feed_fresh(
+        session,
+        user_broker_account_id=uba_id,
+        symbols=symbols,
+        actor=actor,
+        health_snapshot=snap,
+    )
+    event_before = int(feed_recover.get("event_count_before") or 0)
+    verify = await verify_kiwoom_feed_recovery(
+        session,
+        user_broker_account_id=uba_id,
+        event_count_before=event_before,
+    )
+    return {
+        "ok": bool(verify.get("verified")),
+        "market": "KIWOOM",
+        "feed": feed_recover,
+        "feed_verify": verify,
+        "real_tick_verified": bool(verify.get("verified")),
+        "symbols": symbols,
+    }
+
 
 def kiwoom_runtime_feed_is_stale(
     runtime_status: dict[str, Any],
@@ -69,6 +172,14 @@ def kiwoom_health_feed_is_stale(
     feed_st = str((health_snapshot.get("components") or {}).get("feed") or "").upper()
     if feed_st in {"STALE", "DISCONNECTED", "DOWN", "UNHEALTHY"}:
         return True
+    if feed_st == "CONNECTING":
+        detail = health_snapshot.get("feed_detail") or {}
+        reason = str(detail.get("reason") or "").upper()
+        if reason in _UNHEALTHY_CONNECTING_REASONS:
+            return True
+        if not bool(detail.get("ok")):
+            return True
+        return False
     if feed_st in _FEED_FRESH:
         hb_age = (health_snapshot.get("heartbeats") or {}).get("feed_age_seconds")
         if hb_age is not None:
@@ -182,7 +293,7 @@ async def verify_kiwoom_feed_recovery(
     *,
     user_broker_account_id: int,
     event_count_before: int = 0,
-    wait_seconds: float = 8.0,
+    wait_seconds: float = 15.0,
     poll_interval: float = 0.5,
 ) -> dict[str, Any]:
     """REAL tick + freshness 확인 — connected만으로 성공 금지."""

@@ -339,6 +339,77 @@ def test_data_trust_invalid_during_stale() -> None:
     assert ev["reason_code"] == "FEED_DOWN"
 
 
+def test_kiwoom_feed_needs_l1_disconnected() -> None:
+    from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
+
+    assert kiwoom_feed_needs_l1_recovery({"components": {"feed": "DISCONNECTED"}})
+
+
+def test_kiwoom_feed_needs_l1_unhealthy_connecting() -> None:
+    from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
+
+    assert kiwoom_feed_needs_l1_recovery(
+        {
+            "components": {"feed": "CONNECTING"},
+            "feed_detail": {"ok": False, "reason": "NO_REAL_TICK_YET"},
+            "heartbeats": {},
+        }
+    )
+
+
+def test_kiwoom_feed_needs_l1_false_for_real_fresh() -> None:
+    from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
+
+    assert not kiwoom_feed_needs_l1_recovery(
+        {
+            "components": {"feed": "REAL_FRESH"},
+            "heartbeats": {"feed_age_seconds": 2.0},
+        }
+    )
+
+
+@pytest.mark.asyncio
+async def test_recover_kiwoom_feed_l1_feed_only() -> None:
+    from stock_platform.trading.kiwoom_feed_recovery import recover_kiwoom_feed_l1
+
+    session = MagicMock()
+    with (
+        patch(
+            "stock_platform.trading.kiwoom_unattended_stack_restore.evaluate_kiwoom_stack_restore_gates",
+            return_value={"ok": True, "checks": {"strategy_link": {"strategy_id": 1}}},
+        ),
+        patch(
+            "stock_platform.trading.kiwoom_unattended_stack_restore._resolve_kiwoom_stack_feed_symbols",
+            return_value=["034310"],
+        ),
+        patch(
+            "stock_platform.trading.kiwoom_feed_recovery.ensure_kiwoom_feed_fresh",
+            AsyncMock(
+                return_value={
+                    "started": True,
+                    "event_count_before": 0,
+                    "hard_reconnect": True,
+                }
+            ),
+        ),
+        patch(
+            "stock_platform.trading.kiwoom_feed_recovery.verify_kiwoom_feed_recovery",
+            AsyncMock(return_value={"verified": True, "event_count_delta": 3}),
+        ),
+        patch(
+            "stock_platform.trading.kiwoom_feed_recovery.build_trading_health_snapshot",
+            return_value={"components": {"feed": "DISCONNECTED"}},
+        ),
+    ):
+        out = await recover_kiwoom_feed_l1(
+            session, user_broker_account_id=1381, actor="TEST"
+        )
+
+    assert out["ok"] is True
+    assert out["real_tick_verified"] is True
+    assert out["feed"]["hard_reconnect"] is True
+
+
 def test_health_connected_no_timestamp_not_real_fresh() -> None:
     """age/last_received 없이 connected 만으로 REAL_FRESH 금지."""
 

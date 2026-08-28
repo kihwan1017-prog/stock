@@ -561,32 +561,15 @@ async def _l1_feed_reconnect(
         broker = str(getattr(uba, "broker_code", "") or "").upper() if uba else ""
         if broker == "KIWOOM":
             from stock_platform.trading.kiwoom_feed_recovery import (
-                verify_kiwoom_feed_recovery,
-            )
-            from stock_platform.trading.kiwoom_unattended_stack_restore import (
-                restore_kiwoom_trading_stack,
+                recover_kiwoom_feed_l1,
             )
 
-            # L1: feed-first stack restore (STALE 시 hard reconnect 포함)
-            result = await restore_kiwoom_trading_stack(
+            # L1: feed-only (stack restore/L2 backoff와 분리)
+            return await recover_kiwoom_feed_l1(
                 session,
                 user_broker_account_id=int(uba_id),
                 actor=f"L1_KIWOOM_FEED:{actor}",
             )
-            feed_detail = (result.get("detail") or {}).get("feed") or {}
-            event_before = int(feed_detail.get("event_count_before") or 0)
-            verify = await verify_kiwoom_feed_recovery(
-                session,
-                user_broker_account_id=int(uba_id),
-                event_count_before=event_before,
-            )
-            return {
-                "ok": bool(verify.get("verified")),
-                "feed": result,
-                "market": "KIWOOM",
-                "feed_verify": verify,
-                "real_tick_verified": bool(verify.get("verified")),
-            }
 
         from stock_platform.realtime.upbit_quote_feed_restore import (
             ensure_upbit_quote_feed_from_hub,
@@ -840,29 +823,22 @@ async def reconcile_market_health(
                     actions.append("L1_SCANNER")
                     outcome["l1_scanner"] = l1s
             elif market == "KIWOOM" and snap.get("kiwoom_stack_slo_active"):
-                feed_st = str((snap.get("components") or {}).get("feed") or "")
-                if feed_st not in {
-                    "REAL_FRESH",
-                    "FRESH",
-                    "CONNECTED",
-                    "HEALTHY",
-                    "OK",
-                    "CONNECTING",
-                }:
+                from stock_platform.trading.kiwoom_feed_recovery import (
+                    kiwoom_feed_needs_l1_recovery,
+                )
+
+                if kiwoom_feed_needs_l1_recovery(snap):
                     l1f = await _l1_feed_reconnect(
                         session, uba_id=uba_id, actor=actor
                     )
                     actions.append("L1_KIWOOM_FEED")
                     outcome["l1_feed"] = l1f
+                    feed_payload = l1f.get("feed") if isinstance(l1f.get("feed"), dict) else {}
                     outcome["watchdog_feed_recovery"] = {
                         "stale_detected": True,
                         "recovery_attempted": True,
                         "recovery_succeeded": bool(l1f.get("real_tick_verified")),
-                        "hard_reconnect": bool(
-                            ((l1f.get("feed") or {}).get("detail") or {})
-                            .get("feed", {})
-                            .get("hard_reconnect")
-                        ),
+                        "hard_reconnect": bool(feed_payload.get("hard_reconnect")),
                         "feed_verify": l1f.get("feed_verify"),
                     }
 
