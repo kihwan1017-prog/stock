@@ -14,6 +14,7 @@ import {
   Input,
   InputNumber,
   Space,
+  Steps,
   Table,
   Tabs,
   Tag,
@@ -31,6 +32,55 @@ import { queryKeys } from "@/lib/query/queryKeys";
 const REFERENCE_DISCLAIMER =
   "Candidate Lifecycle은 Promotion Gateway를 통해 등록된 CandidateResult(result_id)에 대한 " +
   "내부 참조·검증·만료·철회 관리이며, 자동 매매·전략 배포·주문 승인을 의미하지 않습니다.";
+
+/** 사용자 친화 lifecycle 단계 (raw status는 상세에서 확인) */
+const LIFECYCLE_STEPS = [
+  { key: "DISCOVERED", title: "발견" },
+  { key: "AI_ANALYZED", title: "AI 분석" },
+  { key: "VALIDATED", title: "검증" },
+  { key: "ACTIVE_REVIEW", title: "검토/승인" },
+  { key: "OPERATIONAL", title: "운영 후보" },
+  { key: "ACTIVE", title: "활성 운영" },
+  { key: "CLOSED", title: "종료/폐기" },
+] as const;
+
+function lifecycleStepIndex(raw: unknown): number {
+  const s = String(raw ?? "").toUpperCase();
+  if (!s) return 0;
+  if (s.includes("DISCOVER") || s.includes("REGISTER") || s.includes("NEW")) return 0;
+  if (s.includes("AI") || s.includes("ASSESS")) return 1;
+  if (s.includes("VALID")) return 2;
+  if (s.includes("REVIEW") || s.includes("PROMOT")) return 3;
+  if (s.includes("OPERAT") || s.includes("CANDIDATE")) return 4;
+  if (s.includes("ACTIVE") && !s.includes("REVIEW")) return 5;
+  if (
+    s.includes("EXPIR") ||
+    s.includes("ARCHIV") ||
+    s.includes("REVOK") ||
+    s.includes("SUPERSED") ||
+    s.includes("CLOSED")
+  ) {
+    return 6;
+  }
+  return 0;
+}
+
+function lifecycleLabelKo(raw: unknown): string {
+  const idx = lifecycleStepIndex(raw);
+  return LIFECYCLE_STEPS[idx]?.title ?? String(raw ?? "—");
+}
+
+function CandidateLifecycleSteps({ status }: { status: unknown }) {
+  const current = lifecycleStepIndex(status);
+  return (
+    <Steps
+      size="small"
+      current={current}
+      items={LIFECYCLE_STEPS.map((s) => ({ title: s.title }))}
+      style={{ marginBottom: 8 }}
+    />
+  );
+}
 
 export default function AdminAiCandidateLifecyclePage() {
   const { message } = App.useApp();
@@ -224,9 +274,36 @@ export default function AdminAiCandidateLifecyclePage() {
   });
 
   return (
-    <AdminPageShell title="Candidate Lifecycle">
+    <AdminPageShell
+      title="전략·후보 Lifecycle"
+      description="발견 → 분석 → 검증 → 승인 → 운영 → 종료. 매매 승인이 아닙니다."
+    >
       <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         <Alert type="warning" showIcon title={REFERENCE_DISCLAIMER} />
+
+        <CandidateLifecycleSteps
+          status={
+            selectedId != null
+              ? lifecycle.lifecycle_status
+              : items[0]
+                ? asRecord(items[0])?.lifecycle_status
+                : "DISCOVERED"
+          }
+        />
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          선택 후보 단계:{" "}
+          {lifecycleLabelKo(
+            selectedId != null
+              ? lifecycle.lifecycle_status
+              : asRecord(items[0])?.lifecycle_status,
+          )}{" "}
+          · raw:{" "}
+          {String(
+            (selectedId != null
+              ? lifecycle.lifecycle_status
+              : asRecord(items[0])?.lifecycle_status) ?? "—",
+          )}
+        </Typography.Text>
 
         <Space wrap>
           <Tag>Total: {cell(dash.total)}</Tag>
@@ -280,7 +357,14 @@ export default function AdminAiCandidateLifecyclePage() {
           })}
           columns={[
             { title: "Candidate ID", dataIndex: "candidate_id", width: 110, render: cell },
-            { title: "Lifecycle", dataIndex: "lifecycle_status", width: 140, render: cell },
+            { title: "Lifecycle", dataIndex: "lifecycle_status", width: 140, render: (v) => (
+              <span>
+                {lifecycleLabelKo(v)}{" "}
+                <Typography.Text type="secondary" style={{ fontSize: 11 }}>
+                  ({cell(v)})
+                </Typography.Text>
+              </span>
+            ) },
             { title: "Health", dataIndex: "health_status", width: 120, render: cell },
             { title: "Version", dataIndex: "lifecycle_version", width: 80, render: cell },
             { title: "Promotion", dataIndex: "promotion_request_id", width: 90, render: cell },

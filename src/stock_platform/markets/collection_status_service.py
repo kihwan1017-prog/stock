@@ -342,28 +342,33 @@ class MarketDataCollectionStatusService:
             (expected_latest - latest_date).days if latest_date is not None else None
         )
 
-        per_symbol = self._session.execute(
+        # GROUP BY 전체 price_daily JOIN 대신 active instrument + 최근일 존재 여부 CTE
+        # (fresh/stale 집계 semantic 동일, 전량 MAX 스캔 제거)
+        threshold = expected_latest - timedelta(days=1)
+        agg = self._session.execute(
             text(
                 """
-                SELECT MAX(p.trade_date) AS last_date
-                FROM market.instrument i
-                LEFT JOIN market.price_daily p
-                  ON p.instrument_id = i.instrument_id
-                WHERE i.exchange_code = :ex AND i.is_active = TRUE
-                GROUP BY i.symbol
+                WITH active AS (
+                  SELECT instrument_id
+                  FROM market.instrument
+                  WHERE exchange_code = :ex AND is_active = TRUE
+                ),
+                fresh AS (
+                  SELECT DISTINCT p.instrument_id
+                  FROM market.price_daily p
+                  JOIN active a ON a.instrument_id = p.instrument_id
+                  WHERE p.trade_date >= :threshold
+                )
+                SELECT
+                  (SELECT COUNT(*) FROM active) AS symbol_count,
+                  (SELECT COUNT(*) FROM fresh) AS fresh_count
                 """
             ),
-            {"ex": exchange_code},
-        ).mappings().all()
-
-        symbol_count = len(per_symbol)
-        stale = sum(
-            1
-            for row in per_symbol
-            if row["last_date"] is None
-            or row["last_date"] < expected_latest - timedelta(days=1)
-        )
-        fresh = symbol_count - stale
+            {"ex": exchange_code, "threshold": threshold},
+        ).mappings().first()
+        symbol_count = int((agg or {}).get("symbol_count") or 0)
+        fresh = int((agg or {}).get("fresh_count") or 0)
+        stale = max(0, symbol_count - fresh)
         stale_ratio = stale / symbol_count if symbol_count else 1.0
 
         job_name = (
@@ -391,8 +396,10 @@ class MarketDataCollectionStatusService:
             fresh_symbol_count=fresh,
             stale_symbol_count=stale,
             missing_date_count=stale,
-            duplicate_count=self._count_duplicates(exchange_code),
-            invalid_ohlc_count=self._count_invalid_ohlc(exchange_code),
+            # pk_price_daily (instrument_id, trade_date) UNIQUE → 중복 0 보장
+            duplicate_count=0,
+            # 전체 이력 OHLC 스캔 대신 최신 trade_date만 검사 (운영 품질 신호용)
+            invalid_ohlc_count=self._count_invalid_ohlc_latest(exchange_code),
             last_collect_success=(
                 last_success.started_at.isoformat()
                 if last_success and last_success.started_at
@@ -402,18 +409,65 @@ class MarketDataCollectionStatusService:
         )
 
     def _intraday_quality(self, exchange_code: str) -> list[DataKindQuality]:
+        # KRX minute/tick = 미수집 정책 — 5M tick Seq Scan 없이 즉시 NOT_COLLECTED
+        if exchange_code == "KRX":
+            today = today_kst().isoformat()
+            return [
+                DataKindQuality(
+                    exchange_code="KRX",
+                    data_kind=kind,
+                    status=QUALITY_NOT_COLLECTED,
+                    status_label=_status_label(QUALITY_NOT_COLLECTED),
+                    latest_date=None,
+                    expected_latest_date=today,
+                    lag_days=None,
+                    symbol_count=0,
+                    fresh_symbol_count=0,
+                    stale_symbol_count=0,
+                    missing_date_count=0,
+                    duplicate_count=0,
+                    invalid_ohlc_count=0,
+                    last_collect_success=None,
+                    collection_policy="NOT_COLLECTED",
+                )
+                for kind in ("MINUTE", "TICK")
+            ]
+
+        # UPBIT: COUNT(*) 전체 스캔 대신 EXISTS + MAX — status/latest만 필요
         rows = self._session.execute(
             text(
                 """
-                SELECT 'MINUTE' AS kind, COUNT(*) AS cnt, MAX(c.candle_at) AS latest_at
-                FROM market.candle_minute c
-                JOIN market.instrument i ON i.instrument_id = c.instrument_id
-                WHERE i.exchange_code = :ex
+                SELECT
+                  'MINUTE'::text AS kind,
+                  CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM market.candle_minute c
+                    JOIN market.instrument i ON i.instrument_id = c.instrument_id
+                    WHERE i.exchange_code = :ex
+                    LIMIT 1
+                  ) THEN 1 ELSE 0 END AS cnt,
+                  (
+                    SELECT MAX(c.candle_at)
+                    FROM market.candle_minute c
+                    JOIN market.instrument i ON i.instrument_id = c.instrument_id
+                    WHERE i.exchange_code = :ex
+                  ) AS latest_at
                 UNION ALL
-                SELECT 'TICK', COUNT(*), MAX(t.traded_at)
-                FROM market.trade_tick t
-                JOIN market.instrument i ON i.instrument_id = t.instrument_id
-                WHERE i.exchange_code = :ex
+                SELECT
+                  'TICK'::text,
+                  CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM market.trade_tick t
+                    JOIN market.instrument i ON i.instrument_id = t.instrument_id
+                    WHERE i.exchange_code = :ex
+                    LIMIT 1
+                  ) THEN 1 ELSE 0 END,
+                  (
+                    SELECT MAX(t.traded_at)
+                    FROM market.trade_tick t
+                    JOIN market.instrument i ON i.instrument_id = t.instrument_id
+                    WHERE i.exchange_code = :ex
+                  )
                 """
             ),
             {"ex": exchange_code},
@@ -422,12 +476,7 @@ class MarketDataCollectionStatusService:
         result: list[DataKindQuality] = []
         for row in rows:
             cnt = int(row["cnt"] or 0)
-            if exchange_code == "KRX" and cnt == 0:
-                status = QUALITY_NOT_COLLECTED
-            elif cnt == 0:
-                status = QUALITY_NOT_COLLECTED
-            else:
-                status = QUALITY_HEALTHY
+            status = QUALITY_NOT_COLLECTED if cnt == 0 else QUALITY_HEALTHY
             result.append(
                 DataKindQuality(
                     exchange_code=exchange_code,
@@ -448,11 +497,7 @@ class MarketDataCollectionStatusService:
                     duplicate_count=0,
                     invalid_ohlc_count=0,
                     last_collect_success=None,
-                    collection_policy=(
-                        "NOT_COLLECTED"
-                        if exchange_code == "KRX" and cnt == 0
-                        else "ACTIVE"
-                    ),
+                    collection_policy="ACTIVE",
                 )
             )
         return result
@@ -565,20 +610,38 @@ class MarketDataCollectionStatusService:
         ).mappings().first()
         return int(row["cnt"] or 0)
 
-    def _count_duplicates(self, exchange_code: str) -> int:
-        row = self._session.scalar(
+    def _count_invalid_ohlc_latest(self, exchange_code: str) -> int:
+        """최신 trade_date 구간의 invalid OHLC만 검사 — 대시보드용 경량 신호."""
+
+        row = self._session.execute(
             text(
                 """
-                SELECT COUNT(*) FROM (
-                    SELECT p.instrument_id, p.trade_date
-                    FROM market.price_daily p
-                    JOIN market.instrument i ON i.instrument_id = p.instrument_id
-                    WHERE i.exchange_code = :ex
-                    GROUP BY p.instrument_id, p.trade_date
-                    HAVING COUNT(*) > 1
-                ) d
+                WITH latest AS (
+                  SELECT MAX(p.trade_date) AS d
+                  FROM market.price_daily p
+                  JOIN market.instrument i ON i.instrument_id = p.instrument_id
+                  WHERE i.exchange_code = :ex
+                )
+                SELECT COUNT(*) AS cnt
+                FROM market.price_daily p
+                JOIN market.instrument i ON i.instrument_id = p.instrument_id
+                CROSS JOIN latest l
+                WHERE i.exchange_code = :ex
+                  AND l.d IS NOT NULL
+                  AND p.trade_date = l.d
+                  AND (
+                    p.high_price < p.low_price
+                    OR p.open_price < p.low_price OR p.open_price > p.high_price
+                    OR p.close_price < p.low_price OR p.close_price > p.high_price
+                    OR p.volume < 0
+                  )
                 """
             ),
             {"ex": exchange_code},
-        )
-        return int(row or 0)
+        ).mappings().first()
+        return int((row or {}).get("cnt") or 0)
+
+    def _count_duplicates(self, exchange_code: str) -> int:
+        # Unique PK (instrument_id, trade_date) — 중복 불가. 전체 스캔 제거.
+        _ = exchange_code
+        return 0

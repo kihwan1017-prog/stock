@@ -137,36 +137,62 @@ def _pipeline_unique_stages(
     start_utc: datetime,
     end_utc: datetime,
 ) -> dict[str, int]:
-    """UPBIT entry trace — selection_id 기준 unique stage count (당일)."""
+    """UPBIT entry trace — selection_id 기준 unique stage count (당일).
 
-    mapping = {
-        "CANDIDATE": ("ENTRY_PASS",),
-        "AI_ALLOW": ("ENTRY_PASS",),
-        "TECHNICAL_PASS": ("ENTRY_PASS",),
-        "SIGNAL_EMITTED": ("SIGNAL_EMITTED",),
-        "EXECUTOR_RECEIVED": ("EXECUTOR_RECEIVED",),
-        "BEGIN_ENTRY_ACCEPTED": ("BEGIN_ENTRY_ACCEPTED",),
-        "ORDER": ("ORDER_CREATED", "ADMISSION_PASS"),
-        "FILL": ("FILL", "ORDER_FILLED"),
+    기존 8회 COUNT DISTINCT → FILTER 집계 1회 (결과 equivalence 유지).
+    """
+
+    row = session.execute(
+        text(
+            """
+            SELECT
+              COUNT(DISTINCT selection_id) FILTER (
+                WHERE stage = 'ENTRY_PASS'
+              ) AS entry_pass,
+              COUNT(DISTINCT selection_id) FILTER (
+                WHERE stage = 'SIGNAL_EMITTED'
+              ) AS signal_emitted,
+              COUNT(DISTINCT selection_id) FILTER (
+                WHERE stage = 'EXECUTOR_RECEIVED'
+              ) AS executor_received,
+              COUNT(DISTINCT selection_id) FILTER (
+                WHERE stage = 'BEGIN_ENTRY_ACCEPTED'
+              ) AS begin_entry_accepted,
+              COUNT(DISTINCT selection_id) FILTER (
+                WHERE stage IN ('ORDER_CREATED', 'ADMISSION_PASS')
+              ) AS order_stage,
+              COUNT(DISTINCT selection_id) FILTER (
+                WHERE stage IN ('FILL', 'ORDER_FILLED')
+              ) AS fill_stage
+            FROM operation.upbit_entry_execution_trace
+            WHERE user_broker_account_id = :uba
+              AND created_at >= :start_utc AND created_at < :end_utc
+              AND selection_id IS NOT NULL
+              AND stage IN (
+                'ENTRY_PASS',
+                'SIGNAL_EMITTED',
+                'EXECUTOR_RECEIVED',
+                'BEGIN_ENTRY_ACCEPTED',
+                'ORDER_CREATED',
+                'ADMISSION_PASS',
+                'FILL',
+                'ORDER_FILLED'
+              )
+            """
+        ),
+        {"uba": int(uba_id), "start_utc": start_utc, "end_utc": end_utc},
+    ).mappings().first()
+    entry_pass = int((row or {}).get("entry_pass") or 0)
+    return {
+        "CANDIDATE": entry_pass,
+        "AI_ALLOW": entry_pass,
+        "TECHNICAL_PASS": entry_pass,
+        "SIGNAL_EMITTED": int((row or {}).get("signal_emitted") or 0),
+        "EXECUTOR_RECEIVED": int((row or {}).get("executor_received") or 0),
+        "BEGIN_ENTRY_ACCEPTED": int((row or {}).get("begin_entry_accepted") or 0),
+        "ORDER": int((row or {}).get("order_stage") or 0),
+        "FILL": int((row or {}).get("fill_stage") or 0),
     }
-    out: dict[str, int] = {}
-    for key, stages in mapping.items():
-        stage_list = ", ".join(f"'{s}'" for s in stages)
-        n = session.scalar(
-            text(
-                f"""
-                SELECT COUNT(DISTINCT selection_id)
-                FROM operation.upbit_entry_execution_trace
-                WHERE user_broker_account_id = :uba
-                  AND created_at >= :start_utc AND created_at < :end_utc
-                  AND selection_id IS NOT NULL
-                  AND stage IN ({stage_list})
-                """
-            ),
-            {"uba": int(uba_id), "start_utc": start_utc, "end_utc": end_utc},
-        )
-        out[key] = int(n or 0)
-    return out
 
 
 def _is_kiwoom_expected_post_close(ops: dict[str, Any]) -> bool:

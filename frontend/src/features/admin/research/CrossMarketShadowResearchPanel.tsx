@@ -16,6 +16,15 @@ import {
   Tag,
   Typography,
 } from "antd";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { asRecord } from "@/shared/utils/dataHelpers";
@@ -104,14 +113,51 @@ export function CrossMarketShadowResearchPanel({
     Number(kiwoom?.K0_SAMPLE ?? 0) > 0 ||
     Number(kiwoomGrowth?.LAST_24H_NEW_SAMPLES ?? 0) > 0;
 
+  const compareBars = [
+    {
+      name: "UPBIT E0 자연기회",
+      samples: Number(e0Sem?.NATURAL_OPPORTUNITY_POOL ?? 0),
+    },
+    {
+      name: "UPBIT E0 PASS",
+      samples: Number(e0Sem?.PASS_SAMPLE ?? 0),
+    },
+    {
+      name: "UPBIT E2 PASS",
+      samples: Number(e2Sem?.PASS_SAMPLE ?? 0),
+    },
+    {
+      name: "KIWOOM K0",
+      samples: Number(kiwoom?.K0_SAMPLE ?? 0),
+    },
+  ].filter((r) => Number.isFinite(r.samples));
+
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert
         type="info"
         showIcon
-        title="전략 연구 / Shadow 검증"
-        description="실주문·LIVE/ARM과 분리된 연구 표본입니다. Shadow 결과는 REAL 정책에 자동 반영되지 않습니다."
+        title="연구 데이터 — 실제 주문에 직접 사용되지 않습니다"
+        description="실주문·LIVE/ARM과 분리된 Shadow 연구 표본입니다. Baseline(E0) vs Experiment(E2) 비교는 연구용이며 REAL 정책에 자동 반영되지 않습니다."
       />
+
+      {compareBars.some((b) => b.samples > 0) ? (
+        <Card size="small" title="Baseline vs Experiment 표본 비교">
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={compareBars}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Bar dataKey="samples" name="표본 수" fill="#722ed1" />
+            </BarChart>
+          </ResponsiveContainer>
+        </Card>
+      ) : (
+        <Typography.Text type="secondary">
+          비교할 연구 표본이 아직 없습니다.
+        </Typography.Text>
+      )}
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>

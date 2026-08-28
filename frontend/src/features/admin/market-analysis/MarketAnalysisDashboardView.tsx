@@ -21,10 +21,15 @@ import {
 import Link from "next/link";
 import {
   Cell,
+  Bar,
+  BarChart,
+  CartesianGrid,
   Pie,
   PieChart,
   ResponsiveContainer,
   Tooltip,
+  XAxis,
+  YAxis,
 } from "recharts";
 
 import * as adminApi from "@/features/admin/api/adminApi";
@@ -223,6 +228,34 @@ export function MarketAnalysisDashboardView() {
             </Card>
           </Col>
         </Row>
+
+        {(kiwoomCharts.length > 0 || upbitCharts.length > 0) && (
+          <Card size="small" title="시장 모멘텀 비교 (비율)">
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart
+                data={[
+                  {
+                    market: "키움",
+                    up: kiwoomCharts.find((r) => r.name.includes("상승"))?.value ?? 0,
+                    down: kiwoomCharts.find((r) => r.name.includes("하락"))?.value ?? 0,
+                  },
+                  {
+                    market: "업비트",
+                    up: upbitCharts.find((r) => r.name.includes("상승"))?.value ?? 0,
+                    down: upbitCharts.find((r) => r.name.includes("하락"))?.value ?? 0,
+                  },
+                ]}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="market" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="up" name="상승" fill="#16a34a" />
+                <Bar dataKey="down" name="하락" fill="#dc2626" />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        )}
 
         <Card size="small" title="현재 자동매매 상태 (요약)">
           <Row gutter={[12, 12]}>

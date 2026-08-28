@@ -1,0 +1,228 @@
+{
+  "WORK_ID": "WRK-20260829-009-ADMIN-UX-PERFORMANCE-FINALIZATION",
+  "work_type": "UX_PERFORMANCE_FINALIZATION",
+  "parent": "WRK-20260829-008-ADMIN-UX-IA-FULL-REDESIGN",
+  "FINAL_VERDICT": "ADMIN_UX_PERFORMANCE_FINALIZED",
+  "BASE_COMMIT": "efcbea4",
+  "RESULT_COMMIT": "PENDING",
+  "performance_root_causes": [
+    {
+      "id": "A",
+      "area": "market_analysis / quality_dashboard",
+      "cause": "O. expensive Python/backend aggregation + F. full-table scans",
+      "detail": "per-symbol GROUP BY on price_daily; COUNT(*) on trade_tick(5M); duplicate/invalid full scans; KRX intraday scanned despite NOT_COLLECTED policy"
+    },
+    {
+      "id": "B",
+      "area": "daily_report pipeline stages",
+      "cause": "E. N+1 / repeated aggregation",
+      "detail": "8x COUNT DISTINCT on upbit_entry_execution_trace (~131k) with Parallel Seq Scan"
+    },
+    {
+      "id": "C",
+      "area": "trace date filter",
+      "cause": "G. missing index for (uba, created_at)",
+      "detail": "existing ix_ueet_uba_selection_created not selective for date-range without selection_id"
+    }
+  ],
+  "browser_verified_routes": {
+    "desktop": 18,
+    "mobile": 5,
+    "broken": 0,
+    "console_errors": 0,
+    "console_warnings": 0,
+    "evidence": ".run/k_admin_ux_perf_browser.json",
+    "note": "usable_ms includes fixed 2.5s settle wait — relative compare only"
+  },
+  "page_performance": [
+    {
+      "PAGE": "market-analysis API",
+      "BEFORE_MS": 2356.4,
+      "AFTER_MS": 938.2,
+      "SLOWEST_API": "/admin/market-analysis/summary",
+      "ROOT_CAUSE": "quality_dashboard heavy SQL",
+      "FIX": "CTE fresh/stale + skip duplicate scan + KRX intraday short-circuit + latest-day invalid OHLC"
+    },
+    {
+      "PAGE": "daily-report API",
+      "BEFORE_MS": 4897.8,
+      "AFTER_MS": 3770.7,
+      "SLOWEST_API": "/admin/autotrading/daily-report",
+      "ROOT_CAUSE": "8x pipeline COUNT + ops aggregate",
+      "FIX": "FILTER single-query pipeline + index; ops summary still dominant remainder"
+    },
+    {
+      "PAGE": "pipeline_stages in-process",
+      "BEFORE_MS": 1471.9,
+      "AFTER_MS": 10.8,
+      "SLOWEST_API": "n/a (service)",
+      "ROOT_CAUSE": "N+1 COUNT DISTINCT + seq scan",
+      "FIX": "single FILTER aggregate + ix_ueet_uba_created_at"
+    },
+    {
+      "PAGE": "quality_dashboard in-process",
+      "BEFORE_MS": 9511.2,
+      "AFTER_MS": 899.5,
+      "SLOWEST_API": "n/a (service)",
+      "ROOT_CAUSE": "GROUP BY + tick COUNT + KRX scan",
+      "FIX": "query rewrite + KRX short-circuit"
+    },
+    {
+      "PAGE": "ops-status upbit HTTP",
+      "BEFORE_MS": 932.2,
+      "AFTER_MS": 309.4,
+      "SLOWEST_API": "/uba/1380/ops-status",
+      "ROOT_CAUSE": "cold/warm variance; no semantic change this run",
+      "FIX": "measured only (no trading-logic change)"
+    }
+  ],
+  "slow_pages": [
+    "daily-report (~3.7s p50 remaining — ops_upbit aggregate)",
+    "dashboard browser usable ~3.3s (includes 2.5s settle)"
+  ],
+  "api_profile": ".run/k_admin_ux_perf_api_probe.json + post-deploy HTTP samples",
+  "slow_queries": [
+    {
+      "QUERY": "_pipeline_unique_stages",
+      "TABLES": ["operation.upbit_entry_execution_trace"],
+      "BEFORE_PLAN": "Parallel Seq Scan x8",
+      "AFTER_PLAN": "Bitmap Index Scan on ix_ueet_uba_created_at + FILTER aggregate x1",
+      "SEQ_SCAN": false,
+      "INDEX_USED": "ix_ueet_uba_created_at",
+      "QUERY_CHANGED": true
+    },
+    {
+      "QUERY": "_daily_quality per_symbol GROUP BY",
+      "TABLES": ["market.price_daily", "market.instrument"],
+      "BEFORE_PLAN": "GROUP BY all instruments JOIN price_daily",
+      "AFTER_PLAN": "CTE active+fresh EXISTS on trade_date >= threshold",
+      "SEQ_SCAN": "reduced",
+      "INDEX_USED": "pk_price_daily / trade_date",
+      "QUERY_CHANGED": true
+    },
+    {
+      "QUERY": "_intraday_quality KRX",
+      "TABLES": ["market.trade_tick"],
+      "BEFORE_PLAN": "COUNT/MAX scan",
+      "AFTER_PLAN": "policy short-circuit NOT_COLLECTED (no scan)",
+      "SEQ_SCAN": false,
+      "INDEX_USED": "n/a",
+      "QUERY_CHANGED": true
+    }
+  ],
+  "query_plans": {
+    "pipeline_after": "Bitmap Index Scan on ix_ueet_uba_created_at; Execution ~27ms single FILTER",
+    "pipeline_before": "Parallel Seq Scan; Buffers read~11741; ~59ms x8"
+  },
+  "existing_indexes": [
+    "ix_ueet_uba_selection_created (uba, selection_id, created_at) — not ideal for date-range",
+    "ix_price_daily_trade_date",
+    "pk_price_daily (instrument_id, trade_date) UNIQUE → duplicate_count always 0"
+  ],
+  "indexes_added": [
+    {
+      "name": "ix_ueet_uba_created_at",
+      "table": "operation.upbit_entry_execution_trace",
+      "columns": ["user_broker_account_id", "created_at"],
+      "WHY_NEEDED": "daily pipeline date-range filter Seq Scan",
+      "BEFORE_MS": 1471.9,
+      "AFTER_MS": 10.8,
+      "migration": "perf_ueet_uba_created_20260829"
+    }
+  ],
+  "indexes_rejected": [
+    {
+      "candidate": "extra price_daily composite for quality GROUP BY",
+      "reason": "CTE rewrite removed need; unique PK already covers identity"
+    },
+    {
+      "candidate": "trade_tick exchange index",
+      "reason": "KRX short-circuit; UPBIT MAX ~350ms acceptable for summary"
+    }
+  ],
+  "query_optimizations": [
+    "pipeline FILTER single query",
+    "quality daily CTE",
+    "duplicate_count short-circuit (UNIQUE PK)",
+    "invalid OHLC latest-day only",
+    "KRX intraday policy short-circuit"
+  ],
+  "n_plus_one_findings": [
+    {
+      "FOUND": true,
+      "LOCATION": "autotrading_daily_report_service._pipeline_unique_stages",
+      "FIX": "single FILTER aggregate"
+    }
+  ],
+  "payload_findings": [
+    "ops-status ~15KB — acceptable",
+    "daily-report ~10KB — OK; time dominated by compute not payload"
+  ],
+  "visualizations_added": [
+    {"screen": "portfolio", "charts": ["market donut", "symbol pnl bar"]},
+    {"screen": "market-analysis", "charts": ["momentum comparison bar"]},
+    {"screen": "research", "charts": ["baseline vs experiment sample bar"]},
+    {"screen": "strategy lifecycle", "charts": ["Ant Steps timeline"]}
+  ],
+  "strategy_lifecycle": {
+    "STEPS": ["발견", "AI 분석", "검증", "검토/승인", "운영 후보", "활성 운영", "종료/폐기"],
+    "USER_FRIENDLY_STATUS": true
+  },
+  "mobile_results": {
+    "routes_ok": 5,
+    "console_errors": 0,
+    "BOTTOM_NAV": ["홈", "자동매매", "주문", "포지션", "알림"]
+  },
+  "console_results": {
+    "error": 0,
+    "warn": 0,
+    "method": "playwright real browser"
+  },
+  "tests": {
+    "antd_compat": "PASS",
+    "typecheck": "PASS",
+    "vitest": "22 PASS focused",
+    "pytest": "tests/test_wrk009_pipeline_stages_equivalence.py PASS"
+  },
+  "changed_files": [
+    "src/stock_platform/operation/autotrading_daily_report_service.py",
+    "src/stock_platform/markets/collection_status_service.py",
+    "database/alembic/versions/perf_ueet_uba_created_20260829_entry_trace_uba_created_index.py",
+    "tests/test_wrk009_pipeline_stages_equivalence.py",
+    "frontend portfolio/market-analysis/research/lifecycle screens"
+  ],
+  "migration": {
+    "CREATED": true,
+    "APPLIED": true,
+    "revision": "perf_ueet_uba_created_20260829",
+    "DOWNGRADE_SUPPORTED": true,
+    "CONCURRENTLY": true
+  },
+  "deployment": {
+    "frontend": "hot/source — UI viz commit",
+    "backend_restart_count": 1,
+    "listen_pid_after": 15096
+  },
+  "trading_read_only": {
+    "UPBIT_LIVE": "ON",
+    "UPBIT_ARM": "ON",
+    "LEASE": "ACTIVE",
+    "AUTO_TRADING_READY": true
+  },
+  "safety": {
+    "REAL_TRADING_LOGIC_CHANGED": false,
+    "STRATEGY_LOGIC_CHANGED": false,
+    "RISK_POLICY_CHANGED": false,
+    "PORTFOLIO_POLICY_CHANGED": false,
+    "ORDER_EXECUTION_CHANGED": false,
+    "LIVE_ARM_MUTATION": false,
+    "FORCED_ORDER": 0,
+    "TEST_ORDER": 0,
+    "MANUAL_CANCEL": 0
+  },
+  "remaining_issues": [
+    "daily-report still ~3.7s p50 — dominated by dual build_uba_operational_summary; further slim needs careful semantic review",
+    "UPBIT intraday MAX(trade_tick) still ~0.3–0.9s within quality_dashboard",
+    "browser usable_ms includes artificial 2.5s wait — not pure TTI"
+  ]
+}

@@ -1,0 +1,810 @@
+{
+  "generated_at_kst": "2026-08-29T01:18:23.258988+09:00",
+  "base_url": "http://127.0.0.1:8000",
+  "repeats": 3,
+  "threshold_ms": 500,
+  "rows": [
+    {
+      "page": "dashboard",
+      "label": "operations-center-summary",
+      "path": "/api/v1/admin/operations-center/summary?cache_ttl_sec=3",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        39.6,
+        27.2,
+        9.1
+      ],
+      "p50_ms": 27.2,
+      "mean_ms": 25.3,
+      "max_ms": 39.6,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "uba-ops-status-upbit",
+      "path": "/api/v1/admin/autotrading/uba/1380/ops-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        907.0,
+        408.0,
+        415.6
+      ],
+      "p50_ms": 415.6,
+      "mean_ms": 576.9,
+      "max_ms": 907.0,
+      "payload_bytes": 16300,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "uba-ops-status-kiwoom",
+      "path": "/api/v1/admin/autotrading/uba/1381/ops-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        119.8,
+        154.7,
+        123.0
+      ],
+      "p50_ms": 123.0,
+      "mean_ms": 132.5,
+      "max_ms": 154.7,
+      "payload_bytes": 15354,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "uba-readiness-upbit",
+      "path": "/api/v1/admin/autotrading/uba/1380/autotrading-readiness",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        36.6,
+        433.2,
+        19.8
+      ],
+      "p50_ms": 36.6,
+      "mean_ms": 163.2,
+      "max_ms": 433.2,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "uba-readiness-kiwoom",
+      "path": "/api/v1/admin/autotrading/uba/1381/autotrading-readiness",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        12.2,
+        17.7,
+        31.5
+      ],
+      "p50_ms": 17.7,
+      "mean_ms": 20.5,
+      "max_ms": 31.5,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "portfolio-status-upbit",
+      "path": "/api/v1/admin/autotrading/uba/1380/portfolio-status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        37.7,
+        28.9,
+        15.2
+      ],
+      "p50_ms": 28.9,
+      "mean_ms": 27.2,
+      "max_ms": 37.7,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "ops-positions",
+      "path": "/api/v1/admin/ops/dashboard/positions",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        33.5,
+        29.2,
+        26.7
+      ],
+      "p50_ms": 29.2,
+      "mean_ms": 29.8,
+      "max_ms": 33.5,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "orders-limit50",
+      "path": "/api/v1/admin/orders?limit=50&offset=0",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        27.8,
+        34.8,
+        32.8
+      ],
+      "p50_ms": 32.8,
+      "mean_ms": 31.8,
+      "max_ms": 34.8,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "autotrading-performance",
+      "path": "/api/v1/admin/autotrading/performance?broker=ALL&period=TODAY&include_ops=true",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        11.0,
+        18.9,
+        35.8
+      ],
+      "p50_ms": 18.9,
+      "mean_ms": 21.9,
+      "max_ms": 35.8,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "portfolio",
+      "label": "ops-positions",
+      "path": "/api/v1/admin/ops/dashboard/positions",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        26.9,
+        39.6,
+        15.4
+      ],
+      "p50_ms": 26.9,
+      "mean_ms": 27.3,
+      "max_ms": 39.6,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "portfolio",
+      "label": "symbol-ownership-upbit",
+      "path": "/api/v1/admin/broker-accounts/1380/symbol-ownership?broker_code=UPBIT",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        15.1,
+        12.4,
+        31.9
+      ],
+      "p50_ms": 15.1,
+      "mean_ms": 19.8,
+      "max_ms": 31.9,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "orders",
+      "label": "orders-limit300",
+      "path": "/api/v1/admin/orders?limit=300&offset=0",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        13.4,
+        18.2,
+        44.8
+      ],
+      "p50_ms": 18.2,
+      "mean_ms": 25.5,
+      "max_ms": 44.8,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "daily_report",
+      "label": "daily-report",
+      "path": "/api/v1/admin/autotrading/daily-report",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        4897.8,
+        4258.0,
+        4911.8
+      ],
+      "p50_ms": 4897.8,
+      "mean_ms": 4689.2,
+      "max_ms": 4911.8,
+      "payload_bytes": 10679,
+      "slow": true
+    },
+    {
+      "page": "upbit",
+      "label": "ops-status",
+      "path": "/api/v1/admin/autotrading/uba/1380/ops-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        975.8,
+        932.2,
+        765.9
+      ],
+      "p50_ms": 932.2,
+      "mean_ms": 891.3,
+      "max_ms": 975.8,
+      "payload_bytes": 15942,
+      "slow": true
+    },
+    {
+      "page": "upbit",
+      "label": "portfolio-status",
+      "path": "/api/v1/admin/autotrading/uba/1380/portfolio-status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        346.2,
+        305.1,
+        341.7
+      ],
+      "p50_ms": 341.7,
+      "mean_ms": 331.0,
+      "max_ms": 346.2,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "kiwoom",
+      "label": "ops-status",
+      "path": "/api/v1/admin/autotrading/uba/1381/ops-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        731.3,
+        1084.7,
+        84.2
+      ],
+      "p50_ms": 731.3,
+      "mean_ms": 633.4,
+      "max_ms": 1084.7,
+      "payload_bytes": 14996,
+      "slow": true
+    },
+    {
+      "page": "market_analysis",
+      "label": "summary",
+      "path": "/api/v1/admin/market-analysis/summary",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        2434.1,
+        2341.2,
+        2356.4
+      ],
+      "p50_ms": 2356.4,
+      "mean_ms": 2377.2,
+      "max_ms": 2434.1,
+      "payload_bytes": 2265,
+      "slow": true
+    },
+    {
+      "page": "research",
+      "label": "collection-status",
+      "path": "/api/v1/admin/autotrading/uba/1380/research/collection-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        494.2,
+        796.0,
+        592.5
+      ],
+      "p50_ms": 592.5,
+      "mean_ms": 627.6,
+      "max_ms": 796.0,
+      "payload_bytes": 6280,
+      "slow": true
+    },
+    {
+      "page": "risk",
+      "label": "kill-switch",
+      "path": "/api/v1/admin/risk/kill-switch",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        11.3,
+        24.9,
+        11.4
+      ],
+      "p50_ms": 11.4,
+      "mean_ms": 15.9,
+      "max_ms": 24.9,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "risk",
+      "label": "daily-loss",
+      "path": "/api/v1/admin/risk/daily-loss/status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        28.0,
+        10.1,
+        29.5
+      ],
+      "p50_ms": 28.0,
+      "mean_ms": 22.5,
+      "max_ms": 29.5,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "risk",
+      "label": "system-settings",
+      "path": "/api/v1/admin/risk/system-settings",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        8.7,
+        13.0,
+        32.1
+      ],
+      "p50_ms": 13.0,
+      "mean_ms": 17.9,
+      "max_ms": 32.1,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "monitoring",
+      "label": "system-status",
+      "path": "/api/v1/admin/system/status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        11.7,
+        24.0,
+        11.7
+      ],
+      "p50_ms": 11.7,
+      "mean_ms": 15.8,
+      "max_ms": 24.0,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "notifications",
+      "label": "list",
+      "path": "/api/v1/admin/notifications?limit=50",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        18.0,
+        14.1,
+        12.2
+      ],
+      "p50_ms": 14.1,
+      "mean_ms": 14.8,
+      "max_ms": 18.0,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "recovery",
+      "label": "status",
+      "path": "/api/v1/admin/recovery/status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        73.7,
+        42.6,
+        59.3
+      ],
+      "p50_ms": 59.3,
+      "mean_ms": 58.5,
+      "max_ms": 73.7,
+      "payload_bytes": 12317,
+      "slow": false
+    },
+    {
+      "page": "accounts",
+      "label": "broker-accounts-upbit",
+      "path": "/api/v1/admin/broker-accounts?broker_code=UPBIT&limit=20",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        32.6,
+        28.1,
+        47.7
+      ],
+      "p50_ms": 32.6,
+      "mean_ms": 36.2,
+      "max_ms": 47.7,
+      "payload_bytes": 949,
+      "slow": false
+    },
+    {
+      "page": "mobile",
+      "label": "overview",
+      "path": "/api/v1/mobile/overview",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        1912.2,
+        31.1,
+        16.2
+      ],
+      "p50_ms": 31.1,
+      "mean_ms": 653.1,
+      "max_ms": 1912.2,
+      "payload_bytes": 4233,
+      "slow": false
+    }
+  ],
+  "slow_rows": [
+    {
+      "page": "dashboard",
+      "label": "operations-center-summary",
+      "path": "/api/v1/admin/operations-center/summary?cache_ttl_sec=3",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        39.6,
+        27.2,
+        9.1
+      ],
+      "p50_ms": 27.2,
+      "mean_ms": 25.3,
+      "max_ms": 39.6,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "uba-readiness-upbit",
+      "path": "/api/v1/admin/autotrading/uba/1380/autotrading-readiness",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        36.6,
+        433.2,
+        19.8
+      ],
+      "p50_ms": 36.6,
+      "mean_ms": 163.2,
+      "max_ms": 433.2,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "uba-readiness-kiwoom",
+      "path": "/api/v1/admin/autotrading/uba/1381/autotrading-readiness",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        12.2,
+        17.7,
+        31.5
+      ],
+      "p50_ms": 17.7,
+      "mean_ms": 20.5,
+      "max_ms": 31.5,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "portfolio-status-upbit",
+      "path": "/api/v1/admin/autotrading/uba/1380/portfolio-status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        37.7,
+        28.9,
+        15.2
+      ],
+      "p50_ms": 28.9,
+      "mean_ms": 27.2,
+      "max_ms": 37.7,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "ops-positions",
+      "path": "/api/v1/admin/ops/dashboard/positions",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        33.5,
+        29.2,
+        26.7
+      ],
+      "p50_ms": 29.2,
+      "mean_ms": 29.8,
+      "max_ms": 33.5,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "orders-limit50",
+      "path": "/api/v1/admin/orders?limit=50&offset=0",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        27.8,
+        34.8,
+        32.8
+      ],
+      "p50_ms": 32.8,
+      "mean_ms": 31.8,
+      "max_ms": 34.8,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "dashboard",
+      "label": "autotrading-performance",
+      "path": "/api/v1/admin/autotrading/performance?broker=ALL&period=TODAY&include_ops=true",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        11.0,
+        18.9,
+        35.8
+      ],
+      "p50_ms": 18.9,
+      "mean_ms": 21.9,
+      "max_ms": 35.8,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "portfolio",
+      "label": "ops-positions",
+      "path": "/api/v1/admin/ops/dashboard/positions",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        26.9,
+        39.6,
+        15.4
+      ],
+      "p50_ms": 26.9,
+      "mean_ms": 27.3,
+      "max_ms": 39.6,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "portfolio",
+      "label": "symbol-ownership-upbit",
+      "path": "/api/v1/admin/broker-accounts/1380/symbol-ownership?broker_code=UPBIT",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        15.1,
+        12.4,
+        31.9
+      ],
+      "p50_ms": 15.1,
+      "mean_ms": 19.8,
+      "max_ms": 31.9,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "orders",
+      "label": "orders-limit300",
+      "path": "/api/v1/admin/orders?limit=300&offset=0",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        13.4,
+        18.2,
+        44.8
+      ],
+      "p50_ms": 18.2,
+      "mean_ms": 25.5,
+      "max_ms": 44.8,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "daily_report",
+      "label": "daily-report",
+      "path": "/api/v1/admin/autotrading/daily-report",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        4897.8,
+        4258.0,
+        4911.8
+      ],
+      "p50_ms": 4897.8,
+      "mean_ms": 4689.2,
+      "max_ms": 4911.8,
+      "payload_bytes": 10679,
+      "slow": true
+    },
+    {
+      "page": "upbit",
+      "label": "ops-status",
+      "path": "/api/v1/admin/autotrading/uba/1380/ops-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        975.8,
+        932.2,
+        765.9
+      ],
+      "p50_ms": 932.2,
+      "mean_ms": 891.3,
+      "max_ms": 975.8,
+      "payload_bytes": 15942,
+      "slow": true
+    },
+    {
+      "page": "upbit",
+      "label": "portfolio-status",
+      "path": "/api/v1/admin/autotrading/uba/1380/portfolio-status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        346.2,
+        305.1,
+        341.7
+      ],
+      "p50_ms": 341.7,
+      "mean_ms": 331.0,
+      "max_ms": 346.2,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "kiwoom",
+      "label": "ops-status",
+      "path": "/api/v1/admin/autotrading/uba/1381/ops-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        731.3,
+        1084.7,
+        84.2
+      ],
+      "p50_ms": 731.3,
+      "mean_ms": 633.4,
+      "max_ms": 1084.7,
+      "payload_bytes": 14996,
+      "slow": true
+    },
+    {
+      "page": "market_analysis",
+      "label": "summary",
+      "path": "/api/v1/admin/market-analysis/summary",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        2434.1,
+        2341.2,
+        2356.4
+      ],
+      "p50_ms": 2356.4,
+      "mean_ms": 2377.2,
+      "max_ms": 2434.1,
+      "payload_bytes": 2265,
+      "slow": true
+    },
+    {
+      "page": "research",
+      "label": "collection-status",
+      "path": "/api/v1/admin/autotrading/uba/1380/research/collection-status",
+      "status": 200,
+      "error": null,
+      "samples_ms": [
+        494.2,
+        796.0,
+        592.5
+      ],
+      "p50_ms": 592.5,
+      "mean_ms": 627.6,
+      "max_ms": 796.0,
+      "payload_bytes": 6280,
+      "slow": true
+    },
+    {
+      "page": "risk",
+      "label": "kill-switch",
+      "path": "/api/v1/admin/risk/kill-switch",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        11.3,
+        24.9,
+        11.4
+      ],
+      "p50_ms": 11.4,
+      "mean_ms": 15.9,
+      "max_ms": 24.9,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "risk",
+      "label": "daily-loss",
+      "path": "/api/v1/admin/risk/daily-loss/status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        28.0,
+        10.1,
+        29.5
+      ],
+      "p50_ms": 28.0,
+      "mean_ms": 22.5,
+      "max_ms": 29.5,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "risk",
+      "label": "system-settings",
+      "path": "/api/v1/admin/risk/system-settings",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        8.7,
+        13.0,
+        32.1
+      ],
+      "p50_ms": 13.0,
+      "mean_ms": 17.9,
+      "max_ms": 32.1,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "monitoring",
+      "label": "system-status",
+      "path": "/api/v1/admin/system/status",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        11.7,
+        24.0,
+        11.7
+      ],
+      "p50_ms": 11.7,
+      "mean_ms": 15.8,
+      "max_ms": 24.0,
+      "payload_bytes": 22,
+      "slow": false
+    },
+    {
+      "page": "notifications",
+      "label": "list",
+      "path": "/api/v1/admin/notifications?limit=50",
+      "status": 404,
+      "error": "HTTP Error 404: Not Found",
+      "samples_ms": [
+        18.0,
+        14.1,
+        12.2
+      ],
+      "p50_ms": 14.1,
+      "mean_ms": 14.8,
+      "max_ms": 18.0,
+      "payload_bytes": 22,
+      "slow": false
+    }
+  ],
+  "slow_count": 5
+}

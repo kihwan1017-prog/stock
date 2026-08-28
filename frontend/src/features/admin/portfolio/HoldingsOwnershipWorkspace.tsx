@@ -24,6 +24,18 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 import { adminRoutes } from "@/config/routes";
 import {
@@ -55,6 +67,8 @@ import {
   isEffectivelyZero,
   parseDecimalSafe,
 } from "@/shared/utils/numericFormatKo";
+
+const PIE_COLORS = ["#1677ff", "#13c2c2", "#722ed1", "#fa8c16"];
 
 const DEFAULT_UPBIT_UBA = Number(
   process.env.NEXT_PUBLIC_DEFAULT_UPBIT_UBA_ID ?? "1380",
@@ -364,6 +378,22 @@ export function HoldingsOwnershipWorkspace() {
     return by;
   }, [rows]);
 
+  const compositionCharts = useMemo(() => {
+    const marketShare = [
+      { name: "업비트", value: Math.max(0, summaries.UPBIT.eval) },
+      { name: "키움", value: Math.max(0, summaries.KIWOOM.eval) },
+    ].filter((r) => r.value > 0);
+    const pnlBars = [...rows]
+      .filter((r) => Number.isFinite(r.unrealizedSort) && r.unrealizedSort !== Number.NEGATIVE_INFINITY)
+      .sort((a, b) => Math.abs(b.unrealizedSort) - Math.abs(a.unrealizedSort))
+      .slice(0, 8)
+      .map((r) => ({
+        name: r.symbol.length > 10 ? r.symbol.slice(0, 10) : r.symbol,
+        pnl: Math.round(r.unrealizedSort),
+      }));
+    return { marketShare, pnlBars };
+  }, [rows, summaries]);
+
   const loading =
     accountsQ.isLoading ||
     positionsQ.isLoading ||
@@ -642,6 +672,63 @@ export function HoldingsOwnershipWorkspace() {
           "KIWOOM",
           "수수료/세금 반영 여부 미확정",
         )
+      )}
+
+      {(compositionCharts.marketShare.length > 0 ||
+        compositionCharts.pnlBars.length > 0) && (
+        <Row gutter={[12, 12]}>
+          {compositionCharts.marketShare.length > 1 ? (
+            <Col xs={24} md={10}>
+              <Card size="small" title="시장별 평가 비중">
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={compositionCharts.marketShare}
+                      dataKey="value"
+                      nameKey="name"
+                      outerRadius={70}
+                      label
+                    >
+                      {compositionCharts.marketShare.map((_, i) => (
+                        <Cell
+                          key={`pie-${i}`}
+                          fill={PIE_COLORS[i % PIE_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v) =>
+                        `${Number(v).toLocaleString("ko-KR")}원`
+                      }
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Card>
+            </Col>
+          ) : null}
+          {compositionCharts.pnlBars.length > 0 ? (
+            <Col
+              xs={24}
+              md={compositionCharts.marketShare.length > 1 ? 14 : 24}
+            >
+              <Card size="small" title="종목별 평가손익 (상위)">
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={compositionCharts.pnlBars}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(v) =>
+                        `${Number(v).toLocaleString("ko-KR")}원`
+                      }
+                    />
+                    <Bar dataKey="pnl" name="평가손익" fill="#1677ff" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Card>
+            </Col>
+          ) : null}
+        </Row>
       )}
 
       {errored ? (
