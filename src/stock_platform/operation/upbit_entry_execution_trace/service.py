@@ -41,6 +41,10 @@ from stock_platform.operation.upbit_entry_execution_trace.constants import (
 from stock_platform.operation.upbit_entry_execution_trace.entities import (
     UpbitEntryExecutionTraceEntity,
 )
+from stock_platform.operation.upbit_entry_execution_trace.terminal_selection import (
+    resolve_current_execution_trace_id,
+    select_terminal_for_events,
+)
 from stock_platform.operation.upbit_entry_execution_trace.user_reasons import (
     friendly_reason,
     normalize_portfolio_reason,
@@ -318,6 +322,7 @@ def list_trace_events(
     symbol: str | None = None,
     execution_trace_id: str | None = None,
     limit: int = 100,
+    tail: bool = False,
 ) -> list[dict[str, Any]]:
     q = select(UpbitEntryExecutionTraceEntity).where(
         UpbitEntryExecutionTraceEntity.user_broker_account_id
@@ -336,9 +341,62 @@ def list_trace_events(
             UpbitEntryExecutionTraceEntity.execution_trace_id
             == str(execution_trace_id)
         )
-    q = q.order_by(UpbitEntryExecutionTraceEntity.created_at).limit(int(limit))
-    rows = list(session.scalars(q))
+    if tail:
+        q = q.order_by(
+            UpbitEntryExecutionTraceEntity.created_at.desc(),
+            UpbitEntryExecutionTraceEntity.trace_row_id.desc(),
+        ).limit(int(limit))
+        rows = list(session.scalars(q))
+        rows.reverse()
+    else:
+        q = q.order_by(
+            UpbitEntryExecutionTraceEntity.created_at,
+            UpbitEntryExecutionTraceEntity.trace_row_id,
+        ).limit(int(limit))
+        rows = list(session.scalars(q))
     return [_row_dict(r) for r in rows]
+
+
+def _resolve_current_trace_id_from_db(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    selection_id: int | None = None,
+    symbol: str | None = None,
+) -> str | None:
+    """DB에서 current attempt execution_trace_id — 전체 scan 없이 최신 attempt."""
+    q = select(UpbitEntryExecutionTraceEntity.execution_trace_id).where(
+        UpbitEntryExecutionTraceEntity.user_broker_account_id
+        == int(user_broker_account_id)
+    )
+    if selection_id is not None:
+        q = q.where(
+            UpbitEntryExecutionTraceEntity.selection_id == int(selection_id)
+        )
+    if symbol:
+        q = q.where(
+            UpbitEntryExecutionTraceEntity.symbol == str(symbol).upper()
+        )
+    q = q.order_by(
+        UpbitEntryExecutionTraceEntity.created_at.desc(),
+        UpbitEntryExecutionTraceEntity.trace_row_id.desc(),
+    ).limit(1)
+    tid = session.scalar(q)
+    return str(tid) if tid else None
+
+
+def _load_attempt_events(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    execution_trace_id: str,
+) -> list[dict[str, Any]]:
+    return list_trace_events(
+        session,
+        user_broker_account_id=user_broker_account_id,
+        execution_trace_id=execution_trace_id,
+        limit=50,
+    )
 
 
 def _row_dict(r: UpbitEntryExecutionTraceEntity) -> dict[str, Any]:
@@ -378,17 +436,34 @@ def build_why_no_trade(
     symbol: str | None = None,
     execution_trace_id: str | None = None,
 ) -> dict[str, Any]:
-    """selection/symbol 기준 canonical why-no-trade."""
+    """selection/symbol 기준 canonical why-no-trade — lifecycle priority terminal."""
+    coverage_start = get_trace_coverage_start_at(session)
+    current_trace_id = execution_trace_id
+    if not current_trace_id:
+        current_trace_id = _resolve_current_trace_id_from_db(
+            session,
+            user_broker_account_id=user_broker_account_id,
+            selection_id=selection_id,
+            symbol=symbol,
+        )
+    attempt_events: list[dict[str, Any]] = []
+    if current_trace_id:
+        attempt_events = _load_attempt_events(
+            session,
+            user_broker_account_id=user_broker_account_id,
+            execution_trace_id=str(current_trace_id),
+        )
+    # UI timeline — 최근 attempt 주변 tail (first-N 버그 방지)
     events = list_trace_events(
         session,
         user_broker_account_id=user_broker_account_id,
         selection_id=selection_id,
         symbol=symbol,
         execution_trace_id=execution_trace_id,
-        limit=200,
+        limit=100,
+        tail=True,
     )
-    coverage_start = get_trace_coverage_start_at(session)
-    if not events:
+    if not attempt_events and not events:
         return {
             "ok": True,
             "provenance_status": "UNPROVEN",
@@ -399,30 +474,76 @@ def build_why_no_trade(
                 f"{coverage_start.astimezone(KST).strftime('%Y-%m-%d %H:%M:%S KST') if coverage_start else 'NOT_YET_DEPLOYED'}"
             ),
             "events": [],
+            "terminal": False,
+            "source": "ENTRY_EXECUTION_TRACE",
             "terminal_stage": None,
             "terminal_reason_code": None,
             "user_friendly_reason": None,
+            "stage": None,
+            "reason_code": None,
+            "friendly_reason": None,
+            "occurred_at": None,
         }
-    terminal = events[-1]
-    has_order = any(e.get("order_id") for e in events)
-    has_fill = any(e.get("stage") == STAGE_BUY_FILLED for e in events)
+    terminal_source = attempt_events or events
+    terminal = select_terminal_for_events(
+        terminal_source,
+        execution_trace_id=str(current_trace_id) if current_trace_id else None,
+    )
+    if terminal is None:
+        terminal = select_terminal_for_events(events)
+    resolved_trace_id = (
+        str(current_trace_id)
+        if current_trace_id
+        else resolve_current_execution_trace_id(events)
+    )
+    def _scoped_exists(*filters: Any) -> bool:
+        q = select(UpbitEntryExecutionTraceEntity.trace_row_id).where(
+            UpbitEntryExecutionTraceEntity.user_broker_account_id
+            == int(user_broker_account_id),
+            *filters,
+        )
+        if selection_id is not None:
+            q = q.where(
+                UpbitEntryExecutionTraceEntity.selection_id == int(selection_id)
+            )
+        if symbol:
+            q = q.where(
+                UpbitEntryExecutionTraceEntity.symbol == str(symbol).upper()
+            )
+        return session.scalar(q.limit(1)) is not None
+
+    has_order = _scoped_exists(UpbitEntryExecutionTraceEntity.order_id.is_not(None))
+    has_fill = _scoped_exists(
+        UpbitEntryExecutionTraceEntity.stage == STAGE_BUY_FILLED
+    )
     proven = coverage_start is not None and (
-        not events[0].get("created_at")
+        not events
+        or not events[0].get("created_at")
         or events[0]["created_at"] >= coverage_start.isoformat()
     )
+    reason_code = terminal.get("reason_code") if terminal else None
+    friendly = (
+        terminal.get("user_friendly_reason") if terminal else None
+    ) or friendly_reason(reason_code)
     return {
         "ok": True,
         "provenance_status": "PROVEN" if proven else "UNPROVEN",
         "historical_lineage_status": "PROVEN" if proven else "UNPROVEN",
-        "execution_trace_id": events[0].get("execution_trace_id"),
-        "selection_id": selection_id or events[0].get("selection_id"),
-        "symbol": symbol or events[0].get("symbol"),
+        "execution_trace_id": resolved_trace_id,
+        "selection_id": selection_id or (events[0].get("selection_id") if events else None),
+        "symbol": symbol or (events[0].get("symbol") if events else None),
         "events": events,
-        "terminal_stage": terminal.get("stage"),
-        "terminal_decision": terminal.get("decision"),
-        "terminal_reason_code": terminal.get("reason_code"),
-        "user_friendly_reason": terminal.get("user_friendly_reason")
-        or friendly_reason(terminal.get("reason_code")),
+        "current_attempt_events": attempt_events,
+        "terminal": True,
+        "source": "ENTRY_EXECUTION_TRACE",
+        "terminal_stage": terminal.get("stage") if terminal else None,
+        "terminal_decision": terminal.get("decision") if terminal else None,
+        "terminal_reason_code": reason_code,
+        "user_friendly_reason": friendly,
+        "stage": terminal.get("stage") if terminal else None,
+        "reason_code": reason_code,
+        "friendly_reason": friendly,
+        "occurred_at": terminal.get("created_at_kst") if terminal else None,
         "order_created": has_order,
         "buy_filled": has_fill,
         "trace_coverage_start_at": (

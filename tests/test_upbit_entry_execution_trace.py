@@ -27,6 +27,7 @@ from stock_platform.operation.upbit_entry_execution_trace.service import (
     append_stage_fail_open,
     build_idempotency_key,
     build_provenance,
+    build_why_no_trade,
     new_execution_trace_id,
 )
 from stock_platform.operation.upbit_entry_execution_trace.user_reasons import (
@@ -197,3 +198,18 @@ def test_trace_failure_does_not_propagate(_mock_append: MagicMock) -> None:
         decision="PASS",
     )
     assert out.get("ok") is False
+
+
+def test_build_why_no_trade_empty_fallback() -> None:
+    """TEST 8 — trace 없음 pipeline fallback."""
+    session = MagicMock()
+    session.scalar.side_effect = [None, None, None]
+    session.scalars.return_value.all.return_value = []
+    out = build_why_no_trade(
+        session,
+        user_broker_account_id=1380,
+        selection_id=99999,
+    )
+    assert out["ok"] is True
+    assert out["terminal_stage"] is None
+    assert out["source"] == "ENTRY_EXECUTION_TRACE"
