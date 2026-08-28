@@ -1448,6 +1448,14 @@ export async function getAdminAutotradingPerformance(params?: {
   return getJson("/admin/dashboard/autotrading-performance", params);
 }
 
+/** 자동매매 일일 운영보고 — READ ONLY */
+export async function getAutotradingDailyReport(params?: {
+  date?: string;
+  market?: "ALL" | "UPBIT" | "KIWOOM";
+}): Promise<JsonValue> {
+  return getJson("/admin/autotrading/daily-report", params);
+}
+
 /** STEP 11-3 — AI Provider Configuration / Vault */
 export async function listAiProviderConfigurations(): Promise<JsonValue> {
   return getJson("/admin/ai/provider-configurations");

@@ -812,6 +812,18 @@ class ApplicationLifecycle:
         daily_loss_monitor_scheduler.start()
         position_exit_monitor_scheduler.start()
         telegram_ops_scheduler.start()
+        try:
+            from stock_platform.operation.autotrading_daily_report_scheduler import (
+                autotrading_daily_report_scheduler,
+            )
+
+            dr_start = autotrading_daily_report_scheduler.start()
+            logger.info("autotrading_daily_report_scheduler_startup", **dr_start)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "autotrading_daily_report_scheduler_start_failed",
+                error=str(exc)[:300],
+            )
         strategy_runtime_reload_scheduler.start()
         strategy_approval_scheduler.start()
         strategy_deployment_pipeline_scheduler.start()
@@ -950,6 +962,14 @@ class ApplicationLifecycle:
         await strategy_deployment_pipeline_scheduler.shutdown()
         await strategy_approval_scheduler.shutdown()
         await strategy_runtime_reload_scheduler.shutdown()
+        try:
+            from stock_platform.operation.autotrading_daily_report_scheduler import (
+                autotrading_daily_report_scheduler,
+            )
+
+            autotrading_daily_report_scheduler.stop()
+        except Exception:  # noqa: BLE001
+            pass
         await telegram_ops_scheduler.shutdown()
         await position_exit_monitor_scheduler.shutdown()
         await daily_loss_monitor_scheduler.shutdown()

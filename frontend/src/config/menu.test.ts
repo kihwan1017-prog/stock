@@ -73,15 +73,17 @@ describe("single admin operator menu", () => {
     ]);
   });
 
-  it("자동매매 leaf: 키움/업비트/프로세스/주문·체결", () => {
+  it("자동매매 leaf: 일일보고/키움/업비트/프로세스/주문·체결", () => {
     const auto = adminMenuItems.find((i) => i.key === "autotrading");
     expect(auto?.children?.map((c) => c.key)).toEqual([
+      "autotrading-report",
       "autotrading-kiwoom",
       "autotrading-upbit",
       "autotrading-process",
       "orders",
     ]);
     expect(auto?.children?.map((c) => c.path)).toEqual([
+      adminRoutes.autotradingReport,
       adminRoutes.autotradingKiwoom,
       adminRoutes.autotradingUpbit,
       adminRoutes.autotradingProcess,

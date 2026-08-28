@@ -361,6 +361,9 @@ from stock_platform.api.v1.admin_upbit_research import (
 from stock_platform.api.v1.admin_autotrading_research import (
     router as admin_autotrading_research_router,
 )
+from stock_platform.api.v1.admin_autotrading_daily_report import (
+    router as admin_autotrading_daily_report_router,
+)
 from stock_platform.api.v1.admin_upbit_dual_llm import (
     router as admin_upbit_dual_llm_router,
 )
@@ -613,6 +616,7 @@ _ROUTER_GROUPS = (
     admin_upbit_opportunity_scanner_router,
     admin_upbit_research_router,
     admin_autotrading_research_router,
+    admin_autotrading_daily_report_router,
     admin_upbit_dual_llm_router,
     admin_kiwoom_dual_llm_router,
     admin_llm_learning_router,

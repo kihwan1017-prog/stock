@@ -62,6 +62,7 @@ export const adminRoutes = {
   /** UPBIT 자동매매 설정 워크스페이스 (6탭) */
   upbitAutotrading: "/admin/upbit/autotrading",
   /** 단일 운영자 — Broker Workspace canonical */
+  autotradingReport: "/admin/autotrading/report",
   autotradingUpbit: "/admin/autotrading/upbit",
   autotradingKiwoom: "/admin/autotrading/kiwoom",
   /** 프로세스·버전·Trace·Visual Map */
@@ -232,6 +233,7 @@ const adminTitles: Record<string, string> = {
   [adminRoutes.upbitMarkets]: "업비트 시세",
   [adminRoutes.marketData]: "시장 데이터",
   [adminRoutes.upbitAutotrading]: "업비트 자동매매",
+  [adminRoutes.autotradingReport]: "일일 운영보고",
   [adminRoutes.autotradingUpbit]: "업비트 자동매매",
   [adminRoutes.autotradingProcess]: "프로세스·버전",
   [adminRoutes.autotradingKiwoom]: "키움 자동매매",

@@ -109,6 +109,15 @@ export const adminMenuItems: AdminMenuItem[] = [
     enabled: true,
     children: [
       {
+        key: "autotrading-report",
+        label: "일일 운영보고",
+        path: adminRoutes.autotradingReport,
+        icon: <FileTextOutlined />,
+        enabled: true,
+        permission: "menu:upbit",
+        matchPaths: [adminRoutes.autotradingReport],
+      },
+      {
         key: "autotrading-kiwoom",
         label: "키움 자동매매",
         path: adminRoutes.autotradingKiwoom,

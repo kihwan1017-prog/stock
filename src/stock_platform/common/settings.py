@@ -407,6 +407,10 @@ class Settings(BaseSettings):
     # STEP54 — Telegram Ops
     telegram_ops_enabled: bool = False
     telegram_ops_poll_interval_seconds: float = 3.0
+    # 자동매매 일일 운영보고 Telegram (23:30 KST 기본) — trading fail-open
+    autotrading_daily_report_telegram_enabled: bool = True
+    autotrading_daily_report_hour_kst: int = 23
+    autotrading_daily_report_minute_kst: int = 30
     telegram_allowed_chat_ids: str = ""
     telegram_notification_level: str = "INFO"
     # Telegram webhook Secret-Token (설정 시 헤더 검증 필수)
