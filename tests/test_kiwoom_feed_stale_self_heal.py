@@ -110,6 +110,38 @@ def test_health_real_fresh_within_slo() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ensure_running_never_hard_reconnect() -> None:
+    session = MagicMock()
+    runtime = MagicMock()
+    runtime.status.return_value = {
+        "running": True,
+        "connected": True,
+        "user_broker_account_id": 1381,
+        "feed_age_seconds": 120.0,
+        "client": {"event_count": 50},
+    }
+    runtime.start = AsyncMock(return_value={"started": True, "connected": True})
+    runtime.stop = AsyncMock()
+
+    from stock_platform.trading.kiwoom_feed_recovery import ensure_kiwoom_feed_running
+
+    with patch(
+        "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime",
+        runtime,
+    ):
+        out = await ensure_kiwoom_feed_running(
+            session,
+            user_broker_account_id=1381,
+            symbols=["034310"],
+            actor="SYSTEM_KIWOOM_NEXT_DAY_STACK",
+        )
+
+    runtime.stop.assert_not_called()
+    assert out.get("hard_reconnect") is False
+    assert out.get("stack_idempotent") is True
+
+
+@pytest.mark.asyncio
 async def test_ensure_hard_reconnect_when_stale_running() -> None:
     session = MagicMock()
     runtime = MagicMock()

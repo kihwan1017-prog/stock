@@ -268,6 +268,72 @@ def kiwoom_health_feed_is_stale(
     return feed_st not in _FEED_FRESH and feed_st not in {"CONNECTING", "UNKNOWN", ""}
 
 
+async def ensure_kiwoom_feed_running(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    symbols: list[str],
+    actor: str,
+) -> dict[str, Any]:
+    """Stack idempotent ensure — task 살아 있으면 symbol merge 만, hard reconnect 금지."""
+
+    from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+        kiwoom_market_realtime_runtime,
+    )
+
+    uba_id = int(user_broker_account_id)
+    st_before = kiwoom_market_realtime_runtime.status()
+    client_before = (
+        st_before.get("client") if isinstance(st_before.get("client"), dict) else {}
+    )
+    running = bool(st_before.get("running"))
+    same_uba = int(st_before.get("user_broker_account_id") or 0) == uba_id
+
+    result: dict[str, Any] = {
+        "market": "KIWOOM",
+        "user_broker_account_id": uba_id,
+        "actor": actor,
+        "hard_reconnect": False,
+        "stack_idempotent": True,
+        "event_count_before": int((client_before or {}).get("event_count") or 0),
+    }
+
+    if not symbols:
+        result.update({"started": False, "reason": "SYMBOLS_REQUIRED"})
+        return result
+
+    if running and same_uba:
+        started = await kiwoom_market_realtime_runtime.start(
+            user_broker_account_id=uba_id,
+            symbols=symbols,
+            require_real=True,
+        )
+        result.update(
+            {
+                "started": True,
+                "idempotent": True,
+                "reason": "ALREADY_RUNNING",
+                "connected": bool(started.get("connected")),
+            }
+        )
+        return result
+
+    started = await kiwoom_market_realtime_runtime.start(
+        user_broker_account_id=uba_id,
+        symbols=symbols,
+        require_real=True,
+    )
+    result.update(
+        {
+            "started": bool(started.get("started")),
+            "already_running": bool(started.get("already_running")),
+            "connected": bool(started.get("connected")),
+            "reason": started.get("reason"),
+        }
+    )
+    return result
+
+
 async def ensure_kiwoom_feed_fresh(
     session: Session,
     *,

@@ -324,7 +324,7 @@ async def restore_kiwoom_trading_stack(
     # market_realtime_auto_start=false 여도 이 공식 restore 경로는 명시 start 호출.
     try:
         from stock_platform.trading.kiwoom_feed_recovery import (
-            ensure_kiwoom_feed_fresh,
+            ensure_kiwoom_feed_running,
         )
 
         if not feed_symbols:
@@ -339,7 +339,7 @@ async def restore_kiwoom_trading_stack(
                 "actor": actor,
             }
 
-        feed_recover = await ensure_kiwoom_feed_fresh(
+        feed_recover = await ensure_kiwoom_feed_running(
             session,
             user_broker_account_id=uba_id,
             symbols=feed_symbols,
@@ -348,7 +348,7 @@ async def restore_kiwoom_trading_stack(
         detail["feed"] = feed_recover
         if feed_recover.get("hard_reconnect"):
             detail["feed"]["note"] = (
-                "STALE_RUNNING_HARD_RECONNECT — idempotent no-op 방지"
+                "UNEXPECTED_HARD_RECONNECT_ON_STACK_ENSURE"
             )
         if not feed_recover.get("started") and not feed_recover.get(
             "already_running"
