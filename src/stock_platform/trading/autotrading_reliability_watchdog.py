@@ -810,7 +810,15 @@ async def reconcile_market_health(
                         session.commit()
 
                 feed_st = str((snap.get("components") or {}).get("feed") or "")
-                if feed_st not in {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK", "CONNECTING"}:
+                if feed_st not in {
+                    "REAL_FRESH",
+                    "REAL_IDLE",
+                    "FRESH",
+                    "CONNECTED",
+                    "HEALTHY",
+                    "OK",
+                    "CONNECTING",
+                }:
                     l1f = await _l1_feed_reconnect(session, uba_id=uba_id, actor=actor)
                     actions.append("L1_FEED")
                     outcome["l1_feed"] = l1f

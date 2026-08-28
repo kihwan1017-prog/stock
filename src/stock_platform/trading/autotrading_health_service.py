@@ -453,6 +453,11 @@ def build_trading_health_snapshot(
                 "evaluator_path": "KiwoomMarketWS→QuoteBus→MovingAverageStrategyEvaluator",
             }
             if running and connected:
+                from stock_platform.trading.kiwoom_feed_liveness import (
+                    evaluate_kiwoom_feed_liveness,
+                    kiwoom_feed_is_real_idle,
+                )
+
                 client_ev = (
                     (st.get("client") or {})
                     if isinstance(st.get("client"), dict)
@@ -462,7 +467,26 @@ def build_trading_health_snapshot(
                 last_at = st.get("last_tick_at") or feed_detail.get(
                     "last_received_at"
                 )
-                if age is not None and float(age) > slo.feed_max_age_seconds:
+                lv = evaluate_kiwoom_feed_liveness(st, slo=slo)
+                feed_detail["generation_id"] = lv.get("generation_id")
+                feed_detail["last_frame_at"] = st.get("last_frame_at") or client_ev.get(
+                    "last_frame_at"
+                )
+                feed_detail["last_frame_age_seconds"] = lv.get(
+                    "last_frame_age_seconds"
+                )
+                feed_detail["last_real_tick_age_seconds"] = lv.get(
+                    "last_real_tick_age_seconds"
+                )
+                feed_detail["connection_liveness_ok"] = lv.get(
+                    "connection_liveness_ok"
+                )
+                feed_detail["liveness"] = lv
+                if kiwoom_feed_is_real_idle(st, slo=slo):
+                    feed_status = "REAL_IDLE"
+                    feed_detail["ok"] = True
+                    feed_detail["reason"] = "NO_TRADE_TICK_IDLE"
+                elif age is not None and float(age) > slo.feed_max_age_seconds:
                     feed_status = "STALE"
                     feed_detail["ok"] = False
                     feed_detail["reason"] = "TICK_STALE"
@@ -616,7 +640,14 @@ def build_trading_health_snapshot(
         else True
     )
 
-    feed_healthy = feed_status in {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}
+    feed_healthy = feed_status in {
+        "REAL_FRESH",
+        "REAL_IDLE",
+        "FRESH",
+        "CONNECTED",
+        "HEALTHY",
+        "OK",
+    }
     feed_age = heartbeats.get("feed_age_seconds")
     if feed_age is not None and float(feed_age) > slo.feed_max_age_seconds:
         feed_healthy = False

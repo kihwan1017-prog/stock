@@ -967,6 +967,25 @@ class KiwoomTradingDayLifecycleService:
         trading_armed = bool(uba.live_order_enabled) and bool(uba.live_armed)
 
         if lease_entry_alive and trading_armed:
+            # feed 살아있으면 15s 주기 full stack restore 생략 (boot thrash 방지)
+            try:
+                from stock_platform.realtime.kiwoom_market_realtime_runtime import (
+                    kiwoom_market_realtime_runtime,
+                )
+
+                feed_rt = kiwoom_market_realtime_runtime.status()
+                if bool(feed_rt.get("running")) and bool(feed_rt.get("connected")):
+                    self._write_lifecycle(consent, phase=PHASE_TRADING)
+                    result.update(
+                        {
+                            "phase": PHASE_TRADING,
+                            "action": "FEED_ALREADY_LIVE",
+                            "feed_generation_id": feed_rt.get("generation_id"),
+                        }
+                    )
+                    return result
+            except Exception:  # noqa: BLE001
+                pass
             # 이미 TRADING — stack idempotent ensure (restart 후 runner 복구)
             self._schedule_stack_restore(uba_id, actor=f"{actor}_STACK")
             self._write_lifecycle(consent, phase=PHASE_TRADING)

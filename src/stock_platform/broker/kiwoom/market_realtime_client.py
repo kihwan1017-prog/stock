@@ -63,6 +63,9 @@ class KiwoomMarketRealtimeClient:
         self._subscription_count = 0
         self._event_count = 0
         self._last_event_at: datetime | None = None
+        self._last_frame_at: datetime | None = None
+        self._last_ping_at: datetime | None = None
+        self._frame_count = 0
         self._last_error: str | None = None
         self._reconnect_count = 0
         self._socket: Any | None = None
@@ -76,6 +79,15 @@ class KiwoomMarketRealtimeClient:
 
     def note_exit_reason(self, reason: str) -> None:
         self._exit_reason = str(reason or "").strip() or None
+
+    def _note_inbound_frame(self, message: dict[str, Any]) -> None:
+        """수신 JSON frame 시각 — PING 포함 (market tick activity와 분리)."""
+
+        now = datetime.now(timezone.utc)
+        self._last_frame_at = now
+        self._frame_count += 1
+        if is_ping(message):
+            self._last_ping_at = now
 
     def set_quote_handler(self, handler: QuoteHandler | None) -> None:
         self._quote_handler = handler
@@ -185,6 +197,13 @@ class KiwoomMarketRealtimeClient:
             "subscription_count": self._subscription_count,
             "symbols": sorted(self._symbols),
             "event_count": self._event_count,
+            "frame_count": self._frame_count,
+            "last_frame_at": (
+                self._last_frame_at.isoformat() if self._last_frame_at else None
+            ),
+            "last_ping_at": (
+                self._last_ping_at.isoformat() if self._last_ping_at else None
+            ),
             "last_event_at": (
                 self._last_event_at.isoformat()
                 if self._last_event_at
@@ -207,6 +226,13 @@ class KiwoomMarketRealtimeClient:
                 "last_tick_at": (
                     self._last_event_at.isoformat() if self._last_event_at else None
                 ),
+                "last_frame_at": (
+                    self._last_frame_at.isoformat() if self._last_frame_at else None
+                ),
+                "last_ping_at": (
+                    self._last_ping_at.isoformat() if self._last_ping_at else None
+                ),
+                "frame_count": self._frame_count,
                 "disconnect_at": (
                     self._disconnect_at.isoformat() if self._disconnect_at else None
                 ),
@@ -285,6 +311,7 @@ class KiwoomMarketRealtimeClient:
                     )
                     if not isinstance(message, dict):
                         continue
+                    self._note_inbound_frame(message)
                     if is_ping(message):
                         await socket.send(json.dumps(message))
                         continue

@@ -20,6 +20,14 @@ from stock_platform.trading.autotrading_health_slo import (
     AutotradingHealthSlo,
     load_autotrading_health_slo,
 )
+from stock_platform.trading.execution_stack_reconciliation import (
+    STARTUP_CONTROL_MISMATCH_GRACE_SECONDS,
+)
+from stock_platform.trading.kiwoom_feed_liveness import (
+    evaluate_kiwoom_feed_liveness,
+    kiwoom_feed_connection_failure,
+    kiwoom_feed_is_real_idle,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -27,7 +35,7 @@ logger = structlog.get_logger(__name__)
 FEED_WARMUP_GRACE_SECONDS = 90.0
 
 _FEED_FRESH = frozenset(
-    {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}
+    {"REAL_FRESH", "REAL_IDLE", "FRESH", "CONNECTED", "HEALTHY", "OK"}
 )
 
 _UNHEALTHY_CONNECTING_REASONS = frozenset(
@@ -86,12 +94,19 @@ def kiwoom_feed_in_warmup_grace(
     return float(age) < float(grace_seconds)
 
 
+def _process_in_startup_grace() -> bool:
+    from stock_platform.operation.runtime_info import get_process_started_at
+
+    age = (datetime.now(timezone.utc) - get_process_started_at()).total_seconds()
+    return float(age) < float(STARTUP_CONTROL_MISMATCH_GRACE_SECONDS)
+
+
 def kiwoom_feed_needs_l1_recovery(
     health_snapshot: dict[str, Any],
     *,
     slo: AutotradingHealthSlo | None = None,
 ) -> bool:
-    """Watchdog L1 — DISCONNECTED/STALE; CONNECTING은 warm-up 이후만."""
+    """Watchdog L1 — connection/task 장애만; REAL_IDLE(tick silence) 제외."""
 
     from stock_platform.realtime.kiwoom_market_realtime_runtime import (
         kiwoom_market_realtime_runtime,
@@ -103,35 +118,41 @@ def kiwoom_feed_needs_l1_recovery(
     detail = health_snapshot.get("feed_detail") or {}
     reason = str(detail.get("reason") or "").upper()
 
-    # task 죽음 — 즉시 L1 (warm-up 무관)
+    if feed_st == "REAL_IDLE" or reason == "NO_TRADE_TICK_IDLE":
+        return False
+
+    if _process_in_startup_grace():
+        return feed_st in {"DISCONNECTED", "DOWN", "UNHEALTHY"} and not bool(
+            runtime_st.get("running")
+        )
+
+    if kiwoom_feed_is_real_idle(runtime_st, slo=slo):
+        return False
+
+    # task 죽음 — 즉시 L1
     if not bool(runtime_st.get("running")):
         return feed_st in {"DISCONNECTED", "STALE", "DOWN", "UNHEALTHY", "CONNECTING"}
 
-    # warm-up 중: hard reconnect/L1 억제 (자연 handshake 보호)
     if kiwoom_feed_in_warmup_grace(runtime_st):
-        if feed_st in {"STALE", "DOWN", "UNHEALTHY"} and reason == "TICK_STALE":
-            return True
         return False
 
-    if feed_st in {"DISCONNECTED", "STALE", "DOWN", "UNHEALTHY"}:
+    if feed_st in {"DISCONNECTED", "DOWN", "UNHEALTHY"}:
         return True
+    if feed_st == "STALE":
+        return kiwoom_feed_connection_failure(runtime_st, slo=slo)
     if feed_st in _FEED_FRESH:
-        return kiwoom_health_feed_is_stale(health_snapshot, slo=slo)
-    if feed_st == "CONNECTING":
-        if reason in _UNHEALTHY_CONNECTING_REASONS:
-            return True
-        if not bool(detail.get("ok")):
-            return True
-        hb_age = (health_snapshot.get("heartbeats") or {}).get("feed_age_seconds")
-        if hb_age is None and not detail.get("last_received_at"):
-            return True
-        if hb_age is not None:
-            try:
-                return float(hb_age) > float(slo.feed_max_age_seconds)
-            except (TypeError, ValueError):
-                return True
         return False
-    return kiwoom_health_feed_is_stale(health_snapshot, slo=slo)
+    if feed_st == "CONNECTING":
+        if reason in {"FEED_NOT_RUNNING", "RUNNING_NOT_CONNECTED"}:
+            return True
+        if kiwoom_feed_in_warmup_grace(runtime_st):
+            return False
+        if reason in _UNHEALTHY_CONNECTING_REASONS:
+            return not evaluate_kiwoom_feed_liveness(runtime_st, slo=slo).get(
+                "connection_liveness_ok"
+            )
+        return False
+    return kiwoom_feed_connection_failure(runtime_st, slo=slo)
 
 
 async def recover_kiwoom_feed_l1(
@@ -212,9 +233,11 @@ def kiwoom_runtime_feed_is_stale(
     reason = str((client or {}).get("reason") or runtime_status.get("reason") or "").upper()
 
     if reason in {"TICK_STALE", "QUOTE_STALE", "FEED_NOT_RUNNING"}:
-        return True
+        return kiwoom_feed_connection_failure(runtime_status, slo=slo)
     if not connected:
         return True
+    if kiwoom_feed_is_real_idle(runtime_status, slo=slo):
+        return False
     if age is None:
         event_count = int((client or {}).get("event_count") or 0)
         if event_count <= 0:
@@ -238,6 +261,8 @@ def kiwoom_health_feed_is_stale(
 
     slo = slo or load_autotrading_health_slo()
     feed_st = str((health_snapshot.get("components") or {}).get("feed") or "").upper()
+    if feed_st in {"REAL_IDLE"}:
+        return False
     if feed_st in {"STALE", "DISCONNECTED", "DOWN", "UNHEALTHY"}:
         return True
     if feed_st == "CONNECTING":
@@ -374,16 +399,31 @@ async def ensure_kiwoom_feed_fresh(
         "hard_reconnect": False,
     }
 
+    if kiwoom_feed_is_real_idle(st_before, slo=slo):
+        stale = False
+        result["liveness_ok"] = True
+        result["stale_before"] = False
+
     if stale and running and same_uba:
-        if kiwoom_feed_in_warmup_grace(st_before):
+        if _process_in_startup_grace() or kiwoom_feed_in_warmup_grace(st_before):
             logger.info(
                 "kiwoom_feed_warmup_grace_skip_hard_reconnect",
                 uba_id=uba_id,
                 actor=actor,
                 task_age_seconds=kiwoom_feed_task_age_seconds(st_before),
+                startup_grace=_process_in_startup_grace(),
             )
             stale = False
             result["warmup_grace"] = True
+        elif not kiwoom_feed_connection_failure(st_before, slo=slo):
+            logger.info(
+                "kiwoom_feed_liveness_skip_hard_reconnect",
+                uba_id=uba_id,
+                actor=actor,
+                liveness=evaluate_kiwoom_feed_liveness(st_before, slo=slo),
+            )
+            stale = False
+            result["liveness_ok"] = True
         else:
             logger.info(
                 "kiwoom_feed_stale_hard_reconnect",

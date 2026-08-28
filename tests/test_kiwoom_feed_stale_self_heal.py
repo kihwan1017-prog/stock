@@ -151,14 +151,22 @@ async def test_ensure_hard_reconnect_when_stale_running() -> None:
             "connected": True,
             "user_broker_account_id": 1381,
             "feed_age_seconds": 120.0,
-            "client": {"event_count": 50, "last_error": "1000 Bye"},
+            "started_at": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+            "client": {
+                "event_count": 50,
+                "reg_ack": True,
+                "last_error": "1000 Bye",
+                "last_frame_at": (
+                    datetime.now(timezone.utc) - timedelta(seconds=120)
+                ).isoformat(),
+            },
         },
         {
             "running": True,
             "connected": True,
             "user_broker_account_id": 1381,
             "feed_age_seconds": 1.0,
-            "client": {"event_count": 51},
+            "client": {"event_count": 51, "reg_ack": True},
         },
     ]
     runtime.stop = AsyncMock(return_value={"stopped": True})
@@ -180,6 +188,10 @@ async def test_ensure_hard_reconnect_when_stale_running() -> None:
         patch(
             "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime",
             runtime,
+        ),
+        patch(
+            "stock_platform.trading.kiwoom_feed_recovery._process_in_startup_grace",
+            return_value=False,
         ),
     ):
         out = await ensure_kiwoom_feed_fresh(
@@ -404,12 +416,20 @@ def test_kiwoom_feed_needs_l1_unhealthy_connecting_after_warmup() -> None:
     from stock_platform.trading.kiwoom_feed_recovery import kiwoom_feed_needs_l1_recovery
 
     old_start = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
-    with patch(
-        "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime"
-    ) as kmr:
+    with (
+        patch(
+            "stock_platform.realtime.kiwoom_market_realtime_runtime.kiwoom_market_realtime_runtime"
+        ) as kmr,
+        patch(
+            "stock_platform.trading.kiwoom_feed_recovery._process_in_startup_grace",
+            return_value=False,
+        ),
+    ):
         kmr.status.return_value = {
             "running": True,
             "started_at": old_start,
+            "connected": True,
+            "client": {"event_count": 0, "reg_ack": False},
         }
         assert kiwoom_feed_needs_l1_recovery(
             {

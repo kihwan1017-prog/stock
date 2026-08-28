@@ -54,7 +54,9 @@ def evaluate_data_trust_from_health(health: dict[str, Any]) -> dict[str, Any]:
     worker_ok = _comp_ok(components, "worker", {"RUNNING"})
     exit_ok = _comp_ok(components, "exit_monitor", {"RUNNING"})
     feed_ok = _comp_ok(
-        components, "feed", {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK"}
+        components,
+        "feed",
+        {"REAL_FRESH", "REAL_IDLE", "FRESH", "CONNECTED", "HEALTHY", "OK"},
     )
     scanner_ok = _comp_ok(components, "scanner", {"RUNNING"})
     watchdog = health.get("watchdog") or {}

@@ -66,8 +66,23 @@ class KiwoomMarketRealtimeRuntime:
         )
         last_event_at = None
         feed_age = None
+        last_frame_at = None
+        frame_age = None
         if isinstance(client_status, dict):
             last_event_at = client_status.get("last_event_at")
+            last_frame_at = client_status.get("last_frame_at")
+            if last_frame_at and task_running:
+                try:
+                    fdt = datetime.fromisoformat(
+                        str(last_frame_at).replace("Z", "+00:00")
+                    )
+                    if fdt.tzinfo is None:
+                        fdt = fdt.replace(tzinfo=timezone.utc)
+                    frame_age = (
+                        datetime.now(timezone.utc) - fdt.astimezone(timezone.utc)
+                    ).total_seconds()
+                except Exception:  # noqa: BLE001
+                    frame_age = None
             if last_event_at and task_running:
                 try:
                     dt = datetime.fromisoformat(
@@ -97,6 +112,8 @@ class KiwoomMarketRealtimeRuntime:
             ),
             "last_tick_at": last_event_at if task_running else None,
             "feed_age_seconds": feed_age,
+            "last_frame_at": last_frame_at if task_running else None,
+            "frame_age_seconds": frame_age,
             "process_market_environment": (
                 "MOCK" if settings.kiwoom_market_data_is_mock else "REAL"
             ),
