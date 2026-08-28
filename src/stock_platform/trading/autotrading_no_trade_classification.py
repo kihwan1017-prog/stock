@@ -97,9 +97,13 @@ def classify_no_trade_status(
             if candidate_count_window == 0:
                 classification = "NORMAL_NO_SIGNAL"
             elif waiting_count > 0 and admission_count_window == 0:
-                classification = "PIPELINE_STALL"
-                detail["reason"] = "WAITING_WITHOUT_ADMISSION"
-                detail["first_stalled_transition"] = "WAITING_TO_ADMISSION"
+                if free_slots <= 0:
+                    classification = "NORMAL_POLICY_BLOCK"
+                    detail["reason"] = "SLOT_FULL_WAITING"
+                else:
+                    classification = "PIPELINE_STALL"
+                    detail["reason"] = "WAITING_WITHOUT_ADMISSION"
+                    detail["first_stalled_transition"] = "WAITING_TO_ADMISSION"
             else:
                 classification = "NORMAL_NO_SIGNAL"
 

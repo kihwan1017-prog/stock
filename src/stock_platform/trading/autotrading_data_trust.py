@@ -72,6 +72,7 @@ def evaluate_data_trust_from_health(health: dict[str, Any]) -> dict[str, Any]:
         or ""
     ).upper()
     first_zero = health.get("first_zero_stage")
+    first_zero_reason = str(health.get("first_zero_reason") or "").upper()
     open_count = int(health.get("open_count") or 0)
     stack_down = not (runtime_ok and runner_ok and worker_ok)
     exit_down_open = (not exit_ok) and open_count > 0
@@ -102,6 +103,8 @@ def evaluate_data_trust_from_health(health: dict[str, Any]) -> dict[str, Any]:
         status, reason = QUALITY_DEGRADED, classification
     elif classification in {"NORMAL_NO_SIGNAL", "NORMAL_POLICY_BLOCK"}:
         status, reason = QUALITY_VALID, classification or "NORMAL_NO_SIGNAL"
+    elif str(first_zero or "").upper() == "WAITING" and "SLOT_FULL" in first_zero_reason:
+        status, reason = QUALITY_VALID, "NORMAL_POLICY_BLOCK"
     elif health.get("health_state") in {"READY", "DEGRADED"} and feed_ok and runtime_ok:
         # 거래 유무와 무관 — 스택 정상이면 VALID (no-signal 포함)
         status, reason = QUALITY_VALID, "STACK_HEALTHY"
@@ -195,12 +198,21 @@ def sync_data_quality_window(
                 "wid": int(open_row["window_id"]),
             },
         )
-        return {
+        out = {
             "ok": True,
             "action": "CONTINUE",
             "window_id": int(open_row["window_id"]),
             **ev,
         }
+        if ev["quality_status"] == QUALITY_VALID:
+            try_recover_incidents_for_healthy_stack(
+                session,
+                market=market_u,
+                uba_id=uba,
+                quality_status=ev["quality_status"],
+                components=health.get("components") or {},
+            )
+        return out
 
     if open_row:
         session.execute(
@@ -267,13 +279,22 @@ def sync_data_quality_window(
             since=now,
         )
 
-    return {
+    out = {
         "ok": True,
         "action": "OPENED",
         "window_id": int(row) if row else None,
         "closed_previous": int(open_row["window_id"]) if open_row else None,
         **ev,
     }
+    if ev["quality_status"] == QUALITY_VALID:
+        try_recover_incidents_for_healthy_stack(
+            session,
+            market=market_u,
+            uba_id=uba,
+            quality_status=ev["quality_status"],
+            components=health.get("components") or {},
+        )
+    return out
 
 
 def quarantine_shadow_samples_in_window(
@@ -509,6 +530,110 @@ def record_incident(
         "recurrence_count": 1,
         "action": "OPENED",
     }
+
+
+def recover_incident(
+    session: Session,
+    *,
+    market: str,
+    uba_id: int,
+    signature: str,
+    recovery_actor: str = "SYSTEM_AUTO_RECOVER",
+    evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """조건 해소 시 incident recovered_at 설정 — manual SQL 금지, service 경로만."""
+
+    market_u = str(market).upper()
+    sig = str(signature or "UNKNOWN")[:120]
+    now = _now()
+    row = session.execute(
+        text(
+            """
+            UPDATE operation.autotrading_incident_ledger
+            SET recovered_at = :now,
+                updated_at = :now,
+                evidence_json = COALESCE(evidence_json, '{}'::jsonb)
+                    || CAST(:ev AS jsonb)
+            WHERE market = :m AND uba_id = :uba AND signature = :sig
+              AND recovered_at IS NULL
+            RETURNING incident_id
+            """
+        ),
+        {
+            "now": now,
+            "m": market_u,
+            "uba": int(uba_id),
+            "sig": sig,
+            "ev": __import__("json").dumps(
+                {"recovery_actor": recovery_actor, **(evidence or {})},
+                default=str,
+            ),
+        },
+    ).scalar()
+    if row:
+        return {"ok": True, "incident_id": int(row), "action": "RECOVERED"}
+    return {"ok": True, "action": "NONE_OPEN"}
+
+
+def try_recover_incidents_for_healthy_stack(
+    session: Session,
+    *,
+    market: str,
+    uba_id: int,
+    quality_status: str,
+    components: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """스택 정상 복귀 시 FEED_DOWN/STACK_DOWN open incident 자동 resolve."""
+
+    if str(quality_status).upper() != QUALITY_VALID:
+        return []
+    results: list[dict[str, Any]] = []
+    feed_ok = str((components or {}).get("feed") or "").upper() in {
+        "REAL_FRESH",
+        "REAL_IDLE",
+        "FRESH",
+        "CONNECTED",
+        "HEALTHY",
+        "OK",
+    }
+    runtime_ok = str((components or {}).get("runtime") or "").upper() == "RUNNING"
+    if feed_ok:
+        results.append(
+            recover_incident(
+                session,
+                market=market,
+                uba_id=uba_id,
+                signature=f"SYSTEM_FAILURE:ENTRY_SIGNAL:FEED_DOWN",
+            )
+        )
+        results.append(
+            recover_incident(
+                session,
+                market=market,
+                uba_id=uba_id,
+                signature=f"SYSTEM_FAILURE:EXIT:FEED_DOWN",
+            )
+        )
+        results.append(
+            recover_incident(
+                session,
+                market=market,
+                uba_id=uba_id,
+                signature="SYSTEM_FAILURE:NA:FEED_DOWN",
+            )
+        )
+    if runtime_ok:
+        for stage in ("ENTRY_SIGNAL", "ORDER", "EXIT", "NA"):
+            sig = f"SYSTEM_FAILURE:{stage}:STACK_DOWN" if stage != "NA" else "SYSTEM_FAILURE:NA:STACK_DOWN"
+            results.append(
+                recover_incident(
+                    session,
+                    market=market,
+                    uba_id=uba_id,
+                    signature=sig,
+                )
+            )
+    return results
 
 
 def current_data_trust_summary(

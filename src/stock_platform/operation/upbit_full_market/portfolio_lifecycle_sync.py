@@ -587,6 +587,22 @@ def _reconcile_one_slot(
         if binding is not None and str(binding.status) != BINDING_STATUS_OPEN:
             binding = None
 
+    # OPEN slot stale binding pointer → canonical OPEN binding으로 self-heal
+    if (
+        prior_status == SLOT_OPEN
+        and binding is not None
+        and str(binding.status) == BINDING_STATUS_OPEN
+        and slot.position_binding_id is not None
+        and int(slot.position_binding_id) != int(binding.binding_id)
+    ):
+        slot_eid = int(slot.entry_order_id or 0) or None
+        bind_eid = int(getattr(binding, "entry_order_id", 0) or 0) or None
+        if slot_eid is None or bind_eid is None or slot_eid == bind_eid:
+            slot.position_binding_id = int(binding.binding_id)
+            binding.slot_id = int(slot.slot_id)
+            slot.version = int(slot.version or 1) + 1
+            changes.append("STALE_BINDING_POINTER_HEALED")
+
     # BUY FILLED → OPEN (+ Upbit binding)
     if entry_buy is not None and _is_filled(entry_buy):
         if prior_status == SLOT_ENTRY_PENDING or (

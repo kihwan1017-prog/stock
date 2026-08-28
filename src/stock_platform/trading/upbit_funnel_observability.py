@@ -256,16 +256,26 @@ def build_upbit_funnel_snapshot(
         reason = "NO_WAITING_OR_OPEN"
         reasons.append(reason)
     elif stages["ENTRY_PASS"] > 0 and stages["ORDER"] == 0:
-        first_zero = "ORDER"
-        reason = "ENTRY_PASS_WITHOUT_ORDER"
+        # 포트폴리오 full + waiting → 정책 대기 (ORDER stall 아님)
+        if int(empty_n or 0) == 0 and int(waiting_n or 0) > 0:
+            first_zero = "WAITING"
+            reason = "SLOT_FULL_WAITING"
+        else:
+            first_zero = "ORDER"
+            reason = "ENTRY_PASS_WITHOUT_ORDER"
         reasons.append(reason)
+    elif stages["ORDER"] == 0:
+        if int(empty_n or 0) == 0 and int(waiting_n or 0) > 0:
+            first_zero = "WAITING"
+            reason = "SLOT_FULL_WAITING"
+            reasons.append(reason)
+        elif stages["ENTRY_PASS"] == 0 and stages["WAITING"] == 0:
+            first_zero = "ORDER"
+            reason = "NO_ORDERS"
+            reasons.append(reason)
     elif stages["ORDER"] > 0 and stages["FILL"] == 0:
         first_zero = "FILL"
         reason = "NO_FILLS"
-        reasons.append(reason)
-    elif stages["ORDER"] == 0:
-        first_zero = "ORDER"
-        reason = "NO_ORDERS"
         reasons.append(reason)
 
     return {

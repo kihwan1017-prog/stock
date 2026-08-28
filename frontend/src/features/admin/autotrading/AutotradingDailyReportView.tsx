@@ -65,7 +65,7 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
 
   return (
     <Card title={title} style={{ marginBottom: 16 }}>
-      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+      <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
         <Tag color="blue">{String(data.health_label ?? "—")}</Tag>
         <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
           <Descriptions.Item label="자동매매">
@@ -189,7 +189,7 @@ export function AutotradingDailyReportView() {
   );
 
   return (
-    <Space direction="vertical" size="large" style={{ width: "100%" }}>
+    <Space orientation="vertical" size="large" style={{ width: "100%" }}>
       <Space wrap>
         <DatePicker
           value={reportDay}

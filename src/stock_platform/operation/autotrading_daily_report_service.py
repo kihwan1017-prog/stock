@@ -169,6 +169,70 @@ def _pipeline_unique_stages(
     return out
 
 
+def _is_kiwoom_expected_post_close(ops: dict[str, Any]) -> bool:
+    """KRX 장종료 + LIVE OFF + Feed DISCONNECTED = 정상 장후 상태."""
+
+    phase = str(
+        ops.get("krx_session_phase") or ops.get("market_session") or ""
+    ).upper()
+    live = str(ops.get("live") or "").upper()
+    feed = str((ops.get("market_feed") or {}).get("status") or "").upper()
+    rel = ops.get("reliability") if isinstance(ops.get("reliability"), dict) else {}
+    funnel = ops.get("kiwoom_funnel") if isinstance(ops.get("kiwoom_funnel"), dict) else {}
+    if not funnel:
+        funnel = rel.get("kiwoom_funnel") if isinstance(rel.get("kiwoom_funnel"), dict) else {}
+    if str(funnel.get("FIRST_ZERO_STAGE") or funnel.get("first_zero_stage") or "").upper() == "MARKET_CLOSED":
+        return True
+    if phase in {"CLOSED", "AFTER", "HOLIDAY", "POST_CLOSE"} or "CLOSE" in phase:
+        return live == "OFF" and feed in {"DISCONNECTED", "REAL_IDLE", "IDLE"}
+    return False
+
+
+def _incidents_active(
+    session: Session,
+    *,
+    market: str | None = None,
+) -> list[dict[str, Any]]:
+    """미복구 incident — overall health 판정용."""
+
+    params: dict[str, Any] = {}
+    market_clause = ""
+    if market:
+        params["market"] = str(market).upper()
+        market_clause = "AND market = :market"
+    rows = session.execute(
+        text(
+            f"""
+            SELECT incident_id, market, uba_id, signature, classification,
+                   first_zero_stage, root_cause, started_at, recovered_at,
+                   self_heal_level
+            FROM operation.autotrading_incident_ledger
+            WHERE recovered_at IS NULL
+            {market_clause}
+            ORDER BY started_at ASC
+            """
+        ),
+        params,
+    ).mappings().all()
+    return [_incident_row_to_dict(row) for row in rows]
+
+
+def _incident_row_to_dict(row: Any) -> dict[str, Any]:
+    started = row.get("started_at")
+    recovered = row.get("recovered_at")
+    return {
+        "incident_id": int(row["incident_id"]),
+        "market": row.get("market"),
+        "signature": row.get("signature"),
+        "classification": row.get("classification"),
+        "started_at": started.isoformat() if started else None,
+        "recovered_at": recovered.isoformat() if recovered else None,
+        "recovered": recovered is not None,
+        "root_cause": row.get("root_cause"),
+        "first_zero_stage": row.get("first_zero_stage"),
+    }
+
+
 def _incidents_for_day(
     session: Session,
     *,
@@ -195,23 +259,7 @@ def _incidents_for_day(
         ),
         params,
     ).mappings().all()
-    items: list[dict[str, Any]] = []
-    for row in rows:
-        started = row.get("started_at")
-        recovered = row.get("recovered_at")
-        items.append(
-            {
-                "incident_id": int(row["incident_id"]),
-                "market": row.get("market"),
-                "signature": row.get("signature"),
-                "classification": row.get("classification"),
-                "started_at": started.isoformat() if started else None,
-                "recovered_at": recovered.isoformat() if recovered else None,
-                "recovered": recovered is not None,
-                "root_cause": row.get("root_cause"),
-                "first_zero_stage": row.get("first_zero_stage"),
-            }
-        )
+    items: list[dict[str, Any]] = [_incident_row_to_dict(row) for row in rows]
     return items
 
 
@@ -233,7 +281,10 @@ def _why_no_trade_ko(
         if phase in {"CLOSED", "AFTER", "HOLIDAY"} or "CLOSE" in phase:
             messages.append("현재 정규장이 종료되었습니다.")
         feed = str((ops.get("market_feed") or {}).get("status") or "").upper()
-        if feed in {"DISCONNECTED", "UNHEALTHY", "REAL_STALE"}:
+        if (
+            feed in {"DISCONNECTED", "UNHEALTHY", "REAL_STALE"}
+            and not _is_kiwoom_expected_post_close(ops)
+        ):
             messages.append("시세 연결 상태를 확인해야 합니다.")
         if funnel_first_zero == "NO_GOLDEN_CROSS_SIGNAL" or cls == "NORMAL_NO_SIGNAL":
             messages.append("오늘 Golden Cross가 발생하지 않았습니다.")
@@ -271,9 +322,13 @@ def _why_no_trade_ko(
 
 def _health_class(
     *,
+    broker: str,
     ops: dict[str, Any],
     order_stats: dict[str, Any],
 ) -> tuple[str, str]:
+    if broker == "KIWOOM" and _is_kiwoom_expected_post_close(ops):
+        return "YELLOW", _HEALTH_LABEL["YELLOW"]
+
     rel = ops.get("reliability") if isinstance(ops.get("reliability"), dict) else {}
     cls = str(rel.get("no_trade_classification") or "").upper()
     health = str(rel.get("health_state") or "").upper()
@@ -282,9 +337,13 @@ def _health_class(
     if health == "BROKEN" or cls == "SYSTEM_FAILURE" or rel.get("partial_restore"):
         return "RED", _HEALTH_LABEL["RED"]
     if feed in {"DISCONNECTED", "UNHEALTHY", "REAL_STALE"} or health == "DEGRADED":
+        if broker == "KIWOOM" and _is_kiwoom_expected_post_close(ops):
+            return "YELLOW", _HEALTH_LABEL["YELLOW"]
         return "ORANGE", _HEALTH_LABEL["ORANGE"]
     if cls in {"NORMAL_NO_SIGNAL", "NORMAL_POLICY_BLOCK", "WAITING_SLOT_STARVATION"}:
         return "YELLOW", _HEALTH_LABEL["YELLOW"]
+    if cls == "PIPELINE_STALL":
+        return "ORANGE", _HEALTH_LABEL["ORANGE"]
     if order_stats.get("buy_fill_count") or order_stats.get("sell_fill_count"):
         return "GREEN", _HEALTH_LABEL["GREEN"]
     if str(ops.get("auto_trading_state") or "").upper() == "RUNNING":
@@ -345,7 +404,9 @@ def _market_section(
     funnel_fz = funnel.get("first_zero_stage") or rel.get("first_zero_stage")
     funnel_reason = funnel.get("first_zero_reason") or rel.get("first_zero_reason")
 
-    health_code, health_label = _health_class(ops=ops, order_stats=order_stats)
+    health_code, health_label = _health_class(
+        broker=broker, ops=ops, order_stats=order_stats
+    )
     trust = current_data_trust_summary(
         session, market=broker, uba_id=int(uba_id)
     )
@@ -439,8 +500,13 @@ def build_autotrading_daily_report(
             include_current_ops=is_today,
         )
 
-    incidents = _incidents_for_day(session, start_utc=start_utc, end_utc=end_utc)
-    open_incidents = [i for i in incidents if not i.get("recovered")]
+    incidents_today = _incidents_for_day(
+        session, start_utc=start_utc, end_utc=end_utc
+    )
+    active_incidents = _incidents_active(session)
+    resolved_today = [
+        i for i in incidents_today if i.get("recovered")
+    ]
 
     research = build_cross_market_research_status(
         session, upbit_uba_id=upbit_uba, kiwoom_uba_id=kiwoom_uba
@@ -451,8 +517,12 @@ def build_autotrading_daily_report(
         (upbit or {}).get("health_code"),
         (kiwoom or {}).get("health_code"),
     ]
-    if any(c == "RED" for c in codes):
-        overall = "RED"
+    # overall RED — active incident 또는 per-market RED만 (장후 Kiwoom YELLOW는 제외)
+    if any(c == "RED" for c in codes) or active_incidents:
+        if active_incidents and not any(c == "RED" for c in codes):
+            overall = "ORANGE"
+        else:
+            overall = "RED" if any(c == "RED" for c in codes) else "ORANGE"
     elif any(c == "ORANGE" for c in codes):
         overall = "ORANGE"
     elif all(c == "GREEN" for c in codes if c):
@@ -475,9 +545,13 @@ def build_autotrading_daily_report(
         "upbit": upbit,
         "kiwoom": kiwoom,
         "incidents": {
-            "today_count": len(incidents),
-            "open_count": len(open_incidents),
-            "items": incidents,
+            "today_count": len(incidents_today),
+            "open_count": len(active_incidents),
+            "active_count": len(active_incidents),
+            "resolved_today_count": len(resolved_today),
+            "items": incidents_today,
+            "active_items": active_incidents,
+            "historical_items": incidents_today,
         },
         "research": research,
         "read_only": True,

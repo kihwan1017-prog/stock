@@ -78,4 +78,18 @@ def test_format_daily_report_telegram() -> None:
 
 
 def test_health_labels_no_trade_not_error() -> None:
+    from stock_platform.operation.autotrading_daily_report_service import _health_class
+
+    code, label = _health_class(
+        broker="KIWOOM",
+        ops={
+            "krx_session_phase": "CLOSED",
+            "live": "OFF",
+            "market_feed": {"status": "DISCONNECTED"},
+            "reliability": {"kiwoom_funnel": {"FIRST_ZERO_STAGE": "MARKET_CLOSED"}},
+        },
+        order_stats={},
+    )
+    assert code == "YELLOW"
+    assert label == _HEALTH_LABEL["YELLOW"]
     assert "대기" in _HEALTH_LABEL["YELLOW"]
