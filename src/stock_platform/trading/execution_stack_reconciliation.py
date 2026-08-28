@@ -33,6 +33,8 @@ _FEED_OK = frozenset(
     {"REAL_FRESH", "FRESH", "CONNECTED", "HEALTHY", "OK", "CONNECTING"}
 )
 _STACK_COMPONENTS = ("runtime", "runner", "worker", "exit_monitor", "scanner", "feed")
+# Startup transitional grace — mismatch incident/restore 억제
+STARTUP_CONTROL_MISMATCH_GRACE_SECONDS = 120.0
 
 
 def evaluate_control_plane_desired(
@@ -285,6 +287,187 @@ def verify_stack_restored(
         "heartbeats": hb,
         "checked_at": now.isoformat(),
     }
+
+
+def _execution_runner_running(
+    *,
+    user_broker_account_id: int,
+    broker: str,
+) -> bool:
+    """In-process execution runner SoT — health snapshot 보조."""
+
+    try:
+        from stock_platform.realtime.runtime import (
+            realtime_execution_runner_manager,
+        )
+
+        runner = realtime_execution_runner_manager.get(
+            int(user_broker_account_id), str(broker or "").upper()
+        )
+        if runner is None:
+            return False
+        return bool((runner.status() or {}).get("running"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def detect_runtime_control_mismatch(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    snapshot: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Runtime control vs execution runner SoT 불일치 감지 (READ)."""
+
+    now = now or datetime.now(timezone.utc)
+    uba_id = int(user_broker_account_id)
+    desired = evaluate_desired_execution_state(
+        session, user_broker_account_id=uba_id, now=now
+    )
+    snap = snapshot or build_trading_health_snapshot(
+        session, user_broker_account_id=uba_id
+    )
+    broker = str(
+        desired.get("broker") or snap.get("market") or ""
+    ).upper()
+    comps = snap.get("components") or {}
+    runtime_st = str(comps.get("runtime") or "STOPPED").upper()
+    runner_st = str(comps.get("runner") or "STOPPED").upper()
+    execution_running = _execution_runner_running(
+        user_broker_account_id=uba_id, broker=broker
+    )
+    if runner_st == "RUNNING":
+        execution_running = True
+
+    desired_running = bool(desired.get("desired_execution_running"))
+    desired_runtime = (
+        "RUNNING" if desired_running else str(
+            (desired.get("components") or {}).get("runtime") or "STOPPED"
+        ).upper()
+    )
+
+    from stock_platform.operation.runtime_info import get_process_started_at
+
+    started_at = get_process_started_at()
+    age_sec = (now - started_at).total_seconds()
+    in_grace = age_sec < STARTUP_CONTROL_MISMATCH_GRACE_SECONDS
+
+    mismatch_kind: str | None = None
+    if desired_runtime == "RUNNING" and runtime_st != "RUNNING" and execution_running:
+        mismatch_kind = "CONTROL_STATE_MISMATCH"
+    elif (
+        desired_runtime == "RUNNING"
+        and runtime_st == "RUNNING"
+        and not execution_running
+        and runner_st != "RUNNING"
+    ):
+        mismatch_kind = "EXECUTION_STATE_MISMATCH"
+    elif desired_runtime != "RUNNING" and execution_running:
+        mismatch_kind = "EXECUTION_ORPHAN_WHILE_DESIRED_STOPPED"
+
+    market_open = True
+    if broker == "KIWOOM":
+        try:
+            from stock_platform.trading.market_hours_authorization import (
+                krx_market_hours_state,
+            )
+
+            mh = krx_market_hours_state(session, now=now)
+            market_open = bool(mh.get("in_regular_session"))
+        except Exception:  # noqa: BLE001
+            market_open = True
+
+    return {
+        "ok": True,
+        "user_broker_account_id": uba_id,
+        "broker": broker,
+        "detected_at": now.isoformat(),
+        "desired_execution_running": desired_running,
+        "desired_runtime": desired_runtime,
+        "runtime_state": runtime_st,
+        "runner_state": runner_st,
+        "execution_running": execution_running,
+        "feed_state": str(comps.get("feed") or "").upper(),
+        "market_session_open": market_open,
+        "mismatch_kind": mismatch_kind,
+        "in_grace_period": in_grace,
+        "startup_age_seconds": round(age_sec, 1),
+        "should_reconcile": bool(mismatch_kind and not in_grace and market_open),
+    }
+
+
+async def reconcile_runtime_control_state(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    broker: str | None = None,
+    actor: str = "RECONCILE_RUNTIME_CONTROL",
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """CONTROL/EXECUTION mismatch — fail-closed reconcile (LIVE/ARM 토글 없음)."""
+
+    uba_id = int(user_broker_account_id)
+    mismatch = detect_runtime_control_mismatch(
+        session, user_broker_account_id=uba_id, snapshot=snapshot
+    )
+    outcome: dict[str, Any] = {
+        "user_broker_account_id": uba_id,
+        "mismatch": mismatch,
+        "actions": [],
+    }
+    if not mismatch.get("should_reconcile"):
+        outcome["reason"] = (
+            "GRACE_PERIOD"
+            if mismatch.get("in_grace_period")
+            else "NO_MISMATCH"
+        )
+        return outcome
+
+    market = (broker or mismatch.get("broker") or "UPBIT").upper()
+    kind = str(mismatch.get("mismatch_kind") or "")
+
+    if kind in {"CONTROL_STATE_MISMATCH", "EXECUTION_STATE_MISMATCH"}:
+        if market == "KIWOOM":
+            from stock_platform.trading.kiwoom_unattended_stack_restore import (
+                restore_kiwoom_trading_stack,
+            )
+
+            restored = await restore_kiwoom_trading_stack(
+                session, user_broker_account_id=uba_id, actor=actor
+            )
+        elif market == "UPBIT":
+            from stock_platform.trading.upbit_unattended_stack_restore import (
+                restore_upbit_trading_stack,
+            )
+
+            restored = await restore_upbit_trading_stack(
+                session, user_broker_account_id=uba_id, actor=actor
+            )
+        else:
+            restored = {"restored": False, "reason": "UNSUPPORTED_MARKET"}
+        outcome["actions"].append("RECONCILE_RUNTIME_CONTROL")
+        outcome["restore"] = restored
+    elif kind == "EXECUTION_ORPHAN_WHILE_DESIRED_STOPPED":
+        try:
+            from stock_platform.realtime.runtime import (
+                realtime_execution_runner_manager,
+            )
+
+            await realtime_execution_runner_manager.stop_scope(uba_id, market)
+            outcome["actions"].append("STOP_ORPHAN_EXECUTION_RUNNER")
+        except Exception as exc:  # noqa: BLE001
+            outcome["stop_error"] = type(exc).__name__
+
+    verify = verify_stack_restored(session, user_broker_account_id=uba_id)
+    outcome["verify"] = verify
+    outcome["restore_succeeded"] = bool(verify.get("restore_succeeded"))
+    post = detect_runtime_control_mismatch(
+        session, user_broker_account_id=uba_id
+    )
+    outcome["post_mismatch"] = post
+    outcome["aligned"] = post.get("mismatch_kind") is None
+    return outcome
 
 
 async def reconcile_desired_execution_state(

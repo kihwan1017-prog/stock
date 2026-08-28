@@ -839,6 +839,55 @@ async def reconcile_market_health(
                     actions.append("L1_KIWOOM_FEED")
                     outcome["l1_feed"] = l1f
 
+            # LEVEL 1.5 — runtime control vs execution runner SoT
+            from stock_platform.trading.execution_stack_reconciliation import (
+                detect_runtime_control_mismatch,
+                reconcile_runtime_control_state,
+            )
+
+            mismatch = detect_runtime_control_mismatch(
+                session, user_broker_account_id=uba_id, snapshot=snap
+            )
+            outcome["runtime_control_mismatch"] = mismatch
+            if mismatch.get("should_reconcile"):
+                record_stack_forensic(
+                    market=market,
+                    uba_id=uba_id,
+                    component="runtime_control",
+                    event=str(mismatch.get("mismatch_kind") or "MISMATCH"),
+                    reason=str(mismatch),
+                )
+                l15 = await reconcile_runtime_control_state(
+                    session,
+                    user_broker_account_id=uba_id,
+                    broker=market,
+                    actor=actor,
+                    snapshot=snap,
+                )
+                actions.append("L1.5_RECONCILE_RUNTIME_CONTROL")
+                outcome["l1_5_runtime_control"] = l15
+                if l15.get("aligned"):
+                    snap = build_trading_health_snapshot(
+                        session, user_broker_account_id=uba_id
+                    )
+                    outcome["snapshot"] = {
+                        "health_state": snap.get("health_state"),
+                        "partial_restore": snap.get("partial_restore"),
+                        "components": snap.get("components"),
+                        "no_trade_classification": snap.get(
+                            "no_trade_classification"
+                        ),
+                        "first_zero_stage": snap.get("first_zero_stage"),
+                    }
+                    stack_need = execution_stack_needs_restore(
+                        session, user_broker_account_id=uba_id, snapshot=snap
+                    )
+                    outcome["stack_need"] = {
+                        "needs_restore": stack_need.get("needs_restore"),
+                        "restore_kind": stack_need.get("restore_kind"),
+                        "down_components": stack_need.get("down_components"),
+                    }
+
             # LEVEL 2 — FULL/PARTIAL stack (backoff는 L2만)
             need_l2 = bool(stack_need.get("needs_restore")) and (
                 market != "KIWOOM" or snap.get("kiwoom_stack_slo_active")

@@ -88,6 +88,20 @@ COMPONENT_TYPES = (
 BOOTSTRAP_CHANGES: list[dict[str, object]] = [
     {
         "git_commit": "WORKTREE",
+        "market": "KIWOOM",
+        "change_type": CHANGE_OBSERVABILITY,
+        "component": "RUNTIME_CONTROL",
+        "summary": "KIWOOM_RUNTIME_CONTROL_SOT_RECONCILIATION_FIX",
+        "change_reason": (
+            "Runtime control vs execution runner SoT alignment; "
+            "fail-closed restore ordering; CONTROL/EXECUTION mismatch watchdog"
+        ),
+        "real_policy_changed": False,
+        "research_only": False,
+        "evidence": [".run/k_kiwoom_runtime_control_sot_repair.json"],
+    },
+    {
+        "git_commit": "WORKTREE",
         "market": "UPBIT",
         "change_type": CHANGE_OBSERVABILITY,
         "component": "ENTRY_EXECUTION_TRACE",

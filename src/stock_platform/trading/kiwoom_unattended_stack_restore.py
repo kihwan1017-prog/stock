@@ -400,7 +400,7 @@ async def restore_kiwoom_trading_stack(
             "actor": actor,
         }
 
-    # 2) ensure-scope (PAUSED) + resume
+    # 2) canonical runtime — RUNNING 필수 (runner보다 선행)
     from stock_platform.strategy_deployment.runtime_bootstrap import (
         _build_scope_for_link,
     )
@@ -408,7 +408,12 @@ async def restore_kiwoom_trading_stack(
         dynamic_strategy_runtime_manager,
     )
     from stock_platform.risk_engine.kill_switch_service import KillSwitchService
+    from stock_platform.realtime.kiwoom_runtime_run_gates import (
+        evaluate_kiwoom_runtime_run_gates,
+    )
+    from stock_platform.trading.upbit_24x7_control import runtime_status_for_uba
 
+    runtime_running = False
     if strategy_id is None:
         detail["runtime"] = {
             "resumed": False,
@@ -429,56 +434,71 @@ async def restore_kiwoom_trading_stack(
             }
         else:
             try:
-                kill_active = bool(KillSwitchService(session).is_active())
-            except Exception:  # noqa: BLE001
-                kill_active = True
-            try:
-                scope, _ = _build_scope_for_link(
-                    session, link, kill_active=kill_active
+                rt_gates = evaluate_kiwoom_runtime_run_gates(
+                    session,
+                    user_broker_account_id=uba_id,
+                    strategy_id=int(strategy_id),
                 )
-                await dynamic_strategy_runtime_manager.initialize_scoped(
-                    scope, force=True, start=False
-                )
-                entries = [
-                    e
-                    for e in dynamic_strategy_runtime_manager.list_entries(
-                        user_broker_account_id=uba_id,
-                        strategy_id=int(strategy_id),
-                    )
-                    if str(e.scope.broker_code or "").upper() == "KIWOOM"
-                ]
-                running = [
-                    e
-                    for e in entries
-                    if e.status == RuntimeLifecycleStatus.RUNNING
-                ]
-                paused = [
-                    e
-                    for e in entries
-                    if e.status == RuntimeLifecycleStatus.PAUSED
-                ]
-                if running:
-                    detail["runtime"] = {
-                        "resumed": True,
-                        "reason": "ALREADY_RUNNING",
-                        "idempotent": True,
-                        "scope_key": running[0].scope.scope_key,
-                    }
-                elif paused:
-                    entry = paused[0]
-                    await dynamic_strategy_runtime_manager.resume_runtime(
-                        entry.scope.scope_key
-                    )
-                    detail["runtime"] = {
-                        "resumed": True,
-                        "reason": "RESUMED",
-                        "scope_key": entry.scope.scope_key,
-                    }
-                else:
+                detail["runtime_gates"] = rt_gates
+                if not rt_gates.get("ok"):
                     detail["runtime"] = {
                         "resumed": False,
-                        "reason": "NO_PAUSED_RUNTIME",
+                        "reason": "RUNTIME_GATES_FAILED",
+                        "blockers": rt_gates.get("blockers"),
                     }
+                else:
+                    kill_active = bool(KillSwitchService(session).is_active())
+                    scope, _ = _build_scope_for_link(
+                        session, link, kill_active=kill_active
+                    )
+                    entries = [
+                        e
+                        for e in dynamic_strategy_runtime_manager.list_entries(
+                            user_broker_account_id=uba_id,
+                            strategy_id=int(strategy_id),
+                        )
+                        if str(e.scope.broker_code or "").upper() == "KIWOOM"
+                    ]
+                    running = [
+                        e
+                        for e in entries
+                        if e.status == RuntimeLifecycleStatus.RUNNING
+                    ]
+                    paused = [
+                        e
+                        for e in entries
+                        if e.status == RuntimeLifecycleStatus.PAUSED
+                    ]
+                    if running:
+                        detail["runtime"] = {
+                            "resumed": True,
+                            "reason": "ALREADY_RUNNING",
+                            "idempotent": True,
+                            "scope_key": running[0].scope.scope_key,
+                        }
+                        runtime_running = True
+                    elif paused:
+                        entry = paused[0]
+                        await dynamic_strategy_runtime_manager.resume_runtime(
+                            entry.scope.scope_key
+                        )
+                        detail["runtime"] = {
+                            "resumed": True,
+                            "reason": "RESUMED",
+                            "scope_key": entry.scope.scope_key,
+                        }
+                        runtime_running = True
+                    else:
+                        # STOPPED/미등록 — desired RUNNING 이면 start=True 로 기동
+                        await dynamic_strategy_runtime_manager.initialize_scoped(
+                            scope, force=True, start=True
+                        )
+                        detail["runtime"] = {
+                            "resumed": True,
+                            "reason": "STARTED",
+                            "scope_key": scope.scope_key,
+                        }
+                        runtime_running = True
             except Exception as exc:  # noqa: BLE001
                 detail["runtime"] = {
                     "resumed": False,
@@ -486,7 +506,60 @@ async def restore_kiwoom_trading_stack(
                     "error": type(exc).__name__,
                 }
 
-    # 3) realtime execution runner (scoped LIVE only)
+    rt_status = runtime_status_for_uba(
+        user_broker_account_id=uba_id,
+        strategy_id=int(strategy_id) if strategy_id is not None else None,
+        broker_code="KIWOOM",
+    )
+    detail["runtime_status"] = rt_status
+    runtime_running = (
+        runtime_running
+        and str(rt_status.get("status") or "").upper() == "RUNNING"
+    )
+
+    # fail-closed: canonical runtime != RUNNING 이면 orphan runner 중지
+    try:
+        from stock_platform.realtime.runtime import (
+            realtime_execution_runner_manager,
+        )
+
+        existing = realtime_execution_runner_manager.get(uba_id, "KIWOOM")
+        runner_live = bool(
+            existing is not None
+            and (existing.status() or {}).get("running")
+        )
+        if runner_live and not runtime_running:
+            await realtime_execution_runner_manager.stop_scope(uba_id, "KIWOOM")
+            detail["runner_pre_stop"] = {
+                "stopped": True,
+                "reason": "CONTROL_STATE_MISMATCH_FAIL_CLOSED",
+            }
+    except Exception as exc:  # noqa: BLE001
+        detail["runner_pre_stop"] = {
+            "stopped": False,
+            "error": type(exc).__name__,
+        }
+
+    # 3) realtime execution runner — runtime RUNNING 일 때만
+    if not runtime_running:
+        detail["runner"] = {
+            "started": False,
+            "reason": "RUNTIME_NOT_RUNNING",
+        }
+        from stock_platform.trading.execution_stack_reconciliation import (
+            verify_stack_restored,
+        )
+
+        verify = verify_stack_restored(session, user_broker_account_id=uba_id)
+        detail["verify"] = verify
+        return {
+            "restored": False,
+            "reason": "RUNTIME_NOT_RUNNING",
+            "detail": detail,
+            "actor": actor,
+            "upbit_untouched": True,
+        }
+
     try:
         from stock_platform.api.v1.realtime_execution import (
             _start_live_for_uba,
@@ -520,10 +593,19 @@ async def restore_kiwoom_trading_stack(
             "actor": actor,
         }
 
-    restored_ok = bool(
-        (detail.get("feed") or {}).get("started")
-        and (detail.get("runner") or {}).get("started")
+    from stock_platform.trading.execution_stack_reconciliation import (
+        verify_stack_restored,
     )
+
+    verify = verify_stack_restored(session, user_broker_account_id=uba_id)
+    detail["verify"] = verify
+    restored_ok = bool(verify.get("restore_succeeded"))
+    if not restored_ok and bool(verify.get("core_restored")):
+        restored_ok = bool(
+            (detail.get("feed") or {}).get("started")
+            and (detail.get("runner") or {}).get("started")
+            and runtime_running
+        )
     return {
         "restored": restored_ok,
         "reason": "OK" if restored_ok else "PARTIAL",

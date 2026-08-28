@@ -565,8 +565,33 @@ def build_trading_health_snapshot(
         and arm_on
         and activation_active
         and stack_down
-        and broker == "UPBIT"
+        and broker in {"UPBIT", "KIWOOM"}
     )
+
+    control_mismatch: dict[str, Any] = {}
+    try:
+        from stock_platform.trading.execution_stack_reconciliation import (
+            detect_runtime_control_mismatch,
+        )
+
+        control_mismatch = detect_runtime_control_mismatch(
+            session,
+            user_broker_account_id=uba_id,
+            snapshot={
+                "market": broker,
+                "components": {
+                    "runtime": runtime_st,
+                    "runner": runner_st,
+                    "worker": worker_st,
+                    "exit_monitor": exit_st,
+                    "scanner": scanner_st,
+                    "feed": feed_status,
+                },
+            },
+            now=now,
+        )
+    except Exception:  # noqa: BLE001
+        control_mismatch = {}
 
     kiwoom_stack_slo = (
         _kiwoom_session_allows_stack_slo(session, now=now)
@@ -589,13 +614,19 @@ def build_trading_health_snapshot(
     elif partial_restore:
         health_state = HEALTH_BROKEN
         health_reasons.append("PARTIAL_RESTORE")
+    elif str(control_mismatch.get("mismatch_kind") or "") == "CONTROL_STATE_MISMATCH":
+        health_state = HEALTH_BROKEN
+        health_reasons.append("CONTROL_STATE_MISMATCH")
+    elif str(control_mismatch.get("mismatch_kind") or "") == "EXECUTION_STATE_MISMATCH":
+        health_state = HEALTH_BROKEN
+        health_reasons.append("EXECUTION_STATE_MISMATCH")
     elif int(invariants.get("FILLED_EXIT_WITH_OPEN_BINDING") or 0) > 0:
         health_state = HEALTH_BROKEN
         health_reasons.append("GHOST_OPEN_BINDING")
     elif slots.get("open_count", 0) > 0 and exit_st != "RUNNING":
         health_state = HEALTH_BROKEN
         health_reasons.append("EXIT_DOWN_WITH_OPEN_POSITION")
-    elif broker == "UPBIT" and stack_down and kiwoom_stack_slo:
+    elif broker in {"UPBIT", "KIWOOM"} and stack_down and kiwoom_stack_slo:
         health_state = HEALTH_BROKEN
         health_reasons.append("EXECUTION_STACK_DOWN")
     elif not feed_healthy and broker == "UPBIT":
@@ -804,6 +835,7 @@ def build_trading_health_snapshot(
     auto_trading_ready = (
         health_state == HEALTH_READY
         and not partial_restore
+        and not bool(control_mismatch.get("mismatch_kind"))
         and not bool(daily.get("blocking"))
         and len(blockers) == 0
     )
@@ -845,6 +877,7 @@ def build_trading_health_snapshot(
         "health_reasons": health_reasons,
         "exit_pending_stuck": exit_pending_stuck,
         "partial_restore": partial_restore,
+        "runtime_control_mismatch": control_mismatch,
         "auto_trading_ready": auto_trading_ready,
         "blockers": blockers,
         "invariants": invariants,
