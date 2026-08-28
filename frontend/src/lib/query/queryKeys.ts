@@ -245,6 +245,13 @@ export const queryKeys = {
       ["admin", "upbit-research-entry-signal-shadow-summary", ubaId ?? null] as const,
     upbitResearchEntrySignalShadowRows: (ubaId?: number) =>
       ["admin", "upbit-research-entry-signal-shadow-rows", ubaId ?? null] as const,
+    autotradingResearchStatus: (upbitUbaId?: number, kiwoomUbaId?: number) =>
+      [
+        "admin",
+        "autotrading-research-status",
+        upbitUbaId ?? null,
+        kiwoomUbaId ?? null,
+      ] as const,
     autotradingProcessCurrent: (market: string, ubaId?: number) =>
       ["admin", "autotrading-process-current", market, ubaId ?? null] as const,
     autotradingProcessVersions: (market?: string) =>

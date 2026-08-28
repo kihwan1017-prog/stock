@@ -18,6 +18,9 @@ from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.const
     ALL_VARIANTS,
     FEE_RT_PCT,
     FEE_TAKER_RATE,
+    HORIZON_MATURED,
+    HORIZON_MISSING_DATA,
+    HORIZON_PENDING,
     OUTCOME_WINDOWS_MIN,
     SOURCE_REPLAY,
     VARIANT_E0,
@@ -135,11 +138,16 @@ def _future_prices(
     *,
     symbol: str,
     observed_at: datetime,
+    as_of: datetime | None = None,
 ) -> dict[str, Any]:
-    """Outcome-only future candles — NEVER used for entry decision."""
+    """Outcome-only future candles — NEVER used for entry decision.
+
+    as_of 이전에 도래한 horizon만 MATURED/MISSING_DATA 처리 (look-ahead 금지).
+    """
 
     obs = _as_utc(observed_at)
     assert obs is not None
+    as_of = _as_utc(as_of) or datetime.now(timezone.utc)
     # entry reference = last close at or before observed_at
     entry = session.scalar(
         text(
@@ -160,10 +168,16 @@ def _future_prices(
         return {"ok": False, "reason": "NO_ENTRY_PRICE"}
 
     futures: dict[str, Decimal | None] = {}
+    horizons: dict[str, dict[str, Any]] = {}
     highs: list[Decimal] = []
     lows: list[Decimal] = []
     for mins in OUTCOME_WINDOWS_MIN:
+        key = f"future_{mins}m"
         target = obs + timedelta(minutes=mins)
+        if as_of < target:
+            futures[key] = None
+            horizons[key] = {"status": HORIZON_PENDING, "return_pct": None}
+            continue
         row = session.execute(
             text(
                 """
@@ -171,22 +185,47 @@ def _future_prices(
                 FROM market.candle_minute c
                 JOIN market.instrument i ON i.instrument_id = c.instrument_id
                 WHERE i.symbol = :sym AND c.timeframe = 1
+                  AND c.candle_at <= :tgt
+                ORDER BY c.candle_at DESC
+                LIMIT 1
+                """
+            ),
+            {"sym": symbol, "tgt": target},
+        ).mappings().first()
+        if not row:
+            futures[key] = None
+            horizons[key] = {"status": HORIZON_MISSING_DATA, "return_pct": None}
+            continue
+        close = _dec(row["close_price"])
+        if close is None:
+            futures[key] = None
+            horizons[key] = {"status": HORIZON_MISSING_DATA, "return_pct": None}
+            continue
+        ret = (close - entry_px) / entry_px * Decimal("100")
+        futures[key] = ret
+        horizons[key] = {
+            "status": HORIZON_MATURED,
+            "return_pct": float(ret),
+            "as_of_candle_at": (
+                row["candle_at"].isoformat()
+                if row.get("candle_at")
+                else None
+            ),
+        }
+        # MFE/MAE 구간 — obs~target 사이 bar
+        span = session.execute(
+            text(
+                """
+                SELECT c.high_price, c.low_price
+                FROM market.candle_minute c
+                JOIN market.instrument i ON i.instrument_id = c.instrument_id
+                WHERE i.symbol = :sym AND c.timeframe = 1
                   AND c.candle_at >= :obs AND c.candle_at <= :tgt
-                ORDER BY c.candle_at ASC
                 """
             ),
             {"sym": symbol, "obs": obs, "tgt": target},
         ).mappings().all()
-        if not row:
-            futures[f"future_{mins}m"] = None
-            continue
-        last = row[-1]
-        close = _dec(last["close_price"])
-        if close is not None:
-            futures[f"future_{mins}m"] = (
-                (close - entry_px) / entry_px * Decimal("100")
-            )
-        for r in row:
+        for r in span:
             h = _dec(r["high_price"])
             lo = _dec(r["low_price"])
             if h is not None:
@@ -211,16 +250,25 @@ def _future_prices(
     if fut15 is not None:
         net15 = fut15 - fee_rt
 
+    all_resolved = all(
+        horizons.get(f"future_{m}m", {}).get("status")
+        in (HORIZON_MATURED, HORIZON_MISSING_DATA)
+        for m in OUTCOME_WINDOWS_MIN
+    )
+
     return {
         "ok": True,
         "entry_reference_price": entry_px,
         "futures": {k: (float(v) if v is not None else None) for k, v in futures.items()},
+        "horizons": horizons,
+        "all_horizons_resolved": all_resolved,
         "mfe_pct": float(mfe) if mfe is not None else None,
         "mae_pct": float(mae) if mae is not None else None,
         "net_return_15m_pct": float(net15) if net15 is not None else None,
         "fee_rt_pct": float(fee_rt),
         "fee_assumption": f"UpbitFeePolicy.DEFAULT_TAKER_RATE={taker}",
         "slippage_assumption": "SLIPPAGE_NOT_MODELED",
+        "as_of": as_of.isoformat(),
     }
 
 

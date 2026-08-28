@@ -316,6 +316,20 @@ BOOTSTRAP_CHANGES: list[dict[str, object]] = [
         "research_only": False,
         "evidence": [".run/k_upbit_lifecycle_integrated_reliability_audit.json"],
     },
+    {
+        "git_commit": "WORKTREE",
+        "change_type": CHANGE_RESEARCH,
+        "component": "ENTRY_SIGNAL",
+        "summary": "Cross-market shadow research outcome observability",
+        "change_reason": (
+            "CROSS_MARKET_SHADOW_RESEARCH_OUTCOME_OBSERVABILITY — "
+            "UPBIT E0/E2 4h/24h outcomes + KIWOOM K0 Golden Cross shadow; "
+            "REAL policy unchanged"
+        ),
+        "real_policy_changed": False,
+        "research_only": True,
+        "evidence": [".run/k_cross_market_shadow_research_pipeline.json"],
+    },
 ]
 
 CURRENT_UPBIT_CONFIG_SNAPSHOT = {

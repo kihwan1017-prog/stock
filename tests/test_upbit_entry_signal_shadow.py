@@ -205,3 +205,71 @@ def test_replay_outcome_not_used_in_decision() -> None:
     assert summary["variants"]["E3"]["ENTRIES"] == 1
     assert summary["variants"]["E0"]["ENTRIES"] == 0
     assert summary["opportunity_cost"]["BLOCKED_BY_RSI"]["MISSED_POSITIVE_15M"] == 1
+
+
+def test_mature_pending_includes_block_rows() -> None:
+    """BLOCK row도 age>=60m이면 outcome 대상 (PASS-only 필터 금지)."""
+
+    from datetime import timedelta
+
+    from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.constants import (
+        STATUS_COMPLETED,
+        STATUS_PENDING,
+    )
+    from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.service import (
+        mature_pending_outcomes,
+    )
+
+    old = datetime.now(timezone.utc) - timedelta(minutes=61)
+    row = MagicMock()
+    row.symbol = "KRW-TEST"
+    row.observed_at = old
+    row.shadow_decision = "BLOCK"
+    row.outcome_status = STATUS_PENDING
+
+    session = MagicMock()
+    session.scalars.return_value = [row]
+
+    with patch(
+        "stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.service._future_prices",
+        return_value={
+            "ok": True,
+            "entry_reference_price": Decimal("100"),
+            "futures": {
+                "future_5m": 0.1,
+                "future_15m": 0.2,
+                "future_30m": 0.3,
+                "future_60m": 0.4,
+                "future_240m": 0.5,
+                "future_1440m": 0.6,
+            },
+            "horizons": {},
+            "all_horizons_resolved": True,
+            "mfe_pct": 0.5,
+            "mae_pct": -0.1,
+            "net_return_15m_pct": 0.1,
+            "fee_assumption": "test",
+            "slippage_assumption": "SLIPPAGE_NOT_MODELED",
+            "as_of": datetime.now(timezone.utc).isoformat(),
+        },
+    ):
+        out = mature_pending_outcomes(session, commit=False)
+
+    assert out["matured"] == 1
+    assert row.outcome_status == STATUS_COMPLETED
+
+
+def test_outcome_scheduler_job_id_and_tick_disabled() -> None:
+    from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.scheduler import (
+        UpbitEntrySignalShadowOutcomeScheduler,
+        run_entry_signal_shadow_outcome_tick,
+    )
+
+    assert UpbitEntrySignalShadowOutcomeScheduler.JOB_ID == (
+        "upbit_entry_signal_shadow_outcome"
+    )
+    settings = MagicMock()
+    settings.upbit_entry_signal_shadow_enabled = False
+    out = run_entry_signal_shadow_outcome_tick(settings)
+    assert out["ok"] is False
+    assert out["reason"] == "DISABLED"

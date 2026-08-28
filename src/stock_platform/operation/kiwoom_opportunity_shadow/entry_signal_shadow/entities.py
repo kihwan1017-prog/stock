@@ -1,4 +1,4 @@
-"""ORM — Upbit entry signal forward shadow (research only)."""
+"""ORM — KIWOOM entry signal forward shadow (research only)."""
 
 from __future__ import annotations
 
@@ -21,24 +21,25 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from stock_platform.database.base import Base
-from stock_platform.operation.upbit_opportunity_shadow.entry_signal_shadow.constants import (
+from stock_platform.operation.kiwoom_opportunity_shadow.entry_signal_shadow.constants import (
     MARKET,
     RULE_VERSION,
     STATUS_PENDING,
+    VARIANT_K0,
 )
 
 
-class UpbitEntrySignalShadowEntity(Base):
-    """Forward/replay observation per (selection, variant) — REAL mutation 0."""
+class KiwoomEntrySignalShadowEntity(Base):
+    """Golden Cross episode shadow — REAL mutation 0."""
 
-    __tablename__ = "upbit_entry_signal_shadow"
+    __tablename__ = "kiwoom_entry_signal_shadow"
     __table_args__ = (
         UniqueConstraint(
             "user_broker_account_id",
-            "selection_id",
+            "research_opportunity_id",
             "variant",
             "source",
-            name="uq_entry_signal_shadow_uba_sel_var_src",
+            name="uq_kiwoom_entry_shadow_uba_opp_var_src",
         ),
         {"schema": "operation"},
     )
@@ -54,9 +55,10 @@ class UpbitEntrySignalShadowEntity(Base):
     observed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
-    selection_id: Mapped[int | None] = mapped_column(BigInteger)
-    candidate_ref: Mapped[str | None] = mapped_column(String(64))
-    variant: Mapped[str] = mapped_column(String(8), nullable=False)
+    research_opportunity_id: Mapped[str] = mapped_column(String(96), nullable=False)
+    variant: Mapped[str] = mapped_column(
+        String(8), nullable=False, server_default=text(f"'{VARIANT_K0}'")
+    )
     source: Mapped[str] = mapped_column(String(32), nullable=False)
     rule_version: Mapped[str] = mapped_column(
         String(64), nullable=False, server_default=text(f"'{RULE_VERSION}'")
@@ -64,8 +66,7 @@ class UpbitEntrySignalShadowEntity(Base):
     research_only: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("true")
     )
-    baseline_decision: Mapped[str] = mapped_column(String(20), nullable=False)
-    baseline_block_reason: Mapped[str | None] = mapped_column(String(64))
+    entry_event: Mapped[str] = mapped_column(String(32), nullable=False)
     shadow_decision: Mapped[str] = mapped_column(String(20), nullable=False)
     shadow_block_reason: Mapped[str | None] = mapped_column(String(64))
     indicator_snapshot: Mapped[dict[str, Any]] = mapped_column(
@@ -89,7 +90,6 @@ class UpbitEntrySignalShadowEntity(Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # Data Trust — INVALID 구간 표본은 promotion 제외 (원본 유지)
     data_quality_status: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'UNKNOWN'")
     )

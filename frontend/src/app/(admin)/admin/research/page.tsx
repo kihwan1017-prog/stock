@@ -21,6 +21,7 @@ import { useStrategyMarketFromUrl } from "@/features/admin/strategy-analysis/Mar
 import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/UpbitResearchCollectionStatusPanel";
 import { UpbitMaExitForwardShadowPanel } from "@/features/admin/upbit/UpbitMaExitForwardShadowPanel";
 import { UpbitEntrySignalShadowPanel } from "@/features/admin/upbit/UpbitEntrySignalShadowPanel";
+import { CrossMarketShadowResearchPanel } from "@/features/admin/research/CrossMarketShadowResearchPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
@@ -119,6 +120,13 @@ function ResearchWorkspaceBody() {
         market={market}
         purposeKo="연구·검증용 데이터만 모읍니다. 실주문·LIVE/ARM과는 분리됩니다."
       />
+
+      {(showUpbit || showKiwoom || market === "ALL") ? (
+        <CrossMarketShadowResearchPanel
+          upbitUbaId={ubaId}
+          kiwoomUbaId={1381}
+        />
+      ) : null}
 
       {market === "ALL" ? (
         <Alert

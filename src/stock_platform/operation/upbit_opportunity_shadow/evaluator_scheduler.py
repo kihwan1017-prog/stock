@@ -118,6 +118,17 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 error=str(exc)[:200],
             )
         try:
+            from stock_platform.operation.kiwoom_opportunity_shadow.entry_signal_shadow.scheduler import (
+                KiwoomEntrySignalShadowOutcomeScheduler,
+            )
+
+            KiwoomEntrySignalShadowOutcomeScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "kiwoom_entry_signal_shadow_outcome_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
+        try:
             from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.scheduler import (
                 UpbitTrailingForwardShadowScheduler,
             )

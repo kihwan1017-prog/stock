@@ -291,6 +291,7 @@ def quarantine_shadow_samples_in_window(
         "upbit_entry_signal_shadow",
         "upbit_ma_exit_forward_shadow",
         "upbit_trailing_forward_shadow",
+        "kiwoom_entry_signal_shadow",
     ):
         # table-specific timestamp column
         ts_col = "observed_at" if "entry_signal" in table else "created_at"

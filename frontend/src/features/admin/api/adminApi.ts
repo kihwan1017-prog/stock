@@ -759,6 +759,13 @@ export async function getAdminUpbitResearchEntrySignalShadowRows(
   return getJson("/admin/upbit/research/entry-signal-shadow/rows", params);
 }
 
+/** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
+export async function getAdminAutotradingResearchStatus(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/autotrading/research/status", params);
+}
+
 export async function getAdminUpbitResearchMarketContext(
   params?: Params,
 ): Promise<JsonValue> {

@@ -17,8 +17,18 @@ STATUS_PENDING = "PENDING"
 STATUS_COMPLETED = "COMPLETED"
 STATUS_INSUFFICIENT_OUTCOME = "INSUFFICIENT_OUTCOME"
 
-# future return windows (minutes)
-OUTCOME_WINDOWS_MIN = (5, 15, 30, 60)
+# per-horizon outcome (look-ahead 금지 — as-of 시점 이후만 MATURED)
+HORIZON_PENDING = "PENDING"
+HORIZON_MATURED = "MATURED"
+HORIZON_MISSING_DATA = "MISSING_DATA"
+HORIZON_INVALID_DATA = "INVALID_DATA"
+HORIZON_QUARANTINED = "QUARANTINED"
+
+# future return windows (minutes) — 4h·24h research extension
+OUTCOME_WINDOWS_MIN = (5, 15, 30, 60, 240, 1440)
+
+# unique natural opportunity identity (표본 = selection_id / research_opportunity_id)
+UPBIT_SAMPLE_IDENTITY = "selection_id"
 
 # fee SoT mirror — UpbitFeePolicy.DEFAULT_TAKER_RATE
 FEE_TAKER_RATE = 0.0005

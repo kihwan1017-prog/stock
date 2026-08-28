@@ -377,6 +377,26 @@ class MovingAverageStrategyEvaluator:
             and short_avg > long_avg
             and self._passes_change(event)
         ):
+            # KIWOOM K0 research shadow — REAL emit과 독립, fail-open
+            try:
+                from stock_platform.operation.kiwoom_opportunity_shadow.entry_signal_shadow.hooks import (
+                    maybe_enroll_kiwoom_golden_cross_shadow,
+                )
+
+                maybe_enroll_kiwoom_golden_cross_shadow(
+                    broker_code=str(self.scope.broker_code or ""),
+                    uba_id=int(self.scope.account_id),
+                    symbol=event.symbol.upper(),
+                    short_ma=short_avg,
+                    long_ma=long_avg,
+                    prev_short=prev_s,
+                    prev_long=prev_l,
+                    event_time=event.event_time,
+                    entry_reference_price=event.price,
+                    scope_key=self.scope.scope_key,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             return self._emit(
                 event, state, SignalType.BUY, "MA_GOLDEN_CROSS", short_avg, long_avg
             )

@@ -137,6 +137,25 @@ def enroll_forward_observation(
     }
 
 
+def _apply_future_columns(row: UpbitEntrySignalShadowEntity, fut: dict[str, Any]) -> None:
+    """Fill return columns from _future_prices result (partial horizon OK)."""
+
+    futures = fut.get("futures") or {}
+    mapping = {
+        5: "future_5m_return_pct",
+        15: "future_15m_return_pct",
+        30: "future_30m_return_pct",
+        60: "future_60m_return_pct",
+        240: "future_240m_return_pct",
+        1440: "future_1440m_return_pct",
+    }
+    for mins, col in mapping.items():
+        key = f"future_{mins}m"
+        val = futures.get(key)
+        if val is not None:
+            setattr(row, col, Decimal(str(val)))
+
+
 def mature_pending_outcomes(
     session: Session,
     *,
@@ -144,17 +163,29 @@ def mature_pending_outcomes(
     limit: int = 200,
     commit: bool = True,
 ) -> dict[str, Any]:
-    """Fill future returns for PENDING rows older than 60m.
+    """Fill forward returns per horizon — as-of maturation, look-ahead 금지.
 
-    PASS/BLOCK 모두 성숙시킨다 — historical replay와 동일하게
-    block observation의 counterfactual outcome이 필요하다.
+    PASS/BLOCK 모두 성숙시킨다 — counterfactual outcome 필요.
     REAL order/slot/daily 경로는 절대 건드리지 않는다.
     """
 
-    cutoff = _utc_now() - timedelta(minutes=max(OUTCOME_WINDOWS_MIN))
+    now = _utc_now()
+    min_window = min(OUTCOME_WINDOWS_MIN)
+    cutoff = now - timedelta(minutes=min_window)
+    from sqlalchemy import or_
+
     q = select(UpbitEntrySignalShadowEntity).where(
-        UpbitEntrySignalShadowEntity.outcome_status == STATUS_PENDING,
         UpbitEntrySignalShadowEntity.observed_at <= cutoff,
+        or_(
+            UpbitEntrySignalShadowEntity.outcome_status == STATUS_PENDING,
+            (
+                (UpbitEntrySignalShadowEntity.outcome_status == STATUS_COMPLETED)
+                & (
+                    UpbitEntrySignalShadowEntity.future_240m_return_pct.is_(None)
+                    | UpbitEntrySignalShadowEntity.future_1440m_return_pct.is_(None)
+                )
+            ),
+        ),
     )
     if uba_id is not None:
         q = q.where(
@@ -163,38 +194,19 @@ def mature_pending_outcomes(
     rows = list(session.scalars(q.limit(limit)))
     matured = 0
     insufficient = 0
+    partial = 0
     for row in rows:
         fut = _future_prices(
-            session, symbol=row.symbol, observed_at=row.observed_at
+            session, symbol=row.symbol, observed_at=row.observed_at, as_of=now
         )
         if not fut.get("ok"):
             row.outcome_status = STATUS_INSUFFICIENT_OUTCOME
             row.outcome_json = fut
-            row.completed_at = _utc_now()
+            row.completed_at = now
             insufficient += 1
             continue
-        futures = fut.get("futures") or {}
+        _apply_future_columns(row, fut)
         row.entry_reference_price = fut.get("entry_reference_price")
-        row.future_5m_return_pct = (
-            Decimal(str(futures["future_5m"]))
-            if futures.get("future_5m") is not None
-            else None
-        )
-        row.future_15m_return_pct = (
-            Decimal(str(futures["future_15m"]))
-            if futures.get("future_15m") is not None
-            else None
-        )
-        row.future_30m_return_pct = (
-            Decimal(str(futures["future_30m"]))
-            if futures.get("future_30m") is not None
-            else None
-        )
-        row.future_60m_return_pct = (
-            Decimal(str(futures["future_60m"]))
-            if futures.get("future_60m") is not None
-            else None
-        )
         row.mfe_pct = (
             Decimal(str(fut["mfe_pct"])) if fut.get("mfe_pct") is not None else None
         )
@@ -207,16 +219,35 @@ def mature_pending_outcomes(
             else None
         )
         row.fee_rt_pct = Decimal(str(FEE_RT_PCT))
-        row.outcome_json = {
-            "fee_assumption": fut.get("fee_assumption"),
-            "slippage_assumption": fut.get("slippage_assumption"),
-        }
-        row.outcome_status = STATUS_COMPLETED
-        row.completed_at = _utc_now()
-        matured += 1
+        prev_json = dict(row.outcome_json or {})
+        prev_json.update(
+            {
+                "fee_assumption": fut.get("fee_assumption"),
+                "slippage_assumption": fut.get("slippage_assumption"),
+                "horizons": fut.get("horizons") or {},
+                "as_of": fut.get("as_of"),
+                "BACKFILL_SOURCE": "CANONICAL_CANDLE_MINUTE",
+                "CALCULATED_AT": now.isoformat(),
+            }
+        )
+        row.outcome_json = prev_json
+        if fut.get("all_horizons_resolved"):
+            row.outcome_status = STATUS_COMPLETED
+            row.completed_at = now
+            matured += 1
+        elif row.outcome_status == STATUS_PENDING:
+            partial += 1
+        else:
+            # COMPLETED row — extended horizon backfill only
+            partial += 1
     if commit:
         session.commit()
-    return {"ok": True, "matured": matured, "insufficient": insufficient}
+    return {
+        "ok": True,
+        "matured": matured,
+        "partial": partial,
+        "insufficient": insufficient,
+    }
 
 
 def forward_collection_status(session: Session, *, uba_id: int = 1380) -> dict[str, Any]:
@@ -229,14 +260,15 @@ def forward_collection_status(session: Session, *, uba_id: int = 1380) -> dict[s
         ),
         {"uba": uba_id, "src": SOURCE_FORWARD},
     )
-    # observations = distinct selection_id for E0
+    # observations = distinct selection_id for E0 (natural opportunity only)
     obs = session.scalar(
         text(
             """
-            SELECT COUNT(DISTINCT COALESCE(selection_id::text, shadow_id::text))
+            SELECT COUNT(DISTINCT selection_id)
             FROM operation.upbit_entry_signal_shadow
             WHERE user_broker_account_id = :uba AND source = :src
               AND variant = 'E0'
+              AND selection_id IS NOT NULL
             """
         ),
         {"uba": uba_id, "src": SOURCE_FORWARD},
