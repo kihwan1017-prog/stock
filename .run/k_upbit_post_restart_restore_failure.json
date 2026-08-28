@@ -1,0 +1,128 @@
+{
+  "WORK_ID": "WRK-20260829-012-UPBIT-POST-RESTART-RESTORE-FAILURE",
+  "work_type": "UPBIT_RUNTIME_RESTORE_INCIDENT",
+  "parent": "WRK-20260829-011-UPBIT-24H-NO-TRADE-ADA-DOS-ROOT-CAUSE",
+  "FINAL_VERDICT": "FALSE_ALARM_INPROCESS_PROBE_RESTORE_ALREADY_SUCCEEDED",
+  "BASE_COMMIT": "828f19c",
+  "RESULT_COMMIT": "828f19c",
+  "CODE_FIX_APPLIED": false,
+  "BACKEND_RESTART_COUNT": 0,
+  "generated_at_kst": "2026-08-29T03:10:00+09:00",
+  "incident": {
+    "RESTART_TIME": "2026-08-29T02:46:23+09:00",
+    "reported_failure_window": "poll ~60s after restart showed STOPPED via in-process probe",
+    "LIVE": "ON",
+    "ARM": "ON",
+    "LEASE": "ACTIVE",
+    "INITIAL_REPORTED_VIA_INPROCESS": {
+      "runtime": "STOPPED",
+      "runner": "STOPPED",
+      "worker": "STOPPED",
+      "scanner": false,
+      "exit_monitor": "STOPPED",
+      "feed": "DISCONNECTED",
+      "auto_ready": false
+    },
+    "ACTUAL_SERVER_AT_STARTUP_LOG": {
+      "stack_ok": true,
+      "restore_succeeded": true,
+      "runtime_reason": "RESUMED",
+      "execution_reason": "STARTED",
+      "missing_components": [],
+      "timestamp_utc": "2026-08-28T17:46:33.905709Z"
+    },
+    "ACTUAL_SERVER_NOW_HTTP": {
+      "runtime": "RUNNING",
+      "runner": "RUNNING",
+      "worker": "RUNNING",
+      "exit_monitor": "RUNNING",
+      "scanner": true,
+      "feed": "REAL_FRESH",
+      "auto_trading_ready": true,
+      "reliability": "READY",
+      "runtime_stack": "4/4 RUNNING",
+      "as_of": "2026-08-28T18:08:22.857379+00:00"
+    },
+    "OPEN_POSITION_DURING_FAILURE": {
+      "KRW-ADA_1925": true,
+      "note": "Server exit_monitor was RUNNING after restore; in-process STOPPED was not server truth"
+    },
+    "backend_pid": 22080,
+    "process_start": "2026-08-29T02:46:23+09:00",
+    "health_uptime_seconds_at_check": 1220.9,
+    "git_head": "828f19c"
+  },
+  "restore_sequence": {
+    "TRIGGER_EXECUTED": true,
+    "trigger": "lifecycle._startup_unattended_upbit_stack_restore → restore_all_active_unattended_upbit_leases",
+    "steps": [
+      {"STEP": "startup begin", "EXPECTED": "yes", "ACTUAL": "yes", "RESULT": "PASS", "TIME": "2026-08-28T17:46:32.061920Z"},
+      {"STEP": "identify LIVE+ARM via lease restore", "EXPECTED": "yes", "ACTUAL": "live_restored+arm_restored", "RESULT": "PASS", "TIME": "2026-08-28T17:46:33.4Z"},
+      {"STEP": "validate lease", "EXPECTED": "ACTIVE", "ACTUAL": "ACTIVE", "RESULT": "PASS", "TIME": "same"},
+      {"STEP": "validate deployment/portfolio", "EXPECTED": "enabled", "ACTUAL": "FULL_MARKET_PORTFOLIO strategy 17483 dep 868", "RESULT": "PASS", "TIME": "same"},
+      {"STEP": "restore runtime", "EXPECTED": "RUNNING", "ACTUAL": "RESUMED", "RESULT": "PASS", "TIME": "2026-08-28T17:46:33.9Z"},
+      {"STEP": "runner START", "EXPECTED": "RUNNING", "ACTUAL": "STARTED", "RESULT": "PASS", "TIME": "same"},
+      {"STEP": "worker START", "EXPECTED": "RUNNING", "ACTUAL": "verify worker true", "RESULT": "PASS", "TIME": "same"},
+      {"STEP": "scanner START", "EXPECTED": "RUNNING", "ACTUAL": "verify scanner true", "RESULT": "PASS", "TIME": "same"},
+      {"STEP": "exit monitor START", "EXPECTED": "RUNNING", "ACTUAL": "verify exit_monitor true", "RESULT": "PASS", "TIME": "same"},
+      {"STEP": "feed connect", "EXPECTED": "fresh", "ACTUAL": "verify feed true / now REAL_FRESH", "RESULT": "PASS", "TIME": "same→now"},
+      {"STEP": "AUTO_TRADING_READY", "EXPECTED": "true", "ACTUAL": "true (HTTP now)", "RESULT": "PASS", "TIME": "now"}
+    ],
+    "FIRST_FAILED_STAGE": null,
+    "note": "No restore failure on server. False STOPPED from CLI in-process singleton reads."
+  },
+  "root_cause": {
+    "PRIMARY": "J OTHER — MEASUREMENT_ARTIFACT_INPROCESS_SINGLETON_VS_SERVER",
+    "SECONDARY": "WRK-011 post-restart poll used build_uba_operational_summary() in a separate Python process; runtime/worker/exit/feed singletons there are always STOPPED/DISCONNECTED even when uvicorn process is healthy",
+    "WRK010_REGRESSION": false,
+    "EVIDENCE": "git 0e7cf9c..41ea0c5 touches only daily-report/research/uba_operational_summary slim projection — not lifecycle restore. Startup log shows stack_ok=true. HTTP ops-status now 4/4 RUNNING."
+  },
+  "fix": {
+    "CODE_BUG_FOUND": false,
+    "CODE_FIX_APPLIED": false,
+    "FILES": [],
+    "recommendation": "Future restore polls MUST use HTTP /uba/{id}/ops-status (server process), never in-process ops summary for runtime component state"
+  },
+  "tests": {
+    "PYTEST": "n/a (no code change; HTTP ops proof)",
+    "HTTP_OPS_PROOF": ".run/_wrk012_http_ops.json"
+  },
+  "deploy": {
+    "COMMIT": "none (no code change)",
+    "BACKEND_RESTART_COUNT": 0
+  },
+  "natural_restore": {
+    "MANUAL_START_USED": false,
+    "MANUAL_LIVE_ARM_USED": false,
+    "already_restored_at_startup": true,
+    "RUNTIME": "RUNNING",
+    "RUNNER": "RUNNING",
+    "WORKER": "RUNNING",
+    "SCANNER": true,
+    "EXIT_MONITOR": "RUNNING",
+    "FEED": "REAL_FRESH",
+    "AUTO_TRADING_READY": true,
+    "RESTORE_DURATION": "~1.8s from startup begin to stack_ok (17:46:32.06→17:46:33.90Z)"
+  },
+  "ada_safety": {
+    "ADA_1925_OPEN": true,
+    "EXIT_MONITOR_DOWNTIME_ON_SERVER": "0 after successful restore (false downtime from probe artifact)",
+    "OPEN_POSITION_WITHOUT_EXIT_MONITOR": false
+  },
+  "wrk011_continuation": {
+    "CONTINUED": true,
+    "ADA_NO_SELL_REASON": "Unchanged: SELL #1926 MA_DEAD_CROSS LIMIT@299 unfilled then K1926_SAFE_RESOLUTION cancel; not because exit_monitor was down on server after 02:46 restore",
+    "DOS_NO_BUY_REASON": "Unchanged: MAX_OPEN_POSITIONS_REACHED from 5 broker snapshots when signals reached executor during RUNNING periods; do not attribute no-buy solely to STOPPED stack artifact"
+  },
+  "safety": {
+    "TRADING_POLICY_CHANGED": false,
+    "STRATEGY_CHANGED": false,
+    "RISK_CHANGED": false,
+    "PORTFOLIO_CHANGED": false,
+    "EXIT_POLICY_CHANGED": false,
+    "LIVE_ARM_MUTATION": false,
+    "FORCED_ORDER": 0,
+    "TEST_ORDER": 0,
+    "MANUAL_CANCEL": 0
+  }
+}

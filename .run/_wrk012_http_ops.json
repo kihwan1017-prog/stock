@@ -1,0 +1,24 @@
+{
+  "live": "ON",
+  "arm": "ON",
+  "activation": "ACTIVE",
+  "auto_trading_ready": true,
+  "auto_trading_state": "RUNNING",
+  "runtime": "RUNNING",
+  "runner": "RUNNING",
+  "worker": "RUNNING",
+  "exit_monitor": "RUNNING",
+  "feed": "REAL_FRESH",
+  "scanner": true,
+  "reliability": "READY",
+  "as_of": "2026-08-28T18:08:22.857379+00:00",
+  "runtime_stack": {
+    "running_count": 4,
+    "total": 4,
+    "label": "4/4 RUNNING",
+    "runtime": "RUNNING",
+    "runner": "RUNNING",
+    "outbox_worker": "RUNNING",
+    "exit_monitor": "RUNNING"
+  }
+}
