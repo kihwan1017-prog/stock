@@ -25,6 +25,12 @@ export const ENTRY_BLOCK_REASON_KO: Record<string, string> = {
   ENTRY_EVALUATOR_STALE:
     "매수 조건 평가가 일정 시간 이상 갱신되지 않았습니다.",
   SIGNAL_EMIT_SUPPRESSED: "중복 매수 신호가 억제되었습니다.",
+  MAX_OPEN_POSITIONS_REACHED:
+    "계좌 전체 보유 종목 수 한도에 도달했습니다(수동 보유 포함).",
+  PENDING_ENTRY_LIMIT: "대기 중 진입 주문 수 한도에 도달했습니다.",
+  PORTFOLIO_PENDING_ENTRY_LIMIT:
+    "포트폴리오 대기 진입 한도에 도달했습니다.",
+  FULL_MARKET_NO_WAITING_SIGNAL_SLOT: "비어 있는 대기 슬롯이 없습니다.",
   SIGNALS_NOT_ALLOWED: "현재 신호 발생이 허용되지 않습니다.",
   PREV_MA_NOT_READY: "이전 이동평균이 아직 준비되지 않았습니다.",
   PORTFOLIO_ENTRY_CTX_MISSING: "포트폴리오 진입 컨텍스트가 없습니다.",
@@ -56,6 +62,10 @@ export const ENTRY_BLOCK_REASON_SHORT_KO: Record<string, string> = {
   RISK_BLOCK: "리스크 차단",
   ENTRY_EVALUATOR_STALE: "평가 갱신 지연",
   SIGNAL_EMIT_SUPPRESSED: "중복 매수 신호 억제",
+  MAX_OPEN_POSITIONS_REACHED: "계좌 보유 한도(수동 포함)",
+  PENDING_ENTRY_LIMIT: "대기 진입 한도",
+  PORTFOLIO_PENDING_ENTRY_LIMIT: "포트폴리오 대기 한도",
+  FULL_MARKET_NO_WAITING_SIGNAL_SLOT: "대기 슬롯 없음",
   SIGNALS_NOT_ALLOWED: "신호 발생 미허용",
   PREV_MA_NOT_READY: "이동평균 미준비",
   PORTFOLIO_ENTRY_CTX_MISSING: "진입 컨텍스트 없음",

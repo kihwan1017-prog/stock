@@ -13,6 +13,8 @@ export const UI_LABEL_KO = {
   ownership: "구분",
   status: "상태",
   waitingAge: "대기 시간",
+  holdingAge: "보유 시간",
+  ageTime: "경과 시간",
   lastEvaluated: "최근 평가",
   entryDecision: "매수 판단",
   blockReason: "차단 사유",

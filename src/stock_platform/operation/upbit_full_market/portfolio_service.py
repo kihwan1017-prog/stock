@@ -863,7 +863,29 @@ class UpbitPortfolioService:
         max_wait_s = float(repl.get("candidate_max_wait_seconds") or 10800)
         hold_s = float(repl.get("candidate_hold_seconds") or 1800)
         switch_delta = float(repl.get("candidate_switch_min_score_delta") or 8)
+
+        # OPEN 슬롯 PnL READ — broker snapshot (trading logic 불변)
+        broker_by_sym: dict[str, Any] = {}
+        try:
+            from stock_platform.broker.account_models import (
+                BrokerPositionSnapshotEntity,
+            )
+
+            for bp in self._session.scalars(
+                select(BrokerPositionSnapshotEntity).where(
+                    BrokerPositionSnapshotEntity.user_broker_account_id
+                    == int(user_broker_account_id),
+                    BrokerPositionSnapshotEntity.quantity > 0,
+                )
+            ):
+                bsym = str(bp.symbol or "").upper()
+                if bsym:
+                    broker_by_sym[bsym] = bp
+        except Exception:  # noqa: BLE001
+            broker_by_sym = {}
+
         out: list[dict[str, Any]] = []
+        now_utc = datetime.now(timezone.utc)
         for s in rows:
             sel = (
                 sel_by_id.get(int(s.candidate_selection_id))
@@ -874,29 +896,86 @@ class UpbitPortfolioService:
             ev = evals.get(sym) if isinstance(evals, dict) else None
             if not isinstance(ev, dict):
                 ev = {}
-            waiting_age_seconds = None
-            if sel is not None and getattr(sel, "selected_at", None) is not None:
-                try:
+            status_u = str(s.status or "").upper()
+            # OPEN: 보유 시간 = opened_at / WAITING: 대기 시간 = selected_at
+            age_seconds = None
+            age_kind = "WAITING"
+            age_anchor = None
+            try:
+                if status_u == "OPEN" and getattr(s, "opened_at", None) is not None:
+                    opened = s.opened_at
+                    if opened.tzinfo is None:
+                        opened = opened.replace(tzinfo=timezone.utc)
+                    age_seconds = max(0.0, (now_utc - opened).total_seconds())
+                    age_kind = "HOLDING"
+                    age_anchor = "opened_at"
+                elif sel is not None and getattr(sel, "selected_at", None) is not None:
                     selected = sel.selected_at
                     if selected.tzinfo is None:
                         selected = selected.replace(tzinfo=timezone.utc)
-                    waiting_age_seconds = max(
-                        0.0,
-                        (datetime.now(timezone.utc) - selected).total_seconds(),
-                    )
-                except Exception:  # noqa: BLE001
-                    waiting_age_seconds = None
+                    age_seconds = max(0.0, (now_utc - selected).total_seconds())
+                    age_kind = "WAITING"
+                    age_anchor = "selected_at"
+            except Exception:  # noqa: BLE001
+                age_seconds = None
+            waiting_age_seconds = age_seconds  # 하위호환 필드명 유지
             slot_score = (
                 float(sel.score) if sel is not None and sel.score is not None else None
             )
             max_wait_exceeded = (
                 waiting_age_seconds is not None
                 and float(waiting_age_seconds) >= max_wait_s
+                and age_kind == "WAITING"
             )
             within_hold = (
                 waiting_age_seconds is not None
                 and float(waiting_age_seconds) < hold_s
+                and age_kind == "WAITING"
             )
+            bp = broker_by_sym.get(sym)
+            mark_qty = None
+            entry_px = None
+            mark_px = None
+            eval_amt = None
+            unrealized = None
+            return_rate = None
+            if bp is not None:
+                try:
+                    mark_qty = float(bp.quantity) if bp.quantity is not None else None
+                    entry_px = (
+                        float(bp.average_purchase_price)
+                        if bp.average_purchase_price is not None
+                        else None
+                    )
+                    mark_px = (
+                        float(bp.current_price)
+                        if bp.current_price is not None
+                        else None
+                    )
+                    eval_amt = (
+                        float(bp.evaluation_amount)
+                        if bp.evaluation_amount is not None
+                        else None
+                    )
+                    unrealized = (
+                        float(bp.profit_loss)
+                        if bp.profit_loss is not None
+                        else None
+                    )
+                    return_rate = (
+                        float(bp.return_rate)
+                        if bp.return_rate is not None
+                        else None
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            why_still_holding = None
+            if status_u == "OPEN":
+                why_still_holding = (
+                    "현재 전략 청산(MA_DEAD_CROSS) 조건이 충족·체결되지 않아 "
+                    "보유 중입니다. Stop Loss/Take Profit/Trailing이 비어 있어도 "
+                    "Protective Exit 모니터 경로는 유지됩니다."
+                )
             out.append(
                 {
                     "slot_id": int(s.slot_id),
@@ -911,6 +990,9 @@ class UpbitPortfolioService:
                     "scanner_run_id": s.scanner_run_id,
                     "entry_order_id": s.entry_order_id,
                     "position_binding_id": s.position_binding_id,
+                    "opened_at": (
+                        s.opened_at.isoformat() if s.opened_at else None
+                    ),
                     "cooldown_until": (
                         s.cooldown_until.isoformat()
                         if s.cooldown_until
@@ -928,6 +1010,15 @@ class UpbitPortfolioService:
                         else None
                     ),
                     "waiting_age_seconds": waiting_age_seconds,
+                    "age_seconds": age_seconds,
+                    "age_kind": age_kind,
+                    "age_anchor": age_anchor,
+                    "quantity": mark_qty,
+                    "entry_price": entry_px,
+                    "current_price": mark_px,
+                    "evaluation_amount_krw": eval_amt,
+                    "unrealized_pnl_krw": unrealized,
+                    "return_rate_pct": return_rate,                    "why_still_holding_ko": why_still_holding,
                     "last_entry_decision": ev.get("last_decision"),
                     "last_entry_block_reason": ev.get("last_block_reason"),
                     "last_entry_evaluated_at": ev.get("last_evaluated_at"),

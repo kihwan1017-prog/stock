@@ -306,11 +306,22 @@ export function UpbitPortfolioPolicyPanel({
               render: (v) => (v == null ? "—" : String(v)),
             },
             {
-              title: "대기 시간",
+              title: "경과 시간",
               key: "wait",
-              width: 88,
-              render: (_: unknown, row) =>
-                formatWaitingAge(asRecordOrEmpty(row).waiting_age_seconds),
+              width: 100,
+              render: (_: unknown, row) => {
+                const o = asRecordOrEmpty(row);
+                const st = String(o.status ?? "").toUpperCase();
+                const kind = String(o.age_kind ?? "").toUpperCase();
+                const label =
+                  st === "OPEN" || kind === "HOLDING"
+                    ? "보유"
+                    : "대기";
+                const age = formatWaitingAge(
+                  o.age_seconds ?? o.waiting_age_seconds,
+                );
+                return age === "—" ? "—" : `${label} ${age}`;
+              },
             },
             {
               title: "Entry 판정",

@@ -384,9 +384,21 @@ export function UpbitOpsStatusPanel({
                 ),
               },
               {
-                title: UI_LABEL_KO.waitingAge,
-                dataIndex: "waiting_age_seconds",
-                render: (v) => formatAgeKo(v as number),
+                title: UI_LABEL_KO.ageTime,
+                key: "age",
+                render: (_: unknown, row) => {
+                  const o = rec(row);
+                  const st = String(o.status ?? "").toUpperCase();
+                  const kind = String(o.age_kind ?? "").toUpperCase();
+                  const prefix =
+                    st === "OPEN" || kind === "HOLDING"
+                      ? UI_LABEL_KO.holdingAge
+                      : UI_LABEL_KO.waitingAge;
+                  const age = formatAgeKo(
+                    Number(o.age_seconds ?? o.waiting_age_seconds),
+                  );
+                  return age === "—" ? "—" : `${prefix} ${age}`;
+                },
               },
               {
                 title: UI_LABEL_KO.lastEvaluated,
@@ -488,11 +500,15 @@ export function UpbitOpsStatusPanel({
           />
         ) : (
           <Alert
-            type="warning"
+            type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            title="상세 손익(PnL)/손절/익절"
-            description="OPEN 슬롯의 수량·진입가·현재가·손절·익절·트레일링은 포트폴리오 READ API에 없어 가용 필드만 표시합니다."
+            title="보유 중 이유 · 손익"
+            description={
+              (openSlots[0] as { why_still_holding_ko?: string })
+                ?.why_still_holding_ko ||
+              "전략 청산(MA_DEAD_CROSS)이 체결되기 전까지 보유합니다. 수량·진입가·현재가·손익은 브로커 스냅샷 READ 값입니다."
+            }
           />
         )}
         {openSlots.length > 0 ? (
@@ -506,22 +522,39 @@ export function UpbitOpsStatusPanel({
               {
                 title: UI_LABEL_KO.qty,
                 key: "qty",
-                render: () => "—",
+                render: (_: unknown, row) => {
+                  const v = rec(row).quantity;
+                  return v == null ? "—" : String(v);
+                },
               },
               {
                 title: UI_LABEL_KO.entry,
                 key: "entry",
-                render: () => "—",
+                render: (_: unknown, row) => {
+                  const v = rec(row).entry_price;
+                  return v == null ? "—" : String(v);
+                },
               },
               {
                 title: UI_LABEL_KO.current,
                 key: "cur",
-                render: () => "—",
+                render: (_: unknown, row) => {
+                  const v = rec(row).current_price;
+                  return v == null ? "—" : String(v);
+                },
               },
               {
-                title: UI_LABEL_KO.pnl,
+                title: UI_LABEL_KO.unrealizedPnl,
                 key: "pnl",
-                render: () => "—",
+                render: (_: unknown, row) => {
+                  const o = rec(row);
+                  const pnl = o.unrealized_pnl_krw;
+                  const pct = o.return_rate_pct;
+                  if (pnl == null && pct == null) return "—";
+                  const pctText =
+                    pct == null ? "" : ` (${Number(pct).toFixed(2)}%)`;
+                  return `${formatKrwKo(pnl)}${pctText}`;
+                },
               },
               {
                 title: UI_LABEL_KO.allocated,
@@ -529,14 +562,19 @@ export function UpbitOpsStatusPanel({
                 render: (v) => formatKrwKo(v),
               },
               {
-                title: UI_LABEL_KO.slTpTrailing,
-                key: "sl",
-                render: () => "API 미제공",
+                title: UI_LABEL_KO.holdingAge,
+                key: "hold_age",
+                render: (_: unknown, row) =>
+                  formatAgeKo(
+                    Number(
+                      rec(row).age_seconds ?? rec(row).waiting_age_seconds,
+                    ),
+                  ),
               },
               {
-                title: UI_LABEL_KO.highest,
-                key: "hi",
-                render: () => "—",
+                title: UI_LABEL_KO.slTpTrailing,
+                key: "sl",
+                render: () => "정책 화면 참고",
               },
               {
                 title: UI_LABEL_KO.exitMonitor,
