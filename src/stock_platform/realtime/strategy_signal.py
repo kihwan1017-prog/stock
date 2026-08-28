@@ -47,7 +47,10 @@ class StrategySignal:
         reason_code: str,
         event_time: datetime,
         sequence: int | None = None,
+        opportunity_id: str | None = None,
     ) -> str:
+        # opportunity_id: portfolio selection/waiting 등 natural opportunity 구분
+        # (symbol+event_time만 쓰면 새 selection 첫 PASS가 잘못 suppress될 수 있음)
         raw = "|".join(
             [
                 scope_key,
@@ -56,6 +59,7 @@ class StrategySignal:
                 reason_code,
                 event_time.astimezone(timezone.utc).isoformat(),
                 str(sequence if sequence is not None else ""),
+                str(opportunity_id or ""),
             ]
         )
         return hashlib.sha256(raw.encode()).hexdigest()[:32]

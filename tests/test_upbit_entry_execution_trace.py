@@ -114,6 +114,34 @@ def test_bullish_trace_signal_suppressed(session_mock: None = None) -> None:
     assert session.add.called
 
 
+def test_bullish_trace_signal_emitted_no_duplicate_signal_id_kwarg() -> None:
+    """SIGNAL_EMITTED 경로에서 signal_id 중복 kwargs TypeError가 나면 안 된다."""
+
+    session = _mock_session()
+    out = trace_bullish_evaluation(
+        session,
+        user_broker_account_id=1380,
+        symbol="KRW-XPL",
+        strategy_id=17483,
+        selection_id=247,
+        technical_ok=True,
+        block_reason=None,
+        signal_emitted=True,
+        signal_id="sig_emitted_once",
+        execution_trace_id=str(uuid4()),
+    )
+    assert out["provenance"]["execution_trace_id"]
+    assert session.add.call_count >= 3
+    # STAGE_SIGNAL_EMITTED 가 포함됐는지 entity stage 확인
+    stages = [
+        call.args[0].stage
+        for call in session.add.call_args_list
+        if hasattr(call.args[0], "stage")
+    ]
+    assert STAGE_SIGNAL_EMITTED in stages
+    assert STAGE_SIGNAL_SUPPRESSED not in stages
+
+
 def test_begin_entry_reject_trace() -> None:
     session = _mock_session()
     trace_id = str(uuid4())

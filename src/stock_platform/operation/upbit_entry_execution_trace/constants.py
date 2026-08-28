@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 # Deployment 이후 PROVEN lineage 시작 시각 (migration/첫 trace row 기준 갱신)
 TRACE_COVERAGE_START_AT: datetime | None = None
 
-CHANGE_CODE = "UPBIT_ENTRY_EXECUTION_PROVENANCE_OBSERVABILITY_HARDENING"
+CHANGE_CODE = "UPBIT_ENTRY_SIGNAL_EMIT_DEDUP_RELIABILITY_FIX"
+CHANGE_CLASSIFICATION = "RELIABILITY_BUG_FIX"  # NOT_STRATEGY_POLICY_CHANGE
 
 # Append-only stage names (canonical)
 STAGE_ENTRY_PASS = "ENTRY_PASS"

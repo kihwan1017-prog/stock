@@ -400,3 +400,163 @@ def test_portfolio_bullish_no_entry_when_short_below() -> None:
         seq += 1
         if last is not None and last.signal_type == SignalType.BUY.value:
             pytest.fail("should not BUY when short MA below long MA")
+
+
+def _bullish_evaluator(
+    *,
+    symbol: str,
+    selection_id: int,
+    cooldown_seconds: int = 30,
+) -> MovingAverageStrategyEvaluator:
+    ev = MovingAverageStrategyEvaluator(
+        _scope(),
+        RealtimeStrategyConfig(
+            short_window=3,
+            long_window=5,
+            cooldown_seconds=cooldown_seconds,
+            portfolio_mode=True,
+            entry_signal_policy=POLICY_BULLISH_STATE,
+        ),
+    )
+    now0 = datetime.now(timezone.utc)
+    ev.portfolio_entry_ctx = PortfolioEntryContext(
+        user_broker_account_id=1380,
+        policy=POLICY_BULLISH_STATE,
+        thresholds=PortfolioEntryThresholds(
+            min_ma_separation_pct=0.0,
+            min_volume_surge=0.0,
+            max_candidate_age_seconds=3600,
+            max_feed_age_seconds=60,
+        ),
+        by_symbol={
+            symbol: SymbolEntrySnapshot(
+                symbol=symbol,
+                selection_id=selection_id,
+                selected_at=now0,
+                ai_recommendation="ALLOW",
+                rsi14=50.0,
+                volume_surge=1.0,
+                bound_to_waiting_slot=True,
+            )
+        },
+    )
+    return ev
+
+
+def _warmup_then_pass(
+    ev: MovingAverageStrategyEvaluator,
+    symbol: str,
+    *,
+    start_seq: int = 1,
+    fixed_event_time: datetime | None = None,
+) -> tuple[list, int]:
+    pos = RealtimePositionState(quantity=Decimal("0"), average_entry_price=None)
+    outs: list = []
+    seq = start_seq
+    for p in [Decimal("10")] * 5 + [Decimal("11"), Decimal("12"), Decimal("13")]:
+        if fixed_event_time is not None:
+            now = datetime.now(timezone.utc)
+            event = RealtimeMarketEvent(
+                broker_code="UPBIT",
+                exchange_code="UPBIT",
+                market_type="CRYPTO",
+                symbol=symbol,
+                event_type="TICKER",
+                price=p,
+                event_time=fixed_event_time,
+                received_at=now,
+                source_code="TEST",
+                raw_sequence=None,
+                change_rate=None,
+            )
+            outs.append(ev.evaluate(event, position=pos, allow_signal=True))
+        else:
+            outs.append(
+                ev.evaluate(
+                    _event(symbol, p, seq),
+                    position=pos,
+                    allow_signal=True,
+                )
+            )
+        seq += 1
+    return outs, seq
+
+
+def test_block_then_first_pass_emits_exactly_once() -> None:
+    """BLOCK → PASS 전환 시 최초 PASS는 정확히 1회 emit."""
+
+    symbol = "KRW-N1"
+    ev = _bullish_evaluator(symbol=symbol, selection_id=101, cooldown_seconds=60)
+    pos = RealtimePositionState(quantity=Decimal("0"), average_entry_price=None)
+    emits = []
+    seq = 1
+    for p in [Decimal("10")] * 5 + [Decimal("11"), Decimal("12"), Decimal("13")]:
+        sig = ev.evaluate(_event(symbol, p, seq), position=pos, allow_signal=True)
+        if sig is not None:
+            emits.append(sig)
+        seq += 1
+    assert len(emits) == 1
+    assert emits[0].reason_code == "PORTFOLIO_BULLISH_STATE_ENTRY"
+    again = ev.evaluate(
+        _event(symbol, Decimal("13.5"), seq), position=pos, allow_signal=True
+    )
+    assert again is None
+
+
+def test_selection_b_first_pass_not_blocked_by_selection_a() -> None:
+    """동일 심볼 selection A emit 후 selection B 첫 PASS는 막히면 안 된다."""
+
+    symbol = "KRW-N2"
+    ev = _bullish_evaluator(symbol=symbol, selection_id=201, cooldown_seconds=60)
+    pos = RealtimePositionState(quantity=Decimal("0"), average_entry_price=None)
+    outs_a, seq = _warmup_then_pass(ev, symbol)
+    assert sum(1 for x in outs_a if x is not None) == 1
+
+    # selection B로 교체
+    assert ev.portfolio_entry_ctx is not None
+    snap = ev.portfolio_entry_ctx.by_symbol[symbol]
+    ev.portfolio_entry_ctx.by_symbol[symbol] = SymbolEntrySnapshot(
+        symbol=symbol,
+        selection_id=202,
+        selected_at=datetime.now(timezone.utc),
+        ai_recommendation="ALLOW",
+        rsi14=50.0,
+        volume_surge=1.0,
+        bound_to_waiting_slot=True,
+        technical_metrics=dict(snap.technical_metrics),
+    )
+    sig_b = ev.evaluate(
+        _event(symbol, Decimal("14"), seq), position=pos, allow_signal=True
+    )
+    assert sig_b is not None
+    assert sig_b.reason_code == "PORTFOLIO_BULLISH_STATE_ENTRY"
+
+
+def test_same_selection_stale_event_time_fingerprint_dedup() -> None:
+    """동일 selection + 동일 event_time(raw_sequence=None) 반복은 dedup."""
+
+    symbol = "KRW-N3"
+    ev = _bullish_evaluator(symbol=symbol, selection_id=301, cooldown_seconds=0)
+    fixed = datetime.now(timezone.utc)
+    outs, _ = _warmup_then_pass(ev, symbol, fixed_event_time=fixed)
+    assert sum(1 for x in outs if x is not None) == 1
+    pos = RealtimePositionState(quantity=Decimal("0"), average_entry_price=None)
+    now = datetime.now(timezone.utc)
+    again = ev.evaluate(
+        RealtimeMarketEvent(
+            broker_code="UPBIT",
+            exchange_code="UPBIT",
+            market_type="CRYPTO",
+            symbol=symbol,
+            event_type="TICKER",
+            price=Decimal("14"),
+            event_time=fixed,
+            received_at=now,
+            source_code="TEST",
+            raw_sequence=None,
+            change_rate=None,
+        ),
+        position=pos,
+        allow_signal=True,
+    )
+    assert again is None

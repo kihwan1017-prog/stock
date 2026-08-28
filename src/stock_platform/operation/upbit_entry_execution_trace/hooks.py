@@ -95,12 +95,13 @@ def trace_bullish_evaluation(
         decision=DECISION_PASS,
     )
     if signal_emitted:
+        # signal_id는 base에만 둔다 — 중복 kwargs면 TypeError로
+        # ENTRY_PASS/ATTEMPT flush까지 롤백되어 SIGNAL_EMITTED=0처럼 보인다.
         append_stage_fail_open(
             session,
             **base,
             stage=STAGE_SIGNAL_EMITTED,
             decision=DECISION_PASS,
-            signal_id=signal_id,
         )
     else:
         append_stage_fail_open(

@@ -41,6 +41,8 @@ class ScopeStrategyState:
     last_signal_type: str | None = None
     last_signal_at: datetime | None = None
     last_fingerprint: str | None = None
+    # portfolio bullish entry — selection 단위 opportunity identity
+    last_bullish_selection_id: int | None = None
     last_sequence: int | None = None
     last_event_time: datetime | None = None
     warmup_status: ConsumerWarmupStatus = ConsumerWarmupStatus.WARMING_UP
@@ -714,6 +716,14 @@ class MovingAverageStrategyEvaluator:
                 except Exception:  # noqa: BLE001
                     pass
             return None
+        # 새 selection이면 이전 opportunity의 entry dedup/cooldown을 소비하지 않음
+        if (
+            selection_id is not None
+            and state.last_bullish_selection_id is not None
+            and int(state.last_bullish_selection_id) != int(selection_id)
+        ):
+            state.last_fingerprint = None
+            state.last_signal_at = None
         signal = self._emit(
             event,
             state,
@@ -722,7 +732,12 @@ class MovingAverageStrategyEvaluator:
             short_avg,
             long_avg,
             extra_metadata=emit_prov,
+            opportunity_id=(
+                f"sel:{int(selection_id)}" if selection_id is not None else None
+            ),
         )
+        if signal is not None and selection_id is not None:
+            state.last_bullish_selection_id = int(selection_id)
         if uba_id and ok:
             try:
                 from stock_platform.database.session import get_session_factory
@@ -911,6 +926,7 @@ class MovingAverageStrategyEvaluator:
         long_avg: Decimal | None,
         *,
         extra_metadata: dict | None = None,
+        opportunity_id: str | None = None,
     ) -> StrategySignal | None:
         now = datetime.now(timezone.utc)
         if (
@@ -928,6 +944,7 @@ class MovingAverageStrategyEvaluator:
             reason_code=reason,
             event_time=event.event_time,
             sequence=event.raw_sequence,
+            opportunity_id=opportunity_id,
         )
         if state.last_fingerprint == fingerprint:
             return None
