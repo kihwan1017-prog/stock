@@ -1,0 +1,709 @@
+{
+  "WORK_ID": "WRK-20260829-015-UPBIT-SHORT-TERM-TURNOVER-RESEARCH",
+  "FINAL_VERDICT": "UPBIT_SHORT_TERM_TURNOVER_RESEARCH_COMPLETE",
+  "BASE_COMMIT": "82088dd",
+  "RESULT_COMMIT": null,
+  "DATA": {
+    "WINDOW": "30d",
+    "DAYS": 30,
+    "SYMBOLS": [
+      "KRW-ADA",
+      "KRW-BCH",
+      "KRW-DRV",
+      "KRW-ENA",
+      "KRW-ETC",
+      "KRW-EUL",
+      "KRW-GAS",
+      "KRW-GEOD",
+      "KRW-GRVT",
+      "KRW-HBAR",
+      "KRW-LINK",
+      "KRW-META2",
+      "KRW-NEAR",
+      "KRW-ONG",
+      "KRW-PIEVERSE",
+      "KRW-PUNDIX",
+      "KRW-RE",
+      "KRW-SOL",
+      "KRW-STX",
+      "KRW-SUI",
+      "KRW-SUPER",
+      "KRW-TRUMP",
+      "KRW-WAVES",
+      "KRW-WLD",
+      "KRW-XLM",
+      "KRW-XPL",
+      "KRW-XRP"
+    ],
+    "ENTRY_SAMPLES": 64,
+    "CANDLE_ROWS": 530543,
+    "TRACE_ROWS": 148582,
+    "TRACE_CALENDAR_DAYS_NOTE": "~2 KST days dense (2026-08-28); fills span ~20d",
+    "DATA_QUALITY": "ADEQUATE_FILLS_LIMITED_TRACE_SPAN",
+    "WALK_FORWARD": true,
+    "INSUFFICIENT_FOR_WALK_FORWARD": false,
+    "WALK_FORWARD_DETAIL": {
+      "enabled": true,
+      "INSUFFICIENT_FOR_WALK_FORWARD": false,
+      "train_n": 44,
+      "test_n": 20,
+      "train_net": -1478.8,
+      "test_net": -654.0,
+      "note": "parameter grid fit on full sample; holdout is chronological exit replay only"
+    },
+    "FEE_RATE": 0.0005,
+    "SLIPPAGE_BPS_EACH_SIDE": 2.0
+  },
+  "BASELINE_CONFIG": {
+    "uba_id": 1380,
+    "max_positions": 5,
+    "max_symbol_exposure_pct": 0.12,
+    "max_total_exposure_pct": 0.3,
+    "min_cash_reserve_pct": 0.6,
+    "per_position_target_pct": 0.08,
+    "portfolio_daily_entry_limit": 20,
+    "portfolio_max_pending_entries": 1,
+    "entry_cooldown_seconds": 300,
+    "entry_signal_policy": "BULLISH_STATE",
+    "ma_short_window": 5,
+    "ma_long_window": 20,
+    "strategy_stop_loss_ratio": "0.03",
+    "strategy_take_profit_ratio": "0.06",
+    "exit_min_ma_separation_pct": 0.03,
+    "ma_exit_min_holding_seconds": 180,
+    "fee_rate": 0.0005,
+    "slippage_bps_each_side_research": 2.0,
+    "safety_max_open_positions": 5,
+    "safety_counts_broker_all": true,
+    "wrk014_durable_exit_intent": true,
+    "BASELINE_CONFIG_HASH": "67e0771d3d568375"
+  },
+  "CURRENT_BASELINE": {
+    "TRADES_PER_DAY": 2.13,
+    "BUY_FILLS": 64,
+    "ZERO_TRADE_DAYS_EST_PCT": 73.3,
+    "AVG_HOLDING_HOURS": 1.23,
+    "MEDIAN_HOLDING_HOURS": 0.07,
+    "STILL_OPEN_BINDINGS": 1,
+    "SHADOW_BASELINE": {
+      "label": "BASELINE",
+      "trades": 64,
+      "trades_per_day": 2.13,
+      "zero_trade_days_pct": 73.3,
+      "win_rate": 25.0,
+      "profit_factor": 0.2,
+      "gross_pnl": -2653.5,
+      "fees": 618.7,
+      "slippage": 256.0,
+      "net_pnl": -3528.2,
+      "max_drawdown": 3745.0,
+      "avg_holding_minutes": 55.3,
+      "median_holding_minutes": 31.5,
+      "exit_reasons": {
+        "WINDOW_END": 2,
+        "MA_DEAD_CROSS": 56,
+        "NO_BARS": 2,
+        "STOP_LOSS": 1,
+        "TRAILING_STOP": 3
+      },
+      "entry_factor": 1.0,
+      "horizon_minutes": 1440,
+      "spec": {
+        "tp_pct": 10.0,
+        "sl_pct": 5.0,
+        "trail_distance_pct": 3.0,
+        "trail_activation_pct": null,
+        "ma_exit": true
+      },
+      "slot_policy": "BROKER_ALL"
+    }
+  },
+  "CURRENT_BOTTLENECKS": [
+    "SHORT_MA_NOT_ABOVE_LONG_MA",
+    "MA_SEPARATION_TOO_SMALL",
+    "NO_CANDIDATE_SNAPSHOT",
+    "VOLUME_SURGE_TOO_LOW",
+    "SIGNAL_EMIT_SUPPRESSED"
+  ],
+  "FUNNEL": {
+    "trace_events": 148583,
+    "by_stage_event": {
+      "ENTRY_PASS": 132757,
+      "SIGNAL_EMIT_ATTEMPT": 6486,
+      "SIGNAL_SUPPRESSED": 5867,
+      "SIGNAL_EMITTED": 619,
+      "EXECUTOR_REJECTED": 584,
+      "EXECUTOR_RECEIVED": 584,
+      "SIGNAL_PUBLISHED": 584,
+      "BEGIN_ENTRY_ATTEMPT": 551,
+      "BEGIN_ENTRY_ACCEPTED": 449,
+      "BEGIN_ENTRY_REJECTED": 102
+    },
+    "funnel_unique_selection": {
+      "ENTRY_PASS": 100,
+      "SIGNAL_EMIT_ATTEMPT": 51,
+      "SIGNAL_SUPPRESSED": 50,
+      "EXECUTOR_REJECTED": 31,
+      "BEGIN_ENTRY_ATTEMPT": 30,
+      "BEGIN_ENTRY_ACCEPTED": 29,
+      "EXECUTOR_RECEIVED": 31,
+      "SIGNAL_PUBLISHED": 31,
+      "BEGIN_ENTRY_REJECTED": 20,
+      "SIGNAL_EMITTED": 35
+    },
+    "top_reject_skip_reasons": [
+      {
+        "reason": "SHORT_MA_NOT_ABOVE_LONG_MA",
+        "count": 77217
+      },
+      {
+        "reason": "MA_SEPARATION_TOO_SMALL",
+        "count": 30607
+      },
+      {
+        "reason": "NO_CANDIDATE_SNAPSHOT",
+        "count": 7785
+      },
+      {
+        "reason": "VOLUME_SURGE_TOO_LOW",
+        "count": 6955
+      },
+      {
+        "reason": "SIGNAL_EMIT_SUPPRESSED",
+        "count": 5867
+      },
+      {
+        "reason": "RSI_TOO_HIGH",
+        "count": 3271
+      },
+      {
+        "reason": "FEED_STALE",
+        "count": 436
+      },
+      {
+        "reason": "MAX_OPEN_POSITIONS_REACHED",
+        "count": 210
+      },
+      {
+        "reason": "Order amount exceeds configured limit; Order quantity exceeds configured limit; ",
+        "count": 100
+      },
+      {
+        "reason": "PENDING_ENTRY_LIMIT",
+        "count": 94
+      },
+      {
+        "reason": "PORTFOLIO_PENDING_ENTRY_LIMIT",
+        "count": 94
+      },
+      {
+        "reason": "Order quantity exceeds configured limit; Projected symbol position exceeds quant",
+        "count": 90
+      },
+      {
+        "reason": "Order amount exceeds configured limit",
+        "count": 49
+      },
+      {
+        "reason": "FULL_MARKET_NO_WAITING_SIGNAL_SLOT",
+        "count": 33
+      },
+      {
+        "reason": "STALE_PRE_RESTORE_WAITING",
+        "count": 8
+      }
+    ]
+  },
+  "UNIQUE_OPPORTUNITY_FUNNEL": {
+    "CANDIDATE_SELECTED": 100,
+    "TECHNICAL_PASS": 51,
+    "AI_ALLOW": "see AI.ALLOW (trace-level; not unique-selection mapped)",
+    "SIGNAL_EMITTED": 35,
+    "EXECUTOR_RECEIVED": 31,
+    "BEGIN_ENTRY_ACCEPTED": 29,
+    "ADMISSION_PASS": 29,
+    "ORDER_CREATED": 71,
+    "BROKER_ACCEPTED": 71,
+    "BUY_FILLED": 64,
+    "first_zero_stage": null,
+    "note": "Trace calendar span ~2 days inside 30d order window — unique counts are dense-day biased"
+  },
+  "AUTO_SLOT": {
+    "BROKER_ALL_RESULT": {
+      "MAX_OPEN_POSITIONS_REACHED_events": 210
+    },
+    "AUTO_ONLY_RESULT": {
+      "estimated_additional_opportunity_events": 126,
+      "entry_factor_applied_to_turnover_profiles": 1.3
+    },
+    "ADDITIONAL_OPPORTUNITIES": 126,
+    "ADDITIONAL_TRADES_FACTOR": 1.3
+  },
+  "AI": {
+    "ALLOW": 79168,
+    "HOLD": 0,
+    "REDUCE": 25272,
+    "BLOCK": 0,
+    "AI_BLOCKED_TECHNICAL_PASS": 0,
+    "distribution": {
+      "": 41291,
+      "REDUCE": 25272,
+      "ALLOW": 79168
+    },
+    "note": "AI HOLD/BLOCK not primary bottleneck; REDUCE common; technical MA filters dominate"
+  },
+  "EXIT_GRID": {
+    "TP": {
+      "TP_0.8": {
+        "trades": 64,
+        "net_pnl": -2057.4,
+        "avg_hold_min": 43.2,
+        "win_rate": 39.1,
+        "exit_reasons": {
+          "TAKE_PROFIT": 23,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 35,
+          "STOP_LOSS": 1,
+          "WINDOW_END": 2,
+          "TRAILING_STOP": 1
+        }
+      },
+      "TP_1.2": {
+        "trades": 64,
+        "net_pnl": -2510.0,
+        "avg_hold_min": 49.0,
+        "win_rate": 31.2,
+        "exit_reasons": {
+          "WINDOW_END": 3,
+          "TAKE_PROFIT": 13,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 43,
+          "STOP_LOSS": 1,
+          "TRAILING_STOP": 2
+        }
+      },
+      "TP_1.5": {
+        "trades": 64,
+        "net_pnl": -2707.1,
+        "avg_hold_min": 50.5,
+        "win_rate": 29.7,
+        "exit_reasons": {
+          "WINDOW_END": 3,
+          "TAKE_PROFIT": 8,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 48,
+          "STOP_LOSS": 1,
+          "TRAILING_STOP": 2
+        }
+      },
+      "TP_2.0": {
+        "trades": 64,
+        "net_pnl": -2663.1,
+        "avg_hold_min": 52.1,
+        "win_rate": 29.7,
+        "exit_reasons": {
+          "WINDOW_END": 4,
+          "TAKE_PROFIT": 5,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 50,
+          "STOP_LOSS": 1,
+          "TRAILING_STOP": 2
+        }
+      }
+    },
+    "SL": {
+      "SL_0.5": {
+        "trades": 64,
+        "net_pnl": -2252.3,
+        "avg_hold_min": 21.6,
+        "win_rate": 18.8,
+        "exit_reasons": {
+          "WINDOW_END": 1,
+          "MA_DEAD_CROSS": 20,
+          "NO_BARS": 2,
+          "STOP_LOSS": 41
+        }
+      },
+      "SL_0.8": {
+        "trades": 64,
+        "net_pnl": -2840.2,
+        "avg_hold_min": 29.6,
+        "win_rate": 21.9,
+        "exit_reasons": {
+          "WINDOW_END": 2,
+          "MA_DEAD_CROSS": 31,
+          "NO_BARS": 2,
+          "STOP_LOSS": 29
+        }
+      },
+      "SL_1.0": {
+        "trades": 64,
+        "net_pnl": -2869.0,
+        "avg_hold_min": 35.4,
+        "win_rate": 25.0,
+        "exit_reasons": {
+          "WINDOW_END": 2,
+          "MA_DEAD_CROSS": 39,
+          "NO_BARS": 2,
+          "STOP_LOSS": 21
+        }
+      },
+      "SL_1.5": {
+        "trades": 64,
+        "net_pnl": -2935.6,
+        "avg_hold_min": 46.8,
+        "win_rate": 26.6,
+        "exit_reasons": {
+          "WINDOW_END": 3,
+          "MA_DEAD_CROSS": 47,
+          "NO_BARS": 2,
+          "STOP_LOSS": 12
+        }
+      }
+    },
+    "TRAILING": {
+      "TR_0.4": {
+        "trades": 64,
+        "net_pnl": -2569.8,
+        "avg_hold_min": 36.9,
+        "win_rate": 42.2,
+        "exit_reasons": {
+          "TRAILING_STOP": 29,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 30,
+          "STOP_LOSS": 1,
+          "WINDOW_END": 2
+        }
+      },
+      "TR_0.6": {
+        "trades": 64,
+        "net_pnl": -2413.6,
+        "avg_hold_min": 44.8,
+        "win_rate": 32.8,
+        "exit_reasons": {
+          "TRAILING_STOP": 24,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 35,
+          "STOP_LOSS": 1,
+          "WINDOW_END": 2
+        }
+      },
+      "TR_0.8": {
+        "trades": 64,
+        "net_pnl": -2565.7,
+        "avg_hold_min": 49.1,
+        "win_rate": 32.8,
+        "exit_reasons": {
+          "WINDOW_END": 3,
+          "TRAILING_STOP": 18,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 40,
+          "STOP_LOSS": 1
+        }
+      },
+      "TR_1.0": {
+        "trades": 64,
+        "net_pnl": -2746.7,
+        "avg_hold_min": 51.0,
+        "win_rate": 31.2,
+        "exit_reasons": {
+          "WINDOW_END": 3,
+          "TRAILING_STOP": 13,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 45,
+          "STOP_LOSS": 1
+        }
+      }
+    },
+    "TIME_EXIT": {
+      "H30": {
+        "trades": 64,
+        "net_pnl": -2680.7,
+        "avg_hold_min": 21.6,
+        "win_rate": 26.6,
+        "exit_reasons": {
+          "WINDOW_END": 33,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 26,
+          "TRAILING_STOP": 3
+        }
+      },
+      "H60": {
+        "trades": 64,
+        "net_pnl": -2911.6,
+        "avg_hold_min": 33.2,
+        "win_rate": 26.6,
+        "exit_reasons": {
+          "WINDOW_END": 19,
+          "NO_BARS": 2,
+          "MA_DEAD_CROSS": 40,
+          "TRAILING_STOP": 3
+        }
+      },
+      "H120": {
+        "trades": 64,
+        "net_pnl": -3362.9,
+        "avg_hold_min": 44.3,
+        "win_rate": 28.1,
+        "exit_reasons": {
+          "WINDOW_END": 8,
+          "MA_DEAD_CROSS": 50,
+          "NO_BARS": 2,
+          "STOP_LOSS": 1,
+          "TRAILING_STOP": 3
+        }
+      },
+      "H240": {
+        "trades": 64,
+        "net_pnl": -3359.4,
+        "avg_hold_min": 53.7,
+        "win_rate": 26.6,
+        "exit_reasons": {
+          "WINDOW_END": 4,
+          "MA_DEAD_CROSS": 54,
+          "NO_BARS": 2,
+          "STOP_LOSS": 1,
+          "TRAILING_STOP": 3
+        }
+      }
+    },
+    "BEST_TP": "TP_0.8",
+    "BEST_SL": "SL_0.5",
+    "BEST_TRAILING": "TR_0.6",
+    "BEST_TIME_EXIT": "H30"
+  },
+  "STRATEGY_COMPARISON": {
+    "BASELINE": {
+      "label": "BASELINE",
+      "trades": 64,
+      "trades_per_day": 2.13,
+      "zero_trade_days_pct": 73.3,
+      "win_rate": 25.0,
+      "profit_factor": 0.2,
+      "gross_pnl": -2653.5,
+      "fees": 618.7,
+      "slippage": 256.0,
+      "net_pnl": -3528.2,
+      "max_drawdown": 3745.0,
+      "avg_holding_minutes": 55.3,
+      "median_holding_minutes": 31.5,
+      "exit_reasons": {
+        "WINDOW_END": 2,
+        "MA_DEAD_CROSS": 56,
+        "NO_BARS": 2,
+        "STOP_LOSS": 1,
+        "TRAILING_STOP": 3
+      },
+      "entry_factor": 1.0,
+      "horizon_minutes": 1440,
+      "spec": {
+        "tp_pct": 10.0,
+        "sl_pct": 5.0,
+        "trail_distance_pct": 3.0,
+        "trail_activation_pct": null,
+        "ma_exit": true
+      },
+      "slot_policy": "BROKER_ALL"
+    },
+    "CONSERVATIVE_TURNOVER": {
+      "label": "CONSERVATIVE_TURNOVER",
+      "trades": 83,
+      "trades_per_day": 2.77,
+      "zero_trade_days_pct": 73.3,
+      "win_rate": 29.7,
+      "profit_factor": 0.31,
+      "gross_pnl": -1672.5,
+      "fees": 805.2,
+      "slippage": 332.8,
+      "net_pnl": -2810.4,
+      "max_drawdown": 3038.1,
+      "avg_holding_minutes": 30.1,
+      "median_holding_minutes": 14.0,
+      "exit_reasons": {
+        "WINDOW_END": 1,
+        "TAKE_PROFIT": 4,
+        "NO_BARS": 2,
+        "TRAILING_STOP": 14,
+        "STOP_LOSS": 18,
+        "MA_DEAD_CROSS": 25
+      },
+      "entry_factor": 1.3,
+      "horizon_minutes": 240,
+      "spec": {
+        "tp_pct": 1.5,
+        "sl_pct": 1.0,
+        "trail_distance_pct": 0.8,
+        "trail_activation_pct": 0.6,
+        "ma_exit": true
+      },
+      "slot_policy": "AUTO_ONLY_SHADOW"
+    },
+    "BALANCED_TURNOVER": {
+      "label": "BALANCED_TURNOVER",
+      "trades": 83,
+      "trades_per_day": 2.77,
+      "zero_trade_days_pct": 73.3,
+      "win_rate": 26.6,
+      "profit_factor": 0.31,
+      "gross_pnl": -1634.6,
+      "fees": 805.2,
+      "slippage": 332.8,
+      "net_pnl": -2772.6,
+      "max_drawdown": 2954.8,
+      "avg_holding_minutes": 21.4,
+      "median_holding_minutes": 12.0,
+      "exit_reasons": {
+        "WINDOW_END": 1,
+        "TAKE_PROFIT": 6,
+        "NO_BARS": 2,
+        "TRAILING_STOP": 14,
+        "STOP_LOSS": 25,
+        "MA_DEAD_CROSS": 16
+      },
+      "entry_factor": 1.3,
+      "horizon_minutes": 120,
+      "spec": {
+        "tp_pct": 1.2,
+        "sl_pct": 0.8,
+        "trail_distance_pct": 0.6,
+        "trail_activation_pct": 0.5,
+        "ma_exit": true
+      },
+      "slot_policy": "AUTO_ONLY_SHADOW"
+    },
+    "AGGRESSIVE_TURNOVER": {
+      "label": "AGGRESSIVE_TURNOVER",
+      "trades": 83,
+      "trades_per_day": 2.77,
+      "zero_trade_days_pct": 73.3,
+      "win_rate": 31.2,
+      "profit_factor": 0.28,
+      "gross_pnl": -1060.4,
+      "fees": 805.5,
+      "slippage": 332.8,
+      "net_pnl": -2198.7,
+      "max_drawdown": 2320.8,
+      "avg_holding_minutes": 12.3,
+      "median_holding_minutes": 6.3,
+      "exit_reasons": {
+        "WINDOW_END": 3,
+        "TAKE_PROFIT": 8,
+        "NO_BARS": 2,
+        "TRAILING_STOP": 12,
+        "STOP_LOSS": 33,
+        "MA_DEAD_CROSS": 6
+      },
+      "entry_factor": 1.3,
+      "horizon_minutes": 60,
+      "spec": {
+        "tp_pct": 0.8,
+        "sl_pct": 0.5,
+        "trail_distance_pct": 0.4,
+        "trail_activation_pct": 0.4,
+        "ma_exit": true
+      },
+      "slot_policy": "AUTO_ONLY_SHADOW"
+    }
+  },
+  "LEAST_LOSS_PROFILE": "AGGRESSIVE_TURNOVER",
+  "RECOMMENDATION": {
+    "RECOMMENDED_PROFILE": "BALANCED_TURNOVER",
+    "SLOT_POLICY": "AUTO_ONLY_SLOT (proposal; production unchanged)",
+    "ENTRY_POLICY": "KEEP_CURRENT (MA separation still primary gate)",
+    "AI_POLICY": "KEEP_CURRENT",
+    "TP": 1.2,
+    "SL": 0.8,
+    "TRAILING": {
+      "distance_pct": 0.6,
+      "activation_pct": 0.5
+    },
+    "TIME_EXIT_MINUTES": 120,
+    "TIME_EXIT_SEMANTICS": "hard horizon WINDOW_END / last close (not revalidation)",
+    "MA_EXIT": "KEEP_AS_FALLBACK",
+    "REENTRY_COOLDOWN": "KEEP 300s baseline; optional 600s with BALANCED",
+    "EXPECTED_TRADES_PER_DAY": 2.77,
+    "EXPECTED_HOLDING_MIN": 12.0,
+    "EXPECTED_NET": -2772.6,
+    "EXPECTED_MDD": 2954.8,
+    "CONFIDENCE": "LOW_MEDIUM_SAMPLE_UNPROFITABLE",
+    "RATIONALE": "All profiles net-negative on 64 fills; least_loss=AGGRESSIVE_TURNOVER. BALANCED chosen for target turnover without max fee churn. Do NOT apply to production until paper/shadow shows net>0.",
+    "SAMPLE_STILL_UNPROFITABLE": true
+  },
+  "POLICY_DECISIONS": {
+    "P1_AUTO_ONLY_SLOTS": {
+      "CURRENT": "broker qty>0 counts to max_open=5",
+      "PROPOSED": "AUTO open/pending only for slots; manual in exposure",
+      "EXPECTED_EFFECT": 126,
+      "RISK": "higher concurrent AUTO risk",
+      "CONFIDENCE": "MEDIUM"
+    },
+    "P2_TP": {
+      "CURRENT": "strategy take_profit_ratio=0.06 unused as primary; MA exit dominates",
+      "PROPOSED": 1.2,
+      "EXPECTED_EFFECT": "shorter holds; grid BEST_TP often 0.8",
+      "RISK": "fee drag / early exit of winners",
+      "CONFIDENCE": "MEDIUM"
+    },
+    "P3_SL": {
+      "CURRENT": "strategy stop_loss_ratio=0.03 unused as primary",
+      "PROPOSED": 0.8,
+      "EXPECTED_EFFECT": "cut losers faster",
+      "RISK": "noise stopouts if too tight",
+      "CONFIDENCE": "MEDIUM"
+    },
+    "P4_TRAILING": {
+      "CURRENT": "wide/unused vs MA",
+      "PROPOSED": 0.6,
+      "EXPECTED_EFFECT": "lock gains after activation",
+      "RISK": "whipsaw",
+      "CONFIDENCE": "MEDIUM"
+    },
+    "P5_TIME_EXIT": {
+      "CURRENT": "none",
+      "PROPOSED": 120,
+      "SEMANTICS": "hard horizon WINDOW_END",
+      "EXPECTED_EFFECT": "free capital for re-rotation",
+      "RISK": "exit into temporary dips",
+      "CONFIDENCE": "MEDIUM"
+    },
+    "P6_ENTRY": {
+      "CURRENT": "MA/volume/RSI + BULLISH_STATE",
+      "PROPOSED": "KEEP for now",
+      "EXPECTED_EFFECT": "0 — entry already filters most events",
+      "RISK": "loosening without edge increases fee loss",
+      "CONFIDENCE": "HIGH_KEEP"
+    },
+    "P7_AI": {
+      "CURRENT": "ALLOW/REDUCE present; HOLD/BLOCK rare",
+      "PROPOSED": "KEEP",
+      "EXPECTED_EFFECT": "0 primary",
+      "RISK": "n/a",
+      "CONFIDENCE": "HIGH_KEEP"
+    },
+    "P8_REENTRY": {
+      "CURRENT": 300,
+      "PROPOSED": "optional later 600–900s with multi-exit",
+      "EXPECTED_EFFECT": "reduce churn",
+      "RISK": "miss rebounds",
+      "CONFIDENCE": "LOW"
+    }
+  },
+  "WRK014_COMPAT": {
+    "analysis": "Multi-exit EMIT paths should persist durable exit intent like MA_DEAD_CROSS so zero/partial cancel can retry. WRK-014 production code unchanged this WRK.",
+    "production_changed": false
+  },
+  "PRODUCTION": {
+    "REAL_POLICY_CHANGED": false,
+    "REAL_ORDER_CREATED_BY_RESEARCH": 0,
+    "LIVE_ARM_MUTATION": false,
+    "WRK014_UNCHANGED": true
+  },
+  "LIMITATIONS": [
+    "1m OHLC shadow ≠ tick path",
+    "AUTO_ONLY extra trades estimated from reject rates",
+    "Trace funnel dense on ~2 calendar days; fills span longer",
+    "All compared profiles net-negative on this sample",
+    "Slippage assumed 2bps/side",
+    "Walk-forward is chronological holdout of exits, not re-tuned params"
+  ]
+}

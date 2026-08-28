@@ -22,6 +22,7 @@ import { UpbitResearchCollectionStatusPanel } from "@/features/admin/upbit/Upbit
 import { UpbitMaExitForwardShadowPanel } from "@/features/admin/upbit/UpbitMaExitForwardShadowPanel";
 import { UpbitEntrySignalShadowPanel } from "@/features/admin/upbit/UpbitEntrySignalShadowPanel";
 import { CrossMarketShadowResearchPanel } from "@/features/admin/research/CrossMarketShadowResearchPanel";
+import { UpbitShortTermTurnoverResearchPanel } from "@/features/admin/research/UpbitShortTermTurnoverResearchPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
@@ -95,6 +96,11 @@ function ResearchWorkspaceBody() {
         key: "entry-signal-shadow",
         label: "Entry Signal Shadow",
         children: <UpbitEntrySignalShadowPanel ubaId={ubaId} />,
+      },
+      {
+        key: "short-term-turnover",
+        label: "업비트 단기 회전 전략 비교",
+        children: <UpbitShortTermTurnoverResearchPanel />,
       },
       {
         key: "experiments",

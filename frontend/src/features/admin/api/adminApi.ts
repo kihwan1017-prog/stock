@@ -759,6 +759,11 @@ export async function getAdminUpbitResearchEntrySignalShadowRows(
   return getJson("/admin/upbit/research/entry-signal-shadow/rows", params);
 }
 
+/** WRK-015 short-term turnover research — READ ONLY evidence */
+export async function getAdminUpbitResearchShortTermTurnoverSummary(): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/short-term-turnover/summary");
+}
+
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
 export async function getAdminAutotradingResearchStatus(
   params?: Params,

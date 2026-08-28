@@ -227,6 +227,17 @@ def get_entry_signal_shadow_summary(
     )
 
 
+@router.get("/short-term-turnover/summary")
+def get_short_term_turnover_summary() -> dict[str, Any]:
+    """WRK-015 Upbit short-term turnover research — READ ONLY evidence."""
+
+    from stock_platform.operation.upbit_short_term_turnover.summary import (
+        summarize_for_ui,
+    )
+
+    return summarize_for_ui()
+
+
 @router.get("/entry-signal-shadow/rows")
 def list_entry_signal_shadow_rows_api(
     uba_id: int = Query(default=1380, ge=1),
