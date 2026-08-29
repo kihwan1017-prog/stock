@@ -378,6 +378,20 @@ def build_uba_operational_summary(
                     full_market["daily_entry_label_ko"] = drawer.get(
                         "daily_entry_label_ko"
                     )
+                # UPBIT_SHORT_TERM_OPERATION_V1 observability
+                if isinstance(drawer, dict):
+                    for key in (
+                        "daily_entry_limit",
+                        "daily_entry_used",
+                        "auto_slot_limit",
+                        "auto_slot_used",
+                        "manual_holdings",
+                        "unknown_holdings",
+                        "account_total_holdings",
+                        "position_ownership",
+                    ):
+                        if key in drawer:
+                            full_market[key] = drawer.get(key)
             except Exception:  # noqa: BLE001
                 pass
             if not slim:
