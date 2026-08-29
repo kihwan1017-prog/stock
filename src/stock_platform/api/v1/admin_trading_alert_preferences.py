@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from stock_platform.auth.deps import AuthenticatedUser, require_permission
+from stock_platform.auth.deps import AuthenticatedUser, require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.notification.alert_v2.categories import PREFERENCE_CATALOG
 from stock_platform.notification.alert_v2.mapping import (
@@ -33,7 +33,7 @@ class PreferencePatchBody(BaseModel):
 @router.get("")
 def get_trading_alert_preferences(
     session: Session = Depends(get_db_session),
-    _: AuthenticatedUser = Depends(require_permission("trading:read")),
+    _: AuthenticatedUser = Depends(require_admin),
 ):
     items = list_preferences(session)
     return {
@@ -50,7 +50,7 @@ def get_trading_alert_preferences(
 def patch_trading_alert_preferences(
     body: PreferencePatchBody,
     session: Session = Depends(get_db_session),
-    user: AuthenticatedUser = Depends(require_permission("trading:write")),
+    user: AuthenticatedUser = Depends(require_admin),
 ):
     items = patch_preferences(
         session,
@@ -71,7 +71,7 @@ def get_trading_alert_history(
     category: str | None = None,
     event_type: str | None = None,
     limit: int = 50,
-    _: AuthenticatedUser = Depends(require_permission("trading:read")),
+    _: AuthenticatedUser = Depends(require_admin),
 ):
     """In-memory notification history + V2 category labels."""
 
