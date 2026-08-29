@@ -110,6 +110,9 @@ class NotificationService:
             ensure_market_title_prefix = None  # type: ignore[assignment]
 
         rendered = self._render_korean(event.event_type, event.title, event.message, detail)
+        # Alert V2가 이미 사용자용 title/body를 만든 경우 DB 템플릿으로 덮어쓰지 않음
+        if bool(detail.get("alert_v2_formatted")):
+            rendered = None
         if rendered is not None and rendered.suppressed:
             logger.info(
                 "notification_suppressed",

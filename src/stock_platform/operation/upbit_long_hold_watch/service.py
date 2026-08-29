@@ -33,6 +33,42 @@ OWNERSHIP_AUTO = OWNERSHIP_STRATEGY
 EXCLUDED_OWNERSHIP = frozenset({"MANUAL", "UNKNOWN", "TEST", "SMOKE"})
 
 
+def _already_delivered_checkpoint(
+    session: Session, *, dedupe_key: str
+) -> bool:
+    """checkpoint당 1회 — channel_delivery_log 성공 기록으로 durable dedupe."""
+
+    if not dedupe_key:
+        return False
+    try:
+        row = session.execute(
+            text(
+                """
+                SELECT 1 AS ok
+                FROM notification.channel_delivery_log
+                WHERE event_type = :et
+                  AND channel = 'TELEGRAM'
+                  AND status = 'SUCCESS'
+                  AND original_payload_json->>'dedupe_key' = :dk
+                LIMIT 1
+                """
+            ),
+            {"et": EVENT_TYPE, "dk": str(dedupe_key)},
+        ).first()
+        if row is None:
+            return False
+        try:
+            val = row[0]
+            if not isinstance(val, (int, str)):
+                return False
+            return int(val) == 1
+        except (TypeError, ValueError, IndexError):
+            # 테스트 MagicMock 등 → 억제하지 않음 (fail-open emit)
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -284,7 +320,8 @@ def evaluate_long_hold_positions(
         detail = {
             "market": "UPBIT",
             "broker_code": "UPBIT",
-            "telegram_market": "UPBIT",
+            # 제목 prefix [시스템] 유지 (ensure_market_title_prefix)
+            "telegram_market": "COMMON",
             "user_broker_account_id": int(user_broker_account_id),
             "symbol": symbol,
             "position_id": position_id,
@@ -310,6 +347,8 @@ def evaluate_long_hold_positions(
             "observability_only": True,
             "auto_sell": False,
             "max_holding_time_real": None,
+            "severity": "WARNING",
+            "title_ko": "UPBIT AUTO 장기보유",
         }
         title, body = format_long_hold_alert(detail)
         detail["title_ko"] = title
@@ -346,6 +385,10 @@ def emit_long_hold_alert(detail: dict[str, Any]) -> dict[str, Any]:
         from stock_platform.order.live_safety_audit import emit_live_order_telegram
 
         title, body = format_long_hold_alert(detail)
+        detail = dict(detail)
+        detail["title_ko"] = title
+        detail["message_ko"] = body
+        detail["alert_v2_formatted"] = True
         emit_live_order_telegram(
             event_type=EVENT_TYPE,
             title=title,
@@ -369,7 +412,7 @@ def run_long_hold_watch_once(
     emit_fn: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    """한 사이클 — checkpoint당 1회 (inbox dedupe)."""
+    """한 사이클 — checkpoint당 1회 (delivery-log durable dedupe)."""
 
     items = evaluate_long_hold_positions(
         session,
@@ -379,8 +422,22 @@ def run_long_hold_watch_once(
     results = []
     emitter = emit_fn or emit_long_hold_alert
     for detail in items:
+        dk = str(detail.get("dedupe_key") or "")
+        if dk and _already_delivered_checkpoint(session, dedupe_key=dk):
+            results.append(
+                {
+                    "symbol": detail["symbol"],
+                    "checkpoint": detail["checkpoint"],
+                    "dedupe_key": dk,
+                    "emitted": False,
+                    "skipped_dedupe": True,
+                }
+            )
+            continue
         if not emit:
-            results.append({"symbol": detail["symbol"], "skipped_emit": True, **detail})
+            results.append(
+                {"symbol": detail["symbol"], "skipped_emit": True, **detail}
+            )
             continue
         er = emitter(detail)
         results.append(
