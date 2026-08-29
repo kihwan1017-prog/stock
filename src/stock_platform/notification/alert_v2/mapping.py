@@ -43,6 +43,7 @@ _EVENT_PREFERENCE: dict[str, AlertPreferenceKey] = {
     "ORDER_FILLED": AlertPreferenceKey.UPBIT_AUTO_BUY,  # side refine
     "ORDER_PARTIAL_FILLED": AlertPreferenceKey.UPBIT_AUTO_BUY,
     "TEST_NOTIFICATION": AlertPreferenceKey.SYSTEM_OPERATION,
+    "UPBIT_AUTO_LONG_HOLD": AlertPreferenceKey.AUTO_LONG_HOLD,
 }
 
 
@@ -217,6 +218,7 @@ def title_prefix_for(
         AlertPreferenceKey.CANDIDATE_ANALYSIS,
         AlertPreferenceKey.SHADOW_ANALYSIS,
         AlertPreferenceKey.SYSTEM_OPERATION,
+        AlertPreferenceKey.AUTO_LONG_HOLD,
     }:
         return USER_PREFIX[AlertTopCategory.SYSTEM]
     top = resolve_top_category(event_type, detail=detail)

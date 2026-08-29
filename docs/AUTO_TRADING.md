@@ -12,12 +12,13 @@
 | AUTO slot count | **AUTO-owned** open + ENTRY_PENDING reservation |
 | MANUAL / UNKNOWN | AUTO slot **미소비**, account exposure/risk에는 **포함** |
 | Entry strategy | 기존 MA/AI/candidate (이 문서에서 변경하지 않음) |
-| Exit REAL | **MA_DEAD_CROSS** |
+| Exit REAL | **MA_DEAD_CROSS** (+ Durable Exit Intent retry for **new** emits) |
 | SL / TP | **NOT_CONFIGURED** (REAL enable 금지 상태) |
 | Trailing | **SHADOW** (기존 trailing forward shadow) |
-| Time Exit | **RESEARCH** |
-| H2 / H3 | **SHADOW**, N300 + cost-aware 전 REAL promote 금지 |
-| Exit Strategy Shadow V1 | MA/SL/TP/Trail/Time **비교 관측만** (REAL SELL 없음) |
+| Time Exit | **RESEARCH** (Exit Shadow only) |
+| MAX_HOLDING_TIME (REAL) | **NONE** |
+| Long-hold watch | **Alert V2 observability** (6h/12h/24h+) — 자동매도 아님 |
+| Historical exit recovery | **DETECT_ONLY** dry-run; POST recover는 별도 승인 WRK |
 
 기회 기반 거래: 하루 강제 N회 금지. 나쁜 시장에서 **0 trades 허용**.
 

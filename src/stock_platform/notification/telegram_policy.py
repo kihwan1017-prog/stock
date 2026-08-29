@@ -130,6 +130,8 @@ TELEGRAM_OPERATIONAL_ALLOWLIST = frozenset(
         "UPBIT_SCANNER_CANDIDATE",
         "UPBIT_SCANNER_SHADOW_OPENED",
         "UPBIT_SCANNER_SHADOW_RESULT",
+        # 장기보유 관측 (자동매도 아님)
+        "UPBIT_AUTO_LONG_HOLD",
     }
 )
 

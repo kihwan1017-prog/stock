@@ -50,6 +50,7 @@ class NotificationEventType(StrEnum):
     TELEGRAM_FAILURE = "TELEGRAM_FAILURE"
     MONITORING_ALERT = "MONITORING_ALERT"
     TEST_NOTIFICATION = "TEST_NOTIFICATION"
+    UPBIT_AUTO_LONG_HOLD = "UPBIT_AUTO_LONG_HOLD"
 
 
 class NotificationLevel(IntEnum):
@@ -106,6 +107,7 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.TELEGRAM_FAILURE: NotificationLevel.WARN,
     NotificationEventType.MONITORING_ALERT: NotificationLevel.WARN,
     NotificationEventType.TEST_NOTIFICATION: NotificationLevel.INFO,
+    NotificationEventType.UPBIT_AUTO_LONG_HOLD: NotificationLevel.WARN,
 }
 
 

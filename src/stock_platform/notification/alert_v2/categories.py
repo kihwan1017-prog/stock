@@ -33,6 +33,7 @@ class AlertPreferenceKey(StrEnum):
     CANDIDATE_ANALYSIS = "CANDIDATE_ANALYSIS"
     SHADOW_ANALYSIS = "SHADOW_ANALYSIS"
     SYSTEM_OPERATION = "SYSTEM_OPERATION"
+    AUTO_LONG_HOLD = "AUTO_LONG_HOLD"
 
 
 # Admin UI 표시 메타 (delivery-only)
@@ -133,6 +134,13 @@ PREFERENCE_CATALOG: list[dict[str, str]] = [
         "group": "SYSTEM",
         "label": "시스템 중요 알림",
         "description": "Kill Switch·복구·시세·위험 등",
+        "default_enabled": "true",
+    },
+    {
+        "key": AlertPreferenceKey.AUTO_LONG_HOLD.value,
+        "group": "SYSTEM",
+        "label": "AUTO 장기보유 경고",
+        "description": "AUTO 포지션 6h/12h/24h+ 장기보유 관측 알림 (자동매도 아님)",
         "default_enabled": "true",
     },
 ]

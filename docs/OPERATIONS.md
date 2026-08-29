@@ -21,6 +21,8 @@ CLI / in-process singleton으로 RUNNING·STOPPED를 운영 SoT로 쓰지 않는
 - Telegram 실패는 주문 경로에 영향 없음
 - Daily Report는 개별 BUY/SELL과 별도 유지
 - ops-status는 Admin API Key/`require_admin` 인증 필요 (비인증은 401 — hang이 아님)
+- **AUTO 장기보유 경고** (`AUTO_LONG_HOLD`): 6h/12h/24h+ checkpoint, Alert V2 SYSTEM — **자동매도 아님** · REAL Time Exit 아님
+- Historical orphan exit: `GET .../historical-exit-recovery/candidates` (DETECT_ONLY). 실제 intent INSERT/SELL은 운영자 승인 WRK만
 
 ## 기본 점검 순서
 

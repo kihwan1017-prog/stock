@@ -232,6 +232,9 @@ class Settings(BaseSettings):
     # Reliability watchdog (AutoTradingReliabilityWatchdog)
     autotrading_reliability_watchdog_enabled: bool = True
     autotrading_reliability_watchdog_interval_seconds: float = 30.0
+    # UPBIT AUTO long-hold observability (Alert V2) — REAL Time Exit 아님
+    upbit_long_hold_watch_enabled: bool = True
+    upbit_long_hold_watch_interval_seconds: float = 60.0
     autotrading_scanner_slo_multiplier: float = 2.0
     autotrading_runner_heartbeat_slo_seconds: float = 30.0
     autotrading_worker_heartbeat_slo_seconds: float = 30.0

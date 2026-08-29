@@ -865,6 +865,46 @@ def admin_uba_filled_exit_open_binding(
     return {"detected": detected, "dry_run": dry}
 
 
+@router.get("/uba/{user_broker_account_id}/historical-exit-recovery/candidates")
+def admin_uba_historical_exit_recovery_candidates(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Historical orphan exit DETECT_ONLY — INSERT/SELL 없음.
+
+    POST recover는 별도 운영자 승인 WRK에서만.
+    """
+
+    from stock_platform.operation.upbit_historical_exit_recovery import (
+        list_historical_exit_recovery_candidates,
+    )
+
+    return list_historical_exit_recovery_candidates(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/historical-exit-recovery/dry-run/{symbol}")
+def admin_uba_historical_exit_recovery_dry_run(
+    user_broker_account_id: int,
+    symbol: str,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """단일 심볼 recovery dry-run — DB mutation / order 금지."""
+
+    from stock_platform.operation.upbit_historical_exit_recovery import (
+        dry_run_historical_exit_recovery,
+    )
+
+    return dry_run_historical_exit_recovery(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        symbol=str(symbol).upper(),
+    )
+
+
 @router.post("/uba/{user_broker_account_id}/filled-exit-open-binding/reconcile")
 def admin_uba_reconcile_filled_exit_open_binding(
     user_broker_account_id: int,

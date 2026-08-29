@@ -530,6 +530,57 @@ def _market_section(
         ),
         "pipeline": pipeline,
     }
+    # Long-hold summary — open_positions만 재사용 (N+1 금지)
+    if broker == "UPBIT":
+        try:
+            from stock_platform.notification.alert_v2.display import (
+                format_holding_duration,
+            )
+            from stock_platform.operation.upbit_long_hold_watch.checkpoints import (
+                select_latest_checkpoint,
+            )
+
+            lh_rows = []
+            for pos in perf.get("open_positions") or []:
+                if not isinstance(pos, dict):
+                    continue
+                ownership = str(
+                    pos.get("ownership")
+                    or pos.get("ownership_code")
+                    or "STRATEGY_OWNED"
+                ).upper()
+                if ownership != "STRATEGY_OWNED":
+                    continue
+                age = pos.get("holding_seconds") or pos.get("age_seconds")
+                try:
+                    age_f = float(age) if age is not None else None
+                except (TypeError, ValueError):
+                    age_f = None
+                if age_f is None:
+                    continue
+                cp = select_latest_checkpoint(age_f)
+                if cp is None:
+                    continue
+                lh_rows.append(
+                    {
+                        "symbol": pos.get("symbol"),
+                        "holding_label": format_holding_duration(age_f),
+                        "estimated_pnl_rate_pct": pos.get("return_rate_pct")
+                        or pos.get("pnl_rate_pct"),
+                        "checkpoint": cp,
+                    }
+                )
+            section["long_hold_summary"] = {
+                "count": len(lh_rows),
+                "positions": lh_rows,
+                "note": "장기보유 감시(자동매도 아님)",
+            }
+        except Exception:  # noqa: BLE001
+            section["long_hold_summary"] = {
+                "count": 0,
+                "positions": [],
+                "note": "unavailable",
+            }
     if broker == "KIWOOM":
         section["market_session"] = ops.get("krx_session_phase") or ops.get(
             "market_session"

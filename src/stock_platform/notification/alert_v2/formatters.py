@@ -346,6 +346,12 @@ def maybe_format_user_message(
             "UPBIT_SHADOW_COHORT_30_REVIEW_READY",
         } and d.get("shadow_checkpoint"):
             return format_shadow_checkpoint(event_type=et, detail=d)
+        if et == "UPBIT_AUTO_LONG_HOLD":
+            from stock_platform.operation.upbit_long_hold_watch.service import (
+                format_long_hold_alert,
+            )
+
+            return format_long_hold_alert(d)
         if d.get("runtime_kind"):
             return format_runtime_alert(event_type=et, detail=d)
     except Exception:  # noqa: BLE001 — fail-open keep original

@@ -652,12 +652,34 @@ export function UpbitOpsStatusPanel({
               {
                 title: UI_LABEL_KO.holdingAge,
                 key: "hold_age",
-                render: (_: unknown, row) =>
-                  formatAgeKo(
-                    Number(
-                      rec(row).age_seconds ?? rec(row).waiting_age_seconds,
-                    ),
-                  ),
+                render: (_: unknown, row) => {
+                  const ageSec = Number(
+                    rec(row).age_seconds ?? rec(row).waiting_age_seconds,
+                  );
+                  const ageLabel = formatAgeKo(ageSec);
+                  // 장기보유 감시 badge — 자동 청산 기준 아님
+                  let badge: { color: string; text: string } | null = null;
+                  if (Number.isFinite(ageSec)) {
+                    const hours = ageSec / 3600;
+                    if (hours >= 24) {
+                      badge = { color: "orange", text: "24h+ 장기보유" };
+                    } else if (hours >= 12) {
+                      badge = { color: "gold", text: "12h+ 경고" };
+                    } else if (hours >= 6) {
+                      badge = { color: "default", text: "6h+ 주의" };
+                    }
+                  }
+                  return (
+                    <Space size={4} wrap>
+                      <span>{ageLabel}</span>
+                      {badge ? (
+                        <Tooltip title="장기보유 감시 기준이며 자동 청산 기준이 아닙니다.">
+                          <Tag color={badge.color}>{badge.text}</Tag>
+                        </Tooltip>
+                      ) : null}
+                    </Space>
+                  );
+                },
               },
               {
                 title: UI_LABEL_KO.slTpTrailing,

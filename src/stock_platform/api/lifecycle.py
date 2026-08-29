@@ -611,8 +611,25 @@ class ApplicationLifecycle:
                 except Exception:  # noqa: BLE001
                     logger.exception("autotrading_watchdog_supervisor_start_failed")
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
+                logger.warning(
                 "autotrading_reliability_watchdog_start_failed",
+                error=str(exc)[:300],
+            )
+
+        # UPBIT AUTO long-hold watch — Alert V2 observability (no REAL Time Exit)
+        try:
+            if bool(
+                getattr(settings, "upbit_long_hold_watch_enabled", True)
+            ):
+                from stock_platform.operation.upbit_long_hold_watch.scheduler import (
+                    upbit_long_hold_watch_scheduler,
+                )
+
+                lh_start = upbit_long_hold_watch_scheduler.start()
+                logger.info("upbit_long_hold_watch_startup", **lh_start)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_long_hold_watch_start_failed",
                 error=str(exc)[:300],
             )
 
@@ -872,6 +889,14 @@ class ApplicationLifecycle:
             except Exception:  # noqa: BLE001
                 logger.exception("watchdog_supervisor_shutdown_failed")
             await autotrading_reliability_watchdog.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.operation.upbit_long_hold_watch.scheduler import (
+                upbit_long_hold_watch_scheduler,
+            )
+
+            await upbit_long_hold_watch_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await paper_fill_recovery_scheduler.shutdown()
