@@ -8,6 +8,7 @@ import {
   Card,
   Form,
   InputNumber,
+  Select,
   Space,
   Switch,
   Tag,
@@ -27,12 +28,20 @@ import { queryKeys } from "@/lib/query/queryKeys";
 import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { percentToRate, rateToPercent } from "@/shared/utils/riskRatePercent";
 
+const EXIT_MODE_OPTIONS = [
+  { value: "INHERIT", label: "상위 설정 사용" },
+  { value: "ENABLED", label: "사용" },
+  { value: "DISABLED", label: "사용 안 함" },
+];
+
 export default function AdminRiskPage() {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [systemForm] = Form.useForm();
   const [userForm] = Form.useForm();
+  const [ubaExitForm] = Form.useForm();
   const [targetUserId, setTargetUserId] = useState<number>(1);
+  const [targetUbaId, setTargetUbaId] = useState<number>(1380);
 
   const kill = useQuery({
     queryKey: queryKeys.admin.killSwitch(),
@@ -64,9 +73,17 @@ export default function AdminRiskPage() {
     queryFn: () => adminApi.listAdminLiveOrderAccounts(targetUserId),
     enabled: targetUserId > 0,
   });
+  const ubaRisk = useQuery({
+    queryKey: ["admin", "accountRiskSettings", targetUbaId],
+    queryFn: () => adminApi.getAdminAccountRiskSettings(targetUbaId),
+    enabled: targetUbaId > 0,
+  });
 
   const systemResolved = asRecord(asRecord(systemRisk.data)?.resolved);
   const userResolved = asRecord(asRecord(userRisk.data)?.resolved);
+  const ubaStored = asRecord(asRecord(ubaRisk.data)?.stored);
+  const ubaResolved = asRecord(asRecord(ubaRisk.data)?.resolved);
+  const ubaExitProtection = asRecord(ubaResolved?.exit_protection);
 
   const systemInitialValues = useMemo(() => {
     if (!systemResolved) return undefined;
@@ -98,6 +115,18 @@ export default function AdminRiskPage() {
       account_paused: Boolean(userResolved.account_paused),
     };
   }, [userResolved]);
+
+  const ubaExitInitialValues = useMemo(() => {
+    const stored = ubaStored ?? {};
+    return {
+      stop_loss_mode: String(stored.stop_loss_mode ?? "INHERIT"),
+      take_profit_mode: String(stored.take_profit_mode ?? "INHERIT"),
+      trailing_stop_mode: String(stored.trailing_stop_mode ?? "INHERIT"),
+      stop_loss_rate_pct: rateToPercent(stored.stop_loss_rate),
+      take_profit_rate_pct: rateToPercent(stored.take_profit_rate),
+      trailing_stop_rate_pct: rateToPercent(stored.trailing_stop_rate),
+    };
+  }, [ubaStored]);
 
   const activate = useMutation({
     mutationFn: () => adminApi.activateKillSwitch(),
@@ -134,6 +163,18 @@ export default function AdminRiskPage() {
       message.success("사용자 리스크 설정 저장");
       void qc.invalidateQueries({
         queryKey: queryKeys.admin.userRiskSettings(targetUserId),
+      });
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const saveUbaExit = useMutation({
+    mutationFn: (body: adminApi.AdminRiskSettingsPayload) =>
+      adminApi.updateAdminAccountRiskSettings(targetUbaId, body),
+    onSuccess: () => {
+      message.success("UBA REAL exit protection 저장");
+      void qc.invalidateQueries({
+        queryKey: ["admin", "accountRiskSettings", targetUbaId],
       });
     },
     onError: (e) => message.error(toApiError(e).message),
@@ -471,6 +512,128 @@ export default function AdminRiskPage() {
               disabled={saveUser.isPending}
             >
               사용자 설정 저장
+            </Button>
+          </Form>
+        </Card>
+
+        <Card title="UBA REAL Exit Protection (tri-state)" size="small">
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12 }}
+            title="NULL rate ≠ 비활성. 모드로 REAL executor를 제어합니다."
+            description="DISABLED면 SYSTEM DEFAULT(5%/10%/3%)가 있어도 REAL SL/TP/Trailing을 쓰지 않습니다. Shadow 수집은 별도입니다."
+          />
+          <Space wrap style={{ marginBottom: 12 }}>
+            <span>uba_id</span>
+            <InputNumber
+              min={1}
+              value={targetUbaId}
+              onChange={(v) => setTargetUbaId(Number(v ?? 1380))}
+            />
+            <Button onClick={() => void ubaRisk.refetch()} loading={ubaRisk.isFetching}>
+              조회
+            </Button>
+            {ubaExitProtection ? (
+              <Typography.Text type="secondary">
+                effective SL={String(asRecord(ubaExitProtection.stop_loss)?.mode ?? "—")} /
+                TP={String(asRecord(ubaExitProtection.take_profit)?.mode ?? "—")} /
+                TR={String(asRecord(ubaExitProtection.trailing_stop)?.mode ?? "—")}
+              </Typography.Text>
+            ) : null}
+          </Space>
+          <Form
+            key={`uba-exit-${targetUbaId}-${ubaRisk.dataUpdatedAt}`}
+            form={ubaExitForm}
+            layout="vertical"
+            initialValues={ubaExitInitialValues}
+            onFinish={(values) => {
+              saveUbaExit.mutate({
+                stop_loss_mode: values.stop_loss_mode,
+                take_profit_mode: values.take_profit_mode,
+                trailing_stop_mode: values.trailing_stop_mode,
+                stop_loss_rate:
+                  values.stop_loss_mode === "ENABLED"
+                    ? percentToRate(values.stop_loss_rate_pct)
+                    : null,
+                take_profit_rate:
+                  values.take_profit_mode === "ENABLED"
+                    ? percentToRate(values.take_profit_rate_pct)
+                    : null,
+                trailing_stop_rate:
+                  values.trailing_stop_mode === "ENABLED"
+                    ? percentToRate(values.trailing_stop_rate_pct)
+                    : null,
+              });
+            }}
+          >
+            <Space wrap align="start">
+              <Form.Item name="stop_loss_mode" label="손절 설정 방식">
+                <Select options={EXIT_MODE_OPTIONS} style={{ width: 160 }} />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.stop_loss_mode !== cur.stop_loss_mode}
+              >
+                {({ getFieldValue }) => (
+                  <Form.Item name="stop_loss_rate_pct" label="손절(%)">
+                    <InputNumber
+                      min={0}
+                      max={100}
+                      style={{ width: 100 }}
+                      disabled={getFieldValue("stop_loss_mode") !== "ENABLED"}
+                    />
+                  </Form.Item>
+                )}
+              </Form.Item>
+              <Form.Item name="take_profit_mode" label="익절 설정 방식">
+                <Select options={EXIT_MODE_OPTIONS} style={{ width: 160 }} />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) =>
+                  prev.take_profit_mode !== cur.take_profit_mode
+                }
+              >
+                {({ getFieldValue }) => (
+                  <Form.Item name="take_profit_rate_pct" label="익절(%)">
+                    <InputNumber
+                      min={0}
+                      max={100}
+                      style={{ width: 100 }}
+                      disabled={getFieldValue("take_profit_mode") !== "ENABLED"}
+                    />
+                  </Form.Item>
+                )}
+              </Form.Item>
+              <Form.Item name="trailing_stop_mode" label="트레일링 설정 방식">
+                <Select options={EXIT_MODE_OPTIONS} style={{ width: 160 }} />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) =>
+                  prev.trailing_stop_mode !== cur.trailing_stop_mode
+                }
+              >
+                {({ getFieldValue }) => (
+                  <Form.Item name="trailing_stop_rate_pct" label="트레일링(%)">
+                    <InputNumber
+                      min={0}
+                      max={100}
+                      style={{ width: 100 }}
+                      disabled={getFieldValue("trailing_stop_mode") !== "ENABLED"}
+                    />
+                  </Form.Item>
+                )}
+              </Form.Item>
+            </Space>
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={saveUbaExit.isPending}
+              disabled={saveUbaExit.isPending}
+            >
+              UBA Exit Protection 저장
             </Button>
           </Form>
         </Card>

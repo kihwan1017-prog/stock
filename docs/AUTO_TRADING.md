@@ -12,10 +12,11 @@
 | AUTO slot count | **AUTO-owned** open + ENTRY_PENDING reservation |
 | MANUAL / UNKNOWN | AUTO slot **미소비**, account exposure/risk에는 **포함** |
 | Entry strategy | 기존 MA/AI/candidate (이 문서에서 변경하지 않음) |
-| Exit REAL | **MA_DEAD_CROSS** (+ Durable Exit Intent retry for **new** emits) |
-| SL / TP | **NOT_CONFIGURED** (REAL enable 금지 상태) |
-| Trailing | **SHADOW** (기존 trailing forward shadow) |
-| Time Exit | **RESEARCH** (Exit Shadow only) |
+| Exit REAL | **MA_DEAD_CROSS only** (+ Durable Exit Intent retry for **new** emits) |
+| SL / TP / Trailing REAL | **DISABLED** (UBA 1380 explicit mode — SYSTEM DEFAULT 5%/10%/3% **미상속**) |
+| Exit protection modes | `INHERIT` \| `ENABLED` \| `DISABLED` (NULL rate ≠ disable; NULL mode → INHERIT) |
+| Trailing / SL / TP / Time | **SHADOW/RESEARCH** (Exit Strategy Shadow forward collection — REAL disable과 독립) |
+| Time Exit REAL | **DISABLED** |
 | MAX_HOLDING_TIME (REAL) | **NONE** |
 | Long-hold watch | **Alert V2 observability** (6h/12h/24h+) — 자동매도 아님 |
 | Historical exit recovery | **DETECT_ONLY** dry-run; POST recover는 별도 승인 WRK |

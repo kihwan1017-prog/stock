@@ -148,6 +148,16 @@ class UserRiskSetting(Base):
     stop_loss_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     take_profit_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     trailing_stop_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    # REAL exit protection tri-state (INHERIT|ENABLED|DISABLED)
+    stop_loss_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
+    take_profit_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
+    trailing_stop_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
     auto_trading_enabled: Mapped[bool | None] = mapped_column(Boolean)
     buy_enabled: Mapped[bool | None] = mapped_column(Boolean)
     sell_enabled: Mapped[bool | None] = mapped_column(Boolean)
@@ -218,6 +228,16 @@ class UserBrokerAccountRiskSetting(Base):
     stop_loss_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     take_profit_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
     trailing_stop_rate: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    # REAL exit protection tri-state (INHERIT|ENABLED|DISABLED)
+    stop_loss_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
+    take_profit_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
+    trailing_stop_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
     auto_trading_enabled: Mapped[bool | None] = mapped_column(Boolean)
     buy_enabled: Mapped[bool | None] = mapped_column(Boolean)
     sell_enabled: Mapped[bool | None] = mapped_column(Boolean)

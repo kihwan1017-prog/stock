@@ -79,8 +79,9 @@ class ExitEvaluationRequest:
     entry_price: Decimal
     current_price: Decimal
     highest_price: Decimal
-    stop_loss_price: Decimal
-    take_profit_price: Decimal
+    # DISABLED 보호청산은 None — 해당 분기 skip
+    stop_loss_price: Decimal | None
+    take_profit_price: Decimal | None
     trailing_stop_ratio: Decimal | None = None
     # 진입가 대비 상대 손실 비율 (예: 0.08 = -8%)
     relative_loss_ratio: Decimal | None = None

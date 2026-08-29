@@ -292,6 +292,10 @@ export type AdminRiskSettingsPayload = {
   stop_loss_rate?: number | null;
   take_profit_rate?: number | null;
   trailing_stop_rate?: number | null;
+  /** REAL exit protection: INHERIT | ENABLED | DISABLED */
+  stop_loss_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
+  take_profit_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
+  trailing_stop_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
   auto_trading_enabled?: boolean | null;
   buy_enabled?: boolean | null;
   sell_enabled?: boolean | null;
@@ -325,6 +329,22 @@ export async function updateAdminUserRiskSettings(
   body: AdminRiskSettingsPayload,
 ): Promise<JsonValue> {
   return putJson(`/admin/risk-settings/users/${userId}`, body);
+}
+
+export async function getAdminAccountRiskSettings(
+  userBrokerAccountId: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/risk-settings/accounts/${userBrokerAccountId}`);
+}
+
+export async function updateAdminAccountRiskSettings(
+  userBrokerAccountId: number,
+  body: AdminRiskSettingsPayload,
+): Promise<JsonValue> {
+  return putJson(
+    `/admin/risk-settings/accounts/${userBrokerAccountId}`,
+    body,
+  );
 }
 
 /** STEP 8-7 — LIVE 주문 승인 */

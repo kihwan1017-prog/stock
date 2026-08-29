@@ -6,9 +6,21 @@
 
 **HTTP** `GET /api/v1/admin/autotrading/uba/{uba_id}/ops-status`
 
-확인 필드: LIVE · ARM · Lease · STACK · FEED · AUTO_TRADING_READY · open_orders · full_market
+확인 필드: LIVE · ARM · Lease · STACK · FEED · AUTO_TRADING_READY · open_orders · full_market · **exit_policy** · **exit_shadow** · **exit_protection**
 
 CLI / in-process singleton으로 RUNNING·STOPPED를 운영 SoT로 쓰지 않는다.
+
+## UPBIT Exit Policy (UBA 1380)
+
+| REAL | Shadow / Research |
+|------|-------------------|
+| **MA_DEAD_CROSS** only | SL / TP / Trailing / Time Exit |
+
+- SYSTEM DEFAULT (SL 5% / TP 10% / Trailing 3%)는 **전역 유지**. UBA NULL rate만으로 disable 아님.
+- UBA 명시 `stop_loss_mode` / `take_profit_mode` / `trailing_stop_mode` = `DISABLED` → REAL executor 비활성 (상속 차단).
+- `INHERIT`(기본) = 상위 rate 사용. 기존 계좌 behavior preservation.
+- REAL DISABLED가 Exit Strategy Shadow 수집을 끄지 않음.
+- ops-status: `exit_policy` (REAL) vs `exit_shadow` (research) 분리 표시.
 
 ## 알림 (Trading Alert V2)
 

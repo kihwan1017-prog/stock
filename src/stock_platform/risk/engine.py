@@ -168,14 +168,20 @@ class RiskManagementEngine:
     ) -> ExitDecision:
         self._validate_exit_request(request)
 
-        if request.current_price <= request.stop_loss_price:
+        if (
+            request.stop_loss_price is not None
+            and request.current_price <= request.stop_loss_price
+        ):
             return ExitDecision(
                 should_exit=True,
                 reason="STOP_LOSS",
                 trigger_price=request.stop_loss_price,
             )
 
-        if request.current_price >= request.take_profit_price:
+        if (
+            request.take_profit_price is not None
+            and request.current_price >= request.take_profit_price
+        ):
             return ExitDecision(
                 should_exit=True,
                 reason="TAKE_PROFIT",
@@ -386,8 +392,6 @@ class RiskManagementEngine:
             "entry_price": request.entry_price,
             "current_price": request.current_price,
             "highest_price": request.highest_price,
-            "stop_loss_price": request.stop_loss_price,
-            "take_profit_price": request.take_profit_price,
         }
 
         for field_name, value in price_fields.items():
@@ -401,15 +405,25 @@ class RiskManagementEngine:
                 "highest_price must not be below entry_price",
             )
 
-        if request.stop_loss_price >= request.entry_price:
-            raise RiskValidationError(
-                "stop_loss_price must be below entry_price",
-            )
+        if request.stop_loss_price is not None:
+            if request.stop_loss_price <= ZERO:
+                raise RiskValidationError(
+                    "stop_loss_price must be greater than zero",
+                )
+            if request.stop_loss_price >= request.entry_price:
+                raise RiskValidationError(
+                    "stop_loss_price must be below entry_price",
+                )
 
-        if request.take_profit_price <= request.entry_price:
-            raise RiskValidationError(
-                "take_profit_price must be above entry_price",
-            )
+        if request.take_profit_price is not None:
+            if request.take_profit_price <= ZERO:
+                raise RiskValidationError(
+                    "take_profit_price must be greater than zero",
+                )
+            if request.take_profit_price <= request.entry_price:
+                raise RiskValidationError(
+                    "take_profit_price must be above entry_price",
+                )
 
         if request.trailing_stop_ratio is not None:
             if (

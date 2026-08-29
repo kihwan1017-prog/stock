@@ -918,39 +918,93 @@ export function UpbitAutotradingSettingsWorkspace({
     }
 
     if (key === UPBIT_AUTOTRADING_TAB_KEYS.exit) {
+      const exitProtection = asObj(
+        opsRoot.exit_protection ?? riskFromOps.resolved_exit_protection,
+      );
+      const exitPolicy = asObj(opsRoot.exit_policy);
+      const exitShadow = asObj(opsRoot.exit_shadow);
+      const sourceLabel = (source?: string | null) => {
+        const s = String(source ?? "").toUpperCase();
+        if (s === "UBA" || s === "ACCOUNT") return "UBA 명시 설정";
+        if (s === "USER") return "사용자 설정";
+        if (s === "SYSTEM") return "SYSTEM DEFAULT 상속";
+        if (s === "STRATEGY") return "전략 설정";
+        if (s === "POLICY") return "운영 정책";
+        return s || "—";
+      };
+      const realLabel = (item: Record<string, unknown> | null, fallbackKey: string) => {
+        const mode = String(item?.mode ?? exitPolicy[fallbackKey] ?? "").toUpperCase();
+        const enabled = item?.effective_enabled === true || mode === "REAL" || mode === "ENABLED";
+        if (mode === "DISABLED" || item?.effective_enabled === false) {
+          return { text: "사용 안 함", color: "default" as const };
+        }
+        if (enabled) return { text: "사용 중", color: "green" as const };
+        return { text: "미확인", color: "orange" as const };
+      };
+      const shadowLabel = (keyName: string) => {
+        const v = String(exitShadow[keyName] ?? "ACTIVE").toUpperCase();
+        return v === "ACTIVE" || v === "COLLECTING"
+          ? { text: "수집 중", color: "blue" as const }
+          : { text: v || "—", color: "default" as const };
+      };
+      const sl = asObj(exitProtection.stop_loss);
+      const tp = asObj(exitProtection.take_profit);
+      const tr = asObj(exitProtection.trailing_stop);
+      const slReal = realLabel(sl, "STOP_LOSS");
+      const tpReal = realLabel(tp, "TAKE_PROFIT");
+      const trReal = realLabel(tr, "TRAILING");
+      const slShadow = shadowLabel("STOP_LOSS");
+      const tpShadow = shadowLabel("TAKE_PROFIT");
+      const trShadow = shadowLabel("TRAILING");
+      const timeShadow = shadowLabel("TIME_EXIT");
+
       return {
         key,
         label,
         children: (
           <Space orientation="vertical" size={12} style={{ width: "100%" }}>
             <Alert
-              type="warning"
+              type="info"
               showIcon
-              title="보호성 EXIT(Protective Exit)는 항상 ON입니다. 청산 규칙은 표시 중심이며 이 화면에서 끄지 않습니다."
+              title="REAL 청산과 Shadow 연구는 분리됩니다. REAL 비활성이 Shadow 수집을 끄지 않습니다."
+              description="NULL rate만으로 미설정을 판단하지 않습니다. mode=DISABLED면 SYSTEM DEFAULT가 있어도 REAL executor는 사용하지 않습니다."
             />
-            <Descriptions size="small" bordered column={2}>
-              <Descriptions.Item label="Stop Loss">
-                {numOrDash(
-                  exitFromOps.stop_loss_pct ??
-                    exitFromOps.sl_pct ??
-                    riskFromOps.stop_loss_pct ??
-                    accountRisk.stop_loss_pct,
-                )}
+            <Descriptions size="small" bordered column={1}>
+              <Descriptions.Item label="손절">
+                <Space wrap>
+                  <Tag color={slReal.color}>REAL: {slReal.text}</Tag>
+                  <Tag color={slShadow.color}>Shadow: {slShadow.text}</Tag>
+                  <Typography.Text type="secondary">
+                    출처: {sourceLabel(String(sl.source ?? ""))}
+                  </Typography.Text>
+                </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="Take Profit">
-                {numOrDash(
-                  exitFromOps.take_profit_pct ??
-                    exitFromOps.tp_pct ??
-                    riskFromOps.take_profit_pct ??
-                    accountRisk.take_profit_pct,
-                )}
+              <Descriptions.Item label="익절">
+                <Space wrap>
+                  <Tag color={tpReal.color}>REAL: {tpReal.text}</Tag>
+                  <Tag color={tpShadow.color}>Shadow: {tpShadow.text}</Tag>
+                  <Typography.Text type="secondary">
+                    출처: {sourceLabel(String(tp.source ?? ""))}
+                  </Typography.Text>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="트레일링">
-                {numOrDash(
-                  exitFromOps.trailing_pct ??
-                    exitFromOps.trailing_stop_pct ??
-                    riskFromOps.trailing_pct,
-                )}
+                <Space wrap>
+                  <Tag color={trReal.color}>REAL: {trReal.text}</Tag>
+                  <Tag color={trShadow.color}>Shadow: {trShadow.text}</Tag>
+                  <Typography.Text type="secondary">
+                    출처: {sourceLabel(String(tr.source ?? ""))}
+                  </Typography.Text>
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="이동평균 데드크로스">
+                <Tag color="green">REAL: 사용 중</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="최대 보유시간">
+                <Space wrap>
+                  <Tag>REAL: 사용 안 함</Tag>
+                  <Tag color={timeShadow.color}>Shadow: {timeShadow.text}</Tag>
+                </Space>
               </Descriptions.Item>
               <Descriptions.Item label="청산 감시">
                 {opsSnap?.exitMonitor ?? "—"}
@@ -962,13 +1016,6 @@ export function UpbitAutotradingSettingsWorkspace({
                     "—",
                 )}
                 {policy.entry_cooldown_seconds != null ? "초 (진입 쿨다운 연동)" : ""}
-              </Descriptions.Item>
-              <Descriptions.Item label="Protective Exit">
-                <Tag color="green">
-                  {unattended.protective_exit_authorized === false
-                    ? "LEASE 없음 · 모니터 경로 유지"
-                    : "ALWAYS ON"}
-                </Tag>
               </Descriptions.Item>
             </Descriptions>
 
@@ -1024,9 +1071,9 @@ export function UpbitAutotradingSettingsWorkspace({
             </Card>
 
             <Typography.Paragraph type="secondary">
-              SL/TP/Trailing 값이 ops/risk에 없으면 「—」로 표시합니다. 세부
-              리스크 한도는{" "}
-              <Link href={adminRoutes.risk}>리스크 관리</Link>에서 확인하세요.
+              REAL SL/TP/Trailing 모드 변경은{" "}
+              <Link href={adminRoutes.risk}>리스크 관리</Link>
+              에서 설정합니다. Shadow 실험값은 Research 화면에서 확인합니다.
             </Typography.Paragraph>
           </Space>
         ),

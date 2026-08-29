@@ -39,10 +39,32 @@ ONE = Decimal("1")
 ZERO = Decimal("0")
 
 
+def _protective_prices(
+    *,
+    entry: Decimal,
+    thresholds: "ExitThresholds",
+    quantize: str = "0.00000001",
+) -> tuple[Decimal | None, Decimal | None]:
+    """DISABLED(None ratio)면 해당 가격 None — REAL trigger 없음."""
+
+    stop_loss_price = None
+    take_profit_price = None
+    if thresholds.stop_loss_ratio is not None:
+        stop_loss_price = (
+            entry * (ONE - thresholds.stop_loss_ratio)
+        ).quantize(Decimal(quantize), rounding=ROUND_DOWN)
+    if thresholds.take_profit_ratio is not None:
+        take_profit_price = (
+            entry * (ONE + thresholds.take_profit_ratio)
+        ).quantize(Decimal(quantize), rounding=ROUND_DOWN)
+    return stop_loss_price, take_profit_price
+
+
 @dataclass(frozen=True, slots=True)
 class ExitThresholds:
-    stop_loss_ratio: Decimal
-    take_profit_ratio: Decimal
+    # DISABLED면 None — REAL 가격 트리거 미생성
+    stop_loss_ratio: Decimal | None
+    take_profit_ratio: Decimal | None
     trailing_stop_ratio: Decimal | None
     relative_loss_ratio: Decimal | None
     daily_loss_limit: Decimal
@@ -149,17 +171,9 @@ class PositionExitMonitorLoader:
                 current_price,
             )
             entry = row.average_entry_price
-            stop_loss_price = (
-                entry * (ONE - thresholds.stop_loss_ratio)
-            ).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_DOWN,
-            )
-            take_profit_price = (
-                entry * (ONE + thresholds.take_profit_ratio)
-            ).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_DOWN,
+            stop_loss_price, take_profit_price = _protective_prices(
+                entry=entry,
+                thresholds=thresholds,
             )
 
             unrealized = (
@@ -482,17 +496,9 @@ class PositionExitMonitorLoader:
                 entry=entry,
                 current_price=current_price,
             )
-            stop_loss_price = (
-                entry * (ONE - thresholds.stop_loss_ratio)
-            ).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_DOWN,
-            )
-            take_profit_price = (
-                entry * (ONE + thresholds.take_profit_ratio)
-            ).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_DOWN,
+            stop_loss_price, take_profit_price = _protective_prices(
+                entry=entry,
+                thresholds=thresholds,
             )
             trailing_ratio = (
                 thresholds.trailing_stop_ratio
@@ -648,12 +654,11 @@ class PositionExitMonitorLoader:
                     user_broker_account_id=uba_id,
                 )
             thresholds = threshold_by_uba[uba_id]
-            stop_loss_price = (
-                entry * (ONE - thresholds.stop_loss_ratio)
-            ).quantize(Decimal("1"), rounding=ROUND_DOWN)
-            take_profit_price = (
-                entry * (ONE + thresholds.take_profit_ratio)
-            ).quantize(Decimal("1"), rounding=ROUND_DOWN)
+            stop_loss_price, take_profit_price = _protective_prices(
+                entry=entry,
+                thresholds=thresholds,
+                quantize="1",
+            )
             trailing_ratio = thresholds.trailing_stop_ratio
             highest = max(entry, current_price)
 

@@ -9,6 +9,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from stock_platform.risk_engine.exit_protection_modes import (
+    MODE_INHERIT,
+    exit_protections_bundle,
+)
 from stock_platform.risk_engine.models import RiskPolicy
 from stock_platform.risk_engine.runtime import realtime_risk_policy
 from stock_platform.risk_engine.user_risk_entities import (
@@ -20,7 +24,7 @@ from stock_platform.risk_engine.user_risk_entities import (
 ZERO = Decimal("0")
 ONE = Decimal("1")
 
-# 오버레이 대상 필드 (NULL이면 상위 유지)
+# SL/TP/Trailing rate는 exit_protection_modes 로 별도 해석
 _OVERLAY_FIELDS: tuple[str, ...] = (
     "max_order_amount",
     "daily_max_order_amount",
@@ -32,9 +36,6 @@ _OVERLAY_FIELDS: tuple[str, ...] = (
     "allow_duplicate_buy",
     "daily_max_loss_amount",
     "daily_max_loss_rate",
-    "stop_loss_rate",
-    "take_profit_rate",
-    "trailing_stop_rate",
     "auto_trading_enabled",
     "buy_enabled",
     "sell_enabled",
@@ -52,6 +53,13 @@ _OVERLAY_FIELDS: tuple[str, ...] = (
     "arm_ttl_seconds",
 )
 
+# system overlay에만 rate 포함
+_SYSTEM_RATE_FIELDS: tuple[str, ...] = (
+    "stop_loss_rate",
+    "take_profit_rate",
+    "trailing_stop_rate",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedRiskPolicy:
@@ -67,8 +75,9 @@ class ResolvedRiskPolicy:
     allow_duplicate_buy: bool
     daily_max_loss_amount: Decimal
     daily_max_loss_rate: Decimal
-    stop_loss_rate: Decimal
-    take_profit_rate: Decimal
+    # DISABLED면 None — REAL exit_monitor가 사용하지 않음
+    stop_loss_rate: Decimal | None
+    take_profit_rate: Decimal | None
     trailing_stop_rate: Decimal | None
     auto_trading_enabled: bool
     buy_enabled: bool
@@ -84,9 +93,20 @@ class ResolvedRiskPolicy:
     loop_detect_window_seconds: int
     arm_ttl_seconds: int
     source_layers: tuple[str, ...]
-    # V2 (nullable) — admin 명시 저장 전엔 None → V1 유지
     daily_submit_limit: int | None = None
     daily_filled_entry_limit: int | None = None
+    stop_loss_mode: str = MODE_INHERIT
+    take_profit_mode: str = MODE_INHERIT
+    trailing_stop_mode: str = MODE_INHERIT
+    stop_loss_source: str = "SYSTEM"
+    take_profit_source: str = "SYSTEM"
+    trailing_stop_source: str = "SYSTEM"
+    stop_loss_effective_enabled: bool = True
+    take_profit_effective_enabled: bool = True
+    trailing_stop_effective_enabled: bool = True
+    stop_loss_configured_rate: Decimal | None = None
+    take_profit_configured_rate: Decimal | None = None
+    trailing_stop_configured_rate: Decimal | None = None
 
     def to_engine_policy(self) -> RiskPolicy:
         """RealtimeRiskEngine용 RiskPolicy로 변환."""
@@ -132,6 +152,63 @@ class ResolvedRiskPolicy:
             duplicate_order_window_seconds=self.duplicate_order_window_seconds,
         )
 
+    def exit_protection_summary(self) -> dict[str, Any]:
+        """ops-status / Admin UI용 REAL exit protection SoT."""
+
+        def _one(
+            *,
+            mode: str,
+            enabled: bool,
+            rate: Decimal | None,
+            configured: Decimal | None,
+            source: str,
+        ) -> dict[str, Any]:
+            return {
+                "mode": mode,
+                "configured_rate": (
+                    str(configured) if configured is not None else None
+                ),
+                "effective_enabled": enabled,
+                "effective_rate": str(rate) if rate is not None else None,
+                "source": source,
+            }
+
+        return {
+            "stop_loss": _one(
+                mode=self.stop_loss_mode,
+                enabled=self.stop_loss_effective_enabled,
+                rate=self.stop_loss_rate,
+                configured=self.stop_loss_configured_rate,
+                source=self.stop_loss_source,
+            ),
+            "take_profit": _one(
+                mode=self.take_profit_mode,
+                enabled=self.take_profit_effective_enabled,
+                rate=self.take_profit_rate,
+                configured=self.take_profit_configured_rate,
+                source=self.take_profit_source,
+            ),
+            "trailing_stop": _one(
+                mode=self.trailing_stop_mode,
+                enabled=self.trailing_stop_effective_enabled,
+                rate=self.trailing_stop_rate,
+                configured=self.trailing_stop_configured_rate,
+                source=self.trailing_stop_source,
+            ),
+            "ma_dead_cross": {
+                "mode": "ENABLED",
+                "effective_enabled": True,
+                "source": "STRATEGY",
+                "real": "ENABLED",
+            },
+            "time_exit": {
+                "mode": "DISABLED",
+                "effective_enabled": False,
+                "source": "POLICY",
+                "real": "DISABLED",
+            },
+        }
+
     def as_dict(self) -> dict[str, Any]:
         payload = asdict(self)
         for key, value in list(payload.items()):
@@ -139,6 +216,7 @@ class ResolvedRiskPolicy:
                 payload[key] = str(value)
             elif isinstance(value, tuple):
                 payload[key] = list(value)
+        payload["exit_protection"] = self.exit_protection_summary()
         return payload
 
 
@@ -177,15 +255,22 @@ def _code_fallback_system() -> dict[str, Any]:
     }
 
 
-def _row_overlay(base: dict[str, Any], row: Any | None) -> dict[str, Any]:
+def _row_overlay(
+    base: dict[str, Any],
+    row: Any | None,
+    *,
+    include_rates: bool = False,
+) -> dict[str, Any]:
     if row is None:
         return base
     merged = dict(base)
-    for field in _OVERLAY_FIELDS:
+    fields = _OVERLAY_FIELDS + (
+        _SYSTEM_RATE_FIELDS if include_rates else ()
+    )
+    for field in fields:
         value = getattr(row, field, None)
         if value is None:
             continue
-        # MagicMock 등 테스트 더미가 의도치 않게 덮지 않도록
         if type(value).__name__ in {"MagicMock", "AsyncMock", "Mock"}:
             continue
         merged[field] = value
@@ -193,11 +278,7 @@ def _row_overlay(base: dict[str, Any], row: Any | None) -> dict[str, Any]:
 
 
 class ResolvedRiskPolicyResolver:
-    """
-    공통 진입점.
-    우선순위: 시스템 → 사용자 → UserBrokerAccount.
-    Paper는 UBA가 없으므로 사용자 기본까지만 적용.
-    """
+    """시스템 → 사용자 → UserBrokerAccount. Exit protection mode 적용."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -218,9 +299,10 @@ class ResolvedRiskPolicyResolver:
             )
         )
         if system is not None:
-            base = _row_overlay(base, system)
+            base = _row_overlay(base, system, include_rates=True)
             layers = ["system"]
 
+        user_row: UserRiskSetting | None = None
         if user_id is not None:
             user_row = self._session.scalar(
                 select(UserRiskSetting).where(
@@ -228,9 +310,10 @@ class ResolvedRiskPolicyResolver:
                 )
             )
             if user_row is not None:
-                base = _row_overlay(base, user_row)
+                base = _row_overlay(base, user_row, include_rates=False)
                 layers.append("user")
 
+        uba_row: UserBrokerAccountRiskSetting | None = None
         if user_broker_account_id is not None:
             uba_row = self._session.scalar(
                 select(UserBrokerAccountRiskSetting).where(
@@ -239,8 +322,33 @@ class ResolvedRiskPolicyResolver:
                 )
             )
             if uba_row is not None:
-                base = _row_overlay(base, uba_row)
+                base = _row_overlay(base, uba_row, include_rates=False)
                 layers.append("account")
+
+        protections = exit_protections_bundle(
+            system_rates={
+                "stop_loss": (
+                    None
+                    if base.get("stop_loss_rate") is None
+                    else Decimal(str(base["stop_loss_rate"]))
+                ),
+                "take_profit": (
+                    None
+                    if base.get("take_profit_rate") is None
+                    else Decimal(str(base["take_profit_rate"]))
+                ),
+                "trailing_stop": (
+                    None
+                    if base.get("trailing_stop_rate") is None
+                    else Decimal(str(base["trailing_stop_rate"]))
+                ),
+            },
+            user_row=user_row,
+            account_row=uba_row,
+        )
+        sl = protections["stop_loss"]
+        tp = protections["take_profit"]
+        tr = protections["trailing_stop"]
 
         return ResolvedRiskPolicy(
             max_order_amount=Decimal(str(base["max_order_amount"])),
@@ -259,13 +367,9 @@ class ResolvedRiskPolicyResolver:
                 str(base["daily_max_loss_amount"])
             ),
             daily_max_loss_rate=Decimal(str(base["daily_max_loss_rate"])),
-            stop_loss_rate=Decimal(str(base["stop_loss_rate"])),
-            take_profit_rate=Decimal(str(base["take_profit_rate"])),
-            trailing_stop_rate=(
-                None
-                if base.get("trailing_stop_rate") is None
-                else Decimal(str(base["trailing_stop_rate"]))
-            ),
+            stop_loss_rate=sl.effective_rate,
+            take_profit_rate=tp.effective_rate,
+            trailing_stop_rate=tr.effective_rate,
             auto_trading_enabled=bool(base["auto_trading_enabled"]),
             buy_enabled=bool(base["buy_enabled"]),
             sell_enabled=bool(base["sell_enabled"]),
@@ -296,4 +400,16 @@ class ResolvedRiskPolicyResolver:
                 if base.get("daily_filled_entry_limit") is None
                 else int(base["daily_filled_entry_limit"])
             ),
+            stop_loss_mode=sl.mode,
+            take_profit_mode=tp.mode,
+            trailing_stop_mode=tr.mode,
+            stop_loss_source=sl.source,
+            take_profit_source=tp.source,
+            trailing_stop_source=tr.source,
+            stop_loss_effective_enabled=sl.effective_enabled,
+            take_profit_effective_enabled=tp.effective_enabled,
+            trailing_stop_effective_enabled=tr.effective_enabled,
+            stop_loss_configured_rate=sl.configured_rate,
+            take_profit_configured_rate=tp.configured_rate,
+            trailing_stop_configured_rate=tr.configured_rate,
         )

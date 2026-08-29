@@ -520,6 +520,72 @@ def build_uba_operational_summary(
         "open_orders": open_orders,
         "as_of": now.isoformat(),
     }
+    # REAL exit protection vs Shadow research (ops-status SoT)
+    try:
+        from stock_platform.risk_engine.user_risk_service import (
+            UserRiskSettingService,
+        )
+
+        risk_svc = UserRiskSettingService(session)
+        owner_uid = int(uba.user_id) if uba is not None else None
+        resolved = risk_svc.resolve(
+            user_id=owner_uid,
+            user_broker_account_id=uba_id,
+        )
+        ep = resolved.exit_protection_summary()
+        out["exit_protection"] = ep
+        out["exit_policy"] = {
+            "MA_DEAD_CROSS": "REAL",
+            "STOP_LOSS": (
+                "DISABLED"
+                if not resolved.stop_loss_effective_enabled
+                else "REAL"
+            ),
+            "TAKE_PROFIT": (
+                "DISABLED"
+                if not resolved.take_profit_effective_enabled
+                else "REAL"
+            ),
+            "TRAILING": (
+                "DISABLED"
+                if not resolved.trailing_stop_effective_enabled
+                else "REAL"
+            ),
+            "TIME_EXIT": "DISABLED",
+        }
+        # Shadow는 REAL disable과 독립 — 기존 forward collection 유지
+        out["exit_shadow"] = {
+            "STOP_LOSS": "ACTIVE",
+            "TAKE_PROFIT": "ACTIVE",
+            "TRAILING": "ACTIVE",
+            "TIME_EXIT": "ACTIVE",
+        }
+        out["risk"] = {
+            **(out.get("risk") if isinstance(out.get("risk"), dict) else {}),
+            "stored": risk_svc.snapshot_account(uba_id),
+            "resolved_exit_protection": ep,
+            "stop_loss_mode": resolved.stop_loss_mode,
+            "take_profit_mode": resolved.take_profit_mode,
+            "trailing_stop_mode": resolved.trailing_stop_mode,
+            "stop_loss_rate": (
+                str(resolved.stop_loss_rate)
+                if resolved.stop_loss_rate is not None
+                else None
+            ),
+            "take_profit_rate": (
+                str(resolved.take_profit_rate)
+                if resolved.take_profit_rate is not None
+                else None
+            ),
+            "trailing_stop_rate": (
+                str(resolved.trailing_stop_rate)
+                if resolved.trailing_stop_rate is not None
+                else None
+            ),
+        }
+    except Exception:  # noqa: BLE001
+        out.setdefault("exit_policy", {"error": "EXIT_POLICY_RESOLVE_FAILED"})
+        out.setdefault("exit_shadow", {"error": "EXIT_SHADOW_STATUS_FAILED"})
     # Canonical reliability health (watchdog SoT)
     try:
         from stock_platform.trading.autotrading_health_service import (

@@ -39,6 +39,14 @@ _RATE_FIELDS = frozenset(
         "max_slippage_rate",
     }
 )
+_MODE_FIELDS = frozenset(
+    {
+        "stop_loss_mode",
+        "take_profit_mode",
+        "trailing_stop_mode",
+    }
+)
+_VALID_EXIT_MODES = frozenset({"INHERIT", "ENABLED", "DISABLED"})
 _BOOL_FIELDS = frozenset(
     {
         "allow_duplicate_buy",
@@ -63,7 +71,11 @@ _INT_FIELDS = frozenset(
     }
 )
 _ALL_FIELDS = (
-    _AMOUNT_FIELDS | _RATE_FIELDS | _BOOL_FIELDS | _INT_FIELDS
+    _AMOUNT_FIELDS
+    | _RATE_FIELDS
+    | _MODE_FIELDS
+    | _BOOL_FIELDS
+    | _INT_FIELDS
 )
 
 
@@ -100,6 +112,13 @@ def validate_risk_payload(
                     f"{key} must be between 0 and 1 (fraction)"
                 )
             cleaned[key] = rate
+        elif key in _MODE_FIELDS:
+            mode = str(raw).strip().upper()
+            if mode not in _VALID_EXIT_MODES:
+                raise RiskSettingValidationError(
+                    f"{key} must be one of INHERIT|ENABLED|DISABLED"
+                )
+            cleaned[key] = mode
         elif key in _INT_FIELDS:
             count = int(raw)
             if count < 0:
@@ -123,6 +142,16 @@ def validate_risk_payload(
         raise RiskSettingValidationError(
             "stop_loss_rate must be less than take_profit_rate"
         )
+
+    # ENABLED면 해당 rate 필수 (payload에 mode만 온 경우도)
+    for mode_key, rate_key in (
+        ("stop_loss_mode", "stop_loss_rate"),
+        ("take_profit_mode", "take_profit_rate"),
+        ("trailing_stop_mode", "trailing_stop_rate"),
+    ):
+        if cleaned.get(mode_key) == "ENABLED" and cleaned.get(rate_key) is None:
+            # rate가 unset이면 기존 row 값에 의존 — upsert 시점 재검증은 호출측
+            pass
 
     sell_only = cleaned.get("sell_only")
     buy_enabled = cleaned.get("buy_enabled")

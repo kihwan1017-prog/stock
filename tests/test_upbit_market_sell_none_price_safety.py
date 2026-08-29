@@ -96,16 +96,12 @@ def _exit_reject(*, held: str = "1", sellable: str = "1") -> SimpleNamespace:
 def _pipeline_session(uba: SimpleNamespace) -> MagicMock:
     session = MagicMock()
     session.get.return_value = uba
-    session.scalar.side_effect = [
-        0,  # daily count / usage paths vary — generous defaults
-        None,  # loss
-        None,  # duplicate
-        0,  # open
-        0,  # per_min
-        None,
-        None,
-        None,
-    ]
+
+    def _scalar(_stmt=None, **_kwargs):  # noqa: ANN001
+        # duplicate window 조회는 None, 카운트류는 0
+        return None
+
+    session.scalar.side_effect = _scalar
     session.scalars.return_value = []
     return session
 
