@@ -966,6 +966,8 @@ class RiskIntegratedRealtimeOrderExecutor:
         reason_code: str,
     ) -> RealtimeExecutionResult:
         self._trace_executor_rejected(signal, reason_code)
+        # begin_entry 이후 주문 미생성 terminal reject → ENTRY_PENDING 즉시 복귀
+        self._maybe_rollback_orderless_entry_pending(signal, reason_code)
         try:
             from stock_platform.operation.upbit_entry_execution_trace.context import (
                 clear_current,
@@ -983,3 +985,52 @@ class RiskIntegratedRealtimeOrderExecutor:
             signal=signal,
             reason_code=reason_code,
         )
+
+    def _maybe_rollback_orderless_entry_pending(
+        self,
+        signal: RealtimeSignal,
+        reason_code: str,
+    ) -> None:
+        """UPBIT LIVE BUY: 주문 없는 terminal reject 시 ENTRY_PENDING rollback."""
+        try:
+            if str(getattr(signal.action, "value", signal.action) or "").upper() != "BUY":
+                return
+            uba_id = resolve_signal_user_broker_account_id(signal)
+            if uba_id is None:
+                uba_id = getattr(
+                    self._execution_config, "user_broker_account_id", None
+                )
+            if uba_id is None:
+                return
+            broker_code = resolve_signal_broker_code(signal) or getattr(
+                self._execution_config, "broker_code", None
+            )
+            if str(broker_code or "").upper() != "UPBIT":
+                return
+            environment = resolve_execution_environment(
+                self._execution_config, signal
+            )
+            if environment != "LIVE":
+                return
+
+            from stock_platform.operation.upbit_full_market.portfolio_service import (
+                UpbitPortfolioService,
+            )
+
+            sel_id = getattr(signal, "candidate_selection_id", None)
+            UpbitPortfolioService(
+                self._session
+            ).rollback_entry_pending_after_terminal_reject(
+                int(uba_id),
+                symbol=str(getattr(signal, "symbol", "") or ""),
+                reason_code=str(reason_code or "EXECUTOR_REJECTED"),
+                actor="risk_integrated_order_executor",
+                signal_id=getattr(signal, "signal_id", None),
+                selection_id=int(sel_id) if sel_id is not None else None,
+                execution_trace_id=getattr(
+                    signal, "execution_trace_id", None
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            # rollback 실패가 skip 경로를 막지 않음
+            pass

@@ -3035,6 +3035,275 @@ class UpbitPortfolioService:
             "orders_created": 0,
         }
 
+    def rollback_entry_pending_after_terminal_reject(
+        self,
+        user_broker_account_id: int,
+        *,
+        symbol: str,
+        reason_code: str,
+        actor: str = "executor",
+        broker_open_symbols: set[str] | frozenset[str] | None = None,
+        signal_id: str | None = None,
+        selection_id: int | None = None,
+        execution_trace_id: str | None = None,
+    ) -> dict[str, Any]:
+        """주문 미연결 terminal reject 직후 ENTRY_PENDING → WAITING_SIGNAL.
+
+        ENTRY_PENDING은 실제 주문 lifecycle로 이어질 가능성 있을 때만 유지한다.
+        entry_order_id / local order / outbox inflight / remote AUTO open /
+        recovery·cancel 진행 중이면 fail-closed로 유지한다.
+        """
+
+        uba_id = int(user_broker_account_id)
+        sym = str(symbol or "").upper()
+        reject_reason = str(reason_code or "EXECUTOR_REJECTED").strip() or (
+            "EXECUTOR_REJECTED"
+        )
+        lifecycle_reason = (
+            f"EXECUTOR_REJECTED_NO_ORDER_ROLLBACK:{reject_reason}"
+        )
+
+        empty: dict[str, Any] = {
+            "ok": True,
+            "rolled_back": False,
+            "noop": False,
+            "reason": None,
+            "previous_state": None,
+            "new_state": None,
+            "entry_order_id": None,
+            "reservation_released": False,
+            "lifecycle_reason": lifecycle_reason,
+            "orders_created": 0,
+        }
+        if not sym:
+            empty["reason"] = "SYMBOL_REQUIRED"
+            return empty
+
+        slot = self._session.scalar(
+            select(UpbitPositionSlotEntity)
+            .where(
+                UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                UpbitPositionSlotEntity.symbol == sym,
+            )
+            .with_for_update()
+        )
+        if slot is None:
+            empty["reason"] = "SLOT_NOT_FOUND"
+            return empty
+
+        prior_status = str(slot.status or "")
+        prior_entry_order_id = slot.entry_order_id
+        empty["previous_state"] = prior_status
+        empty["entry_order_id"] = prior_entry_order_id
+
+        # 이미 WAITING_SIGNAL이면 idempotent no-op
+        if prior_status == SLOT_WAITING_SIGNAL:
+            empty["noop"] = True
+            empty["reason"] = "ALREADY_WAITING_SIGNAL"
+            empty["new_state"] = SLOT_WAITING_SIGNAL
+            return empty
+
+        if prior_status != SLOT_ENTRY_PENDING:
+            empty["reason"] = f"STATUS_NOT_ENTRY_PENDING:{prior_status}"
+            return empty
+
+        # 실제 주문 연결이 있으면 fail-closed 유지
+        if prior_entry_order_id is not None:
+            empty["reason"] = "ENTRY_ORDER_ID_PRESENT"
+            return empty
+        if self._order_has_broker_uuid(uba_id, symbol=sym):
+            empty["reason"] = "BROKER_UUID_PRESENT"
+            return empty
+        if self._has_local_open_order(uba_id, symbol=sym):
+            empty["reason"] = "LOCAL_OPEN_ORDER"
+            return empty
+        if self._has_pending_outbox_for_symbol(uba_id, symbol=sym):
+            empty["reason"] = "ORDER_SUBMISSION_INFLIGHT"
+            return empty
+        if self._has_active_cancel_or_recovery(uba_id, symbol=sym):
+            empty["reason"] = "ACTIVE_RECOVERY_OR_CANCEL"
+            return empty
+        if broker_open_symbols is not None and sym in {
+            str(x).upper() for x in broker_open_symbols
+        }:
+            empty["reason"] = "BROKER_OPEN_ORDER"
+            return empty
+
+        had_reservation = (
+            slot.reserved_amount_krw is not None
+            or slot.allocated_amount_krw is not None
+        )
+        # selection history 보존 — WAITING_SIGNAL + reserve 해제
+        slot.status = SLOT_WAITING_SIGNAL
+        slot.reserved_amount_krw = None
+        slot.allocated_amount_krw = None
+        slot.clamp_reasons = [lifecycle_reason]
+        slot.entry_order_id = None
+        slot.version = int(slot.version or 1) + 1
+        self._session.flush()
+
+        logger.info(
+            "entry_pending_rolled_back",
+            uba_id=uba_id,
+            symbol=sym,
+            reason=reject_reason,
+            lifecycle_reason=lifecycle_reason,
+            previous_state=prior_status,
+            new_state=SLOT_WAITING_SIGNAL,
+            entry_order_id=None,
+            reservation_released=had_reservation,
+            selection_id=(
+                int(selection_id)
+                if selection_id is not None
+                else (
+                    int(slot.candidate_selection_id)
+                    if slot.candidate_selection_id is not None
+                    else None
+                )
+            ),
+            signal_id=signal_id,
+            actor=str(actor or "executor")[:80],
+            rollback_event="ENTRY_PENDING_ROLLED_BACK",
+        )
+
+        # observability — session.rollback 금지 (slot 전이 보호)
+        try:
+            tid = str(execution_trace_id or "").strip()
+            if tid:
+                from stock_platform.operation.upbit_entry_execution_trace.constants import (
+                    DECISION_PASS,
+                    STAGE_ENTRY_PENDING_ROLLED_BACK,
+                )
+                from stock_platform.operation.upbit_entry_execution_trace.service import (
+                    append_stage,
+                )
+
+                append_stage(
+                    self._session,
+                    execution_trace_id=tid,
+                    user_broker_account_id=uba_id,
+                    symbol=sym,
+                    stage=STAGE_ENTRY_PENDING_ROLLED_BACK,
+                    decision=DECISION_PASS,
+                    reason_code=reject_reason[:80],
+                    reason_detail=lifecycle_reason[:2000],
+                    selection_id=(
+                        int(selection_id)
+                        if selection_id is not None
+                        else (
+                            int(slot.candidate_selection_id)
+                            if slot.candidate_selection_id is not None
+                            else None
+                        )
+                    ),
+                    waiting_id=int(slot.slot_id),
+                    signal_id=str(signal_id) if signal_id else None,
+                    detail={
+                        "event": "ENTRY_PENDING_ROLLED_BACK",
+                        "previous_state": prior_status,
+                        "new_state": SLOT_WAITING_SIGNAL,
+                        "entry_order_id": None,
+                        "reservation_released": had_reservation,
+                        "reject_reason": reject_reason,
+                    },
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "entry_pending_rollback_trace_failed",
+                error=type(exc).__name__,
+                symbol=sym,
+            )
+
+        return {
+            "ok": True,
+            "rolled_back": True,
+            "noop": False,
+            "reason": lifecycle_reason,
+            "previous_state": prior_status,
+            "new_state": SLOT_WAITING_SIGNAL,
+            "entry_order_id": None,
+            "reservation_released": had_reservation,
+            "lifecycle_reason": lifecycle_reason,
+            "slot_id": int(slot.slot_id),
+            "orders_created": 0,
+        }
+
+    def _order_has_broker_uuid(
+        self, user_broker_account_id: int, *, symbol: str
+    ) -> bool:
+        """심볼에 broker 연계 주문(uuid)이 활성 상태면 True."""
+        from sqlalchemy import func
+
+        from stock_platform.order.entities import TradingOrderEntity
+
+        open_statuses = (
+            "CREATED",
+            "PENDING",
+            "SENT",
+            "ACCEPTED",
+            "PARTIALLY_FILLED",
+            "CANCEL_REQUESTED",
+            "REPLACE_REQUESTED",
+        )
+        count = self._session.scalar(
+            select(func.count())
+            .select_from(TradingOrderEntity)
+            .where(
+                TradingOrderEntity.user_broker_account_id
+                == int(user_broker_account_id),
+                TradingOrderEntity.symbol == str(symbol).upper(),
+                TradingOrderEntity.status_code.in_(open_statuses),
+                TradingOrderEntity.broker_order_id.is_not(None),
+            )
+        )
+        return int(count or 0) > 0
+
+    def _has_active_cancel_or_recovery(
+        self, user_broker_account_id: int, *, symbol: str
+    ) -> bool:
+        """cancel 진행 또는 open recovery conflict면 True."""
+        from sqlalchemy import func
+
+        from stock_platform.order.entities import TradingOrderEntity
+
+        cancel_n = self._session.scalar(
+            select(func.count())
+            .select_from(TradingOrderEntity)
+            .where(
+                TradingOrderEntity.user_broker_account_id
+                == int(user_broker_account_id),
+                TradingOrderEntity.symbol == str(symbol).upper(),
+                TradingOrderEntity.status_code.in_(
+                    ("CANCEL_REQUESTED", "REPLACE_REQUESTED")
+                ),
+            )
+        )
+        if int(cancel_n or 0) > 0:
+            return True
+        try:
+            from stock_platform.broker.recovery_conflict_constants import (
+                ACTIVE_REVIEW_STATUSES,
+            )
+            from stock_platform.broker.recovery_conflict_entities import (
+                BrokerRecoveryConflictEntity,
+            )
+
+            status_vals = tuple(str(s.value) for s in ACTIVE_REVIEW_STATUSES)
+            conflict_n = self._session.scalar(
+                select(func.count())
+                .select_from(BrokerRecoveryConflictEntity)
+                .where(
+                    BrokerRecoveryConflictEntity.user_broker_account_id
+                    == int(user_broker_account_id),
+                    BrokerRecoveryConflictEntity.market_code
+                    == str(symbol).upper(),
+                    BrokerRecoveryConflictEntity.review_status.in_(status_vals),
+                )
+            )
+            return int(conflict_n or 0) > 0
+        except Exception:  # noqa: BLE001
+            return False
+
     def _has_local_open_order(
         self, user_broker_account_id: int, *, symbol: str
     ) -> bool:
