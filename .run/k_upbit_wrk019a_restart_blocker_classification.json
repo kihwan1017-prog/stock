@@ -1,0 +1,337 @@
+{
+  "WORK_ID": "WRK-20260829-019B-UPBIT-RESTART-SAFETY-BLOCKER-CLASSIFICATION",
+  "PARENT": "WRK-20260829-019A-UPBIT-H2-H3-FORWARD-SHADOW-RUNTIME-ACTIVATION",
+  "BASE_HEAD": "4395f93b7e137f4f20201cfb6ff6340f430bd3b5",
+  "RESULT_HEAD": null,
+  "HISTORY": {
+    "WRK019": "COMPLETED H2_H3_FORWARD_SHADOW_INFRA_READY",
+    "WRK019A": "COMPLETED RESTART_SKIPPED_ACTIVE_ORDER_SAFETY",
+    "WRK014": "evidence file exists (.run/k_upbit_durable_exit_intent_retry.*) but no DB work_history row"
+  },
+  "HTTP_OPS_STATUS": {
+    "LIVE": "ON",
+    "ARM": "ON",
+    "LEASE": "ACTIVE",
+    "STACK": "4/4 RUNNING",
+    "FEED": "REAL_FRESH",
+    "AUTO_TRADING_READY": true,
+    "runtime": "RUNNING",
+    "runner": "RUNNING",
+    "outbox_worker": "RUNNING",
+    "exit_monitor": "RUNNING"
+  },
+  "OPS_OPEN_ORDERS_SUMMARY": {
+    "total_open_orders": 5,
+    "manual_open_orders": 5,
+    "auto_open_orders": 0,
+    "unknown_open_orders": 0,
+    "auto_open_order_limit": 1,
+    "remote_open_state": "FRESH",
+    "source": "UPBIT_REST_WAIT_WATCH"
+  },
+  "FUNNEL_STAGES": {
+    "FEED": 0,
+    "SCANNER": 102,
+    "CANDIDATE": 0,
+    "ANALYSIS": 0,
+    "SELECTION": 2,
+    "WAITING": 3,
+    "ENTRY_EVALUATION": 2178,
+    "ENTRY_PASS": 0,
+    "ENTRY_PENDING": 0,
+    "ENTRY_PENDING_STUCK": 0,
+    "ADMISSION": 0,
+    "ORDER": 0,
+    "FILL": 0
+  },
+  "REMOTE_OPEN_ORDERS": {
+    "TOTAL": 5,
+    "AUTO": 0,
+    "MANUAL": 5,
+    "UNKNOWN": 0,
+    "RESTART_SENSITIVE": false,
+    "exposure": {
+      "open_order_count": 0,
+      "auto_open_orders": 0,
+      "manual_open_orders": 5,
+      "unknown_open_orders": 0,
+      "total_open_orders": 5,
+      "local_open_order_count": 0,
+      "local_auto_open_order_count": 0,
+      "local_manual_open_order_count": 0,
+      "remote_open_order_count": 5,
+      "remote_unmapped_open_order_count": 5,
+      "remote_unmapped_manual_open_order_count": 5,
+      "mapped_remote_open_order_count": 0,
+      "remote_open_state": "FRESH",
+      "open_order_source": "UPBIT_REST_WAIT_WATCH",
+      "ownership_reason_code": null
+    },
+    "rest_error": null,
+    "orders": [
+      {
+        "symbol": "KRW-BTC",
+        "side": "ask",
+        "broker_order_id_masked": "53e9fdb0…8a2f",
+        "identifier_masked": null,
+        "created_at": "2026-08-28T15:00:44+09:00",
+        "remaining_qty": "0.00090391",
+        "executed_qty": "0",
+        "broker_status": "wait",
+        "ord_type": "limit",
+        "classification": "MANUAL",
+        "mapped_to_local": false,
+        "local_match": null,
+        "links": {
+          "StrategySignal": false,
+          "EntryExecutionTrace": false,
+          "canonical_order": false,
+          "EntryLifecycle_slot": false,
+          "ExitIntent": false,
+          "RecoveryCancel": false
+        }
+      },
+      {
+        "symbol": "KRW-BTC",
+        "side": "ask",
+        "broker_order_id_masked": "539f3fd7…f864",
+        "identifier_masked": null,
+        "created_at": "2026-08-25T11:46:24+09:00",
+        "remaining_qty": "0.00342889",
+        "executed_qty": "0",
+        "broker_status": "wait",
+        "ord_type": "limit",
+        "classification": "MANUAL",
+        "mapped_to_local": false,
+        "local_match": null,
+        "links": {
+          "StrategySignal": false,
+          "EntryExecutionTrace": false,
+          "canonical_order": false,
+          "EntryLifecycle_slot": false,
+          "ExitIntent": false,
+          "RecoveryCancel": false
+        }
+      },
+      {
+        "symbol": "KRW-SKY",
+        "side": "ask",
+        "broker_order_id_masked": "cf96fcd7…cf2a",
+        "identifier_masked": null,
+        "created_at": "2026-08-23T23:30:46+09:00",
+        "remaining_qty": "990.09900991",
+        "executed_qty": "0",
+        "broker_status": "wait",
+        "ord_type": "limit",
+        "classification": "MANUAL",
+        "mapped_to_local": false,
+        "local_match": null,
+        "links": {
+          "StrategySignal": false,
+          "EntryExecutionTrace": false,
+          "canonical_order": false,
+          "EntryLifecycle_slot": false,
+          "ExitIntent": false,
+          "RecoveryCancel": false
+        }
+      },
+      {
+        "symbol": "KRW-DOGE",
+        "side": "ask",
+        "broker_order_id_masked": "a8628c58…a9f1",
+        "identifier_masked": null,
+        "created_at": "2026-08-22T12:27:33+09:00",
+        "remaining_qty": "1360.54421769",
+        "executed_qty": "0",
+        "broker_status": "wait",
+        "ord_type": "limit",
+        "classification": "MANUAL",
+        "mapped_to_local": false,
+        "local_match": null,
+        "links": {
+          "StrategySignal": false,
+          "EntryExecutionTrace": false,
+          "canonical_order": false,
+          "EntryLifecycle_slot": false,
+          "ExitIntent": false,
+          "RecoveryCancel": false
+        }
+      },
+      {
+        "symbol": "KRW-ETH",
+        "side": "ask",
+        "broker_order_id_masked": "4ffedd5d…2f13",
+        "identifier_masked": null,
+        "created_at": "2026-08-22T07:04:24+09:00",
+        "remaining_qty": "0.11001101",
+        "executed_qty": "0",
+        "broker_status": "wait",
+        "ord_type": "limit",
+        "classification": "MANUAL",
+        "mapped_to_local": false,
+        "local_match": null,
+        "links": {
+          "StrategySignal": false,
+          "EntryExecutionTrace": false,
+          "canonical_order": false,
+          "EntryLifecycle_slot": false,
+          "ExitIntent": false,
+          "RecoveryCancel": false
+        }
+      }
+    ],
+    "manual_restart_impact": "Manual unmapped remote orders are NOT managed by autotrading cancel/recovery/exit-intent paths. Backend restart does not create/cancel them. Wait-watch snapshot reloads after restart. They do not block unattended lease restore by AUTO open-order gate (auto_open_count excludes MANUAL)."
+  },
+  "ENTRY_PENDING_PROVENANCE": {
+    "COUNT": 0,
+    "FUNNEL_ENTRY_PENDING": 0,
+    "ROWS": [],
+    "CLASSIFICATION": "NONE_NOW_PRIOR_LIKELY_RESOLVED",
+    "REMOTE_ORDER_EXISTS": false,
+    "CANONICAL_ORDER_STATUS": null,
+    "AGE": null,
+    "ROOT_CAUSE": "No ENTRY_PENDING slot currently; WRK-019A ENTRY_PENDING=1 not present now",
+    "ALL_SLOTS": [
+      {
+        "slot_id": 4,
+        "slot_no": 1,
+        "symbol": "KRW-ADA",
+        "status": "OPEN",
+        "entry_order_id": 1925,
+        "candidate_selection_id": 213,
+        "reserved_amount_krw": null,
+        "position_binding_id": 60,
+        "updated_at": "2026-08-28 07:30:25.390204+09:00"
+      },
+      {
+        "slot_id": 5,
+        "slot_no": 2,
+        "symbol": "KRW-NEAR",
+        "status": "WAITING_SIGNAL",
+        "entry_order_id": null,
+        "candidate_selection_id": 358,
+        "reserved_amount_krw": null,
+        "position_binding_id": null,
+        "updated_at": "2026-08-29 12:43:24.682359+09:00"
+      },
+      {
+        "slot_id": 6,
+        "slot_no": 3,
+        "symbol": "KRW-TRUMP",
+        "status": "COOLDOWN",
+        "entry_order_id": 1919,
+        "candidate_selection_id": 359,
+        "reserved_amount_krw": null,
+        "position_binding_id": 77,
+        "updated_at": "2026-08-29 12:40:23.254587+09:00"
+      },
+      {
+        "slot_id": 7,
+        "slot_no": 4,
+        "symbol": "KRW-DOS",
+        "status": "WAITING_SIGNAL",
+        "entry_order_id": null,
+        "candidate_selection_id": 357,
+        "reserved_amount_krw": null,
+        "position_binding_id": null,
+        "updated_at": "2026-08-29 12:43:24.682359+09:00"
+      },
+      {
+        "slot_id": 8,
+        "slot_no": 5,
+        "symbol": "KRW-ORBS",
+        "status": "WAITING_SIGNAL",
+        "entry_order_id": null,
+        "candidate_selection_id": 360,
+        "reserved_amount_krw": null,
+        "position_binding_id": null,
+        "updated_at": "2026-08-29 12:43:24.682359+09:00"
+      }
+    ],
+    "WRK019A_THEN": {
+      "funnel_ENTRY_PENDING": 1,
+      "classification_then_unknown_exact_row": true,
+      "now": "RESOLVED_OR_ABSENT",
+      "now_classification": "NONE_NOW_PRIOR_LIKELY_RESOLVED",
+      "likely": "Transient VALID_INTERNAL_PENDING or short-lived slot; no ENTRY_PENDING slot remains; not STALE currently"
+    }
+  },
+  "ACTIVE_CANCEL_RECOVERY": {
+    "CANCEL": "NONE",
+    "RECOVERY": "NONE",
+    "ORDER_SUBMISSION": "NONE",
+    "EXECUTOR": "NONE",
+    "note": "Prior probe matched status LIKE %CANCEL% including terminal CANCELLED; no non-terminal local orders",
+    "local_nonterminal_open": [],
+    "terminal_cancelled_sample_count": 11
+  },
+  "EXIT_INTENT_STATE": {
+    "STATE": "NONE",
+    "rows": [],
+    "note": "operation.upbit_exit_intent: 0 incomplete rows for UBA 1380 (corrected column exit_intent_id)"
+  },
+  "RESTART_SAFETY_SEMANTICS": {
+    "manual_always_unsafe": false,
+    "auto_entry_pending_always_unsafe": true,
+    "unattended_restore_can_recover": [
+      "LIVE/ARM/Activation from active lease",
+      "stack components via unattended restore",
+      "remote MANUAL open orders remain at broker (untouched)"
+    ],
+    "must_not_restart": [
+      "AUTO open/in-flight order submission",
+      "active cancel/recovery",
+      "active exit intent in-flight",
+      "ENTRY_PENDING with live broker order"
+    ],
+    "CLASSIFICATION": "RESTART_BLOCKER_PARTIALLY_FALSE_POSITIVE",
+    "wrk019a_precheck_assessment": "Over-conservative: treated MANUAL remote open + transient ENTRY_PENDING as hard blockers without distinguishing AUTO lifecycle sensitivity."
+  },
+  "H2_H3_RUNTIME_STATE": {
+    "PROCESS_REGISTERED": false,
+    "SCHEDULER_ENABLED": false,
+    "LAST_RUN": null,
+    "LAST_SUCCESS": null,
+    "LAST_ERROR": null,
+    "run_count": 0,
+    "VALID_FORWARD_SAMPLES": 0,
+    "BOOTSTRAP_MANUAL": 2,
+    "rows": [
+      {
+        "shadow_id": 1,
+        "strategy": "H2",
+        "symbol": "KRW-BTC",
+        "evaluated_at": "2026-08-29 10:00:00+09:00",
+        "created_at": "2026-08-29 10:09:29.035196+09:00",
+        "outcome_status": "PENDING",
+        "provenance": null,
+        "close_snap": "100.0",
+        "source_class": "BOOTSTRAP_MANUAL"
+      },
+      {
+        "shadow_id": 3,
+        "strategy": "H3",
+        "symbol": "KRW-ETH",
+        "evaluated_at": "2026-08-29 10:15:00+09:00",
+        "created_at": "2026-08-29 10:09:29.035196+09:00",
+        "outcome_status": "PENDING",
+        "provenance": null,
+        "close_snap": "200.0",
+        "source_class": "BOOTSTRAP_MANUAL"
+      }
+    ],
+    "note": "configured=false expected until process restart loads WRK-019 job"
+  },
+  "FINAL_CASE": "SAFE_NOW",
+  "FINAL_CLASSIFICATION": "RESTART_BLOCKER_PARTIALLY_FALSE_POSITIVE",
+  "NEXT_ACTION": "RUN_WRK019A_RESTART_ACTIVATION_ONLY",
+  "SAFETY_ASSERTIONS": {
+    "CODE_CHANGED": false,
+    "RESTART_COUNT": 0,
+    "LIVE_ARM_MUTATED": false,
+    "ORDERS_CREATED": 0,
+    "ORDERS_CANCELLED": 0,
+    "DB_MUTATED": false
+  },
+  "corrected_at": "2026-08-29T03:47:03.997350+00:00"
+}
