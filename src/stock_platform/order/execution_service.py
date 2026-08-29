@@ -439,6 +439,7 @@ class OrderExecutionService:
                         else str(command.order_type or "")
                     ),
                     order_amount=command.order_amount,
+                    order_source=str(command.order_source or "MANUAL"),
                 )
                 if not safety.allowed:
                     return self._blocked(safety.reason_code)

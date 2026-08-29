@@ -292,7 +292,7 @@ export function UpbitAutotradingSettingsWorkspace({
         policy.candidate_switch_min_score_delta ?? 8,
       ),
       portfolio_daily_entry_limit: Number(
-        policy.portfolio_daily_entry_limit ?? 10,
+        policy.portfolio_daily_entry_limit ?? 6,
       ),
       consecutive_loss_limit: Number(policy.consecutive_loss_limit ?? 3),
     };

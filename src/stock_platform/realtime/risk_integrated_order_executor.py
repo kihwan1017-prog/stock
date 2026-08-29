@@ -524,15 +524,28 @@ class RiskIntegratedRealtimeOrderExecutor:
                 BrokerPositionSnapshotEntity,
             )
 
-            open_position_count = self._session.scalar(
-                select(func.count())
-                .select_from(BrokerPositionSnapshotEntity)
-                .where(
-                    BrokerPositionSnapshotEntity.user_broker_account_id
-                    == int(user_broker_account_id),
-                    BrokerPositionSnapshotEntity.quantity > 0,
+            broker_u = str(broker_code or "").upper()
+            if broker_u == "UPBIT":
+                # AUTO slot: AUTO-owned + ENTRY reservation only
+                from stock_platform.operation.upbit_full_market.auto_slot_count import (
+                    count_auto_slots_used,
                 )
-            ) or 0
+
+                open_position_count = count_auto_slots_used(
+                    self._session,
+                    user_broker_account_id=int(user_broker_account_id),
+                    broker_code="UPBIT",
+                )
+            else:
+                open_position_count = self._session.scalar(
+                    select(func.count())
+                    .select_from(BrokerPositionSnapshotEntity)
+                    .where(
+                        BrokerPositionSnapshotEntity.user_broker_account_id
+                        == int(user_broker_account_id),
+                        BrokerPositionSnapshotEntity.quantity > 0,
+                    )
+                ) or 0
         else:
             open_position_count = self._session.scalar(
                 select(func.count())
@@ -558,9 +571,16 @@ class RiskIntegratedRealtimeOrderExecutor:
             live_unlock_token=unlock_token,
         )
         if not decision.allowed:
+            reason = decision.reason_code
+            # UPBIT AUTO slot 한도 — canonical reason (compat: MAX_OPEN alias)
+            if (
+                str(broker_code or "").upper() == "UPBIT"
+                and reason == "MAX_OPEN_POSITIONS_REACHED"
+            ):
+                reason = "AUTO_POSITION_LIMIT_REACHED"
             return self._skipped(
                 signal,
-                decision.reason_code,
+                reason,
             )
 
         from stock_platform.order.live_dry_run import is_live_dry_run_mode

@@ -54,7 +54,7 @@ export const CONSERVATIVE_PORTFOLIO_DEFAULTS = {
   candidate_hold_seconds: 1800,
   candidate_max_wait_seconds: 10800,
   candidate_switch_min_score_delta: 8,
-  portfolio_daily_entry_limit: 10,
+  portfolio_daily_entry_limit: 6,
   daily_loss_limit_pct: 0.02,
   consecutive_loss_limit: 3,
 } as const;

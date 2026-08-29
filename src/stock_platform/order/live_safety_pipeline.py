@@ -86,6 +86,7 @@ class LiveOrderSafetyPipeline:
         require_arm: bool = True,
         order_type: str | None = None,
         order_amount: Decimal | None = None,
+        order_source: str | None = None,
     ) -> LiveSafetyDecision:
         env = (environment or "LIVE").upper()
         if env != "LIVE":
@@ -489,10 +490,88 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 7) Daily order / submit / filled-entry — ENTRY 전용 (EXIT 제외)
+        # 7) Daily ENTRY quota — EXIT(SELL)는 절대 미적용
+        # UPBIT REAL AUTO BUY: portfolio_daily_entry_limit (BUY only) SoT
+        # 기타 market/MANUAL: 기존 V1/V2 (Kiwoom 등 호환)
         # submit reservation은 최종 PASS 직전에서만 수행 (중간 실패 leak 방지)
         submit_reserve_plan: dict[str, Any] | None = None
-        if not verified_exit:
+        source_u = str(order_source or "").strip().upper()
+        base_detail["order_source"] = source_u or None
+        # SELL / verified EXIT → ENTRY quota 완전 분리 (표시용 count만)
+        if side_u == "SELL" or verified_exit:
+            base_detail["daily_entry_quota_applies"] = False
+            base_detail["daily_order_count"] = self._count_orders_today(uba_id)
+            if broker == "UPBIT":
+                try:
+                    from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+                        resolve_portfolio_daily_entry_limit,
+                    )
+                    from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
+                        summarize_portfolio_daily_entries,
+                    )
+
+                    lim = resolve_portfolio_daily_entry_limit(
+                        self._session, uba_id
+                    )
+                    usage = summarize_portfolio_daily_entries(
+                        self._session, uba_id, daily_limit=lim
+                    )
+                    base_detail["daily_entry_limit"] = usage["entry_limit"]
+                    base_detail["daily_entry_used"] = usage["entry_count"]
+                    base_detail["daily_exit_excluded_from_entry_quota"] = True
+                except Exception:  # noqa: BLE001
+                    pass
+        elif (
+            broker == "UPBIT"
+            and side_u == "BUY"
+            and (
+                source_u == "AUTO"
+                or (not source_u and strategy_id is not None)
+            )
+        ):
+            from stock_platform.operation.upbit_full_market.constants import (
+                REASON_DAILY_ENTRY_LIMIT_REACHED,
+            )
+            from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+                resolve_portfolio_daily_entry_limit,
+            )
+            from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
+                summarize_portfolio_daily_entries,
+            )
+            from stock_platform.order.order_limit_policy_v2 import (
+                trading_date_kst,
+            )
+
+            day = trading_date_kst()
+            lim = resolve_portfolio_daily_entry_limit(self._session, uba_id)
+            usage = summarize_portfolio_daily_entries(
+                self._session, uba_id, daily_limit=lim
+            )
+            base_detail["order_limit_policy_version"] = (
+                "UPBIT_DAILY_ENTRY_V1"
+            )
+            base_detail["order_limit_trading_date"] = day.isoformat()
+            base_detail["daily_entry_quota_applies"] = True
+            base_detail["daily_entry_limit"] = usage["entry_limit"]
+            base_detail["daily_entry_used"] = usage["entry_count"]
+            base_detail["daily_entry_count_semantics"] = usage[
+                "count_source"
+            ]
+            # legacy 필드 — 모니터링 호환 (의미는 ENTRY used/limit)
+            base_detail["daily_order_limit"] = usage["entry_limit"]
+            base_detail["daily_order_count"] = usage["entry_count"]
+            if usage["blocking"]:
+                return _fail(
+                    REASON_DAILY_ENTRY_LIMIT_REACHED,
+                    DAILY_LIMIT_REJECT,
+                    {
+                        "limit": usage["entry_limit"],
+                        "count": usage["entry_count"],
+                        "policy_version": "UPBIT_DAILY_ENTRY_V1",
+                        "legacy_reason": "PORTFOLIO_DAILY_ENTRY_LIMIT",
+                    },
+                )
+        elif not verified_exit:
             from stock_platform.order.order_limit_policy_v2 import (
                 ORDER_LIMIT_V1,
                 ORDER_LIMIT_V2,
@@ -567,7 +646,7 @@ class LiveOrderSafetyPipeline:
                     "trading_date": day,
                 }
             else:
-                # V1 legacy — UBA-wide CREATE 집계 (오늘 #1798 semantics 보존)
+                # V1 legacy — Kiwoom/비-UPBIT-AUTO (BUY+SELL CREATE)
                 daily_count = self._count_orders_today(uba_id)
                 base_detail["daily_order_count"] = daily_count
                 base_detail["daily_order_limit"] = int(policy.daily_order_limit)
@@ -581,8 +660,6 @@ class LiveOrderSafetyPipeline:
                             "policy_version": ORDER_LIMIT_V1,
                         },
                     )
-        else:
-            base_detail["daily_order_count"] = self._count_orders_today(uba_id)
 
         # 8a) Account Hard Safety — Kill/CRITICAL만 (수동 MTM LIMIT_REACHED는 ENTRY 비차단)
         if not verified_exit:

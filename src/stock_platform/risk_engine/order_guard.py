@@ -248,6 +248,31 @@ class DatabaseBackedRiskOrderGuard:
             )
         is_risk_reducing = verified_exit
 
+        # UPBIT AUTO BUY: PositionLimit 카운트만 AUTO slot (exposure는 전량 유지)
+        broker_u = str(self._broker_code or "").upper()
+        source_u = str(order_source or "").upper()
+        if (
+            is_live
+            and broker_u == "UPBIT"
+            and side_u == "BUY"
+            and not verified_exit
+            and source_u == "AUTO"
+            and uba_id is not None
+        ):
+            from stock_platform.operation.upbit_full_market.auto_slot_count import (
+                count_auto_slots_used,
+            )
+
+            auto_slots = count_auto_slots_used(
+                self._session,
+                user_broker_account_id=int(uba_id),
+                broker_code="UPBIT",
+            )
+            account_state = replace(
+                account_state,
+                open_position_count=int(auto_slots),
+            )
+
         order = RiskOrderRequest(
             exchange_code=exchange_code,
             symbol=symbol,

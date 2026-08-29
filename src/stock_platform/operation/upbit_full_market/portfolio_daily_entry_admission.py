@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 
 KST = ZoneInfo("Asia/Seoul")
 
+# legacy alias — UI/로그 호환. canonical은 DAILY_ENTRY_LIMIT_REACHED.
 REASON_PORTFOLIO_DAILY_ENTRY_LIMIT = "PORTFOLIO_DAILY_ENTRY_LIMIT"
+REASON_DAILY_ENTRY_LIMIT_REACHED = "DAILY_ENTRY_LIMIT_REACHED"
 
 _PROCESS_LOCKS: dict[str, threading.RLock] = {}
 _PROCESS_LOCKS_GUARD = threading.Lock()
@@ -215,7 +217,8 @@ def try_final_admit_portfolio_daily_entry(
         return {
             **base,
             "allowed": False,
-            "reason": REASON_PORTFOLIO_DAILY_ENTRY_LIMIT,
+            "reason": REASON_DAILY_ENTRY_LIMIT_REACHED,
+            "reason_legacy": REASON_PORTFOLIO_DAILY_ENTRY_LIMIT,
             "event": "DAILY_ENTRY_FINAL_ADMISSION_BLOCKED",
         }
 

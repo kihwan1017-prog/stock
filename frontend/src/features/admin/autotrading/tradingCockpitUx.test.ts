@@ -30,7 +30,10 @@ describe("entryBlockReasonKo", () => {
     );
     expect(entryBlockReasonKo("RSI_TOO_HIGH").known).toBe(true);
     expect(entryBlockReasonShortKo("MAX_OPEN_POSITIONS_REACHED")).toContain(
-      "보유 한도",
+      "AUTO 슬롯",
+    );
+    expect(entryBlockReasonShortKo("DAILY_ENTRY_LIMIT_REACHED")).toContain(
+      "ENTRY",
     );
     expect(Object.keys(ENTRY_BLOCK_REASON_KO).length).toBeGreaterThanOrEqual(11);
   });

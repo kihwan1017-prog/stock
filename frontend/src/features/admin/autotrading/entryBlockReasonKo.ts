@@ -26,7 +26,15 @@ export const ENTRY_BLOCK_REASON_KO: Record<string, string> = {
     "매수 조건 평가가 일정 시간 이상 갱신되지 않았습니다.",
   SIGNAL_EMIT_SUPPRESSED: "중복 매수 신호가 억제되었습니다.",
   MAX_OPEN_POSITIONS_REACHED:
-    "계좌 전체 보유 종목 수 한도에 도달했습니다(수동 보유 포함).",
+    "AUTO 보유 슬롯 한도에 도달했습니다(수동 보유는 슬롯 미소비).",
+  AUTO_POSITION_LIMIT_REACHED:
+    "AUTO 보유 슬롯 한도에 도달했습니다(수동/UNKNOWN 미포함).",
+  DAILY_ENTRY_LIMIT_REACHED:
+    "오늘 AUTO 신규 진입(ENTRY BUY) 한도에 도달했습니다.",
+  PORTFOLIO_DAILY_ENTRY_LIMIT:
+    "오늘 AUTO 신규 진입(ENTRY BUY) 한도에 도달했습니다.",
+  DAILY_ORDER_LIMIT_EXCEEDED:
+    "일일 주문 한도(레거시)에 도달했습니다.",
   PENDING_ENTRY_LIMIT: "대기 중 진입 주문 수 한도에 도달했습니다.",
   PORTFOLIO_PENDING_ENTRY_LIMIT:
     "포트폴리오 대기 진입 한도에 도달했습니다.",
@@ -62,7 +70,11 @@ export const ENTRY_BLOCK_REASON_SHORT_KO: Record<string, string> = {
   RISK_BLOCK: "리스크 차단",
   ENTRY_EVALUATOR_STALE: "평가 갱신 지연",
   SIGNAL_EMIT_SUPPRESSED: "중복 매수 신호 억제",
-  MAX_OPEN_POSITIONS_REACHED: "계좌 보유 한도(수동 포함)",
+  MAX_OPEN_POSITIONS_REACHED: "AUTO 슬롯 한도",
+  AUTO_POSITION_LIMIT_REACHED: "AUTO 슬롯 한도",
+  DAILY_ENTRY_LIMIT_REACHED: "일일 ENTRY 한도",
+  PORTFOLIO_DAILY_ENTRY_LIMIT: "일일 ENTRY 한도",
+  DAILY_ORDER_LIMIT_EXCEEDED: "일일 주문 한도(레거시)",
   PENDING_ENTRY_LIMIT: "대기 진입 한도",
   PORTFOLIO_PENDING_ENTRY_LIMIT: "포트폴리오 대기 한도",
   FULL_MARKET_NO_WAITING_SIGNAL_SLOT: "대기 슬롯 없음",

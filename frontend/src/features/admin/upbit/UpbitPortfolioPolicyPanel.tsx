@@ -71,7 +71,7 @@ export function UpbitPortfolioPolicyPanel({
   const entryLimit =
     dailyEntry?.entry_limit != null && Number.isFinite(Number(dailyEntry.entry_limit))
       ? Number(dailyEntry.entry_limit)
-      : Number(entryInitial.portfolio_daily_entry_limit ?? 10);
+      : Number(entryInitial.portfolio_daily_entry_limit ?? 6);
   const remaining =
     dailyEntry?.remaining != null && Number.isFinite(Number(dailyEntry.remaining))
       ? Number(dailyEntry.remaining)

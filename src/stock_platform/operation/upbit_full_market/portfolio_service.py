@@ -658,6 +658,31 @@ class UpbitPortfolioService:
                 or DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT
             ),
         )
+        from stock_platform.operation.upbit_full_market.auto_slot_count import (
+            summarize_position_ownership,
+        )
+
+        ownership = summarize_position_ownership(
+            self._session,
+            user_broker_account_id=int(user_broker_account_id),
+            broker_code="UPBIT",
+        )
+        auto_slot_limit = int(policy["max_positions"])
+        # Risk max_position_count와 정렬 — AUTO slot 한도는 risk 쪽 6 유지
+        try:
+            from stock_platform.risk_engine.resolved_policy import (
+                ResolvedRiskPolicyResolver,
+            )
+
+            risk_pol = ResolvedRiskPolicyResolver(self._session).resolve(
+                user_id=None,
+                user_broker_account_id=int(user_broker_account_id),
+            )
+            if int(risk_pol.max_position_count) > 0:
+                auto_slot_limit = int(risk_pol.max_position_count)
+        except Exception:  # noqa: BLE001
+            pass
+
         return {
             "mode": assignment.get("mode"),
             "portfolio_enabled": bool(assignment.get("portfolio_enabled")),
@@ -673,10 +698,18 @@ class UpbitPortfolioService:
             "entry_state": policy["entry_state"],
             "daily_entry": daily_entry,
             "daily_entry_label_ko": (
-                f"오늘 실제 진입 {daily_entry['entry_count']} / "
+                f"오늘 AUTO 진입 {daily_entry['entry_count']} / "
                 f"{daily_entry['entry_limit']} "
                 f"(남은 {daily_entry['remaining']})"
             ),
+            "daily_entry_limit": daily_entry["entry_limit"],
+            "daily_entry_used": daily_entry["entry_count"],
+            "auto_slot_limit": auto_slot_limit,
+            "auto_slot_used": ownership["auto_slots_used"],
+            "manual_holdings": ownership["manual_position_count"],
+            "unknown_holdings": ownership["unknown_position_count"],
+            "account_total_holdings": ownership["account_total_holdings"],
+            "position_ownership": ownership,
             "slot_badges": [
                 {
                     "slot_no": s["slot_no"],

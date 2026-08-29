@@ -166,10 +166,51 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
           <Alert
             type="info"
             showIcon
-            title="오늘 신규 진입"
-            description={`${dailyEntry.consumed ?? dailyEntry.entry_count ?? "—"} / ${dailyEntry.limit ?? dailyEntry.daily_limit ?? "—"} (잔여 ${dailyEntry.remaining ?? "—"})`}
+            title="오늘 AUTO 신규 진입 (ENTRY)"
+            description={`${dailyEntry.consumed ?? dailyEntry.entry_count ?? "—"} / ${dailyEntry.limit ?? dailyEntry.entry_limit ?? dailyEntry.daily_limit ?? "—"} (잔여 ${dailyEntry.remaining ?? "—"}) · EXIT는 미포함`}
           />
         ) : null}
+
+        {(() => {
+          const sto = rec(data.short_term_operation);
+          if (Object.keys(sto).length === 0) return null;
+          const pw = rec(sto.performance_windows);
+          const today = rec(pw.TODAY);
+          const d7 = rec(pw["7D"]);
+          const d30 = rec(pw["30D"]);
+          return (
+            <Card size="small" title="Short-Term Operation V1">
+              <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
+                <Descriptions.Item label="Daily ENTRY">
+                  {String(sto.daily_entry_used ?? "—")} /{" "}
+                  {String(sto.daily_entry_limit ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="AUTO 슬롯">
+                  {String(sto.auto_slot_used ?? "—")} /{" "}
+                  {String(sto.auto_slot_limit ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="수동 보유">
+                  {String(sto.manual_holdings ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="UNKNOWN 보유">
+                  {String(sto.unknown_holdings ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="계좌 전체 보유">
+                  {String(sto.account_total_holdings ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="TODAY RT">
+                  {String(today.round_trips ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="7D BUY">
+                  {String(d7.auto_buy_count ?? "—")}
+                </Descriptions.Item>
+                <Descriptions.Item label="30D BUY">
+                  {String(d30.auto_buy_count ?? "—")}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+          );
+        })()}
 
         {why.length > 0 ? (
           <Alert

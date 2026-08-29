@@ -447,6 +447,32 @@ def _market_section(
     if isinstance(fm.get("daily_entry"), dict):
         daily_entry = fm["daily_entry"]
 
+    short_term: dict[str, Any] = {}
+    if broker == "UPBIT":
+        short_term = {
+            "daily_entry_used": fm.get("daily_entry_used")
+            or daily_entry.get("entry_count"),
+            "daily_entry_limit": fm.get("daily_entry_limit")
+            or daily_entry.get("entry_limit"),
+            "auto_slot_used": fm.get("auto_slot_used"),
+            "auto_slot_limit": fm.get("auto_slot_limit"),
+            "manual_holdings": fm.get("manual_holdings"),
+            "unknown_holdings": fm.get("unknown_holdings"),
+            "account_total_holdings": fm.get("account_total_holdings"),
+        }
+        try:
+            from stock_platform.operation.upbit_full_market.natural_auto_performance import (
+                build_natural_auto_performance_windows,
+            )
+
+            short_term["performance_windows"] = (
+                build_natural_auto_performance_windows(
+                    session, user_broker_account_id=int(uba_id)
+                )
+            )
+        except Exception:  # noqa: BLE001
+            short_term["performance_windows"] = {"error": "UNAVAILABLE"}
+
     pipeline = {}
     if broker == "UPBIT":
         pipeline = _pipeline_unique_stages(
@@ -471,6 +497,7 @@ def _market_section(
             "open_position_count": open_count,
         },
         "daily_entry": daily_entry,
+        "short_term_operation": short_term,
         "open_positions": (perf.get("open_positions") or [])[:10],
         "recent_trades": (perf.get("recent_closed_trades") or [])[:5],
         "why_no_trade": _why_no_trade_ko(
