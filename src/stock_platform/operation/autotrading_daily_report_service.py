@@ -472,6 +472,28 @@ def _market_section(
             )
         except Exception:  # noqa: BLE001
             short_term["performance_windows"] = {"error": "UNAVAILABLE"}
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.summary import (
+                summarize_exit_strategy_shadow,
+            )
+
+            ess = summarize_exit_strategy_shadow(
+                session, user_broker_account_id=int(uba_id)
+            )
+            short_term["exit_shadow"] = {
+                "natural_entries": ess.get("natural_entries"),
+                "active_experiments": ess.get("active_experiments"),
+                "matured_or_triggered": ess.get("matured_or_triggered"),
+                "best_net_variant": (ess.get("best_net_variant") or {}).get(
+                    "variant_code"
+                ),
+                "best_pf_variant": (ess.get("best_pf_variant") or {}).get(
+                    "variant_code"
+                ),
+                "research_only": True,
+            }
+        except Exception:  # noqa: BLE001
+            short_term["exit_shadow"] = {"error": "UNAVAILABLE"}
 
     pipeline = {}
     if broker == "UPBIT":

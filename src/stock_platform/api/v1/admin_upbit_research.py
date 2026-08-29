@@ -262,6 +262,37 @@ def get_h2_h3_forward_shadow_summary(
     return summarize_for_ui(session)
 
 
+@router.get("/exit-strategy-shadow/summary")
+def get_exit_strategy_shadow_summary(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """WRK Exit Strategy Shadow V1 — RESEARCH ONLY (no REAL promote)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.summary import (
+        summarize_exit_strategy_shadow,
+    )
+
+    return summarize_exit_strategy_shadow(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+    )
+
+
+@router.get("/exit-strategy-shadow/entry/{entry_order_id}")
+def get_exit_strategy_shadow_entry_detail(
+    entry_order_id: int,
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """단일 natural BUY에 대한 exit family 비교."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.summary import (
+        entry_detail_comparison,
+    )
+
+    return entry_detail_comparison(session, entry_order_id=int(entry_order_id))
+
+
 @router.get("/entry-signal-shadow/rows")
 def list_entry_signal_shadow_rows_api(
     uba_id: int = Query(default=1380, ge=1),

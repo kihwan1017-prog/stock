@@ -150,6 +150,17 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 "h2_h3_forward_shadow_scheduler_configure_failed",
                 error=str(exc)[:200],
             )
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.scheduler import (
+                UpbitExitStrategyShadowScheduler,
+            )
+
+            UpbitExitStrategyShadowScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "exit_strategy_shadow_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
 
     def start(self) -> None:
         """lifecycle 진입점 — configure 후 AsyncIOScheduler 기동."""

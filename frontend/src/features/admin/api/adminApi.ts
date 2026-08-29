@@ -774,6 +774,23 @@ export async function getAdminUpbitResearchH2H3ForwardShadowSummary(): Promise<J
   return getJson("/admin/upbit/research/h2-h3-forward-shadow/summary");
 }
 
+/** Exit Strategy Shadow V1 — RESEARCH ONLY (no REAL promote) */
+export async function getAdminUpbitResearchExitStrategyShadowSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/exit-strategy-shadow/summary", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitResearchExitStrategyShadowEntry(
+  entryOrderId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/upbit/research/exit-strategy-shadow/entry/${entryOrderId}`,
+  );
+}
+
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
 export async function getAdminAutotradingResearchStatus(
   params?: Params,

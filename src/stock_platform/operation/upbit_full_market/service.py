@@ -807,6 +807,33 @@ class UpbitFullMarketAssignmentService:
                 entry_quantity=entry_qty,
                 entry_fee=entry_fee,
             )
+            # Exit strategy shadow V1 (SL/TP/Trail/Time — research only)
+            from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
+                enroll_binding_on_open as enroll_exit_strategy_shadow,
+            )
+
+            order_meta = None
+            if entry_order_id is not None:
+                from stock_platform.order.entities import TradingOrderEntity
+
+                _ord = self._session.get(TradingOrderEntity, int(entry_order_id))
+                if _ord is not None and isinstance(
+                    getattr(_ord, "metadata_payload", None), dict
+                ):
+                    order_meta = dict(_ord.metadata_payload)
+            enroll_exit_strategy_shadow(
+                self._session,
+                user_broker_account_id=uba_id,
+                binding_id=int(binding.binding_id),
+                symbol=sym,
+                strategy_id=assignment.strategy_id,
+                entry_order_id=entry_order_id,
+                entry_at=binding.opened_at,
+                entry_price=entry_px,
+                entry_quantity=entry_qty,
+                entry_fee=entry_fee,
+                metadata=order_meta,
+            )
         except Exception:  # noqa: BLE001
             pass
         # OPEN binding → protective quote feed (slot 없어도 GEOD 등 구독)
@@ -905,6 +932,21 @@ class UpbitFullMarketAssignmentService:
                         exit_reason=exit_reason,
                         exit_at=now,
                         exit_price=exit_px,
+                    )
+                    from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
+                        finalize_binding_on_close as finalize_exit_strategy_shadow,
+                    )
+
+                    finalize_exit_strategy_shadow(
+                        self._session,
+                        binding_id=int(b.binding_id),
+                        entry_order_id=getattr(b, "entry_order_id", None),
+                        exit_reason=exit_reason,
+                        exit_at=now,
+                        exit_price=exit_px,
+                        exit_order_id=(
+                            int(exit_oid) if exit_oid is not None else None
+                        ),
                     )
             except Exception:  # noqa: BLE001
                 pass
