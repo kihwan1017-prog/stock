@@ -533,7 +533,8 @@ class LiveOrderSafetyPipeline:
                 REASON_DAILY_ENTRY_LIMIT_REACHED,
             )
             from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
-                resolve_portfolio_daily_entry_limit,
+                MODE_UNLIMITED,
+                resolve_portfolio_daily_entry_policy,
             )
             from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
                 summarize_portfolio_daily_entries,
@@ -543,15 +544,21 @@ class LiveOrderSafetyPipeline:
             )
 
             day = trading_date_kst()
-            lim = resolve_portfolio_daily_entry_limit(self._session, uba_id)
+            mode, lim = resolve_portfolio_daily_entry_policy(
+                self._session, uba_id
+            )
             usage = summarize_portfolio_daily_entries(
-                self._session, uba_id, daily_limit=lim
+                self._session,
+                uba_id,
+                daily_limit=lim,
+                mode=mode,
             )
             base_detail["order_limit_policy_version"] = (
                 "UPBIT_DAILY_ENTRY_V1"
             )
             base_detail["order_limit_trading_date"] = day.isoformat()
-            base_detail["daily_entry_quota_applies"] = True
+            base_detail["daily_entry_quota_applies"] = mode != MODE_UNLIMITED
+            base_detail["daily_entry_limit_mode"] = mode
             base_detail["daily_entry_limit"] = usage["entry_limit"]
             base_detail["daily_entry_used"] = usage["entry_count"]
             base_detail["daily_entry_count_semantics"] = usage[
@@ -567,6 +574,7 @@ class LiveOrderSafetyPipeline:
                     {
                         "limit": usage["entry_limit"],
                         "count": usage["entry_count"],
+                        "mode": mode,
                         "policy_version": "UPBIT_DAILY_ENTRY_V1",
                         "legacy_reason": "PORTFOLIO_DAILY_ENTRY_LIMIT",
                     },

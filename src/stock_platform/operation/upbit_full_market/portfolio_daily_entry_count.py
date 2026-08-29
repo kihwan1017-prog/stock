@@ -176,13 +176,16 @@ def summarize_portfolio_daily_entries(
     session: Session,
     user_broker_account_id: int,
     *,
-    daily_limit: int,
+    daily_limit: int | None = None,
+    mode: str | None = None,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """운영 표시용 — 오늘 진입 / 한도 / 잔여 / breakdown (KST)."""
 
     uba_id = int(user_broker_account_id)
-    limit = max(1, int(daily_limit))
+    mode_u = str(mode or "LIMITED").strip().upper()
+    unlimited = mode_u == "UNLIMITED"
+    limit = None if unlimited else max(1, int(daily_limit or 1))
     now_utc = now or datetime.now(timezone.utc)
     day_start = day_start_kst_as_utc(now_utc)
     used = count_portfolio_daily_real_entries(session, uba_id, now=now_utc)
@@ -195,22 +198,34 @@ def summarize_portfolio_daily_entries(
     zero_fill_cancelled = count_portfolio_daily_zero_fill_cancelled(
         session, uba_id, now=now_utc
     )
-    remaining = max(0, limit - used)
+    remaining = None if unlimited else max(0, int(limit) - used)
+    blocking = False if unlimited else used >= int(limit)
+    if unlimited:
+        label_ko = (
+            f"오늘 신규매수 {consumed}건 / 제한 없음 "
+            f"(대기 {reserved}, 취소·미체결 {zero_fill_cancelled})"
+        )
+    else:
+        label_ko = (
+            f"오늘 신규매수 {consumed} / {limit} "
+            f"(대기 {reserved}, 취소·미체결 {zero_fill_cancelled})"
+        )
     return {
         "user_broker_account_id": uba_id,
         "timezone": "Asia/Seoul",
         "day_start_utc": day_start.isoformat(),
+        "mode": "UNLIMITED" if unlimited else "LIMITED",
         "entry_count": used,
         "entry_limit": limit,
         "remaining": remaining,
-        "blocking": used >= limit,
+        "blocking": blocking,
         "consumed_count": consumed,
         "reserved_count": reserved,
         "zero_fill_cancelled_count": zero_fill_cancelled,
         "count_source": "REAL_AUTO_BUY_CONSUMED_OR_RESERVED",
         "canonical_meaning_ko": (
             "실제 신규 포지션 진입(체결) + 미체결 open reservation. "
-            "0-fill 취소는 quota 미소비."
+            "0-fill 취소는 quota 미소비. UNLIMITED는 일일 count gate만 해제."
         ),
         "excludes": [
             "SUPERSEDED_SELECTION",
@@ -223,10 +238,7 @@ def summarize_portfolio_daily_entries(
             "RETIRED_UNSUBMITTED",
             "ZERO_FILL_CANCELLED",
         ],
-        "label_ko": (
-            f"오늘 진입 {consumed} / {limit} "
-            f"(대기 {reserved}, 취소·미체결 {zero_fill_cancelled})"
-        ),
+        "label_ko": label_ko,
     }
 
 

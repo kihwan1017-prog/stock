@@ -294,6 +294,13 @@ export function UpbitAutotradingSettingsWorkspace({
       portfolio_daily_entry_limit: Number(
         policy.portfolio_daily_entry_limit ?? 6,
       ),
+      portfolio_daily_entry_limit_mode: String(
+        policy.portfolio_daily_entry_limit_mode ?? "LIMITED",
+      ).toUpperCase(),
+      realtime_monitored_symbol_target:
+        policy.realtime_monitored_symbol_target == null
+          ? 5
+          : Number(policy.realtime_monitored_symbol_target),
       consecutive_loss_limit: Number(policy.consecutive_loss_limit ?? 3),
     };
   }, [portfolioQuery.data]);

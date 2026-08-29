@@ -64,18 +64,27 @@ export function UpbitPortfolioPolicyPanel({
   const capacity = Number(p.max_positions ?? p.slot_capacity ?? 3);
   const occupied = Number(p.slots_occupied ?? 0);
   const emptyN = Number(p.slots_empty ?? Math.max(0, capacity - occupied));
+  const entryMode = String(
+    entryInitial.portfolio_daily_entry_limit_mode ??
+      policy.portfolio_daily_entry_limit_mode ??
+      "LIMITED",
+  ).toUpperCase();
+  const unlimited = entryMode === "UNLIMITED";
   const entryCount =
     dailyEntry?.entry_count != null && Number.isFinite(Number(dailyEntry.entry_count))
       ? Number(dailyEntry.entry_count)
       : null;
   const entryLimit =
-    dailyEntry?.entry_limit != null && Number.isFinite(Number(dailyEntry.entry_limit))
-      ? Number(dailyEntry.entry_limit)
-      : Number(entryInitial.portfolio_daily_entry_limit ?? 6);
-  const remaining =
-    dailyEntry?.remaining != null && Number.isFinite(Number(dailyEntry.remaining))
+    unlimited
+      ? null
+      : dailyEntry?.entry_limit != null && Number.isFinite(Number(dailyEntry.entry_limit))
+        ? Number(dailyEntry.entry_limit)
+        : Number(entryInitial.portfolio_daily_entry_limit ?? 6);
+  const remaining = unlimited
+    ? null
+    : dailyEntry?.remaining != null && Number.isFinite(Number(dailyEntry.remaining))
       ? Number(dailyEntry.remaining)
-      : entryCount != null
+      : entryCount != null && entryLimit != null
         ? Math.max(0, entryLimit - entryCount)
         : null;
 
@@ -239,28 +248,73 @@ export function UpbitPortfolioPolicyPanel({
               <InputNumber min={0} step={30} />
             </Form.Item>
             <Form.Item
-              name="portfolio_daily_entry_limit"
-              label={
-                <Tooltip title="실제 자동매매 신규 진입 기준. 후보 교체/Shadow는 포함하지 않습니다. (KST 00:00~24:00)">
-                  <span>일일 진입 한도</span>
-                </Tooltip>
-              }
+              name="portfolio_daily_entry_limit_mode"
+              label="일일 신규매수 한도 방식"
               extra={
-                entryCount != null ? (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {dailyEntryLabelKo ??
-                      `오늘 실제 진입 ${entryCount} / ${entryLimit} (남은 ${remaining ?? "—"})`}
-                    {" · "}
-                    기준 KST 00:00~24:00
-                  </Typography.Text>
-                ) : (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    실제 BUY 진입만 집계 · KST 일자
-                  </Typography.Text>
-                )
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  제한 없음은 일일 AUTO BUY 건수 게이트만 해제합니다. Slot·Risk·AI·Kill은 유지됩니다.
+                </Typography.Text>
               }
             >
-              <InputNumber min={1} max={100} />
+              <Select
+                options={[
+                  { value: "LIMITED", label: "제한 있음" },
+                  { value: "UNLIMITED", label: "제한 없음" },
+                ]}
+                style={{ width: 160 }}
+              />
+            </Form.Item>
+            <Form.Item
+              noStyle
+              shouldUpdate={(prev, cur) =>
+                prev.portfolio_daily_entry_limit_mode !==
+                cur.portfolio_daily_entry_limit_mode
+              }
+            >
+              {({ getFieldValue }) => {
+                const mode = String(
+                  getFieldValue("portfolio_daily_entry_limit_mode") ?? "LIMITED",
+                ).toUpperCase();
+                const isUnlimited = mode === "UNLIMITED";
+                return (
+                  <Form.Item
+                    name="portfolio_daily_entry_limit"
+                    label={
+                      <Tooltip title="실제 자동매매 신규 진입 기준. 후보 교체/Shadow는 포함하지 않습니다. (KST 00:00~24:00)">
+                        <span>일일 진입 한도</span>
+                      </Tooltip>
+                    }
+                    extra={
+                      entryCount != null ? (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          {isUnlimited
+                            ? `오늘 신규매수 ${entryCount}건 / 제한 없음`
+                            : dailyEntryLabelKo ??
+                              `오늘 신규매수 ${entryCount} / ${entryLimit} (남은 ${remaining ?? "—"})`}
+                          {" · "}
+                          기준 KST 00:00~24:00
+                        </Typography.Text>
+                      ) : (
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          실제 BUY 진입만 집계 · KST 일자
+                        </Typography.Text>
+                      )
+                    }
+                  >
+                    <InputNumber min={1} max={100} disabled={isUnlimited} />
+                  </Form.Item>
+                );
+              }}
+            </Form.Item>
+            <Form.Item
+              name="realtime_monitored_symbol_target"
+              label={
+                <Tooltip title="자동매매 후보 중 실시간 시세를 동시에 감시할 최대 종목 수입니다. 물리 WebSocket 연결과 다를 수 있습니다.">
+                  <span>실시간 감시 종목 수</span>
+                </Tooltip>
+              }
+            >
+              <InputNumber min={1} max={10} />
             </Form.Item>
             <Form.Item
               name="consecutive_loss_limit"

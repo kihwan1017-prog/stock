@@ -276,6 +276,14 @@ class UpbitPortfolioPolicyEntity(Base):
     portfolio_daily_entry_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default=text("20")
     )
+    # LIMITED | UNLIMITED — UNLIMITED는 일일 AUTO BUY count gate만 해제
+    portfolio_daily_entry_limit_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'LIMITED'")
+    )
+    # 실시간 감시 종목 목표 (NULL=settings.upbit_scanner_top_n 상속)
+    realtime_monitored_symbol_target: Mapped[int | None] = mapped_column(
+        Integer, nullable=True
+    )
     entry_state: Mapped[str] = mapped_column(
         String(30),
         nullable=False,

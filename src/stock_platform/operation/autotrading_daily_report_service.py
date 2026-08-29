@@ -454,6 +454,12 @@ def _market_section(
             or daily_entry.get("entry_count"),
             "daily_entry_limit": fm.get("daily_entry_limit")
             or daily_entry.get("entry_limit"),
+            # LIMITED|UNLIMITED — magic value(0/-1)로 unlimited 표현 금지
+            "daily_entry_limit_mode": fm.get("daily_entry_limit_mode")
+            or daily_entry.get("mode")
+            or "LIMITED",
+            "daily_entry_label_ko": fm.get("daily_entry_label_ko")
+            or daily_entry.get("label_ko"),
             "auto_slot_used": fm.get("auto_slot_used"),
             "auto_slot_limit": fm.get("auto_slot_limit"),
             "manual_holdings": fm.get("manual_holdings"),

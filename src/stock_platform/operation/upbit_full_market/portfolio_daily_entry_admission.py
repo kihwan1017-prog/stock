@@ -37,8 +37,47 @@ KST = ZoneInfo("Asia/Seoul")
 REASON_PORTFOLIO_DAILY_ENTRY_LIMIT = "PORTFOLIO_DAILY_ENTRY_LIMIT"
 REASON_DAILY_ENTRY_LIMIT_REACHED = "DAILY_ENTRY_LIMIT_REACHED"
 
+MODE_LIMITED = "LIMITED"
+MODE_UNLIMITED = "UNLIMITED"
+
 _PROCESS_LOCKS: dict[str, threading.RLock] = {}
 _PROCESS_LOCKS_GUARD = threading.Lock()
+
+
+def normalize_daily_entry_limit_mode(raw: Any) -> str:
+    text = str(raw or MODE_LIMITED).strip().upper()
+    if text == MODE_UNLIMITED:
+        return MODE_UNLIMITED
+    return MODE_LIMITED
+
+
+def resolve_portfolio_daily_entry_policy(
+    session: Session,
+    user_broker_account_id: int,
+) -> tuple[str, int | None]:
+    """(mode, limit). UNLIMITED면 limit=None."""
+
+    from stock_platform.operation.upbit_full_market.entities import (
+        UpbitPortfolioPolicyEntity,
+    )
+
+    row = session.scalar(
+        select(UpbitPortfolioPolicyEntity).where(
+            UpbitPortfolioPolicyEntity.user_broker_account_id
+            == int(user_broker_account_id)
+        )
+    )
+    if row is None:
+        return MODE_LIMITED, int(DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT)
+    mode = normalize_daily_entry_limit_mode(
+        getattr(row, "portfolio_daily_entry_limit_mode", MODE_LIMITED)
+    )
+    if mode == MODE_UNLIMITED:
+        return MODE_UNLIMITED, None
+    try:
+        return MODE_LIMITED, max(1, int(row.portfolio_daily_entry_limit))
+    except (TypeError, ValueError):
+        return MODE_LIMITED, int(DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT)
 
 
 def kst_trading_date(now: datetime | None = None) -> date:
@@ -97,24 +136,18 @@ def resolve_portfolio_daily_entry_limit(
     session: Session,
     user_broker_account_id: int,
 ) -> int:
-    """정책 row의 limit (없으면 DEFAULT)."""
+    """정책 row의 limit (없으면 DEFAULT).
 
-    from stock_platform.operation.upbit_full_market.entities import (
-        UpbitPortfolioPolicyEntity,
-    )
+    UNLIMITED는 int sentinel 대신 resolve_portfolio_daily_entry_policy 사용.
+    레거시 int-only 호출부는 비차단용 큰 값을 받되, 신규 경로는 mode를 본다.
+    """
 
-    row = session.scalar(
-        select(UpbitPortfolioPolicyEntity).where(
-            UpbitPortfolioPolicyEntity.user_broker_account_id
-            == int(user_broker_account_id)
-        )
+    mode, limit = resolve_portfolio_daily_entry_policy(
+        session, user_broker_account_id
     )
-    if row is None:
-        return int(DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT)
-    try:
-        return max(1, int(row.portfolio_daily_entry_limit))
-    except (TypeError, ValueError):
-        return int(DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT)
+    if mode == MODE_UNLIMITED or limit is None:
+        return 10**9
+    return int(limit)
 
 
 def applies_final_daily_entry_admission(
@@ -162,14 +195,34 @@ def try_final_admit_portfolio_daily_entry(
     uba_id = int(user_broker_account_id)
     now_utc = now or datetime.now(timezone.utc)
     trading_day = kst_trading_date(now_utc)
-    limit = max(
-        1,
-        int(
-            daily_limit
-            if daily_limit is not None
-            else resolve_portfolio_daily_entry_limit(session, uba_id)
-        ),
-    )
+    mode, resolved_limit = resolve_portfolio_daily_entry_policy(session, uba_id)
+    if daily_limit is not None:
+        mode = MODE_LIMITED
+        resolved_limit = max(1, int(daily_limit))
+
+    if mode == MODE_UNLIMITED or resolved_limit is None:
+        count_before = count_portfolio_daily_real_entries(
+            session, uba_id, now=now_utc
+        )
+        day_start = day_start_kst_as_utc(now_utc)
+        return {
+            "uba_id": uba_id,
+            "kst_date": trading_day.isoformat(),
+            "day_start_utc": day_start.isoformat(),
+            "count_before": count_before,
+            "limit": None,
+            "mode": MODE_UNLIMITED,
+            "symbol": symbol,
+            "binding_id": binding_id,
+            "candidate_id": candidate_id,
+            "timezone": "Asia/Seoul",
+            "count_source": "REAL_AUTO_BUY_CONSUMED_OR_RESERVED",
+            "allowed": True,
+            "reason": None,
+            "event": "DAILY_ENTRY_FINAL_ADMISSION_ALLOWED_UNLIMITED",
+        }
+
+    limit = max(1, int(resolved_limit))
 
     acquire_portfolio_daily_entry_xact_lock(
         session, user_broker_account_id=uba_id, now=now_utc
@@ -184,6 +237,7 @@ def try_final_admit_portfolio_daily_entry(
         "day_start_utc": day_start.isoformat(),
         "count_before": count_before,
         "limit": limit,
+        "mode": MODE_LIMITED,
         "symbol": symbol,
         "binding_id": binding_id,
         "candidate_id": candidate_id,

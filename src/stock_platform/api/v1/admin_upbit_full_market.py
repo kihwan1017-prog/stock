@@ -211,6 +211,12 @@ class PortfolioPolicyPatchBody(BaseModel):
     candidate_max_age_seconds: int | None = Field(default=None, ge=60)
     portfolio_max_pending_entries: int | None = Field(default=None, ge=1, le=10)
     portfolio_daily_entry_limit: int | None = Field(default=None, ge=1, le=100)
+    portfolio_daily_entry_limit_mode: str | None = Field(
+        default=None, pattern="^(LIMITED|UNLIMITED)$"
+    )
+    realtime_monitored_symbol_target: int | None = Field(
+        default=None, ge=1, le=10
+    )
     entry_state: str | None = Field(default=None, max_length=30)
     entry_signal_policy: str | None = Field(default=None, max_length=40)
     candidate_hold_seconds: int | None = Field(default=None, ge=0, le=86400)

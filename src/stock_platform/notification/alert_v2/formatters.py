@@ -57,6 +57,7 @@ def format_auto_buy_filled(
     slot_limit = detail.get("auto_slot_limit")
     entry_used = detail.get("daily_entry_used")
     entry_limit = detail.get("daily_entry_limit")
+    entry_mode = str(detail.get("daily_entry_limit_mode") or "LIMITED").upper()
     filled_at = detail.get("filled_at") or detail.get("ordered_at")
 
     reason_parts = []
@@ -70,7 +71,10 @@ def format_auto_buy_filled(
     if slot_used is not None and slot_limit is not None:
         slot_text = f"{slot_used}/{slot_limit}"
     entry_text = None
-    if entry_used is not None and entry_limit is not None:
+    if entry_mode == "UNLIMITED" and entry_used is not None:
+        # UNLIMITED: "7건 / 제한 없음"
+        entry_text = f"{entry_used}건 / 제한 없음"
+    elif entry_used is not None and entry_limit is not None:
         entry_text = f"{entry_used}/{entry_limit}"
 
     body = _join(

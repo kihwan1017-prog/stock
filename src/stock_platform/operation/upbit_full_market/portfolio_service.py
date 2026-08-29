@@ -312,6 +312,15 @@ class UpbitPortfolioService:
                 row.portfolio_max_pending_entries
             ),
             "portfolio_daily_entry_limit": int(row.portfolio_daily_entry_limit),
+            "portfolio_daily_entry_limit_mode": str(
+                getattr(row, "portfolio_daily_entry_limit_mode", "LIMITED")
+                or "LIMITED"
+            ).upper(),
+            "realtime_monitored_symbol_target": (
+                None
+                if getattr(row, "realtime_monitored_symbol_target", None) is None
+                else int(row.realtime_monitored_symbol_target)
+            ),
             "entry_state": row.entry_state,
             "consecutive_loss_count": int(row.consecutive_loss_count),
             "entry_signal_policy": entry_policy,
@@ -449,6 +458,11 @@ class UpbitPortfolioService:
             "candidate_max_age_seconds",
             "portfolio_max_pending_entries",
             "portfolio_daily_entry_limit",
+            "realtime_monitored_symbol_target",
+        }
+        str_keys = {
+            "portfolio_daily_entry_limit_mode",
+            "entry_state",
         }
         bool_keys = {
             "allow_averaging_down",
@@ -493,6 +507,18 @@ class UpbitPortfolioService:
                 if key == "allow_duplicate_symbol" and new_b:
                     warnings.append("DUPLICATE_SYMBOL_ENABLED")
                 setattr(row, key, new_b)
+            elif key == "portfolio_daily_entry_limit_mode" and value is not None:
+                mode = str(value).strip().upper()
+                if mode not in {"LIMITED", "UNLIMITED"}:
+                    raise ValueError(
+                        "portfolio_daily_entry_limit_mode must be LIMITED|UNLIMITED"
+                    )
+                setattr(row, key, mode)
+            elif key == "realtime_monitored_symbol_target":
+                if value is None:
+                    setattr(row, key, None)
+                else:
+                    setattr(row, key, max(1, min(50, int(value))))
             elif key == "entry_state" and value is not None:
                 setattr(row, key, str(value).upper()[:30])
             elif key == "entry_signal_policy" and value is not None:
@@ -650,6 +676,13 @@ class UpbitPortfolioService:
             summarize_portfolio_daily_entries,
         )
 
+        from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+            normalize_daily_entry_limit_mode,
+        )
+
+        daily_entry_mode = normalize_daily_entry_limit_mode(
+            policy.get("portfolio_daily_entry_limit_mode")
+        )
         daily_entry = summarize_portfolio_daily_entries(
             self._session,
             int(user_broker_account_id),
@@ -657,6 +690,7 @@ class UpbitPortfolioService:
                 policy.get("portfolio_daily_entry_limit")
                 or DEFAULT_PORTFOLIO_DAILY_ENTRY_LIMIT
             ),
+            mode=daily_entry_mode,
         )
         from stock_platform.operation.upbit_full_market.auto_slot_count import (
             summarize_position_ownership,
@@ -697,13 +731,18 @@ class UpbitPortfolioService:
             "min_cash_reserve_pct": float(policy["min_cash_reserve_pct"]),
             "entry_state": policy["entry_state"],
             "daily_entry": daily_entry,
-            "daily_entry_label_ko": (
-                f"오늘 AUTO 진입 {daily_entry['entry_count']} / "
-                f"{daily_entry['entry_limit']} "
-                f"(남은 {daily_entry['remaining']})"
+            # UNLIMITED면 "제한 없음" 라벨 사용
+            "daily_entry_label_ko": str(
+                daily_entry.get("label_ko")
+                or (
+                    f"오늘 AUTO 진입 {daily_entry['entry_count']} / "
+                    f"{daily_entry['entry_limit']} "
+                    f"(남은 {daily_entry['remaining']})"
+                )
             ),
             "daily_entry_limit": daily_entry["entry_limit"],
             "daily_entry_used": daily_entry["entry_count"],
+            "daily_entry_limit_mode": daily_entry.get("mode") or daily_entry_mode,
             "auto_slot_limit": auto_slot_limit,
             "auto_slot_used": ownership["auto_slots_used"],
             "manual_holdings": ownership["manual_position_count"],
@@ -1443,19 +1482,27 @@ class UpbitPortfolioService:
 
         # portfolio_daily_entry_limit — REAL AUTO BUY(KST day) SoT.
         # SUPERSEDED/SELECTED/slot rotation 은 쿼터를 소비하지 않는다.
+        from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+            MODE_UNLIMITED,
+            normalize_daily_entry_limit_mode,
+        )
         from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
             summarize_portfolio_daily_entries,
         )
 
+        mode = normalize_daily_entry_limit_mode(
+            getattr(policy, "portfolio_daily_entry_limit_mode", "LIMITED")
+        )
         daily_limit = int(policy.portfolio_daily_entry_limit)
         daily_usage = summarize_portfolio_daily_entries(
             self._session,
             uba_id,
             daily_limit=daily_limit,
+            mode=mode,
             now=_now(),
         )
         out["daily_entry_usage"] = daily_usage
-        if int(daily_usage["entry_count"]) >= daily_limit:
+        if mode != MODE_UNLIMITED and int(daily_usage["entry_count"]) >= daily_limit:
             out["reason"] = "PORTFOLIO_DAILY_ENTRY_LIMIT"
             try:
                 from stock_platform.notification.telegram_policy import (
@@ -2685,6 +2732,14 @@ class UpbitPortfolioService:
                 summarize_portfolio_daily_entries,
             )
 
+            from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
+                MODE_UNLIMITED,
+                normalize_daily_entry_limit_mode,
+            )
+
+            daily_mode = normalize_daily_entry_limit_mode(
+                getattr(policy, "portfolio_daily_entry_limit_mode", "LIMITED")
+            )
             daily_limit = int(
                 getattr(
                     policy,
@@ -2697,8 +2752,13 @@ class UpbitPortfolioService:
                 self._session,
                 uba_id,
                 daily_limit=daily_limit,
+                mode=daily_mode,
             )
-            if int(daily_usage["entry_count"]) >= daily_limit:
+            # UNLIMITED는 일일 count gate만 해제 (슬롯/리스크는 유지)
+            if (
+                daily_mode != MODE_UNLIMITED
+                and int(daily_usage["entry_count"]) >= daily_limit
+            ):
                 return _finish(
                     {
                         "ok": False,

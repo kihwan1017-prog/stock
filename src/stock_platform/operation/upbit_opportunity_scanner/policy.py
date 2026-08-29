@@ -56,6 +56,27 @@ def load_scanner_policy(settings: Any | None = None) -> ScannerPolicy:
     settings = settings if settings is not None else get_settings()
     top_n = int(getattr(settings, "upbit_scanner_top_n", 5) or 5)
     top_n = max(1, min(10, top_n))
+    # UBA portfolio override (dynamic, no restart) — primary UPBIT autotrading
+    try:
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.operation.upbit_full_market.entities import (
+            UpbitPortfolioPolicyEntity,
+        )
+        from sqlalchemy import select
+
+        with get_session_factory()() as session:
+            row = session.scalar(
+                select(UpbitPortfolioPolicyEntity)
+                .where(
+                    UpbitPortfolioPolicyEntity.user_broker_account_id == 1380
+                )
+                .limit(1)
+            )
+            target = getattr(row, "realtime_monitored_symbol_target", None) if row else None
+            if target is not None:
+                top_n = max(1, min(10, int(target)))
+    except Exception:  # noqa: BLE001
+        pass
     tech_limit = int(
         getattr(settings, "upbit_scanner_technical_candidate_limit", 30) or 30
     )
