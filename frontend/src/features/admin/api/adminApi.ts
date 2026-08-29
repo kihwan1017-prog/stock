@@ -4871,6 +4871,70 @@ export async function getNotificationStatus(): Promise<JsonValue> {
   return getJson("/notification/status");
 }
 
+export async function getTradingAlertPreferences(): Promise<{
+  items: Array<{
+    key: string;
+    group: string;
+    label: string;
+    description: string;
+    enabled: boolean;
+    updated_at?: string | null;
+  }>;
+  groups: string[];
+  delivery_only_notice: string;
+}> {
+  return getJson("/admin/trading-alert-preferences") as Promise<{
+    items: Array<{
+      key: string;
+      group: string;
+      label: string;
+      description: string;
+      enabled: boolean;
+      updated_at?: string | null;
+    }>;
+    groups: string[];
+    delivery_only_notice: string;
+  }>;
+}
+
+export async function patchTradingAlertPreferences(body: {
+  preferences: Record<string, boolean>;
+}): Promise<JsonValue> {
+  return patchJson("/admin/trading-alert-preferences", body);
+}
+
+export async function getTradingAlertHistory(params?: {
+  category?: string;
+  event_type?: string;
+  limit?: number;
+}): Promise<{
+  items: Array<{
+    event_type: string;
+    title: string;
+    message: string;
+    category: string;
+    preference_key?: string | null;
+    prefix?: string;
+    status?: string;
+    created_at?: string;
+  }>;
+  count: number;
+}> {
+  return getJson("/admin/trading-alert-preferences/history", params) as Promise<{
+    items: Array<{
+      event_type: string;
+      title: string;
+      message: string;
+      category: string;
+      preference_key?: string | null;
+      prefix?: string;
+      status?: string;
+      created_at?: string;
+    }>;
+    count: number;
+  }>;
+}
+
 /** 시장별 Telegram destination / ANALYSIS suppression (secret 없음) */
 export async function getTelegramMarketStatus(): Promise<JsonValue> {
   return getJson("/telegram/status");

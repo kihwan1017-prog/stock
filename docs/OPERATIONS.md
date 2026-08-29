@@ -10,6 +10,15 @@
 
 CLI / in-process singleton으로 RUNNING·STOPPED를 운영 SoT로 쓰지 않는다.
 
+## 알림 (Trading Alert V2)
+
+사용자 대분류: **[업비트] / [키움] / [시스템]**
+
+- Admin: `/admin/notifications` → 알림 수신 설정 (delivery only — LIVE/ARM/전략 미변경)
+- AUTO BUY/SELL 체결은 FILLED 중심, MANUAL/TEST 제외
+- Telegram 실패는 주문 경로에 영향 없음 (`NOTIFICATION_FAIL_OPEN`)
+- Daily Report는 개별 BUY/SELL과 별도 유지
+
 ## 기본 점검 순서
 
 1. Backend health (live/ready)

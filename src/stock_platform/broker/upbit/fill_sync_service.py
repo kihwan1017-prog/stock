@@ -1054,6 +1054,24 @@ class UpbitFillSyncService:
                 or meta.get("exit_reason")
                 or ""
             ).upper()
+            # AUTO provenance — Alert V2 (MANUAL/TEST 혼합 금지)
+            order_source = str(
+                getattr(order, "order_source", None)
+                or meta.get("order_source")
+                or ""
+            ).upper()
+            strategy_id = getattr(order, "strategy_id", None)
+            deployment_id = getattr(order, "strategy_deployment_id", None)
+            try:
+                avg_d = Decimal(str(avg or 0))
+                qty_d = Decimal(str(qty or 0))
+                gross = (
+                    str(avg_d * qty_d)
+                    if avg_d > ZERO and qty_d > ZERO
+                    else None
+                )
+            except Exception:  # noqa: BLE001
+                gross = None
 
             binding_closed = (
                 side == "SELL"
@@ -1065,30 +1083,40 @@ class UpbitFillSyncService:
                 emit_live_order_telegram(
                     event_type="ORDER_FILLED",
                     title=("매수 체결" if side == "BUY" else "매도 체결"),
-                    message=(
-                        f"유형: {'매수' if side == 'BUY' else '매도'}\n"
-                        f"내용: 자동매매 체결\n"
-                        f"종목: {symbol or '-'}\n"
-                        + (
-                            f"매수가: {avg}원\n"
-                            if side == "BUY"
-                            else f"매도가: {avg}원\n"
-                        )
-                        + f"수량: {qty or '-'}\n"
-                        + f"수수료: {fee or '-'}원"
-                    ),
+                    message="",  # Alert V2 formatter가 본문 생성
                     detail={
                         "order_id": oid,
                         "symbol": symbol,
+                        "symbol_name": meta.get("symbol_name")
+                        or meta.get("korean_name"),
                         "side": side,
                         "filled_qty": qty,
+                        "filled_quantity": qty,
                         "avg_fill_price": avg,
+                        "average_fill_price": avg,
                         "fee": fee,
+                        "gross_amount": gross,
+                        "amount_krw": gross,
                         "broker_code": "UPBIT",
                         "market": "UPBIT",
                         "broker_order_id": order.broker_order_id,
                         "actor": actor,
-                        "dedupe_key": f"ORDER_FILLED:{oid}",
+                        "order_source": order_source or None,
+                        "strategy_id": strategy_id,
+                        "strategy_deployment_id": deployment_id,
+                        "entry_reason": meta.get("entry_reason")
+                        or meta.get("signal_reason"),
+                        "ai_recommendation": meta.get("ai_recommendation"),
+                        "ai_confidence": meta.get("ai_confidence")
+                        or meta.get("confidence"),
+                        "auto_slot_used": meta.get("auto_slot_used"),
+                        "auto_slot_limit": meta.get("auto_slot_limit"),
+                        "daily_entry_used": meta.get("daily_entry_used"),
+                        "daily_entry_limit": meta.get("daily_entry_limit"),
+                        "filled_at": getattr(order, "filled_at", None),
+                        "dedupe_key": f"BUY_FILLED:{oid}"
+                        if side == "BUY"
+                        else f"SELL_FILLED:{oid}",
                     },
                 )
 
@@ -1117,13 +1145,16 @@ class UpbitFillSyncService:
                         "DEAD_CROSS" in signal_reason
                         or "MA_DEAD" in signal_reason
                     ):
-                        reason_ko = "MA 데드크로스"
+                        reason_ko = "이동평균 데드크로스"
                     elif "STOP" in signal_reason:
                         reason_ko = "손절"
                     elif "TAKE" in signal_reason or "PROFIT" in signal_reason:
-                        reason_ko = "익절"
+                        reason_ko = "목표수익 도달"
                     elif "TRAIL" in signal_reason:
                         reason_ko = "트레일링 스탑"
+                    # reason_ko는 exit_reason 보강용 (formatter도 mapping 수행)
+                    if not signal_reason and reason_ko:
+                        signal_reason = "STRATEGY_SIGNAL"
 
                     hold_sec = None
                     try:
@@ -1144,52 +1175,42 @@ class UpbitFillSyncService:
                     except Exception:  # noqa: BLE001
                         hold_sec = None
 
-                    def _hold_ko(seconds: int | None) -> str:
-                        if seconds is None:
-                            return "—"
-                        if seconds < 60:
-                            return f"{seconds}초"
-                        m, s = divmod(int(seconds), 60)
-                        if m < 60:
-                            return f"{m}분 {s}초" if s else f"{m}분"
-                        h, m2 = divmod(m, 60)
-                        return f"{h}시간 {m2}분"
-
-                    sign = "+" if net >= ZERO else ""
                     emit_live_order_telegram(
                         event_type="POSITION_CLOSED",
                         title="매도 체결",
-                        message=(
-                            f"유형: 매도\n"
-                            f"내용: 자동매매 청산\n"
-                            f"종목: {symbol or '-'}\n"
-                            f"매수가: {entry if entry > ZERO else '-'}원\n"
-                            f"매도가: {avg or '-'}원\n"
-                            f"수량: {qty or '-'}\n"
-                            f"순손익: {sign}{net:.2f}원 "
-                            f"({sign}{pct:.2f}%)\n"
-                            f"수수료: {fees_b if fees_b is not None else '-'}원\n"
-                            f"청산사유: {signal_reason or reason_ko or '-'}\n"
-                            f"보유시간: {_hold_ko(hold_sec)}"
-                        ),
+                        message="",  # Alert V2 formatter
                         detail={
                             "order_id": oid,
                             "binding_id": getattr(
                                 binding, "binding_id", None
                             ),
                             "symbol": symbol,
+                            "symbol_name": meta.get("symbol_name")
+                            or meta.get("korean_name"),
+                            "side": "SELL",
                             "broker_code": "UPBIT",
                             "market": "UPBIT",
                             "entry_price": str(entry),
                             "exit_price": str(avg),
                             "filled_qty": qty,
+                            "filled_quantity": qty,
+                            "buy_amount": str(entry_cost)
+                            if entry_cost > ZERO
+                            else None,
+                            "sell_amount": gross,
                             "realized_pnl": str(net),
                             "realized_pnl_pct": str(pct),
                             "fees": str(fees_b),
+                            "total_fee": str(fees_b),
                             "exit_reason": signal_reason
                             or "STRATEGY_SIGNAL",
                             "holding_seconds": hold_sec,
-                            "dedupe_key": f"POSITION_CLOSED:{oid}",
+                            "opened_at": getattr(binding, "opened_at", None),
+                            "closed_at": getattr(binding, "closed_at", None),
+                            "order_source": order_source or None,
+                            "strategy_id": strategy_id,
+                            "strategy_deployment_id": deployment_id,
+                            "dedupe_key": f"SELL_FILLED:{oid}",
                         },
                     )
                     # REALIZED_PNL 별도 알림은 allowlist에서 제외 — POSITION_CLOSED에 포함

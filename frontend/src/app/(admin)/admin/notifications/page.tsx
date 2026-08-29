@@ -5,13 +5,11 @@ import { App, Button, Space, Table, Tag, Typography } from "antd";
 import Link from "next/link";
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import {
-  AdminJsonCard,
-  UnimplementedApiPanel,
-} from "@/features/admin/components/AdminPanels";
+import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { NOTIFICATION_EVENT_CATALOG } from "@/features/admin/notifications/opsCatalog";
 import { MessageTemplatesPanel } from "@/features/admin/notifications/MessageTemplatesPanel";
+import { TradingAlertPreferencesPanel } from "@/features/admin/notifications/TradingAlertPreferencesPanel";
 import { adminRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -39,7 +37,7 @@ export default function AdminNotificationsPage() {
   return (
     <AdminPageShell
       title="알림 관리"
-      description="한글 템플릿 · notification/status · test — Telegram 운영은 Telegram 페이지"
+      description="사용자 친화 알림 설정 · 한글 템플릿 · notification/status — Telegram 운영은 Telegram 페이지"
       extra={
         <Space wrap>
           <Button
@@ -58,6 +56,8 @@ export default function AdminNotificationsPage() {
           정형 알림은 JSON dump 대신 한글 템플릿으로 전송됩니다. 원본 JSON은
           관리자 전송 이력에서 확인하세요. Discord 채널 UI는 다루지 않습니다.
         </Typography.Paragraph>
+
+        <TradingAlertPreferencesPanel />
 
         <MessageTemplatesPanel />
 
@@ -95,19 +95,6 @@ export default function AdminNotificationsPage() {
                 </Tag>
               ),
             },
-          ]}
-        />
-
-        <UnimplementedApiPanel
-          feature="알림 채널 설정 CRUD"
-          reason="알림 채널 등록/수정/삭제 API가 Backend에 없습니다. 상태 조회·테스트만 가능합니다."
-          expectedApis={[
-            "GET/POST/PUT/DELETE /api/v1/notification/channels",
-          ]}
-          relatedApis={[
-            "GET /api/v1/notification/status",
-            "POST /api/v1/notification/test",
-            "/admin/telegram",
           ]}
         />
       </Space>

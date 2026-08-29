@@ -152,6 +152,47 @@ def emit_live_order_telegram(
             notification_publisher,
         )
 
+        # Alert V2: preference / provenance gate + user-friendly format (fail-open)
+        try:
+            from stock_platform.notification.alert_v2.formatters import (
+                maybe_format_user_message,
+            )
+            from stock_platform.notification.alert_v2.gate import (
+                should_deliver_trading_alert,
+            )
+
+            pref_session = None
+            try:
+                from stock_platform.database.session import get_session_factory
+
+                pref_session = get_session_factory()()
+            except Exception:  # noqa: BLE001
+                pref_session = None
+            try:
+                allowed, gate_reason = should_deliver_trading_alert(
+                    event_type=event_type,
+                    detail=safe_detail,
+                    session=pref_session,
+                )
+                safe_detail["alert_v2_gate"] = gate_reason
+                if not allowed:
+                    return
+            finally:
+                if pref_session is not None:
+                    try:
+                        pref_session.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+            title, message = maybe_format_user_message(
+                event_type=event_type,
+                title=title,
+                message=message,
+                detail=safe_detail,
+            )
+            safe_detail["alert_v2_formatted"] = True
+        except Exception:  # noqa: BLE001
+            pass
+
         mapped = event_type
         if event_type in {
             LIVE_REJECTED,
