@@ -491,5 +491,6 @@
     "RESTART_CATCHUP": true,
     "DEDUPE": "15m grid + unique(strategy,symbol,evaluated_at,rule_hash)",
     "IDEMPOTENCY": true
-  }
+  },
+  "RESULT_COMMIT": "aa009438dd23f34285de38f4a46db93b2a6b1680"
 }
