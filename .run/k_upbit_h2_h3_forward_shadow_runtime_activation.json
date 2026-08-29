@@ -1,0 +1,124 @@
+{
+  "WORK_ID": "WRK-20260829-019A-UPBIT-H2-H3-FORWARD-SHADOW-RUNTIME-ACTIVATION",
+  "PARENT": "WRK-20260829-019-UPBIT-H2-H3-FROZEN-FORWARD-SHADOW",
+  "BASE_COMMIT": "d29135b2bc72438da9a2b7398f4662b085de55c4",
+  "RESULT_COMMIT": null,
+  "FINAL_VERDICT": "RESTART_SKIPPED_ACTIVE_ORDER_SAFETY",
+  "generated_at": "2026-08-29T01:30:00+00:00",
+  "HISTORY": {
+    "WRK019": {
+      "found": true,
+      "status": "COMPLETED",
+      "final_verdict": "H2_H3_FORWARD_SHADOW_INFRA_READY",
+      "result_commit": "aa009438dd23f34285de38f4a46db93b2a6b1680"
+    },
+    "WRK018": {
+      "found": false,
+      "note": "No row in operation.ai_development_work_history for WRK-018 (parent referenced by WRK-019 only)"
+    },
+    "code_reaudit": false,
+    "code_reimplement": false
+  },
+  "PRECHECK": {
+    "sot": "HTTP /api/v1/admin/autotrading/uba/1380/ops-status",
+    "LIVE": "ON",
+    "ARM": "ON",
+    "LEASE": "ACTIVE",
+    "STACK": "4/4 RUNNING",
+    "FEED": "REAL_FRESH",
+    "AUTO_TRADING_READY": true,
+    "ACTIVE_BROKER_LIFECYCLE": {
+      "remote_open_orders_total": 5,
+      "remote_open_orders_manual": 5,
+      "remote_open_orders_auto": 0,
+      "remote_open_state": "FRESH",
+      "remote_source": "UPBIT_REST_WAIT_WATCH",
+      "funnel_ENTRY_PENDING": 1,
+      "funnel_ENTRY_PENDING_STUCK": 0,
+      "open_positions": 1,
+      "local_db_nonterminal_orders": 0,
+      "forced_cancel": false
+    },
+    "RESTART_SAFE": false,
+    "reason": "Remote open broker orders (5 manual) + ENTRY_PENDING=1 → restart interrupt risk; do not force cancel/cleanup"
+  },
+  "WIRING": {
+    "SOURCE_REGISTERED": true,
+    "path": "src/stock_platform/operation/upbit_opportunity_shadow/evaluator_scheduler.py::configure → UpbitH2H3ForwardShadowScheduler().configure",
+    "PROCESS_REGISTERED_AFTER_RESTART": false,
+    "SCHEDULER_ENABLED": "UNKNOWN_NOT_RESTARTED",
+    "LAST_RUN_AT": null,
+    "LAST_SUCCESS_AT": null,
+    "LAST_ERROR": null,
+    "wiring_fix_applied": false
+  },
+  "RESTART": {
+    "PERFORMED": false,
+    "UNATTENDED_RESTORE": false,
+    "MANUAL_LIVE_ARM_MUTATION": false,
+    "SKIP_REASON": "RESTART_SKIPPED_ACTIVE_ORDER_SAFETY"
+  },
+  "NATURAL_PROOF": {
+    "EVALUATOR_RAN": false,
+    "H2_NATURAL_MATCHES": 0,
+    "H3_NATURAL_MATCHES": 0,
+    "FORCED_SAMPLE_CREATED": false,
+    "HISTORICAL_BACKFILL": false,
+    "note": "No restart → current process still lacks WRK-019 scheduler job; natural tick not proven this WRK"
+  },
+  "EXISTING_INITIAL_ROWS": {
+    "H2": {
+      "shadow_id": 1,
+      "symbol": "KRW-BTC",
+      "evaluated_at": "2026-08-29T01:00:00Z",
+      "created_at": "2026-08-29T01:09:29.035Z",
+      "H2_SOURCE": "BOOTSTRAP_MANUAL",
+      "evidence": "feature_snapshot close=100 / synthetic features from WRK-019 infra probe; not natural candle match"
+    },
+    "H3": {
+      "shadow_id": 3,
+      "symbol": "KRW-ETH",
+      "evaluated_at": "2026-08-29T01:15:00Z",
+      "created_at": "2026-08-29T01:09:29.035Z",
+      "H3_SOURCE": "BOOTSTRAP_MANUAL",
+      "evidence": "feature_snapshot close=200 / synthetic features from WRK-019 infra probe"
+    },
+    "PROMOTION_SAMPLE_VALID": false,
+    "db_row_mutated": false,
+    "deletion": false,
+    "note": "Documented as BOOTSTRAP_MANUAL in evidence only; not promotion-valid forward samples"
+  },
+  "OUTCOME_CATCHUP": {
+    "code_present": true,
+    "mature_pending": "service.mature_pending / apply_maturity_to_outcomes",
+    "waited_for_horizon": false,
+    "retest": "skipped (no code change; WRK-019 unit tests cover catch-up)"
+  },
+  "SAFETY": {
+    "REAL_POLICY_CHANGED": false,
+    "STRATEGY_SIGNAL_PUBLISHED_BY_H2H3": 0,
+    "EXECUTOR_CALLS_BY_H2H3": 0,
+    "REAL_ORDER_CREATED_BY_H2H3": 0,
+    "LIVE_ARM_MUTATION": false
+  },
+  "HTTP_OPS": {
+    "LIVE": "ON",
+    "ARM": "ON",
+    "LEASE": "ACTIVE",
+    "STACK": "4/4",
+    "FEED": "REAL_FRESH",
+    "AUTO_TRADING_READY": true
+  },
+  "TEST": {
+    "PYTEST": "REUSED_WRK019_NO_CODE_CHANGE"
+  },
+  "STATUS": {
+    "FORWARD_SHADOW_AUTOMATIC_COLLECTION": "NOT_READY",
+    "detail": "Source wiring OK; process activation blocked by open-order safety skip"
+  },
+  "REMAINING": [
+    "When remote open orders clear / ENTRY_PENDING=0, re-run WRK-019A restart-only activation",
+    "Do not force sample creation or historical backfill",
+    "Treat shadow_id 1/3 as BOOTSTRAP_MANUAL for promotion"
+  ]
+}
