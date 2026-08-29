@@ -37,8 +37,8 @@ class ManagedPosition:
     entry_price: Decimal
     current_price: Decimal
     highest_price: Decimal
-    stop_loss_price: Decimal
-    take_profit_price: Decimal
+    stop_loss_price: Decimal | None
+    take_profit_price: Decimal | None
     trailing_stop_ratio: Decimal | None = None
     relative_loss_ratio: Decimal | None = None
     broker_code: str = "KIWOOM"
