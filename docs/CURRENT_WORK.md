@@ -15,7 +15,7 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **SHARED** | Trading Alert Management V2 | **ALERT_V2_IMPLEMENTED_RESTART_DEFERRED** | Observe natural alerts · restart when ops-status safe |
+| **SHARED** | Trading Alert V2 Activation Closeout | **PASS_ALERT_V2_ACTIVE_NATURAL_SAMPLE_PENDING** | Observe natural BUY/SELL alerts |
 | **U** | Short-Term Operation V1 | **PASS** | OBSERVE entry quota 6 / AUTO slots |
 | **U** | Exit Strategy Shadow V1 | **PASS** | OBSERVE shadow rows · no REAL promote |
 | **U** | WRK-019 H2/H3 frozen forward-shadow | **H2_H3_FORWARD_SHADOW_INFRA_READY** | OBSERVE forward N · no retune · no REAL promo |

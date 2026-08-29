@@ -15,9 +15,12 @@ CLI / in-process singleton으로 RUNNING·STOPPED를 운영 SoT로 쓰지 않는
 사용자 대분류: **[업비트] / [키움] / [시스템]**
 
 - Admin: `/admin/notifications` → 알림 수신 설정 (delivery only — LIVE/ARM/전략 미변경)
+- API: `GET/PATCH /api/v1/admin/trading-alert-preferences` (`require_admin`)
 - AUTO BUY/SELL 체결은 FILLED 중심, MANUAL/TEST 제외
-- Telegram 실패는 주문 경로에 영향 없음 (`NOTIFICATION_FAIL_OPEN`)
+- Upbit fill + Kiwoom fill → Alert V2 emit (NOTIFICATION_FAIL_OPEN)
+- Telegram 실패는 주문 경로에 영향 없음
 - Daily Report는 개별 BUY/SELL과 별도 유지
+- ops-status는 Admin API Key/`require_admin` 인증 필요 (비인증은 401 — hang이 아님)
 
 ## 기본 점검 순서
 
