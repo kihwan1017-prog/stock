@@ -71,7 +71,7 @@ class LiveOrderSafetyPipeline:
         symbol: str,
         side: str,
         quantity: Decimal,
-        price: Decimal,
+        price: Decimal | None,
         strategy_id: str | None = None,
         strategy_deployment_id: int | None = None,
         run_id: str | None = None,
@@ -100,19 +100,96 @@ class LiveOrderSafetyPipeline:
         exchange = (exchange_code or "").strip().upper()
         sym = (symbol or "").strip().upper()
         side_u = (side or "").strip().upper()
-        qty = Decimal(str(quantity))
-        px = Decimal(str(price))
         order_type_u = str(order_type or "").strip().upper()
-        # UPBIT MARKET BUY: 노셔널은 KRW order_amount (qty*ref_price 아님)
+        is_market = order_type_u == "MARKET"
+        is_market_buy = is_market and side_u == "BUY"
+        is_market_sell = is_market and side_u == "SELL"
+
+        try:
+            qty = Decimal(str(quantity))
+        except Exception:  # noqa: BLE001 — 수량 파싱 실패는 domain reject
+            return LiveSafetyDecision(
+                allowed=False,
+                reason_code="INVALID_ORDER_QUANTITY",
+                audit_event_type=ORDER_QTY_REJECT,
+                detail={"quantity": str(quantity)},
+            )
+        if qty <= ZERO:
+            return LiveSafetyDecision(
+                allowed=False,
+                reason_code="INVALID_ORDER_QUANTITY",
+                audit_event_type=ORDER_QTY_REJECT,
+                detail={"quantity": str(qty)},
+            )
+
+        # LIMIT: price 필수 / MARKET BUY: quote(order_amount|KRW price) /
+        # MARKET SELL: price=None 정상 (체결가 사전 확정 불가) — Decimal(str(None)) 금지
+        px: Decimal | None = None
+        if price is not None:
+            try:
+                px = Decimal(str(price))
+            except Exception:  # noqa: BLE001
+                return LiveSafetyDecision(
+                    allowed=False,
+                    reason_code="INVALID_ORDER_PRICE",
+                    audit_event_type=ORDER_AMOUNT_REJECT,
+                    detail={"price": str(price)},
+                )
+
+        amount: Decimal | None = None
+        amount_basis = "NONE"
         if (
-            order_type_u == "MARKET"
-            and side_u == "BUY"
+            is_market_buy
             and order_amount is not None
             and Decimal(str(order_amount)) > ZERO
         ):
+            # UPBIT MARKET BUY: 노셔널은 KRW order_amount (qty*ref 아님)
             amount = Decimal(str(order_amount)).quantize(Decimal("0.01"))
-        else:
+            amount_basis = "MARKET_BUY_QUOTE"
+            if px is None:
+                px = amount  # 상세/감사용 KRW notional
+        elif is_market_buy and px is not None and px > ZERO:
+            # resolve_size가 order_price=KRW notional로 넘긴 경우
+            amount = px.quantize(Decimal("0.01"))
+            amount_basis = "MARKET_BUY_QUOTE"
+        elif is_market_sell:
+            ref = reference_price
+            if ref is not None:
+                try:
+                    ref_d = Decimal(str(ref))
+                except Exception:  # noqa: BLE001
+                    ref_d = ZERO
+                if ref_d > ZERO:
+                    # 추정 노셔널만 (주문가 대체 아님, 0 위장 금지)
+                    amount = (qty * ref_d).quantize(Decimal("0.01"))
+                    amount_basis = "MARKET_SELL_REFERENCE_ESTIMATE"
+            # price/ref 없으면 amount=None — qty·잔고·KILL/ARM 게이트로 fail-closed
+        elif not is_market:
+            if px is None or px <= ZERO:
+                return LiveSafetyDecision(
+                    allowed=False,
+                    reason_code="LIMIT_PRICE_REQUIRED",
+                    audit_event_type=ORDER_AMOUNT_REJECT,
+                    detail={
+                        "order_type": order_type_u or "LIMIT",
+                        "side": side_u,
+                        "price": None if price is None else str(price),
+                    },
+                )
             amount = (qty * px).quantize(Decimal("0.01"))
+            amount_basis = "LIMIT_PRICE"
+        else:
+            # MARKET 이지만 BUY/SELL 분류 밖 — price 필수
+            if px is None or px <= ZERO:
+                return LiveSafetyDecision(
+                    allowed=False,
+                    reason_code="INVALID_ORDER_PRICE",
+                    audit_event_type=ORDER_AMOUNT_REJECT,
+                    detail={"order_type": order_type_u, "side": side_u},
+                )
+            amount = (qty * px).quantize(Decimal("0.01"))
+            amount_basis = "ORDER_PRICE"
+
         base_detail: dict[str, Any] = {
             "user_id": user_id,
             "account_id": uba_id,
@@ -122,8 +199,10 @@ class LiveOrderSafetyPipeline:
             "symbol": sym,
             "side": side_u,
             "quantity": str(qty),
-            "price": str(px),
-            "amount": str(amount),
+            "price": None if px is None else str(px),
+            "amount": None if amount is None else str(amount),
+            "amount_basis": amount_basis,
+            "order_type": order_type_u or None,
             "strategy_id": strategy_id,
             "strategy_deployment_id": strategy_deployment_id,
             "run_id": run_id,
@@ -154,7 +233,9 @@ class LiveOrderSafetyPipeline:
                     title=f"LIVE order rejected: {reason}",
                     message=(
                         f"{broker} {sym} {side_u} qty={qty} "
-                        f"price={px} amount={amount} — {reason}"
+                        f"price={px if px is not None else 'N/A'} "
+                        f"amount={amount if amount is not None else 'N/A'} "
+                        f"— {reason}"
                     ),
                     detail=detail,
                 )
@@ -256,7 +337,7 @@ class LiveOrderSafetyPipeline:
         if broker == "KIWOOM" and order_type_u == "LIMIT":
             if qty <= ZERO:
                 return _fail("INVALID_ORDER_QUANTITY", ORDER_QTY_REJECT)
-            if px <= ZERO:
+            if px is None or px <= ZERO:
                 return _fail("INVALID_ORDER_PRICE", ORDER_AMOUNT_REJECT)
             from stock_platform.position.lot_rounding import (
                 is_krx_tick_aligned,
@@ -364,7 +445,7 @@ class LiveOrderSafetyPipeline:
             side=side_u,
             order_type=str(order_type or "LIMIT"),
             quantity=qty,
-            price=px if px > ZERO else None,
+            price=px if (px is not None and px > ZERO) else None,
             market_krw_amount=(
                 amount
                 if order_type_u == "MARKET" and side_u == "BUY"
@@ -382,7 +463,12 @@ class LiveOrderSafetyPipeline:
             )
 
         # 5) Order Amount — ENTRY 전용 (검증된 EXIT 스킵)
-        if (not verified_exit) and amount > policy.max_order_amount:
+        # MARKET SELL amount=None(추정 불가)이면 qty/잔고 게이트로 충분 — 0 위장 금지
+        if (
+            (not verified_exit)
+            and amount is not None
+            and amount > policy.max_order_amount
+        ):
             return _fail(
                 "ORDER_AMOUNT_EXCEEDED",
                 ORDER_AMOUNT_REJECT,
@@ -642,12 +728,14 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 9c) Slippage — MARKET BUY는 unit price가 없어 스킵
-        # (UPBIT MARKET BUY price = KRW notional; ticker와 비교 금지)
+        # 9c) Slippage — MARKET BUY: unit price 없음 / MARKET SELL: 주문가 미확정 → 스킵
         if (
             reference_price is not None
             and reference_price > ZERO
+            and px is not None
+            and px > ZERO
             and not (order_type_u == "MARKET" and side_u == "BUY")
+            and not (order_type_u == "MARKET" and side_u == "SELL")
         ):
             slip = self._slippage_ratio(
                 side=side_u,
@@ -896,11 +984,16 @@ class LiveOrderSafetyPipeline:
         user_broker_account_id: int,
         symbol: str,
         side: str,
-        price: Decimal,
+        price: Decimal | None,
         quantity: Decimal,
         window_seconds: int,
     ) -> bool:
         since = datetime.now(timezone.utc) - timedelta(seconds=window_seconds)
+        price_clause = (
+            TradingOrderEntity.order_price.is_(None)
+            if price is None
+            else (TradingOrderEntity.order_price == price)
+        )
         row = self._session.scalar(
             select(TradingOrderEntity)
             .where(
@@ -909,7 +1002,7 @@ class LiveOrderSafetyPipeline:
                 TradingOrderEntity.symbol == symbol.upper(),
                 TradingOrderEntity.side_code == side.upper(),
                 TradingOrderEntity.order_quantity == quantity,
-                TradingOrderEntity.order_price == price,
+                price_clause,
                 TradingOrderEntity.created_at >= since,
             )
             .order_by(TradingOrderEntity.order_id.desc())

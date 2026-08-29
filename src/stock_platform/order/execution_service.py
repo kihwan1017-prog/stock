@@ -372,6 +372,28 @@ class OrderExecutionService:
                 if command.user_broker_account_id is None:
                     return self._blocked("UBA_REQUIRED")
 
+                # MARKET SELL: resolve_size가 broker price=None을 반환한다.
+                # plan/command reference만 추정 노셔널용으로 파이프라인에 전달.
+                plan_reference_price = None
+                if isinstance(plan_payload, dict) and plan_payload.get(
+                    "reference_price"
+                ) not in (None, ""):
+                    try:
+                        plan_reference_price = Decimal(
+                            str(plan_payload["reference_price"])
+                        )
+                    except Exception:  # noqa: BLE001
+                        plan_reference_price = None
+                safety_reference_price = None
+                if not (
+                    str(command.broker_code or "").upper() == "UPBIT"
+                    and str(order_type_text or "").upper() == "MARKET"
+                    and side_text == "BUY"
+                ):
+                    safety_reference_price = (
+                        command.reference_price or plan_reference_price
+                    )
+
                 # STEP 8-7 — Adapter 직전과 동일한 LIVE 안전 파이프라인
                 safety = LiveOrderSafetyPipeline(self._session).evaluate(
                     user_id=command.user_id or command.owner_user_id,
@@ -407,18 +429,8 @@ class OrderExecutionService:
                     environment=environment,
                     is_risk_reducing=command.is_risk_reducing,
                     arm_token=command.arm_token,
-                    # MARKET BUY: unit ticker만 슬리피지 기준 (KRW notional 금지)
-                    reference_price=(
-                        None
-                        if (
-                            str(command.broker_code or "").upper()
-                            == "UPBIT"
-                            and str(order_type_text or "").upper()
-                            == "MARKET"
-                            and side_text == "BUY"
-                        )
-                        else command.reference_price
-                    ),
+                    # MARKET BUY: unit ticker 슬리피지 기준 금지 (KRW notional)
+                    reference_price=safety_reference_price,
                     require_arm=True,
                     # KIWOOM LIMIT tick 검증 — 주문 유형을 파이프라인에 전달
                     order_type=(
