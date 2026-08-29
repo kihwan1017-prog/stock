@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-29 (SOURCE-DOC-CLEANUP-V1)
+**최종 갱신:** 2026-08-30 (ALERT-PREFERENCE-DELIVERY-BYPASS-CLOSEOUT)
 
 ---
 
@@ -11,11 +11,22 @@
 
 ---
 
+## SHARED — Alert preference Telegram delivery bypass (2026-08-30)
+
+- Symptom: preference OFF인데 Telegram 계속 수신 (후보/슬롯/Shadow/AI)
+- Root: `evaluate_telegram_policy` allowlist만 보고 preference 미적용 (**G. ALLOWLIST_OVERRIDES_PREFERENCE**)
+- Fix: allowlist 통과 후 `should_deliver_trading_alert` — OFF면 Telegram suppress (거래/분석 로직 유지)
+- Commit: **`d31a656`** · Evidence: `.run/k_alert_preference_delivery_bypass_closeout.json`
+- Verdict: **PASS_ALERT_PREFERENCE_ENFORCED_END_TO_END**
+
+---
+
 ## Current Phase
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
 | **U** | Historical Exit Recovery + Long Hold Watch V1 | **PASS_LONG_HOLD_MONITORING_ADA_RECOVERY_NOT_ELIGIBLE** | Restart load long-hold · re-check dry-run when MA bearish · no force SELL |
+| **SHARED** | Alert Preference Delivery Bypass Closeout | **PASS_ALERT_PREFERENCE_ENFORCED_END_TO_END** | Natural OBSERVE — OFF keys must not Telegram |
 | **SHARED** | Trading Alert V2 Activation Closeout | **PASS_ALERT_V2_ACTIVE_NATURAL_SAMPLE_PENDING** | Observe natural BUY/SELL alerts |
 | **U** | Short-Term Operation V1 | **PASS** | OBSERVE entry quota 6 / AUTO slots |
 | **U** | Exit Strategy Shadow V1 | **PASS** | OBSERVE shadow rows · no REAL promote |
