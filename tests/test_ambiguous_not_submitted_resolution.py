@@ -153,6 +153,25 @@ def test_block_without_local_failure_evidence() -> None:
     assert "local_pre_send_failure_not_proven" in svc.preview(1684).blockers
 
 
+def test_preview_resolvable_price_unit_invalid_request() -> None:
+    """Upbit 400 가격단위 거절은 주문 미생성으로 CONFIRMED_NOT_SUBMITTED 후보."""
+
+    svc, _ = _service(
+        _order(),
+        _outbox(
+            last_error=(
+                "RETRY_BLOCKED_AFTER_INTENT:"
+                "Upbit invalid request: 주문가격 단위를 잘못 입력하셨습니다. "
+                "확인 후 시도해주세요."
+            )
+        ),
+    )
+    preview = svc.preview(1684)
+    assert preview.resolvable is True
+    assert preview.blockers == []
+    assert "주문가격 단위" in (preview.local_failure_evidence or "")
+
+
 def test_block_broker_order_found() -> None:
     svc, _ = _service(
         _order(),

@@ -46,11 +46,15 @@ _BROKER_SUBMIT_AUDIT_TYPES = frozenset(
     }
 )
 
-# intent 이후라도 HTTP 이전 deterministic 로컬 실패 증거
+# intent 이후라도 브로커가 주문을 수락하지 않은 deterministic 실패 증거
+# (로컬 notional 게이트 + Upbit 400 invalid request — 주문 UUID 미생성)
 _LOCAL_PRE_SEND_MARKERS = (
     "upbit minimum order amount",
     "minimum order amount is",
     "validate_upbit_notional",
+    # UpbitInvalidRequestError — 가격 단위 거부 시 주문 미생성 (HTTP 400)
+    "주문가격 단위를 잘못",
+    "upbit invalid request",
 )
 
 

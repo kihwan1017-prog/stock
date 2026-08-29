@@ -158,6 +158,15 @@ class UpbitStartupOpenOrderReconciliationService:
                 continue
 
             if not str(order.broker_order_id or "").strip():
+                # MISSING UUID: AMBIGUOUS + deterministic reject 증명 시
+                # CONFIRMED_NOT_SUBMITTED 경로만 허용 (신규 SELL/cancel 금지)
+                resolved = self._try_resolve_missing_uuid_not_submitted(
+                    order=order,
+                    actor=actor,
+                )
+                if resolved is not None:
+                    actions.append(resolved)
+                    continue
                 blockers.append(f"MISSING_BROKER_UUID:{order.order_id}")
                 actions.append(
                     StartupOrderReconcileAction(
@@ -263,6 +272,69 @@ class UpbitStartupOpenOrderReconciliationService:
             manual_skipped=manual_skipped,
         )
         return result
+
+    def _try_resolve_missing_uuid_not_submitted(
+        self,
+        *,
+        order: TradingOrderEntity,
+        actor: str,
+    ) -> StartupOrderReconcileAction | None:
+        """broker_uuid 없는 AUTO open → CONFIRMED_NOT_SUBMITTED 가능하면 종결.
+
+        신규 SELL/CREATE/CANCEL 금지. AmbiguousNotSubmittedResolutionService만 재사용.
+        preview 불가·lookup 실패 시 None → 기존 MISSING_BROKER_UUID blocker 유지.
+        """
+
+        from stock_platform.order.ambiguous_not_submitted_resolution_service import (
+            AmbiguousNotSubmittedResolutionError,
+            AmbiguousNotSubmittedResolutionService,
+        )
+
+        order_id = int(order.order_id)
+        side = str(order.side_code or "").upper()
+        service = AmbiguousNotSubmittedResolutionService(self._session)
+        preview = service.preview(order_id)
+        if not preview.resolvable:
+            return None
+        try:
+            result = service.resolve_and_retire(
+                order_id,
+                reason=(
+                    "STARTUP_OPEN_ORDER_RECONCILIATION:"
+                    "MISSING_BROKER_UUID deterministic not-submitted"
+                ),
+                actor=actor,
+                skip_broker_lookup=False,
+            )
+        except AmbiguousNotSubmittedResolutionError as exc:
+            logger.warning(
+                "startup_missing_uuid_not_submitted_blocked",
+                order_id=order_id,
+                code=exc.code,
+                blockers=list(exc.blockers),
+            )
+            return None
+        self._session.flush()
+        refreshed = self._session.get(TradingOrderEntity, order_id)
+        return StartupOrderReconcileAction(
+            order_id=order_id,
+            owner=OWNER_AUTO,
+            side=side,
+            action="RESOLVED_CONFIRMED_NOT_SUBMITTED",
+            local_status_after=(
+                str(refreshed.status_code)
+                if refreshed is not None
+                else str(result.get("order_status") or "")
+            ),
+            detail={
+                "resolution": result.get("resolution"),
+                "reason_code": result.get("reason_code"),
+                "outbox_id": result.get("outbox_id"),
+                "identifier": result.get("identifier"),
+                "idempotent": result.get("idempotent"),
+                "create_order_calls": result.get("create_order_calls"),
+            },
+        )
 
     def _reconcile_auto_order(
         self,

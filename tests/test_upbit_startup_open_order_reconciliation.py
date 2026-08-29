@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
-from types import SimpleNamespace
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from stock_platform.broker.upbit.startup_open_order_reconciliation import (
     UpbitStartupOpenOrderReconciliationService,
     _is_stale_auto_wait,
 )
 from stock_platform.order.models import OrderStatus
-from stock_platform.trading.symbol_ownership.constants import OWNER_AUTO, OWNER_MANUAL
+from stock_platform.trading.symbol_ownership.constants import OWNER_AUTO
 
 
 def _auto_order(
@@ -188,6 +184,80 @@ def test_no_auto_open_passes() -> None:
 
     assert result.ok is True
     assert result.auto_open_before == 0
+
+
+def test_missing_uuid_resolves_confirmed_not_submitted() -> None:
+    """MISSING UUID + resolvable AMBIGUOUS → CONFIRMED_NOT_SUBMITTED (신규 SELL 없음)."""
+
+    session = MagicMock()
+    svc = UpbitStartupOpenOrderReconciliationService(session)
+    order = _auto_order(order_id=1947)
+    order.broker_order_id = None
+    order.status_code = OrderStatus.PENDING.value
+
+    preview = MagicMock(resolvable=True)
+    resolve_result = {
+        "resolution": "CONFIRMED_NOT_SUBMITTED",
+        "reason_code": "BROKER_NOT_REACHED_LOCAL_VALIDATION_FAILURE",
+        "outbox_id": 1384,
+        "identifier": "spu-test",
+        "idempotent": False,
+        "create_order_calls": 0,
+        "order_status": OrderStatus.CANCELLED.value,
+    }
+
+    with patch.object(svc, "_list_local_open_orders", return_value=[order]), patch.object(
+        svc, "_count_auto_db_open", side_effect=[1, 0]
+    ), patch(
+        "stock_platform.order.ambiguous_not_submitted_resolution_service."
+        "AmbiguousNotSubmittedResolutionService"
+    ) as amb_cls, patch(
+        "stock_platform.broker.upbit.startup_open_order_reconciliation.emit_live_safety_audit"
+    ), patch(
+        "stock_platform.operation.autotrading_process_version.service.capture_operational_recovery_trace"
+    ):
+        amb = amb_cls.return_value
+        amb.preview.return_value = preview
+        amb.resolve_and_retire.return_value = resolve_result
+        session.get.return_value = SimpleNamespace(
+            status_code=OrderStatus.CANCELLED.value
+        )
+        result = svc.reconcile_for_uba(1380, capture_trace=False)
+
+    assert result.ok is True
+    assert result.blockers == []
+    assert any(
+        a.action == "RESOLVED_CONFIRMED_NOT_SUBMITTED" for a in result.actions
+    )
+    amb.resolve_and_retire.assert_called_once()
+    assert amb.resolve_and_retire.call_args.kwargs.get("skip_broker_lookup") is False
+
+
+def test_missing_uuid_still_blocks_when_not_resolvable() -> None:
+    session = MagicMock()
+    svc = UpbitStartupOpenOrderReconciliationService(session)
+    order = _auto_order(order_id=1947)
+    order.broker_order_id = None
+    order.status_code = OrderStatus.PENDING.value
+
+    with patch.object(svc, "_list_local_open_orders", return_value=[order]), patch.object(
+        svc, "_count_auto_db_open", side_effect=[1, 1]
+    ), patch(
+        "stock_platform.order.ambiguous_not_submitted_resolution_service."
+        "AmbiguousNotSubmittedResolutionService"
+    ) as amb_cls, patch(
+        "stock_platform.broker.upbit.startup_open_order_reconciliation.emit_live_safety_audit"
+    ), patch(
+        "stock_platform.operation.autotrading_process_version.service.capture_operational_recovery_trace"
+    ), patch.object(svc, "_maybe_alert_restore_blocked"):
+        amb_cls.return_value.preview.return_value = MagicMock(
+            resolvable=False, blockers=["local_pre_send_failure_not_proven"]
+        )
+        result = svc.reconcile_for_uba(1380, capture_trace=False)
+
+    assert result.ok is False
+    assert "MISSING_BROKER_UUID:1947" in result.blockers
+    amb_cls.return_value.resolve_and_retire.assert_not_called()
 
 
 def test_unresolved_auto_blocks_ok() -> None:
