@@ -15,7 +15,7 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
-| **U** | Historical Exit Recovery + Long Hold Watch V1 | **ADA_RECOVERY_READY_FOR_OPERATOR_APPROVAL** | Operator approve recovery WRK · observe long-hold alerts |
+| **U** | Historical Exit Recovery + Long Hold Watch V1 | **PASS_LONG_HOLD_MONITORING_ADA_RECOVERY_NOT_ELIGIBLE** | Restart load long-hold · re-check dry-run when MA bearish · no force SELL |
 | **SHARED** | Trading Alert V2 Activation Closeout | **PASS_ALERT_V2_ACTIVE_NATURAL_SAMPLE_PENDING** | Observe natural BUY/SELL alerts |
 | **U** | Short-Term Operation V1 | **PASS** | OBSERVE entry quota 6 / AUTO slots |
 | **U** | Exit Strategy Shadow V1 | **PASS** | OBSERVE shadow rows · no REAL promote |
