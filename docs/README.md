@@ -1,9 +1,23 @@
 # Documentation Index — stock-platform
 
-> v1.0.0 · Docker 미사용 · PostgreSQL Windows 서비스  
-> 루트 포털: [../README.md](../README.md) · AI SoT: [../AGENTS.md](../AGENTS.md)
+> Docker 미사용 · PostgreSQL Windows 서비스  
+> 루트: [../README.md](../README.md) · AI SoT: [../AGENTS.md](../AGENTS.md)
 
-## Canonical Source of Truth (PHASE 2)
+## Human-facing canonical (시작점)
+
+| 문서 | 역할 |
+|------|------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 현재 구조 |
+| [AUTO_TRADING.md](AUTO_TRADING.md) | 자동매매 정책 요약 (문서화 only) |
+| [OPERATIONS.md](OPERATIONS.md) | 기동·ops-status·재시작 |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | 개발 Gate · **DOCUMENTATION POLICY** |
+| [DATABASE.md](DATABASE.md) | Alembic / DB |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 반복 장애 점검 |
+| [../CHANGELOG.md](../CHANGELOG.md) | 사용자 영향 milestone |
+
+일회성 AUDIT/VERIFY/STEP 보고서는 root에 두지 않는다. → [archive/](archive/) · Evidence → `../.run/`
+
+## Agent / implementation SoT (PHASE 2)
 
 | 문서 | 역할 |
 |------|------|
@@ -21,9 +35,8 @@
 | [AI_SECURITY_RULE.md](AI_SECURITY_RULE.md) | 보안 |
 | [AI_TRADING_SAFETY.md](AI_TRADING_SAFETY.md) | LIVE/PAPER 안전 |
 | [architecture/STRATEGY_LIFECYCLE_STEP12.md](architecture/STRATEGY_LIFECYCLE_STEP12.md) | Strategy STEP12 |
-| [audit/PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md](audit/PHASE2_DOCUMENTATION_STANDARDIZATION_REPORT_20260731.md) | PHASE 2 완료보고 |
 
-운영: UPBIT UBA1380 24x7 **COMPLETED** (controlled session) · 플랫폼 LIVE: P0·KIWOOM 잔여로 **NOT APPROVED**. 상세는 IMPLEMENTATION_STATUS.
+운영: UPBIT UBA1380 controlled · 플랫폼 LIVE: P0·KIWOOM 잔여로 **NOT APPROVED**.
 
 ## Domain folders
 

@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-29 (WRK-019 H2/H3 forward-shadow infra)
+**최종 갱신:** 2026-08-29 (SOURCE-DOC-CLEANUP-V1)
 
 ---
 
@@ -15,6 +15,9 @@
 
 | Track | STEP | Verdict | Next |
 |-------|------|---------|------|
+| **SHARED** | Source/Doc Cleanup V1 | **PASS_DOC_CLEANUP_SOURCE_REFACTOR_DEFERRED** | Observe MD policy; docs/audit bulk archive DEFERRED; source dead-code DEFERRED |
+| **U** | Short-Term Operation V1 | **PASS** | OBSERVE entry quota 6 / AUTO slots |
+| **U** | Exit Strategy Shadow V1 | **PASS** | OBSERVE shadow rows · no REAL promote |
 | **U** | WRK-019 H2/H3 frozen forward-shadow | **H2_H3_FORWARD_SHADOW_INFRA_READY** | OBSERVE forward N · no retune · no REAL promo |
 | **U** | 20:39+ no-trade + Data Trust | **UPBIT_RECURRING_FAILURE_ROOT_FIXED_DATA_TRUST_ENABLED** | OBSERVE_VALID_WINDOW · Trailing N10 VALID_ONLY |
 | **U** | STALE_PRE_RESTORE equal-epoch | **UPBIT_WAITING_RESTORE_ENTRY_RELIABILITY_FIX** | NATURAL: BEGIN_ENTRY without false STALE |

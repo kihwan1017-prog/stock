@@ -1,7 +1,26 @@
 # Changelog
 
-모든 주목할 만한 변경은 이 파일에 기록합니다.  
-형식은 [Keep a Changelog](https://keepachangelog.com/) 스타일을 따릅니다.
+사용자에게 영향이 큰 milestone만 기록한다.  
+세부 WRK/커밋 전체 목록은 Git 및 `operation.ai_development_work_history`로 위임.
+
+형식은 [Keep a Changelog](https://keepachangelog.com/) 스타일.
+
+---
+
+## [Unreleased]
+
+### Changed — Repository hygiene
+
+- Canonical human docs: `docs/ARCHITECTURE|AUTO_TRADING|OPERATIONS|DEVELOPMENT|DATABASE|TROUBLESHOOTING.md`
+- Root STEP/AUDIT/RUNBOOK portals → `docs/archive/2026-08/root-portal/`
+- `.run/` runtime evidence Git-ignored (README only tracked)
+- DOCUMENTATION POLICY in `docs/DEVELOPMENT.md`
+
+### Kept milestones (summary — do not expand per WRK)
+
+- Upbit runtime / recovery / Daily Entry+AUTO Slot / Exit Intent / Exit Shadow / H2·H3 shadow
+- Kiwoom runtime / feed
+- Order execution · Risk · Admin UX · Daily Report
 
 ---
 

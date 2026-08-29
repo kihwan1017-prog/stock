@@ -33,10 +33,12 @@ alwaysApply: true
 Allowed at repo root only for portal/agent continuity:
 
 - `README.md`, `CHANGELOG.md`, `PROJECT_STATUS.md`
-- Agent/persona: `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`
+- Agent/persona: `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, `CLAUDE.md`
+- Notices: `THIRD_PARTY_NOTICES.md` (and similar legal)
 - App-local: `frontend/README.md` (and similar package README under `frontend/`)
 
-New how-to, runbook, design, STEP, or checklist docs belong under `docs/…`, not the root.
+New how-to, runbook, design, STEP, AUDIT, VERIFY, RESULT, or checklist docs belong under `docs/…` or `docs/archive/…`, **not** the root.
+Per-WRK completion reports → Development Work History DB + `.run/` evidence — not a new root `.md`.
 
 ## Deletion
 

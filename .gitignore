@@ -52,3 +52,16 @@ openclaw-workspace-state.json
 USER.md
 MEMORY.md
 memory/
+
+# Runtime evidence / probes (not product docs)
+.run/*
+!.run/README.md
+
+# Generated / editor leftovers
+*.bak
+*.tmp
+*.old
+*.backup
+.ruff_cache/
+.next/
+coverage/
