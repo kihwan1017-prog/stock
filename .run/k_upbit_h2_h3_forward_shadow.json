@@ -1,0 +1,495 @@
+{
+  "WORK_ID": "WRK-20260829-019-UPBIT-H2-H3-FROZEN-FORWARD-SHADOW",
+  "PARENT": "WRK-20260829-018-UPBIT-POSITIVE-OUTCOME-FEATURE-DISCOVERY",
+  "BASE_COMMIT": "9e811b0391b1a4ab0c79759397ebda0ceb97faf8",
+  "generated_at": "2026-08-29T01:10:08.846158+00:00",
+  "FINAL_VERDICT": "H2_H3_FORWARD_SHADOW_INFRA_READY",
+  "frozen": {
+    "H2_RULE": {
+      "strategy": "H2",
+      "legacy_name": "IX_dist_ma20_pct_1_ret_1m_1",
+      "all_of": [
+        {
+          "feature": "dist_ma20_pct",
+          "op": "<=",
+          "bound": -0.20964360587002462,
+          "quantile_label": "Q1"
+        },
+        {
+          "feature": "ret_1m",
+          "op": "<=",
+          "bound": -0.09191176470588758,
+          "quantile_label": "Q1"
+        }
+      ],
+      "feature_defs": {
+        "dist_ma20_pct": {
+          "lookback_ma_short": 5,
+          "lookback_ma_long": 20,
+          "formula": "(close / ma20 - 1) * 100",
+          "q1_upper_bound": -0.20964360587002462,
+          "edges_discovery": [
+            -0.20964360587002462,
+            -0.053531504865067525,
+            0.04283179342838839,
+            0.19764544126492645
+          ]
+        },
+        "ret_1m": {
+          "lookback_minutes": 1,
+          "formula": "(close[t] / close[t-1] - 1) * 100",
+          "q1_upper_bound": -0.09191176470588758,
+          "edges_discovery": [
+            -0.09191176470588758,
+            0.0,
+            0.0,
+            0.08912655971480277
+          ]
+        }
+      },
+      "primary_horizon_min": 60,
+      "sample_every_min": 15,
+      "rule_version": "wrk018_h2_h3_frozen_v1",
+      "quantiles_recalculated": false
+    },
+    "H2_RULE_HASH": "0cfb35c4590f404b",
+    "H3_RULE": {
+      "strategy": "H3",
+      "legacy_name": "IX_ret_1m_1_dist_low_20_pct_1",
+      "all_of": [
+        {
+          "feature": "ret_1m",
+          "op": "<=",
+          "bound": -0.09191176470588758,
+          "quantile_label": "Q1"
+        },
+        {
+          "feature": "dist_low_20_pct",
+          "op": "<=",
+          "bound": 0.06131207847945852,
+          "quantile_label": "Q1"
+        }
+      ],
+      "feature_defs": {
+        "ret_1m": {
+          "lookback_minutes": 1,
+          "formula": "(close[t] / close[t-1] - 1) * 100",
+          "q1_upper_bound": -0.09191176470588758,
+          "edges_discovery": [
+            -0.09191176470588758,
+            0.0,
+            0.0,
+            0.08912655971480277
+          ]
+        },
+        "dist_low_20_pct": {
+          "lookback_minutes": 20,
+          "formula": "(close / min(low[t-20:t]) - 1) * 100",
+          "q1_upper_bound": 0.06131207847945852,
+          "edges_discovery": [
+            0.06131207847945852,
+            0.189969604863216,
+            0.38058991436726863,
+            0.7597340930674212
+          ]
+        }
+      },
+      "primary_horizon_min": 60,
+      "sample_every_min": 15,
+      "rule_version": "wrk018_h2_h3_frozen_v1",
+      "quantiles_recalculated": false
+    },
+    "H3_RULE_HASH": "80893dfac2d5b2ea",
+    "FORWARD_VALIDATION_STARTED_AT": "2026-08-29T01:00:00+00:00",
+    "QUANTILES_RECALCULATED": false,
+    "PRIMARY_HORIZON_MIN": 60
+  },
+  "H2_RULE": {
+    "strategy": "H2",
+    "legacy_name": "IX_dist_ma20_pct_1_ret_1m_1",
+    "all_of": [
+      {
+        "feature": "dist_ma20_pct",
+        "op": "<=",
+        "bound": -0.20964360587002462,
+        "quantile_label": "Q1"
+      },
+      {
+        "feature": "ret_1m",
+        "op": "<=",
+        "bound": -0.09191176470588758,
+        "quantile_label": "Q1"
+      }
+    ],
+    "feature_defs": {
+      "dist_ma20_pct": {
+        "lookback_ma_short": 5,
+        "lookback_ma_long": 20,
+        "formula": "(close / ma20 - 1) * 100",
+        "q1_upper_bound": -0.20964360587002462,
+        "edges_discovery": [
+          -0.20964360587002462,
+          -0.053531504865067525,
+          0.04283179342838839,
+          0.19764544126492645
+        ]
+      },
+      "ret_1m": {
+        "lookback_minutes": 1,
+        "formula": "(close[t] / close[t-1] - 1) * 100",
+        "q1_upper_bound": -0.09191176470588758,
+        "edges_discovery": [
+          -0.09191176470588758,
+          0.0,
+          0.0,
+          0.08912655971480277
+        ]
+      }
+    },
+    "primary_horizon_min": 60,
+    "sample_every_min": 15,
+    "rule_version": "wrk018_h2_h3_frozen_v1",
+    "quantiles_recalculated": false
+  },
+  "H2_RULE_HASH": "0cfb35c4590f404b",
+  "H3_RULE": {
+    "strategy": "H3",
+    "legacy_name": "IX_ret_1m_1_dist_low_20_pct_1",
+    "all_of": [
+      {
+        "feature": "ret_1m",
+        "op": "<=",
+        "bound": -0.09191176470588758,
+        "quantile_label": "Q1"
+      },
+      {
+        "feature": "dist_low_20_pct",
+        "op": "<=",
+        "bound": 0.06131207847945852,
+        "quantile_label": "Q1"
+      }
+    ],
+    "feature_defs": {
+      "ret_1m": {
+        "lookback_minutes": 1,
+        "formula": "(close[t] / close[t-1] - 1) * 100",
+        "q1_upper_bound": -0.09191176470588758,
+        "edges_discovery": [
+          -0.09191176470588758,
+          0.0,
+          0.0,
+          0.08912655971480277
+        ]
+      },
+      "dist_low_20_pct": {
+        "lookback_minutes": 20,
+        "formula": "(close / min(low[t-20:t]) - 1) * 100",
+        "q1_upper_bound": 0.06131207847945852,
+        "edges_discovery": [
+          0.06131207847945852,
+          0.189969604863216,
+          0.38058991436726863,
+          0.7597340930674212
+        ]
+      }
+    },
+    "primary_horizon_min": 60,
+    "sample_every_min": 15,
+    "rule_version": "wrk018_h2_h3_frozen_v1",
+    "quantiles_recalculated": false
+  },
+  "H3_RULE_HASH": "80893dfac2d5b2ea",
+  "FORWARD_VALIDATION_STARTED_AT": "2026-08-29T01:00:00+00:00",
+  "HISTORICAL_DATA_REUSED_AS_FORWARD": false,
+  "QUANTILES_RECALCULATED": false,
+  "STORAGE": "operation.upbit_h2_h3_forward_shadow",
+  "EVALUATOR": "UpbitH2H3ForwardShadowScheduler / run_evaluate_tick",
+  "OUTCOME_WORKER": "mature_pending (30/60/120 catch-up)",
+  "summary": {
+    "ok": true,
+    "research_only": true,
+    "work_id": "WRK-20260829-019-UPBIT-H2-H3-FROZEN-FORWARD-SHADOW",
+    "historical": {
+      "ok": true,
+      "source": "HISTORICAL",
+      "wrk018": true,
+      "H2": {
+        "strategy": "H2",
+        "legacy_name": "IX_dist_ma20_pct_1_ret_1m_1",
+        "source": "HISTORICAL",
+        "validation": {
+          "n": 1592,
+          "pf": 1.2,
+          "total_net": 17740.2
+        },
+        "test": {
+          "n": 2018,
+          "pf": 1.001,
+          "total_net": 199.8
+        }
+      },
+      "H3": {
+        "strategy": "H3",
+        "legacy_name": "IX_ret_1m_1_dist_low_20_pct_1",
+        "source": "HISTORICAL",
+        "validation": {
+          "n": 1489,
+          "pf": 1.11,
+          "total_net": 6281.1
+        },
+        "test": {
+          "n": 1284,
+          "pf": 1.025,
+          "total_net": 1568.9
+        }
+      },
+      "note": "Historical must NOT be merged into forward promotion sample"
+    },
+    "forward_shadow": {
+      "source": "FORWARD_SHADOW",
+      "started_at": "2026-08-29T01:00:00+00:00",
+      "rule_version": "wrk018_h2_h3_frozen_v1",
+      "primary_horizon_min": 60,
+      "quantiles_recalculated": false,
+      "H2": {
+        "strategy": "H2",
+        "rule_hash": "0cfb35c4590f404b",
+        "total": 1,
+        "pending": 1,
+        "complete": 0,
+        "primary_horizon": 60,
+        "summary_primary": {
+          "n": 0,
+          "opportunities_day": 0.0,
+          "win_rate": null,
+          "pf": null,
+          "total_net": 0.0,
+          "mdd": 0.0
+        },
+        "horizons": {
+          "30m": {
+            "n": 0
+          },
+          "60m": {
+            "n": 0
+          },
+          "120m": {
+            "n": 0
+          }
+        },
+        "readiness": "NOT_ENOUGH_FORWARD_DATA",
+        "user_approval_required": true,
+        "profit_concentration_top2": 0.0,
+        "top_symbol_profit_share": 0.0,
+        "slip5_pf": 0.0,
+        "mdd": 0.0,
+        "source": "FORWARD_SHADOW",
+        "rule": {
+          "strategy": "H2",
+          "legacy_name": "IX_dist_ma20_pct_1_ret_1m_1",
+          "all_of": [
+            {
+              "feature": "dist_ma20_pct",
+              "op": "<=",
+              "bound": -0.20964360587002462,
+              "quantile_label": "Q1"
+            },
+            {
+              "feature": "ret_1m",
+              "op": "<=",
+              "bound": -0.09191176470588758,
+              "quantile_label": "Q1"
+            }
+          ],
+          "feature_defs": {
+            "dist_ma20_pct": {
+              "lookback_ma_short": 5,
+              "lookback_ma_long": 20,
+              "formula": "(close / ma20 - 1) * 100",
+              "q1_upper_bound": -0.20964360587002462,
+              "edges_discovery": [
+                -0.20964360587002462,
+                -0.053531504865067525,
+                0.04283179342838839,
+                0.19764544126492645
+              ]
+            },
+            "ret_1m": {
+              "lookback_minutes": 1,
+              "formula": "(close[t] / close[t-1] - 1) * 100",
+              "q1_upper_bound": -0.09191176470588758,
+              "edges_discovery": [
+                -0.09191176470588758,
+                0.0,
+                0.0,
+                0.08912655971480277
+              ]
+            }
+          },
+          "primary_horizon_min": 60,
+          "sample_every_min": 15,
+          "rule_version": "wrk018_h2_h3_frozen_v1",
+          "quantiles_recalculated": false
+        }
+      },
+      "H3": {
+        "strategy": "H3",
+        "rule_hash": "80893dfac2d5b2ea",
+        "total": 1,
+        "pending": 1,
+        "complete": 0,
+        "primary_horizon": 60,
+        "summary_primary": {
+          "n": 0,
+          "opportunities_day": 0.0,
+          "win_rate": null,
+          "pf": null,
+          "total_net": 0.0,
+          "mdd": 0.0
+        },
+        "horizons": {
+          "30m": {
+            "n": 0
+          },
+          "60m": {
+            "n": 0
+          },
+          "120m": {
+            "n": 0
+          }
+        },
+        "readiness": "NOT_ENOUGH_FORWARD_DATA",
+        "user_approval_required": true,
+        "profit_concentration_top2": 0.0,
+        "top_symbol_profit_share": 0.0,
+        "slip5_pf": 0.0,
+        "mdd": 0.0,
+        "source": "FORWARD_SHADOW",
+        "rule": {
+          "strategy": "H3",
+          "legacy_name": "IX_ret_1m_1_dist_low_20_pct_1",
+          "all_of": [
+            {
+              "feature": "ret_1m",
+              "op": "<=",
+              "bound": -0.09191176470588758,
+              "quantile_label": "Q1"
+            },
+            {
+              "feature": "dist_low_20_pct",
+              "op": "<=",
+              "bound": 0.06131207847945852,
+              "quantile_label": "Q1"
+            }
+          ],
+          "feature_defs": {
+            "ret_1m": {
+              "lookback_minutes": 1,
+              "formula": "(close[t] / close[t-1] - 1) * 100",
+              "q1_upper_bound": -0.09191176470588758,
+              "edges_discovery": [
+                -0.09191176470588758,
+                0.0,
+                0.0,
+                0.08912655971480277
+              ]
+            },
+            "dist_low_20_pct": {
+              "lookback_minutes": 20,
+              "formula": "(close / min(low[t-20:t]) - 1) * 100",
+              "q1_upper_bound": 0.06131207847945852,
+              "edges_discovery": [
+                0.06131207847945852,
+                0.189969604863216,
+                0.38058991436726863,
+                0.7597340930674212
+              ]
+            }
+          },
+          "primary_horizon_min": 60,
+          "sample_every_min": 15,
+          "rule_version": "wrk018_h2_h3_frozen_v1",
+          "quantiles_recalculated": false
+        }
+      }
+    },
+    "runtime": {
+      "configured": false,
+      "run_count": 0,
+      "success_count": 0,
+      "error_count": 0,
+      "last_run_at": null,
+      "last_success_at": null,
+      "last_error": null,
+      "last_result": null,
+      "strategy_signal_published": 0,
+      "executor_calls": 0,
+      "real_orders": 0
+    },
+    "safety": {
+      "shadow_only": true,
+      "strategy_signal_published": 0,
+      "executor_calls": 0,
+      "real_order_created_by_shadow": 0,
+      "user_approval_required": true,
+      "auto_promotion": false
+    }
+  },
+  "H2": {
+    "TOTAL": 1,
+    "PENDING": 1,
+    "COMPLETE": 0,
+    "PF30": null,
+    "PF60": null,
+    "PF120": null,
+    "NET30": null,
+    "NET60": null,
+    "NET120": null,
+    "READINESS": "NOT_ENOUGH_FORWARD_DATA",
+    "RULE_HASH": "0cfb35c4590f404b"
+  },
+  "H3": {
+    "TOTAL": 1,
+    "PENDING": 1,
+    "COMPLETE": 0,
+    "PF30": null,
+    "PF60": null,
+    "PF120": null,
+    "NET30": null,
+    "NET60": null,
+    "NET120": null,
+    "READINESS": "NOT_ENOUGH_FORWARD_DATA",
+    "RULE_HASH": "80893dfac2d5b2ea"
+  },
+  "SAFETY": {
+    "SHADOW_ONLY": true,
+    "STRATEGY_SIGNAL_PUBLISHED": 0,
+    "EXECUTOR_CALLS": 0,
+    "REAL_ORDER_CREATED_BY_SHADOW": 0,
+    "REAL_POLICY_CHANGED": false,
+    "LIVE_ARM_MUTATION": false
+  },
+  "TEST": {
+    "PYTEST": "PASS",
+    "file": "tests/test_upbit_h2_h3_forward_shadow.py"
+  },
+  "REMAINING": "Forward sample auto-accumulates; do not force next WRK",
+  "DEPLOY": {
+    "migration": "h2h3fs1a2b3c4d applied",
+    "backend_restart": "SKIPPED_LIVE_ON",
+    "reason": "LIVE=ON ARM=ON unattended ACTIVE — do not disturb"
+  },
+  "HTTP_OPS_PRE": {
+    "LIVE": "ON",
+    "ARM": "ON",
+    "LEASE": "ACTIVE",
+    "STACK": "4/4",
+    "AUTO_TRADING_READY": true,
+    "FEED": "see ops-status"
+  },
+  "RECOVERY": {
+    "RESTART_CATCHUP": true,
+    "DEDUPE": "15m grid + unique(strategy,symbol,evaluated_at,rule_hash)",
+    "IDEMPOTENCY": true
+  }
+}

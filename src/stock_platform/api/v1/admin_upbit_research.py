@@ -249,6 +249,19 @@ def get_positive_edge_entry_summary() -> dict[str, Any]:
     return summarize_for_ui()
 
 
+@router.get("/h2-h3-forward-shadow/summary")
+def get_h2_h3_forward_shadow_summary(
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """WRK-019 H2/H3 frozen forward-shadow — RESEARCH ONLY."""
+
+    from stock_platform.operation.upbit_h2_h3_forward_shadow.summary import (
+        summarize_for_ui,
+    )
+
+    return summarize_for_ui(session)
+
+
 @router.get("/entry-signal-shadow/rows")
 def list_entry_signal_shadow_rows_api(
     uba_id: int = Query(default=1380, ge=1),

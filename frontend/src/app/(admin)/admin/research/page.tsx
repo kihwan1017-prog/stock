@@ -24,6 +24,7 @@ import { UpbitEntrySignalShadowPanel } from "@/features/admin/upbit/UpbitEntrySi
 import { CrossMarketShadowResearchPanel } from "@/features/admin/research/CrossMarketShadowResearchPanel";
 import { UpbitShortTermTurnoverResearchPanel } from "@/features/admin/research/UpbitShortTermTurnoverResearchPanel";
 import { UpbitPositiveEdgeEntryResearchPanel } from "@/features/admin/research/UpbitPositiveEdgeEntryResearchPanel";
+import { UpbitH2H3ForwardShadowPanel } from "@/features/admin/research/UpbitH2H3ForwardShadowPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
@@ -106,7 +107,15 @@ function ResearchWorkspaceBody() {
       {
         key: "positive-edge-entry",
         label: "Entry 전략 비교",
-        children: <UpbitPositiveEdgeEntryResearchPanel />,
+        children: (
+          <Space orientation="vertical" size={24} style={{ width: "100%" }}>
+            <UpbitPositiveEdgeEntryResearchPanel />
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Forward Shadow
+            </Typography.Title>
+            <UpbitH2H3ForwardShadowPanel />
+          </Space>
+        ),
       },
       {
         key: "experiments",

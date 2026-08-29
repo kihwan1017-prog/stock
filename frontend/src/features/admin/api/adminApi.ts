@@ -769,6 +769,11 @@ export async function getAdminUpbitResearchPositiveEdgeEntrySummary(): Promise<J
   return getJson("/admin/upbit/research/positive-edge-entry/summary");
 }
 
+/** WRK-019 H2/H3 frozen forward-shadow — READ ONLY */
+export async function getAdminUpbitResearchH2H3ForwardShadowSummary(): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/h2-h3-forward-shadow/summary");
+}
+
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
 export async function getAdminAutotradingResearchStatus(
   params?: Params,
