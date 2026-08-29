@@ -585,3 +585,117 @@ def test_45_symbol_display_and_maybe_format() -> None:
     )
     assert "자동매수" in title
     assert "DOS" in body or "KRW-DOS" in body
+
+
+def test_46_bulk_patch_last_changed_values_persist() -> None:
+    """연속 변경 후 일괄 PATCH — 마지막 상태 전부 persist (save→revert 회귀)."""
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from stock_platform.database.base import Base
+    from stock_platform.notification.alert_v2.preferences import (
+        TradingAlertPreference,
+        list_preferences,
+        patch_preferences,
+    )
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    table = TradingAlertPreference.__table__
+    original_schema = table.schema
+    table.schema = None
+    try:
+        Base.metadata.create_all(engine, tables=[table])
+        Session = sessionmaker(bind=engine)
+        with Session() as session:
+            patch_preferences(
+                session,
+                updates={
+                    "UPBIT_AI_DECISION": True,
+                    "AUTO_SLOT": True,
+                    "CANDIDATE_ANALYSIS": True,
+                    "SHADOW_ANALYSIS": True,
+                    "KIWOOM_AI_DECISION": True,
+                },
+                updated_by="test",
+            )
+            session.commit()
+            items = patch_preferences(
+                session,
+                updates={
+                    "UPBIT_AI_DECISION": False,
+                    "AUTO_SLOT": False,
+                    "CANDIDATE_ANALYSIS": False,
+                    "SHADOW_ANALYSIS": False,
+                },
+                updated_by="test",
+            )
+            session.commit()
+            by_key = {i["key"]: i["enabled"] for i in items}
+            assert by_key["UPBIT_AI_DECISION"] is False
+            assert by_key["AUTO_SLOT"] is False
+            assert by_key["CANDIDATE_ANALYSIS"] is False
+            assert by_key["SHADOW_ANALYSIS"] is False
+            assert by_key["KIWOOM_AI_DECISION"] is True
+            again = {i["key"]: i["enabled"] for i in list_preferences(session)}
+            assert again["UPBIT_AI_DECISION"] is False
+            assert again["AUTO_SLOT"] is False
+    finally:
+        table.schema = original_schema
+
+
+def test_47_noisy_prefs_off_blocks_delivery_only() -> None:
+    """preference OFF → delivery False, mapping/event 는 유지."""
+
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from stock_platform.notification.alert_v2.gate import (
+        should_deliver_trading_alert,
+    )
+
+    session = MagicMock()
+    # is_preference_enabled → session.get
+    def _get(_cls, key):
+        enabled = key not in {
+            "UPBIT_AI_DECISION",
+            "AUTO_SLOT",
+            "CANDIDATE_ANALYSIS",
+            "SHADOW_ANALYSIS",
+        }
+        return SimpleNamespace(enabled=enabled)
+
+    session.get.side_effect = _get
+
+    ok, reason = should_deliver_trading_alert(
+        event_type="AI_GATE_RECOMMENDATION_CHANGED",
+        detail={"market": "UPBIT"},
+        session=session,
+    )
+    assert ok is False
+    assert "OFF" in reason or "PREFERENCE" in reason
+
+    ok_buy, _ = should_deliver_trading_alert(
+        event_type="ORDER_FILLED",
+        detail={
+            "market": "UPBIT",
+            "side": "BUY",
+            "order_source": "AUTO",
+            "strategy_id": 1,
+        },
+        session=session,
+    )
+    assert ok_buy is True
+
+    # KIWOOM AI 는 OFF 대상 아님
+    ok_k, _ = should_deliver_trading_alert(
+        event_type="AI_GATE_RECOMMENDATION_CHANGED",
+        detail={"market": "KIWOOM"},
+        session=session,
+    )
+    assert ok_k is True

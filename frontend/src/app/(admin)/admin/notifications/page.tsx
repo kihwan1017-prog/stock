@@ -37,7 +37,7 @@ export default function AdminNotificationsPage() {
   return (
     <AdminPageShell
       title="알림 관리"
-      description="사용자 친화 알림 설정 · 한글 템플릿 · notification/status — Telegram 운영은 Telegram 페이지"
+      description="자동매매에서 받을 알림을 선택합니다. 알림을 꺼도 자동매매와 분석 기능은 계속 실행됩니다."
       extra={
         <Space wrap>
           <Button
@@ -53,8 +53,8 @@ export default function AdminNotificationsPage() {
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          정형 알림은 JSON dump 대신 한글 템플릿으로 전송됩니다. 원본 JSON은
-          관리자 전송 이력에서 확인하세요. Discord 채널 UI는 다루지 않습니다.
+          알림 설정은 수신(Telegram 등)만 제어합니다. EVENT_TYPE·자동매매·AI·후보
+          분석 로직은 그대로 동작합니다.
         </Typography.Paragraph>
 
         <TradingAlertPreferencesPanel />
