@@ -72,6 +72,12 @@ class PositionExitMonitorScheduler:
             ),
         )
 
+    def status(self) -> dict:
+        return {
+            "scheduler_running": bool(self._scheduler.running),
+            "independent_of_strategy_runtime": True,
+        }
+
     async def shutdown(self) -> None:
         if self._scheduler.running:
             self._scheduler.shutdown(wait=False)

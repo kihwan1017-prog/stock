@@ -75,6 +75,26 @@ class ExitProtectionResolved:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class MaxHoldResolved:
+    """최대보유(max hold) — seconds 기반 protection."""
+
+    mode: ExitProtectionMode
+    configured_seconds: int | None
+    effective_enabled: bool
+    effective_seconds: int | None
+    source: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "mode": self.mode,
+            "configured_seconds": self.configured_seconds,
+            "effective_enabled": self.effective_enabled,
+            "effective_seconds": self.effective_seconds,
+            "source": self.source,
+        }
+
+
 def resolve_exit_protection(
     *,
     key: str,
@@ -166,6 +186,107 @@ def resolve_exit_protection(
     )
 
 
+def resolve_max_hold(
+    *,
+    system_seconds: int | None,
+    user_mode: Any,
+    user_seconds: int | None,
+    account_mode: Any,
+    account_seconds: int | None,
+) -> MaxHoldResolved:
+    """max_hold_mode + max_hold_seconds — SL/TP/Trailing과 동일 상속 규칙."""
+
+    current_seconds = system_seconds
+    current_source = "SYSTEM"
+    configured_seconds: int | None = None
+
+    u_mode = normalize_exit_protection_mode(user_mode)
+    if u_mode == MODE_DISABLED:
+        return MaxHoldResolved(
+            mode=MODE_DISABLED,
+            configured_seconds=user_seconds,
+            effective_enabled=False,
+            effective_seconds=None,
+            source="USER",
+        )
+    if u_mode == MODE_ENABLED:
+        if user_seconds is None:
+            return MaxHoldResolved(
+                mode=MODE_ENABLED,
+                configured_seconds=None,
+                effective_enabled=False,
+                effective_seconds=None,
+                source="USER",
+            )
+        current_seconds = int(user_seconds)
+        current_source = "USER"
+        configured_seconds = int(user_seconds)
+    elif user_seconds is not None:
+        current_seconds = int(user_seconds)
+        current_source = "USER"
+        configured_seconds = int(user_seconds)
+
+    a_mode = normalize_exit_protection_mode(account_mode)
+    if a_mode == MODE_DISABLED:
+        return MaxHoldResolved(
+            mode=MODE_DISABLED,
+            configured_seconds=account_seconds,
+            effective_enabled=False,
+            effective_seconds=None,
+            source="UBA",
+        )
+    if a_mode == MODE_ENABLED:
+        if account_seconds is None:
+            return MaxHoldResolved(
+                mode=MODE_ENABLED,
+                configured_seconds=None,
+                effective_enabled=False,
+                effective_seconds=None,
+                source="UBA",
+            )
+        return MaxHoldResolved(
+            mode=MODE_ENABLED,
+            configured_seconds=int(account_seconds),
+            effective_enabled=True,
+            effective_seconds=int(account_seconds),
+            source="UBA",
+        )
+    if account_seconds is not None:
+        current_seconds = int(account_seconds)
+        current_source = "UBA"
+        configured_seconds = int(account_seconds)
+
+    enabled = current_seconds is not None
+    return MaxHoldResolved(
+        mode=(
+            MODE_INHERIT
+            if a_mode == MODE_INHERIT and u_mode == MODE_INHERIT
+            else (a_mode if a_mode != MODE_INHERIT else u_mode)
+        ),
+        configured_seconds=configured_seconds,
+        effective_enabled=enabled,
+        effective_seconds=current_seconds if enabled else None,
+        source=current_source,
+    )
+
+
+def resolve_trailing_activation_rate(
+    *,
+    user_rate: Decimal | None,
+    account_rate: Decimal | None,
+) -> Decimal | None:
+    """트레일링 활성 수익 임계. None = 레거시(any profit arm).
+
+    SYSTEM 기본값 없음 — UBA > USER > None.
+    """
+
+    if account_rate is not None:
+        return Decimal(str(account_rate))
+    if user_rate is not None:
+        return Decimal(str(user_rate))
+    return None
+
+
 def exit_protections_bundle(
     *,
     system_rates: dict[str, Decimal | None],
@@ -189,3 +310,49 @@ def exit_protections_bundle(
             ),
         )
     return out
+
+
+def resolve_max_hold_from_rows(
+    *,
+    user_row: Any | None,
+    account_row: Any | None,
+    system_seconds: int | None = None,
+) -> MaxHoldResolved:
+    """USER/UBA row에서 max_hold 해석."""
+
+    return resolve_max_hold(
+        system_seconds=system_seconds,
+        user_mode=getattr(user_row, "max_hold_mode", None) if user_row else None,
+        user_seconds=(
+            getattr(user_row, "max_hold_seconds", None) if user_row else None
+        ),
+        account_mode=(
+            getattr(account_row, "max_hold_mode", None) if account_row else None
+        ),
+        account_seconds=(
+            getattr(account_row, "max_hold_seconds", None)
+            if account_row
+            else None
+        ),
+    )
+
+
+def resolve_trailing_activation_from_rows(
+    *,
+    user_row: Any | None,
+    account_row: Any | None,
+) -> Decimal | None:
+    """USER/UBA row에서 trailing_activation_rate 해석."""
+
+    return resolve_trailing_activation_rate(
+        user_rate=(
+            getattr(user_row, "trailing_activation_rate", None)
+            if user_row
+            else None
+        ),
+        account_rate=(
+            getattr(account_row, "trailing_activation_rate", None)
+            if account_row
+            else None
+        ),
+    )

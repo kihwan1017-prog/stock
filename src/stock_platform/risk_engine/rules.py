@@ -17,6 +17,17 @@ from stock_platform.risk_engine.models import (
 ZERO = Decimal("0")
 
 
+def _as_pending_sell(account) -> Decimal:
+    """미체결 SELL 수량. 필드 없으면 0 (기존 테스트 호환)."""
+
+    raw = getattr(account, "symbol_pending_sell_quantity", ZERO)
+    try:
+        pending = Decimal(str(raw if raw is not None else 0))
+    except Exception:  # noqa: BLE001
+        return ZERO
+    return pending if pending > ZERO else ZERO
+
+
 class RiskRule(ABC):
     @abstractmethod
     def evaluate(
@@ -61,6 +72,21 @@ class EmergencyStopRule(RiskRule):
 class MaximumOrderAmountRule(RiskRule):
     def evaluate(self, *, order, account, policy):
         amount = order.order_amount
+        # ENTRY 전용 — 서버가 검증한 risk-reducing EXIT는 금액 한도 미적용
+        if (
+            order.side == RiskOrderSide.SELL
+            and getattr(order, "is_risk_reducing", False)
+        ):
+            return RiskRuleResult(
+                rule_code="MAX_ORDER_AMOUNT",
+                level=RiskDecisionLevel.PASS,
+                message="EXIT skips ENTRY max_order_amount",
+                detail={
+                    "order_amount": str(amount),
+                    "limit": str(policy.max_order_amount),
+                    "exit_skip": True,
+                },
+            )
 
         if amount <= policy.max_order_amount:
             return RiskRuleResult(
@@ -325,21 +351,32 @@ class SellQuantityRule(RiskRule):
                 message="BUY does not require held quantity",
             )
 
-        if order.quantity <= account.symbol_position_quantity:
+        pending = _as_pending_sell(account)
+        held = Decimal(str(account.symbol_position_quantity or ZERO))
+        sellable = held - pending
+        if sellable < ZERO:
+            sellable = ZERO
+
+        if order.quantity <= sellable:
             return RiskRuleResult(
                 rule_code="SELL_QUANTITY",
                 level=RiskDecisionLevel.PASS,
                 message="Held quantity is sufficient",
+                detail={
+                    "held_quantity": str(held),
+                    "pending_sell_quantity": str(pending),
+                    "sellable_quantity": str(sellable),
+                },
             )
 
         return RiskRuleResult(
             rule_code="SELL_QUANTITY",
             level=RiskDecisionLevel.BLOCK,
-            message="Sell quantity exceeds held quantity",
+            message="Sell quantity exceeds sellable holding",
             detail={
-                "held_quantity": str(
-                    account.symbol_position_quantity
-                ),
+                "held_quantity": str(held),
+                "pending_sell_quantity": str(pending),
+                "sellable_quantity": str(sellable),
                 "sell_quantity": str(order.quantity),
             },
         )

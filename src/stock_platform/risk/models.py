@@ -85,6 +85,11 @@ class ExitEvaluationRequest:
     trailing_stop_ratio: Decimal | None = None
     # 진입가 대비 상대 손실 비율 (예: 0.08 = -8%)
     relative_loss_ratio: Decimal | None = None
+    # REAL Exit V1 — trailing 활성(+1%) / 최대보유
+    trailing_activation_ratio: Decimal | None = None
+    trailing_armed: bool = False
+    holding_seconds: int | None = None
+    max_hold_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

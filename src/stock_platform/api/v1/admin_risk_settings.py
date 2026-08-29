@@ -55,6 +55,9 @@ class RiskSettingUpdateRequest(BaseModel):
     trailing_stop_rate: Decimal | None = Field(
         default=None, ge=0, le=1
     )
+    trailing_activation_rate: Decimal | None = Field(
+        default=None, ge=0, le=1
+    )
     # REAL exit protection tri-state
     stop_loss_mode: str | None = Field(
         default=None, pattern="^(INHERIT|ENABLED|DISABLED)$"
@@ -65,6 +68,10 @@ class RiskSettingUpdateRequest(BaseModel):
     trailing_stop_mode: str | None = Field(
         default=None, pattern="^(INHERIT|ENABLED|DISABLED)$"
     )
+    max_hold_mode: str | None = Field(
+        default=None, pattern="^(INHERIT|ENABLED|DISABLED)$"
+    )
+    max_hold_seconds: int | None = Field(default=None, ge=0)
     auto_trading_enabled: bool | None = None
     buy_enabled: bool | None = None
     sell_enabled: bool | None = None

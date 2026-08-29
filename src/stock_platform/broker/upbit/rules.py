@@ -13,27 +13,42 @@ UPBIT_VOLUME_STEP = Decimal("0.00000001")
 
 
 def upbit_tick_size(price: Decimal) -> Decimal:
-    """
-    업비트 KRW 호가 단위 (단순화 테이블).
-    공식 규칙은 구간·종목별로 더 세분화될 수 있어 보수적으로 적용한다.
+    """업비트 KRW 호가 단위 (2025-07-31 이후 공식 표).
+
+    출처: https://docs.upbit.com/kr/docs/krw-market-info
+    구버전(10만~50만=50원 등)은 주문가격 단위 거부를 유발하므로 사용 금지.
     """
 
     value = abs(price)
+    if value < Decimal("0.00001"):
+        return Decimal("0.00000001")
+    if value < Decimal("0.0001"):
+        return Decimal("0.0000001")
+    if value < Decimal("0.001"):
+        return Decimal("0.000001")
+    if value < Decimal("0.01"):
+        return Decimal("0.00001")
+    if value < Decimal("0.1"):
+        return Decimal("0.0001")
+    if value < Decimal("1"):
+        return Decimal("0.001")
     if value < Decimal("10"):
         return Decimal("0.01")
     if value < Decimal("100"):
         return Decimal("0.1")
     if value < Decimal("1000"):
         return Decimal("1")
+    if value < Decimal("5000"):
+        return Decimal("1")
     if value < Decimal("10000"):
         return Decimal("5")
-    if value < Decimal("100000"):
+    if value < Decimal("50000"):
         return Decimal("10")
-    if value < Decimal("500000"):
+    if value < Decimal("100000"):
         return Decimal("50")
-    if value < Decimal("1000000"):
+    if value < Decimal("500000"):
         return Decimal("100")
-    if value < Decimal("2000000"):
+    if value < Decimal("1000000"):
         return Decimal("500")
     return Decimal("1000")
 

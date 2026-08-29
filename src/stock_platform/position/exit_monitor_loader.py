@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from decimal import ROUND_DOWN, Decimal
 
 import structlog
@@ -68,6 +69,8 @@ class ExitThresholds:
     trailing_stop_ratio: Decimal | None
     relative_loss_ratio: Decimal | None
     daily_loss_limit: Decimal
+    trailing_activation_ratio: Decimal | None = None
+    max_hold_seconds: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -291,6 +294,12 @@ class PositionExitMonitorLoader:
                         item.snapshot_synchronized_at
                     ),
                     binding_id=item.binding_id,
+                    holding_seconds=item.holding_seconds,
+                    max_hold_seconds=item.max_hold_seconds,
+                    trailing_activation_ratio=(
+                        item.trailing_activation_ratio
+                    ),
+                    trailing_armed=item.trailing_armed,
                 )
                 for item in positions
             ]
@@ -326,6 +335,12 @@ class PositionExitMonitorLoader:
                 trailing_stop_ratio=resolved.trailing_stop_rate,
                 relative_loss_ratio=None,
                 daily_loss_limit=resolved.daily_max_loss_amount,
+                trailing_activation_ratio=resolved.trailing_activation_rate,
+                max_hold_seconds=(
+                    resolved.max_hold_seconds
+                    if resolved.max_hold_effective_enabled
+                    else None
+                ),
             )
 
         settings = get_settings()
@@ -426,6 +441,7 @@ class PositionExitMonitorLoader:
             if uba_id <= 0 or not symbol:
                 continue
             # 수동/기존 보유 vs strategy-owned 구분 — 의도치 않은 청산 방지
+            # Exit SoT: canonical strategy_position_binding (upbit binding drift 허용)
             try:
                 from stock_platform.operation.upbit_full_market.constants import (
                     is_any_full_market,
@@ -433,24 +449,62 @@ class PositionExitMonitorLoader:
                 from stock_platform.operation.upbit_full_market.service import (
                     UpbitFullMarketAssignmentService,
                 )
+                from stock_platform.risk_engine.strategy_owned_entities import (
+                    BINDING_STATUS_OPEN,
+                    OWNERSHIP_MANUAL,
+                    OWNERSHIP_STRATEGY,
+                    OWNERSHIP_UNKNOWN,
+                    StrategyPositionBindingEntity,
+                )
 
                 fma = UpbitFullMarketAssignmentService(self._session)
                 st = fma.status_dict(uba_id)
                 mode = str(st.get("mode") or "")
+                canonical = self._session.scalar(
+                    select(StrategyPositionBindingEntity).where(
+                        StrategyPositionBindingEntity.user_broker_account_id
+                        == uba_id,
+                        StrategyPositionBindingEntity.broker_code == "UPBIT",
+                        StrategyPositionBindingEntity.symbol == symbol,
+                        StrategyPositionBindingEntity.status
+                        == BINDING_STATUS_OPEN,
+                    )
+                )
+                ownership = (
+                    str(getattr(canonical, "ownership_code", "") or "")
+                    .strip()
+                    .upper()
+                    if canonical is not None
+                    else ""
+                )
+                if ownership in {OWNERSHIP_MANUAL, OWNERSHIP_UNKNOWN}:
+                    skipped.append(
+                        f"manual_holding:LIVE:{uba_id}/{symbol}"
+                    )
+                    continue
                 if is_any_full_market(mode):
-                    if not fma.is_strategy_owned_symbol(uba_id, symbol):
+                    # STRATEGY_OWNED canonical 우선; 없으면 레거시 upbit binding
+                    strategy_owned = ownership == OWNERSHIP_STRATEGY or (
+                        canonical is None
+                        and fma.is_strategy_owned_symbol(uba_id, symbol)
+                    )
+                    if not strategy_owned:
                         skipped.append(
                             f"manual_holding:LIVE:{uba_id}/{symbol}"
                         )
                         continue
                 else:
-                    # FIXED: template/current 외 심볼은 EXIT 대상 제외
+                    # FIXED: template/current 외는 canonical STRATEGY_OWNED만 허용
                     fixed_syms = {
                         str(st.get("template_symbol") or "").upper(),
                         str(st.get("current_symbol") or "").upper(),
                     }
                     fixed_syms.discard("")
-                    if fixed_syms and symbol not in fixed_syms:
+                    if (
+                        fixed_syms
+                        and symbol not in fixed_syms
+                        and ownership != OWNERSHIP_STRATEGY
+                    ):
                         skipped.append(
                             f"manual_holding:LIVE:{uba_id}/{symbol}"
                         )
@@ -495,6 +549,7 @@ class PositionExitMonitorLoader:
                 row,
                 entry=entry,
                 current_price=current_price,
+                activation_rate=thresholds.trailing_activation_ratio,
             )
             stop_loss_price, take_profit_price = _protective_prices(
                 entry=entry,
@@ -510,9 +565,11 @@ class PositionExitMonitorLoader:
                 continue
             # OPEN binding 필수 — CLOSED 후 trailing/telegram spam 방지
             from stock_platform.position.exit_monitor_live import (
+                STATE_TRAILING_ARMED,
                 has_blocking_live_exit_sell,
                 is_live_exit_eligible,
                 load_open_strategy_binding,
+                read_exit_lifecycle,
             )
 
             open_binding = load_open_strategy_binding(
@@ -546,6 +603,45 @@ class PositionExitMonitorLoader:
                 and getattr(open_binding, "binding_id", None) is not None
                 else None
             )
+            # 보유초 — OPEN binding.opened_at 기준 (프로세스 시작 시각 금지)
+            holding_seconds: int | None = None
+            opened_at = (
+                getattr(open_binding, "opened_at", None)
+                if open_binding is not None
+                else None
+            )
+            if isinstance(opened_at, datetime):
+                opened_utc = (
+                    opened_at
+                    if opened_at.tzinfo is not None
+                    else opened_at.replace(tzinfo=timezone.utc)
+                )
+                holding_seconds = max(
+                    0,
+                    int(
+                        (
+                            datetime.now(timezone.utc) - opened_utc
+                        ).total_seconds()
+                    ),
+                )
+
+            # trailing_armed: lifecycle 또는 peak gain >= activation
+            life = read_exit_lifecycle(getattr(row, "raw_data", None))
+            trailing_armed = (
+                str(life.get("state") or "").upper() == STATE_TRAILING_ARMED
+            )
+            act = thresholds.trailing_activation_ratio
+            if (
+                not trailing_armed
+                and entry > ZERO
+                and highest > entry
+            ):
+                peak_gain = (highest - entry) / entry
+                if act is None:
+                    trailing_armed = True  # 레거시 any-profit
+                elif peak_gain >= act:
+                    trailing_armed = True
+
             positions.append(
                 ManagedPosition(
                     account_id=0,
@@ -570,6 +666,12 @@ class PositionExitMonitorLoader:
                         row, "synchronized_at", None
                     ),
                     binding_id=binding_id,
+                    holding_seconds=holding_seconds,
+                    max_hold_seconds=thresholds.max_hold_seconds,
+                    trailing_activation_ratio=(
+                        thresholds.trailing_activation_ratio
+                    ),
+                    trailing_armed=trailing_armed,
                 )
             )
         return positions, skipped

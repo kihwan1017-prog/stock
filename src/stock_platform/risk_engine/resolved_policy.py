@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from stock_platform.risk_engine.exit_protection_modes import (
     MODE_INHERIT,
     exit_protections_bundle,
+    resolve_max_hold_from_rows,
+    resolve_trailing_activation_from_rows,
 )
 from stock_platform.risk_engine.models import RiskPolicy
 from stock_platform.risk_engine.runtime import realtime_risk_policy
@@ -107,6 +109,13 @@ class ResolvedRiskPolicy:
     stop_loss_configured_rate: Decimal | None = None
     take_profit_configured_rate: Decimal | None = None
     trailing_stop_configured_rate: Decimal | None = None
+    # REAL Exit V1 — activation / max hold
+    trailing_activation_rate: Decimal | None = None
+    max_hold_mode: str = MODE_INHERIT
+    max_hold_seconds: int | None = None
+    max_hold_source: str = "SYSTEM"
+    max_hold_effective_enabled: bool = False
+    max_hold_configured_seconds: int | None = None
 
     def to_engine_policy(self) -> RiskPolicy:
         """RealtimeRiskEngine용 RiskPolicy로 변환."""
@@ -195,6 +204,18 @@ class ResolvedRiskPolicy:
                 configured=self.trailing_stop_configured_rate,
                 source=self.trailing_stop_source,
             ),
+            "trailing_activation_rate": (
+                str(self.trailing_activation_rate)
+                if self.trailing_activation_rate is not None
+                else None
+            ),
+            "max_hold": {
+                "mode": self.max_hold_mode,
+                "configured_seconds": self.max_hold_configured_seconds,
+                "effective_enabled": self.max_hold_effective_enabled,
+                "effective_seconds": self.max_hold_seconds,
+                "source": self.max_hold_source,
+            },
             "ma_dead_cross": {
                 "mode": "ENABLED",
                 "effective_enabled": True,
@@ -202,10 +223,13 @@ class ResolvedRiskPolicy:
                 "real": "ENABLED",
             },
             "time_exit": {
-                "mode": "DISABLED",
-                "effective_enabled": False,
-                "source": "POLICY",
-                "real": "DISABLED",
+                "mode": self.max_hold_mode,
+                "effective_enabled": self.max_hold_effective_enabled,
+                "effective_seconds": self.max_hold_seconds,
+                "source": self.max_hold_source,
+                "real": (
+                    "ENABLED" if self.max_hold_effective_enabled else "DISABLED"
+                ),
             },
         }
 
@@ -349,6 +373,15 @@ class ResolvedRiskPolicyResolver:
         sl = protections["stop_loss"]
         tp = protections["take_profit"]
         tr = protections["trailing_stop"]
+        mh = resolve_max_hold_from_rows(
+            user_row=user_row,
+            account_row=uba_row,
+            system_seconds=None,
+        )
+        act = resolve_trailing_activation_from_rows(
+            user_row=user_row,
+            account_row=uba_row,
+        )
 
         return ResolvedRiskPolicy(
             max_order_amount=Decimal(str(base["max_order_amount"])),
@@ -412,4 +445,10 @@ class ResolvedRiskPolicyResolver:
             stop_loss_configured_rate=sl.configured_rate,
             take_profit_configured_rate=tp.configured_rate,
             trailing_stop_configured_rate=tr.configured_rate,
+            trailing_activation_rate=act,
+            max_hold_mode=mh.mode,
+            max_hold_seconds=mh.effective_seconds,
+            max_hold_source=mh.source,
+            max_hold_effective_enabled=mh.effective_enabled,
+            max_hold_configured_seconds=mh.configured_seconds,
         )

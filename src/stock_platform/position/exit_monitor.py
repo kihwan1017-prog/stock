@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone
 
 import structlog
 from sqlalchemy.orm import Session
@@ -21,6 +21,8 @@ from stock_platform.risk.models import ExitEvaluationRequest
 
 
 logger = structlog.get_logger(__name__)
+
+ZERO = Decimal("0")
 
 # 강제 청산 사유 — RiskEngine 가격 평가를 건너뛴다.
 FORCE_EXIT_REASONS = frozenset(
@@ -50,6 +52,11 @@ class ManagedPosition:
     snapshot_synchronized_at: datetime | None = None
     # LIVE strategy-owned OPEN binding (없으면 LIVE exit 평가 skip)
     binding_id: int | None = None
+    # REAL Exit V1 — max hold / trailing activation
+    holding_seconds: int | None = None
+    max_hold_seconds: int | None = None
+    trailing_activation_ratio: Decimal | None = None
+    trailing_armed: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +154,12 @@ class PositionExitMonitorService:
                     relative_loss_ratio=(
                         position.relative_loss_ratio
                     ),
+                    trailing_activation_ratio=(
+                        position.trailing_activation_ratio
+                    ),
+                    trailing_armed=bool(position.trailing_armed),
+                    holding_seconds=position.holding_seconds,
+                    max_hold_seconds=position.max_hold_seconds,
                 )
             )
             reason = decision.reason
@@ -430,8 +443,6 @@ class PositionExitMonitorService:
                 )
             # smoke suppress: Telegram 0 (이전 tick spam 경로 제거)
             if snap is not None:
-                from datetime import datetime, timezone
-
                 life = dict(lifecycle)
                 life.update(
                     {
@@ -479,11 +490,64 @@ class PositionExitMonitorService:
                 submitted=False,
             )
 
+        # zero-fill/cancel 후 EXIT_SUBMITTED 잔존 → 동일 cycle 재제출 허용
+        exit_attempt = int(lifecycle.get("exit_attempt") or 0)
+        linked_oid = lifecycle.get("exit_order_id")
+        linked_terminal_cancel = False
+        if linked_oid is not None:
+            from stock_platform.order.entities import TradingOrderEntity
+            from stock_platform.order.models import OrderStatus
+
+            linked = self._session.get(TradingOrderEntity, int(linked_oid))
+            if linked is not None:
+                st = str(getattr(linked, "status_code", "") or "").upper()
+                filled = Decimal(str(getattr(linked, "filled_quantity", 0) or 0))
+                if st == OrderStatus.CANCELLED.value and filled <= ZERO:
+                    next_attempt = max(exit_attempt, 0) + 1
+                    # initial + retries ≤ 4 (attempt index 0..3)
+                    if next_attempt > 3:
+                        logger.warning(
+                            "position_exit_retry_exhausted",
+                            symbol=position.symbol,
+                            user_broker_account_id=int(uba_id),
+                            reason=reason,
+                            exit_order_id=int(linked_oid),
+                            exit_attempt=next_attempt,
+                        )
+                        return PositionExitAction(
+                            symbol=position.symbol,
+                            reason=f"{reason}:RETRY_EXHAUSTED",
+                            trigger_price=trigger_price,
+                            order_id=int(linked_oid),
+                            submitted=False,
+                        )
+                    linked_terminal_cancel = True
+                    exit_attempt = next_attempt
+                    if snap is not None:
+                        life = dict(lifecycle)
+                        life.update(
+                            {
+                                "state": STATE_EXIT_ORDER_PENDING,
+                                "exit_attempt": exit_attempt,
+                                "telegram_submitted_sent": False,
+                                "last_cancelled_exit_order_id": int(
+                                    linked_oid
+                                ),
+                                "cleared_at": datetime.now(
+                                    timezone.utc
+                                ).isoformat(),
+                            }
+                        )
+                        persist_exit_lifecycle(snap, life)
+                        lifecycle = life
+
         # edge: 동일 cycle 이미 submit 성공 알림 보냈으면 재발행 금지
+        # (단 zero-fill cancel 해소 직후는 위 분기에서 상태 리셋)
         if (
             str(lifecycle.get("state") or "") == STATE_EXIT_SUBMITTED
             and str(lifecycle.get("cycle_key") or "") == cycle
             and already_notified_exit_submit(lifecycle)
+            and not linked_terminal_cancel
         ):
             return PositionExitAction(
                 symbol=position.symbol,
@@ -499,8 +563,6 @@ class PositionExitMonitorService:
 
         # first edge → TRAILING_TRIGGERED (아직 Telegram 없음)
         if snap is not None and str(lifecycle.get("cycle_key") or "") != cycle:
-            from datetime import datetime, timezone
-
             life = dict(lifecycle)
             life.update(
                 {
@@ -549,6 +611,12 @@ class PositionExitMonitorService:
                 exit_meta["peak_price"] = str(position.highest_price)
             if trigger_price is not None:
                 exit_meta["trigger_price"] = str(trigger_price)
+            # UPBIT LIMIT — 호가 단위 반올림 (구 tick 테이블 거부 방지)
+            exit_price = position.current_price
+            if broker == "UPBIT":
+                from stock_platform.broker.upbit.rules import round_upbit_price
+
+                exit_price = round_upbit_price(Decimal(str(exit_price)))
             result = self._execution.submit(
                 OrderExecutionCommand(
                     account_id=None,
@@ -558,7 +626,7 @@ class PositionExitMonitorService:
                     side=OrderSide.SELL,
                     order_type=OrderType.LIMIT,
                     quantity=position.quantity,
-                    price=position.current_price,
+                    price=exit_price,
                     skip_risk_checks=skip_risk_checks,
                     metadata_payload=exit_meta,
                     actor="POSITION_EXIT_MONITOR",
@@ -570,11 +638,12 @@ class PositionExitMonitorService:
                     user_broker_account_id=int(uba_id),
                     environment="LIVE",
                     account_number=f"UBA:{int(uba_id)}",
-                    reference_price=position.current_price,
+                    reference_price=exit_price,
                     idempotency_key=(
                         f"EXIT:LIVE:{int(uba_id)}:"
                         f"{exchange}:"
-                        f"{position.symbol}"
+                        f"{position.symbol}:"
+                        f"{cycle}:a{exit_attempt}"
                     ),
                 )
             )

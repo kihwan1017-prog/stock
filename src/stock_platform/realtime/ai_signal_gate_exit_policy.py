@@ -13,6 +13,7 @@ from typing import Any
 # MA evaluator / exit monitor에서 실제로 쓰는 reason_code
 STOP_LOSS_REASONS = frozenset({"STOP_LOSS"})
 TAKE_PROFIT_REASONS = frozenset({"TAKE_PROFIT"})
+TRAILING_STOP_REASONS = frozenset({"TRAILING_STOP"})
 STRATEGY_POSITION_REDUCING_SELL_REASONS = frozenset(
     {
         # 현물 UPBIT: position.quantity>0 일 때만 emit → short 불가, holdings clip
@@ -28,6 +29,7 @@ FORCED_EXIT_REASONS = frozenset(
         "EMERGENCY_EXIT",
         "LIQUIDATION",
         "EMERGENCY_LIQUIDATION",
+        "MAX_HOLD_TIME",
     }
 )
 
@@ -35,6 +37,7 @@ FORCED_EXIT_REASONS = frozenset(
 AI_GATE_BYPASS_REASON_MAP: dict[str, str] = {
     **{r: "AI_GATE_BYPASS_STOP_LOSS" for r in STOP_LOSS_REASONS},
     **{r: "AI_GATE_BYPASS_TAKE_PROFIT" for r in TAKE_PROFIT_REASONS},
+    **{r: "AI_GATE_BYPASS_TRAILING_STOP" for r in TRAILING_STOP_REASONS},
     **{
         r: "AI_GATE_BYPASS_STRATEGY_POSITION_REDUCING_SELL"
         for r in STRATEGY_POSITION_REDUCING_SELL_REASONS

@@ -36,6 +36,7 @@ _RATE_FIELDS = frozenset(
         "stop_loss_rate",
         "take_profit_rate",
         "trailing_stop_rate",
+        "trailing_activation_rate",
         "max_slippage_rate",
     }
 )
@@ -44,6 +45,7 @@ _MODE_FIELDS = frozenset(
         "stop_loss_mode",
         "take_profit_mode",
         "trailing_stop_mode",
+        "max_hold_mode",
     }
 )
 _VALID_EXIT_MODES = frozenset({"INHERIT", "ENABLED", "DISABLED"})
@@ -68,6 +70,7 @@ _INT_FIELDS = frozenset(
         "anomaly_orders_per_minute",
         "loop_detect_window_seconds",
         "arm_ttl_seconds",
+        "max_hold_seconds",
     }
 )
 _ALL_FIELDS = (
@@ -129,28 +132,18 @@ def validate_risk_payload(
         elif key in _BOOL_FIELDS:
             cleaned[key] = bool(raw)
 
-    stop = cleaned.get("stop_loss_rate")
-    take = cleaned.get("take_profit_rate")
-    # 둘 다 명시된 경우에만 교차 검증 (의도 뒤집힘 방지 힌트)
-    if (
-        isinstance(stop, Decimal)
-        and isinstance(take, Decimal)
-        and stop > 0
-        and take > 0
-        and stop >= take
-    ):
-        raise RiskSettingValidationError(
-            "stop_loss_rate must be less than take_profit_rate"
-        )
+    # SL/TP는 독립 magnitude (예: SL 3% + TP 2% 허용).
+    # 예전 stop < take 교차검증은 V1 asymmetric protection과 충돌하므로 제거.
 
     # ENABLED면 해당 rate 필수 (payload에 mode만 온 경우도)
     for mode_key, rate_key in (
         ("stop_loss_mode", "stop_loss_rate"),
         ("take_profit_mode", "take_profit_rate"),
         ("trailing_stop_mode", "trailing_stop_rate"),
+        ("max_hold_mode", "max_hold_seconds"),
     ):
         if cleaned.get(mode_key) == "ENABLED" and cleaned.get(rate_key) is None:
-            # rate가 unset이면 기존 row 값에 의존 — upsert 시점 재검증은 호출측
+            # rate/seconds가 unset이면 기존 row 값에 의존 — upsert 시점 재검증은 호출측
             pass
 
     sell_only = cleaned.get("sell_only")

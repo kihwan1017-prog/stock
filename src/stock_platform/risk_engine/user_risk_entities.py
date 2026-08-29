@@ -158,6 +158,14 @@ class UserRiskSetting(Base):
     trailing_stop_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'INHERIT'")
     )
+    # REAL Exit V1 — trailing 활성 수익 임계 / 최대보유
+    trailing_activation_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 6)
+    )
+    max_hold_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
+    max_hold_seconds: Mapped[int | None] = mapped_column(Integer)
     auto_trading_enabled: Mapped[bool | None] = mapped_column(Boolean)
     buy_enabled: Mapped[bool | None] = mapped_column(Boolean)
     sell_enabled: Mapped[bool | None] = mapped_column(Boolean)
@@ -238,6 +246,14 @@ class UserBrokerAccountRiskSetting(Base):
     trailing_stop_mode: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=text("'INHERIT'")
     )
+    # REAL Exit V1 — trailing 활성 수익 임계 / 최대보유
+    trailing_activation_rate: Mapped[Decimal | None] = mapped_column(
+        Numeric(10, 6)
+    )
+    max_hold_mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=text("'INHERIT'")
+    )
+    max_hold_seconds: Mapped[int | None] = mapped_column(Integer)
     auto_trading_enabled: Mapped[bool | None] = mapped_column(Boolean)
     buy_enabled: Mapped[bool | None] = mapped_column(Boolean)
     sell_enabled: Mapped[bool | None] = mapped_column(Boolean)

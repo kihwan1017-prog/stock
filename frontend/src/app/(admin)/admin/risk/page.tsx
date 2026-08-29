@@ -118,6 +118,10 @@ export default function AdminRiskPage() {
 
   const ubaExitInitialValues = useMemo(() => {
     const stored = ubaStored ?? {};
+    const maxHoldSeconds =
+      stored.max_hold_seconds != null
+        ? Number(stored.max_hold_seconds)
+        : null;
     return {
       stop_loss_mode: String(stored.stop_loss_mode ?? "INHERIT"),
       take_profit_mode: String(stored.take_profit_mode ?? "INHERIT"),
@@ -125,6 +129,15 @@ export default function AdminRiskPage() {
       stop_loss_rate_pct: rateToPercent(stored.stop_loss_rate),
       take_profit_rate_pct: rateToPercent(stored.take_profit_rate),
       trailing_stop_rate_pct: rateToPercent(stored.trailing_stop_rate),
+      trailing_activation_rate_pct: rateToPercent(
+        stored.trailing_activation_rate,
+      ),
+      max_hold_mode: String(stored.max_hold_mode ?? "INHERIT"),
+      // UI는 시간(h) — 저장 시 seconds로 변환
+      max_hold_hours:
+        maxHoldSeconds != null && Number.isFinite(maxHoldSeconds)
+          ? maxHoldSeconds / 3600
+          : null,
     };
   }, [ubaStored]);
 
@@ -538,7 +551,8 @@ export default function AdminRiskPage() {
               <Typography.Text type="secondary">
                 effective SL={String(asRecord(ubaExitProtection.stop_loss)?.mode ?? "—")} /
                 TP={String(asRecord(ubaExitProtection.take_profit)?.mode ?? "—")} /
-                TR={String(asRecord(ubaExitProtection.trailing_stop)?.mode ?? "—")}
+                TR={String(asRecord(ubaExitProtection.trailing_stop)?.mode ?? "—")} /
+                MH={String(asRecord(ubaExitProtection.max_hold)?.mode ?? "—")}
               </Typography.Text>
             ) : null}
           </Space>
@@ -548,6 +562,10 @@ export default function AdminRiskPage() {
             layout="vertical"
             initialValues={ubaExitInitialValues}
             onFinish={(values) => {
+              const maxHoldHours =
+                values.max_hold_hours != null
+                  ? Number(values.max_hold_hours)
+                  : null;
               saveUbaExit.mutate({
                 stop_loss_mode: values.stop_loss_mode,
                 take_profit_mode: values.take_profit_mode,
@@ -563,6 +581,16 @@ export default function AdminRiskPage() {
                 trailing_stop_rate:
                   values.trailing_stop_mode === "ENABLED"
                     ? percentToRate(values.trailing_stop_rate_pct)
+                    : null,
+                trailing_activation_rate: percentToRate(
+                  values.trailing_activation_rate_pct,
+                ),
+                max_hold_mode: values.max_hold_mode,
+                max_hold_seconds:
+                  values.max_hold_mode === "ENABLED" &&
+                  maxHoldHours != null &&
+                  Number.isFinite(maxHoldHours)
+                    ? Math.round(maxHoldHours * 3600)
                     : null,
               });
             }}
@@ -622,6 +650,35 @@ export default function AdminRiskPage() {
                       max={100}
                       style={{ width: 100 }}
                       disabled={getFieldValue("trailing_stop_mode") !== "ENABLED"}
+                    />
+                  </Form.Item>
+                )}
+              </Form.Item>
+              <Form.Item
+                name="trailing_activation_rate_pct"
+                label="트레일링 활성(%)"
+                tooltip="수익이 이 %에 도달해야 트레일링이 무장됩니다. 비우면 레거시(any profit)."
+              >
+                <InputNumber min={0} max={100} step={0.1} style={{ width: 100 }} />
+              </Form.Item>
+              <Form.Item name="max_hold_mode" label="최대보유 설정 방식">
+                <Select options={EXIT_MODE_OPTIONS} style={{ width: 160 }} />
+              </Form.Item>
+              <Form.Item
+                noStyle
+                shouldUpdate={(prev, cur) => prev.max_hold_mode !== cur.max_hold_mode}
+              >
+                {({ getFieldValue }) => (
+                  <Form.Item
+                    name="max_hold_hours"
+                    label="최대보유(시간)"
+                    tooltip="저장 시 초(seconds)로 변환됩니다."
+                  >
+                    <InputNumber
+                      min={0}
+                      step={0.5}
+                      style={{ width: 100 }}
+                      disabled={getFieldValue("max_hold_mode") !== "ENABLED"}
                     />
                   </Form.Item>
                 )}

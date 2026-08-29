@@ -97,6 +97,16 @@ def test_arm_issues_token_and_validates() -> None:
         patch(
             "stock_platform.trading.live_arm_service.emit_live_order_telegram"
         ),
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=SimpleNamespace(
+                live_trading_transition_id=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
+                broker_code="KIWOOM",
+                user_broker_account_id=10,
+            ),
+        ),
     ):
         R.return_value.resolve.return_value = _policy()
         result = LiveArmService(session).arm(10, actor="admin", ttl_seconds=300)

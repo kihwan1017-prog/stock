@@ -111,29 +111,60 @@ def resolve_trailing_high_water(
     *,
     entry: Decimal,
     current_price: Decimal,
+    activation_rate: Decimal | None = None,
 ) -> tuple[Decimal, bool]:
     """(평가용 high-water, trailing 허용 여부).
 
-    persisted 값이 없으면 이번 tick은 trailing 금지 후 저장만 한다.
-    restart 후 current를 peak로 오인하는 잘못된 SELL을 막는다.
+    - high-water는 항상 persist
+    - mark_trailing_armed는 activation 충족 시에만
+    - trailing_ok = 이전 HW 존재 AND (armed 또는 레거시 peak>entry)
+    - 첫 persist tick은 restart 오인 방지로 trailing 금지
     """
 
     persisted = read_persisted_high_water(getattr(row, "raw_data", None))
     observed = max(entry, current_price, ZERO)
     if persisted is None or persisted <= ZERO:
         persist_high_water(row, high_water=observed)
-        # trailing은 highest > entry 필요 — entry만 주면 미발화
+        # 첫 tick: HW만 저장, trailing 미허용
         return entry, False
+
     new_high = max(persisted, observed)
     if new_high > persisted:
         persist_high_water(row, high_water=new_high)
-        # peak 갱신 시 trailing armed provenance (가벼운 write)
+
+    life = read_exit_lifecycle(getattr(row, "raw_data", None))
+    already_armed = (
+        str(life.get("state") or "").upper() == STATE_TRAILING_ARMED
+    )
+
+    peak_gain = ZERO
+    if entry > ZERO and new_high > entry:
+        peak_gain = (new_high - entry) / entry
+
+    activation_met = False
+    if activation_rate is None:
+        # 레거시: peak > entry 이면 armed 가능
+        activation_met = new_high > entry
+    elif entry > ZERO:
+        activation_met = peak_gain >= activation_rate
+
+    if activation_met and not already_armed and new_high > entry:
         mark_trailing_armed(
             row,
             peak_price=new_high,
             binding_id=None,
         )
-    return new_high, True
+        already_armed = True
+    elif new_high > persisted and already_armed:
+        # armed 이후 peak 갱신만 lifecycle에 반영
+        mark_trailing_armed(
+            row,
+            peak_price=new_high,
+            binding_id=None,
+        )
+
+    trailing_ok = activation_met or already_armed
+    return new_high, trailing_ok
 
 
 def _exit_monitor_nested(raw_data: object) -> dict[str, Any]:
