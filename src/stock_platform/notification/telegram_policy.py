@@ -381,7 +381,13 @@ def evaluate_telegram_policy(
     detail: dict[str, Any] | None = None,
     session: Session | None = None,
 ) -> TelegramDecision:
-    """중앙 Telegram allow/suppress 판정."""
+    """중앙 Telegram allow/suppress 판정.
+
+    Precedence:
+    1) allowlist — 발송 가능한 이벤트 종류
+    2) Alert V2 preference — 사용자가 받을지 (OFF면 allowlist여도 억제)
+    3) category / ANALYSIS 운영 조건
+    """
 
     d = dict(detail or {})
     market = resolve_telegram_market(event_type=event_type, detail=d)
@@ -398,7 +404,50 @@ def evaluate_telegram_policy(
             chat_route=route,
         )
 
+    # preference OFF → delivery suppress (allowlist보다 사용자 설정 우선)
+    owns_pref_session = False
+    pref_sess = session
+    if pref_sess is None:
+        try:
+            from stock_platform.database.session import get_session_factory
+
+            pref_sess = get_session_factory()()
+            owns_pref_session = True
+        except Exception:  # noqa: BLE001
+            pref_sess = None
+    try:
+        from stock_platform.notification.alert_v2.gate import (
+            should_deliver_trading_alert,
+        )
+
+        # provenance는 live_order telegram 경로 전용 — policy에서는 preference만
+        pref_detail = dict(d)
+        pref_detail["skip_provenance_check"] = True
+        pref_ok, pref_reason = should_deliver_trading_alert(
+            event_type=event_type,
+            detail=pref_detail,
+            session=pref_sess,
+        )
+        if not pref_ok:
+            return TelegramDecision(
+                allowed=False,
+                reason=str(pref_reason or "PREFERENCE_OFF"),
+                market=market.value,
+                category=category.value,
+                chat_route=route,
+            )
+    except Exception:  # noqa: BLE001
+        # preference 판정 실패 시 fail-open (기존 gate와 동일) — 이후 정책 계속
+        pass
+    finally:
+        if owns_pref_session and pref_sess is not None:
+            try:
+                pref_sess.close()
+            except Exception:  # noqa: BLE001
+                pass
+
     # CRITICAL / TRADING / SYSTEM — ANALYSIS suppress와 무관하게 허용
+    # (preference는 위에서 이미 적용됨)
     if category in {
         TelegramCategory.CRITICAL,
         TelegramCategory.TRADING,
@@ -472,17 +521,19 @@ def evaluate_telegram_policy(
                 chat_route=route,
             )
 
-        # COMMON ANALYSIS — suppress 보수적으로 허용하지 않음? fail-open for ops
         return TelegramDecision(
             allowed=True,
-            reason="COMMON_ANALYSIS_FAIL_OPEN",
+            reason="ANALYSIS_COMMON_ALLOW",
             market=market.value,
             category=category.value,
             chat_route=route,
         )
     finally:
         if owns_session and sess is not None:
-            sess.close()
+            try:
+                sess.close()
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _edge_key(market: str, name: str) -> str:
