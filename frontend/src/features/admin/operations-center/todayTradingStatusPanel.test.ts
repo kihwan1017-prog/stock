@@ -1,0 +1,37 @@
+/**
+ * 오늘 거래현황 — profit/loss 표시 규칙 (canonical net 정합).
+ */
+
+import { describe, expect, it } from "vitest";
+
+/** Backend summary 규칙을 FE에서 재계산하지 않음 — 계약 스모크만. */
+function assertProfitLossConsistency(input: {
+  today_profit_amount: string;
+  today_loss_amount: string;
+  today_net_pnl: string;
+}) {
+  const profit = Number(input.today_profit_amount);
+  const loss = Number(input.today_loss_amount);
+  const net = Number(input.today_net_pnl);
+  expect(profit).toBeGreaterThanOrEqual(0);
+  expect(loss).toBeLessThanOrEqual(0);
+  expect(profit + loss).toBeCloseTo(net, 6);
+}
+
+describe("today trading status pnl contract", () => {
+  it("profit + loss = net", () => {
+    assertProfitLossConsistency({
+      today_profit_amount: "15000",
+      today_loss_amount: "-5000",
+      today_net_pnl: "10000",
+    });
+  });
+
+  it("all profit", () => {
+    assertProfitLossConsistency({
+      today_profit_amount: "100",
+      today_loss_amount: "0",
+      today_net_pnl: "100",
+    });
+  });
+});

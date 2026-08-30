@@ -325,6 +325,15 @@ class AutotradingPerformanceService:
             broker=broker,
             period=period,
         )
+        today_order_activity = self._build_today_order_activity(
+            brokers=brokers,
+            scope_ubas=scope_ubas,
+            today_start=today_start,
+        )
+        today_hourly_pnl = self._build_today_hourly_pnl(
+            all_closed=closed_trades,
+            today_start=today_start,
+        )
         daily_returns = self._build_daily_returns(period_closed)
         cumulative_returns = self._build_cumulative_returns(daily_returns)
         daily_by_broker = (
@@ -370,6 +379,8 @@ class AutotradingPerformanceService:
                 "계좌 전체 평가손익과 분리."
             ),
             "summary": summary,
+            "today_order_activity": today_order_activity,
+            "today_hourly_pnl": today_hourly_pnl,
             "daily_returns": daily_returns,
             "cumulative_returns": cumulative_returns,
             "daily_by_broker": daily_by_broker,
@@ -451,6 +462,55 @@ class AutotradingPerformanceService:
         today_net = _sum_net(today_closed)
         today_cost = _sum_entry_cost(today_closed)
 
+        # 오늘 수익/손실 금액 — canonical net_pnl 기준 (새 산식 금지)
+        today_profit = sum(
+            (Decimal(str(t["net_pnl"])) for t in today_closed if Decimal(str(t["net_pnl"])) > ZERO),
+            ZERO,
+        ).quantize(QUANT)
+        today_loss_abs = sum(
+            (
+                abs(Decimal(str(t["net_pnl"])))
+                for t in today_closed
+                if Decimal(str(t["net_pnl"])) < ZERO
+            ),
+            ZERO,
+        ).quantize(QUANT)
+        today_loss = (-today_loss_abs).quantize(QUANT)  # UI: -5,000원
+        today_fees = sum(
+            (Decimal(str(t.get("fees") or 0)) for t in today_closed),
+            ZERO,
+        ).quantize(QUANT)
+        today_wins = sum(1 for t in today_closed if Decimal(str(t["net_pnl"])) > ZERO)
+        today_losses = sum(1 for t in today_closed if Decimal(str(t["net_pnl"])) < ZERO)
+        today_closed_n = len(today_closed)
+        today_win_rate = (
+            str(
+                (Decimal(today_wins) / Decimal(today_closed_n) * Decimal("100")).quantize(
+                    _PCT_QUANT
+                )
+            )
+            if today_closed_n > 0
+            else None
+        )
+        today_symbols = {str(t.get("symbol") or "") for t in today_closed if t.get("symbol")}
+        hold_secs = [
+            int(t["duration_sec"])
+            for t in today_closed
+            if isinstance(t.get("duration_sec"), (int, float))
+        ]
+        avg_hold_sec = int(sum(hold_secs) / len(hold_secs)) if hold_secs else None
+
+        best_trade = max(
+            today_closed,
+            key=lambda t: Decimal(str(t["net_pnl"])),
+            default=None,
+        )
+        worst_trade = min(
+            today_closed,
+            key=lambda t: Decimal(str(t["net_pnl"])),
+            default=None,
+        )
+
         period_net = _sum_net(period_closed)
         period_cost = _sum_entry_cost(period_closed)
         all_net = _sum_net(all_closed)
@@ -482,6 +542,32 @@ class AutotradingPerformanceService:
             "broker": broker,
             "period": period,
             "today_realized_pnl": str(today_net),
+            "today_net_pnl": str(today_net),  # alias — 순손익 = canonical realized
+            "today_profit_amount": str(today_profit),
+            "today_loss_amount": str(today_loss),
+            "today_fees": str(today_fees),
+            "today_wins": today_wins,
+            "today_losses": today_losses,
+            "today_win_rate_pct": today_win_rate,
+            "today_closed_trade_count": today_closed_n,
+            "today_symbol_count": len(today_symbols),
+            "today_avg_hold_sec": avg_hold_sec,
+            "today_best_symbol": (
+                str(best_trade.get("symbol")) if best_trade is not None else None
+            ),
+            "today_best_pnl": (
+                str(Decimal(str(best_trade["net_pnl"])).quantize(QUANT))
+                if best_trade is not None
+                else None
+            ),
+            "today_worst_symbol": (
+                str(worst_trade.get("symbol")) if worst_trade is not None else None
+            ),
+            "today_worst_pnl": (
+                str(Decimal(str(worst_trade["net_pnl"])).quantize(QUANT))
+                if worst_trade is not None
+                else None
+            ),
             "today_return_pct": _return_pct(today_net, today_cost),
             "period_realized_pnl": str(period_net),
             "period_return_pct": _return_pct(period_net, period_cost),
@@ -496,6 +582,107 @@ class AutotradingPerformanceService:
             "losses": losses,
             "flats": flats,
         }
+
+    def _build_today_order_activity(
+        self,
+        *,
+        brokers: list[str],
+        scope_ubas: frozenset[int],
+        today_start: datetime,
+    ) -> dict[str, Any]:
+        """오늘(KST) AUTO 주문 건수/금액 — TradingOrder filled_amount 재사용."""
+
+        filled_statuses = {"FILLED", "DONE", "COMPLETED", "PARTIAL", "PARTIALLY_FILLED"}
+        cancelled_statuses = {"CANCELLED", "CANCELED", "REJECTED", "EXPIRED"}
+        open_statuses = {"NEW", "ACCEPTED", "SUBMITTED", "PENDING", "OPEN", "CREATED"}
+
+        buy_count = sell_count = filled_count = open_count = cancelled_count = 0
+        buy_amount = sell_amount = ZERO
+
+        rows = list(
+            self.session.scalars(
+                select(TradingOrderEntity).where(
+                    TradingOrderEntity.user_broker_account_id.in_(scope_ubas),
+                    TradingOrderEntity.broker_code.in_(brokers),
+                    TradingOrderEntity.created_at >= today_start,
+                    TradingOrderEntity.strategy_id.isnot(None),
+                )
+            )
+        )
+        for order in rows:
+            side = str(getattr(order, "side_code", "") or "").upper()
+            st = str(getattr(order, "status_code", "") or "").upper()
+            amount = Decimal(str(getattr(order, "filled_amount", 0) or 0))
+            if amount <= ZERO:
+                qty = Decimal(str(getattr(order, "filled_quantity", 0) or 0))
+                px = Decimal(str(getattr(order, "average_fill_price", 0) or 0))
+                if qty > ZERO and px > ZERO:
+                    amount = (qty * px).quantize(QUANT)
+
+            if side in {"BUY", "BID"}:
+                buy_count += 1
+                if st in filled_statuses or amount > ZERO:
+                    buy_amount += amount
+            elif side in {"SELL", "ASK"}:
+                sell_count += 1
+                if st in filled_statuses or amount > ZERO:
+                    sell_amount += amount
+
+            if st in filled_statuses or (
+                Decimal(str(getattr(order, "filled_quantity", 0) or 0)) > ZERO
+            ):
+                filled_count += 1
+            if st in open_statuses and st not in filled_statuses:
+                open_count += 1
+            if st in cancelled_statuses:
+                cancelled_count += 1
+
+        return {
+            "buy_count": buy_count,
+            "sell_count": sell_count,
+            "filled_count": filled_count,
+            "open_count": open_count,
+            "cancelled_count": cancelled_count,
+            "buy_amount": str(buy_amount.quantize(QUANT)),
+            "sell_amount": str(sell_amount.quantize(QUANT)),
+            "day_boundary": "Asia/Seoul",
+        }
+
+    def _build_today_hourly_pnl(
+        self,
+        *,
+        all_closed: list[dict[str, Any]],
+        today_start: datetime,
+    ) -> list[dict[str, Any]]:
+        """오늘 시간별 실현손익(bar) + 누적(line) — closed binding net_pnl."""
+
+        buckets: dict[int, Decimal] = {h: ZERO for h in range(24)}
+        for t in all_closed:
+            closed_at = t.get("closed_at")
+            if not closed_at:
+                continue
+            ts = datetime.fromisoformat(str(closed_at))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if ts < today_start:
+                continue
+            hour = ts.astimezone(_KST).hour
+            buckets[hour] += Decimal(str(t["net_pnl"]))
+
+        cum = ZERO
+        rows: list[dict[str, Any]] = []
+        for hour in range(24):
+            pnl = buckets[hour].quantize(QUANT)
+            cum = (cum + pnl).quantize(QUANT)
+            rows.append(
+                {
+                    "hour": hour,
+                    "label": f"{hour:02d}:00",
+                    "realized_pnl": str(pnl),
+                    "cumulative_realized_pnl": str(cum),
+                }
+            )
+        return rows
 
     def _build_daily_returns(
         self, period_closed: list[dict[str, Any]]

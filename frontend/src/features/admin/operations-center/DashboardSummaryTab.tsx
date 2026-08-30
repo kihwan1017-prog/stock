@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Card, Col, Row, Segmented, Space, Statistic, Table, Tag, Typography } from "antd";
+import { Alert, Card, Col, Row, Segmented, Space, Table, Tag, Typography } from "antd";
 
 import { adminRoutes } from "@/config/routes";
 import { asRecord, extractRows } from "@/features/admin/utils/dataHelpers";
@@ -10,7 +10,6 @@ import {
   formatKrw,
   formatPct,
   parsePerformanceSummary,
-  pnlColor,
   type BrokerFilter,
 } from "./autoTradingPerformanceHelpers";
 import {
@@ -19,6 +18,7 @@ import {
   SummaryDailyChart,
 } from "./dashboardCharts";
 import { SUMMARY_PERIOD_OPTIONS, type SummaryPeriodFilter } from "./dashboardTabState";
+import { TodayTradingStatusPanel } from "./TodayTradingStatusPanel";
 import { useAutotradingPerformanceQuery } from "./useAutotradingPerformanceQuery";
 import { useDashboardBrokerOps } from "./useDashboardBrokerOps";
 
@@ -118,6 +118,12 @@ export function DashboardSummaryTab({
         )}
       </Card>
 
+      <TodayTradingStatusPanel
+        broker={broker}
+        enabled={enabled}
+        refreshMs={refreshMs}
+      />
+
       <Row gutter={[12, 12]}>
         <Col xs={24} sm={12} md={6}>
           <SummaryLinkCard
@@ -152,57 +158,6 @@ export function DashboardSummaryTab({
           />
         </Col>
       </Row>
-
-      <Card
-        size="small"
-        title="오늘 손익·거래 (AUTO)"
-        loading={perfQ.isLoading && !perfQ.data}
-      >
-        <Row gutter={[12, 12]}>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="AUTO 누적 실현손익"
-              value={summary.cumulativeRealizedPnl ?? 0}
-              precision={0}
-              suffix="원"
-              styles={{
-                content: { color: pnlColor(summary.cumulativeRealizedPnl) },
-              }}
-            />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="AUTO 수익률"
-              value={formatPct(summary.periodReturnPct)}
-            />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic title="AUTO 거래 횟수" value={summary.closedTradeCount} />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="승률"
-              value={
-                summary.winRatePct != null
-                  ? `${summary.winRatePct.toFixed(1)}%`
-                  : "—"
-              }
-            />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic title="AUTO 보유종목" value={summary.openPositionCount} />
-          </Col>
-          <Col xs={12} sm={8} md={4}>
-            <Statistic
-              title="오늘 AUTO 손익"
-              value={summary.todayRealizedPnl ?? 0}
-              precision={0}
-              suffix="원"
-              styles={{ content: { color: pnlColor(summary.todayRealizedPnl) } }}
-            />
-          </Col>
-        </Row>
-      </Card>
 
       <Card
         size="small"

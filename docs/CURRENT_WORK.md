@@ -1,13 +1,22 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-30 (GOOGLE-OAUTH-LOGIN-V1)
+**최종 갱신:** 2026-08-30 (DASHBOARD-TODAY-TRADING-STATUS-V1)
 
 ---
 
 ## Parallel policy
 
 **TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
+
+---
+
+## SHARED — Dashboard Today Trading Status V1 (2026-08-30)
+
+- Admin 요약 탭에 **오늘 거래현황** 패널 추가 (업비트/키움/주문/보유 카드 위)
+- API 재사용: `/admin/dashboard/autotrading-performance?period=TODAY` (+ summary 확장)
+- 중복 상단 KPI 카드 제거 · Trading 로직 불변
+- History **#52** · Verdict target: `PASS_DASHBOARD_TODAY_TRADING_STATUS_V1`
 
 ---
 

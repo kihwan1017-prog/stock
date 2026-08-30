@@ -82,8 +82,9 @@ def _mock_session(
     open_bindings: list | None = None,
     exit_orders: list | None = None,
     snapshots: list | None = None,
+    today_orders: list | None = None,
 ) -> MagicMock:
-    """scalars 호출 순서: CLOSED bindings → OPEN → exit orders → mark prices."""
+    """scalars 호출 순서: CLOSED → OPEN → exit orders → mark prices → today orders."""
 
     session = MagicMock()
     queues = [
@@ -91,6 +92,7 @@ def _mock_session(
         iter(open_bindings or []),
         iter(exit_orders or []),
         iter(snapshots or []),
+        iter(today_orders or []),
     ]
 
     def _scalars(_stmt):  # noqa: ANN001
@@ -100,6 +102,60 @@ def _mock_session(
 
     session.scalars = MagicMock(side_effect=_scalars)
     return session
+
+
+def test_today_profit_loss_amounts_match_net() -> None:
+    """오늘 수익/손실 합 = 순손익 (canonical net_pnl)."""
+
+    from zoneinfo import ZoneInfo
+
+    kst = ZoneInfo("Asia/Seoul")
+    now = datetime.now(kst)
+    closed_at = datetime(
+        now.year, now.month, now.day, 12, 0, tzinfo=kst
+    ).astimezone(timezone.utc)
+
+    win = StrategyPositionBindingEntity(
+        binding_id=101,
+        user_broker_account_id=1380,
+        broker_code="UPBIT",
+        strategy_id=100,
+        symbol="KRW-WIN",
+        status=BINDING_STATUS_CLOSED,
+        ownership_code=OWNERSHIP_STRATEGY,
+        owned_quantity=Decimal("0"),
+        entry_price=Decimal("100"),
+        realized_pnl=Decimal("15"),
+        fees=Decimal("0"),
+        closed_at=closed_at,
+        meta_json={"exit_fill_price": "115", "closed_quantity": "1"},
+    )
+    loss = StrategyPositionBindingEntity(
+        binding_id=102,
+        user_broker_account_id=1380,
+        broker_code="UPBIT",
+        strategy_id=100,
+        symbol="KRW-LOSS",
+        status=BINDING_STATUS_CLOSED,
+        ownership_code=OWNERSHIP_STRATEGY,
+        owned_quantity=Decimal("0"),
+        entry_price=Decimal("100"),
+        realized_pnl=Decimal("-5"),
+        fees=Decimal("0"),
+        closed_at=closed_at,
+        meta_json={"exit_fill_price": "95", "closed_quantity": "1"},
+    )
+    session = _mock_session(closed=[win, loss])
+    out = AutotradingPerformanceService(session).build(period="TODAY")
+    s = out["summary"]
+    assert Decimal(str(s["today_profit_amount"])) == Decimal("15.00")
+    assert Decimal(str(s["today_loss_amount"])) == Decimal("-5.00")
+    assert Decimal(str(s["today_net_pnl"])) == Decimal("10.00")
+    assert Decimal(str(s["today_realized_pnl"])) == Decimal("10.00")
+    assert s["today_wins"] == 1
+    assert s["today_losses"] == 1
+    assert out["today_order_activity"]["buy_count"] == 0
+    assert len(out["today_hourly_pnl"]) == 24
 
 
 def test_manual_binding_excluded_from_service_query() -> None:
@@ -306,6 +362,7 @@ def test_include_ops_returns_ops_insight(monkeypatch) -> None:
         iter([]),
         iter([]),
         iter([]),
+        iter([]),  # today_order_activity
         iter([]),
         iter([]),
         iter([]),
