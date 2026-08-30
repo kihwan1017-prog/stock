@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -27,6 +28,8 @@ from stock_platform.order.outbox_models import OutboxStatus
 from stock_platform.order.outbox_repository import (
     OrderOutboxRepository,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,6 +120,61 @@ class OrderOutboxWorker:
         return self._run_claimed(claims)
 
     def _run_claimed(
+        self, claims: list[tuple[int, int]]
+    ) -> OutboxRunSummary:
+        """Claimed 건 처리. LIVE BUY submit은 최대 2 parallel (V1)."""
+
+        if not claims:
+            return OutboxRunSummary(
+                claimed=0, succeeded=0, retried=0, failed=0, ambiguous=0
+            )
+
+        workers = 1
+        if self._live_only:
+            try:
+                from stock_platform.operation.upbit_full_market.buy_concurrency import (
+                    resolve_order_submit_concurrency,
+                )
+
+                workers = resolve_order_submit_concurrency()
+            except Exception:  # noqa: BLE001
+                workers = 1
+
+        if workers <= 1 or len(claims) <= 1:
+            return self._run_claimed_serial(claims)
+
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        summaries: list[OutboxRunSummary] = []
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [
+                pool.submit(self._run_claimed_serial, [claim])
+                for claim in claims
+            ]
+            for fut in as_completed(futures):
+                try:
+                    summaries.append(fut.result())
+                except Exception:  # noqa: BLE001
+                    logger.exception("outbox_parallel_claim_failed")
+                    summaries.append(
+                        OutboxRunSummary(
+                            claimed=1,
+                            succeeded=0,
+                            retried=0,
+                            failed=1,
+                            ambiguous=0,
+                        )
+                    )
+
+        return OutboxRunSummary(
+            claimed=sum(s.claimed for s in summaries),
+            succeeded=sum(s.succeeded for s in summaries),
+            retried=sum(s.retried for s in summaries),
+            failed=sum(s.failed for s in summaries),
+            ambiguous=sum(s.ambiguous for s in summaries),
+        )
+
+    def _run_claimed_serial(
         self, claims: list[tuple[int, int]]
     ) -> OutboxRunSummary:
         claimed = len(claims)

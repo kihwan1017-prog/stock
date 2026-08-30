@@ -588,8 +588,13 @@ export function UpbitAutotradingSettingsWorkspace({
               <Descriptions.Item label="Max positions">
                 {numOrDash(policy.max_positions ?? 3)}
               </Descriptions.Item>
-              <Descriptions.Item label="Pending BUY">
-                {numOrDash(policy.portfolio_max_pending_entries ?? 1)}
+              <Descriptions.Item label="동시 매수 처리">
+                {numOrDash(
+                  policy.max_concurrent_entries_effective
+                    ?? policy.portfolio_max_pending_entries
+                    ?? 1,
+                )}
+                {" / 2"}
               </Descriptions.Item>
               <Descriptions.Item label="Total exposure">
                 {(Number(policy.max_total_exposure_pct ?? 0.3) * 100).toFixed(0)}
@@ -755,9 +760,10 @@ export function UpbitAutotradingSettingsWorkspace({
                 </Form.Item>
                 <Form.Item
                   name="portfolio_max_pending_entries"
-                  label="대기 진입 상한"
+                  label="동시 매수 처리 상한"
+                  extra="동시에 진행할 수 있는 신규 매수 진입 수 (최대 2)"
                 >
-                  <InputNumber min={1} max={10} />
+                  <InputNumber min={1} max={2} />
                 </Form.Item>
                 <Form.Item
                   name="allow_averaging_down"

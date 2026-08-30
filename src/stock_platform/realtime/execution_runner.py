@@ -56,6 +56,10 @@ class RealtimeExecutionRunner:
         self._history: deque[dict[str, Any]] = deque(
             maxlen=history_size
         )
+        self._active_count = 0
+        self._concurrency_limit = 1
+        self._max_observed_active = 0
+        self._in_flight: set[asyncio.Task] = set()
 
     async def start(self) -> dict:
         if self._task is not None and not self._task.done():
@@ -103,30 +107,29 @@ class RealtimeExecutionRunner:
         self._started_at = datetime.now(timezone.utc)
         self._heartbeat_at = self._started_at
 
-        try:
-            async for signal in self._signal_bus.subscribe():
-                self._heartbeat_at = datetime.now(timezone.utc)
-                # 다른 UBA/broker 신호는 이 Runner가 주문하지 않는다.
-                if not signal_matches_execution_scope(signal, self._config):
-                    self._trace_scope_filter_reject(signal)
-                    continue
-                self._processed_count += 1
+        from stock_platform.operation.upbit_full_market.buy_concurrency import (
+            resolve_executor_concurrency,
+        )
+
+        limit = resolve_executor_concurrency()
+        self._concurrency_limit = limit
+        sem = asyncio.Semaphore(limit)
+
+        async def _run_one(signal: Any) -> None:
+            async with sem:
+                self._active_count += 1
+                if self._active_count > self._max_observed_active:
+                    self._max_observed_active = self._active_count
                 try:
-                    # 이벤트 루프를 막지 않기 위해 동기 주문 경로를 스레드로 보낸다.
                     result = await asyncio.to_thread(
                         self._execute_signal, signal
                     )
-
                     if result.order_status == "SKIPPED":
                         self._blocked_count += 1
                     else:
                         self._executed_count += 1
-
-                    self._history.appendleft(
-                        self._to_dict(result)
-                    )
+                    self._history.appendleft(self._to_dict(result))
                     self._last_error = None
-
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
@@ -134,14 +137,50 @@ class RealtimeExecutionRunner:
                     self._last_error = str(exc)
                     logger.exception(
                         "realtime_execution_failed",
-                        exchange_code=(
-                            signal.exchange_code
-                        ),
+                        exchange_code=signal.exchange_code,
                         symbol=signal.symbol,
                         action=signal.action.value,
                     )
+                finally:
+                    self._active_count = max(0, self._active_count - 1)
+
+        try:
+            async for signal in self._signal_bus.subscribe():
+                self._heartbeat_at = datetime.now(timezone.utc)
+                if not signal_matches_execution_scope(signal, self._config):
+                    self._trace_scope_filter_reject(signal)
+                    continue
+                self._processed_count += 1
+
+                # 활성 task가 한도에 도달하면 버스에서 추가 pull을 대기 (drop 금지)
+                while len(self._in_flight) >= limit:
+                    done, pending = await asyncio.wait(
+                        self._in_flight,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    self._in_flight = set(pending)
+                    for finished in done:
+                        try:
+                            finished.result()
+                        except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                            pass
+
+                task = asyncio.create_task(
+                    _run_one(signal),
+                    name=f"exec-{getattr(signal, 'symbol', '?')}",
+                )
+                self._in_flight.add(task)
+
+                def _discard(t: asyncio.Task, _s: set = self._in_flight) -> None:
+                    _s.discard(t)
+
+                task.add_done_callback(_discard)
         finally:
+            if self._in_flight:
+                await asyncio.gather(*self._in_flight, return_exceptions=True)
+            self._in_flight.clear()
             self._running = False
+            self._active_count = 0
 
     def _trace_scope_filter_reject(self, signal) -> None:
         """provenance 있는 BUY가 이 Runner scope와 안 맞으면 durable reject."""
@@ -236,6 +275,9 @@ class RealtimeExecutionRunner:
             "executed_count": self._executed_count,
             "blocked_count": self._blocked_count,
             "failed_count": self._failed_count,
+            "executor_concurrency_limit": self._concurrency_limit,
+            "executor_active_count": self._active_count,
+            "executor_max_observed_active": self._max_observed_active,
             "daily_realized_loss": str(
                 self._safety_guard.daily_realized_loss
             ),

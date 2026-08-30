@@ -1,13 +1,23 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-30 (DASHBOARD-TODAY-TRADING-STATUS-V1)
+**최종 갱신:** 2026-08-30 (UPBIT-LIMITED-BUY-CONCURRENCY-V1)
 
 ---
 
 ## Parallel policy
 
 **TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
+
+---
+
+## U — Limited Buy Concurrency V1 (2026-08-30)
+
+- Max concurrent AUTO BUY entries/executor/submit = **2** (invalid → 1)
+- SoT: `portfolio_max_pending_entries` + `UPBIT_BUY_*_CONCURRENCY`
+- Admission: UBA advisory lock + pending/position atomic checks
+- Parent History **#53** · History **#54**
+- Evidence: `.run/k_upbit_limited_buy_concurrency_v1.json`
 
 ---
 

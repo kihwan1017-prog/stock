@@ -209,7 +209,8 @@ class PortfolioPolicyPatchBody(BaseModel):
     allow_duplicate_symbol: bool | None = None
     entry_cooldown_seconds: int | None = Field(default=None, ge=0)
     candidate_max_age_seconds: int | None = Field(default=None, ge=60)
-    portfolio_max_pending_entries: int | None = Field(default=None, ge=1, le=10)
+    # V1 제한 병렬: 동시 ENTRY_PENDING 상한 2 (코드 clamp와 동일)
+    portfolio_max_pending_entries: int | None = Field(default=None, ge=1, le=2)
     portfolio_daily_entry_limit: int | None = Field(default=None, ge=1, le=100)
     portfolio_daily_entry_limit_mode: str | None = Field(
         default=None, pattern="^(LIMITED|UNLIMITED)$"

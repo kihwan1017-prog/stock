@@ -35,6 +35,15 @@ class LiveOutboxWorkerRuntime:
     def _build_worker(self) -> OrderOutboxWorker:
         settings = get_settings()
         batch = int(getattr(settings, "live_outbox_worker_batch_size", 20))
+        try:
+            from stock_platform.operation.upbit_full_market.buy_concurrency import (
+                resolve_order_submit_concurrency,
+            )
+
+            # claim 크기를 submit concurrency 이하로 — 과다 PROCESSING 방지
+            batch = min(max(1, batch), resolve_order_submit_concurrency(settings))
+        except Exception:  # noqa: BLE001
+            batch = max(1, batch)
         stale_sec = float(
             getattr(settings, "live_outbox_worker_stale_seconds", 30.0)
         )
@@ -59,8 +68,9 @@ class LiveOutboxWorkerRuntime:
             }
         if self._task is not None and not self._task.done():
             return {
-                "started": False,
+                "started": True,
                 "reason": "ALREADY_RUNNING",
+                "idempotent": True,
                 **self.status(),
             }
         self._worker = self._build_worker()
@@ -73,6 +83,47 @@ class LiveOutboxWorkerRuntime:
         self._last_error = None
         self._consecutive_failures = 0
         return {"started": True, **self.status()}
+
+    def stop(self) -> dict[str, Any]:
+        """동기 idempotent STOP. 이벤트 루프가 있으면 shutdown을 스케줄한다."""
+
+        running = self._task is not None and not self._task.done()
+        if not running:
+            self._started_at = None
+            return {
+                "stopped": True,
+                "reason": "ALREADY_STOPPED",
+                "idempotent": True,
+                **self.status(),
+            }
+        if self._stopping is not None:
+            self._stopping.set()
+        task = self._task
+        self._task = None
+        self._started_at = None
+        if task is not None and not task.done():
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self._await_stopped(task))
+            except RuntimeError:
+                task.cancel()
+        return {
+            "stopped": True,
+            "reason": "STOPPED",
+            "idempotent": False,
+            **self.status(),
+        }
+
+    async def _await_stopped(self, task: asyncio.Task) -> None:
+        try:
+            await asyncio.wait_for(task, timeout=6.0)
+        except (
+            TimeoutError,
+            asyncio.CancelledError,
+            Exception,
+        ):  # noqa: BLE001
+            if not task.done():
+                task.cancel()
 
     async def shutdown(self) -> None:
         if self._stopping is not None:

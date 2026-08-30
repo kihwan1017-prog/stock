@@ -227,6 +227,9 @@ class Settings(BaseSettings):
     live_outbox_worker_batch_size: int = 20
     live_outbox_worker_backoff_seconds: float = 2.0
     live_outbox_worker_stale_seconds: float = 30.0
+    # UPBIT AUTO BUY 제한 병렬 V1 — 기본 1(직렬), 상한 2 (잘못된 값→1)
+    upbit_buy_executor_concurrency: int = Field(default=1, ge=1, le=2)
+    upbit_buy_order_submit_concurrency: int = Field(default=1, ge=1, le=2)
     # AUTO LIVE readiness — 시세 stale 임계(초). 초과 시 BLOCKER
     autotrading_market_feed_stale_seconds: float = 30.0
     # Reliability watchdog (AutoTradingReliabilityWatchdog)

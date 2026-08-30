@@ -1,4 +1,4 @@
-"""FULL_MARKET_PORTFOLIO — slots / Top-K / sequential pending (주문 CREATE 금지)."""
+"""FULL_MARKET_PORTFOLIO — slots / Top-K / bounded concurrent pending (주문 CREATE 금지)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from sqlalchemy.orm import Session
 from stock_platform.operation.upbit_full_market.capital_allocator import (
     AllocationInput,
     AllocationResult,
+)
+from stock_platform.operation.upbit_full_market.buy_concurrency import (
+    resolve_max_concurrent_entries,
 )
 from stock_platform.operation.upbit_full_market.portfolio_entry_sizing import (
     PortfolioEntryRiskLimits,
@@ -311,6 +314,10 @@ class UpbitPortfolioService:
             "portfolio_max_pending_entries": int(
                 row.portfolio_max_pending_entries
             ),
+            "max_concurrent_entries_effective": resolve_max_concurrent_entries(
+                row
+            ),
+            "buy_concurrency_v1_ceiling": 2,
             "portfolio_daily_entry_limit": int(row.portfolio_daily_entry_limit),
             "portfolio_daily_entry_limit_mode": str(
                 getattr(row, "portfolio_daily_entry_limit_mode", "LIMITED")
@@ -1504,8 +1511,8 @@ class UpbitPortfolioService:
         # NOTE: hold/score-delta는 EMPTY fill을 막지 않는다.
         # WAITING_SIGNAL 교체 경로에서만 사용 (_try_replace_waiting_signal).
 
-        if self.pending_entry_count(uba_id) >= int(
-            policy.portfolio_max_pending_entries
+        if self.pending_entry_count(uba_id) >= resolve_max_concurrent_entries(
+            policy
         ):
             out["reason"] = "PENDING_ENTRY_LIMIT"
             return out
@@ -2609,47 +2616,105 @@ class UpbitPortfolioService:
 
         if not sym:
             return _finish({"ok": False, "reason": "SYMBOL_REQUIRED"})
-        if self.pending_entry_count(uba_id) >= 1:
-            # max_pending_entries=1 — 다른 심볼이 이미 주문 단계면 대기
-            existing = self._session.scalar(
+
+        # --- 짧은 admission critical section (병렬 시 oversubscription 방지) ---
+        from stock_platform.operation.upbit_full_market.buy_concurrency import (
+            acquire_buy_admission_xact_lock,
+            resolve_max_concurrent_entries,
+        )
+        from stock_platform.operation.upbit_full_market.auto_slot_count import (
+            REASON_AUTO_POSITION_LIMIT,
+            count_auto_slots_used,
+        )
+
+        policy = self.get_or_create_policy(uba_id)
+        max_concurrent = resolve_max_concurrent_entries(policy)
+        process_lock = acquire_buy_admission_xact_lock(
+            self._session, user_broker_account_id=uba_id
+        )
+
+        with process_lock:
+            # 동일 심볼 이미 ENTRY_PENDING → already (중복 BUY 방지)
+            existing_same = self._session.scalar(
                 select(UpbitPositionSlotEntity).where(
                     UpbitPositionSlotEntity.user_broker_account_id == uba_id,
                     UpbitPositionSlotEntity.symbol == sym,
                     UpbitPositionSlotEntity.status == SLOT_ENTRY_PENDING,
                 )
             )
-            if existing is not None:
-                # already 경로 — executor가 portfolio sizing을 쓰도록 approved 금액 포함
+            if existing_same is not None:
                 approved_krw = (
-                    existing.allocated_amount_krw
-                    if existing.allocated_amount_krw is not None
-                    else existing.reserved_amount_krw
+                    existing_same.allocated_amount_krw
+                    if existing_same.allocated_amount_krw is not None
+                    else existing_same.reserved_amount_krw
                 )
                 return _finish(
                     {
                         "ok": True,
                         "already": True,
-                        "slot_id": int(existing.slot_id),
+                        "slot_id": int(existing_same.slot_id),
                         "status": SLOT_ENTRY_PENDING,
-                        "reserved_amount_krw": existing.reserved_amount_krw,
+                        "reserved_amount_krw": existing_same.reserved_amount_krw,
                         "approved_amount_krw": approved_krw,
-                        "allocated_amount_krw": existing.allocated_amount_krw,
+                        "allocated_amount_krw": existing_same.allocated_amount_krw,
                     },
-                    existing,
+                    existing_same,
                 )
-            return _finish({"ok": False, "reason": "PENDING_ENTRY_LIMIT"})
 
-        slot = self._session.scalar(
-            select(UpbitPositionSlotEntity)
-            .where(
-                UpbitPositionSlotEntity.user_broker_account_id == uba_id,
-                UpbitPositionSlotEntity.symbol == sym,
-                UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+            pending_before = self.pending_entry_count(uba_id)
+            if pending_before >= max_concurrent:
+                return _finish(
+                    {
+                        "ok": False,
+                        "reason": "PENDING_ENTRY_LIMIT",
+                        "pending_entry_count_before": pending_before,
+                        "max_concurrent_entries": max_concurrent,
+                    }
+                )
+
+            # AUTO position + reservation 원자 검사 (한도 초과 방지)
+            auto_limit = int(policy.max_positions or 1)
+            try:
+                from stock_platform.risk_engine.resolved_policy import (
+                    ResolvedRiskPolicyResolver,
+                )
+
+                risk_pol = ResolvedRiskPolicyResolver(self._session).resolve(
+                    user_id=None,
+                    user_broker_account_id=uba_id,
+                )
+                if int(risk_pol.max_position_count) > 0:
+                    auto_limit = int(risk_pol.max_position_count)
+            except Exception:  # noqa: BLE001
+                pass
+            slots_used = count_auto_slots_used(
+                self._session,
+                user_broker_account_id=uba_id,
+                broker_code="UPBIT",
             )
-            .with_for_update()
-        )
-        if slot is None:
-            return _finish({"ok": False, "reason": "NO_WAITING_SIGNAL_SLOT"})
+            if slots_used >= auto_limit:
+                return _finish(
+                    {
+                        "ok": False,
+                        "reason": REASON_AUTO_POSITION_LIMIT,
+                        "auto_slots_used": slots_used,
+                        "auto_position_limit": auto_limit,
+                    }
+                )
+
+            slot = self._session.scalar(
+                select(UpbitPositionSlotEntity)
+                .where(
+                    UpbitPositionSlotEntity.user_broker_account_id == uba_id,
+                    UpbitPositionSlotEntity.symbol == sym,
+                    UpbitPositionSlotEntity.status == SLOT_WAITING_SIGNAL,
+                )
+                .with_for_update()
+            )
+            if slot is None:
+                return _finish({"ok": False, "reason": "NO_WAITING_SIGNAL_SLOT"})
+
+        # advisory xact lock은 commit까지 유지 — reserved는 동일 트랜잭션에서 반영
 
         # WAITING_SIGNAL + 수동 보유(바인딩 없음) → ENTRY 금지 + slot 안전 해제
         if self._assignment._has_preexisting_holding(uba_id, sym):
@@ -2746,7 +2811,6 @@ class UpbitPortfolioService:
                 slot,
             )
 
-        policy = self.get_or_create_policy(uba_id)
         if not policy.enabled:
             return _finish({"ok": False, "reason": "POLICY_DISABLED"}, slot)
         if str(policy.entry_state or "") == PORTFOLIO_ENTRY_PAUSED:
@@ -2915,6 +2979,9 @@ class UpbitPortfolioService:
                 "clamp_reasons": list(alloc.clamp_reasons),
                 "sizing": sizing,
                 "orders_created": 0,
+                "pending_entry_count_before": pending_before,
+                "pending_entry_count_after": pending_before + 1,
+                "max_concurrent_entries": max_concurrent,
             },
             slot,
         )
