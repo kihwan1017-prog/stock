@@ -13,6 +13,7 @@ from stock_platform.broker.fee_policy import UpbitFeePolicy
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
     HISTORICAL_TRAILING_REPLAY_AVAILABLE,
+    POLICY_TRAILING_MIN_HOLD_60S_V1,
     RESEARCH_ONLY_LABEL,
     RULE_VERSION,
     SAMPLE_TARGET_INITIAL,
@@ -32,11 +33,16 @@ from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.c
     T4_ACTIVATION_PCT,
     T4_MIN_HOLDING_SECONDS,
     T4_TRAIL_PCT,
+    T5_ACTIVATION_PCT,
+    T5_MIN_HOLDING_SECONDS,
+    T5_TRAIL_PCT,
     VARIANT_T0,
     VARIANT_T1,
     VARIANT_T2,
     VARIANT_T3,
     VARIANT_T4,
+    VARIANT_T5,
+    VARIANT_TRAILING_MIN_HOLD_60S_V1,
 )
 from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.entities import (
     UpbitTrailingForwardShadowEntity,
@@ -211,6 +217,15 @@ def variant_specs() -> dict[str, dict[str, Any]]:
             "min_holding_seconds": T4_MIN_HOLDING_SECONDS,
             "label": "MIN_HOLD_180S",
         },
+        VARIANT_T5: {
+            "activation_pct": T5_ACTIVATION_PCT,
+            "trail_pct": T5_TRAIL_PCT,
+            "min_holding_seconds": T5_MIN_HOLDING_SECONDS,
+            "label": POLICY_TRAILING_MIN_HOLD_60S_V1,
+            "policy_id": POLICY_TRAILING_MIN_HOLD_60S_V1,
+            # REAL arm +1.0% / drawdown -0.8% 와 동일 + min_hold only
+            "mirrors_real_trailing": True,
+        },
     }
 
 
@@ -224,6 +239,8 @@ def _init_variant(spec: dict[str, Any]) -> dict[str, Any]:
         "peak_at": None,
         "armed_at": None,
         "trigger_at": None,
+        "early_trigger_seen": False,
+        "early_trigger_at": None,
         "virtual_exit_price": None,
         "holding_seconds": None,
         "gross": None,
@@ -409,6 +426,9 @@ def observe_price_tick(
     state["mae"] = float(mae)
 
     for key, spec in variant_specs().items():
+        # forward-only: 기존 row에 없던 신규 variant(T5 등)는 주입하지 않음
+        if key not in variants:
+            continue
         v = dict(variants.get(key) or _init_variant(spec))
         if v.get("outcome_status") not in (None, "ACTIVE"):
             variants[key] = v
@@ -425,13 +445,15 @@ def observe_price_tick(
         ):
             v["armed_at"] = now.isoformat()
         min_hold = int(spec.get("min_holding_seconds") or 0)
-        if (
-            v.get("armed_at")
-            and v.get("trigger_at") is None
-            and hold_s >= min_hold
-        ):
+        if v.get("armed_at") and v.get("trigger_at") is None:
             trig = _trigger_price(peak, float(spec["trail_pct"]))
-            if price <= trig:
+            would_trigger = price <= trig
+            if would_trigger and hold_s < min_hold:
+                # 60초 전 조건 충족 → EARLY_TRIGGER_SEEN (강제 exit 금지)
+                v["early_trigger_seen"] = True
+                if not v.get("early_trigger_at"):
+                    v["early_trigger_at"] = now.isoformat()
+            elif would_trigger and hold_s >= min_hold:
                 v["trigger_at"] = now.isoformat()
                 v["virtual_exit_price"] = str(price)
                 v["holding_seconds"] = hold_s

@@ -19,6 +19,9 @@ VARIANT_T1 = "T1"
 VARIANT_T2 = "T2"
 VARIANT_T3 = "T3"
 VARIANT_T4 = "T4"
+# REAL trailing(arm +1.0% / drawdown -0.8%) + min_hold 60s — forward shadow only
+VARIANT_T5 = "T5"
+VARIANT_TRAILING_MIN_HOLD_60S_V1 = VARIANT_T5
 
 # 보수적 research grid (임의 과격 값 금지)
 T0_ACTIVATION_PCT = 0.0  # peak > entry only
@@ -32,6 +35,11 @@ T3_TRAIL_PCT = 5.0
 T4_ACTIVATION_PCT = 0.0
 T4_TRAIL_PCT = 3.0
 T4_MIN_HOLDING_SECONDS = 180
+# REAL UBA trailing_activation_rate=0.01 / trailing_stop_rate=0.008
+T5_ACTIVATION_PCT = 1.0
+T5_TRAIL_PCT = 0.8
+T5_MIN_HOLDING_SECONDS = 60
+POLICY_TRAILING_MIN_HOLD_60S_V1 = "TRAILING_MIN_HOLD_60S_V1"
 
 SAMPLE_TARGET_INITIAL = 10
 SAMPLE_TARGET_NEXT = 25

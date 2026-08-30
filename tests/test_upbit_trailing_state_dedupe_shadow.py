@@ -518,7 +518,159 @@ def test_exit_reason_precedence_stop_before_trailing() -> None:
             stop_loss_price=Decimal("95"),
             take_profit_price=Decimal("200"),
             trailing_stop_ratio=Decimal("0.03"),
-            relative_loss_ratio=None,
         )
     )
     assert d.reason == "STOP_LOSS"
+
+
+def test_t5_min_hold_60s_early_trigger_no_force_exit() -> None:
+    """TRAILING_MIN_HOLD_60S_V1: 60초 전 trigger → EARLY_TRIGGER_SEEN, 강제 exit 금지."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+        VARIANT_T5,
+    )
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.service import (
+        _init_variant,
+        observe_price_tick,
+        variant_specs,
+    )
+
+    entry = Decimal("100")
+    # arm +1% → peak 101; trail -0.8% → trigger <= 101*0.992 = 100.192
+    specs = variant_specs()
+    variants = {VARIANT_T5: _init_variant(specs[VARIANT_T5])}
+    variants[VARIANT_T5]["peak_price"] = "101"
+    variants[VARIANT_T5]["armed_at"] = datetime(
+        2026, 8, 31, 0, 0, 10, tzinfo=timezone.utc
+    ).isoformat()
+    row = SimpleNamespace(
+        status="ACTIVE",
+        entry_price=entry,
+        entry_at=datetime(2026, 8, 31, 0, 0, 0, tzinfo=timezone.utc),
+        entry_quantity=Decimal("10"),
+        entry_fee=Decimal("0.05"),
+        variants_json=variants,
+        shadow_state_json={},
+        context_as_of=None,
+    )
+    session = MagicMock()
+    session.scalar.return_value = row
+    # hold=30s < 60, price below trail
+    observe_price_tick(
+        session,
+        binding_id=1,
+        price=Decimal("100.1"),
+        observed_at=datetime(2026, 8, 31, 0, 0, 30, tzinfo=timezone.utc),
+    )
+    v = row.variants_json[VARIANT_T5]
+    assert v.get("early_trigger_seen") is True
+    assert v.get("trigger_at") is None
+    assert v.get("outcome_status") == "ACTIVE"
+
+
+def test_t5_min_hold_60s_exits_after_hold() -> None:
+    """60초 이후 조건 유지 시 shadow virtual exit."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+        VARIANT_T5,
+    )
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.service import (
+        _init_variant,
+        observe_price_tick,
+        variant_specs,
+    )
+
+    entry = Decimal("100")
+    specs = variant_specs()
+    variants = {VARIANT_T5: _init_variant(specs[VARIANT_T5])}
+    variants[VARIANT_T5]["peak_price"] = "101"
+    variants[VARIANT_T5]["armed_at"] = datetime(
+        2026, 8, 31, 0, 0, 10, tzinfo=timezone.utc
+    ).isoformat()
+    row = SimpleNamespace(
+        status="ACTIVE",
+        entry_price=entry,
+        entry_at=datetime(2026, 8, 31, 0, 0, 0, tzinfo=timezone.utc),
+        entry_quantity=Decimal("10"),
+        entry_fee=Decimal("0.05"),
+        variants_json=variants,
+        shadow_state_json={},
+        context_as_of=None,
+    )
+    session = MagicMock()
+    session.scalar.return_value = row
+    observe_price_tick(
+        session,
+        binding_id=1,
+        price=Decimal("100.1"),
+        observed_at=datetime(2026, 8, 31, 0, 1, 5, tzinfo=timezone.utc),
+    )
+    v = row.variants_json[VARIANT_T5]
+    assert v.get("outcome_status") == "VIRTUAL_TRAILING_EXIT"
+    assert v.get("trigger_at") is not None
+
+
+def test_t5_peak_reset_per_entry_enrollment() -> None:
+    """재진입 시 binding별 peak 독립 — enroll peak=entry."""
+
+    session = MagicMock()
+    session.scalar.return_value = None
+    out = enroll_on_position_open(
+        session,
+        user_broker_account_id=UBA,
+        binding_id=9100,
+        symbol="KRW-ENA",
+        strategy_id=1,
+        entry_order_id=99,
+        entry_at=datetime(2026, 8, 31, 12, 0, tzinfo=timezone.utc),
+        entry_price=Decimal("220"),
+        settings=SimpleNamespace(
+            upbit_trailing_forward_shadow_enabled=True,
+            upbit_trailing_forward_shadow_deployed_at="2026-08-27T11:12:00+00:00",
+        ),
+    )
+    assert out["ok"] is True
+    added = session.add.call_args[0][0]
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+        VARIANT_T5,
+    )
+
+    assert VARIANT_T5 in added.variants_json
+    assert added.variants_json[VARIANT_T5]["peak_price"] == "220"
+
+
+def test_t5_forward_only_no_inject_into_old_row() -> None:
+    """기존 row에 T5 없으면 observe가 주입하지 않음 (forward-only)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+        VARIANT_T0,
+        VARIANT_T5,
+    )
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.service import (
+        _init_variant,
+        observe_price_tick,
+        variant_specs,
+    )
+
+    specs = variant_specs()
+    variants = {VARIANT_T0: _init_variant(specs[VARIANT_T0])}
+    variants[VARIANT_T0]["peak_price"] = "100"
+    row = SimpleNamespace(
+        status="ACTIVE",
+        entry_price=Decimal("100"),
+        entry_at=datetime(2026, 8, 31, 0, 0, 0, tzinfo=timezone.utc),
+        entry_quantity=Decimal("10"),
+        entry_fee=None,
+        variants_json=variants,
+        shadow_state_json={},
+        context_as_of=None,
+    )
+    session = MagicMock()
+    session.scalar.return_value = row
+    observe_price_tick(
+        session,
+        binding_id=1,
+        price=Decimal("105"),
+        observed_at=datetime(2026, 8, 31, 0, 2, 0, tzinfo=timezone.utc),
+    )
+    assert VARIANT_T5 not in row.variants_json
