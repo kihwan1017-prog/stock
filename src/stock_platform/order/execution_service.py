@@ -5,6 +5,8 @@ import re
 import traceback
 from dataclasses import dataclass
 from decimal import Decimal
+
+ZERO = Decimal("0")
 from typing import Any
 
 from sqlalchemy.exc import IntegrityError
@@ -442,9 +444,41 @@ class OrderExecutionService:
                     order_source=str(command.order_source or "MANUAL"),
                 )
                 if not safety.allowed:
+                    # EXIT deterministic reject — intent에 지문 기록(재제출 폭주 방지)
+                    try:
+                        if (
+                            side_text == "SELL"
+                            and str(safety.reason_code or "")
+                            == "ORDER_QTY_EXCEEDED"
+                            and command.user_broker_account_id is not None
+                        ):
+                            from stock_platform.operation.upbit_exit_intent.hooks import (
+                                note_deterministic_qty_reject,
+                            )
+
+                            note_deterministic_qty_reject(
+                                user_broker_account_id=int(
+                                    command.user_broker_account_id
+                                ),
+                                symbol=str(command.symbol),
+                                reason_code=str(safety.reason_code),
+                                detail=getattr(safety, "detail", None) or {},
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
                     return self._blocked(safety.reason_code)
-                # V2 reservation 추적 — 이후 실패 시 release
+                # verified EXIT clamp — 파이프라인이 줄인 수량을 실제 주문에 반영
                 safety_detail = getattr(safety, "detail", None) or {}
+                if safety_detail.get("effective_quantity") not in (None, ""):
+                    try:
+                        clamped_qty = Decimal(
+                            str(safety_detail["effective_quantity"])
+                        )
+                        if clamped_qty > ZERO:
+                            quantity = clamped_qty
+                    except Exception:  # noqa: BLE001
+                        pass
+                # V2 reservation 추적 — 이후 실패 시 release
                 if safety_detail.get("submit_reserved"):
                     self._pending_submit_release = {
                         **dict(safety_detail),

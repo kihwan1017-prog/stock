@@ -465,11 +465,54 @@ class RiskIntegratedRealtimeOrderExecutor:
                 )
                 if held is None or Decimal(str(held)) <= 0:
                     return self._skipped(signal, "NO_POSITION_TO_SELL")
-                # MOCK/LIVE 자동매매: SELL 신호 시 전량 청산
-                quantity = Decimal(str(held))
+                # MOCK/LIVE AUTO: broker 전량이 아니라 canonical EXIT 수량
+                # (strategy-owned ∩ sellable ∩ max_order_quantity)
+                requested_sell = Decimal(str(held))
+                try:
+                    from stock_platform.risk_engine.exit_sell_quantity import (
+                        resolve_exit_sell_quantity,
+                    )
+                    from stock_platform.risk_engine.resolved_policy import (
+                        ResolvedRiskPolicyResolver,
+                    )
+
+                    policy = ResolvedRiskPolicyResolver(
+                        self._session
+                    ).resolve(
+                        user_id=getattr(signal, "user_id", None),
+                        user_broker_account_id=int(signal.account_id),
+                    )
+                    plan = resolve_exit_sell_quantity(
+                        self._session,
+                        user_broker_account_id=int(signal.account_id),
+                        symbol=str(signal.symbol).upper(),
+                        exchange_code=str(
+                            getattr(signal, "exchange_code", "") or ""
+                        ),
+                        environment=environment,
+                        broker_code=broker_code,
+                        requested_quantity=requested_sell,
+                        max_order_quantity=getattr(
+                            policy, "max_order_quantity", None
+                        ),
+                        require_strategy_owned=True,
+                    )
+                    if plan.sell_quantity <= 0:
+                        return self._skipped(
+                            signal,
+                            "NO_SELLABLE_STRATEGY_QTY"
+                            if "NO_STRATEGY_OWNED" in plan.capped_by
+                            else "NO_POSITION_TO_SELL",
+                        )
+                    quantity = plan.sell_quantity
+                except Exception:  # noqa: BLE001
+                    # fail-closed: 산정 실패 시 전량 제출 금지 → skip
+                    return self._skipped(
+                        signal, "EXIT_SELL_QTY_RESOLVE_FAILED"
+                    )
 
         # MOCK/LIVE SELL도 outstanding/EXIT Risk를 건너뛰지 않는다.
-        # 전량 캡은 위에서 snapshot 수량으로 이미 적용했다.
+        # EXIT 수량은 위에서 canonical plan으로 이미 적용했다.
         risk_result = DatabaseBackedRiskOrderGuard(
             self._session,
             broker_code=broker_code,

@@ -210,6 +210,71 @@ def read_active_intent_public(
         session.close()
 
 
+def note_deterministic_qty_reject(
+    *,
+    user_broker_account_id: int,
+    symbol: str,
+    reason_code: str,
+    detail: dict[str, Any] | None = None,
+) -> None:
+    """ORDER_QTY_EXCEEDED 등 deterministic reject — intent BLOCKED + cooldown."""
+
+    if not feature_enabled() or not user_broker_account_id:
+        return
+    session = get_session_factory()()
+    try:
+        svc = UpbitExitIntentService(session)
+        row = svc.get_active(
+            user_broker_account_id=int(user_broker_account_id),
+            symbol=str(symbol).upper(),
+            for_update=True,
+        )
+        if row is None:
+            return
+        detail = dict(detail or {})
+        fp = (
+            f"qty={detail.get('quantity')}|"
+            f"limit={detail.get('limit')}|"
+            f"sellable={detail.get('sellable_quantity')}|"
+            f"held={detail.get('held_quantity')}|"
+            f"pending={detail.get('pending_sell_quantity')}"
+        )
+        svc.note_deterministic_qty_reject(
+            row,
+            reason_code=str(reason_code or "ORDER_QTY_EXCEEDED"),
+            fingerprint=fp,
+            detail=detail,
+        )
+        session.commit()
+    except Exception:  # noqa: BLE001
+        session.rollback()
+    finally:
+        session.close()
+
+
+def should_suppress_ma_exit_emit(
+    *,
+    user_broker_account_id: int,
+    symbol: str,
+) -> bool:
+    """MA EMIT 직전 — deterministic qty reject cooldown이면 True."""
+
+    if not feature_enabled() or not user_broker_account_id:
+        return False
+    session = get_session_factory()()
+    try:
+        svc = UpbitExitIntentService(session)
+        suppress, _reason = svc.should_suppress_sell_emit(
+            user_broker_account_id=int(user_broker_account_id),
+            symbol=str(symbol).upper(),
+        )
+        return bool(suppress)
+    except Exception:  # noqa: BLE001
+        return False
+    finally:
+        session.close()
+
+
 def mark_intent_blocked(
     *,
     exit_intent_id: int,
@@ -240,4 +305,6 @@ __all__ = [
     "recover_intents_after_restore",
     "read_active_intent_public",
     "mark_intent_blocked",
+    "note_deterministic_qty_reject",
+    "should_suppress_ma_exit_emit",
 ]

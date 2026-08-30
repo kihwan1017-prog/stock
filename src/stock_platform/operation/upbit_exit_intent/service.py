@@ -26,6 +26,7 @@ from stock_platform.operation.upbit_exit_intent.constants import (
     EVT_CONDITION_CLEARED,
     EVT_COOLDOWN,
     EVT_CREATED,
+    EVT_DETERMINISTIC_REJECT,
     EVT_EXHAUSTED,
     EVT_ORDER_LINKED,
     EVT_PARTIAL_FILL,
@@ -34,6 +35,7 @@ from stock_platform.operation.upbit_exit_intent.constants import (
     EVT_REVALIDATED,
     EVT_ZERO_FILL_CANCELLED,
     EXIT_REASON_MA_DEAD_CROSS,
+    DETERMINISTIC_REJECT_COOLDOWN_SECONDS,
     STATUS_BLOCKED,
     STATUS_COMPLETED,
     STATUS_CONDITION_CLEARED,
@@ -345,6 +347,81 @@ class UpbitExitIntentService:
             row, EVT_BLOCKED, {"reason": row.last_block_reason}
         )
         return row
+
+    def note_deterministic_qty_reject(
+        self,
+        row: UpbitExitIntentEntity,
+        *,
+        reason_code: str,
+        fingerprint: str,
+        detail: dict[str, Any] | None = None,
+    ) -> UpbitExitIntentEntity:
+        """동일 상태에서 성공할 수 없는 reject — cooldown + fingerprint.
+
+        상태(지문)가 바뀌기 전에는 재제출을 억제한다.
+        """
+
+        fp = str(fingerprint or "")[:200]
+        detail_json = dict(row.detail_json or {})
+        prev_fp = str(detail_json.get("deterministic_reject_fp") or "")
+        same = bool(fp) and fp == prev_fp
+        detail_json["deterministic_reject_fp"] = fp
+        detail_json["deterministic_reject_reason"] = str(reason_code)[:80]
+        detail_json["deterministic_reject_at"] = _now().isoformat()
+        row.detail_json = detail_json
+        flag_modified(row, "detail_json")
+        row.last_block_reason = str(reason_code or "ORDER_QTY_EXCEEDED")[:80]
+        row.status = STATUS_BLOCKED
+        # 동일 지문이면 쿨다운 연장만; 새 지문이면 새 쿨다운
+        row.next_retry_at = _now() + timedelta(
+            seconds=DETERMINISTIC_REJECT_COOLDOWN_SECONDS
+        )
+        row.updated_at = _now()
+        self._append_event(
+            row,
+            EVT_DETERMINISTIC_REJECT,
+            {
+                "reason": row.last_block_reason,
+                "fingerprint": fp,
+                "same_fingerprint": same,
+                **(detail or {}),
+            },
+        )
+        return row
+
+    def should_suppress_sell_emit(
+        self,
+        *,
+        user_broker_account_id: int,
+        symbol: str,
+        current_fingerprint: str | None = None,
+    ) -> tuple[bool, str | None]:
+        """deterministic reject cooldown 중이면 MA SELL 재발행 억제."""
+
+        row = self.get_active(
+            user_broker_account_id=int(user_broker_account_id),
+            symbol=str(symbol).upper(),
+            for_update=False,
+        )
+        if row is None:
+            return False, None
+        if row.status != STATUS_BLOCKED:
+            return False, None
+        reason = str(row.last_block_reason or "")
+        if reason != "ORDER_QTY_EXCEEDED":
+            return False, None
+        detail = dict(row.detail_json or {})
+        stored_fp = str(detail.get("deterministic_reject_fp") or "")
+        if (
+            current_fingerprint
+            and stored_fp
+            and str(current_fingerprint) != stored_fp
+        ):
+            # 수량 상태 변화 → 재평가 허용
+            return False, None
+        if row.next_retry_at and row.next_retry_at > _now():
+            return True, "DETERMINISTIC_QTY_REJECT_COOLDOWN"
+        return False, None
 
     def state_condition_still_true(
         self,
@@ -748,7 +825,34 @@ def resolve_open_binding(
     user_broker_account_id: int,
     symbol: str,
 ) -> tuple[int | None, int | None]:
-    """(binding_id, slot_id) for OPEN AUTO binding."""
+    """(binding_id, slot_id) for OPEN STRATEGY_OWNED binding.
+
+    Canonical: operation.strategy_position_binding (FIFO oldest).
+    Legacy upbit_strategy_position_binding 은 fallback.
+    """
+
+    try:
+        row = session.execute(
+            text(
+                """
+                SELECT binding_id, NULL::bigint AS slot_id
+                FROM operation.strategy_position_binding
+                WHERE user_broker_account_id = :uba
+                  AND symbol = :sym
+                  AND status = 'OPEN'
+                  AND ownership_code = 'STRATEGY_OWNED'
+                  AND closed_at IS NULL
+                  AND owned_quantity > 0
+                ORDER BY binding_id ASC
+                LIMIT 1
+                """
+            ),
+            {"uba": int(user_broker_account_id), "sym": str(symbol).upper()},
+        ).mappings().first()
+        if row and row.get("binding_id"):
+            return int(row["binding_id"]), None
+    except Exception:  # noqa: BLE001
+        pass
 
     try:
         row = session.execute(

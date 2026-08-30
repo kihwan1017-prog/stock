@@ -632,9 +632,17 @@ class MovingAverageStrategyEvaluator:
             try:
                 from stock_platform.operation.upbit_exit_intent.hooks import (
                     create_intent_on_ma_emit,
+                    should_suppress_ma_exit_emit,
                 )
 
                 uba = int(getattr(self.scope, "account_id", 0) or 0)
+                # deterministic ORDER_QTY_EXCEEDED cooldown — 동일 상태 재제출 금지
+                if uba and should_suppress_ma_exit_emit(
+                    user_broker_account_id=uba,
+                    symbol=str(event.symbol),
+                ):
+                    self._bump("ma_exit_suppressed_deterministic_qty")
+                    return None
                 intent_id = create_intent_on_ma_emit(
                     user_broker_account_id=uba,
                     symbol=str(event.symbol),

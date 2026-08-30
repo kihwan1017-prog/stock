@@ -479,16 +479,44 @@ class LiveOrderSafetyPipeline:
                 },
             )
 
-        # 6) Order Quantity — EXIT에도 안전 캡 유지
+        # 6) Order Quantity
+        # ENTRY: hard reject. verified EXIT: max_order_quantity로 clamp
+        # (부분 청산 후 remaining은 Exit Intent / 다음 tick이 처리)
         if qty > policy.max_order_quantity:
-            return _fail(
-                "ORDER_QTY_EXCEEDED",
-                ORDER_QTY_REJECT,
-                {
-                    "limit": str(policy.max_order_quantity),
-                    "quantity": str(qty),
-                },
-            )
+            if verified_exit:
+                base_detail["requested_quantity"] = str(qty)
+                base_detail["quantity_clamped_to_max_order"] = True
+                base_detail["max_order_quantity_limit"] = str(
+                    policy.max_order_quantity
+                )
+                qty = Decimal(str(policy.max_order_quantity))
+                base_detail["quantity"] = str(qty)
+                base_detail["effective_quantity"] = str(qty)
+                # clamp 후 sellable 재확인 (pending 반영된 분류 기준)
+                if qty > exit_clf.sellable_quantity:
+                    return _fail(
+                        "SELL_QUANTITY",
+                        LIVE_REJECTED,
+                        {
+                            "held_quantity": str(exit_clf.held_quantity),
+                            "pending_sell_quantity": str(
+                                exit_clf.pending_sell_quantity
+                            ),
+                            "sellable_quantity": str(
+                                exit_clf.sellable_quantity
+                            ),
+                            "requested_after_clamp": str(qty),
+                        },
+                    )
+            else:
+                return _fail(
+                    "ORDER_QTY_EXCEEDED",
+                    ORDER_QTY_REJECT,
+                    {
+                        "limit": str(policy.max_order_quantity),
+                        "quantity": str(qty),
+                    },
+                )
 
         # 7) Daily ENTRY quota — EXIT(SELL)는 절대 미적용
         # UPBIT REAL AUTO BUY: portfolio_daily_entry_limit (BUY only) SoT
