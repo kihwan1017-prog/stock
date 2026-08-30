@@ -7,11 +7,14 @@ const BACKEND_ORIGIN =
 
 const nextConfig: NextConfig = {
   transpilePackages: ["antd", "@ant-design/icons", "@ant-design/cssinjs"],
-  // localhost·LAN IP 혼용 시 HMR/dev origin 허용
+  // localhost·LAN·Tailscale MagicDNS 혼용 시 HMR/dev origin 허용
   allowedDevOrigins: [
     "127.0.0.1",
     "localhost",
     "192.168.1.2",
+    "stock.tail3bf7b2.ts.net",
+    "lottolab.tail3bf7b2.ts.net",
+    "100.79.126.15",
   ],
   async rewrites() {
     return [

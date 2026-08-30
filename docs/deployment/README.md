@@ -14,6 +14,7 @@
 | [INSTALL.md](INSTALL.md) | 설치 요약 (본 폴더) |
 | [CONFIGURATION.md](CONFIGURATION.md) | 환경변수·설정 |
 | [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md) | v1.0 릴리스 체크리스트 |
+| [TAILSCALE_STOCK_SERVICE.md](TAILSCALE_STOCK_SERVICE.md) | Stock MagicDNS(`stock.*.ts.net`) + LottoLab 보존 |
 | [../manual/설치매뉴얼.md](../manual/설치매뉴얼.md) | Windows 11 지침 설치 매뉴얼 |
 | [../manual/운영매뉴얼.md](../manual/운영매뉴얼.md) | 기동·스케줄·백업 개요 |
 

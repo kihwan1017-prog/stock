@@ -288,10 +288,10 @@ export function UpbitOpsStatusPanel({
       <Alert
         type="info"
         showIcon
-        title={`UBA ${ubaId} 현황`}
+        title={`업비트 계좌 현황`}
         description={
           <>
-            LIVE/ARM WRITE는{" "}
+            계좌 식별자(내부) {ubaId}. LIVE/ARM WRITE는{" "}
             <Link href={`${adminRoutes.accounts}?broker=UPBIT`}>계좌 현황</Link>
             , 리스크 WRITE는{" "}
             <Link href={adminRoutes.risk}>리스크</Link>, 안전 제어는{" "}

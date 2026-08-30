@@ -1,13 +1,24 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-30 (ALERT-PREFERENCE-DELIVERY-BYPASS-CLOSEOUT)
+**최종 갱신:** 2026-08-30 (STOCK-PLATFORM-FINAL-PRODUCTION-HARDENING-V1)
 
 ---
 
 ## Parallel policy
 
 **TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
+
+---
+
+## SHARED — Final Production Hardening V1 (2026-08-30)
+
+- Scope: tmp artifact cleanup · UX 계좌 label · Tailscale `stock` MagicDNS 준비 · FE/BE/DB 감사 · trading 정책 불변
+- Tailscale: `svc:stock` = **노드 태그 + Admin Service 승인 필요** (`HUMAN_ACTION_REQUIRED`)
+- LottoLab 보존: `https://lottolab.tail3bf7b2.ts.net` 200 · Interim: `http://100.79.126.15:3000`
+- Doc: `docs/deployment/TAILSCALE_STOCK_SERVICE.md`
+- Evidence: `.run/k_stock_platform_final_production_hardening_v1.json`
+- Verdict: **PASS_PLATFORM_READY_TAILSCALE_APPROVAL_REQUIRED**
 
 ---
 

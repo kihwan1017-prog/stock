@@ -1538,7 +1538,7 @@ export function UpbitAutotradingSettingsWorkspace({
         </Typography.Paragraph>
         <ul>
           <li>
-            UBA {ubaId} · UPBIT REAL · current mode {modeLabel} ({modeRaw})
+            업비트 계좌 {ubaId} · REAL · 현재 모드 {modeLabel} ({modeRaw})
           </li>
           <li>
             target/current{" "}
