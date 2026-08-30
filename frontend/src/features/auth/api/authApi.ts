@@ -81,6 +81,36 @@ export async function loginWithCredentials(
   return mapLogin(data);
 }
 
+/** Google OAuth 시작 URL (same-origin rewrite → backend) */
+export function googleLoginStartUrl(next?: string | null): string {
+  const prefix = env.API_PREFIX.replace(/\/$/, "");
+  const qs =
+    next && next.startsWith("/")
+      ? `?next=${encodeURIComponent(next)}`
+      : "";
+  return `${env.API_BASE_URL}${prefix}/auth/google/login${qs}`;
+}
+
+export async function fetchGoogleOAuthStatus(): Promise<{
+  enabled: boolean;
+  provider: string;
+}> {
+  const { data } = await apiClient.get<{ enabled: boolean; provider: string }>(
+    "/auth/google/status",
+  );
+  return data;
+}
+
+export async function completeGoogleLogin(
+  code: string,
+): Promise<LoginResponse> {
+  const { data } = await apiClient.post<BackendTokenResponse>(
+    "/auth/google/complete",
+    { code },
+  );
+  return mapLogin(data);
+}
+
 export async function signupWithCredentials(
   payload: SignupRequest,
 ): Promise<LoginResponse> {

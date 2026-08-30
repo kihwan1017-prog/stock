@@ -194,6 +194,79 @@ class RefreshToken(Base):
     user: Mapped[AuthUser] = relationship(back_populates="refresh_tokens")
 
 
+class UserExternalIdentity(Base):
+    """외부 IdP(Google 등) subject ↔ 내부 auth.user 연결."""
+
+    __tablename__ = "user_external_identity"
+    __table_args__ = {"schema": "auth"}
+
+    identity_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("auth.user.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_login_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+
+class OAuthLoginState(Base):
+    """OAuth authorization state/nonce (짧은 TTL)."""
+
+    __tablename__ = "oauth_login_state"
+    __table_args__ = {"schema": "auth"}
+
+    state: Mapped[str] = mapped_column(String(64), primary_key=True)
+    nonce: Mapped[str] = mapped_column(String(64), nullable=False)
+    next_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
+class OAuthHandoff(Base):
+    """Google callback 후 FE 일회성 교환 코드."""
+
+    __tablename__ = "oauth_handoff"
+    __table_args__ = {"schema": "auth"}
+
+    code: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("auth.user.user_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    next_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class UserConnection(Base):
     """외부 서비스 연결 (Telegram 등). Secret 원문은 저장하지 않음."""
 

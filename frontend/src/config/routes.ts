@@ -164,6 +164,7 @@ export const authRoutes = {
   changePassword: "/change-password",
   onboarding: "/onboarding",
   forbidden: "/forbidden",
+  googleComplete: "/login/google/complete",
 } as const;
 
 /** @deprecated Admin 경로 — adminRoutes 사용. signup 은 authRoutes 권장 */

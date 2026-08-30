@@ -463,6 +463,15 @@ class Settings(BaseSettings):
     # SPA가 다른 Origin이면 credentials + CORS 필요
     auth_refresh_cookie_enabled: bool = False
 
+    # Google OAuth / OIDC (Authorization Code). 비어 있으면 기능 OFF.
+    google_oauth_enabled: bool = False
+    google_oauth_client_id: str = Field(default="")
+    google_oauth_client_secret: str = Field(default="")
+    # 브라우저가 도달하는 exact redirect (예: https://stock.../api/v1/auth/google/callback)
+    google_oauth_redirect_uri: str = Field(default="")
+    # callback 후 FE 완료 페이지 (예: https://stock.../login/google/complete)
+    google_oauth_frontend_complete_url: str = Field(default="")
+
     upbit_base_url: str = "https://api.upbit.com"
     upbit_timeout_seconds: float = 10.0
     upbit_max_requests_per_second: int = 8

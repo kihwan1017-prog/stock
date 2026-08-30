@@ -1,12 +1,16 @@
 "use client";
 
-import { Button, Card, Checkbox, Form, Input, Space, Typography } from "antd";
+import { Button, Card, Checkbox, Collapse, Divider, Form, Input, Space, Typography } from "antd";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { authRoutes } from "@/config/routes";
 import { env } from "@/config/env";
+import {
+  fetchGoogleOAuthStatus,
+  googleLoginStartUrl,
+} from "@/features/auth/api/authApi";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import type { LoginRequest } from "@/features/auth/types/auth";
 import { resolvePostLoginPath } from "@/features/auth/utils/roles";
@@ -38,15 +42,42 @@ export function LoginForm() {
   const { login, authenticated, hydrated, user, hydrateFromStorage } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   const nextParam = searchParams.get("next");
   const redirectTo =
     nextParam && nextParam.startsWith("/") ? nextParam : undefined;
+  const oauthError = searchParams.get("error");
 
-  // 세션 복원 후 이미 로그인된 경우 Role별 대시보드로 이동
   useEffect(() => {
     hydrateFromStorage();
   }, [hydrateFromStorage]);
+
+  useEffect(() => {
+    if (oauthError) {
+      setErrorMessage(oauthError);
+    }
+  }, [oauthError]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const status = await fetchGoogleOAuthStatus();
+        if (!cancelled) {
+          setGoogleEnabled(Boolean(status.enabled));
+        }
+      } catch {
+        if (!cancelled) {
+          setGoogleEnabled(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!hydrated || !authenticated || !user) {
@@ -74,7 +105,13 @@ export function LoginForm() {
     }
   };
 
-  // 로그인 상태면 폼 대신 이동 중 표시
+  const onGoogleLogin = () => {
+    setGoogleLoading(true);
+    setErrorMessage(null);
+    // same-origin /api rewrite → backend Google authorize redirect
+    window.location.assign(googleLoginStartUrl(redirectTo));
+  };
+
   if (hydrated && authenticated) {
     return (
       <Card style={{ width: "100%", maxWidth: 420 }}>
@@ -97,32 +134,84 @@ export function LoginForm() {
 
         {errorMessage ? <NoticeBanner title={errorMessage} /> : null}
 
-        <Form
-          layout="vertical"
-          onFinish={(values) => void onFinish(values)}
-          initialValues={{ rememberMe: true }}
-        >
-          <Form.Item
-            label="아이디 또는 이메일"
-            name="username"
-            rules={[{ required: true, message: "아이디 또는 이메일을 입력하세요" }]}
+        {googleEnabled ? (
+          <Button
+            type="primary"
+            size="large"
+            block
+            loading={googleLoading}
+            onClick={onGoogleLogin}
+            style={{
+              background: "#fff",
+              color: "#1f1f1f",
+              borderColor: "#dadce0",
+              fontWeight: 500,
+            }}
           >
-            <Input autoComplete="username" placeholder="hong 또는 hong@example.com" />
-          </Form.Item>
-          <Form.Item
-            label="비밀번호"
-            name="password"
-            rules={[{ required: true, message: "비밀번호를 입력하세요" }]}
-          >
-            <Input.Password autoComplete="current-password" />
-          </Form.Item>
-          <Form.Item name="rememberMe" valuePropName="checked">
-            <Checkbox>로그인 상태 유지</Checkbox>
-          </Form.Item>
-          <Button type="primary" htmlType="submit" loading={submitting} block>
-            로그인
+            Google로 로그인
           </Button>
-        </Form>
+        ) : (
+          <Typography.Text type="secondary">
+            Google 로그인은 관리자 설정 후 활성화됩니다. 그동안 기존 계정으로
+            로그인하세요.
+          </Typography.Text>
+        )}
+
+        <Divider plain>또는</Divider>
+
+        <Collapse
+          ghost
+          defaultActiveKey={googleEnabled ? [] : ["password"]}
+          items={[
+            {
+              key: "password",
+              label: "기존 계정으로 로그인",
+              children: (
+                <Form
+                  layout="vertical"
+                  onFinish={(values) => void onFinish(values)}
+                  initialValues={{ rememberMe: true }}
+                >
+                  <Form.Item
+                    label="아이디 또는 이메일"
+                    name="username"
+                    rules={[
+                      {
+                        required: true,
+                        message: "아이디 또는 이메일을 입력하세요",
+                      },
+                    ]}
+                  >
+                    <Input
+                      autoComplete="username"
+                      placeholder="hong 또는 hong@example.com"
+                    />
+                  </Form.Item>
+                  <Form.Item
+                    label="비밀번호"
+                    name="password"
+                    rules={[
+                      { required: true, message: "비밀번호를 입력하세요" },
+                    ]}
+                  >
+                    <Input.Password autoComplete="current-password" />
+                  </Form.Item>
+                  <Form.Item name="rememberMe" valuePropName="checked">
+                    <Checkbox>로그인 상태 유지</Checkbox>
+                  </Form.Item>
+                  <Button
+                    type="default"
+                    htmlType="submit"
+                    loading={submitting}
+                    block
+                  >
+                    로그인
+                  </Button>
+                </Form>
+              ),
+            },
+          ]}
+        />
 
         <Typography.Text type="secondary">
           계정이 없나요? <Link href={authRoutes.signup}>회원가입</Link>

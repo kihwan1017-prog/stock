@@ -12,6 +12,7 @@ from stock_platform.auth.schemas import (
     AuthUserResponse,
     AvailabilityResponse,
     ChangePasswordRequest,
+    GoogleCompleteRequest,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
@@ -21,7 +22,7 @@ from stock_platform.auth.schemas import (
 from stock_platform.auth.service import AuthError, AuthService, user_view_dict
 from stock_platform.auth.session_meta import session_meta_from_request
 from stock_platform.common.rate_limit import enforce_rate_limit
-from stock_platform.common.settings import get_settings
+from stock_platform.common.settings import Settings, get_settings
 from stock_platform.database.session import get_db_session
 from stock_platform.api.deps_admin import AuditLogService, get_audit_service
 from stock_platform.common.security_mask import mask_secret
@@ -177,6 +178,150 @@ def login(
         session.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return _token_response(pair, view, response)
+
+
+@router.get("/google/status")
+def google_oauth_status(
+    settings: Settings = Depends(get_settings),
+):
+    """FE용 — Google 로그인 버튼 노출 여부 (secret 미포함)."""
+
+    configured = bool(
+        settings.google_oauth_enabled
+        and settings.google_oauth_client_id.strip()
+        and settings.google_oauth_client_secret.strip()
+        and settings.google_oauth_redirect_uri.strip()
+        and settings.google_oauth_frontend_complete_url.strip()
+    )
+    return {"enabled": configured, "provider": "google"}
+
+
+@router.get("/google/login")
+def google_oauth_login(
+    next: str | None = Query(default=None, max_length=512),
+    session: Session = Depends(get_db_session),
+    service: AuthService = Depends(get_auth_service),
+    settings: Settings = Depends(get_settings),
+):
+    """Browser redirect → Google authorize URL."""
+
+    from stock_platform.auth.google_oauth import GoogleOAuthService
+    from urllib.parse import quote
+
+    oauth = GoogleOAuthService(session, settings, service)
+    try:
+        url = oauth.build_authorization_url(next_path=next)
+        session.commit()
+    except AuthError as exc:
+        session.rollback()
+        # FE로 오류 전달 (open redirect 방지: complete URL만 허용)
+        complete = settings.google_oauth_frontend_complete_url.strip()
+        if complete:
+            from fastapi.responses import RedirectResponse
+
+            return RedirectResponse(
+                url=f"{complete}?error={quote(str(exc))}",
+                status_code=status.HTTP_302_FOUND,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    from fastapi.responses import RedirectResponse
+
+    return RedirectResponse(url=url, status_code=status.HTTP_302_FOUND)
+
+
+@router.get("/google/callback")
+def google_oauth_callback(
+    http_request: Request,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    service: AuthService = Depends(get_auth_service),
+    settings: Settings = Depends(get_settings),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Google redirect → FE handoff (토큰은 query에 넣지 않음)."""
+
+    from urllib.parse import quote
+
+    from fastapi.responses import RedirectResponse
+
+    from stock_platform.auth.google_oauth import GoogleOAuthService
+
+    complete = settings.google_oauth_frontend_complete_url.strip()
+    if not complete:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth frontend complete URL이 설정되지 않았습니다.",
+        )
+
+    if error:
+        return RedirectResponse(
+            url=f"{complete}?error={quote('Google 인증이 취소되었거나 실패했습니다.')}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    oauth = GoogleOAuthService(session, settings, service)
+    try:
+        redirect_url = oauth.complete_callback(
+            code=code or "",
+            state=state or "",
+            session_meta=session_meta_from_request(http_request),
+        )
+        audit.record(
+            event_type="AUTH_GOOGLE_LOGIN_SUCCESS",
+            actor="google_oauth",
+            detail={"provider": "google"},
+        )
+        session.commit()
+    except AuthError as exc:
+        session.rollback()
+        try:
+            AuditLogService(session).record(
+                event_type="AUTH_GOOGLE_LOGIN_FAILURE",
+                actor="anonymous",
+                detail={"provider": "google"},
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+        return RedirectResponse(
+            url=f"{complete}?error={quote(str(exc))}",
+            status_code=status.HTTP_302_FOUND,
+        )
+    return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+
+
+@router.post("/google/complete", response_model=TokenResponse)
+def google_oauth_complete(
+    body: GoogleCompleteRequest,
+    http_request: Request,
+    response: Response,
+    session: Session = Depends(get_db_session),
+    service: AuthService = Depends(get_auth_service),
+    settings: Settings = Depends(get_settings),
+):
+    """FE one-time handoff code → 기존 TokenResponse (sessionStorage 저장)."""
+
+    from stock_platform.auth.google_oauth import GoogleOAuthService
+
+    oauth = GoogleOAuthService(session, settings, service)
+    try:
+        pair, view, _next = oauth.exchange_handoff(
+            code=body.code,
+            session_meta=session_meta_from_request(http_request),
+        )
+        session.commit()
+    except AuthError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
     return _token_response(pair, view, response)

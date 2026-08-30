@@ -82,6 +82,12 @@ class LogoutRequest(BaseModel):
     refresh_token: str | None = None
 
 
+class GoogleCompleteRequest(BaseModel):
+    """Google OAuth FE handoff 일회성 코드."""
+
+    code: str = Field(min_length=16, max_length=128)
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)

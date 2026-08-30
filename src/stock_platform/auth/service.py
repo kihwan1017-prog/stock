@@ -234,6 +234,155 @@ class AuthService:
             to_user_view(user, self._rbac),
         )
 
+    def login_with_google_identity(
+        self,
+        *,
+        subject: str,
+        email: str,
+        email_verified: bool,
+        session_meta: dict[str, str | None] | None = None,
+    ) -> tuple[TokenPair, AuthUserView]:
+        """테스트/직접 호출용 — resolve 후 즉시 JWT 발급."""
+
+        user = self.resolve_google_user(
+            subject=subject,
+            email=email,
+            email_verified=email_verified,
+            session_meta=session_meta,
+        )
+        return (
+            self._issue_tokens(user, session_meta=session_meta),
+            to_user_view(user, self._rbac),
+        )
+
+    def resolve_google_user(
+        self,
+        *,
+        subject: str,
+        email: str,
+        email_verified: bool,
+        session_meta: dict[str, str | None] | None = None,
+    ) -> AuthUser:
+        """Google 검증 identity → 기존 DB 사용자 (자동 가입 없음)."""
+
+        from sqlalchemy import select
+
+        from stock_platform.auth.google_oauth import upsert_google_identity
+        from stock_platform.auth.models import UserExternalIdentity
+        from stock_platform.auth.role_codes import has_valid_app_role
+        from stock_platform.auth.user_status import (
+            STATUS_LOCKED,
+            resolve_user_status,
+        )
+
+        if not email_verified:
+            raise AuthError("인증되지 않은 Google 이메일은 사용할 수 없습니다.")
+
+        cleaned_email = email.strip().lower()
+        if not cleaned_email:
+            raise AuthError("Google 계정 이메일을 확인할 수 없습니다.")
+
+        linked = self._repository._session.scalar(
+            select(UserExternalIdentity).where(
+                UserExternalIdentity.provider == "google",
+                UserExternalIdentity.provider_subject == subject,
+            )
+        )
+        user = None
+        if linked is not None:
+            user = self._repository.get_by_id(int(linked.user_id))
+        if user is None:
+            user = self._repository.get_by_email(cleaned_email)
+
+        if user is None or user.deleted_at is not None:
+            raise AuthError(
+                "GOOGLE_ACCOUNT_NOT_REGISTERED: "
+                "등록되지 않은 Google 계정입니다. 관리자에게 계정 등록을 요청하세요."
+            )
+        if not user.is_active:
+            raise AuthError("비활성 계정입니다. 관리자에게 문의하세요.")
+
+        status = resolve_user_status(user)
+        if status == STATUS_LOCKED:
+            raise AuthError(
+                "계정이 일시 잠금되었습니다. 잠시 후 다시 시도하세요."
+            )
+
+        if self._rbac is not None:
+            from stock_platform.auth.role_sync import reconcile_user_roles
+
+            reconcile_user_roles(
+                self._repository._session,
+                user,
+                self._rbac,
+                commit=False,
+            )
+
+        roles = _roles_of(user, self._rbac)
+        if not has_valid_app_role(roles):
+            raise AuthError(
+                "계정에 유효한 권한이 없습니다. 관리자에게 문의하세요."
+            )
+
+        upsert_google_identity(
+            self._repository._session,
+            user_id=int(user.user_id),
+            subject=subject,
+            email=cleaned_email,
+        )
+
+        user.failed_login_count = 0
+        user.locked_until = None
+        ip = None
+        if session_meta:
+            ip = session_meta.get("ip_address") or session_meta.get("client_ip")
+        if ip:
+            user.last_login_ip = str(ip)[:64]
+        if not user.email_verified:
+            user.email_verified = True
+        self._repository.mark_last_login(user)
+        return user
+
+    def issue_tokens_for_user_id(
+        self,
+        user_id: int,
+        *,
+        session_meta: dict[str, str | None] | None = None,
+    ) -> tuple[TokenPair, AuthUserView]:
+        """handoff 교환용 — 이미 인증된 user_id에 대해 JWT만 재발급."""
+
+        from stock_platform.auth.role_codes import has_valid_app_role
+        from stock_platform.auth.user_status import (
+            STATUS_LOCKED,
+            resolve_user_status,
+        )
+
+        user = self._repository.get_by_id(int(user_id))
+        if user is None or user.deleted_at is not None or not user.is_active:
+            raise AuthError("사용자를 찾을 수 없습니다.")
+        if resolve_user_status(user) == STATUS_LOCKED:
+            raise AuthError(
+                "계정이 일시 잠금되었습니다. 잠시 후 다시 시도하세요."
+            )
+        if self._rbac is not None:
+            from stock_platform.auth.role_sync import reconcile_user_roles
+
+            reconcile_user_roles(
+                self._repository._session,
+                user,
+                self._rbac,
+                commit=False,
+            )
+        roles = _roles_of(user, self._rbac)
+        if not has_valid_app_role(roles):
+            raise AuthError(
+                "계정에 유효한 권한이 없습니다. 관리자에게 문의하세요."
+            )
+        return (
+            self._issue_tokens(user, session_meta=session_meta),
+            to_user_view(user, self._rbac),
+        )
+
     def _register_failed_login(self, user: AuthUser) -> None:
         self._repository.record_failed_login(
             user,

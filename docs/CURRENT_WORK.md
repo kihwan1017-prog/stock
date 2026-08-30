@@ -1,13 +1,25 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-30 (STOCK-PLATFORM-FINAL-PRODUCTION-HARDENING-V1)
+**최종 갱신:** 2026-08-30 (GOOGLE-OAUTH-LOGIN-V1)
 
 ---
 
 ## Parallel policy
 
 **TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
+
+---
+
+## SHARED — Google OAuth Login V1 (2026-08-30)
+
+- Google = Authentication · Stock DB = Authorization (자동 가입 금지)
+- Endpoints: `/api/v1/auth/google/login|callback|complete|status`
+- Migration: `ggl1oauth2v1a2b3` (`user_external_identity`, oauth state/handoff)
+- Password fallback 유지 (admin lock-out 방지)
+- Related: History **#50** Tailscale production hardening
+- Verdict target: **GOOGLE_OAUTH_CODE_READY_CREDENTIALS_REQUIRED** until Google Cloud secrets
+- Evidence: `.run/k_google_oauth_login_v1.json`
 
 ---
 
