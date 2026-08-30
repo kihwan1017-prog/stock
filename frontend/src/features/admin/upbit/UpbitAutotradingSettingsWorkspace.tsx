@@ -58,7 +58,10 @@ import {
 import { UpbitOpsStatusPanel } from "./UpbitOpsStatusPanel";
 import { UpbitUnattendedAutoRenewPanel } from "./UpbitUnattendedAutoRenewPanel";
 import { entryBlockReasonKo } from "@/features/admin/autotrading/entryBlockReasonKo";
-import { slotStatusLabelKo } from "@/features/admin/autotrading/slotStatusLabels";
+import {
+  slotStatusLabelKo,
+  slotStatusTooltipKo,
+} from "@/features/admin/autotrading/slotStatusLabels";
 
 type Props = {
   ubaId: number;
@@ -787,7 +790,11 @@ export function UpbitAutotradingSettingsWorkspace({
                 포지션·자금 저장
               </Button>
             </Space>
-            <Typography.Text strong>자동매매 후보 슬롯</Typography.Text>
+            <Typography.Text strong>자동매매 후보 감시 슬롯</Typography.Text>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+              매수 후보를 등록해 조건을 감시합니다. 빈 슬롯(후보 대기)은 오류가
+              아니며 현재 적격 후보가 없다는 의미입니다.
+            </Typography.Paragraph>
             <Table
               size="small"
               pagination={false}
@@ -806,7 +813,7 @@ export function UpbitAutotradingSettingsWorkspace({
                   title: "상태",
                   dataIndex: "status",
                   render: (v) => (
-                    <Tooltip title={String(v)}>
+                    <Tooltip title={slotStatusTooltipKo(String(v))}>
                       <Tag>{slotStatusLabelKo(String(v))}</Tag>
                     </Tooltip>
                   ),
@@ -838,7 +845,7 @@ export function UpbitAutotradingSettingsWorkspace({
                   },
                 },
                 {
-                  title: "차단 사유",
+                  title: "대기 이유",
                   key: "block_reason",
                   ellipsis: true,
                   render: (_: unknown, row) => {

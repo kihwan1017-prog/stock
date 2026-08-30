@@ -390,7 +390,7 @@ export function UpbitPortfolioPolicyPanel({
               },
             },
             {
-              title: "차단 이유",
+              title: "대기 이유",
               key: "reason",
               ellipsis: true,
               render: (_: unknown, row) => {

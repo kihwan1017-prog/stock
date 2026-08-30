@@ -32,6 +32,7 @@ import {
   formatAgeKo,
   formatIsoAgeKo,
   slotStatusLabelKo,
+  slotStatusTooltipKo,
   unattendedLeaseLabelKo,
 } from "@/features/admin/autotrading/slotStatusLabels";
 import {
@@ -46,6 +47,13 @@ import {
   parseOpsLiveArm,
 } from "@/features/admin/upbit/upbitAutotradingCanonicalStatus";
 import { UPBIT_AUTOTRADING_EMPTY_LABELS } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
+import {
+  CANDIDATE_SLOT_TABLE_HINT_KO,
+  resolveAutoPositionCoverage,
+  resolveCandidateSlotCoverage,
+  resolveDailyEntryCoverage,
+  resolveRealtimeMonitorCoverage,
+} from "@/features/admin/upbit/upbitSlotStatusSemantics";
 import {
   UI_LABEL_KO,
   UI_TOOLTIP_KO,
@@ -176,6 +184,75 @@ export function UpbitOpsStatusPanel({
   }
   const reasonTotal = [...reasonCounts.values()].reduce((a, b) => a + b, 0);
 
+  const fm = rec(ops.full_market);
+  const policyRec = rec(portfolio.policy);
+  const coverageInput: import("@/features/admin/upbit/upbitSlotStatusSemantics").SlotCoverageSemanticsInput =
+    {
+      candidate_slot_assigned: Number(
+        fm.candidate_slot_assigned ?? summary.candidate_slot_assigned ?? NaN,
+      ),
+      candidate_slot_capacity: Number(
+        fm.candidate_slot_capacity ??
+          summary.candidate_slot_capacity ??
+          summary.max_positions ??
+          fm.max_positions ??
+          policyRec.max_positions ??
+          NaN,
+      ),
+      candidates_waiting: Number(summary.candidates_waiting ?? NaN),
+      positions_open: Number(summary.positions_open ?? NaN),
+      pending_orders: Number(summary.pending_orders ?? NaN),
+      auto_position_used: Number(
+        fm.auto_position_used ?? summary.auto_position_used ?? NaN,
+      ),
+      auto_position_limit: Number(
+        fm.auto_position_limit ?? summary.auto_position_limit ?? NaN,
+      ),
+      auto_slot_used: Number(fm.auto_slot_used ?? summary.auto_slot_used ?? NaN),
+      auto_slot_limit: Number(
+        fm.auto_slot_limit ?? summary.auto_slot_limit ?? NaN,
+      ),
+      daily_entry_used: Number(
+        fm.daily_entry_used ?? summary.daily_entry_used ?? NaN,
+      ),
+      daily_entry_limit:
+        fm.daily_entry_limit == null && summary.daily_entry_limit == null
+          ? null
+          : Number(fm.daily_entry_limit ?? summary.daily_entry_limit),
+      daily_entry_limit_mode: String(
+        fm.daily_entry_limit_mode ?? summary.daily_entry_limit_mode ?? "",
+      ),
+      daily_entry: rec(fm.daily_entry ?? summary.daily_entry) as {
+        entry_count?: number | null;
+        entry_limit?: number | null;
+        mode?: string | null;
+      },
+      realtime_monitor_target:
+        fm.realtime_monitor_target == null &&
+        summary.realtime_monitor_target == null &&
+        policyRec.realtime_monitored_symbol_target == null
+          ? null
+          : Number(
+              fm.realtime_monitor_target ??
+                summary.realtime_monitor_target ??
+                policyRec.realtime_monitored_symbol_target,
+            ),
+      realtime_monitored_count:
+        fm.realtime_monitored_count == null
+          ? null
+          : Number(fm.realtime_monitored_count),
+    };
+  // NaN → null (표시 헬퍼에서 처리)
+  for (const [k, v] of Object.entries(coverageInput)) {
+    if (typeof v === "number" && !Number.isFinite(v)) {
+      (coverageInput as Record<string, unknown>)[k] = null;
+    }
+  }
+  const candidateCov = resolveCandidateSlotCoverage(coverageInput);
+  const autoPosCov = resolveAutoPositionCoverage(coverageInput);
+  const dailyCov = resolveDailyEntryCoverage(coverageInput);
+  const realtimeCov = resolveRealtimeMonitorCoverage(coverageInput);
+
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert
@@ -222,6 +299,41 @@ export function UpbitOpsStatusPanel({
           </>
         }
       />
+
+      <Row gutter={[8, 8]}>
+        {(
+          [
+            [
+              UI_LABEL_KO.candidateWatchSlots,
+              candidateCov.label,
+              "yellow" as StatusTone,
+              UI_TOOLTIP_KO.candidateWatchSlots,
+            ],
+            [
+              UI_LABEL_KO.autoHoldPositions,
+              autoPosCov.label,
+              "green" as StatusTone,
+              UI_TOOLTIP_KO.autoHoldPositions,
+            ],
+            [
+              UI_LABEL_KO.dailyEntryToday,
+              dailyCov.label,
+              "gray" as StatusTone,
+              UI_TOOLTIP_KO.dailyEntryToday,
+            ],
+            [
+              UI_LABEL_KO.realtimeMonitorTarget,
+              realtimeCov.label,
+              "gray" as StatusTone,
+              UI_TOOLTIP_KO.realtimeMonitorTarget,
+            ],
+          ] as [string, string, StatusTone, string][]
+        ).map(([label, value, tone, tip]) => (
+          <Col xs={12} sm={12} md={6} key={label}>
+            <StatusCard label={label} value={value} tone={tone} tip={tip} />
+          </Col>
+        ))}
+      </Row>
 
       <Row gutter={[8, 8]}>
         {(
@@ -318,7 +430,25 @@ export function UpbitOpsStatusPanel({
         ))}
       </Row>
 
-      <Card size="small" title={UI_LABEL_KO.portfolioSlots}>
+      <Card
+        size="small"
+        title={UI_LABEL_KO.portfolioSlots}
+        extra={
+          candidateCov.capacity > 0 ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              최대 {candidateCov.capacity}개
+            </Typography.Text>
+          ) : null
+        }
+      >
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
+          매수 후보를 최대 {candidateCov.capacity || "—"}개까지 등록하여 조건을
+          감시합니다. 빈 슬롯은 오류가 아니며 현재 적격 후보가 없다는
+          의미입니다.
+        </Typography.Paragraph>
+        <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+          {CANDIDATE_SLOT_TABLE_HINT_KO}
+        </Typography.Paragraph>
         <div style={{ overflowX: "auto" }}>
           <Table
             size="small"
@@ -378,7 +508,7 @@ export function UpbitOpsStatusPanel({
                 title: UI_LABEL_KO.status,
                 dataIndex: "status",
                 render: (v) => (
-                  <Tooltip title={`원본: ${String(v)}`}>
+                  <Tooltip title={slotStatusTooltipKo(String(v))}>
                     <Tag>{slotStatusLabelKo(String(v))}</Tag>
                   </Tooltip>
                 ),

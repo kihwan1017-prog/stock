@@ -701,8 +701,21 @@ class UpbitPortfolioService:
             user_broker_account_id=int(user_broker_account_id),
             broker_code="UPBIT",
         )
-        auto_slot_limit = int(policy["max_positions"])
-        # Risk max_position_count와 정렬 — AUTO slot 한도는 risk 쪽 6 유지
+        # 후보 감시 슬롯 용량 = portfolio.max_positions (risk와 분리)
+        candidate_slot_capacity = int(policy["max_positions"])
+        candidate_slot_assigned = sum(
+            1
+            for s in slots
+            if int(s.get("slot_no") or 0) <= candidate_slot_capacity
+            and str(s.get("status") or "").upper() != SLOT_EMPTY
+        )
+        candidate_slot_empty = max(
+            0, candidate_slot_capacity - candidate_slot_assigned
+        )
+
+        # AUTO 보유 포지션 한도 = risk.max_position_count
+        # legacy auto_slot_limit 은 이 의미로 유지 (호환) — 후보 슬롯 용량이 아님
+        auto_position_limit = candidate_slot_capacity
         try:
             from stock_platform.risk_engine.resolved_policy import (
                 ResolvedRiskPolicyResolver,
@@ -713,9 +726,18 @@ class UpbitPortfolioService:
                 user_broker_account_id=int(user_broker_account_id),
             )
             if int(risk_pol.max_position_count) > 0:
-                auto_slot_limit = int(risk_pol.max_position_count)
+                auto_position_limit = int(risk_pol.max_position_count)
         except Exception:  # noqa: BLE001
             pass
+        auto_slot_limit = auto_position_limit
+        auto_position_used = int(ownership.get("auto_slots_used") or 0)
+
+        realtime_monitor_target = policy.get("realtime_monitored_symbol_target")
+        if realtime_monitor_target is not None:
+            try:
+                realtime_monitor_target = int(realtime_monitor_target)
+            except (TypeError, ValueError):
+                realtime_monitor_target = None
 
         return {
             "mode": assignment.get("mode"),
@@ -743,6 +765,14 @@ class UpbitPortfolioService:
             "daily_entry_limit": daily_entry["entry_limit"],
             "daily_entry_used": daily_entry["entry_count"],
             "daily_entry_limit_mode": daily_entry.get("mode") or daily_entry_mode,
+            # semantic (UX) — 후보 슬롯 ≠ AUTO 보유 한도
+            "candidate_slot_capacity": candidate_slot_capacity,
+            "candidate_slot_assigned": candidate_slot_assigned,
+            "candidate_slot_empty": candidate_slot_empty,
+            "auto_position_limit": auto_position_limit,
+            "auto_position_used": auto_position_used,
+            "realtime_monitor_target": realtime_monitor_target,
+            # legacy: AUTO 보유 포지션 한도 (후보 슬롯 capacity 아님)
             "auto_slot_limit": auto_slot_limit,
             "auto_slot_used": ownership["auto_slots_used"],
             "manual_holdings": ownership["manual_position_count"],

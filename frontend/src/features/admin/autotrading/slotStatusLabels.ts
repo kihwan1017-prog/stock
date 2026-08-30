@@ -8,12 +8,13 @@ export function slotStatusLabelKo(status: string | null | undefined): string {
     case "WAITING_SIGNAL":
       return "매수조건 감시 중";
     case "ENTRY_PENDING":
-      return "매수 주문 처리 중";
+      return "매수 진행 중";
     case "OPEN":
       return "보유 중";
     case "EXIT_PENDING":
       return "매도 주문 처리 중";
     case "COOLDOWN":
+    case "REENTRY_WAIT":
       return "재진입 대기";
     case "EMPTY":
       return "후보 대기";
@@ -22,6 +23,15 @@ export function slotStatusLabelKo(status: string | null | undefined): string {
     default:
       return s ? `확인 필요 (${s})` : "—";
   }
+}
+
+/** EMPTY 등 상태별 tooltip — 오류로 오인되지 않게 */
+export function slotStatusTooltipKo(status: string | null | undefined): string {
+  const s = String(status ?? "").trim().toUpperCase();
+  if (s === "EMPTY") {
+    return "현재 등록할 적격 후보를 기다리고 있습니다.";
+  }
+  return `원본: ${s || "—"}`;
 }
 
 export function unattendedLeaseLabelKo(

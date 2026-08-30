@@ -181,13 +181,29 @@ function MarketDailyCard({ title, data }: MarketSectionProps) {
           return (
             <Card size="small" title="Short-Term Operation V1">
               <Descriptions size="small" column={{ xs: 1, sm: 2, md: 3 }}>
-                <Descriptions.Item label="Daily ENTRY">
+                <Descriptions.Item label="오늘 진입">
                   {String(sto.daily_entry_used ?? "—")} /{" "}
-                  {String(sto.daily_entry_limit ?? "—")}
+                  {String(
+                    String(sto.daily_entry_limit_mode ?? "").toUpperCase() ===
+                      "UNLIMITED" || sto.daily_entry_limit == null
+                      ? "무제한"
+                      : sto.daily_entry_limit,
+                  )}
                 </Descriptions.Item>
-                <Descriptions.Item label="AUTO 슬롯">
-                  {String(sto.auto_slot_used ?? "—")} /{" "}
-                  {String(sto.auto_slot_limit ?? "—")}
+                <Descriptions.Item label="AUTO 보유 포지션">
+                  {String(
+                    sto.auto_position_used ?? sto.auto_slot_used ?? "—",
+                  )}{" "}
+                  /{" "}
+                  {String(
+                    sto.auto_position_limit ?? sto.auto_slot_limit ?? "—",
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="후보 감시 슬롯">
+                  {String(sto.candidate_slot_assigned ?? "—")} /{" "}
+                  {String(
+                    sto.candidate_slot_capacity ?? sto.max_positions ?? "—",
+                  )}
                 </Descriptions.Item>
                 <Descriptions.Item label="수동 보유">
                   {String(sto.manual_holdings ?? "—")}

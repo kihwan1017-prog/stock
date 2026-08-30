@@ -12,12 +12,13 @@ export type UserFacingStatus = {
 const SLOT_STATUS_MAP: Record<string, { label: string; tone: UserFacingStatus["tone"] }> = {
   OPEN: { label: "보유 중", tone: "success" },
   WAITING_SIGNAL: { label: "매수조건 감시 중", tone: "processing" },
-  ENTRY_PENDING: { label: "매수 주문 처리 중", tone: "processing" },
+  ENTRY_PENDING: { label: "매수 진행 중", tone: "processing" },
   EMPTY: { label: "후보 대기", tone: "default" },
   EXIT_PENDING: { label: "매도 주문 처리 중", tone: "warning" },
   BLOCKED: { label: "일시 차단", tone: "error" },
   SELECTED: { label: "후보 선정됨", tone: "processing" },
   COOLDOWN: { label: "재진입 대기", tone: "default" },
+  REENTRY_WAIT: { label: "재진입 대기", tone: "default" },
   ERROR: { label: "오류", tone: "error" },
 };
 

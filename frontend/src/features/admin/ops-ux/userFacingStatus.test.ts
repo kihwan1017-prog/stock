@@ -10,7 +10,8 @@ import {
 describe("userFacingStatus", () => {
   it("슬롯 상태를 운영자 언어로 바꾼다", () => {
     expect(formatSlotStatus("WAITING_SIGNAL").label).toBe("매수조건 감시 중");
-    expect(formatSlotStatus("ENTRY_PENDING").label).toBe("매수 주문 처리 중");
+    expect(formatSlotStatus("ENTRY_PENDING").label).toBe("매수 진행 중");
+    expect(formatSlotStatus("EMPTY").label).toBe("후보 대기");
     expect(formatSlotStatus("OPEN").tone).toBe("success");
   });
 

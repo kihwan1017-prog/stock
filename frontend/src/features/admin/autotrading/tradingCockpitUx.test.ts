@@ -11,6 +11,7 @@ import {
 } from "@/features/admin/autotrading/orderOwnership";
 import {
   slotStatusLabelKo,
+  slotStatusTooltipKo,
   unattendedLeaseLabelKo,
 } from "@/features/admin/autotrading/slotStatusLabels";
 import {
@@ -49,10 +50,11 @@ describe("entryBlockReasonKo", () => {
 describe("slotStatusLabelKo", () => {
   it("uses operator-friendly labels", () => {
     expect(slotStatusLabelKo("WAITING_SIGNAL")).toBe("매수조건 감시 중");
-    expect(slotStatusLabelKo("ENTRY_PENDING")).toContain("매수 주문");
+    expect(slotStatusLabelKo("ENTRY_PENDING")).toContain("매수");
     expect(slotStatusLabelKo("OPEN")).toContain("보유");
-    expect(slotStatusLabelKo("EMPTY")).toContain("후보");
+    expect(slotStatusLabelKo("EMPTY")).toBe("후보 대기");
     expect(slotStatusLabelKo("COOLDOWN")).toContain("재진입");
+    expect(slotStatusTooltipKo("EMPTY")).toContain("적격 후보");
     expect(unattendedLeaseLabelKo("PROTECTIVE_EXIT_ONLY")).toContain("보호");
   });
 });
@@ -94,7 +96,10 @@ describe("tradingDisplayLabelsKo", () => {
     const { UI_LABEL_KO } = await import(
       "@/features/shared/display/displayUiLabelsKo"
     );
-    expect(UI_LABEL_KO.portfolioSlots).toBe("자동매매 후보 슬롯");
+    expect(UI_LABEL_KO.portfolioSlots).toBe("자동매매 후보 감시 슬롯");
+    expect(UI_LABEL_KO.candidateWatchSlots).toBe("후보 감시 슬롯");
+    expect(UI_LABEL_KO.autoHoldPositions).toBe("AUTO 보유 포지션");
+    expect(UI_LABEL_KO.blockReason).toBe("대기 이유");
     expect(UI_LABEL_KO.runtime).toBe("자동매매 런타임");
     expect(UI_LABEL_KO.worker).toBe("주문 처리");
     expect(UI_LABEL_KO.killSwitch).toContain("Kill Switch");

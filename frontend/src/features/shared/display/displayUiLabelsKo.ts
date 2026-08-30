@@ -4,7 +4,11 @@
  */
 
 export const UI_LABEL_KO = {
-  portfolioSlots: "자동매매 후보 슬롯",
+  portfolioSlots: "자동매매 후보 감시 슬롯",
+  candidateWatchSlots: "후보 감시 슬롯",
+  autoHoldPositions: "AUTO 보유 포지션",
+  dailyEntryToday: "오늘 진입",
+  realtimeMonitorTarget: "실시간 감시 목표",
   slot: "슬롯",
   symbol: "종목",
   score: "점수",
@@ -17,7 +21,7 @@ export const UI_LABEL_KO = {
   ageTime: "경과 시간",
   lastEvaluated: "최근 평가",
   entryDecision: "매수 판단",
-  blockReason: "차단 사유",
+  blockReason: "대기 이유",
   reservedKrw: "예약 금액",
   expectedOrderKrw: "예상 주문금액",
   recommendedKrw: "권장 주문금액",
@@ -132,4 +136,11 @@ export const UI_TOOLTIP_KO = {
   shadow: "실주문 없이 분석용으로만 추적하는 가상 진입입니다.",
   live: "실제 자금으로 주문이 나갈 수 있는 실거래 모드입니다.",
   killSwitch: "전체 실거래를 즉시 막는 최상위 안전 장치입니다.",
+  candidateWatchSlots:
+    "자동매매 후보를 등록해 매수 조건을 감시하는 자리입니다. 적격 후보가 부족하면 빈 슬롯이 있을 수 있습니다.",
+  autoHoldPositions:
+    "자동매매로 동시에 보유할 수 있는 최대 포지션 수입니다.",
+  dailyEntryToday: "오늘 AUTO 신규 진입 횟수입니다.",
+  realtimeMonitorTarget:
+    "Scanner가 실시간 분석 대상으로 확보하려는 목표 종목 수입니다. 실제 후보 슬롯 수와 항상 같지는 않습니다.",
 } as const;

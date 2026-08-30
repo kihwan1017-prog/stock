@@ -383,8 +383,16 @@ def build_uba_operational_summary(
                     for key in (
                         "daily_entry_limit",
                         "daily_entry_used",
+                        "daily_entry_limit_mode",
                         "auto_slot_limit",
                         "auto_slot_used",
+                        "candidate_slot_capacity",
+                        "candidate_slot_assigned",
+                        "candidate_slot_empty",
+                        "auto_position_limit",
+                        "auto_position_used",
+                        "realtime_monitor_target",
+                        "max_positions",
                         "manual_holdings",
                         "unknown_holdings",
                         "account_total_holdings",
@@ -392,6 +400,22 @@ def build_uba_operational_summary(
                     ):
                         if key in drawer:
                             full_market[key] = drawer.get(key)
+                    # scanner 실측 감시 종목 수 (목표와 별개)
+                    try:
+                        from stock_platform.operation.upbit_opportunity_scanner.scheduler import (
+                            upbit_opportunity_scanner_scheduler,
+                        )
+
+                        sc_st = upbit_opportunity_scanner_scheduler.status()
+                        last_sum = sc_st.get("last_result_summary") or {}
+                        cands = last_sum.get("candidates") or []
+                        full_market["realtime_monitored_count"] = (
+                            len(cands)
+                            if isinstance(cands, list)
+                            else last_sum.get("top_n")
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
             except Exception:  # noqa: BLE001
                 pass
             if not slim:
@@ -551,7 +575,39 @@ def build_uba_operational_summary(
                 if not resolved.trailing_stop_effective_enabled
                 else "REAL"
             ),
-            "TIME_EXIT": "DISABLED",
+            "MAX_HOLD": (
+                "DISABLED"
+                if not resolved.max_hold_effective_enabled
+                else "REAL"
+            ),
+            "TIME_EXIT": (
+                "DISABLED"
+                if not resolved.max_hold_effective_enabled
+                else "REAL"
+            ),
+            "rates": {
+                "stop_loss_rate": (
+                    str(resolved.stop_loss_rate)
+                    if resolved.stop_loss_rate is not None
+                    else None
+                ),
+                "take_profit_rate": (
+                    str(resolved.take_profit_rate)
+                    if resolved.take_profit_rate is not None
+                    else None
+                ),
+                "trailing_stop_rate": (
+                    str(resolved.trailing_stop_rate)
+                    if resolved.trailing_stop_rate is not None
+                    else None
+                ),
+                "trailing_activation_rate": (
+                    str(resolved.trailing_activation_rate)
+                    if resolved.trailing_activation_rate is not None
+                    else None
+                ),
+                "max_hold_seconds": resolved.max_hold_seconds,
+            },
         }
         # Shadow는 REAL disable과 독립 — 기존 forward collection 유지
         out["exit_shadow"] = {
@@ -559,6 +615,7 @@ def build_uba_operational_summary(
             "TAKE_PROFIT": "ACTIVE",
             "TRAILING": "ACTIVE",
             "TIME_EXIT": "ACTIVE",
+            "MAX_HOLD": "ACTIVE",
         }
         out["risk"] = {
             **(out.get("risk") if isinstance(out.get("risk"), dict) else {}),
@@ -567,6 +624,7 @@ def build_uba_operational_summary(
             "stop_loss_mode": resolved.stop_loss_mode,
             "take_profit_mode": resolved.take_profit_mode,
             "trailing_stop_mode": resolved.trailing_stop_mode,
+            "max_hold_mode": resolved.max_hold_mode,
             "stop_loss_rate": (
                 str(resolved.stop_loss_rate)
                 if resolved.stop_loss_rate is not None
@@ -582,6 +640,12 @@ def build_uba_operational_summary(
                 if resolved.trailing_stop_rate is not None
                 else None
             ),
+            "trailing_activation_rate": (
+                str(resolved.trailing_activation_rate)
+                if resolved.trailing_activation_rate is not None
+                else None
+            ),
+            "max_hold_seconds": resolved.max_hold_seconds,
         }
     except Exception:  # noqa: BLE001
         out.setdefault("exit_policy", {"error": "EXIT_POLICY_RESOLVE_FAILED"})
