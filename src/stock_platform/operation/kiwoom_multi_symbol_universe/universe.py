@@ -34,6 +34,13 @@ def is_kiwoom_autotrade_excluded(
         return True
     if _extra_bool(extra, "is_etf") or _extra_bool(extra, "is_etn"):
         return True
+    # Kiwoom instrument master — market_code 8=ETF (broker 제공 필드)
+    market_code = str(extra.get("market_code") or "").strip()
+    if market_code in {"8", "60", "70", "90"}:
+        return True
+    market_name = str(extra.get("market_name") or "").strip().upper()
+    if market_name in {"ETF", "ETN", "ELW"}:
+        return True
     segment = str(extra.get("market_segment") or extra.get("mrkt_tp") or "")
     if segment in {"ETF", "ETN", "ELW", "SUBSCRIPTION_WARRANT", "8", "60", "70", "90"}:
         return True

@@ -26,6 +26,17 @@ def _closes(n: int, base: Decimal = Decimal("1000")) -> list[Decimal]:
     return [base + Decimal(i) for i in range(n)]
 
 
+def test_universe_excludes_kiwoom_market_code_etf() -> None:
+    assert is_kiwoom_autotrade_excluded(
+        asset_type="STOCK",
+        extra={"market_code": "8", "market_name": "ETF", "is_etf": False},
+    ) is True
+    assert is_kiwoom_autotrade_excluded(
+        asset_type="STOCK",
+        extra={"market_name": "ETN"},
+    ) is True
+
+
 def test_universe_excludes_etf_etn() -> None:
     assert is_kiwoom_autotrade_excluded(asset_type="ETF", extra={}) is True
     assert is_kiwoom_autotrade_excluded(
