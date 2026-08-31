@@ -118,11 +118,15 @@ class LiveArmService:
         user_broker_account_id: int,
         *,
         allow_auto_protective_open_orders: bool = False,
+        require_scheduler_paused: bool = True,
     ) -> dict[str, Any]:
         """ARM ON 사전조건 — LIVE/Scheduler/Runtime은 변경하지 않음.
 
         allow_auto_protective_open_orders:
           Unattended renew/restore — AUTO SELL open은 허용, UNKNOWN는 fail-closed.
+        require_scheduler_paused:
+          Manual ARM ON requires Scheduler PAUSED.
+          Unattended force_renew allows RUNNING scheduler.
         """
         uba_id = int(user_broker_account_id)
         uba = self._require_uba(uba_id)
@@ -239,23 +243,26 @@ class LiveArmService:
             )
 
         trading = collect_scheduler_readiness()
-        if trading.trading_scheduler_actual_state != "PAUSED":
-            raise LiveArmError(
-                "trading_scheduler_not_paused",
-                f"Trading Scheduler must be PAUSED "
-                f"(actual={trading.trading_scheduler_actual_state})",
-            )
-        if trading.trading_scheduler_desired_state != "PAUSE":
-            raise LiveArmError(
-                "trading_scheduler_desired_not_pause",
-                f"Trading Scheduler desired must be PAUSE "
-                f"(desired={trading.trading_scheduler_desired_state})",
-            )
+        if require_scheduler_paused:
+            # 수동 ARM ON: 운영자가 Scheduler를 멈춘 뒤에만 무장
+            if trading.trading_scheduler_actual_state != "PAUSED":
+                raise LiveArmError(
+                    "trading_scheduler_not_paused",
+                    f"Trading Scheduler must be PAUSED "
+                    f"(actual={trading.trading_scheduler_actual_state})",
+                )
+            if trading.trading_scheduler_desired_state != "PAUSE":
+                raise LiveArmError(
+                    "trading_scheduler_desired_not_pause",
+                    f"Trading Scheduler desired must be PAUSE "
+                    f"(desired={trading.trading_scheduler_desired_state})",
+                )
         return {
             "blocking": blocking,
             "active_review": active,
             "pending_review": pending,
             "trading_scheduler_actual": trading.trading_scheduler_actual_state,
+            "require_scheduler_paused": bool(require_scheduler_paused),
             "live_order_enabled": bool(uba.live_order_enabled),
             "health_status": health.get("status"),
             "recovery_status": recovery.get("recovery_status"),
@@ -387,11 +394,13 @@ class LiveArmService:
                     )
                     # 원문 토큰은 재발급하지 않음
                     return status
+            # force_renew=이미 무장된 unattended 세션 TTL 연장 — Scheduler RUNNING 허용
             self.assert_arm_enable_preconditions(
                 int(user_broker_account_id),
                 allow_auto_protective_open_orders=bool(
                     allow_auto_protective_open_orders
                 ),
+                require_scheduler_paused=not bool(force_renew),
             )
         else:
             # 레거시 경로 (내부/테스트)

@@ -724,6 +724,16 @@ def build_uba_operational_summary(
     except Exception:  # noqa: BLE001
         out["reliability"] = {"error": "HEALTH_SNAPSHOT_FAILED"}
 
+    # ARM/Activation expiry+renew 스캔 runtime 관측 (주문 유발 없음)
+    try:
+        from stock_platform.trading.live_session_expiry_runtime import (
+            live_session_expiry_runtime,
+        )
+
+        out["session_expiry"] = live_session_expiry_runtime.status()
+    except Exception:  # noqa: BLE001
+        out["session_expiry"] = {"error": "SESSION_EXPIRY_STATUS_UNAVAILABLE"}
+
     return out
 
 

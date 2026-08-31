@@ -225,6 +225,11 @@ class LiveUnattendedAuthorizationService:
             "last_horizon_auto_renew": self._last_horizon_auto_renew_summary(
                 row
             ),
+            "last_arm_renew_attempt": (
+                detail.get("last_arm_renew_attempt")
+                if isinstance(detail.get("last_arm_renew_attempt"), dict)
+                else None
+            ),
             "approved_by": row.approved_by,
             "approved_at": (
                 aware_utc(row.approved_at).isoformat()
@@ -2095,14 +2100,16 @@ class LiveUnattendedAuthorizationService:
                         allow_auto_protective_open_orders=True,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    detail["arm_renew_skipped"] = type(exc).__name__
+                    detail["arm_renew_skipped"] = (
+                        getattr(exc, "code", None) or type(exc).__name__
+                    )
                     detail["arm_renew_error"] = str(exc)[:200]
                     arm_result = {"arm_changed": False}
                     if mode == MODE_MARKET_HOURS:
                         self._emit_market_hours_renew_telegram(
                             success=False,
                             uba_id=int(user_broker_account_id),
-                            blockers=[type(exc).__name__],
+                            blockers=[str(detail["arm_renew_skipped"])],
                             detail=detail,
                         )
                 if arm_result.get("arm_changed"):
@@ -2137,6 +2144,34 @@ class LiveUnattendedAuthorizationService:
                     )
 
         if not did and not horizon_renewed:
+            # ARM due였는데 연장 실패/스킵이면 시도 흔적을 lease detail에 남김
+            if arm_remaining <= margin:
+                attempt = {
+                    "at": now.isoformat(),
+                    "result": "FAILED_OR_SKIPPED",
+                    "arm_remaining": arm_remaining,
+                    "effective_renewal_margin_seconds": margin,
+                    "arm_renew_skipped": detail.get("arm_renew_skipped"),
+                    "arm_renew_error": detail.get("arm_renew_error"),
+                    "arm_extension_seconds": detail.get("arm_extension_seconds"),
+                }
+                prev = dict(row.last_renewal_detail or {})
+                prev["last_arm_renew_attempt"] = attempt
+                row.last_renewal_detail = self._preserve_mode_detail(row, prev)
+                row.updated_at = now
+                self._session.flush()
+                emit_live_safety_audit(
+                    self._session,
+                    event_type="UNATTENDED_ARM_RENEW_ATTEMPT",
+                    actor=renew_actor,
+                    run_id=None,
+                    user_id=int(uba.user_id),
+                    account_id=int(user_broker_account_id),
+                    strategy_id=None,
+                    detail=attempt,
+                    commit=False,
+                )
+                self._session.commit()
             return {
                 "renewed": False,
                 "reason": "NOT_DUE",
