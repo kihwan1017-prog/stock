@@ -108,6 +108,25 @@ def sync_realtime_consumer_for_entry(entry: ScopedRuntimeEntry) -> dict[str, Any
         return {"synced": False, "reason": "hub_disabled"}
 
     symbols = _symbols_for_entry(entry)
+    uba_id = None
+    try:
+        from stock_platform.strategy_deployment.runtime_scope import AccountKind
+
+        if getattr(entry.scope, "account_kind", None) == AccountKind.USER_BROKER:
+            uba_id = int(entry.scope.account_id)
+    except Exception:  # noqa: BLE001
+        uba_id = None
+    if (
+        uba_id is not None
+        and str(getattr(entry.scope, "broker_code", "") or "").upper() == "KIWOOM"
+    ):
+        from stock_platform.operation.kiwoom_multi_symbol_universe.real_signal import (
+            extend_kiwoom_consumer_symbols,
+        )
+
+        symbols = extend_kiwoom_consumer_symbols(
+            symbols, user_broker_account_id=uba_id
+        )
     if not symbols:
         return {
             "synced": False,

@@ -20,7 +20,7 @@ from stock_platform.operation.kiwoom_multi_symbol_universe.constants import (
 from stock_platform.operation.kiwoom_multi_symbol_universe.ma_eval import (
     evaluate_daily_ma_cross,
 )
-from stock_platform.realtime.daily_bar_seed import today_kst
+from stock_platform.operation.kiwoom_multi_symbol_universe.kst_date import today_kst
 
 
 @dataclass(frozen=True, slots=True)

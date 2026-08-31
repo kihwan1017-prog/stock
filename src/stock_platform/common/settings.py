@@ -362,7 +362,8 @@ class Settings(BaseSettings):
     upbit_h2_h3_forward_shadow_interval_seconds: float = 180.0
     kiwoom_entry_signal_shadow_enabled: bool = True
     kiwoom_entry_signal_shadow_interval_seconds: float = 120.0
-    # KIWOOM multi-symbol universe V1 — SHADOW/OBSERVE (REAL executor 미연결)
+    # KIWOOM multi-symbol universe V1 — SHADOW | REAL (REAL = shadow observability + executor)
+    kiwoom_multi_symbol_mode: str = "SHADOW"
     kiwoom_multi_symbol_shadow_enabled: bool = False
     kiwoom_multi_symbol_shadow_only: bool = True
     kiwoom_multi_symbol_monitor_target: int = 10

@@ -1,4 +1,4 @@
-"""KIWOOM multi-symbol universe V1 — SHADOW/OBSERVE only."""
+"""KIWOOM multi-symbol universe V1 — SHADOW + REAL promotion."""
 
 from __future__ import annotations
 
@@ -6,6 +6,16 @@ MARKET = "KIWOOM"
 EXCHANGE_KRX = "KRX"
 RULE_VERSION = "kiwoom_multi_symbol_universe_v1"
 SOURCE_MULTI_SYMBOL_V1 = "MULTI_SYMBOL_V1"
+
+# Canonical durable mode — settings.kiwoom_multi_symbol_mode 와 동기
+MODE_SHADOW = "SHADOW"
+MODE_REAL = "REAL"
+
+SIGNAL_STATUS_SHADOW_RECORDED = "SHADOW_RECORDED"
+SIGNAL_STATUS_REAL_DISPATCHED = "REAL_DISPATCHED"
+SIGNAL_STATUS_REAL_DUPLICATE_BLOCKED = "REAL_DUPLICATE_BLOCKED"
+SIGNAL_STATUS_REAL_GUARD_BLOCKED = "REAL_GUARD_BLOCKED"
+SIGNAL_STATUS_REAL_DEFERRED_LEGACY = "REAL_DEFERRED_LEGACY"
 
 # Golden Cross — Strategy 17579 semantics (변경 금지)
 SHORT_MA_WINDOW = 5

@@ -379,6 +379,20 @@ class MovingAverageStrategyEvaluator:
             and short_avg > long_avg
             and self._passes_change(event)
         ):
+            # REAL multi-symbol roster symbol → refresh path owns BUY (034310 포함)
+            try:
+                from stock_platform.operation.kiwoom_multi_symbol_universe.real_signal import (
+                    multi_symbol_real_defers_legacy_ma_buy,
+                )
+
+                if multi_symbol_real_defers_legacy_ma_buy(
+                    broker_code=str(self.scope.broker_code or ""),
+                    uba_id=int(self.scope.account_id),
+                    symbol=str(event.symbol or "").upper(),
+                ):
+                    return None
+            except Exception:  # noqa: BLE001
+                pass
             # KIWOOM K0 research shadow — REAL emit과 독립, fail-open
             try:
                 from stock_platform.operation.kiwoom_opportunity_shadow.entry_signal_shadow.hooks import (

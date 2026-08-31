@@ -1,4 +1,4 @@
-"""KIWOOM multi-symbol universe orchestration — SHADOW ONLY."""
+"""KIWOOM multi-symbol universe orchestration — SHADOW + REAL promotion."""
 
 from __future__ import annotations
 
@@ -17,6 +17,10 @@ from stock_platform.operation.kiwoom_multi_symbol_universe.constants import (
     BLOCK_INSUFFICIENT_HISTORY,
     BLOCK_NO_FRESH_GOLDEN_CROSS,
     CROSS_STATE_FRESH_CROSS,
+    SIGNAL_STATUS_REAL_DISPATCHED,
+    SIGNAL_STATUS_REAL_DUPLICATE_BLOCKED,
+    SIGNAL_STATUS_REAL_GUARD_BLOCKED,
+    SIGNAL_STATUS_SHADOW_RECORDED,
     SOURCE_MULTI_SYMBOL_V1,
 )
 from stock_platform.operation.kiwoom_multi_symbol_universe.entities import (
@@ -28,8 +32,18 @@ from stock_platform.operation.kiwoom_multi_symbol_universe.ma_eval import (
     build_signal_fingerprint,
     evaluate_daily_ma_cross,
 )
+from stock_platform.operation.kiwoom_multi_symbol_universe.mode import (
+    is_kiwoom_multi_symbol_real_enabled,
+    is_kiwoom_multi_symbol_shadow_observability_enabled,
+    resolve_kiwoom_multi_symbol_mode,
+)
 from stock_platform.operation.kiwoom_multi_symbol_universe.ranking import (
     prefilter_and_rank_candidates,
+)
+from stock_platform.operation.kiwoom_multi_symbol_universe.real_signal import (
+    dispatch_multi_symbol_real_signal,
+    resolve_kiwoom_multi_symbol_scope,
+    update_multi_symbol_runtime_cache,
 )
 from stock_platform.operation.kiwoom_multi_symbol_universe.universe import (
     load_krx_tradable_universe,
@@ -85,12 +99,22 @@ def union_real_and_shadow_symbols(
     *,
     user_broker_account_id: int,
     shadow_symbols: list[str],
+    extra_owned_symbols: set[str] | None = None,
 ) -> list[str]:
+    """REAL deployment + TOP10 monitor + strategy-owned position union."""
+
     real = resolve_real_feed_symbols(
         session, user_broker_account_id=user_broker_account_id
     )
+    owned = extra_owned_symbols or _strategy_owned_symbols(
+        session, uba_id=int(user_broker_account_id)
+    )
     merged = sorted(
-        {str(s).strip().upper() for s in (real or []) + (shadow_symbols or []) if s}
+        {
+            str(s).strip().upper()
+            for s in (real or []) + (shadow_symbols or []) + list(owned)
+            if s
+        }
     )
     return merged
 
@@ -100,14 +124,19 @@ async def reconcile_shadow_feed_subscriptions(
     *,
     user_broker_account_id: int,
     shadow_symbols: list[str],
+    extra_owned_symbols: set[str] | None = None,
     actor: str = "SYSTEM_KIWOOM_MULTI_SYMBOL_SHADOW",
 ) -> dict[str, Any]:
-    """REAL feed + shadow TOP10 union subscribe — physical socket 1개 유지."""
+    """REAL feed + shadow TOP10 + owned position union subscribe — physical socket 1개 유지."""
 
+    owned = extra_owned_symbols or _strategy_owned_symbols(
+        session, uba_id=int(user_broker_account_id)
+    )
     symbols = union_real_and_shadow_symbols(
         session,
         user_broker_account_id=user_broker_account_id,
         shadow_symbols=shadow_symbols,
+        extra_owned_symbols=owned,
     )
     if not symbols:
         return {"ok": False, "reason": "NO_SYMBOLS"}
@@ -249,7 +278,7 @@ def _record_shadow_signal(
 
 
 class KiwoomMultiSymbolUniverseService:
-    """SHADOW/OBSERVE — REAL executor에 signal 전달 금지."""
+    """SHADOW observability + optional REAL executor signal source."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -283,9 +312,11 @@ class KiwoomMultiSymbolUniverseService:
                 )
             )
         )
-        shadow_only = bool(
-            getattr(self._settings, "kiwoom_multi_symbol_shadow_only", True)
-        )
+        mode = resolve_kiwoom_multi_symbol_mode(self._settings)
+        real_enabled = mode == "REAL"
+        shadow_obs = is_kiwoom_multi_symbol_shadow_observability_enabled(
+            self._settings
+        ) or bool(getattr(self._settings, "kiwoom_multi_symbol_shadow_enabled", False))
 
         universe = load_krx_tradable_universe(self._session)
         t_rank = time.perf_counter()
@@ -319,7 +350,14 @@ class KiwoomMultiSymbolUniverseService:
 
         fresh_cross_count = 0
         shadow_signal_count = 0
+        real_signal_count = 0
+        duplicate_real_blocked = 0
         fake_cross_prevented = 0
+        scope_ctx = (
+            resolve_kiwoom_multi_symbol_scope(self._session, user_broker_account_id=uba_id)
+            if real_enabled
+            else None
+        )
 
         # roster 교체
         self._session.execute(
@@ -339,7 +377,7 @@ class KiwoomMultiSymbolUniverseService:
                 block_reason = "PENDING_ORDER"
             elif cand.cross_state == CROSS_STATE_FRESH_CROSS:
                 block_reason = None
-                signal_status = "SHADOW_CANDIDATE"
+                signal_status = "REAL_CANDIDATE" if real_enabled else "SHADOW_CANDIDATE"
 
             prev_row = _load_cross_state(
                 self._session, uba_id=uba_id, symbol=cand.symbol
@@ -372,7 +410,8 @@ class KiwoomMultiSymbolUniverseService:
                     fresh_cross_count += 1
                     last_cross_at = now
                     fingerprint = fp
-                    if shadow_only:
+                    # shadow observability — REAL mode에서도 lineage 유지
+                    if shadow_obs or not real_enabled:
                         sig = _record_shadow_signal(
                             self._session,
                             uba_id=uba_id,
@@ -383,7 +422,44 @@ class KiwoomMultiSymbolUniverseService:
                         )
                         if sig.get("ok") or sig.get("created"):
                             shadow_signal_count += 1
-                            signal_status = "SHADOW_RECORDED"
+                            if not real_enabled:
+                                signal_status = SIGNAL_STATUS_SHADOW_RECORDED
+                    if (
+                        real_enabled
+                        and block_reason is None
+                        and cand.symbol not in owned
+                        and cand.symbol not in pending
+                    ):
+                        real_out = await dispatch_multi_symbol_real_signal(
+                            self._session,
+                            user_broker_account_id=uba_id,
+                            symbol=cand.symbol,
+                            ma_eval=ma_eval,
+                            price=cand.price,
+                            observed_at=now,
+                            refresh_batch_id=batch_id,
+                            rank=cand.rank,
+                            scope_ctx=scope_ctx,
+                        )
+                        if real_out.get("reason") == "DUPLICATE_REAL_SIGNAL":
+                            duplicate_real_blocked += 1
+                            signal_status = SIGNAL_STATUS_REAL_DUPLICATE_BLOCKED
+                        elif real_out.get("published"):
+                            real_signal_count += 1
+                            signal_status = SIGNAL_STATUS_REAL_DISPATCHED
+                        elif real_out.get("ok"):
+                            real_signal_count += 1
+                            signal_status = SIGNAL_STATUS_REAL_DISPATCHED
+                        else:
+                            signal_status = SIGNAL_STATUS_REAL_GUARD_BLOCKED
+                    elif real_enabled and signal_status not in (
+                        SIGNAL_STATUS_REAL_DISPATCHED,
+                        SIGNAL_STATUS_REAL_DUPLICATE_BLOCKED,
+                    ):
+                        if cand.symbol in owned:
+                            signal_status = "REAL_BLOCKED_ALREADY_POSITIONED"
+                        elif cand.symbol in pending:
+                            signal_status = "REAL_BLOCKED_PENDING_ORDER"
 
             _upsert_cross_state(
                 self._session,
@@ -413,16 +489,27 @@ class KiwoomMultiSymbolUniverseService:
                     block_reason=block_reason,
                     signal_status=signal_status,
                     selected_at=now,
-                    meta_json={"shadow_only": shadow_only},
+                    meta_json={
+                        "mode": mode,
+                        "real_enabled": real_enabled,
+                        "shadow_observability": shadow_obs,
+                    },
                 )
             )
 
+        update_multi_symbol_runtime_cache(
+            user_broker_account_id=uba_id,
+            monitor_symbols=symbols,
+            owned_symbols=owned,
+        )
+
         feed_result: dict[str, Any] | None = None
-        if symbols:
+        if symbols or owned:
             feed_result = await reconcile_shadow_feed_subscriptions(
                 self._session,
                 user_broker_account_id=uba_id,
                 shadow_symbols=symbols,
+                extra_owned_symbols=owned,
                 actor=actor,
             )
 
@@ -438,7 +525,9 @@ class KiwoomMultiSymbolUniverseService:
 
         return {
             "ok": True,
-            "shadow_only": shadow_only,
+            "mode": mode,
+            "real_enabled": real_enabled,
+            "shadow_observability_enabled": shadow_obs,
             "refresh_batch_id": batch_id,
             "trigger_source": trigger_source,
             "duration_ms": duration_ms,
@@ -447,10 +536,14 @@ class KiwoomMultiSymbolUniverseService:
             "roster_changed": roster_changed,
             "stats": stats,
             "monitored_symbols": symbols,
+            "owned_symbols": sorted(owned),
             "fresh_cross_count": fresh_cross_count,
             "shadow_signal_count": shadow_signal_count,
+            "real_signal_count": real_signal_count,
+            "duplicate_real_blocked": duplicate_real_blocked,
             "fake_cross_prevented": fake_cross_prevented,
             "feed": feed_result,
-            "REAL_ORDER_MUTATION": 0,
-            "EXECUTOR_DISPATCH": False,
+            "DUPLICATE_REAL_SIGNAL_PROTECTED": True,
+            "REAL_ORDER_MUTATION": real_signal_count,
+            "EXECUTOR_DISPATCH": real_signal_count > 0,
         }

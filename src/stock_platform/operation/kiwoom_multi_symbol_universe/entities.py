@@ -119,6 +119,46 @@ class KiwoomMultiSymbolCrossStateEntity(Base):
     )
 
 
+class KiwoomMultiSymbolRealSignalEntity(Base):
+    """REAL multi-symbol signal lineage — shadow 와 분리."""
+
+    __tablename__ = "kiwoom_multi_symbol_real_signal"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_broker_account_id",
+            "signal_fingerprint",
+            name="uq_kiwoom_ms_real_sig_uba_fp",
+        ),
+        {"schema": "operation"},
+    )
+
+    real_signal_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    user_broker_account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    strategy_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    refresh_batch_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    rank: Mapped[int | None] = mapped_column(Integer)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    signal_fingerprint: Mapped[str] = mapped_column(String(96), nullable=False)
+    publish_fingerprint: Mapped[str | None] = mapped_column(String(96))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    sma5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12))
+    sma20: Mapped[Decimal | None] = mapped_column(Numeric(28, 12))
+    prev_sma5: Mapped[Decimal | None] = mapped_column(Numeric(28, 12))
+    prev_sma20: Mapped[Decimal | None] = mapped_column(Numeric(28, 12))
+    dispatch_state: Mapped[str] = mapped_column(String(40), nullable=False)
+    dispatch_detail_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    meta_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class KiwoomMultiSymbolRefreshRunEntity(Base):
     """refresh run audit — scheduler 자연 관측용."""
 

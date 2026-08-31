@@ -153,6 +153,10 @@ def test_union_real_and_shadow_preserves_real(monkeypatch: pytest.MonkeyPatch) -
         "stock_platform.operation.kiwoom_multi_symbol_universe.service.resolve_real_feed_symbols",
         lambda session, user_broker_account_id: ["034310"],
     )
+    monkeypatch.setattr(
+        "stock_platform.operation.kiwoom_multi_symbol_universe.service._strategy_owned_symbols",
+        lambda session, uba_id: set(),
+    )
     merged = union_real_and_shadow_symbols(
         None,  # type: ignore[arg-type]
         user_broker_account_id=1381,
