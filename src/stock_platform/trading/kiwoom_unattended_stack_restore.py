@@ -322,6 +322,7 @@ async def restore_kiwoom_trading_stack(
 
     # 1) Kiwoom market realtime WS (idempotent)
     # market_realtime_auto_start=false 여도 이 공식 restore 경로는 명시 start 호출.
+    feed_ok_to_continue = False
     try:
         from stock_platform.trading.kiwoom_feed_recovery import (
             ensure_kiwoom_feed_running,
@@ -359,16 +360,66 @@ async def restore_kiwoom_trading_stack(
                 "detail": detail,
                 "actor": actor,
             }
+        feed_ok_to_continue = True
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
-            "kiwoom_stack_feed_failed",
-            uba_id=uba_id,
-            error=type(exc).__name__,
-        )
+        # feed ensure 예외여도 이미 REAL_FRESH면 runner/runtime 복구를 막지 않음
+        feed_status = ""
+        try:
+            from stock_platform.trading.autotrading_health_service import (
+                build_trading_health_snapshot,
+            )
+
+            snap = build_trading_health_snapshot(
+                session, user_broker_account_id=uba_id
+            )
+            feed_status = str(
+                (snap.get("components") or {}).get("feed") or ""
+            ).upper()
+        except Exception:  # noqa: BLE001
+            feed_status = ""
+        detail["feed"] = {
+            "started": False,
+            "error": type(exc).__name__,
+            "error_message": str(exc)[:300],
+            "health_feed": feed_status or None,
+        }
+        if feed_status in {
+            "REAL_FRESH",
+            "REAL_IDLE",
+            "FRESH",
+            "CONNECTED",
+            "HEALTHY",
+            "OK",
+        }:
+            logger.warning(
+                "kiwoom_stack_feed_ensure_error_but_fresh_continue",
+                uba_id=uba_id,
+                error=type(exc).__name__,
+                feed_status=feed_status,
+            )
+            # 이미 살아 있는 feed로 간주 — runner/runtime 복구 계속
+            detail["feed"]["continued_despite_error"] = True
+            detail["feed"]["already_running"] = True
+            feed_ok_to_continue = True
+        else:
+            logger.warning(
+                "kiwoom_stack_feed_failed",
+                uba_id=uba_id,
+                error=type(exc).__name__,
+                feed_status=feed_status or None,
+            )
+            return {
+                "restored": False,
+                "reason": "FEED_START_ERROR",
+                "error": type(exc).__name__,
+                "detail": detail,
+                "actor": actor,
+            }
+
+    if not feed_ok_to_continue:
         return {
             "restored": False,
-            "reason": "FEED_START_ERROR",
-            "error": type(exc).__name__,
+            "reason": "FEED_START_FAILED",
             "detail": detail,
             "actor": actor,
         }
