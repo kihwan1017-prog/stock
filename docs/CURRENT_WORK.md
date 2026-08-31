@@ -1,13 +1,93 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-30 (UPBIT-LIMITED-BUY-CONCURRENCY-V1)
+**최종 갱신:** 2026-08-31 (UPBIT-EXIT-OPTIMIZATION-SHADOW-LAB-V2)
 
 ---
 
 ## Parallel policy
 
 **TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
+
+---
+
+## U — Exit Optimization Shadow Lab V2 (2026-08-31)
+
+- WORK: `WRK-20260831-UPBIT-EXIT-OPTIMIZATION-SHADOW-LAB-V2`
+- Parent: Daily Perf Review #70 / T5 (#59)
+- T5 pairing root cause: finalize without ledger PnL → `BASELINE_NET_NULL`
+- Fix: entry_order_id → `binding_closed_trade_metrics` reconcile (`RECONCILED_EXISTING_FORWARD`)
+- Variants: T5/T6/T7/T8 forward-only + Re-entry R1/R2/R3 shadow
+- Migration: `eoslabv2a1b2c3` applied · REAL trailing **unchanged**
+- After reconcile: **T5_VALID_PAIRED_N=31** (EARLY_REVIEW)
+- T6/T7/T8 N=0 until natural enroll after process reload
+- Restart: **DEFERRED** (research-only; no manual LIVE/ARM)
+- Evidence: `.run/k_upbit_exit_optimization_shadow_lab_v2.json`
+
+---
+
+## K — Kiwoom Multi-Symbol SHADOW Closeout V1 (2026-08-31)
+
+- Parent **#66** · refresh **300s→0.6s** (bulk) · STACK **4/4** · ETF-free TOP10
+- `MULTI_SYMBOL_SHADOW_READY=false` — NATURAL_REFRESH=1 (misfire grace **00eef65** needs restart)
+- Evidence: `.run/k_kiwoom_multi_symbol_shadow_closeout_v1.json`
+
+---
+
+## K — Kiwoom Multi-Symbol SHADOW Activation V1 (2026-08-31)
+
+- Parent **#65** · migration **`kms1a2b3c4d5e` applied** · shadow **ENABLED** · restart **×1**
+- TOP10 monitored · feed union **11 symbols** (034310 preserved) · **SHADOW_ONLY**
+- `MULTI_SYMBOL_SHADOW_READY=false` — refresh<2 · stack 1/4 · ETF filter fix **cb30074** (next restart)
+- Evidence: `.run/k_kiwoom_multi_symbol_shadow_activation_v1.json`
+
+---
+
+## K — Kiwoom Multi-Symbol Autotrading Universe V1 (2026-08-31)
+
+- Parent **#64** · commit **`8a44d86`** · SHADOW/OBSERVE only (`kiwoom_multi_symbol_shadow_enabled` default OFF)
+- TOP10 KRX ranking + Golden Cross shadow + feed union (1 physical WS)
+- REAL Strategy 17579 / 034310 executor path **unchanged**
+- API: `/kiwoom-multi-symbol/status|funnel|refresh`
+- Migration: `kms1a2b3c4d5e`
+
+---
+
+## K — Kiwoom REAL Autotrading Readiness V1 (2026-08-31)
+
+- History **#64** · Parent **#63** · Verdict: **KIWOOM_REAL_AUTOTRADING_READY_WAITING_FRESH_GOLDEN_CROSS**
+- UBA **1381** / Strategy **17579** / Deployment **#869** / symbol **034310**
+- Fix: feed ensure 예외여도 health `REAL_FRESH`면 stack restore 계속 → commit **`8a44d86`**
+- Post-tick: stack **4/4** · READY · no-trade = fresh Golden Cross 대기 (신호 없음)
+- REAL 주문/수동 LIVE·ARM **없음** · Evidence: `.run/k_kiwoom_real_autotrading_readiness_v1.json`
+
+---
+
+## U — ARM Lease Pre-expiry Renew Reliability V1 (2026-08-31)
+
+- History **#63** · Parent **#62** · Verdict: **ARM_PREEXPIRY_RENEW_RELIABILITY_FIXED**
+- Root: renew gate `trading_scheduler_not_paused` while scheduler RUNNING → silent renew miss → TTL expiry
+- Fix commit: **`f4e1ab8`** (`force_renew` skips PAUSED requirement; attempt audit; `session_expiry` on ops-status)
+- Restart ×1 → unattended restore OK · Next renew due ~**10:25 KST**
+- Evidence: `.run/k_upbit_arm_lease_preexpiry_renew_reliability_v1.json`
+
+---
+
+## U — Unexpected Runtime OFF Recovery V1 (2026-08-31)
+
+- History **#62** · Parents **#60/#61** · Verdict: **ROOT_CAUSE_CONFIRMED_ALREADY_RESTORED**
+- Root: ARM TTL 3600s 만료 → SYSTEM `LIVE_ARM_EXPIRED` fail-closed (LIVE OFF / ARM OFF / stack pause)
+- Outage ~08:17–08:58 KST; watchdog unattended restore at 08:58; this WRK **no** manual LIVE/ARM, **no** restart
+- Evidence: `.run/k_upbit_unexpected_runtime_off_recovery_v1.json`
+
+---
+
+## U — BUY Concurrency 2/3/4 Benchmark V1 (2026-08-30)
+
+- Fixture-only C2/C3/C4 compare (fake broker); **operating stays 2/2/2**
+- Verdict: **PASS_BUY_CONCURRENCY_2_3_4_BENCHMARK_V1**
+- Rec: **RECOMMEND_CONCURRENCY_3_FOR_FUTURE** (rate-limited C3→C4 ~0.7%)
+- History **#55** · Parent **#54** · Evidence: `.run/k_upbit_buy_concurrency_2_3_4_benchmark_v1.json`
 
 ---
 

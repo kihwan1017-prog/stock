@@ -807,6 +807,20 @@ class UpbitFullMarketAssignmentService:
                 entry_quantity=entry_qty,
                 entry_fee=entry_fee,
             )
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
+                    enroll_reentry_on_open,
+                )
+
+                enroll_reentry_on_open(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    symbol=sym,
+                    entry_order_id=entry_order_id,
+                    entry_at=binding.opened_at,
+                )
+            except Exception:  # noqa: BLE001
+                pass
             # Exit strategy shadow V1 (SL/TP/Trail/Time — research only)
             from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
                 enroll_binding_on_open as enroll_exit_strategy_shadow,
@@ -932,6 +946,7 @@ class UpbitFullMarketAssignmentService:
                         exit_reason=exit_reason,
                         exit_at=now,
                         exit_price=exit_px,
+                        entry_order_id=getattr(b, "entry_order_id", None),
                     )
                     from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
                         finalize_binding_on_close as finalize_exit_strategy_shadow,
@@ -948,6 +963,37 @@ class UpbitFullMarketAssignmentService:
                             int(exit_oid) if exit_oid is not None else None
                         ),
                     )
+                    try:
+                        from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
+                            finalize_reentry_on_close,
+                        )
+
+                        finalize_reentry_on_close(
+                            self._session,
+                            entry_order_id=getattr(b, "entry_order_id", None),
+                            user_broker_account_id=int(
+                                b.user_broker_account_id
+                            ),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                else:
+                    # exit_px 없어도 trailing baseline ledger reconcile 시도
+                    try:
+                        from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.hooks import (
+                            finalize_binding_on_close as finalize_trailing_shadow,
+                        )
+
+                        finalize_trailing_shadow(
+                            self._session,
+                            binding_id=int(b.binding_id),
+                            exit_reason=exit_reason,
+                            exit_at=now,
+                            exit_price=None,
+                            entry_order_id=getattr(b, "entry_order_id", None),
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
             except Exception:  # noqa: BLE001
                 pass
 

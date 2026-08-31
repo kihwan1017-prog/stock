@@ -292,10 +292,14 @@ export type AdminRiskSettingsPayload = {
   stop_loss_rate?: number | null;
   take_profit_rate?: number | null;
   trailing_stop_rate?: number | null;
+  /** Trailing arm 수익 임계 (fraction, e.g. 0.01 = +1%) */
+  trailing_activation_rate?: number | null;
   /** REAL exit protection: INHERIT | ENABLED | DISABLED */
   stop_loss_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
   take_profit_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
   trailing_stop_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
+  max_hold_mode?: "INHERIT" | "ENABLED" | "DISABLED" | null;
+  max_hold_seconds?: number | null;
   auto_trading_enabled?: boolean | null;
   buy_enabled?: boolean | null;
   sell_enabled?: boolean | null;
@@ -809,6 +813,23 @@ export async function getAdminUpbitResearchExitStrategyShadowEntry(
   return getJson(
     `/admin/upbit/research/exit-strategy-shadow/entry/${entryOrderId}`,
   );
+}
+
+/** Exit Optimization Lab V2 — T0/T5–T8 trailing shadows (RESEARCH ONLY) */
+export async function getAdminUpbitExitOptimizationLabSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/exit-optimization-lab/summary", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitExitOptimizationReentrySummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/exit-optimization-lab/reentry-summary", {
+    uba_id: ubaId ?? 1380,
+  });
 }
 
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */

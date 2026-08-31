@@ -12,8 +12,15 @@ from sqlalchemy.orm import Session
 from stock_platform.broker.fee_policy import UpbitFeePolicy
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.constants import (
+    EARLY_REVIEW_N,
     HISTORICAL_TRAILING_REPLAY_AVAILABLE,
+    LAB_COMPARE_VARIANTS,
+    LAB_ID,
+    POLICY_TRAILING_1P0_1P0_MIN60_V1,
+    POLICY_TRAILING_MIN_HOLD_120S_V1,
+    POLICY_TRAILING_MIN_HOLD_30S_V1,
     POLICY_TRAILING_MIN_HOLD_60S_V1,
+    PROMOTION_REVIEW_N,
     RESEARCH_ONLY_LABEL,
     RULE_VERSION,
     SAMPLE_TARGET_INITIAL,
@@ -36,12 +43,24 @@ from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.c
     T5_ACTIVATION_PCT,
     T5_MIN_HOLDING_SECONDS,
     T5_TRAIL_PCT,
+    T6_ACTIVATION_PCT,
+    T6_MIN_HOLDING_SECONDS,
+    T6_TRAIL_PCT,
+    T7_ACTIVATION_PCT,
+    T7_MIN_HOLDING_SECONDS,
+    T7_TRAIL_PCT,
+    T8_ACTIVATION_PCT,
+    T8_MIN_HOLDING_SECONDS,
+    T8_TRAIL_PCT,
     VARIANT_T0,
     VARIANT_T1,
     VARIANT_T2,
     VARIANT_T3,
     VARIANT_T4,
     VARIANT_T5,
+    VARIANT_T6,
+    VARIANT_T7,
+    VARIANT_T8,
     VARIANT_TRAILING_MIN_HOLD_60S_V1,
 )
 from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.entities import (
@@ -226,6 +245,30 @@ def variant_specs() -> dict[str, dict[str, Any]]:
             # REAL arm +1.0% / drawdown -0.8% 와 동일 + min_hold only
             "mirrors_real_trailing": True,
         },
+        VARIANT_T6: {
+            "activation_pct": T6_ACTIVATION_PCT,
+            "trail_pct": T6_TRAIL_PCT,
+            "min_holding_seconds": T6_MIN_HOLDING_SECONDS,
+            "label": POLICY_TRAILING_MIN_HOLD_30S_V1,
+            "policy_id": POLICY_TRAILING_MIN_HOLD_30S_V1,
+            "mirrors_real_trailing": True,
+        },
+        VARIANT_T7: {
+            "activation_pct": T7_ACTIVATION_PCT,
+            "trail_pct": T7_TRAIL_PCT,
+            "min_holding_seconds": T7_MIN_HOLDING_SECONDS,
+            "label": POLICY_TRAILING_MIN_HOLD_120S_V1,
+            "policy_id": POLICY_TRAILING_MIN_HOLD_120S_V1,
+            "mirrors_real_trailing": True,
+        },
+        VARIANT_T8: {
+            "activation_pct": T8_ACTIVATION_PCT,
+            "trail_pct": T8_TRAIL_PCT,
+            "min_holding_seconds": T8_MIN_HOLDING_SECONDS,
+            "label": POLICY_TRAILING_1P0_1P0_MIN60_V1,
+            "policy_id": POLICY_TRAILING_1P0_1P0_MIN60_V1,
+            "mirrors_real_trailing": False,
+        },
     }
 
 
@@ -335,6 +378,7 @@ def enroll_on_position_open(
         variants_json=variants,
         shadow_state_json={
             "research_label": RESEARCH_ONLY_LABEL,
+            "lab_id": LAB_ID,
             "real_order_from_shadow": 0,
             "historical_replay_available": HISTORICAL_TRAILING_REPLAY_AVAILABLE,
         },
@@ -495,6 +539,8 @@ def finalize_baseline_on_binding_close(
     gross_pnl: float | None = None,
     fee: float | None = None,
     net_pnl: float | None = None,
+    entry_order_id: int | None = None,
+    resolve_ledger: bool = True,
 ) -> dict[str, Any]:
     if not shadow_enabled():
         return {"ok": False, "reason": "DISABLED"}
@@ -505,7 +551,42 @@ def finalize_baseline_on_binding_close(
     )
     if row is None:
         return {"ok": False, "reason": "NOT_FOUND"}
-    if row.status == STATUS_COMPLETED:
+
+    # Canonical ledger baseline — upbit binding_id ≠ risk binding_id
+    reconciled = False
+    if resolve_ledger and (
+        net_pnl is None or fee is None or gross_pnl is None or exit_price is None
+    ):
+        from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.baseline import (
+            resolve_baseline_outcome_for_entry,
+        )
+
+        oid = entry_order_id if entry_order_id is not None else row.entry_order_id
+        resolved = resolve_baseline_outcome_for_entry(
+            session,
+            entry_order_id=int(oid) if oid is not None else None,
+            user_broker_account_id=int(row.user_broker_account_id),
+            fallback_exit_reason=exit_reason,
+            fallback_exit_at=exit_at,
+            fallback_exit_price=exit_price,
+        )
+        if resolved and resolved.get("ok"):
+            if gross_pnl is None:
+                gross_pnl = float(resolved["gross_pnl"])
+            if fee is None:
+                fee = float(resolved["fee"])
+            if net_pnl is None:
+                net_pnl = float(resolved["net_pnl"])
+            if exit_price is None and resolved.get("exit_price") is not None:
+                exit_price = Decimal(str(resolved["exit_price"]))
+            if not exit_reason or exit_reason == "UNKNOWN":
+                exit_reason = str(resolved.get("exit_reason") or exit_reason)
+            if exit_at is None and resolved.get("exit_at_dt") is not None:
+                exit_at = resolved["exit_at_dt"]
+            reconciled = True
+
+    already_completed = row.status == STATUS_COMPLETED
+    if already_completed and row.baseline_net_pnl is not None and not reconciled:
         return {"ok": True, "duplicate": True}
 
     row.baseline_exit_reason = str(exit_reason or "UNKNOWN")[:64]
@@ -519,10 +600,9 @@ def finalize_baseline_on_binding_close(
     if net_pnl is not None:
         row.baseline_net_pnl = Decimal(str(round(net_pnl, 4)))
 
-    # T0 virtual가 아직이면 REAL exit를 T0 관측으로 기록 (SELL 생성 아님)
     variants = dict(row.variants_json or {})
     t0 = dict(variants.get(VARIANT_T0) or {})
-    if t0.get("outcome_status") == "ACTIVE" and exit_price is not None:
+    if t0.get("outcome_status") in (None, "ACTIVE") and exit_price is not None:
         t0["trigger_at"] = (row.baseline_exit_at or _utc_now()).isoformat()
         t0["virtual_exit_price"] = str(exit_price)
         t0["outcome_status"] = f"BASELINE_{row.baseline_exit_reason}"
@@ -532,13 +612,63 @@ def finalize_baseline_on_binding_close(
             t0["gross"] = float(gross_pnl)
         if fee is not None:
             t0["estimated_fee"] = float(fee)
+        entry_at = _as_utc(row.entry_at)
+        if entry_at and row.baseline_exit_at:
+            t0["holding_seconds"] = max(
+                0.0, (row.baseline_exit_at - entry_at).total_seconds()
+            )
         variants[VARIANT_T0] = t0
-        row.variants_json = variants
 
+    # REAL terminal boundary — ACTIVE shadow variants close at REAL exit (미래가격 금지)
+    if exit_price is not None:
+        qty = Decimal(str(row.entry_quantity or ZERO))
+        if qty <= ZERO:
+            qty = ONE
+        entry = Decimal(str(row.entry_price))
+        for key, vraw in list(variants.items()):
+            if key == VARIANT_T0:
+                continue
+            v = dict(vraw or {})
+            if v.get("outcome_status") not in (None, "ACTIVE"):
+                variants[key] = v
+                continue
+            v["trigger_at"] = (row.baseline_exit_at or _utc_now()).isoformat()
+            v["virtual_exit_price"] = str(exit_price)
+            v["outcome_status"] = "REAL_TERMINAL_BOUNDARY"
+            pnl = compute_round_trip_pnl(
+                entry_price=entry,
+                exit_price=exit_price,
+                quantity=qty,
+                buy_fee=row.entry_fee,
+            )
+            v["gross"] = pnl["gross_pnl"]
+            v["estimated_fee"] = pnl["fee"]
+            v["net"] = pnl["net_pnl"]
+            entry_at = _as_utc(row.entry_at)
+            if entry_at and row.baseline_exit_at:
+                v["holding_seconds"] = max(
+                    0.0, (row.baseline_exit_at - entry_at).total_seconds()
+                )
+            variants[key] = v
+
+    row.variants_json = variants
+    state = dict(row.shadow_state_json or {})
+    if reconciled:
+        state["RECONCILED_EXISTING_FORWARD"] = True
+        state["baseline_source"] = "binding_closed_trade_metrics"
+    row.shadow_state_json = state
     row.status = STATUS_COMPLETED
-    row.completed_at = _utc_now()
+    if row.completed_at is None:
+        row.completed_at = _utc_now()
     session.flush()
-    return {"ok": True, "shadow_row_id": int(row.shadow_row_id)}
+    return {
+        "ok": True,
+        "shadow_row_id": int(row.shadow_row_id),
+        "reconciled_ledger": reconciled,
+        "baseline_net_pnl": float(row.baseline_net_pnl)
+        if row.baseline_net_pnl is not None
+        else None,
+    }
 
 
 def summarize_cohort(
@@ -633,4 +763,336 @@ def summarize_cohort(
         "promotion": "AUTO_PROMOTION_FORBIDDEN",
         "PROMOTION_SAMPLE_BASIS": "VALID_ONLY",
         "raw_data_deleted": False,
+    }
+
+
+def _pf(wins_sum: float, losses_abs: float) -> float | None:
+    if losses_abs <= 0:
+        return None if wins_sum <= 0 else None
+    return round(wins_sum / losses_abs, 6) if losses_abs > 0 else None
+
+
+def _mdd_from_series(nets: list[float]) -> float | None:
+    if not nets:
+        return None
+    cum = 0.0
+    peak = 0.0
+    mdd = 0.0
+    for n in nets:
+        cum += n
+        peak = max(peak, cum)
+        mdd = min(mdd, cum - peak)
+    return round(mdd, 4)
+
+
+def pair_row_variant(
+    row: UpbitTrailingForwardShadowEntity,
+    variant_key: str,
+) -> dict[str, Any]:
+    """Canonical entry×variant comparison unit."""
+
+    specs = variant_specs().get(variant_key) or {}
+    v = (row.variants_json or {}).get(variant_key) or {}
+    baseline_net = (
+        float(row.baseline_net_pnl) if row.baseline_net_pnl is not None else None
+    )
+    shadow_net = float(v["net"]) if v.get("net") is not None else None
+    invalid: list[str] = []
+    if not bool(getattr(row, "included_in_research_metrics", True)):
+        invalid.append("EXCLUDED_FROM_RESEARCH_METRICS")
+    if str(getattr(row, "data_quality_status", "") or "").upper() == "INVALID":
+        invalid.append("DATA_QUALITY_INVALID")
+    if baseline_net is None:
+        invalid.append("BASELINE_NET_NULL")
+    if row.baseline_exit_at is None:
+        invalid.append("BASELINE_NOT_EXITED")
+    if shadow_net is None or v.get("virtual_exit_price") is None:
+        invalid.append("SHADOW_OUTCOME_NULL")
+    paired_valid = len(invalid) == 0
+    delta = (
+        round(shadow_net - baseline_net, 4)
+        if paired_valid and shadow_net is not None and baseline_net is not None
+        else None
+    )
+    entry_at = _as_utc(row.entry_at)
+    baseline_hold = None
+    if entry_at and row.baseline_exit_at:
+        baseline_hold = max(
+            0.0, (_as_utc(row.baseline_exit_at) - entry_at).total_seconds()  # type: ignore[operator]
+        )
+    return {
+        "entry_id": row.entry_order_id,
+        "shadow_row_id": int(row.shadow_row_id),
+        "binding_id": int(row.binding_id),
+        "symbol": row.symbol,
+        "entry_at": entry_at.isoformat() if entry_at else None,
+        "entry_price": str(row.entry_price),
+        "variant": variant_key,
+        "arm_pct": specs.get("activation_pct"),
+        "drawdown_pct": specs.get("trail_pct"),
+        "min_hold_seconds": specs.get("min_holding_seconds"),
+        "peak_price": v.get("peak_price"),
+        "peak_at": v.get("peak_at"),
+        "early_trigger_at": v.get("early_trigger_at"),
+        "eligible_at": None,
+        "virtual_exit_at": v.get("trigger_at"),
+        "virtual_exit_price": v.get("virtual_exit_price"),
+        "virtual_exit_reason": v.get("outcome_status"),
+        "baseline_exit_at": (
+            _as_utc(row.baseline_exit_at).isoformat() if row.baseline_exit_at else None
+        ),
+        "baseline_exit_price": (
+            str(row.baseline_exit_price) if row.baseline_exit_price is not None else None
+        ),
+        "baseline_exit_reason": row.baseline_exit_reason,
+        "baseline_gross": (
+            float(row.baseline_gross_pnl) if row.baseline_gross_pnl is not None else None
+        ),
+        "baseline_fees": float(row.baseline_fee) if row.baseline_fee is not None else None,
+        "baseline_net": baseline_net,
+        "shadow_gross": v.get("gross"),
+        "shadow_fees": v.get("estimated_fee"),
+        "shadow_net": shadow_net,
+        "delta_net": delta,
+        "baseline_hold_seconds": baseline_hold,
+        "shadow_hold_seconds": v.get("holding_seconds"),
+        "paired_valid": paired_valid,
+        "invalid_reason": invalid,
+        "RECONCILED_EXISTING_FORWARD": bool(
+            (row.shadow_state_json or {}).get("RECONCILED_EXISTING_FORWARD")
+        ),
+    }
+
+
+def reconcile_existing_forward_baselines(
+    session: Session,
+    *,
+    user_broker_account_id: int | None = None,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """누락 lineage 연결만 — 새 virtual exit / historical backfill 금지."""
+
+    q = select(UpbitTrailingForwardShadowEntity).where(
+        UpbitTrailingForwardShadowEntity.status.in_(
+            (STATUS_ACTIVE, STATUS_COMPLETED)
+        )
+    )
+    if user_broker_account_id is not None:
+        q = q.where(
+            UpbitTrailingForwardShadowEntity.user_broker_account_id
+            == int(user_broker_account_id)
+        )
+    rows = list(session.scalars(q.order_by(UpbitTrailingForwardShadowEntity.shadow_row_id)))
+    scanned = 0
+    reconciled = 0
+    skipped = 0
+    errors: list[dict[str, Any]] = []
+    for row in rows:
+        if scanned >= limit:
+            break
+        scanned += 1
+        if row.baseline_net_pnl is not None and row.status == STATUS_COMPLETED:
+            skipped += 1
+            continue
+        if row.entry_order_id is None:
+            skipped += 1
+            continue
+        try:
+            out = finalize_baseline_on_binding_close(
+                session,
+                binding_id=int(row.binding_id),
+                exit_reason=row.baseline_exit_reason,
+                exit_at=row.baseline_exit_at,
+                exit_price=row.baseline_exit_price,
+                entry_order_id=int(row.entry_order_id),
+                resolve_ledger=True,
+            )
+            if out.get("ok") and out.get("baseline_net_pnl") is not None:
+                reconciled += 1
+                state = dict(row.shadow_state_json or {})
+                state["RECONCILED_EXISTING_FORWARD"] = True
+                row.shadow_state_json = state
+            else:
+                skipped += 1
+                if not out.get("ok"):
+                    errors.append(
+                        {
+                            "shadow_row_id": int(row.shadow_row_id),
+                            "reason": out.get("reason") or out,
+                        }
+                    )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(
+                {
+                    "shadow_row_id": int(row.shadow_row_id),
+                    "error": type(exc).__name__,
+                }
+            )
+    session.flush()
+    return {
+        "ok": True,
+        "RECONCILED_EXISTING_FORWARD": True,
+        "scanned": scanned,
+        "reconciled": reconciled,
+        "skipped": skipped,
+        "errors": errors[:20],
+    }
+
+
+def summarize_exit_optimization_lab(
+    session: Session,
+    *,
+    user_broker_account_id: int | None = None,
+    include_rows: bool = False,
+    row_limit: int = 200,
+) -> dict[str, Any]:
+    """GPT/Admin용 Lab V2 canonical evaluation dataset."""
+
+    q = select(UpbitTrailingForwardShadowEntity)
+    if user_broker_account_id is not None:
+        q = q.where(
+            UpbitTrailingForwardShadowEntity.user_broker_account_id
+            == int(user_broker_account_id)
+        )
+    rows = list(session.scalars(q))
+    active = [r for r in rows if r.status == STATUS_ACTIVE]
+    completed = [r for r in rows if r.status == STATUS_COMPLETED]
+
+    variant_metrics: dict[str, Any] = {}
+    all_pair_rows: list[dict[str, Any]] = []
+    for key in LAB_COMPARE_VARIANTS:
+        pairs = [pair_row_variant(r, key) for r in completed]
+        valid = [p for p in pairs if p["paired_valid"]]
+        valid_sorted = sorted(
+            valid,
+            key=lambda p: p.get("entry_at") or "",
+        )
+        base_nets = [float(p["baseline_net"]) for p in valid_sorted]
+        sh_nets = [float(p["shadow_net"]) for p in valid_sorted]
+        deltas = [float(p["delta_net"]) for p in valid_sorted]
+        base_fees = [
+            float(p["baseline_fees"])
+            for p in valid_sorted
+            if p.get("baseline_fees") is not None
+        ]
+        sh_fees = [
+            float(p["shadow_fees"])
+            for p in valid_sorted
+            if p.get("shadow_fees") is not None
+        ]
+        base_holds = [
+            float(p["baseline_hold_seconds"])
+            for p in valid_sorted
+            if p.get("baseline_hold_seconds") is not None
+        ]
+        sh_holds = [
+            float(p["shadow_hold_seconds"])
+            for p in valid_sorted
+            if p.get("shadow_hold_seconds") is not None
+        ]
+
+        def _stats(nets: list[float]) -> dict[str, Any]:
+            if not nets:
+                return {
+                    "net": 0.0,
+                    "win_rate": None,
+                    "pf": None,
+                    "avg": None,
+                    "median": None,
+                }
+            wins = [n for n in nets if n > 0]
+            losses = [n for n in nets if n <= 0]
+            win_sum = sum(wins)
+            loss_abs = abs(sum(losses))
+            ordered = sorted(nets)
+            mid = len(ordered) // 2
+            median = (
+                ordered[mid]
+                if len(ordered) % 2 == 1
+                else (ordered[mid - 1] + ordered[mid]) / 2
+            )
+            return {
+                "net": round(sum(nets), 4),
+                "win_rate": round(len(wins) / len(nets), 4),
+                "pf": (
+                    round(win_sum / loss_abs, 6) if loss_abs > 0 else None
+                ),
+                "avg": round(sum(nets) / len(nets), 4),
+                "median": round(median, 4),
+            }
+
+        bs = _stats(base_nets)
+        ss = _stats(sh_nets)
+        n = len(valid_sorted)
+        readiness = "표본 수집 중"
+        if n >= PROMOTION_REVIEW_N:
+            readiness = "승격 검토 가능"
+        elif n >= EARLY_REVIEW_N:
+            readiness = "1차 검토 가능"
+        variant_metrics[key] = {
+            "TOTAL": len(rows),
+            "ACTIVE": len(active),
+            "COMPLETED": len(completed),
+            "VALID_PAIRED_N": n,
+            "BASELINE_NET": bs["net"],
+            "SHADOW_NET": ss["net"],
+            "DELTA_NET": round(sum(deltas), 4) if deltas else 0.0,
+            "BASELINE_PF": bs["pf"],
+            "SHADOW_PF": ss["pf"],
+            "BASELINE_WIN_RATE": bs["win_rate"],
+            "SHADOW_WIN_RATE": ss["win_rate"],
+            "BASELINE_AVG_HOLD": (
+                round(sum(base_holds) / len(base_holds), 2) if base_holds else None
+            ),
+            "SHADOW_AVG_HOLD": (
+                round(sum(sh_holds) / len(sh_holds), 2) if sh_holds else None
+            ),
+            "BASELINE_MEDIAN_HOLD": (
+                round(sorted(base_holds)[len(base_holds) // 2], 2)
+                if base_holds
+                else None
+            ),
+            "SHADOW_MEDIAN_HOLD": (
+                round(sorted(sh_holds)[len(sh_holds) // 2], 2) if sh_holds else None
+            ),
+            "BASELINE_FEES": round(sum(base_fees), 4) if base_fees else 0.0,
+            "SHADOW_ESTIMATED_FEES": round(sum(sh_fees), 4) if sh_fees else 0.0,
+            "AVG_DELTA_PER_TRADE": (
+                round(sum(deltas) / len(deltas), 4) if deltas else None
+            ),
+            "BASELINE_MDD": _mdd_from_series(base_nets),
+            "SHADOW_MDD": _mdd_from_series(sh_nets),
+            "EARLY_REVIEW_READY": n >= EARLY_REVIEW_N,
+            "PROMOTION_REVIEW_READY": n >= PROMOTION_REVIEW_N,
+            "readiness_label": readiness,
+            "AUTO_PROMOTION": False,
+        }
+        if include_rows:
+            all_pair_rows.extend(valid_sorted[:row_limit])
+
+    t5_n = int(variant_metrics.get(VARIANT_T5, {}).get("VALID_PAIRED_N") or 0)
+    return {
+        "ok": True,
+        "lab_id": LAB_ID,
+        "schema": RULE_VERSION,
+        "ROOT_CAUSE_T5_N0": (
+            "finalize_baseline_on_binding_close called without ledger PnL; "
+            "baseline_net_pnl stayed NULL; pairing required baseline_net"
+        ),
+        "variants": variant_specs(),
+        "lab_compare_variants": list(LAB_COMPARE_VARIANTS),
+        "per_variant": variant_metrics,
+        "EARLY_REVIEW_READY": any(
+            v.get("EARLY_REVIEW_READY") for v in variant_metrics.values()
+        ),
+        "PROMOTION_REVIEW_READY": any(
+            v.get("PROMOTION_REVIEW_READY") for v in variant_metrics.values()
+        ),
+        "T5_VALID_PAIRED_N": t5_n,
+        "REAL_TRAILING_UNCHANGED": True,
+        "AUTO_PROMOTION_FORBIDDEN": True,
+        "rows": all_pair_rows if include_rows else [],
+        "TOTAL_ROWS": len(rows),
+        "ACTIVE": len(active),
+        "COMPLETED": len(completed),
     }

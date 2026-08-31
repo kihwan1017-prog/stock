@@ -64,6 +64,7 @@ def finalize_binding_on_close(
     gross_pnl: float | None = None,
     fee: float | None = None,
     net_pnl: float | None = None,
+    entry_order_id: int | None = None,
 ) -> dict[str, Any]:
     if not shadow_enabled():
         return {"ok": False, "reason": "DISABLED"}
@@ -77,6 +78,8 @@ def finalize_binding_on_close(
             gross_pnl=gross_pnl,
             fee=fee,
             net_pnl=net_pnl,
+            entry_order_id=entry_order_id,
+            resolve_ledger=True,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(

@@ -293,6 +293,68 @@ def get_exit_strategy_shadow_entry_detail(
     return entry_detail_comparison(session, entry_order_id=int(entry_order_id))
 
 
+@router.get("/exit-optimization-lab/summary")
+def get_exit_optimization_lab_summary(
+    uba_id: int | None = Query(default=1380),
+    include_rows: bool = Query(default=False),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Exit Optimization Shadow Lab V2 — T0/T5/T6/T7/T8 + readiness (RESEARCH)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.service import (
+        summarize_exit_optimization_lab,
+    )
+
+    return summarize_exit_optimization_lab(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+        include_rows=bool(include_rows),
+    )
+
+
+@router.post("/exit-optimization-lab/reconcile-baselines")
+def post_exit_optimization_lab_reconcile(
+    uba_id: int | None = Query(default=1380),
+    limit: int = Query(default=500, ge=1, le=2000),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """기존 forward T5 row에 canonical baseline ledger 연결 (backfill virtual exit 금지)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.service import (
+        reconcile_existing_forward_baselines,
+        summarize_exit_optimization_lab,
+    )
+
+    result = reconcile_existing_forward_baselines(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+        limit=int(limit),
+    )
+    session.commit()
+    summary = summarize_exit_optimization_lab(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+    )
+    return {"ok": True, "reconcile": result, "summary": summary}
+
+
+@router.get("/exit-optimization-lab/reentry-summary")
+def get_exit_optimization_reentry_summary(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Post-exit re-entry cooldown shadow R0–R3 summary."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.service import (
+        summarize_reentry_cooldown,
+    )
+
+    return summarize_reentry_cooldown(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+    )
+
+
 @router.get("/entry-signal-shadow/rows")
 def list_entry_signal_shadow_rows_api(
     uba_id: int = Query(default=1380, ge=1),

@@ -261,6 +261,18 @@ export const queryKeys = {
         "upbit-research-exit-strategy-shadow-summary",
         ubaId ?? null,
       ] as const,
+    upbitExitOptimizationLabSummary: (ubaId?: number) =>
+      [
+        "admin",
+        "upbit-exit-optimization-lab-summary",
+        ubaId ?? null,
+      ] as const,
+    upbitExitOptimizationReentrySummary: (ubaId?: number) =>
+      [
+        "admin",
+        "upbit-exit-optimization-reentry-summary",
+        ubaId ?? null,
+      ] as const,
     autotradingResearchStatus: (upbitUbaId?: number, kiwoomUbaId?: number) =>
       [
         "admin",

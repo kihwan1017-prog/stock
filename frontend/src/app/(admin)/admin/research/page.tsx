@@ -26,6 +26,7 @@ import { UpbitShortTermTurnoverResearchPanel } from "@/features/admin/research/U
 import { UpbitPositiveEdgeEntryResearchPanel } from "@/features/admin/research/UpbitPositiveEdgeEntryResearchPanel";
 import { UpbitH2H3ForwardShadowPanel } from "@/features/admin/research/UpbitH2H3ForwardShadowPanel";
 import { UpbitExitStrategyShadowPanel } from "@/features/admin/research/UpbitExitStrategyShadowPanel";
+import { UpbitExitOptimizationLabPanel } from "@/features/admin/research/UpbitExitOptimizationLabPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
@@ -121,7 +122,15 @@ function ResearchWorkspaceBody() {
       {
         key: "exit-strategy-shadow",
         label: "Exit 전략 비교",
-        children: <UpbitExitStrategyShadowPanel ubaId={ubaId} />,
+        children: (
+          <Space orientation="vertical" size={24} style={{ width: "100%" }}>
+            <UpbitExitStrategyShadowPanel ubaId={ubaId} />
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Exit Optimization Lab V2
+            </Typography.Title>
+            <UpbitExitOptimizationLabPanel ubaId={ubaId} />
+          </Space>
+        ),
       },
       {
         key: "experiments",
