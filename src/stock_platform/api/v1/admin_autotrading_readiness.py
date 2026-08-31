@@ -950,6 +950,55 @@ def admin_uba_kiwoom_funnel(
     )
 
 
+@router.get("/uba/{user_broker_account_id}/kiwoom-multi-symbol/status")
+def admin_uba_kiwoom_multi_symbol_status(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """KIWOOM multi-symbol SHADOW universe status — READ ONLY."""
+
+    from stock_platform.operation.kiwoom_multi_symbol_universe.observability import (
+        build_multi_symbol_status,
+    )
+
+    return build_multi_symbol_status(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/kiwoom-multi-symbol/funnel")
+def admin_uba_kiwoom_multi_symbol_funnel(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.operation.kiwoom_multi_symbol_universe.observability import (
+        build_multi_symbol_funnel,
+    )
+
+    return build_multi_symbol_funnel(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+
+
+@router.post("/uba/{user_broker_account_id}/kiwoom-multi-symbol/refresh")
+async def admin_uba_kiwoom_multi_symbol_refresh(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """SHADOW roster refresh — REAL 주문/executor 미연결."""
+
+    from stock_platform.operation.kiwoom_multi_symbol_universe.service import (
+        KiwoomMultiSymbolUniverseService,
+    )
+
+    svc = KiwoomMultiSymbolUniverseService(session)
+    result = await svc.refresh(user_broker_account_id=int(user_broker_account_id))
+    return result
+
+
 @router.get("/uba/{user_broker_account_id}/why-no-trade")
 def admin_uba_why_no_trade(
     user_broker_account_id: int,

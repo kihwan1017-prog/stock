@@ -61,6 +61,7 @@ def enroll_golden_cross_observation(
     observed_at: datetime | None = None,
     entry_reference_price: Decimal | None = None,
     scope_key: str | None = None,
+    source: str | None = None,
     commit: bool = False,
 ) -> dict[str, Any]:
     """K0 — REAL Golden Cross rule mirror. 주문/executor 미호출."""
@@ -68,12 +69,13 @@ def enroll_golden_cross_observation(
     observed_at = observed_at or _utc_now()
     opp_id = build_research_opportunity_id(symbol=symbol, event_time=observed_at)
 
+    src = str(source or SOURCE_FORWARD)
     exists = session.scalar(
         select(KiwoomEntrySignalShadowEntity.shadow_id).where(
             KiwoomEntrySignalShadowEntity.user_broker_account_id == int(uba_id),
             KiwoomEntrySignalShadowEntity.research_opportunity_id == opp_id,
             KiwoomEntrySignalShadowEntity.variant == VARIANT_K0,
-            KiwoomEntrySignalShadowEntity.source == SOURCE_FORWARD,
+            KiwoomEntrySignalShadowEntity.source == src,
         )
     )
     if exists is not None:
@@ -91,7 +93,7 @@ def enroll_golden_cross_observation(
         observed_at=observed_at,
         research_opportunity_id=opp_id,
         variant=VARIANT_K0,
-        source=SOURCE_FORWARD,
+        source=src,
         entry_event=ENTRY_EVENT_GOLDEN_CROSS,
         shadow_decision="PASS",
         shadow_block_reason=None,

@@ -1,0 +1,429 @@
+"""KIWOOM multi-symbol universe orchestration — SHADOW ONLY."""
+
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
+
+import structlog
+from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
+
+from stock_platform.common.settings import get_settings
+from stock_platform.operation.kiwoom_multi_symbol_universe.constants import (
+    BLOCK_INSUFFICIENT_HISTORY,
+    BLOCK_NO_FRESH_GOLDEN_CROSS,
+    CROSS_STATE_FRESH_CROSS,
+    SOURCE_MULTI_SYMBOL_V1,
+)
+from stock_platform.operation.kiwoom_multi_symbol_universe.entities import (
+    KiwoomMultiSymbolCrossStateEntity,
+    KiwoomMultiSymbolMonitorEntity,
+)
+from stock_platform.operation.kiwoom_multi_symbol_universe.ma_eval import (
+    build_signal_fingerprint,
+    evaluate_daily_ma_cross,
+)
+from stock_platform.operation.kiwoom_multi_symbol_universe.ranking import (
+    prefilter_and_rank_candidates,
+)
+from stock_platform.operation.kiwoom_multi_symbol_universe.universe import (
+    load_krx_tradable_universe,
+)
+from stock_platform.realtime.daily_bar_seed import (
+    load_completed_daily_closes,
+    today_kst,
+)
+from stock_platform.operation.kiwoom_multi_symbol_universe.constants import (
+    EXCHANGE_KRX,
+    MIN_COMPLETED_BARS,
+)
+
+logger = structlog.get_logger(__name__)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def resolve_real_feed_symbols(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+) -> list[str]:
+    """기존 REAL stack restore SoT — 변경하지 않음."""
+
+    from stock_platform.trading.kiwoom_unattended_stack_restore import (
+        _resolve_kiwoom_stack_feed_symbols,
+    )
+    from stock_platform.strategy_deployment.definition_entities import (
+        AccountStrategyLinkEntity,
+    )
+
+    uba_id = int(user_broker_account_id)
+    link = session.scalar(
+        select(AccountStrategyLinkEntity).where(
+            AccountStrategyLinkEntity.user_broker_account_id == uba_id,
+            AccountStrategyLinkEntity.is_active.is_(True),
+        ).limit(1)
+    )
+    strategy_id = int(link.strategy_id) if link is not None else None
+    return _resolve_kiwoom_stack_feed_symbols(
+        session,
+        user_broker_account_id=uba_id,
+        strategy_id=strategy_id,
+        symbols=None,
+    )
+
+
+def union_real_and_shadow_symbols(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    shadow_symbols: list[str],
+) -> list[str]:
+    real = resolve_real_feed_symbols(
+        session, user_broker_account_id=user_broker_account_id
+    )
+    merged = sorted(
+        {str(s).strip().upper() for s in (real or []) + (shadow_symbols or []) if s}
+    )
+    return merged
+
+
+async def reconcile_shadow_feed_subscriptions(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    shadow_symbols: list[str],
+    actor: str = "SYSTEM_KIWOOM_MULTI_SYMBOL_SHADOW",
+) -> dict[str, Any]:
+    """REAL feed + shadow TOP10 union subscribe — physical socket 1개 유지."""
+
+    symbols = union_real_and_shadow_symbols(
+        session,
+        user_broker_account_id=user_broker_account_id,
+        shadow_symbols=shadow_symbols,
+    )
+    if not symbols:
+        return {"ok": False, "reason": "NO_SYMBOLS"}
+
+    from stock_platform.trading.kiwoom_feed_recovery import (
+        ensure_kiwoom_feed_running,
+    )
+
+    feed = await ensure_kiwoom_feed_running(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        symbols=symbols,
+        actor=actor,
+    )
+    return {
+        "ok": True,
+        "symbols": symbols,
+        "real_count": len(
+            resolve_real_feed_symbols(
+                session, user_broker_account_id=user_broker_account_id
+            )
+        ),
+        "shadow_count": len(shadow_symbols),
+        "feed": feed,
+    }
+
+
+def _load_cross_state(
+    session: Session, *, uba_id: int, symbol: str
+) -> KiwoomMultiSymbolCrossStateEntity | None:
+    return session.scalar(
+        select(KiwoomMultiSymbolCrossStateEntity).where(
+            KiwoomMultiSymbolCrossStateEntity.user_broker_account_id == uba_id,
+            KiwoomMultiSymbolCrossStateEntity.symbol == symbol.upper(),
+        )
+    )
+
+
+def _upsert_cross_state(
+    session: Session,
+    *,
+    uba_id: int,
+    symbol: str,
+    ma_eval: Any,
+    now: datetime,
+    last_cross_at: datetime | None = None,
+    fingerprint: str | None = None,
+) -> KiwoomMultiSymbolCrossStateEntity:
+    row = _load_cross_state(session, uba_id=uba_id, symbol=symbol)
+    if row is None:
+        row = KiwoomMultiSymbolCrossStateEntity(
+            user_broker_account_id=uba_id,
+            symbol=symbol.upper(),
+        )
+        session.add(row)
+    row.sma5 = ma_eval.sma5
+    row.sma20 = ma_eval.sma20
+    row.prev_sma5 = ma_eval.prev_sma5
+    row.prev_sma20 = ma_eval.prev_sma20
+    row.cross_state = ma_eval.cross_state
+    row.insufficient_history = ma_eval.insufficient_history
+    row.last_evaluated_at = now
+    if last_cross_at is not None:
+        row.last_cross_at = last_cross_at
+    if fingerprint:
+        row.last_signal_fingerprint = fingerprint
+    return row
+
+
+def _strategy_owned_symbols(session: Session, *, uba_id: int) -> set[str]:
+    from stock_platform.risk_engine.strategy_owned_entities import (
+        StrategyPositionBindingEntity,
+    )
+
+    rows = session.scalars(
+        select(StrategyPositionBindingEntity.symbol).where(
+            StrategyPositionBindingEntity.user_broker_account_id == uba_id,
+            StrategyPositionBindingEntity.broker_code == "KIWOOM",
+            StrategyPositionBindingEntity.status.in_(("OPEN", "ACTIVE", "PARTIAL")),
+        )
+    )
+    return {str(s).upper() for s in rows if s}
+
+
+def _pending_order_symbols(session: Session, *, uba_id: int) -> set[str]:
+    from stock_platform.order.entities import TradingOrderEntity
+
+    rows = session.scalars(
+        select(TradingOrderEntity.symbol).where(
+            TradingOrderEntity.user_broker_account_id == uba_id,
+            TradingOrderEntity.broker_code == "KIWOOM",
+            TradingOrderEntity.status_code.in_(
+                (
+                    "PENDING",
+                    "SUBMITTING",
+                    "SENT",
+                    "CREATED",
+                    "ACCEPTED",
+                    "PARTIALLY_FILLED",
+                )
+            ),
+        )
+    )
+    return {str(s).upper() for s in rows if s}
+
+
+def _record_shadow_signal(
+    session: Session,
+    *,
+    uba_id: int,
+    symbol: str,
+    ma_eval: Any,
+    price: Decimal | None,
+    observed_at: datetime,
+) -> dict[str, Any]:
+    """기존 kiwoom_entry_signal_shadow 재사용 — executor 미호출."""
+
+    from stock_platform.operation.kiwoom_opportunity_shadow.entry_signal_shadow.constants import (
+        VARIANT_K0,
+    )
+    from stock_platform.operation.kiwoom_opportunity_shadow.entry_signal_shadow.service import (
+        enroll_golden_cross_observation,
+    )
+
+    return enroll_golden_cross_observation(
+        session,
+        uba_id=uba_id,
+        symbol=symbol,
+        short_ma=ma_eval.sma5 or Decimal("0"),
+        long_ma=ma_eval.sma20 or Decimal("0"),
+        prev_short=ma_eval.prev_sma5 or Decimal("0"),
+        prev_long=ma_eval.prev_sma20 or Decimal("0"),
+        observed_at=observed_at,
+        entry_reference_price=price,
+        scope_key=f"SHADOW:{SOURCE_MULTI_SYMBOL_V1}",
+        source=SOURCE_MULTI_SYMBOL_V1,
+        commit=False,
+    )
+
+
+class KiwoomMultiSymbolUniverseService:
+    """SHADOW/OBSERVE — REAL executor에 signal 전달 금지."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._settings = get_settings()
+
+    async def refresh(
+        self,
+        *,
+        user_broker_account_id: int,
+        actor: str = "SYSTEM_KIWOOM_MULTI_SYMBOL",
+    ) -> dict[str, Any]:
+        uba_id = int(user_broker_account_id)
+        now = _utc_now()
+        batch_id = uuid.uuid4().hex[:32]
+        monitor_target = int(
+            getattr(self._settings, "kiwoom_multi_symbol_monitor_target", 10) or 10
+        )
+        min_tv = Decimal(
+            str(
+                getattr(
+                    self._settings, "kiwoom_multi_symbol_min_trade_value", 100_000_000
+                )
+            )
+        )
+        shadow_only = bool(
+            getattr(self._settings, "kiwoom_multi_symbol_shadow_only", True)
+        )
+
+        universe = load_krx_tradable_universe(self._session)
+        ranked, stats = prefilter_and_rank_candidates(
+            self._session,
+            universe,
+            monitor_target=monitor_target,
+            min_trade_value=min_tv,
+        )
+        symbols = [c.symbol for c in ranked]
+
+        # 이전 roster — subscription churn 방지 비교
+        prev_rows = list(
+            self._session.scalars(
+                select(KiwoomMultiSymbolMonitorEntity.symbol)
+                .where(
+                    KiwoomMultiSymbolMonitorEntity.user_broker_account_id == uba_id,
+                )
+                .distinct()
+            )
+        )
+        prev_set = {str(s).upper() for s in prev_rows}
+        new_set = set(symbols)
+        roster_changed = prev_set != new_set
+
+        owned = _strategy_owned_symbols(self._session, uba_id=uba_id)
+        pending = _pending_order_symbols(self._session, uba_id=uba_id)
+
+        fresh_cross_count = 0
+        shadow_signal_count = 0
+        fake_cross_prevented = 0
+
+        # roster 교체
+        self._session.execute(
+            delete(KiwoomMultiSymbolMonitorEntity).where(
+                KiwoomMultiSymbolMonitorEntity.user_broker_account_id == uba_id
+            )
+        )
+
+        for cand in ranked:
+            block_reason = BLOCK_NO_FRESH_GOLDEN_CROSS
+            signal_status = "NONE"
+            if cand.insufficient_history:
+                block_reason = BLOCK_INSUFFICIENT_HISTORY
+            elif cand.symbol in owned:
+                block_reason = "ALREADY_POSITIONED"
+            elif cand.symbol in pending:
+                block_reason = "PENDING_ORDER"
+            elif cand.cross_state == CROSS_STATE_FRESH_CROSS:
+                block_reason = None
+                signal_status = "SHADOW_CANDIDATE"
+
+            prev_row = _load_cross_state(
+                self._session, uba_id=uba_id, symbol=cand.symbol
+            )
+            closes_tuples = load_completed_daily_closes(
+                self._session,
+                exchange_code=EXCHANGE_KRX,
+                symbol=cand.symbol,
+                required=MIN_COMPLETED_BARS,
+                today=today_kst(),
+            )
+            closes = [c for _, c in closes_tuples]
+            if cand.price is not None:
+                closes = closes + [cand.price]
+
+            ma_eval = evaluate_daily_ma_cross(
+                symbol=cand.symbol,
+                closes=closes,
+            )
+
+            fingerprint = None
+            last_cross_at = prev_row.last_cross_at if prev_row else None
+            if ma_eval.is_fresh_golden_cross and not ma_eval.insufficient_history:
+                fp = build_signal_fingerprint(
+                    symbol=cand.symbol, cross_day=today_kst(now)
+                )
+                if prev_row and prev_row.last_signal_fingerprint == fp:
+                    fake_cross_prevented += 1
+                else:
+                    fresh_cross_count += 1
+                    last_cross_at = now
+                    fingerprint = fp
+                    if shadow_only:
+                        sig = _record_shadow_signal(
+                            self._session,
+                            uba_id=uba_id,
+                            symbol=cand.symbol,
+                            ma_eval=ma_eval,
+                            price=cand.price,
+                            observed_at=now,
+                        )
+                        if sig.get("ok") or sig.get("created"):
+                            shadow_signal_count += 1
+                            signal_status = "SHADOW_RECORDED"
+
+            _upsert_cross_state(
+                self._session,
+                uba_id=uba_id,
+                symbol=cand.symbol,
+                ma_eval=ma_eval,
+                now=now,
+                last_cross_at=last_cross_at,
+                fingerprint=fingerprint,
+            )
+
+            self._session.add(
+                KiwoomMultiSymbolMonitorEntity(
+                    user_broker_account_id=uba_id,
+                    refresh_batch_id=batch_id,
+                    rank=cand.rank,
+                    symbol=cand.symbol,
+                    name=cand.name,
+                    price=cand.price,
+                    volume=cand.volume,
+                    trading_value=cand.trading_value,
+                    change_pct=cand.change_pct,
+                    selection_reason=cand.selection_reason,
+                    sma5=ma_eval.sma5,
+                    sma20=ma_eval.sma20,
+                    cross_state=ma_eval.cross_state,
+                    block_reason=block_reason,
+                    signal_status=signal_status,
+                    selected_at=now,
+                    meta_json={"shadow_only": shadow_only},
+                )
+            )
+
+        feed_result: dict[str, Any] | None = None
+        if symbols:
+            feed_result = await reconcile_shadow_feed_subscriptions(
+                self._session,
+                user_broker_account_id=uba_id,
+                shadow_symbols=symbols,
+                actor=actor,
+            )
+
+        self._session.commit()
+
+        return {
+            "ok": True,
+            "shadow_only": shadow_only,
+            "refresh_batch_id": batch_id,
+            "roster_changed": roster_changed,
+            "stats": stats,
+            "monitored_symbols": symbols,
+            "fresh_cross_count": fresh_cross_count,
+            "shadow_signal_count": shadow_signal_count,
+            "fake_cross_prevented": fake_cross_prevented,
+            "feed": feed_result,
+            "REAL_ORDER_MUTATION": 0,
+            "EXECUTOR_DISPATCH": False,
+        }

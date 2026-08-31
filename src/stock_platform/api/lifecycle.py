@@ -681,6 +681,19 @@ class ApplicationLifecycle:
                 "upbit_shadow_evaluator_start_failed",
                 error=str(exc)[:300],
             )
+        # KIWOOM multi-symbol universe SHADOW (enabled 플래그 기본 OFF)
+        try:
+            from stock_platform.operation.kiwoom_multi_symbol_universe import (
+                kiwoom_multi_symbol_universe_scheduler,
+            )
+
+            kms_start = kiwoom_multi_symbol_universe_scheduler.start()
+            logger.info("kiwoom_multi_symbol_universe_startup", **kms_start)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "kiwoom_multi_symbol_universe_start_failed",
+                error=str(exc)[:300],
+            )
         # Upbit Market Context Research (market/asset/F&G) — REAL 주문 무관
         try:
             from stock_platform.operation.upbit_market_context.research_collection_scheduler import (
