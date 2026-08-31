@@ -1,13 +1,33 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-31 (UPBIT-EXIT-OPTIMIZATION-SHADOW-LAB-V2)
+**최종 갱신:** 2026-08-31 (UPBIT-WAITING-SLOT-STARVATION-UI-ANALYSIS-V1)
 
 ---
 
 ## Parallel policy
 
 **TRACK U** / **TRACK K** / **SHARED** — U+K commit 혼합 금지
+
+---
+
+## U — Waiting Slot Starvation UI Fix + Lifecycle Analysis (2026-08-31)
+
+- WORK: `WRK-20260831-UPBIT-WAITING-SLOT-STARVATION-UI-ANALYSIS-V1` · Parent History **#73**
+- UI: `partial_restore=true`만 PARTIAL_RESTORE; `WAITING_SLOT_STARVATION_BROKEN` → 슬롯 포화 문구
+- READ-ONLY package: `.run/k_upbit_waiting_slot_starvation_ui_analysis_v1.json`
+- Release/Entry/LIVE 정책 **미변경** · REAL 주문/restart **없음**
+- NEXT: `GPT_REVIEW_WAITING_LIFECYCLE`
+
+---
+
+## U — Exit Optimization Shadow Lab V2 Activation (2026-08-31)
+
+- WORK: `WRK-20260831-UPBIT-EXIT-OPTIMIZATION-SHADOW-LAB-V2-ACTIVATION` · History **#72**
+- Parent **#71** · HEAD **`43f3d4d`** · migration **`eoslabv2a1b2c3`**
+- Restart **×1** · unattended restore OK · LIVE/ARM/LEASE/4/4/REAL_FRESH/READY
+- T5–T8 + R1–R3 runtime loaded · REAL trailing unchanged (+1.0% / -0.8%)
+- `NATURAL_SAMPLE_PENDING=true` (no forced BUY) · Evidence: `.run/k_upbit_exit_lab_v2_activation.json`
 
 ---
 

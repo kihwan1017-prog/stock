@@ -70,24 +70,82 @@ describe("upbitAutotradingCanonicalStatus", () => {
     ).toEqual(expect.arrayContaining(["LIVE_OFF", "ARM_OFF_OR_EXPIRED"]));
   });
 
-  it("WAITING_SLOT_STARVATION — 슬롯 정체 headline", () => {
+  it("partial_restore=true → PARTIAL_RESTORE 문구", () => {
     const agg = buildUpbitAutotradingAggregateStatus({
       ops: {
         live: "ON",
         arm: "ON",
         blockers: [],
         reliability: {
-          health_state: "DEGRADED",
-          no_trade_classification: "WAITING_SLOT_STARVATION",
-          waiting_starvation: { waiting_slot_starvation: true },
-          waiting_count: 5,
-          heartbeats: { oldest_waiting_age_seconds: 7320 },
+          health_state: "BROKEN",
+          partial_restore: true,
+          health_reasons: ["STACK_INCOMPLETE"],
+          first_zero_stage: "ENTRY_SIGNAL",
         },
       },
       readiness: { status: "READY_FOR_AUTO_TRADING", blockers: [] },
       entryEvaluatorState: "RUNNING",
     });
-    expect(agg.headline).toContain("대기 슬롯 정체");
+    expect(agg.description).toContain("실행 스택 불완전 (PARTIAL_RESTORE)");
+    expect(agg.description).toContain("Funnel FIRST_ZERO=ENTRY_SIGNAL");
+    expect(agg.description).not.toContain("대기 슬롯 포화");
     expect(agg.entryOrdersPermitted).toBe(false);
+  });
+
+  it("WAITING_SLOT_STARVATION_BROKEN → 슬롯 포화 문구 (PARTIAL_RESTORE 금지)", () => {
+    const agg = buildUpbitAutotradingAggregateStatus({
+      ops: {
+        live: "ON",
+        arm: "ON",
+        blockers: [],
+        reliability: {
+          health_state: "BROKEN",
+          partial_restore: false,
+          health_reasons: ["WAITING_SLOT_STARVATION_BROKEN"],
+          no_trade_classification: "WAITING_SLOT_STARVATION",
+          waiting_starvation: {
+            waiting_slot_starvation: true,
+            waiting_count: 10,
+            oldest_waiting_age_seconds: 13793,
+          },
+          waiting_count: 10,
+          first_zero_stage: "ENTRY_SIGNAL",
+          first_zero_reason: "SHORT_MA_NOT_ABOVE_LONG_MA",
+        },
+      },
+      readiness: { status: "READY_FOR_AUTO_TRADING", blockers: [] },
+      entryEvaluatorState: "RUNNING",
+    });
+    expect(agg.headline).toContain("자동매매 후보 대기 슬롯 포화");
+    expect(agg.description).toContain(
+      "대기 후보가 기술조건 미충족 상태로 장시간 슬롯을 점유",
+    );
+    expect(agg.description).toContain("실행 프로세스는 정상");
+    expect(agg.description).toContain("Funnel FIRST_ZERO=ENTRY_SIGNAL");
+    expect(agg.description).not.toContain("실행 스택 불완전 (PARTIAL_RESTORE)");
+    expect(agg.description).not.toMatch(/runtime failure/i);
+    expect(agg.entryOrdersPermitted).toBe(false);
+  });
+
+  it("stack 정상 + health BROKEN(기타) → PARTIAL_RESTORE/runtime failure 문구 금지", () => {
+    const agg = buildUpbitAutotradingAggregateStatus({
+      ops: {
+        live: "ON",
+        arm: "ON",
+        blockers: [],
+        reliability: {
+          health_state: "BROKEN",
+          partial_restore: false,
+          health_reasons: ["SOME_OTHER_BROKEN"],
+          first_zero_stage: "ENTRY_SIGNAL",
+        },
+      },
+      readiness: { status: "READY_FOR_AUTO_TRADING", blockers: [] },
+      entryEvaluatorState: "RUNNING",
+    });
+    expect(agg.description).not.toContain("실행 스택 불완전 (PARTIAL_RESTORE)");
+    expect(agg.description).not.toMatch(/runtime failure/i);
+    expect(agg.description).toContain("health=BROKEN");
+    expect(agg.description).toContain("PARTIAL_RESTORE는 아닙니다");
   });
 });

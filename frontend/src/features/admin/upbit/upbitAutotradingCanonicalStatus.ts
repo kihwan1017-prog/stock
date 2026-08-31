@@ -98,17 +98,38 @@ export function buildUpbitAutotradingAggregateStatus(input: {
 
   const noTradeClass = String(rel.no_trade_classification ?? "").toUpperCase();
   const waitingStarvation = rel.waiting_starvation as Record<string, unknown> | undefined;
+  const healthReasons = Array.isArray(rel.health_reasons)
+    ? rel.health_reasons.map((x) => String(x ?? "").toUpperCase())
+    : [];
+  const isWaitingStarvationBroken = healthReasons.includes(
+    "WAITING_SLOT_STARVATION_BROKEN",
+  );
   const isWaitingStarvation =
+    isWaitingStarvationBroken ||
     noTradeClass === "WAITING_SLOT_STARVATION" ||
-    (noTradeClass === "PIPELINE_STALL" &&
-      waitingStarvation?.waiting_slot_starvation === true);
+    (waitingStarvation?.waiting_slot_starvation === true &&
+      (noTradeClass === "PIPELINE_STALL" ||
+        noTradeClass === "WAITING_SLOT_STARVATION" ||
+        healthState === "BROKEN" ||
+        healthState === "DEGRADED"));
 
-  if (rel.partial_restore === true || healthState === "BROKEN") {
-    const firstZero = rel.first_zero_stage != null ? String(rel.first_zero_stage) : "—";
+  const firstZero =
+    rel.first_zero_stage != null ? String(rel.first_zero_stage) : null;
+  const firstZeroReason =
+    rel.first_zero_reason != null ? String(rel.first_zero_reason) : null;
+  const funnelDiag =
+    firstZero != null
+      ? ` Funnel FIRST_ZERO=${firstZero}${
+          firstZeroReason ? ` (${firstZeroReason})` : ""
+        }.`
+      : "";
+
+  // 1) 진짜 PARTIAL_RESTORE만 스택 장애로 표시 (health BROKEN 일괄 매핑 금지)
+  if (rel.partial_restore === true) {
     return {
       tier: "blocked",
       headline: "🔴 자동매매 실행 장애",
-      description: `실행 스택 불완전 (PARTIAL_RESTORE). FIRST_ZERO=${firstZero}. Watchdog 자동복구 중이거나 관리자 확인이 필요합니다.`,
+      description: `실행 스택 불완전 (PARTIAL_RESTORE). Watchdog 자동복구 중이거나 관리자 확인이 필요합니다.${funnelDiag}`,
       blockers,
       liveOn,
       armOn,
@@ -118,38 +139,65 @@ export function buildUpbitAutotradingAggregateStatus(input: {
     };
   }
 
-  if (healthState === "DEGRADED" || isWaitingStarvation) {
-    if (isWaitingStarvation) {
-      const wc = rel.waiting_count ?? "—";
-      const oldestMin =
-        rel.heartbeats != null &&
-        typeof rel.heartbeats === "object" &&
-        (rel.heartbeats as Record<string, unknown>).oldest_waiting_age_seconds != null
-          ? Math.round(
-              Number(
-                (rel.heartbeats as Record<string, unknown>)
-                  .oldest_waiting_age_seconds,
-              ) / 60,
-            )
-          : null;
-      return {
-        tier: "blocked",
-        headline: "🟡 UPBIT · 대기 슬롯 정체",
-        description: `${wc}/5 슬롯 WAITING · 유효 매수신호 0${
-          oldestMin != null ? ` · 최장 대기 ${oldestMin}분` : ""
-        }. 신규 후보 배정 제한 중 — 재검증/교체 진행.`,
-        blockers,
-        liveOn,
-        armOn,
-        readinessStatus,
-        entryEvaluatorState,
-        entryOrdersPermitted: false,
-      };
-    }
+  // 2) Waiting 슬롯 포화 — 프로세스는 정상, 후보 점유/필터 이슈
+  if (isWaitingStarvation) {
+    const wc =
+      rel.waiting_count ??
+      (waitingStarvation?.waiting_count as number | undefined) ??
+      "—";
+    const oldestRaw =
+      (waitingStarvation?.oldest_waiting_age_seconds as number | undefined) ??
+      (rel.heartbeats != null &&
+      typeof rel.heartbeats === "object" &&
+      (rel.heartbeats as Record<string, unknown>).oldest_waiting_age_seconds !=
+        null
+        ? Number(
+            (rel.heartbeats as Record<string, unknown>)
+              .oldest_waiting_age_seconds,
+          )
+        : null);
+    const oldestMin =
+      oldestRaw != null && Number.isFinite(Number(oldestRaw))
+        ? Math.round(Number(oldestRaw) / 60)
+        : null;
+    return {
+      tier: "blocked",
+      headline: "🟡 자동매매 후보 대기 슬롯 포화",
+      description:
+        `대기 후보가 기술조건 미충족 상태로 장시간 슬롯을 점유하고 있습니다. ` +
+        `실행 프로세스는 정상이며 신규 후보 등록이 제한될 수 있습니다. ` +
+        `(WAITING ${String(wc)}${
+          oldestMin != null ? ` · 최장 ${oldestMin}분` : ""
+        }).${funnelDiag}`,
+      blockers,
+      liveOn,
+      armOn,
+      readinessStatus,
+      entryEvaluatorState,
+      entryOrdersPermitted: false,
+    };
+  }
+
+  // 3) 기타 BROKEN — PARTIAL_RESTORE 문구 사용 금지
+  if (healthState === "BROKEN") {
+    return {
+      tier: "blocked",
+      headline: "🔴 자동매매 운영 상태 이상",
+      description: `health=BROKEN (${healthReasons.join(", ") || "reason unknown"}). 실행 스택 PARTIAL_RESTORE는 아닙니다.${funnelDiag}`,
+      blockers,
+      liveOn,
+      armOn,
+      readinessStatus,
+      entryEvaluatorState,
+      entryOrdersPermitted: false,
+    };
+  }
+
+  if (healthState === "DEGRADED") {
     return {
       tier: "blocked",
       headline: "🟡 자동매매 degraded",
-      description: `운영 상태 degraded — ${String(rel.no_trade_classification ?? summary.primaryBlocker ?? "확인 필요")}`,
+      description: `운영 상태 degraded — ${String(rel.no_trade_classification ?? summary.primaryBlocker ?? "확인 필요")}${funnelDiag}`,
       blockers,
       liveOn,
       armOn,
