@@ -389,13 +389,33 @@ def _startup_market_summary_lines() -> list[str]:
     return lines
 
 
+def format_system_start_upbit_daily_entry_lines(usage: dict[str, Any]) -> list[str]:
+    """SYSTEM_START / ARM 복구 알림용 — summarize 결과를 canonical semantics로 표시."""
+
+    mode = str(usage.get("mode") or "LIMITED").strip().upper()
+    count = int(usage.get("entry_count") or 0)
+    if mode == "UNLIMITED":
+        return [f"오늘 신규매수: {count}건 / 제한 없음"]
+    limit = int(usage.get("entry_limit") or 0)
+    remaining = usage.get("remaining")
+    rem = (
+        int(remaining)
+        if remaining is not None
+        else max(0, limit - count)
+    )
+    return [
+        f"오늘 신규매수: {count} / {limit}",
+        f"추가 가능: {rem}건",
+    ]
+
+
 def _try_upbit_daily_line(uba_id: int | None) -> list[str]:
     if uba_id is None:
         return []
     try:
         from stock_platform.database.session import get_session_factory
         from stock_platform.operation.upbit_full_market.portfolio_daily_entry_admission import (
-            resolve_portfolio_daily_entry_limit,
+            resolve_portfolio_daily_entry_policy,
         )
         from stock_platform.operation.upbit_full_market.portfolio_daily_entry_count import (
             summarize_portfolio_daily_entries,
@@ -403,17 +423,14 @@ def _try_upbit_daily_line(uba_id: int | None) -> list[str]:
 
         session = get_session_factory()()
         try:
-            limit = resolve_portfolio_daily_entry_limit(session, int(uba_id))
+            mode, limit = resolve_portfolio_daily_entry_policy(session, int(uba_id))
             usage = summarize_portfolio_daily_entries(
-                session, int(uba_id), daily_limit=limit
+                session,
+                int(uba_id),
+                daily_limit=limit,
+                mode=mode,
             )
-            count = int(usage.get("entry_count") or 0)
-            lim = int(usage.get("entry_limit") or limit)
-            rem = max(0, lim - count)
-            return [
-                f"오늘 신규매수: {count} / {lim}",
-                f"추가 가능: {rem}건",
-            ]
+            return format_system_start_upbit_daily_entry_lines(usage)
         finally:
             session.close()
     except Exception:  # noqa: BLE001
