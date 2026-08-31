@@ -338,6 +338,64 @@ def post_exit_optimization_lab_reconcile(
     return {"ok": True, "reconcile": result, "summary": summary}
 
 
+@router.get("/waiting-lifecycle-lab/summary")
+def get_waiting_lifecycle_lab_summary(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Waiting Lifecycle Forward Shadow Lab V1 summary (research only)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.service import (
+        summarize_waiting_lifecycle_lab,
+    )
+
+    return summarize_waiting_lifecycle_lab(
+        session,
+        user_broker_account_id=int(uba_id or 1380),
+    )
+
+
+@router.get("/waiting-lifecycle-lab/observations")
+def get_waiting_lifecycle_lab_observations(
+    uba_id: int | None = Query(default=1380),
+    variant: str | None = Query(default=None),
+    cohort: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    symbol: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.service import (
+        list_observations,
+    )
+
+    return list_observations(
+        session,
+        user_broker_account_id=int(uba_id or 1380),
+        variant=variant,
+        cohort=cohort,
+        status=status,
+        symbol=symbol,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/waiting-lifecycle-lab/comparison")
+def get_waiting_lifecycle_lab_comparison(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.service import (
+        compare_variants,
+    )
+
+    return compare_variants(
+        session, user_broker_account_id=int(uba_id or 1380)
+    )
+
+
 @router.get("/exit-optimization-lab/reentry-summary")
 def get_exit_optimization_reentry_summary(
     uba_id: int | None = Query(default=1380),

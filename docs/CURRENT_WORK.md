@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-31 (UPBIT-WAITING-SLOT-STARVATION-UI-ANALYSIS-V1)
+**최종 갱신:** 2026-08-31 (UPBIT-WAITING-LIFECYCLE-FORWARD-SHADOW-LAB-V1)
 
 ---
 
@@ -11,10 +11,22 @@
 
 ---
 
+## U — Waiting Lifecycle Forward Shadow Lab V1 (2026-08-31)
+
+- WORK: `WRK-20260831-UPBIT-WAITING-LIFECYCLE-FORWARD-SHADOW-LAB-V1` · Parent History **#74**
+- Migration **`wlshlabv1a2b3`** · Variants R0/R1/R2/R3 research-only
+- REAL waiting release/expiry/replacement **UNCHANGED**
+- API: `/admin/upbit/research/waiting-lifecycle-lab/{summary,observations,comparison}`
+- UI: Research → Waiting Lifecycle Lab
+- Evidence tests: `tests/test_upbit_waiting_lifecycle_shadow_lab_v1.py`
+- NEXT: `COLLECT_NATURAL_FORWARD_SAMPLES`
+
+---
+
 ## U — Waiting Slot Starvation UI Fix + Lifecycle Analysis (2026-08-31)
 
-- WORK: `WRK-20260831-UPBIT-WAITING-SLOT-STARVATION-UI-ANALYSIS-V1` · Parent History **#73**
-- UI: `partial_restore=true`만 PARTIAL_RESTORE; `WAITING_SLOT_STARVATION_BROKEN` → 슬롯 포화 문구
+- WORK: `WRK-20260831-UPBIT-WAITING-SLOT-STARVATION-UI-ANALYSIS-V1` · Parent History **#73** · History **#74**
+- Commit **`bfbda95`** · UI: `partial_restore=true`만 PARTIAL_RESTORE; `WAITING_SLOT_STARVATION_BROKEN` → 슬롯 포화 문구
 - READ-ONLY package: `.run/k_upbit_waiting_slot_starvation_ui_analysis_v1.json`
 - Release/Entry/LIVE 정책 **미변경** · REAL 주문/restart **없음**
 - NEXT: `GPT_REVIEW_WAITING_LIFECYCLE`

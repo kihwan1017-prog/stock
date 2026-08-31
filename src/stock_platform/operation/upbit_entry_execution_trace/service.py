@@ -264,6 +264,48 @@ def append_stage(
         session.commit()
     else:
         session.flush()
+    # Waiting lifecycle shadow — key REAL stages only (fail-open)
+    try:
+        stage_u = str(stage or "").upper()
+        if stage_u in {
+            "ENTRY_PASS",
+            "SIGNAL_EMITTED",
+            "ORDER_INTENT_CREATED",
+            "ORDER_INTENT",
+            "BUY_FILLED",
+        } and str(decision or "").upper() in {"PASS", "ACCEPT", "BUY", ""}:
+            # ENTRY_PASS REJECT는 technical block — evaluation 경로로만
+            if stage_u != "ENTRY_PASS" or str(decision or "").upper() == "PASS":
+                from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.hooks import (
+                    on_real_entry_stage,
+                )
+
+                on_real_entry_stage(
+                    session,
+                    user_broker_account_id=int(user_broker_account_id),
+                    symbol=sym,
+                    selection_id=selection_id,
+                    stage=stage_u,
+                )
+        reason_u = str(reason_code or "").upper()
+        if reason_u in {
+            "NO_WAITING_SIGNAL_SLOT",
+            "FULL_MARKET_NO_WAITING_SIGNAL_SLOT",
+            "PORTFOLIO_NO_WAITING_SIGNAL_SLOT",
+        }:
+            from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.hooks import (
+                on_full_slot_or_no_waiting,
+            )
+
+            on_full_slot_or_no_waiting(
+                session,
+                user_broker_account_id=int(user_broker_account_id),
+                symbol=sym,
+                selection_id=selection_id,
+                reason_code=reason_u,
+            )
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": True, "duplicate": False, "trace_row_id": int(row.trace_row_id)}
 
 

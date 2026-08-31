@@ -379,6 +379,9 @@ class Settings(BaseSettings):
     # Exit strategy shadow V1 — SL/TP/Trail/Time research (REAL exit 정책 0 변경)
     upbit_exit_strategy_shadow_enabled: bool = True
     upbit_exit_strategy_shadow_interval_seconds: float = 60.0
+    # Waiting lifecycle forward shadow lab — R0/R1/R2/R3 (REAL waiting policy 0 변경)
+    upbit_waiting_lifecycle_shadow_enabled: bool = True
+    upbit_waiting_lifecycle_shadow_interval_seconds: float = 60.0
     upbit_scanner_shadow_mismatch_watch_enabled: bool = True
     upbit_scanner_shadow_mismatch_tolerance: float = 5e-4
     upbit_scanner_shadow_cohort_milestone_watch_enabled: bool = True

@@ -832,6 +832,29 @@ export async function getAdminUpbitExitOptimizationReentrySummary(
   });
 }
 
+/** Waiting Lifecycle Forward Shadow Lab V1 (RESEARCH ONLY) */
+export async function getAdminUpbitWaitingLifecycleLabSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/waiting-lifecycle-lab/summary", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitWaitingLifecycleLabComparison(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/waiting-lifecycle-lab/comparison", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitWaitingLifecycleLabObservations(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/waiting-lifecycle-lab/observations", params);
+}
+
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
 export async function getAdminAutotradingResearchStatus(
   params?: Params,

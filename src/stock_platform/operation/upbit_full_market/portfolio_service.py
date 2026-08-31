@@ -1568,6 +1568,38 @@ class UpbitPortfolioService:
         empty = [s for s in empty if int(s.slot_no) <= int(policy.max_positions)]
         if not empty:
             # EMPTY 없음 → WAITING_SIGNAL 안전 교체 시도 (OPEN/ENTRY_PENDING 보호)
+            # research: full-slot pressure를 shadow 입력으로 관측 (REAL path 불변)
+            if not dry_run and candidates:
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.hooks import (
+                        on_full_slot_or_no_waiting,
+                    )
+
+                    top = candidates[0]
+                    top_sym = str(
+                        top.get("symbol")
+                        if isinstance(top, dict)
+                        else getattr(top, "symbol", "")
+                    ).upper()
+                    top_score = None
+                    try:
+                        top_score = float(
+                            top.get("score")
+                            if isinstance(top, dict)
+                            else getattr(top, "score", None)
+                        )
+                    except (TypeError, ValueError):
+                        top_score = None
+                    on_full_slot_or_no_waiting(
+                        self._session,
+                        user_broker_account_id=uba_id,
+                        symbol=top_sym,
+                        selection_id=None,
+                        score=top_score,
+                        reason_code="FULL_MARKET_NO_WAITING_SIGNAL_SLOT",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             replaced = self._try_replace_waiting_signal(
                 uba_id,
                 candidates=candidates,
@@ -2014,6 +2046,28 @@ class UpbitPortfolioService:
                 slot, started_at=getattr(sel, "selected_at", None), reset=False
             )
             self._session.flush()
+            # research shadow enroll — fail-open
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.hooks import (
+                    on_waiting_slot_assigned,
+                )
+
+                on_waiting_slot_assigned(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    symbol=str(chosen.symbol),
+                    selection_id=int(sel.selection_id),
+                    waiting_created_at=getattr(sel, "selected_at", None),
+                    candidate_id=int(sel.selection_id),
+                    strategy_id=getattr(sel, "strategy_id", None),
+                    deployment_id=getattr(sel, "deployment_id", None),
+                    slot_id=int(slot.slot_id),
+                    initial_score=float(chosen.score)
+                    if chosen.score is not None
+                    else None,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         else:
             slot.status = SLOT_WAITING_SIGNAL
 

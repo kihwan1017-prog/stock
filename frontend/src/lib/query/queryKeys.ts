@@ -273,6 +273,18 @@ export const queryKeys = {
         "upbit-exit-optimization-reentry-summary",
         ubaId ?? null,
       ] as const,
+    upbitWaitingLifecycleLabSummary: (ubaId?: number) =>
+      [
+        "admin",
+        "upbit-waiting-lifecycle-lab-summary",
+        ubaId ?? null,
+      ] as const,
+    upbitWaitingLifecycleLabComparison: (ubaId?: number) =>
+      [
+        "admin",
+        "upbit-waiting-lifecycle-lab-comparison",
+        ubaId ?? null,
+      ] as const,
     autotradingResearchStatus: (upbitUbaId?: number, kiwoomUbaId?: number) =>
       [
         "admin",

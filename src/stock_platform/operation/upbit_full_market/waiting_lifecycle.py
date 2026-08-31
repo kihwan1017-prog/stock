@@ -589,6 +589,11 @@ def revalidate_waiting_slots(
             {
                 "slot_id": assessment.slot_id,
                 "symbol": assessment.symbol,
+                "selection_id": (
+                    int(slot.candidate_selection_id)
+                    if slot.candidate_selection_id is not None
+                    else None
+                ),
                 "waiting_started_at": (
                     assessment.waiting_started_at.isoformat()
                     if assessment.waiting_started_at
@@ -620,6 +625,20 @@ def revalidate_waiting_slots(
 
     if transitions:
         session.flush()
+
+    # research shadow — fail-open (REAL release/path 불변)
+    try:
+        from stock_platform.operation.upbit_opportunity_shadow.waiting_lifecycle_shadow.hooks import (
+            on_waiting_revalidated,
+        )
+
+        on_waiting_revalidated(
+            session,
+            user_broker_account_id=uba_id,
+            assessments=assessments,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
     return {
         "ok": True,
