@@ -16,6 +16,9 @@ async def test_feed_ensure_error_blocks_when_feed_not_fresh() -> None:
     session = MagicMock()
     with (
         patch(
+            "stock_platform.order.live_outbox_worker_runtime.live_outbox_worker_runtime"
+        ) as worker_rt,
+        patch(
             "stock_platform.trading.kiwoom_unattended_stack_restore.evaluate_kiwoom_stack_restore_gates",
             return_value={
                 "ok": True,
@@ -37,6 +40,7 @@ async def test_feed_ensure_error_blocks_when_feed_not_fresh() -> None:
             return_value={"components": {"feed": "STALE"}},
         ),
     ):
+        worker_rt.status.return_value = {"enabled": True, "running": True}
         out = await restore_kiwoom_trading_stack(
             session,
             user_broker_account_id=1381,
@@ -53,6 +57,9 @@ async def test_feed_ensure_error_continues_when_health_feed_fresh() -> None:
     session.scalar = MagicMock(return_value=None)
 
     with (
+        patch(
+            "stock_platform.order.live_outbox_worker_runtime.live_outbox_worker_runtime"
+        ) as worker_rt,
         patch(
             "stock_platform.trading.kiwoom_unattended_stack_restore.evaluate_kiwoom_stack_restore_gates",
             return_value={

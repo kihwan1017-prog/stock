@@ -117,3 +117,29 @@ class KiwoomMultiSymbolCrossStateEntity(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class KiwoomMultiSymbolRefreshRunEntity(Base):
+    """refresh run audit — scheduler 자연 관측용."""
+
+    __tablename__ = "kiwoom_multi_symbol_refresh_run"
+    __table_args__ = {"schema": "operation"}
+
+    refresh_run_id: Mapped[int] = mapped_column(
+        BigInteger, Identity(), primary_key=True
+    )
+    user_broker_account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    refresh_batch_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    trigger_source: Mapped[str] = mapped_column(String(32), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    duration_ms: Mapped[int | None] = mapped_column(BigInteger)
+    stats_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    timing_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

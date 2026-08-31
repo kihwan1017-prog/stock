@@ -102,7 +102,10 @@ class KiwoomMultiSymbolUniverseScheduler:
             session = sf()
             try:
                 svc = KiwoomMultiSymbolUniverseService(session)
-                out = await svc.refresh(user_broker_account_id=uba_id)
+                out = await svc.refresh(
+                    user_broker_account_id=uba_id,
+                    trigger_source="SCHEDULER",
+                )
                 results.append(out)
             except Exception as exc:  # noqa: BLE001
                 session.rollback()

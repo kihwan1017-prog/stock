@@ -91,24 +91,33 @@ def test_fingerprint_dedup_same_day() -> None:
 def test_ranking_cap_ten(monkeypatch: pytest.MonkeyPatch) -> None:
     from stock_platform.operation.kiwoom_multi_symbol_universe import ranking
 
-    class FakeRepo:
-        def list_recent(self, instrument_id: int, limit: int = 1):
-            class Row:
-                trade_value = Decimal("200000000")
-                close_price = Decimal("10000")
-                volume = Decimal("1000")
+    def _fake_latest(session, instrument_ids):  # noqa: ANN001
+        return {
+            iid: (
+                {
+                    "trade_value": Decimal("200000000"),
+                    "close_price": Decimal("10000"),
+                    "volume": Decimal("1000"),
+                },
+                None,
+            )
+            for iid in instrument_ids
+        }
 
-            return [Row(), Row()]
+    def _fake_closes(session, instrument_ids, **kwargs):  # noqa: ANN001
+        return {
+            iid: [Decimal("100")] * MIN_COMPLETED_BARS for iid in instrument_ids
+        }
 
     monkeypatch.setattr(
         ranking,
-        "PriceDailyRepository",
-        lambda session: FakeRepo(),
+        "load_bulk_latest_two_daily_rows",
+        _fake_latest,
     )
     monkeypatch.setattr(
         ranking,
-        "load_completed_daily_closes",
-        lambda *a, **k: [(None, Decimal("100"))] * MIN_COMPLETED_BARS,
+        "load_bulk_completed_closes",
+        _fake_closes,
     )
 
     universe = [

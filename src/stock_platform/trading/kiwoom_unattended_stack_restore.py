@@ -311,6 +311,36 @@ async def restore_kiwoom_trading_stack(
     link_meta = (gates.get("checks") or {}).get("strategy_link") or {}
     strategy_id = link_meta.get("strategy_id")
 
+    # 0) Live Outbox Worker — Upbit unattended restore와 동일 canonical 경로
+    from stock_platform.order.live_outbox_worker_runtime import (
+        live_outbox_worker_runtime,
+    )
+
+    worker_before = live_outbox_worker_runtime.status()
+    detail["worker_before"] = {
+        "enabled": worker_before.get("enabled"),
+        "running": worker_before.get("running"),
+    }
+    if not bool(worker_before.get("enabled")):
+        detail["worker"] = {
+            "started": False,
+            "reason": "LIVE_OUTBOX_WORKER_DISABLED",
+        }
+        return {
+            "restored": False,
+            "reason": "OUTBOX_WORKER_DISABLED",
+            "detail": detail,
+            "actor": actor,
+        }
+    if bool(worker_before.get("running")):
+        detail["worker"] = {
+            "started": True,
+            "reason": "ALREADY_RUNNING",
+            "idempotent": True,
+        }
+    else:
+        detail["worker"] = live_outbox_worker_runtime.start()
+
     # 심볼: 명시 > deployment/definition/backtest/perf SoT (빈 목록이면 feed start 불가)
     feed_symbols = _resolve_kiwoom_stack_feed_symbols(
         session,

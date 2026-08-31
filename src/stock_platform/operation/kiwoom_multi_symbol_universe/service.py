@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -21,6 +22,7 @@ from stock_platform.operation.kiwoom_multi_symbol_universe.constants import (
 from stock_platform.operation.kiwoom_multi_symbol_universe.entities import (
     KiwoomMultiSymbolCrossStateEntity,
     KiwoomMultiSymbolMonitorEntity,
+    KiwoomMultiSymbolRefreshRunEntity,
 )
 from stock_platform.operation.kiwoom_multi_symbol_universe.ma_eval import (
     build_signal_fingerprint,
@@ -258,10 +260,19 @@ class KiwoomMultiSymbolUniverseService:
         *,
         user_broker_account_id: int,
         actor: str = "SYSTEM_KIWOOM_MULTI_SYMBOL",
+        trigger_source: str = "SCHEDULER",
     ) -> dict[str, Any]:
         uba_id = int(user_broker_account_id)
-        now = _utc_now()
+        started = _utc_now()
+        t0 = time.perf_counter()
         batch_id = uuid.uuid4().hex[:32]
+        audit_row = KiwoomMultiSymbolRefreshRunEntity(
+            user_broker_account_id=uba_id,
+            refresh_batch_id=batch_id,
+            trigger_source=str(trigger_source or "SCHEDULER").upper(),
+            started_at=started,
+        )
+        self._session.add(audit_row)
         monitor_target = int(
             getattr(self._settings, "kiwoom_multi_symbol_monitor_target", 10) or 10
         )
@@ -277,13 +288,17 @@ class KiwoomMultiSymbolUniverseService:
         )
 
         universe = load_krx_tradable_universe(self._session)
+        t_rank = time.perf_counter()
         ranked, stats = prefilter_and_rank_candidates(
             self._session,
             universe,
             monitor_target=monitor_target,
             min_trade_value=min_tv,
         )
+        timing = dict(stats.get("timing") or {})
+        timing["ranking_ms"] = round((time.perf_counter() - t_rank) * 1000, 2)
         symbols = [c.symbol for c in ranked]
+        now = _utc_now()
 
         # 이전 roster — subscription churn 방지 비교
         prev_rows = list(
@@ -413,10 +428,22 @@ class KiwoomMultiSymbolUniverseService:
 
         self._session.commit()
 
+        finished = _utc_now()
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        audit_row.finished_at = finished
+        audit_row.duration_ms = duration_ms
+        audit_row.stats_json = stats
+        audit_row.timing_json = timing
+        self._session.commit()
+
         return {
             "ok": True,
             "shadow_only": shadow_only,
             "refresh_batch_id": batch_id,
+            "trigger_source": trigger_source,
+            "duration_ms": duration_ms,
+            "timing": timing,
+            "query_count": stats.get("query_count"),
             "roster_changed": roster_changed,
             "stats": stats,
             "monitored_symbols": symbols,

@@ -995,7 +995,10 @@ async def admin_uba_kiwoom_multi_symbol_refresh(
     )
 
     svc = KiwoomMultiSymbolUniverseService(session)
-    result = await svc.refresh(user_broker_account_id=int(user_broker_account_id))
+    result = await svc.refresh(
+        user_broker_account_id=int(user_broker_account_id),
+        trigger_source="ADMIN",
+    )
     return result
 
 
