@@ -51,6 +51,7 @@ class KiwoomMultiSymbolUniverseScheduler:
             replace_existing=True,
             max_instances=1,
             coalesce=True,
+            misfire_grace_time=120,
         )
         self._configured = True
         logger.info(
