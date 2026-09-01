@@ -780,6 +780,27 @@ def build_uba_operational_summary(
         out["EXIT_SUBMISSION_SUPPRESSED"] = 0
         out["EXIT_SUPPRESSION_REASON"] = None
 
+    # REAL ↔ hot-reload 프로세스 안정성 (History #92)
+    try:
+        from stock_platform.operation.runtime_process_stability import (
+            build_runtime_stability_snapshot,
+        )
+
+        stability = build_runtime_stability_snapshot()
+        out["RUNTIME_MODE"] = stability.get("RUNTIME_MODE")
+        out["HOT_RELOAD_ENABLED"] = stability.get("HOT_RELOAD_ENABLED")
+        out["STABLE_RUNTIME_REQUIRED"] = stability.get(
+            "STABLE_RUNTIME_REQUIRED"
+        )
+        out["REAL_RUNTIME_STABLE"] = stability.get("REAL_RUNTIME_STABLE")
+        out["runtime_stability"] = stability
+    except Exception:  # noqa: BLE001
+        out["RUNTIME_MODE"] = None
+        out["HOT_RELOAD_ENABLED"] = None
+        out["STABLE_RUNTIME_REQUIRED"] = True
+        out["REAL_RUNTIME_STABLE"] = None
+        out["runtime_stability"] = {"error": "RUNTIME_STABILITY_UNAVAILABLE"}
+
     return out
 
 

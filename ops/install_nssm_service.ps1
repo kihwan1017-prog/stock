@@ -60,7 +60,7 @@ Write-Host "[install] $ServiceName (NO --reload, workers=1)"
 & nssm install $ServiceName $python $appParams
 & nssm set $ServiceName AppDirectory $projectRoot
 # STOCK_PLATFORM_ENV_FILE 경로만 설정 — 시크릿 내용 미포함
-& nssm set $ServiceName AppEnvironmentExtra "PYTHONPATH=$projectRoot\src" "STOCK_PLATFORM_ENV_FILE=$envFile" "STOCK_PLATFORM_LAUNCH_MODE=PROD"
+& nssm set $ServiceName AppEnvironmentExtra "PYTHONPATH=$projectRoot\src" "STOCK_PLATFORM_ENV_FILE=$envFile" "STOCK_PLATFORM_LAUNCH_MODE=PROD" "APP_RUNTIME_MODE=production" "HOT_RELOAD_ENABLED=false"
 & nssm set $ServiceName DisplayName "Stock Platform API"
 & nssm set $ServiceName Description "FastAPI stock-platform (uvicorn)"
 & nssm set $ServiceName Start SERVICE_AUTO_START

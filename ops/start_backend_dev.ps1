@@ -2,6 +2,7 @@
 <#
 .SYNOPSIS
   개발용 Backend만 기동 (uvicorn --reload --reload-dir src).
+  PAPER/development only — REAL LIVE/ARM 금지 (APP_RUNTIME_MODE=development).
   LIVE 운영에는 ops/start_backend_prod.ps1 사용.
 #>
 [CmdletBinding()]
@@ -20,5 +21,6 @@ $dev = Join-Path $here "dev\start-dev.ps1"
 if (-not (Test-Path -LiteralPath $dev)) {
     throw "missing $dev"
 }
-Write-Host "[start-backend-dev] delegating to ops/dev/start-dev.ps1 (includes --reload)"
+Write-Host "[start-backend-dev] DEV ONLY — REAL trading blocked under hot-reload (History #92)"
+Write-Host "[start-backend-dev] delegating to ops/dev/start-dev.ps1 (includes --reload --reload-dir src)"
 & $dev -ProjectRoot $ProjectRoot -EnvFile $EnvFile -BackendHost $BackendHost -BackendPort $BackendPort

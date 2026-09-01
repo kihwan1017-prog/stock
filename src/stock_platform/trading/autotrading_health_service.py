@@ -694,6 +694,36 @@ def build_trading_health_snapshot(
         health_state = HEALTH_DEGRADED
         health_reasons.append("MASTER_GATE_BLOCKERS")
 
+    # REAL 활성 + hot-reload → DEGRADED 경고 (주문 경로 중단 아님, History #92)
+    try:
+        from stock_platform.operation.runtime_process_stability import (
+            real_runtime_unstable_health_reason,
+        )
+
+        lease_active = False
+        try:
+            from stock_platform.trading.live_unattended_authorization_service import (
+                LiveUnattendedAuthorizationService,
+            )
+
+            lease_row = LiveUnattendedAuthorizationService(session).get_active(
+                int(uba_id)
+            )
+            lease_active = lease_row is not None
+        except Exception:  # noqa: BLE001
+            lease_active = False
+        unstable = real_runtime_unstable_health_reason(
+            live_on=bool(live_on),
+            arm_on=bool(arm_on),
+            lease_active=bool(lease_active),
+        )
+        if unstable and unstable not in health_reasons:
+            if health_state == HEALTH_READY:
+                health_state = HEALTH_DEGRADED
+            health_reasons.append(unstable)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Funnel + FIRST_ZERO
     funnel: dict[str, Any] | None = None
     first_zero_stage = None

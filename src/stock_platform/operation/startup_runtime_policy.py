@@ -78,6 +78,39 @@ class RuntimeStartupPolicy:
             "process_instance_id": self._process_id,
             "startup_at": self._startup_at,
         }
+        try:
+            from stock_platform.operation.runtime_process_stability import (
+                build_runtime_stability_snapshot,
+                classify_startup_fail_closed_cause,
+            )
+
+            stability = build_runtime_stability_snapshot()
+            result["runtime_stability"] = stability
+            result["restart_cause"] = classify_startup_fail_closed_cause()
+            emit_live_safety_audit(
+                self._session,
+                event_type="PROCESS_START",
+                actor="STARTUP",
+                run_id=None,
+                user_id=None,
+                account_id=None,
+                strategy_id=None,
+                detail={
+                    "process_instance_id": self._process_id,
+                    "startup_at": self._startup_at,
+                    "RUNTIME_MODE": stability.get("RUNTIME_MODE"),
+                    "HOT_RELOAD_ENABLED": stability.get("HOT_RELOAD_ENABLED"),
+                    "REAL_RUNTIME_STABLE": stability.get(
+                        "REAL_RUNTIME_STABLE"
+                    ),
+                    "pid": stability.get("pid"),
+                    "restart_cause": result["restart_cause"],
+                },
+                commit=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            result["runtime_stability_error"] = type(exc).__name__
+
         result["migration_at_head"] = migration_at_head(self._session)
 
         row = self._repo.get_trading_scheduler_row(create_if_missing=True)
@@ -194,6 +227,11 @@ class RuntimeStartupPolicy:
             )
         )
         count = 0
+        from stock_platform.operation.runtime_process_stability import (
+            classify_startup_fail_closed_cause,
+        )
+
+        restart_cause = classify_startup_fail_closed_cause()
         for uba in rows:
             before = bool(uba.live_order_enabled)
             uba.live_order_enabled = False
@@ -212,6 +250,8 @@ class RuntimeStartupPolicy:
                         "process_instance_id": self._process_id,
                         "startup_at": self._startup_at,
                         "broker_code": str(uba.broker_code).upper(),
+                        "fail_closed_reason": "fail_closed_restart",
+                        "restart_cause": restart_cause,
                     },
                     commit=False,
                 )
@@ -255,6 +295,10 @@ class RuntimeStartupPolicy:
             if expires_before != expires_after and expires_after is not None:
                 raise RuntimeError("ARM TTL must not refresh on startup")
             count += 1
+            from stock_platform.operation.runtime_process_stability import (
+                classify_startup_fail_closed_cause,
+            )
+
             emit_live_safety_audit(
                 self._session,
                 event_type="ARM_STARTUP_FORCED_OFF",
@@ -268,6 +312,8 @@ class RuntimeStartupPolicy:
                     "startup_at": self._startup_at,
                     "arm_expires_before": expires_before,
                     "arm_expires_after": expires_after,
+                    "fail_closed_reason": "fail_closed_restart",
+                    "restart_cause": classify_startup_fail_closed_cause(),
                 },
                 commit=False,
             )

@@ -1663,6 +1663,23 @@ class LiveUnattendedAuthorizationService:
         if row is None:
             return {"restored": False, "reason": "NO_ACTIVE_LEASE"}
 
+        # History #92 — hot-reload 프로세스에서 unattended REAL restore 금지
+        try:
+            from stock_platform.operation.runtime_process_stability import (
+                RealRuntimeUnstableError,
+                assert_stable_runtime_for_real_trading,
+            )
+
+            assert_stable_runtime_for_real_trading(
+                context="UNATTENDED_RESTORE"
+            )
+        except RealRuntimeUnstableError as exc:
+            return {
+                "restored": False,
+                "reason": exc.code,
+                "message": exc.message,
+            }
+
         now = _now()
         until = aware_utc(row.authorized_until)
         if until is None or until <= now:

@@ -116,6 +116,17 @@ class Settings(BaseSettings):
     app_env: str = "local"
     app_name: str = "stock-platform"
     app_timezone: str = "Asia/Seoul"
+    # REAL 자동매매 ↔ 개발 hot-reload 분리 (History #92)
+    # development: reload 허용, REAL activation fail-closed
+    # production: reload 금지, REAL activation 허용
+    app_runtime_mode: str = Field(
+        default="development",
+        description="APP_RUNTIME_MODE=development|production",
+    )
+    hot_reload_enabled: bool | None = Field(
+        default=None,
+        description="HOT_RELOAD_ENABLED — None이면 app_runtime_mode로 추론",
+    )
     # STEP59 — 운영 로깅 / CORS
     log_level: str = "INFO"
     cors_allow_origins: str = (

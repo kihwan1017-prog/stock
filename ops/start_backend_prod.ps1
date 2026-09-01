@@ -84,13 +84,15 @@ if ($Force -and $null -ne $existing) {
     Start-Sleep -Seconds 2
 }
 
-Write-Step "NO --reload · workers=1 · env=$EnvFile"
+Write-Step "NO --reload · workers=1 · env=$EnvFile · APP_RUNTIME_MODE=production"
 $backendCmd = @"
 `$ErrorActionPreference='Continue'
 Set-Location -LiteralPath '$ProjectRoot'
 `$env:STOCK_PLATFORM_ENV_FILE='$EnvFile'
 `$env:PYTHONPATH='$(Join-Path $ProjectRoot "src")'
 `$env:STOCK_PLATFORM_LAUNCH_MODE='PROD'
+`$env:APP_RUNTIME_MODE='production'
+`$env:HOT_RELOAD_ENABLED='false'
 `$liveEnvKeys = @(
     'GLOBAL_LIVE_ORDER_ENABLED','UPBIT_LIVE_ORDER_ENABLED','UPBIT_USE_MOCK',
     'LIVE_OUTBOX_WORKER_ENABLED','LIVE_OUTBOX_WORKER_AUTO_START',

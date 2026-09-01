@@ -2,6 +2,12 @@
 <#
 .SYNOPSIS
   개발용 Backend(FastAPI) + Frontend(Next.js) 통합 기동
+
+.DESCRIPTION
+  PAPER / development only.
+  uvicorn --reload --reload-dir src (frontend 변경은 backend restart 유발 안 함).
+  REAL LIVE/ARM/unattended restore 는 이 모드에서 fail-closed 차단됨.
+  실거래 운영: ops/start_backend_prod.ps1 (reload 없음).
 #>
 [CmdletBinding()]
 param(
@@ -224,7 +230,9 @@ print('DB_OK')
 
     # --- start backend ---
     if ($startBackend) {
-        Write-Step "starting backend (uvicorn reload)"
+        Write-Step "starting backend (DEV reload — REAL trading activation BLOCKED)"
+        Write-Host "[start-dev] WARNING: APP_RUNTIME_MODE=development HOT_RELOAD_ENABLED=true" -ForegroundColor Yellow
+        Write-Host "[start-dev] REAL LIVE/ARM 는 ops/start_backend_prod.ps1 사용 (History #92 hot-reload fail-closed 방지)" -ForegroundColor Yellow
         # OS/PowerShell process env가 secrets env 파일보다 우선하므로,
         # LIVE 관련 override를 자식 프로세스에서 제거해 env 파일을 공식 source로 둔다.
         # cmd.exe 글로브/따옴표 깨짐 방지: PowerShell 에서 python 을 직접 실행한다.
@@ -233,6 +241,9 @@ print('DB_OK')
 Set-Location -LiteralPath '$ProjectRoot'
 `$env:STOCK_PLATFORM_ENV_FILE='$EnvFile'
 `$env:PYTHONPATH='$(Join-Path $ProjectRoot "src")'
+`$env:APP_RUNTIME_MODE='development'
+`$env:STOCK_PLATFORM_LAUNCH_MODE='DEV'
+`$env:HOT_RELOAD_ENABLED='true'
 `$liveEnvKeys = @(
     'GLOBAL_LIVE_ORDER_ENABLED',
     'UPBIT_LIVE_ORDER_ENABLED',
@@ -246,8 +257,7 @@ foreach (`$key in `$liveEnvKeys) {
     Remove-Item -LiteralPath ("Env:" + `$key) -ErrorAction SilentlyContinue
 }
 Write-Host '[start-dev] LIVE-related process env overrides cleared; env file is source of truth'
-# glob 패턴(--reload-exclude tmp_* 등)은 cmd/PowerShell 이 확장하므로 사용하지 않는다.
-# --reload-dir src 만으로 루트 tmp_*.txt 감시/인자 오염을 피한다.
+# frontend/docs 제외: --reload-dir src 만 감시 (frontend 변경 → backend restart 금지)
 cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --reload-dir src --app-dir src >> `"$BackendLog`" 2>&1"
 "@
         $backendProc = Start-Process -FilePath "powershell.exe" `

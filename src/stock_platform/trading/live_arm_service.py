@@ -120,6 +120,7 @@ class LiveArmService:
         allow_auto_protective_open_orders: bool = False,
         allow_known_auto_entry_buys: bool = False,
         require_scheduler_paused: bool = True,
+        require_stable_runtime: bool = True,
     ) -> dict[str, Any]:
         """ARM ON 사전조건 — LIVE/Scheduler/Runtime은 변경하지 않음.
 
@@ -131,11 +132,24 @@ class LiveArmService:
         require_scheduler_paused:
           Manual ARM ON requires Scheduler PAUSED.
           Unattended force_renew allows RUNNING scheduler.
+        require_stable_runtime:
+          initial ARM ON 은 production/no-reload 필수.
+          force_renew(이미 ARM)는 TTL 유지용으로 스킵 가능.
         """
         uba_id = int(user_broker_account_id)
         uba = self._require_uba(uba_id)
         if not bool(uba.is_active):
             raise LiveArmError("uba_inactive", "Account inactive")
+        if require_stable_runtime:
+            try:
+                from stock_platform.operation.runtime_process_stability import (
+                    RealRuntimeUnstableError,
+                    assert_stable_runtime_for_real_trading,
+                )
+
+                assert_stable_runtime_for_real_trading(context="ARM_ENABLE")
+            except RealRuntimeUnstableError as exc:
+                raise LiveArmError(exc.code, exc.message) from exc
         if not bool(uba.live_order_enabled):
             raise LiveArmError(
                 "live_required",
@@ -415,6 +429,7 @@ class LiveArmService:
                     force_renew and allow_auto_protective_open_orders
                 ),
                 require_scheduler_paused=not bool(force_renew),
+                require_stable_runtime=not bool(force_renew),
             )
         else:
             # 레거시 경로 (내부/테스트)

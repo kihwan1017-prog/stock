@@ -210,6 +210,16 @@ class LiveOrderApprovalService:
             raise LiveOrderApprovalError(
                 "uba_inactive", "Account not found or inactive"
             )
+        # History #92 — hot-reload/dev 프로세스에서 REAL LIVE ON 금지
+        try:
+            from stock_platform.operation.runtime_process_stability import (
+                RealRuntimeUnstableError,
+                assert_stable_runtime_for_real_trading,
+            )
+
+            assert_stable_runtime_for_real_trading(context="LIVE_ENABLE")
+        except RealRuntimeUnstableError as exc:
+            raise LiveOrderApprovalError(exc.code, exc.message) from exc
         if bool(uba.live_armed):
             raise LiveOrderApprovalError(
                 "arm_must_be_off",
