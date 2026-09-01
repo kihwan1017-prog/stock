@@ -13,8 +13,8 @@
 
 ## K — TOP10 REAL Frontend + Mobile/PWA V1 (2026-09-01)
 
-- WORK: `WRK-20260901-KIWOOM-TOP10-REAL-FRONTEND-MOBILE-V1` · Parent History **#79/#80**
-- PC: `/admin/autotrading/kiwoom` — AUTO/LIVE/ARM/LEASE/STACK/FEED/READY + TOP10 REAL 패널
+- WORK: `WRK-20260901-KIWOOM-TOP10-REAL-FRONTEND-MOBILE-V1` · Parent History **#79/#80** · History **#81**
+- Commit **`de777ac`** · PC: `/admin/autotrading/kiwoom` — AUTO/LIVE/ARM/LEASE/STACK/FEED/READY + TOP10 REAL 패널
 - Mobile: `/mobile/autotrading` — chip 상태 + 종목 카드(펼치기)
 - API 재사용: `kiwoom-multi-symbol/status` · NEW API 없음 · trading logic 미변경
 - Evidence: `.run/k_kiwoom_top10_real_frontend_mobile_v1.json`
