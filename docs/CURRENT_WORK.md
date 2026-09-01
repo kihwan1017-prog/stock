@@ -1,7 +1,7 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-08-31 (UPBIT-WAITING-LIFECYCLE-FORWARD-SHADOW-LAB-V1)
+**최종 갱신:** 2026-09-01 (KIWOOM-TOP10-REAL-FRONTEND-MOBILE-V1)
 
 ---
 
@@ -11,15 +11,58 @@
 
 ---
 
+## K — TOP10 REAL Frontend + Mobile/PWA V1 (2026-09-01)
+
+- WORK: `WRK-20260901-KIWOOM-TOP10-REAL-FRONTEND-MOBILE-V1` · Parent History **#79/#80**
+- PC: `/admin/autotrading/kiwoom` — AUTO/LIVE/ARM/LEASE/STACK/FEED/READY + TOP10 REAL 패널
+- Mobile: `/mobile/autotrading` — chip 상태 + 종목 카드(펼치기)
+- API 재사용: `kiwoom-multi-symbol/status` · NEW API 없음 · trading logic 미변경
+- Evidence: `.run/k_kiwoom_top10_real_frontend_mobile_v1.json`
+- NEXT: `NORMAL_REAL_OPERATION`
+
+---
+
+## K — TOP10 REAL Multi-Symbol Activation (2026-09-01)
+
+- WORK: `WRK-20260901-KIWOOM-TOP10-REAL-MULTI-SYMBOL-ACTIVATION` · Parent History **#69** · History **#79**
+- HEAD includes **`838f588`** (refresh bugfix #80) · MODE **REAL** · shadow obs 유지
+- LIVE/ARM/LEASE ON · STACK **4/4** · FEED **REAL_FRESH** · READY · SUBS **11** (TOP10+034310) · socket **1**
+- REAL_ORDER_COUNT=0 (자연 Fresh Cross 대기) · Evidence: `.run/k_kiwoom_top10_real_multi_symbol_activation_20260901.json`
+- NEXT: `NORMAL_REAL_OPERATION`
+
+---
+
+## U — SYSTEM_FAILURE Root Cause + Safe Recovery (2026-09-01)
+
+- WORK: `WRK-20260901-UPBIT-SYSTEM-FAILURE-SAFE-RECOVERY` · Parent History **#76** · History **#78**
+- SoT: AUTO=STOPPED · LIVE=OFF · ARM=OFF/EXPIRED · STACK **2/4** · FEED REAL_FRESH · SYSTEM_FAILURE
+- ROOT: ARM TTL expiry @ `2026-08-31T22:31:16Z` → renew fail `db_open remain` → LIVE fail-closed
+- Pending AUTO BUY **#2226** KRW-DOS ACCEPTED / Upbit `wait` (**REAL_OPEN_ORDER**) — cancel 금지로 restore 보류
+- Shadow Lab **not** cause · CODE_CHANGED=false · Evidence: `.run/k_upbit_system_failure_safe_recovery_20260901.json`
+- NEXT: `WAIT_ORDER_2226_FILL_OR_OPERATOR_CANCEL_THEN_UNATTENDED_RESTORE`
+
+---
+
+## U — Waiting Lifecycle Shadow Lab V1 Activation (2026-08-31)
+
+- WORK: `WRK-20260831-UPBIT-WAITING-LIFECYCLE-SHADOW-LAB-V1-ACTIVATION` · Parent History **#75** · History **#76**
+- HEAD **`62094ad`** · Migration **`wlshlabv1a2b3`** · Restart **×1** · unattended restore OK
+- LIVE/ARM/LEASE ON · STACK **4/4** · FEED **REAL_FRESH** · `partial_restore=false`
+- Policy health may show `WAITING_SLOT_STARVATION_BROKEN` — **not** process PARTIAL_RESTORE
+- R0–R3 runtime loaded · PRIMARY_FORWARD start recorded · forward N=0 · preexisting excluded
+- REAL waiting/entry/exit/AI/risk **UNCHANGED** · no forced order/release/LIVE-ARM
+- Evidence: `.run/k_upbit_waiting_lifecycle_shadow_lab_v1_activation.json`
+- NEXT: `COLLECT_NATURAL_FORWARD_SAMPLES`
+
+---
+
 ## U — Waiting Lifecycle Forward Shadow Lab V1 (2026-08-31)
 
-- WORK: `WRK-20260831-UPBIT-WAITING-LIFECYCLE-FORWARD-SHADOW-LAB-V1` · Parent History **#74**
-- Migration **`wlshlabv1a2b3`** · Variants R0/R1/R2/R3 research-only
+- WORK: `WRK-20260831-UPBIT-WAITING-LIFECYCLE-FORWARD-SHADOW-LAB-V1` · Parent History **#74** · History **#75**
+- Commit **`62094ad`** · Migration **`wlshlabv1a2b3`** applied · Variants R0/R1/R2/R3 research-only
 - REAL waiting release/expiry/replacement **UNCHANGED**
-- API: `/admin/upbit/research/waiting-lifecycle-lab/{summary,observations,comparison}`
-- UI: Research → Waiting Lifecycle Lab
-- Evidence tests: `tests/test_upbit_waiting_lifecycle_shadow_lab_v1.py`
-- NEXT: `COLLECT_NATURAL_FORWARD_SAMPLES`
+- Preexisting cohort enrolled=7×4 (primary forward N=0)
+- Activation completed under History **#76** (restart ×1)
 
 ---
 

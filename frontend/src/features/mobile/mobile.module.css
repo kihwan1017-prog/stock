@@ -155,3 +155,45 @@
   text-decoration: none;
   font-weight: 600;
 }
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 10px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 11px;
+  font-weight: 700;
+  color: #d7e2ec;
+}
+
+.chipHot {
+  border-color: rgba(255, 120, 80, 0.45);
+  background: rgba(255, 90, 50, 0.18);
+  color: #ffd0c2;
+}
+
+.expandBtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 6px 0;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.expandBody {
+  padding: 4px 0 8px;
+}

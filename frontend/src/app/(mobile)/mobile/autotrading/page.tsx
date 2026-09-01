@@ -7,6 +7,7 @@
 
 import Link from "next/link";
 
+import { KiwoomTop10RealMobileSection } from "@/features/mobile/KiwoomTop10RealMobileSection";
 import {
   boolOnOff,
   formatClock,
@@ -120,6 +121,16 @@ export default function MobileAutotradingPage() {
             데스크톱 상세 →
           </Link>
         </section>
+
+        <KiwoomTop10RealMobileSection
+          liveOn={Boolean(kiwoom.live)}
+          armOn={Boolean(kiwoom.arm)}
+          feedLabel={statusKo(kiwoom.feed)}
+          readyLabel={
+            kiwoom.can_auto_trade ? "자동매매 가능" : "준비 안 됨"
+          }
+          autoLabel={statusKo(kiwoom.auto_trading_state)}
+        />
 
         <section className={`${styles.card} ${styles.spanFull}`}>
           <p className={styles.empty}>

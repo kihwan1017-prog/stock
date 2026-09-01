@@ -27,8 +27,10 @@ import {
   ownershipLabelKo,
 } from "@/features/admin/accounts/symbolOwnershipLabels";
 import * as adminApi from "@/features/admin/api/adminApi";
+import { KiwoomTop10RealPanel } from "@/features/admin/autotrading/KiwoomTop10RealPanel";
 import {
   autoTradingStateLabelKo,
+  unattendedLeaseLabelKo,
 } from "@/features/admin/autotrading/slotStatusLabels";
 import {
   toneFromBoolOnOff,
@@ -131,12 +133,28 @@ export default function AdminAutotradingKiwoomPage() {
   const ready = rec(readyQ.data);
   const krx = rec(krxQ.data);
   const control = rec(ops.control);
+  const unattended = rec(ops.unattended);
+  const stack = rec(ops.runtime_stack);
   const liveOn = Boolean(ops.live_on ?? ops.live_order_enabled);
   const armOn = Boolean(ops.arm_on ?? ops.live_armed);
   const runtime = String(ops.strategy_runtime ?? control.strategy_runtime ?? "—");
   const readiness = String(ready.readiness ?? ready.status ?? ops.auto_trading_state ?? "—");
   const activation = String(ops.activation ?? control.activation ?? "—");
   const feed = String(rec(ops.market_feed).status ?? "—");
+  const lease = String(
+    unattended.lease_status ??
+      unattended.status ??
+      (unattended.unattended_enabled ? "ACTIVE" : "OFF"),
+  );
+  const stackReady = Number(stack.ready_count ?? stack.ready ?? NaN);
+  const stackTotal = Number(stack.total_count ?? stack.total ?? NaN);
+  const stackLabel =
+    Number.isFinite(stackReady) && Number.isFinite(stackTotal)
+      ? `${stackReady}/${stackTotal}`
+      : String(stack.status ?? stack.summary ?? "—");
+  const armExpires = String(
+    ops.arm_expires_at ?? unattended.expires_at ?? unattended.arm_expires_at ?? "",
+  );
   const blocker =
     String(
       ops.primary_blocker ??
@@ -237,6 +255,13 @@ export default function AdminAutotradingKiwoomPage() {
                 toneFromRuntime(activation),
               ],
               [
+                "AUTO",
+                autoTradingStateLabelKo(
+                  String(ops.auto_trading_state ?? readiness),
+                ),
+                toneFromReadiness(String(ops.auto_trading_state ?? readiness)),
+              ],
+              [
                 UI_LABEL_KO.live,
                 liveOn ? "켜짐" : "꺼짐",
                 toneFromBoolOnOff(liveOn),
@@ -245,6 +270,35 @@ export default function AdminAutotradingKiwoomPage() {
                 UI_LABEL_KO.arm,
                 armOn ? "승인됨" : "해제",
                 toneFromBoolOnOff(armOn),
+              ],
+              [
+                "ARM 만료",
+                armExpires
+                  ? new Date(armExpires).toLocaleString("ko-KR", {
+                      hour12: false,
+                    })
+                  : "—",
+                "gray" as const,
+              ],
+              [
+                "LEASE",
+                unattendedLeaseLabelKo(lease),
+                toneFromRuntime(
+                  lease === "ACTIVE"
+                    ? "RUNNING"
+                    : lease === "PROTECTIVE_EXIT_ONLY"
+                      ? "WAITING_SIGNAL"
+                      : "STOPPED",
+                ),
+              ],
+              [
+                "STACK",
+                stackLabel,
+                toneFromRuntime(
+                  stackLabel.includes("/") && stackLabel.startsWith("4/")
+                    ? "RUNNING"
+                    : "WAITING_SIGNAL",
+                ),
               ],
               [
                 UI_LABEL_KO.runtime,
@@ -264,7 +318,7 @@ export default function AdminAutotradingKiwoomPage() {
               ],
             ] as const
           ).map(([label, value, tone]) => (
-            <Col xs={12} sm={8} md={6} lg={3} key={label}>
+            <Col xs={12} sm={8} md={6} lg={4} xl={3} key={label}>
               <Card size="small">
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                   {label}
@@ -276,6 +330,8 @@ export default function AdminAutotradingKiwoomPage() {
             </Col>
           ))}
         </Row>
+
+        <KiwoomTop10RealPanel ubaId={activeUbaId} />
 
         <Row gutter={16}>
           <Col xs={12} md={6}>

@@ -1089,6 +1089,15 @@ export async function getAdminUbaOpsStatus(
   return getJson(`/admin/autotrading/uba/${ubaId}/ops-status${qs}`);
 }
 
+/** Kiwoom TOP10 REAL / SHADOW multi-symbol — READ-ONLY status (trading 변경 없음) */
+export async function getAdminKiwoomMultiSymbolStatus(
+  ubaId: number,
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/autotrading/uba/${ubaId}/kiwoom-multi-symbol/status`,
+  );
+}
+
 /** Process Version / Trace / Visual Map — observability READ */
 export async function getAdminAutotradingProcessCurrent(
   market: string,
