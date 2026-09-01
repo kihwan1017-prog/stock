@@ -571,11 +571,12 @@ class OrderExecutionService:
 
             risk_quote = None
             risk_unit_price = None
-            if (
+            is_upbit_market = (
                 str(command.broker_code or "").upper() == "UPBIT"
                 and str(order_type_text or "").upper() == "MARKET"
-                and side_text == "BUY"
-            ):
+            )
+            if is_upbit_market and side_text == "BUY":
+                # MARKET BUY: risk notional = KRW quote; unit ticker는 reference
                 risk_quote = (
                     Decimal(str(command.order_amount))
                     if command.order_amount is not None
@@ -585,14 +586,19 @@ class OrderExecutionService:
                         else None
                     )
                 )
-                if isinstance(plan_payload, dict) and plan_payload.get(
-                    "reference_price"
-                ):
-                    risk_unit_price = Decimal(
-                        str(plan_payload["reference_price"])
-                    )
-                elif command.reference_price is not None:
-                    risk_unit_price = Decimal(str(command.reference_price))
+                risk_unit_price = self._upbit_market_risk_unit_price(
+                    command=command,
+                    plan_payload=plan_payload,
+                )
+            elif is_upbit_market and side_text == "SELL":
+                # MARKET SELL: broker price=None 정상.
+                # risk/notional만 유효 unit price 필요 — 0/None 위장 금지.
+                risk_unit_price = self._upbit_market_risk_unit_price(
+                    command=command,
+                    plan_payload=plan_payload,
+                )
+                if risk_unit_price is None or risk_unit_price <= ZERO:
+                    return self._blocked("MARKET_SELL_RISK_PRICE_UNAVAILABLE")
             risk_result = DatabaseBackedRiskOrderGuard(
                 self._session,
                 broker_code=command.broker_code,
@@ -603,7 +609,16 @@ class OrderExecutionService:
                 symbol=command.symbol,
                 side=command.side.value,
                 quantity=quantity,
-                price=price if price is not None else Decimal("0"),
+                # MARKET SELL broker price=None → 0 위장 금지; unit은 reference_unit_price
+                price=(
+                    price
+                    if price is not None
+                    else (
+                        risk_unit_price
+                        if risk_unit_price is not None
+                        else Decimal("0")
+                    )
+                ),
                 user_id=command.user_id or command.owner_user_id,
                 user_broker_account_id=uba_id,
                 order_source=command.order_source,
@@ -1288,6 +1303,36 @@ class OrderExecutionService:
             quantity=order.order_quantity,
             price=order.order_price,
         )
+
+    @staticmethod
+    def _upbit_market_risk_unit_price(
+        *,
+        command: OrderExecutionCommand,
+        plan_payload: dict[str, Any] | None,
+    ) -> Decimal | None:
+        """UPBIT MARKET용 risk unit ticker.
+
+        Broker order price와 분리: MARKET SELL은 broker price=None이 정상.
+        plan/command의 기존 reference만 재사용 (신규 가격 소스 금지).
+        """
+
+        candidates: list[object] = []
+        if isinstance(plan_payload, dict):
+            candidates.append(plan_payload.get("reference_price"))
+        candidates.append(command.reference_price)
+        # MARKET SELL: resolve_size가 broker price=None을 반환해도 command.price는
+        # 호출자가 넣은 reference ticker일 수 있음
+        candidates.append(command.price)
+        for raw in candidates:
+            if raw in (None, ""):
+                continue
+            try:
+                value = Decimal(str(raw))
+            except Exception:  # noqa: BLE001
+                continue
+            if value > ZERO:
+                return value
+        return None
 
     def _resolve_size(
         self,
