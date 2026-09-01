@@ -766,6 +766,73 @@ def build_uba_operational_summary(
         )
     except Exception:  # noqa: BLE001
         out["ARM_RENEW_BLOCK_REASON"] = None
+
+    # Activation TTL ↔ unattended horizon alignment (ops-status SoT)
+    try:
+        from stock_platform.trading.activation_horizon_alignment import (
+            activation_horizon_alignment_status,
+            activation_horizon_mismatch_margin_seconds,
+        )
+
+        auth_until_raw = unattended.get("authorized_until")
+        auth_until = None
+        if auth_until_raw:
+            auth_until = datetime.fromisoformat(
+                str(auth_until_raw).replace("Z", "+00:00")
+            )
+            if auth_until.tzinfo is None:
+                auth_until = auth_until.replace(tzinfo=timezone.utc)
+        act_exp_raw = out.get("activation_expires_at")
+        act_exp = None
+        if act_exp_raw:
+            act_exp = datetime.fromisoformat(
+                str(act_exp_raw).replace("Z", "+00:00")
+            )
+            if act_exp.tzinfo is None:
+                act_exp = act_exp.replace(tzinfo=timezone.utc)
+        margin = activation_horizon_mismatch_margin_seconds(
+            renewal_margin_seconds=int(
+                unattended.get("renewal_margin_seconds") or 600
+            ),
+            arm_lease_ttl_seconds=int(
+                unattended.get("arm_lease_ttl_seconds") or 3600
+            ),
+        )
+        align = activation_horizon_alignment_status(
+            authorized_until=auth_until,
+            activation_expires_at=act_exp,
+            mismatch_margin_seconds=margin,
+        )
+        out["AUTHORIZED_UNTIL"] = auth_until_raw
+        out["ACTIVATION_EXPIRES_AT"] = act_exp_raw
+        out["ACTIVATION_HORIZON_DELTA_SECONDS"] = align.get(
+            "ACTIVATION_HORIZON_DELTA_SECONDS"
+        )
+        out["ACTIVATION_HORIZON_ALIGNED"] = align.get(
+            "ACTIVATION_HORIZON_ALIGNED"
+        )
+        last_refresh = (
+            (unattended.get("last_renewal_detail") or {}).get(
+                "last_activation_refresh"
+            )
+            if isinstance(unattended.get("last_renewal_detail"), dict)
+            else None
+        )
+        if isinstance(last_refresh, dict):
+            out["ACTIVATION_REFRESH_LAST_AT"] = last_refresh.get("at")
+            out["ACTIVATION_REFRESH_RESULT"] = last_refresh.get("result")
+        else:
+            out["ACTIVATION_REFRESH_LAST_AT"] = None
+            out["ACTIVATION_REFRESH_RESULT"] = None
+        if not align.get("ACTIVATION_HORIZON_ALIGNED") and act_exp is not None:
+            warnings.append("ACTIVATION_HORIZON_MISMATCH")
+    except Exception:  # noqa: BLE001
+        out["AUTHORIZED_UNTIL"] = unattended.get("authorized_until")
+        out["ACTIVATION_EXPIRES_AT"] = out.get("activation_expires_at")
+        out["ACTIVATION_HORIZON_DELTA_SECONDS"] = None
+        out["ACTIVATION_HORIZON_ALIGNED"] = None
+        out["ACTIVATION_REFRESH_LAST_AT"] = None
+        out["ACTIVATION_REFRESH_RESULT"] = None
     try:
         from stock_platform.position.exit_monitor_runtime import (
             position_exit_monitor_manager,

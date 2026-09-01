@@ -106,6 +106,16 @@ def test_auto_renew_on_pass_in_margin_extends_horizon() -> None:
     svc = _svc(session)
     with (
         patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value=_pass_gates()),
+        patch.object(
+            svc,
+            "_sync_activation_with_horizon_renew",
+            return_value={
+                "required": False,
+                "ok": True,
+                "skipped": True,
+                "reason": "ALREADY_ALIGNED",
+            },
+        ),
         patch.object(svc, "_maybe_emit_horizon_renew_success_telegram"),
         patch(
             "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"

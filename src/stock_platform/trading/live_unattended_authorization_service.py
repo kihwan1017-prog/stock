@@ -27,6 +27,15 @@ from stock_platform.order.live_safety_audit import (
     emit_live_safety_audit,
 )
 from stock_platform.trading.account_models import UserBrokerAccount
+from stock_platform.trading.activation_horizon_alignment import (
+    ACTIVATION_HORIZON_MISMATCH,
+    activation_horizon_alignment_status,
+    activation_horizon_mismatch_margin_seconds,
+    activation_refresh_needed_for_horizon,
+    compute_horizon_activation_refresh_hours,
+    is_activation_eligible_for_horizon_refresh,
+    projected_successor_expires_at,
+)
 from stock_platform.trading.live_session_expiry import (
     activation_remaining_seconds,
     aware_utc,
@@ -63,6 +72,7 @@ ACTOR_HORIZON_AUTO_RENEW = "SYSTEM_UNATTENDED_AUTO_RENEW"
 ACTOR_MARKET_HOURS_ARM_RENEW = "SYSTEM_MARKET_HOURS_ARM_RENEW"
 HORIZON_RENEW_SUCCESS_TELEGRAM_INTERVAL_SECONDS = 86400
 HORIZON_RENEW_FAILURE_TELEGRAM_COOLDOWN_SECONDS = 3600
+ACTIVATION_HORIZON_MISMATCH_ALERT_COOLDOWN_SECONDS = 3600
 MARKET_HOURS_RENEW_SUCCESS_TELEGRAM_INTERVAL_SECONDS = 3600
 MARKET_HOURS_RENEW_FAILURE_TELEGRAM_COOLDOWN_SECONDS = 1800
 
@@ -1391,6 +1401,221 @@ class LiveUnattendedAuthorizationService:
             "meaningful_extension": meaningful,
         }
 
+    def _activation_horizon_mismatch_margin_seconds(
+        self, row: LiveUnattendedAuthorizationEntity
+    ) -> int:
+        return activation_horizon_mismatch_margin_seconds(
+            renewal_margin_seconds=int(row.renewal_margin_seconds),
+            arm_lease_ttl_seconds=int(row.arm_lease_ttl_seconds),
+        )
+
+    def _sync_activation_with_horizon_renew(
+        self,
+        row: LiveUnattendedAuthorizationEntity,
+        uba: UserBrokerAccount,
+        *,
+        new_until: datetime,
+        actor: str,
+        now: datetime,
+    ) -> dict[str, Any]:
+        """Horizon 연장 직후 eligible ACTIVE activation TTL refresh (successor)."""
+
+        margin = self._activation_horizon_mismatch_margin_seconds(row)
+        transition_svc = LiveTradingTransitionService(self._session)
+        act = transition_svc.peek_active(
+            broker_code=str(uba.broker_code or "").upper(),
+            user_broker_account_id=int(row.user_broker_account_id),
+            now=now,
+        )
+        eligible, elig_reason = is_activation_eligible_for_horizon_refresh(
+            act, now=now
+        )
+        if not eligible:
+            return {
+                "required": True,
+                "ok": False,
+                "reason": elig_reason,
+                "refreshed": False,
+            }
+
+        act_exp = aware_utc(act.expires_at)  # type: ignore[union-attr]
+        if act_exp is None:
+            return {
+                "required": True,
+                "ok": False,
+                "reason": "ACTIVATION_MISSING_EXPIRES_AT",
+                "refreshed": False,
+            }
+
+        if not activation_refresh_needed_for_horizon(
+            authorized_until=new_until,
+            activation_expires_at=act_exp,
+            mismatch_margin_seconds=margin,
+        ):
+            return {
+                "required": False,
+                "ok": True,
+                "skipped": True,
+                "reason": "ALREADY_ALIGNED",
+                "refreshed": False,
+                "activation_id": int(act.live_trading_transition_id),
+                "activation_expires_at": act_exp.isoformat(),
+            }
+
+        renew_hours = compute_horizon_activation_refresh_hours(
+            authorized_until=new_until,
+            activation_renew_hours=int(row.activation_renew_hours),
+            now=now,
+        )
+        projected = projected_successor_expires_at(
+            now=now,
+            renew_hours=renew_hours,
+            authorized_until=new_until,
+        )
+        if projected > new_until:
+            return {
+                "required": True,
+                "ok": False,
+                "reason": "SUCCESSOR_EXCEEDS_HORIZON",
+                "refreshed": False,
+            }
+
+        try:
+            successor = self._create_successor_activation(
+                uba=uba,
+                previous=act,
+                actor=actor,
+                ttl_hours=renew_hours,
+            )
+        except LiveUnattendedError as exc:
+            return {
+                "required": True,
+                "ok": False,
+                "reason": exc.code,
+                "message": exc.message,
+                "refreshed": False,
+            }
+
+        succ_exp = aware_utc(successor.expires_at)
+        row.source_activation_id = int(successor.live_trading_transition_id)
+        return {
+            "required": True,
+            "ok": True,
+            "refreshed": True,
+            "reason": "SUCCESSOR_CREATED",
+            "previous_activation_id": int(act.live_trading_transition_id),
+            "successor_activation_id": int(
+                successor.live_trading_transition_id
+            ),
+            "activation_expires_at": (
+                succ_exp.isoformat() if succ_exp is not None else None
+            ),
+            "renew_hours": renew_hours,
+            "at": now.isoformat(),
+        }
+
+    def _record_activation_refresh_observability(
+        self,
+        row: LiveUnattendedAuthorizationEntity,
+        activation_refresh: dict[str, Any],
+    ) -> None:
+        detail = dict(row.last_renewal_detail or {})
+        detail["last_activation_refresh"] = {
+            "at": activation_refresh.get("at") or _now().isoformat(),
+            "result": (
+                "SUCCESS"
+                if activation_refresh.get("ok")
+                else "FAILED"
+            ),
+            **activation_refresh,
+        }
+        row.last_renewal_detail = detail
+
+    def _scan_activation_horizon_mismatch_alerts(
+        self, *, actor: str
+    ) -> list[dict[str, Any]]:
+        """informational mismatch — REAL trading blocker 아님."""
+
+        emitted: list[dict[str, Any]] = []
+        now = _now()
+        rows = list(
+            self._session.scalars(
+                select(LiveUnattendedAuthorizationEntity).where(
+                    LiveUnattendedAuthorizationEntity.enabled.is_(True),
+                    LiveUnattendedAuthorizationEntity.status_code == STATUS_ACTIVE,
+                )
+            )
+        )
+        transition_svc = LiveTradingTransitionService(self._session)
+        for row in rows:
+            until = aware_utc(row.authorized_until)
+            if until is None or until <= now:
+                continue
+            uba = self._session.get(
+                UserBrokerAccount, int(row.user_broker_account_id)
+            )
+            if uba is None:
+                continue
+            act = transition_svc.peek_active(
+                broker_code=str(uba.broker_code or "").upper(),
+                user_broker_account_id=int(row.user_broker_account_id),
+                now=now,
+            )
+            if act is None:
+                continue
+            act_exp = aware_utc(act.expires_at)
+            margin = self._activation_horizon_mismatch_margin_seconds(row)
+            align = activation_horizon_alignment_status(
+                authorized_until=until,
+                activation_expires_at=act_exp,
+                mismatch_margin_seconds=margin,
+            )
+            if align.get("ACTIVATION_HORIZON_ALIGNED"):
+                continue
+            detail_prev = dict(row.last_renewal_detail or {})
+            last_alert = detail_prev.get("last_activation_horizon_mismatch_alert")
+            if isinstance(last_alert, dict) and last_alert.get("at"):
+                try:
+                    last_at = datetime.fromisoformat(
+                        str(last_alert["at"]).replace("Z", "+00:00")
+                    )
+                    if last_at.tzinfo is None:
+                        last_at = last_at.replace(tzinfo=timezone.utc)
+                    if (
+                        now - last_at.astimezone(timezone.utc)
+                    ).total_seconds() < ACTIVATION_HORIZON_MISMATCH_ALERT_COOLDOWN_SECONDS:
+                        continue
+                except Exception:  # noqa: BLE001
+                    pass
+            alert_detail = {
+                "at": now.isoformat(),
+                "user_broker_account_id": int(row.user_broker_account_id),
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "activation_id": int(act.live_trading_transition_id),
+                "authorized_until": until.isoformat(),
+                "activation_expires_at": (
+                    act_exp.isoformat() if act_exp is not None else None
+                ),
+                **align,
+            }
+            detail_prev["last_activation_horizon_mismatch_alert"] = alert_detail
+            row.last_renewal_detail = detail_prev
+            row.updated_at = now
+            self._session.flush()
+            emit_live_safety_audit(
+                self._session,
+                event_type=ACTIVATION_HORIZON_MISMATCH,
+                actor=actor,
+                run_id=None,
+                user_id=int(uba.user_id),
+                account_id=int(row.user_broker_account_id),
+                strategy_id=None,
+                detail=alert_detail,
+                commit=False,
+            )
+            emitted.append(alert_detail)
+        return emitted
+
     def _try_horizon_auto_renew(
         self,
         row: LiveUnattendedAuthorizationEntity,
@@ -1506,6 +1731,47 @@ class LiveUnattendedAuthorizationService:
                 "extension_hours": default_h,
                 "precheck": gates,
             }
+            activation_refresh = self._sync_activation_with_horizon_renew(
+                row,
+                uba,
+                new_until=new_until,
+                actor=actor,
+                now=now,
+            )
+            hz_ok["activation_refresh"] = activation_refresh
+            self._record_activation_refresh_observability(
+                row, activation_refresh
+            )
+
+            if activation_refresh.get("required") and not activation_refresh.get(
+                "ok"
+            ):
+                # 부분 성공 금지 — horizon 연장 롤백
+                row.authorized_until = old_until
+                hz_ok["result"] = "ACTIVATION_REFRESH_FAILED"
+                hz_ok["activation_refresh_failed"] = True
+                detail_prev["horizon_auto_renew"] = hz_ok
+                row.last_renewal_detail = detail_prev
+                row.updated_at = _now()
+                self._session.flush()
+                emit_live_safety_audit(
+                    self._session,
+                    event_type="UNATTENDED_HORIZON_AUTO_RENEW_FAILED",
+                    actor=actor,
+                    run_id=None,
+                    user_id=int(uba.user_id),
+                    account_id=int(row.user_broker_account_id),
+                    strategy_id=None,
+                    detail=hz_ok,
+                    commit=False,
+                )
+                return {
+                    "horizon_renewed": False,
+                    "reason": "ACTIVATION_REFRESH_FAILED",
+                    "activation_refresh": activation_refresh,
+                    "detail": hz_ok,
+                }
+
             detail_prev["horizon_auto_renew"] = hz_ok
             row.last_renewal_detail = detail_prev
             row.updated_at = now
@@ -1529,6 +1795,7 @@ class LiveUnattendedAuthorizationService:
                 "old_authorized_until": old_until.isoformat(),
                 "new_authorized_until": new_until.isoformat(),
                 "detail": hz_ok,
+                "activation_refresh": activation_refresh,
             }
         finally:
             lock.release()
@@ -2341,12 +2608,16 @@ class LiveUnattendedAuthorizationService:
                 renewed += 1
             else:
                 skipped += 1
+        mismatch_alerts = self._scan_activation_horizon_mismatch_alerts(
+            actor=f"{actor}_MISMATCH"
+        )
         return {
             "expired": expired,
             "renewed": renewed,
             "skipped": skipped,
             "scanned": len(rows),
             "errors": errors,
+            "activation_horizon_mismatch_alerts": len(mismatch_alerts),
         }
 
     def is_entry_authorized(self, user_broker_account_id: int) -> bool:
