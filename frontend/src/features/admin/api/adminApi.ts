@@ -832,6 +832,15 @@ export async function getAdminUpbitExitOptimizationReentrySummary(
   });
 }
 
+/** Exit Optimization Shadow Lab V3 — R0/E1–E4 (RESEARCH ONLY) */
+export async function getAdminUpbitExitOptimizationV3Summary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/exit-optimization-v3/summary", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
 /** Waiting Lifecycle Forward Shadow Lab V1 (RESEARCH ONLY) */
 export async function getAdminUpbitWaitingLifecycleLabSummary(
   ubaId?: number,

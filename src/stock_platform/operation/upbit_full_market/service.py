@@ -808,6 +808,25 @@ class UpbitFullMarketAssignmentService:
                 entry_fee=entry_fee,
             )
             try:
+                from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.hooks import (
+                    enroll_binding_on_open as enroll_eosv3_shadow,
+                )
+
+                enroll_eosv3_shadow(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    binding_id=int(binding.binding_id),
+                    symbol=sym,
+                    strategy_id=assignment.strategy_id,
+                    entry_order_id=entry_order_id,
+                    entry_at=binding.opened_at,
+                    entry_price=entry_px,
+                    entry_quantity=entry_qty,
+                    entry_fee=entry_fee,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
                     enroll_reentry_on_open,
                 )
@@ -948,6 +967,26 @@ class UpbitFullMarketAssignmentService:
                         exit_price=exit_px,
                         entry_order_id=getattr(b, "entry_order_id", None),
                     )
+                    try:
+                        from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.hooks import (
+                            finalize_binding_on_close as finalize_eosv3_shadow,
+                        )
+
+                        gross = float(b.realized_pnl or 0)
+                        fees = float(b.fees or 0)
+                        net = gross - fees
+                        finalize_eosv3_shadow(
+                            self._session,
+                            binding_id=int(b.binding_id),
+                            exit_reason=exit_reason,
+                            exit_at=now,
+                            exit_price=exit_px,
+                            gross_pnl=gross,
+                            fee=fees,
+                            net_pnl=net,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                     from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
                         finalize_binding_on_close as finalize_exit_strategy_shadow,
                     )

@@ -27,6 +27,7 @@ import { UpbitPositiveEdgeEntryResearchPanel } from "@/features/admin/research/U
 import { UpbitH2H3ForwardShadowPanel } from "@/features/admin/research/UpbitH2H3ForwardShadowPanel";
 import { UpbitExitStrategyShadowPanel } from "@/features/admin/research/UpbitExitStrategyShadowPanel";
 import { UpbitExitOptimizationLabPanel } from "@/features/admin/research/UpbitExitOptimizationLabPanel";
+import { UpbitExitOptimizationV3LabPanel } from "@/features/admin/research/UpbitExitOptimizationV3LabPanel";
 import { UpbitWaitingLifecycleLabPanel } from "@/features/admin/research/UpbitWaitingLifecycleLabPanel";
 import { UpbitExitOrderRecoveryLabPanel } from "@/features/admin/research/UpbitExitOrderRecoveryLabPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
@@ -131,6 +132,10 @@ function ResearchWorkspaceBody() {
               Exit Optimization Lab V2
             </Typography.Title>
             <UpbitExitOptimizationLabPanel ubaId={ubaId} />
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Exit Optimization V3
+            </Typography.Title>
+            <UpbitExitOptimizationV3LabPanel ubaId={ubaId} />
             <Typography.Title level={5} style={{ margin: 0 }}>
               Waiting Lifecycle Lab
             </Typography.Title>

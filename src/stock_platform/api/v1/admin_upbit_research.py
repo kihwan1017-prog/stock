@@ -446,6 +446,82 @@ def get_exit_order_recovery_lab_comparison(
     )
 
 
+@router.get("/exit-optimization-v3/summary")
+def get_exit_optimization_v3_summary(
+    uba_id: int | None = Query(default=1380),
+    include_rows: bool = Query(default=False),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Exit Optimization Shadow Lab V3 — R0/E1–E4 (RESEARCH)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.service import (
+        summarize_exit_optimization_v3_lab,
+    )
+
+    return summarize_exit_optimization_v3_lab(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+        include_rows=bool(include_rows),
+    )
+
+
+@router.get("/exit-optimization-v3/variants")
+def get_exit_optimization_v3_variants(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.service import (
+        summarize_exit_optimization_v3_lab,
+    )
+
+    summary = summarize_exit_optimization_v3_lab(
+        session, user_broker_account_id=int(uba_id) if uba_id else None
+    )
+    return {
+        "ok": True,
+        "VARIANTS": summary.get("VARIANTS"),
+        "VARIANT_LABELS": summary.get("VARIANT_LABELS"),
+    }
+
+
+@router.get("/exit-optimization-v3/comparison")
+def get_exit_optimization_v3_comparison(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.service import (
+        summarize_exit_optimization_v3_lab,
+    )
+
+    return summarize_exit_optimization_v3_lab(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+        include_rows=True,
+        row_limit=100,
+    )
+
+
+@router.get("/exit-optimization-v3/observations")
+def get_exit_optimization_v3_observations(
+    uba_id: int | None = Query(default=1380),
+    variant: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.service import (
+        list_observations,
+    )
+
+    return list_observations(
+        session,
+        user_broker_account_id=int(uba_id) if uba_id else None,
+        variant=variant,
+        limit=int(limit),
+        offset=int(offset),
+    )
+
+
 @router.get("/exit-optimization-lab/reentry-summary")
 def get_exit_optimization_reentry_summary(
     uba_id: int | None = Query(default=1380),

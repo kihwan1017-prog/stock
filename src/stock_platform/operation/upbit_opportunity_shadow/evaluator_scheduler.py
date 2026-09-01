@@ -140,6 +140,17 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 error=str(exc)[:200],
             )
         try:
+            from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.scheduler import (
+                UpbitExitOptimizationShadowV3Scheduler,
+            )
+
+            UpbitExitOptimizationShadowV3Scheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "exit_optimization_shadow_v3_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
+        try:
             from stock_platform.operation.upbit_h2_h3_forward_shadow.scheduler import (
                 UpbitH2H3ForwardShadowScheduler,
             )
