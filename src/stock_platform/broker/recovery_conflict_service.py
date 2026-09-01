@@ -921,6 +921,8 @@ class BrokerRecoveryConflictService:
         uba_id: int,
         *,
         exclude_auto_protective_exits: bool = False,
+        exclude_known_auto_entry_buys: bool = False,
+        verify_upbit_broker_for_entry_buys: bool = False,
     ) -> dict[str, int]:
         """Resume 사전조건 — DB Open / 미확정 / cancel·replace pending 건수.
 
@@ -928,6 +930,11 @@ class BrokerRecoveryConflictService:
           Unattended ARM renew / lease restore 전용.
           AUTO SELL open(보호 청산)은 db_open에서 제외한다.
           UNKNOWN/AMBIGUOUS·cancel/replace·MANUAL open은 계속 fail-closed.
+
+        exclude_known_auto_entry_buys:
+          ACTIVE ARM force_renew 전용.
+          broker-confirmed known AUTO_ENTRY_BUY_OPEN 은 renew blocker에서 제외.
+          initial ARM activation 은 이 flag 를 사용하지 않는다 (strict).
         """
         from stock_platform.order.entities import TradingOrderEntity
 
@@ -961,37 +968,35 @@ class BrokerRecoveryConflictService:
                 or 0
             )
 
-        db_open = _count(open_statuses)
-        auto_protective_open = 0
-        if exclude_auto_protective_exits and db_open > 0:
-            open_rows = list(
-                self._session.scalars(
-                    select(TradingOrderEntity).where(
-                        TradingOrderEntity.user_broker_account_id
-                        == int(uba_id),
-                        TradingOrderEntity.status_code.in_(
-                            list(open_statuses)
-                        ),
-                    )
-                )
+        if exclude_auto_protective_exits or exclude_known_auto_entry_buys:
+            from stock_platform.broker.open_order_gate_classification import (
+                evaluate_open_order_gate_for_uba,
             )
-            for order in open_rows:
-                if str(getattr(order, "side_code", "") or "").upper() != "SELL":
-                    continue
-                meta = getattr(order, "metadata_payload", None) or {}
-                if not isinstance(meta, dict):
-                    meta = {}
-                src = str(meta.get("order_source") or "").strip().upper()
-                if src == "AUTO":
-                    auto_protective_open += 1
-            db_open = max(0, db_open - auto_protective_open)
+
+            summary = evaluate_open_order_gate_for_uba(
+                self._session,
+                int(uba_id),
+                gate_mode="arm_renew",
+                verify_upbit_broker_state=bool(
+                    verify_upbit_broker_for_entry_buys
+                    and exclude_known_auto_entry_buys
+                ),
+            )
+            return {
+                **summary.blocking_dict(),
+                "open_order_class_counts": summary.class_counts,
+                "arm_renew_block_reason": summary.arm_renew_block_reason,
+            }
+
+        db_open = _count(open_statuses)
 
         return {
             "db_open": db_open,
             "submission_unknown": _count(submission_unknown),
             "cancel_pending": _count(cancel_pending),
             "replace_pending": _count(replace_pending),
-            "auto_protective_open_excluded": auto_protective_open,
+            "auto_protective_open_excluded": 0,
+            "auto_entry_buy_excluded": 0,
         }
 
     def resume_account(

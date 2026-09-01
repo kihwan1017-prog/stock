@@ -118,12 +118,16 @@ class LiveArmService:
         user_broker_account_id: int,
         *,
         allow_auto_protective_open_orders: bool = False,
+        allow_known_auto_entry_buys: bool = False,
         require_scheduler_paused: bool = True,
     ) -> dict[str, Any]:
         """ARM ON 사전조건 — LIVE/Scheduler/Runtime은 변경하지 않음.
 
         allow_auto_protective_open_orders:
           Unattended renew/restore — AUTO SELL open은 허용, UNKNOWN는 fail-closed.
+        allow_known_auto_entry_buys:
+          ACTIVE ARM force_renew 전용 — broker-confirmed AUTO ENTRY BUY 는 renew 차단 제외.
+          initial ARM ON (force_renew=False) 에서는 항상 False.
         require_scheduler_paused:
           Manual ARM ON requires Scheduler PAUSED.
           Unattended force_renew allows RUNNING scheduler.
@@ -198,6 +202,10 @@ class LiveArmService:
             exclude_auto_protective_exits=bool(
                 allow_auto_protective_open_orders
             ),
+            exclude_known_auto_entry_buys=bool(allow_known_auto_entry_buys),
+            verify_upbit_broker_for_entry_buys=bool(
+                allow_known_auto_entry_buys
+            ),
         )
         for key, code in (
             ("db_open", "db_open_orders"),
@@ -268,6 +276,9 @@ class LiveArmService:
             "recovery_status": recovery.get("recovery_status"),
             "account_paused": risk.get("account_paused"),
             "arm_ttl_seconds": risk.get("arm_ttl_seconds"),
+            "allow_known_auto_entry_buys": bool(allow_known_auto_entry_buys),
+            "open_order_class_counts": blocking.get("open_order_class_counts"),
+            "ARM_RENEW_BLOCK_REASON": blocking.get("arm_renew_block_reason"),
         }
 
     def _require_session_activation(self, uba: UserBrokerAccount):
@@ -399,6 +410,9 @@ class LiveArmService:
                 int(user_broker_account_id),
                 allow_auto_protective_open_orders=bool(
                     allow_auto_protective_open_orders
+                ),
+                allow_known_auto_entry_buys=bool(
+                    force_renew and allow_auto_protective_open_orders
                 ),
                 require_scheduler_paused=not bool(force_renew),
             )

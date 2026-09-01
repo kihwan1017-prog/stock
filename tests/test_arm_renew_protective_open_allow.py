@@ -19,51 +19,72 @@ from stock_platform.trading.live_arm_service import (
 
 def test_exclude_auto_protective_sell_from_db_open_count() -> None:
     session = MagicMock()
-    auto_sell = SimpleNamespace(
-        side_code="SELL",
-        status_code="ACCEPTED",
-        metadata_payload={"order_source": "AUTO", "signal_reason": "MA_DEAD_CROSS"},
-    )
-    manual_buy = SimpleNamespace(
-        side_code="BUY",
-        status_code="ACCEPTED",
-        metadata_payload={"order_source": "MANUAL"},
-    )
-
-    # count() returns 2 open, then scalars returns both rows for exclude filter
-    session.scalar = MagicMock(side_effect=[2, 0, 0, 0])
-    session.scalars = MagicMock(return_value=[auto_sell, manual_buy])
-
-    out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
-        1380, exclude_auto_protective_exits=True
-    )
-    assert out["db_open"] == 1  # MANUAL remains
+    with patch(
+        "stock_platform.broker.open_order_gate_classification.evaluate_open_order_gate_for_uba"
+    ) as ev:
+        ev.return_value = SimpleNamespace(
+            blocking_dict=lambda: {
+                "db_open": 1,
+                "submission_unknown": 0,
+                "cancel_pending": 0,
+                "replace_pending": 0,
+                "auto_protective_open_excluded": 1,
+                "auto_entry_buy_excluded": 0,
+            },
+            class_counts={},
+            arm_renew_block_reason="db_open_orders:MANUAL_OPEN:100",
+        )
+        out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
+            1380, exclude_auto_protective_exits=True
+        )
+    assert out["db_open"] == 1
     assert out["auto_protective_open_excluded"] == 1
 
 
 def test_exclude_only_auto_sell_leaves_zero_when_only_protective() -> None:
     session = MagicMock()
-    auto_sell = SimpleNamespace(
-        side_code="SELL",
-        status_code="ACCEPTED",
-        metadata_payload={"order_source": "AUTO"},
-    )
-    session.scalar = MagicMock(side_effect=[1, 0, 0, 0])
-    session.scalars = MagicMock(return_value=[auto_sell])
-    out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
-        1380, exclude_auto_protective_exits=True
-    )
+    with patch(
+        "stock_platform.broker.open_order_gate_classification.evaluate_open_order_gate_for_uba"
+    ) as ev:
+        ev.return_value = SimpleNamespace(
+            blocking_dict=lambda: {
+                "db_open": 0,
+                "submission_unknown": 0,
+                "cancel_pending": 0,
+                "replace_pending": 0,
+                "auto_protective_open_excluded": 1,
+                "auto_entry_buy_excluded": 0,
+            },
+            class_counts={},
+            arm_renew_block_reason=None,
+        )
+        out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
+            1380, exclude_auto_protective_exits=True
+        )
     assert out["db_open"] == 0
     assert out["auto_protective_open_excluded"] == 1
 
 
 def test_unknown_orders_still_block_even_with_exclude() -> None:
     session = MagicMock()
-    # db_open=0 after exclude path; submission_unknown=1
-    session.scalar = MagicMock(side_effect=[0, 1, 0, 0])
-    out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
-        1380, exclude_auto_protective_exits=True
-    )
+    with patch(
+        "stock_platform.broker.open_order_gate_classification.evaluate_open_order_gate_for_uba"
+    ) as ev:
+        ev.return_value = SimpleNamespace(
+            blocking_dict=lambda: {
+                "db_open": 0,
+                "submission_unknown": 1,
+                "cancel_pending": 0,
+                "replace_pending": 0,
+                "auto_protective_open_excluded": 0,
+                "auto_entry_buy_excluded": 0,
+            },
+            class_counts={},
+            arm_renew_block_reason="submission_unknown:1",
+        )
+        out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
+            1380, exclude_auto_protective_exits=True
+        )
     assert out["db_open"] == 0
     assert out["submission_unknown"] == 1
 
@@ -198,3 +219,4 @@ def test_arm_passes_allow_auto_protective_flag() -> None:
                     allow_auto_protective_open_orders=True,
                 )
     assert seen.get("allow_auto_protective_open_orders") is True
+    assert seen.get("allow_known_auto_entry_buys") is True

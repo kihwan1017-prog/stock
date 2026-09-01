@@ -617,6 +617,48 @@ class PositionExitMonitorService:
                 from stock_platform.broker.upbit.rules import round_upbit_price
 
                 exit_price = round_upbit_price(Decimal(str(exit_price)))
+
+            # deterministic LIVE/ARM blocker — repeat submit 억제 (첫 1회는 pipeline audit)
+            from stock_platform.position.exit_submission_suppression import (
+                predict_deterministic_exit_blocker,
+                should_suppress_exit_submit,
+            )
+            from stock_platform.trading.account_models import UserBrokerAccount
+
+            uba_row = self._session.get(UserBrokerAccount, int(uba_id))
+            if uba_row is not None:
+                predicted = predict_deterministic_exit_blocker(
+                    live_order_enabled=bool(uba_row.live_order_enabled),
+                    live_armed=bool(uba_row.live_armed),
+                    arm_expires_at=getattr(uba_row, "arm_expires_at", None),
+                )
+                if predicted is not None:
+                    sup = should_suppress_exit_submit(
+                        user_broker_account_id=int(uba_id),
+                        symbol=position.symbol,
+                        binding_id=binding_id,
+                        exit_reason=reason,
+                        blocker_code=predicted,
+                        live_order_enabled=bool(uba_row.live_order_enabled),
+                        live_armed=bool(uba_row.live_armed),
+                        arm_expires_at=getattr(uba_row, "arm_expires_at", None),
+                    )
+                    if sup.suppress:
+                        logger.debug(
+                            "position_exit_submit_suppressed",
+                            symbol=position.symbol,
+                            blocker=predicted,
+                            suppression_key=sup.suppression_key,
+                            user_broker_account_id=int(uba_id),
+                        )
+                        return PositionExitAction(
+                            symbol=position.symbol,
+                            reason=reason,
+                            trigger_price=trigger_price,
+                            order_id=None,
+                            submitted=False,
+                        )
+
             result = self._execution.submit(
                 OrderExecutionCommand(
                     account_id=None,

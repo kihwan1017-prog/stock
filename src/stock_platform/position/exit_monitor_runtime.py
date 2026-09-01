@@ -138,7 +138,7 @@ class PositionExitMonitorManager:
 
     def status(self) -> dict:
         settings = get_settings()
-        return {
+        st = {
             "enabled": (
                 settings.position_exit_monitor_enabled
             ),
@@ -173,6 +173,15 @@ class PositionExitMonitorManager:
                 for item in self._last_actions
             ],
         }
+        try:
+            from stock_platform.position.exit_submission_suppression import (
+                exit_suppression_status,
+            )
+
+            st.update(exit_suppression_status())
+        except Exception:  # noqa: BLE001
+            pass
+        return st
 
 
 position_exit_monitor_manager = (

@@ -497,6 +497,16 @@ def build_uba_operational_summary(
                     "remote_open_state": exp.remote_state,
                     "source": exp.source,
                 }
+                try:
+                    from stock_platform.broker.open_order_gate_classification import (
+                        open_order_class_counts_for_ops,
+                    )
+
+                    open_orders["OPEN_ORDER_CLASS_COUNTS"] = (
+                        open_order_class_counts_for_ops(session, uba_id)
+                    )
+                except Exception:  # noqa: BLE001
+                    open_orders["OPEN_ORDER_CLASS_COUNTS"] = None
         except Exception:  # noqa: BLE001
             open_orders = None
     out = {
@@ -733,6 +743,34 @@ def build_uba_operational_summary(
         out["session_expiry"] = live_session_expiry_runtime.status()
     except Exception:  # noqa: BLE001
         out["session_expiry"] = {"error": "SESSION_EXPIRY_STATUS_UNAVAILABLE"}
+
+    # ARM renew / exit spam observability (operational safety hardening)
+    try:
+        unatt = out.get("unattended") if isinstance(out.get("unattended"), dict) else {}
+        last_arm = (
+            unatt.get("last_arm_renew_attempt")
+            if isinstance(unatt.get("last_arm_renew_attempt"), dict)
+            else {}
+        )
+        out["ARM_RENEW_BLOCK_REASON"] = (
+            last_arm.get("arm_renew_skipped")
+            or last_arm.get("arm_renew_error")
+        )
+    except Exception:  # noqa: BLE001
+        out["ARM_RENEW_BLOCK_REASON"] = None
+    try:
+        from stock_platform.position.exit_monitor_runtime import (
+            position_exit_monitor_manager,
+        )
+
+        em_st = position_exit_monitor_manager.status()
+        out["EXIT_SUBMISSION_SUPPRESSED"] = int(
+            em_st.get("EXIT_SUBMISSION_SUPPRESSED") or 0
+        )
+        out["EXIT_SUPPRESSION_REASON"] = em_st.get("EXIT_SUPPRESSION_REASON")
+    except Exception:  # noqa: BLE001
+        out["EXIT_SUBMISSION_SUPPRESSED"] = 0
+        out["EXIT_SUPPRESSION_REASON"] = None
 
     return out
 
