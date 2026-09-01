@@ -106,10 +106,20 @@ def _broker_card(ops: dict[str, Any], *, side: dict[str, int]) -> dict[str, Any]
         market_status = "UNKNOWN"
 
     rel = ops.get("reliability") if isinstance(ops.get("reliability"), dict) else {}
+    sem = ops.get("operational_semantics") if isinstance(
+        ops.get("operational_semantics"), dict
+    ) else rel.get("operational_semantics") if isinstance(
+        rel.get("operational_semantics"), dict
+    ) else {}
+    op_tier = str(sem.get("operational_tier") or "").upper()
     health_state = str(rel.get("health_state") or "").upper()
     no_trade = str(rel.get("no_trade_classification") or "")
     display_status = "정상"
-    if health_state == "BROKEN" or rel.get("partial_restore"):
+    if op_tier == "ENTRY_RESTRICTED":
+        display_status = "청산체결대기"
+    elif op_tier == "SYSTEM_BLOCKED" or health_state == "BROKEN" or rel.get(
+        "partial_restore"
+    ):
         display_status = "장애"
     elif no_trade == "WAITING_SLOT_STARVATION":
         display_status = "슬롯대기정체"
@@ -150,6 +160,10 @@ def _broker_card(ops: dict[str, Any], *, side: dict[str, int]) -> dict[str, Any]
         "feed": str(feed.get("status") or "UNKNOWN").upper(),
         "auto_trading_state": auto_state,
         "can_auto_trade": can_auto,
+        "operational_tier": sem.get("operational_tier"),
+        "operational_label_ko": sem.get("operational_label_ko"),
+        "entry_restricted": bool(sem.get("entry_restricted")),
+        "system_blocked": bool(sem.get("system_blocked")),
         "blockers": list(ops.get("blockers") or [])[:8],
         "warnings": list(ops.get("warnings") or [])[:8],
         "today_buy_count": int(side.get("auto_buy_count") or 0),

@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 # market:uba_id -> last health state (edge-trigger telegram)
 _last_exit_stuck_alert: dict[str, bool] = {}
+# market:uba_id -> sent long-wait tier seconds (dedupe)
+_last_exit_stuck_tiers: dict[str, set[int]] = {}
 
 _last_health_state: dict[str, str] = {}
 # market:uba_id -> last starvation alert escalation (edge-trigger)
@@ -450,43 +452,78 @@ def _handle_exit_stuck_transition(
     snapshot: dict[str, Any],
     supervisor: dict[str, Any] | None = None,
 ) -> None:
-    """EXIT_PENDING zero-fill stuck — edge telegram (tick spam 금지)."""
+    """EXIT_PENDING zero-fill — tiered telegram (tick spam 금지)."""
 
     if market != "UPBIT":
         return
     key = _market_key(market, uba_id)
-    prev = bool(_last_exit_stuck_alert.get(key))
-    if stuck and not prev:
+    items = ((snapshot.get("exit_pending_stuck") or {}).get("items") or [])
+    primary = items[0] if items else {}
+    age = float(primary.get("age_seconds") or 0)
+
+    from stock_platform.trading.exit_pending_watchdog import (
+        LONG_WAIT_TIERS_SECONDS,
+    )
+
+    if stuck:
+        prev = bool(_last_exit_stuck_alert.get(key))
         _last_exit_stuck_alert[key] = True
-        items = ((snapshot.get("exit_pending_stuck") or {}).get("items") or [])
-        primary = items[0] if items else {}
-        _emit_reliability_telegram(
-            market=market,
-            uba_id=uba_id,
-            event_type="UPBIT_EXIT_PENDING_ZERO_FILL_STUCK",
-            title="🔴 [업비트] 자동매매 장애",
-            message=(
-                "매도 주문 체결 지연이 감지되었습니다.\n"
-                f"{primary.get('symbol') or ''}\n"
-                f"주문 #{primary.get('order_id') or '-'}\n"
-                "자동 복구를 시도합니다. 강제 매도는 하지 않습니다."
-            ),
-            detail={
-                "order_id": primary.get("order_id"),
-                "symbol": primary.get("symbol"),
-                "age_seconds": primary.get("age_seconds"),
-            },
-        )
-    elif (not stuck) and prev:
+        sent = _last_exit_stuck_tiers.setdefault(key, set())
+        if not prev and 0 not in sent:
+            _emit_reliability_telegram(
+                market=market,
+                uba_id=uba_id,
+                event_type="UPBIT_EXIT_PENDING_ZERO_FILL",
+                title="🟡 [업비트] 청산 주문 체결 대기",
+                message=(
+                    "기존 청산 주문이 체결 대기 중입니다.\n"
+                    f"{primary.get('symbol') or ''}\n"
+                    f"주문 #{primary.get('order_id') or '-'}\n"
+                    "신규 매수는 일시 제한됩니다. 강제 매도/취소는 하지 않습니다."
+                ),
+                detail={
+                    "order_id": primary.get("order_id"),
+                    "symbol": primary.get("symbol"),
+                    "age_seconds": primary.get("age_seconds"),
+                    "tier_seconds": 0,
+                },
+            )
+            sent.add(0)
+        for tier in LONG_WAIT_TIERS_SECONDS:
+            if age >= tier and tier not in sent:
+                mins = int(tier // 60)
+                _emit_reliability_telegram(
+                    market=market,
+                    uba_id=uba_id,
+                    event_type="UPBIT_EXIT_PENDING_LONG_WAIT",
+                    title=f"🟡 [업비트] 청산 주문 장시간 대기 ({mins}분+)",
+                    message=(
+                        "청산 limit 주문 체결이 지연되고 있습니다.\n"
+                        f"{primary.get('symbol') or ''} · 주문 #{primary.get('order_id') or '-'}\n"
+                        "시스템은 정상 감시 중이며 강제 매도/취소는 하지 않습니다."
+                    ),
+                    detail={
+                        "order_id": primary.get("order_id"),
+                        "symbol": primary.get("symbol"),
+                        "age_seconds": primary.get("age_seconds"),
+                        "tier_seconds": tier,
+                    },
+                )
+                sent.add(tier)
+    elif _last_exit_stuck_alert.get(key):
         _last_exit_stuck_alert[key] = False
-        items = ((supervisor or {}).get("items") or [{}])
-        heal = (items[0] if items else {}).get("self_heal_status")
+        _last_exit_stuck_tiers.pop(key, None)
+        items_sup = ((supervisor or {}).get("items") or [{}])
+        heal = (items_sup[0] if items_sup else {}).get("self_heal_status")
         _emit_reliability_telegram(
             market=market,
             uba_id=uba_id,
-            event_type="UPBIT_EXIT_ORDER_RECOVERED",
-            title="🟢 [업비트] 자동매매 복구 완료",
-            message="매도 주문 상태가 정상화되었습니다. 포지션 감시를 재개합니다.",
+            event_type="UPBIT_EXIT_PENDING_RECOVERED",
+            title="🟢 [업비트] 청산 주문 상태 정상화",
+            message=(
+                "청산 주문이 체결되었거나 상태가 정상화되었습니다. "
+                "자동매매 감시를 재개합니다."
+            ),
             detail={"self_heal_status": heal},
         )
 

@@ -85,7 +85,15 @@ export default function MobileAutotradingPage() {
           />
           <Row
             label="준비"
-            value={upbit.can_auto_trade ? "자동매매 가능" : "준비 안 됨"}
+            value={
+              upbit.entry_restricted
+                ? "청산 체결 대기"
+                : upbit.can_auto_trade
+                  ? "자동매매 가능"
+                  : upbit.system_blocked
+                    ? "자동매매 차단"
+                    : "준비 안 됨"
+            }
           />
           <Link href="/admin/autotrading/upbit" className={styles.moreLink}>
             데스크톱 상세 →

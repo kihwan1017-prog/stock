@@ -861,22 +861,42 @@ def build_trading_health_snapshot(
                 session, user_broker_account_id=uba_id, now=now
             )
             if exit_pending_stuck.get("stuck"):
-                if health_state == HEALTH_READY:
-                    health_state = HEALTH_DEGRADED
+                infra_ok = (
+                    live_on
+                    and arm_on
+                    and activation_active
+                    and not partial_restore
+                    and not stack_down
+                    and feed_healthy
+                    and exit_st == "RUNNING"
+                )
                 if "EXIT_PENDING_ZERO_FILL_STUCK" not in health_reasons:
                     health_reasons.append("EXIT_PENDING_ZERO_FILL_STUCK")
-                # 청산 고착은 시스템 장애로 승격 (거래 없음 ≠ NORMAL)
-                no_trade = {
-                    "classification": "SYSTEM_FAILURE",
-                    "detail": {
-                        "reason": "EXIT_PENDING_ZERO_FILL_STUCK",
-                        "items": exit_pending_stuck.get("items") or [],
-                    },
-                    "evaluated_at": now.isoformat(),
-                }
-                if first_zero_stage in (None, "ORDER", "ENTRY_SIGNAL"):
-                    first_zero_stage = "EXIT"
-                    first_zero_reason = "EXIT_PENDING_ZERO_FILL_STUCK"
+                if infra_ok:
+                    # Entry restriction only — infra healthy → SYSTEM_FAILURE 승격 금지
+                    no_trade = {
+                        "classification": "EXIT_PENDING_WAIT",
+                        "detail": {
+                            "reason": "EXIT_PENDING_ZERO_FILL_STUCK",
+                            "items": exit_pending_stuck.get("items") or [],
+                            "entry_restricted": True,
+                        },
+                        "evaluated_at": now.isoformat(),
+                    }
+                else:
+                    if health_state == HEALTH_READY:
+                        health_state = HEALTH_DEGRADED
+                    no_trade = {
+                        "classification": "SYSTEM_FAILURE",
+                        "detail": {
+                            "reason": "EXIT_PENDING_ZERO_FILL_STUCK",
+                            "items": exit_pending_stuck.get("items") or [],
+                        },
+                        "evaluated_at": now.isoformat(),
+                    }
+                    if first_zero_stage in (None, "ORDER", "ENTRY_SIGNAL"):
+                        first_zero_stage = "EXIT"
+                        first_zero_reason = "EXIT_PENDING_ZERO_FILL_STUCK"
         except Exception:  # noqa: BLE001
             exit_pending_stuck = {"stuck": False, "count": 0, "error": True}
 
@@ -887,6 +907,45 @@ def build_trading_health_snapshot(
         and not bool(daily.get("blocking"))
         and len(blockers) == 0
     )
+
+    exit_pending_watchdog: dict[str, Any] = {"items": [], "count": 0}
+    operational_semantics: dict[str, Any] = {}
+    if broker == "UPBIT":
+        try:
+            from stock_platform.trading.exit_pending_watchdog import (
+                build_exit_pending_watchdog_snapshot,
+            )
+
+            exit_pending_watchdog = build_exit_pending_watchdog_snapshot(
+                session,
+                user_broker_account_id=uba_id,
+                now=now,
+                fetch_market_prices=False,
+            )
+        except Exception:  # noqa: BLE001
+            exit_pending_watchdog = {"items": [], "count": 0, "error": True}
+        try:
+            from stock_platform.trading.autotrading_operational_semantics import (
+                classify_operational_status,
+            )
+
+            operational_semantics = classify_operational_status(
+                live_on=live_on,
+                arm_on=arm_on,
+                activation_active=activation_active,
+                partial_restore=partial_restore,
+                stack_down=stack_down,
+                feed_healthy=feed_healthy,
+                exit_monitor_running=exit_st == "RUNNING",
+                health_state=health_state,
+                health_reasons=health_reasons,
+                blockers=blockers,
+                exit_pending_stuck=exit_pending_stuck,
+                exit_pending_watchdog=exit_pending_watchdog,
+                first_zero_reason=first_zero_reason,
+            )
+        except Exception:  # noqa: BLE001
+            operational_semantics = {"operational_tier": "SYSTEM_BLOCKED", "error": True}
 
     return {
         "ok": True,
@@ -924,6 +983,8 @@ def build_trading_health_snapshot(
         "health_state": health_state,
         "health_reasons": health_reasons,
         "exit_pending_stuck": exit_pending_stuck,
+        "exit_pending_watchdog": exit_pending_watchdog,
+        "operational_semantics": operational_semantics,
         "partial_restore": partial_restore,
         "runtime_control_mismatch": control_mismatch,
         "auto_trading_ready": auto_trading_ready,

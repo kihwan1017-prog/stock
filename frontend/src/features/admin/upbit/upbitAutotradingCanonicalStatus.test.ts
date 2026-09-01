@@ -18,7 +18,58 @@ describe("upbitAutotradingCanonicalStatus", () => {
     ).toBe(false);
   });
 
-  it("A–F: LIVE/ARM OFF + readiness READY → 차단", () => {
+  it("ENTRY_RESTRICTED — 청산 체결 대기 (SYSTEM_BLOCKED 아님)", () => {
+    const agg = buildUpbitAutotradingAggregateStatus({
+      ops: {
+        live: "ON",
+        arm: "ON",
+        blockers: [],
+        operational_semantics: {
+          operational_tier: "ENTRY_RESTRICTED",
+          entry_restricted: true,
+          system_blocked: false,
+          primary_blocker_ko: "청산 주문 체결 대기",
+        },
+        reliability: {
+          health_state: "READY",
+          health_reasons: ["EXIT_PENDING_ZERO_FILL_STUCK"],
+          auto_trading_ready: true,
+        },
+      },
+      readiness: { status: "READY_FOR_AUTO_TRADING", blockers: [] },
+      entryEvaluatorState: "RUNNING",
+    });
+    expect(agg.tier).toBe("entry_restricted");
+    expect(agg.headline).toBe("청산 주문 체결 대기");
+    expect(agg.headline).not.toBe("자동매매 차단");
+    expect(agg.entryOrdersPermitted).toBe(false);
+    expect(agg.systemBlocked).toBe(false);
+  });
+
+  it("FIRST_ZERO informational — 차단 headline 금지", () => {
+    const agg = buildUpbitAutotradingAggregateStatus({
+      ops: {
+        live: "ON",
+        arm: "ON",
+        operational_semantics: {
+          operational_tier: "RUNNING",
+          informational_first_zero: true,
+        },
+        reliability: {
+          health_state: "READY",
+          first_zero_stage: "CANDIDATE",
+          first_zero_reason: "NO_CANDIDATE_SNAPSHOT",
+          auto_trading_ready: true,
+        },
+      },
+      readiness: { status: "READY_FOR_AUTO_TRADING", blockers: [] },
+      entryEvaluatorState: "RUNNING",
+    });
+    expect(agg.headline).not.toBe("자동매매 차단");
+    expect(agg.tier).toBe("available_waiting");
+  });
+
+  it("ARM OFF → SYSTEM_BLOCKED 자동매매 차단", () => {
     const agg = buildUpbitAutotradingAggregateStatus({
       ops: { live: "OFF", arm: "OFF", blockers: ["LIVE_OFF", "ARM_OFF"] },
       readiness: {
@@ -27,7 +78,7 @@ describe("upbitAutotradingCanonicalStatus", () => {
       },
       entryEvaluatorState: "RUNNING",
     });
-    expect(agg.tier).toBe("blocked");
+    expect(agg.tier).toBe("system_blocked");
     expect(agg.headline).toBe("자동매매 차단");
     expect(agg.entryOrdersPermitted).toBe(false);
     expect(agg.blockers).toContain("LIVE_OFF");
@@ -145,7 +196,7 @@ describe("upbitAutotradingCanonicalStatus", () => {
     });
     expect(agg.description).not.toContain("실행 스택 불완전 (PARTIAL_RESTORE)");
     expect(agg.description).not.toMatch(/runtime failure/i);
-    expect(agg.description).toContain("health=BROKEN");
-    expect(agg.description).toContain("PARTIAL_RESTORE는 아닙니다");
+    expect(agg.description).toContain("운영 상태 이상");
+    expect(agg.description).toContain("SOME_OTHER_BROKEN");
   });
 });

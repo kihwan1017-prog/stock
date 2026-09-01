@@ -710,9 +710,17 @@ def build_uba_operational_summary(
             "heartbeats": health.get("heartbeats"),
             "invariants": health.get("invariants"),
             "funnel": health.get("funnel"),
+            "exit_pending_stuck": health.get("exit_pending_stuck"),
+            "exit_pending_watchdog": health.get("exit_pending_watchdog"),
+            "operational_semantics": health.get("operational_semantics"),
             "watchdog": autotrading_reliability_watchdog.status(),
         }
         out["auto_trading_ready"] = health.get("auto_trading_ready")
+        sem = health.get("operational_semantics")
+        if isinstance(sem, dict):
+            out["operational_semantics"] = sem
+            out["operational_tier"] = sem.get("operational_tier")
+            out["operational_label_ko"] = sem.get("operational_label_ko")
         # slim KIWOOM: funnel을 ops 루트에도 복사 (장후 분류용)
         if slim and broker_u == "KIWOOM" and isinstance(health.get("funnel"), dict):
             out["kiwoom_funnel"] = health.get("funnel")
