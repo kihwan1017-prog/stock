@@ -738,6 +738,23 @@ class PositionExitMonitorService:
                     }
                 )
                 persist_exit_lifecycle(snap, life)
+            # Shadow Lab enroll — fail-open (REAL cancel/reprice 절대 없음)
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.exit_order_recovery_shadow.hooks import (
+                    on_exit_order_submitted,
+                )
+
+                on_exit_order_submitted(
+                    self._session,
+                    order_id=result.order_id,
+                    user_broker_account_id=int(uba_id),
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "exit_order_recovery_shadow_hook_failed",
+                    order_id=result.order_id,
+                    exc_info=True,
+                )
             # Policy A: submit 성공 시에만 1회 알림
             self._publish_exit_event(
                 reason=reason,

@@ -855,6 +855,32 @@ export async function getAdminUpbitWaitingLifecycleLabObservations(
   return getJson("/admin/upbit/research/waiting-lifecycle-lab/observations", params);
 }
 
+/** Exit Order Recovery Shadow Lab V1 — long-unfilled AUTO exit (RESEARCH ONLY) */
+export async function getAdminUpbitExitOrderRecoveryLabSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/exit-order-recovery-lab/summary", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitExitOrderRecoveryLabComparison(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/exit-order-recovery-lab/comparison", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitExitOrderRecoveryLabObservations(
+  params?: Params,
+): Promise<JsonValue> {
+  return getJson(
+    "/admin/upbit/research/exit-order-recovery-lab/observations",
+    params,
+  );
+}
+
 /** Cross-market shadow research status — UPBIT + KIWOOM (READ ONLY) */
 export async function getAdminAutotradingResearchStatus(
   params?: Params,

@@ -172,6 +172,20 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 "waiting_lifecycle_shadow_scheduler_configure_failed",
                 error=str(exc)[:200],
             )
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.exit_order_recovery_shadow.scheduler import (
+                configure_exit_order_recovery_shadow_scheduler,
+            )
+
+            configure_exit_order_recovery_shadow_scheduler(
+                self._scheduler,
+                get_settings(),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "exit_order_recovery_shadow_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
 
     def start(self) -> None:
         """lifecycle 진입점 — configure 후 AsyncIOScheduler 기동."""

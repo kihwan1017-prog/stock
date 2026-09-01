@@ -28,6 +28,7 @@ import { UpbitH2H3ForwardShadowPanel } from "@/features/admin/research/UpbitH2H3
 import { UpbitExitStrategyShadowPanel } from "@/features/admin/research/UpbitExitStrategyShadowPanel";
 import { UpbitExitOptimizationLabPanel } from "@/features/admin/research/UpbitExitOptimizationLabPanel";
 import { UpbitWaitingLifecycleLabPanel } from "@/features/admin/research/UpbitWaitingLifecycleLabPanel";
+import { UpbitExitOrderRecoveryLabPanel } from "@/features/admin/research/UpbitExitOrderRecoveryLabPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
 import { KiwoomRagFeedbackTab } from "@/features/admin/upbit/KiwoomResearchRagFeedback";
 import { DEFAULT_UPBIT_AUTOTRADING_UBA_ID } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
@@ -134,6 +135,10 @@ function ResearchWorkspaceBody() {
               Waiting Lifecycle Lab
             </Typography.Title>
             <UpbitWaitingLifecycleLabPanel ubaId={ubaId} />
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              Exit 주문 미체결 Lab
+            </Typography.Title>
+            <UpbitExitOrderRecoveryLabPanel ubaId={ubaId} />
           </Space>
         ),
       },

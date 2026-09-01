@@ -396,6 +396,56 @@ def get_waiting_lifecycle_lab_comparison(
     )
 
 
+@router.get("/exit-order-recovery-lab/summary")
+def get_exit_order_recovery_lab_summary(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Exit Order Recovery Shadow Lab V1 — RESEARCH ONLY (REAL policy 불변)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.exit_order_recovery_shadow.service import (
+        summarize_exit_order_recovery_lab,
+    )
+
+    return summarize_exit_order_recovery_lab(
+        session,
+        user_broker_account_id=int(uba_id or 1380),
+    )
+
+
+@router.get("/exit-order-recovery-lab/observations")
+def get_exit_order_recovery_lab_observations(
+    uba_id: int | None = Query(default=1380),
+    variant: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.exit_order_recovery_shadow.service import (
+        list_observations,
+    )
+
+    return list_observations(
+        session,
+        user_broker_account_id=int(uba_id or 1380),
+        variant=variant,
+        limit=limit,
+    )
+
+
+@router.get("/exit-order-recovery-lab/comparison")
+def get_exit_order_recovery_lab_comparison(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.exit_order_recovery_shadow.service import (
+        compare_variants,
+    )
+
+    return compare_variants(
+        session, user_broker_account_id=int(uba_id or 1380)
+    )
+
+
 @router.get("/exit-optimization-lab/reentry-summary")
 def get_exit_optimization_reentry_summary(
     uba_id: int | None = Query(default=1380),

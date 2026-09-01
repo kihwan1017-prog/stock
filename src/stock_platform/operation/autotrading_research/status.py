@@ -520,7 +520,43 @@ def build_upbit_research_status(
         ),
         "scheduler": upbit_scheduler_runtime(),
         "PROMOTION_SAMPLE_BASIS": "VALID_ONLY",
+        # Exit Order Recovery Shadow Lab — research observability only (not READY blocker)
+        "EXIT_ORDER_RECOVERY_SHADOW": _exit_order_recovery_shadow_obs(
+            session, uba_id=uba
+        ),
     }
+
+
+def _exit_order_recovery_shadow_obs(
+    session: Session, *, uba_id: int
+) -> dict[str, Any]:
+    try:
+        from stock_platform.operation.upbit_opportunity_shadow.exit_order_recovery_shadow.service import (
+            summarize_exit_order_recovery_lab,
+        )
+
+        summary = summarize_exit_order_recovery_lab(
+            session, user_broker_account_id=uba_id
+        )
+        return {
+            "EXIT_RECOVERY_SHADOW_ACTIVE": summary.get(
+                "EXIT_RECOVERY_SHADOW_ACTIVE"
+            ),
+            "EXIT_RECOVERY_VARIANTS": summary.get("EXIT_RECOVERY_VARIANTS"),
+            "EXIT_RECOVERY_VALID_PAIRED_N": summary.get("VALID_PAIRED_N_MAX"),
+            "READINESS": summary.get("READINESS"),
+            "FORWARD_START_AT": summary.get("FORWARD_START_AT"),
+            "REAL_POLICY_CHANGED": False,
+            "SHADOW_ONLY": True,
+            "blocks_auto_ready": False,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "EXIT_RECOVERY_SHADOW_ACTIVE": False,
+            "error": type(exc).__name__,
+            "blocks_auto_ready": False,
+            "REAL_TRADING_BLOCKED": False,
+        }
 
 
 def build_kiwoom_research_status(
