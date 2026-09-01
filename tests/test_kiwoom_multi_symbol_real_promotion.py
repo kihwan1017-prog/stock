@@ -28,6 +28,44 @@ from stock_platform.operation.kiwoom_multi_symbol_universe.real_signal import (
     update_multi_symbol_runtime_cache,
 )
 
+def test_o_resolve_scope_without_deployment_strategy_version() -> None:
+    """Deployment entity에 strategy_version 없어도 scope 해석 가능해야 한다."""
+    from stock_platform.operation.kiwoom_multi_symbol_universe.real_signal import (
+        resolve_kiwoom_multi_symbol_scope,
+    )
+
+    uba = MagicMock(user_id=61, user_broker_account_id=1381)
+    link = MagicMock(strategy_id=17579, is_active=True)
+    dep = MagicMock(
+        strategy_deployment_id=869,
+        strategy_id=17579,
+        strategy_code="CODE",
+        market_code="KIWOOM",
+        status_code="ACTIVE",
+    )
+    # 의도적으로 없는 속성
+    del dep.strategy_version
+    del dep.market_type
+    definition = MagicMock(
+        strategy_id=17579,
+        market_type="STOCK",
+        updated_at=datetime(2026, 8, 19, 13, 39, 47, tzinfo=timezone.utc),
+    )
+
+    session = MagicMock()
+    session.get.side_effect = lambda model, key: (
+        uba if key == 1381 else definition
+    )
+    session.scalar.side_effect = [link, dep]
+
+    ctx = resolve_kiwoom_multi_symbol_scope(session, user_broker_account_id=1381)
+    assert ctx is not None
+    assert ctx["strategy_id"] == 17579
+    assert ctx["strategy_version"].startswith("sid:17579:")
+    assert "uba:1381" in ctx["scope_key"]
+    assert ctx["market_type"] == "STOCK"
+
+
 def test_a_top10_selection_does_not_imply_buy() -> None:
     closes = [Decimal("100") + Decimal(i) for i in range(25)]
     ma = evaluate_daily_ma_cross(symbol="005930", closes=closes)

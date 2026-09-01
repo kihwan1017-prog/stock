@@ -137,7 +137,22 @@ def resolve_kiwoom_multi_symbol_scope(
     )
     if dep is None:
         return None
-    strategy_version = str(dep.strategy_version or "1")
+    # StrategyDeploymentEntity에는 strategy_version/market_type 컬럼이 없다.
+    # runtime_loader와 동일: dep id fallback → definition updated_at 기반 version.
+    strategy_version = f"dep:{int(dep.strategy_deployment_id)}"
+    market_type = "STOCK"
+    from stock_platform.strategy_deployment.definition_entities import (
+        StrategyDefinitionEntity,
+    )
+
+    definition = session.get(StrategyDefinitionEntity, strategy_id)
+    if definition is not None:
+        market_type = str(getattr(definition, "market_type", None) or "STOCK")
+        updated = getattr(definition, "updated_at", None)
+        strategy_version = (
+            f"sid:{definition.strategy_id}:"
+            f"{updated.isoformat() if updated is not None else '1'}"
+        )
     scope_key = build_runtime_scope_key(
         user_id=int(uba.user_id),
         account_id=uba_id,
@@ -145,7 +160,7 @@ def resolve_kiwoom_multi_symbol_scope(
         strategy_id=strategy_id,
         strategy_code=str(dep.strategy_code or ""),
         market_code=str(dep.market_code or "KRX"),
-        market_type=str(dep.market_type or "STOCK"),
+        market_type=market_type,
         strategy_version=strategy_version,
         broker_code="KIWOOM",
     )
@@ -156,7 +171,7 @@ def resolve_kiwoom_multi_symbol_scope(
         "strategy_version": strategy_version,
         "scope_key": scope_key,
         "broker_code": "KIWOOM",
-        "market_type": str(dep.market_type or "STOCK"),
+        "market_type": market_type,
     }
 
 
