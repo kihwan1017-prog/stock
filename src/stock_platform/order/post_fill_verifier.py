@@ -145,8 +145,13 @@ class PostFillBalanceVerifier:
                 from stock_platform.risk_engine.kill_switch_service import (
                     KillSwitchService,
                 )
+                from stock_platform.trading.account_identity import (
+                    uba_kill_switch_scope,
+                )
 
-                KillSwitchService(self._session).activate(
+                # 단일 UBA post-fill 실패 → UBA scoped kill (GLOBAL 금지)
+                KillSwitchService(self._session).activate_scope(
+                    scope_code=uba_kill_switch_scope(int(account_id)),
                     actor=actor,
                     reason=event_type,
                 )
@@ -165,9 +170,58 @@ class PostFillBalanceVerifier:
                 )
             except Exception:  # noqa: BLE001
                 pass
-            self._pause_scheduler(actor=actor, reason=event_type)
+            self._pause_uba_runtimes(
+                account_id=int(account_id),
+                actor=actor,
+                reason=event_type,
+            )
+
+    def _pause_uba_runtimes(
+        self,
+        *,
+        account_id: int,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """해당 UBA runtime만 pause — GLOBAL pause_all 금지."""
+
+        try:
+            emit_live_safety_audit(
+                self._session,
+                event_type="SCHEDULER_PAUSE",
+                actor=actor,
+                run_id=None,
+                user_id=None,
+                account_id=int(account_id),
+                strategy_id=None,
+                detail={
+                    "reason": reason,
+                    "scope": "UBA",
+                    "user_broker_account_id": int(account_id),
+                },
+                commit=False,
+            )
+            import asyncio
+
+            from stock_platform.strategy_deployment.runtime_manager import (
+                dynamic_strategy_runtime_manager,
+            )
+
+            coro = dynamic_strategy_runtime_manager.pause_account_runtimes(
+                user_broker_account_id=int(account_id),
+                reason=reason,
+            )
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(coro)
+            except RuntimeError:
+                asyncio.run(coro)
+        except Exception:  # noqa: BLE001
+            pass
 
     def _pause_scheduler(self, *, actor: str, reason: str) -> None:
+        """legacy — GLOBAL pause 경로 보존(명시 GLOBAL 호출용). 신규 post-fill은 _pause_uba_runtimes."""
+
         try:
             from stock_platform.common.settings import get_settings
 

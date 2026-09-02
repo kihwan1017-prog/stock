@@ -790,6 +790,9 @@ class Settings(BaseSettings):
     post_fill_verify_claim_seconds: int = 30
     post_fill_verify_max_attempts: int = 5
     post_fill_verify_ttl_seconds: int = 60
+    # WAITING_SNAPSHOT transient lag — TTL 만료 시 bounded defer (즉시 GLOBAL kill 금지)
+    post_fill_verify_snapshot_defer_seconds: int = 120
+    post_fill_verify_max_snapshot_defers: int = 3
     # 재시도 간격(초) — 콤마 구분, 하드코딩 금지
     post_fill_verify_retry_delays_seconds: str = "2,5,10,20"
     post_fill_verify_telegram_on_verified: bool = False
@@ -1102,6 +1105,14 @@ class Settings(BaseSettings):
             raise ValueError("post_fill_verify_max_attempts must be >= 1")
         if self.post_fill_verify_ttl_seconds < 1:
             raise ValueError("post_fill_verify_ttl_seconds must be >= 1")
+        if self.post_fill_verify_snapshot_defer_seconds < 1:
+            raise ValueError(
+                "post_fill_verify_snapshot_defer_seconds must be >= 1"
+            )
+        if self.post_fill_verify_max_snapshot_defers < 0:
+            raise ValueError(
+                "post_fill_verify_max_snapshot_defers must be >= 0"
+            )
         if self.post_fill_verify_claim_seconds < 5:
             raise ValueError("post_fill_verify_claim_seconds must be >= 5")
         if self.post_fill_verify_batch_size <= 0:

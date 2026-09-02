@@ -24,6 +24,7 @@ _EDGE_LOCK = threading.Lock()
 class TelegramMarket(StrEnum):
     UPBIT = "UPBIT"
     KIWOOM = "KIWOOM"
+    PAPER = "PAPER"
     COMMON = "COMMON"
 
 
@@ -137,14 +138,17 @@ TELEGRAM_OPERATIONAL_ALLOWLIST = frozenset(
 
 _TITLE_PREFIX_UPBIT = "[업비트]"
 _TITLE_PREFIX_KIWOOM = "[키움]"
+_TITLE_PREFIX_PAPER = "[모의]"
 _TITLE_PREFIX_SYSTEM = "[시스템]"
 _KNOWN_TITLE_PREFIXES = (
     _TITLE_PREFIX_UPBIT,
     _TITLE_PREFIX_KIWOOM,
+    _TITLE_PREFIX_PAPER,
     _TITLE_PREFIX_SYSTEM,
     "[키움증권]",
     "[UPBIT]",
     "[KIWOOM]",
+    "[PAPER]",
     "[SYSTEM]",
 )
 
@@ -159,6 +163,8 @@ def market_title_prefix(market: TelegramMarket | str) -> str:
         return _TITLE_PREFIX_UPBIT
     if m == TelegramMarket.KIWOOM.value or m == "KIWOOM":
         return _TITLE_PREFIX_KIWOOM
+    if m == TelegramMarket.PAPER.value or m == "PAPER":
+        return _TITLE_PREFIX_PAPER
     return _TITLE_PREFIX_SYSTEM
 
 
@@ -167,7 +173,7 @@ def ensure_market_title_prefix(
     *,
     market: TelegramMarket | str,
 ) -> str:
-    """시장 종속 TITLE 앞에 [업비트]/[키움]/[시스템] 강제."""
+    """시장 종속 TITLE 앞에 [업비트]/[키움]/[모의]/[시스템] 강제."""
 
     raw = str(title or "").strip()
     if not raw:
@@ -176,6 +182,8 @@ def ensure_market_title_prefix(
     if raw.startswith(_TITLE_PREFIX_UPBIT):
         return raw
     if raw.startswith(_TITLE_PREFIX_KIWOOM):
+        return raw
+    if raw.startswith(_TITLE_PREFIX_PAPER):
         return raw
     if raw.startswith(_TITLE_PREFIX_SYSTEM):
         return raw
@@ -229,12 +237,17 @@ def resolve_telegram_market(
         return TelegramMarket.UPBIT
     if explicit in {"KIWOOM", "KRX", "STOCK"}:
         return TelegramMarket.KIWOOM
+    # PAPER / 모의 — [키움] 오분류 금지
+    if explicit in {"PAPER", "PAPER_STOCK", "PAPER_CRYPTO", "MOCK"}:
+        return TelegramMarket.PAPER
 
     et = str(event_type or "").upper()
     if et.startswith("UPBIT_") or "UPBIT" in et:
         return TelegramMarket.UPBIT
     if et.startswith("KIWOOM_") or "KIWOOM" in et or "KRX" in et:
         return TelegramMarket.KIWOOM
+    if et.startswith("PAPER_") or "PAPER" in et:
+        return TelegramMarket.PAPER
 
     # UBA id 힌트 (운영 관례: 1380 UPBIT / 1381 KIWOOM — 하드코딩 의존 최소화)
     uba = d.get("user_broker_account_id") or d.get("uba_id") or d.get("account_id")
@@ -251,6 +264,8 @@ def resolve_telegram_market(
                     return TelegramMarket.UPBIT
                 if bc == "KIWOOM":
                     return TelegramMarket.KIWOOM
+                if bc in {"PAPER", "PAPER_STOCK", "PAPER_CRYPTO"}:
+                    return TelegramMarket.PAPER
             finally:
                 session.close()
         except Exception:  # noqa: BLE001

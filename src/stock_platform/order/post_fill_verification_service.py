@@ -409,11 +409,17 @@ class PostFillVerificationService:
     ) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         if row.expires_at <= now:
-            self._mark_expired(row, actor="POST_FILL_WORKER")
-            return {
-                "verification_id": row.verification_id,
-                "status": PostFillVerifyStatus.EXPIRED.value,
-            }
+            if self._try_defer_waiting_snapshot_ttl(
+                row, actor="POST_FILL_WORKER"
+            ):
+                # TTL defer 후 계속 sync→reverify (즉시 kill 금지)
+                pass
+            else:
+                self._mark_expired(row, actor="POST_FILL_WORKER")
+                return {
+                    "verification_id": row.verification_id,
+                    "status": PostFillVerifyStatus.EXPIRED.value,
+                }
 
         if row.retry_count >= int(row.max_attempts):
             self._mark_expired(
@@ -474,11 +480,16 @@ class PostFillVerificationService:
     ) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
         if row.expires_at <= now:
-            self._mark_expired(row, actor="POST_FILL_WORKER")
-            return {
-                "verification_id": row.verification_id,
-                "status": PostFillVerifyStatus.EXPIRED.value,
-            }
+            if self._try_defer_waiting_snapshot_ttl(
+                row, actor="POST_FILL_WORKER"
+            ):
+                pass
+            else:
+                self._mark_expired(row, actor="POST_FILL_WORKER")
+                return {
+                    "verification_id": row.verification_id,
+                    "status": PostFillVerifyStatus.EXPIRED.value,
+                }
         if row.retry_count >= int(row.max_attempts):
             self._mark_expired(
                 row,
@@ -614,10 +625,15 @@ class PostFillVerificationService:
                 "code": "NOT_FOUND",
                 "verification_id": int(verification_id),
             }
-        if str(row.status_code) != PostFillVerifyStatus.MISMATCH.value:
+        # MISMATCH 또는 EXPIRED(stale TTL) — 현재 snapshot 일치 시 VERIFIED 해소
+        resolvable = {
+            PostFillVerifyStatus.MISMATCH.value,
+            PostFillVerifyStatus.EXPIRED.value,
+        }
+        if str(row.status_code) not in resolvable:
             return {
                 "ok": False,
-                "code": "NOT_MISMATCH",
+                "code": "NOT_RESOLVABLE_STATUS",
                 "verification_id": int(verification_id),
                 "status_code": row.status_code,
             }
@@ -663,11 +679,16 @@ class PostFillVerificationService:
                 "detail": result.detail,
             }
 
+        prior_status = str(row.status_code)
         prior = {
-            "prior_status": PostFillVerifyStatus.MISMATCH.value,
+            "prior_status": prior_status,
             "prior_error": row.last_error_code,
             "prior_detail": dict(row.detail or {}),
-            "resolution": "STALE_RESOLVED_AFTER_RECONCILE",
+            "resolution": (
+                "EXPIRED_RESOLVED_AFTER_RECONCILE"
+                if prior_status == PostFillVerifyStatus.EXPIRED.value
+                else "STALE_RESOLVED_AFTER_RECONCILE"
+            ),
             "resolution_reason_code": result.reason_code,
             "expected_positions_now": expected,
             "broker_positions_symbol_now": broker_positions,
@@ -1075,14 +1096,25 @@ class PostFillVerificationService:
         actor: str,
         reason: str,
     ) -> None:
+        """Post-fill fail-closed — UBA scoped kill (GLOBAL escalation 금지).
+
+        단일 UBA verification failure는 해당 UBA만 차단한다.
+        """
+
+        uba_id = int(row.user_broker_account_id)
+        kill_reason = f"POST_FILL_{reason}"
         try:
             from stock_platform.risk_engine.kill_switch_service import (
                 KillSwitchService,
             )
+            from stock_platform.trading.account_identity import (
+                uba_kill_switch_scope,
+            )
 
-            KillSwitchService(self._session).activate(
+            KillSwitchService(self._session).activate_scope(
+                scope_code=uba_kill_switch_scope(uba_id),
                 actor=actor,
-                reason=f"POST_FILL_{reason}",
+                reason=kill_reason,
             )
         except Exception:  # noqa: BLE001
             pass
@@ -1090,9 +1122,9 @@ class PostFillVerificationService:
             from stock_platform.trading.live_arm_service import LiveArmService
 
             LiveArmService(self._session).disarm(
-                int(row.user_broker_account_id),
+                uba_id,
                 actor=actor,
-                reason=f"POST_FILL_{reason}",
+                reason=kill_reason,
                 turn_live_off=True,
             )
         except Exception:  # noqa: BLE001
@@ -1104,8 +1136,10 @@ class PostFillVerificationService:
                 dynamic_strategy_runtime_manager,
             )
 
-            coro = dynamic_strategy_runtime_manager.pause_all(
-                reason=f"post_fill_{reason.lower()}"
+            # 해당 UBA runtime만 pause — 타 브로커/UBA 영향 금지
+            coro = dynamic_strategy_runtime_manager.pause_account_runtimes(
+                user_broker_account_id=uba_id,
+                reason=f"post_fill_{reason.lower()}",
             )
             try:
                 loop = asyncio.get_running_loop()
@@ -1114,6 +1148,120 @@ class PostFillVerificationService:
                 asyncio.run(coro)
         except Exception:  # noqa: BLE001
             pass
+
+    def _try_defer_waiting_snapshot_ttl(
+        self,
+        row: PostFillVerificationEntity,
+        *,
+        actor: str,
+    ) -> bool:
+        """WAITING_SNAPSHOT + fill canonical + no contradiction → TTL 연장.
+
+        즉시 kill 금지. bounded defer만 허용.
+        """
+
+        settings = get_settings()
+        max_defers = int(
+            getattr(settings, "post_fill_verify_max_snapshot_defers", 3)
+        )
+        defer_seconds = int(
+            getattr(settings, "post_fill_verify_snapshot_defer_seconds", 120)
+        )
+        detail = dict(row.detail or {})
+        defer_count = int(detail.get("snapshot_defer_count") or 0)
+        if defer_count >= max_defers:
+            return False
+
+        sync_errors = {
+            POSITION_SYNC_PENDING,
+            CASH_SYNC_PENDING,
+            "SNAPSHOT_STALE",
+            "POSITION_MISMATCH",
+            "CASH_MISMATCH",
+        }
+        last_err = str(row.last_error_code or "").upper()
+        deferred_flag = bool(detail.get("deferred_kill") or detail.get("sync_pending"))
+        if not deferred_flag and last_err not in sync_errors:
+            return False
+
+        # 모순 수량: broker_qty가 기대와 다르면서 0이 아닌 확정 mismatch면 defer 금지
+        # (0은 snapshot lag 전형 — defer 허용)
+        if self._has_contradictory_position_evidence(detail):
+            return False
+
+        if not self._order_fill_canonical_for_defer(row):
+            return False
+
+        now = datetime.now(timezone.utc)
+        row.expires_at = now + timedelta(seconds=defer_seconds)
+        row.status_code = PostFillVerifyStatus.WAITING_SNAPSHOT.value
+        row.next_retry_at = self._next_retry_at(int(row.retry_count))
+        row.claimed_by = None
+        row.claim_expires_at = None
+        detail["deferred_kill"] = True
+        detail["sync_pending"] = True
+        detail["snapshot_defer_count"] = defer_count + 1
+        detail["last_snapshot_defer_at"] = now.isoformat()
+        detail["snapshot_defer_seconds"] = defer_seconds
+        row.detail = detail
+        row.updated_at = now
+        self._session.flush()
+        self._audit(
+            event_type=POST_FILL_RETRY_SCHEDULED,
+            row=row,
+            actor=actor,
+            detail={
+                "reason_code": "WAITING_SNAPSHOT_TTL_DEFERRED",
+                "snapshot_defer_count": defer_count + 1,
+                "max_snapshot_defers": max_defers,
+                "new_expires_at": row.expires_at.isoformat(),
+            },
+        )
+        return True
+
+    @staticmethod
+    def _has_contradictory_position_evidence(detail: dict[str, Any]) -> bool:
+        """broker qty가 0이 아니면서 expected와 불일치하면 확정 mismatch 후보."""
+
+        try:
+            broker_raw = detail.get("broker_qty")
+            db_raw = detail.get("db_qty")
+            if broker_raw is None:
+                return False
+            broker_qty = Decimal(str(broker_raw))
+            if broker_qty == 0:
+                return False  # lag 전형
+            if db_raw is None:
+                return False
+            db_qty = Decimal(str(db_raw))
+            # 둘 다 양수인데 크게 다르면 contradiction
+            if db_qty > 0 and broker_qty > 0 and broker_qty != db_qty:
+                return True
+        except Exception:  # noqa: BLE001
+            return False
+        return False
+
+    def _order_fill_canonical_for_defer(
+        self, row: PostFillVerificationEntity
+    ) -> bool:
+        """broker fill 확인된 terminal order만 snapshot defer 허용."""
+
+        if row.order_id is None:
+            return False
+        try:
+            from stock_platform.order.entities import TradingOrderEntity
+
+            order = self._session.get(TradingOrderEntity, int(row.order_id))
+            if order is None:
+                return False
+            status = str(getattr(order, "status_code", "") or "").upper()
+            if status not in {"FILLED", "PARTIAL_FILLED", "PARTIALLY_FILLED"}:
+                return False
+            if not str(getattr(order, "broker_order_id", "") or "").strip():
+                return False
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def _next_retry_at(self, retry_count: int) -> datetime:
         settings = get_settings()
