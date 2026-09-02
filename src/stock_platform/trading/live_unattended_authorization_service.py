@@ -2732,6 +2732,13 @@ class LiveUnattendedAuthorizationService:
         actor: str,
         reason: str,
     ) -> None:
+        # scheduler tick마다 동일 PROTECTIVE/EXPIRED audit 재발행 금지 (gate 평가는 scan 유지)
+        if not bool(row.entry_authorized) and row.status_code in (
+            STATUS_PROTECTIVE,
+            STATUS_EXPIRED,
+        ):
+            return
+
         uba_id = int(row.user_broker_account_id)
         self._fail_closed_on_expiry(
             uba_id,

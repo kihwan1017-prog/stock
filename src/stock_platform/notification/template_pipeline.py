@@ -24,6 +24,29 @@ from stock_platform.notification.template_renderer import (
 # AI HOLD 무변경 등 spam 억제용 in-process dedupe
 _state_dedupe: dict[str, float] = {}
 _STATE_TTL_SECONDS = 900.0
+# safety-critical blocker reminder — ACCOUNT_DAILY_DRAWDOWN 과 동일 45분
+_SAFETY_CRITICAL_BLOCK_TTL_SECONDS = 2700.0
+
+# trading gate 차단 알림 dedupe (gate 평가 자체는 skip 하지 않음)
+_TRADING_BLOCK_EVENT_TYPES = frozenset(
+    {
+        "KILL_SWITCH",
+        "KILL_SWITCH_ACTIVATE",
+        "ORDER_REJECTED",
+        "LIVE_REJECTED",
+        "UNATTENDED_ENTRY_BLOCKED",
+        "UNATTENDED_AUTHORIZATION_EXPIRED",
+    }
+)
+
+# Admin UI 관측용 — Telegram 경고/차단으로 매 tick 보내지 않음
+_ENTRY_WAIT_OBSERVABILITY_ONLY_REASONS = frozenset(
+    {
+        "NO_FRESH_GOLDEN_CROSS",
+        "ABOVE_NO_NEW_CROSS",
+        "MA_CONDITION_WAITING",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -47,6 +70,67 @@ class RenderedNotification:
     diagnostic_code: str | None = None
 
 
+def _trading_block_dedupe_key(
+    *,
+    event_type: str,
+    variables: dict[str, Any],
+    detail: dict[str, Any],
+) -> tuple[str, float] | None:
+    """broker/UBA/strategy/symbol/event/reason 기준 dedupe identity."""
+
+    et = str(event_type or "").upper()
+    if et == "MONITORING_ALERT":
+        rule_id = str(detail.get("rule_id") or "")
+        nested = detail.get("detail")
+        if isinstance(nested, dict) and not rule_id:
+            rule_id = str(nested.get("rule_id") or "")
+        if rule_id != "KILL_SWITCH_ACTIVATED":
+            return None
+        et = "KILL_SWITCH"
+
+    if et not in _TRADING_BLOCK_EVENT_TYPES:
+        return None
+
+    reason = str(
+        detail.get("reason")
+        or detail.get("reason_code")
+        or detail.get("message")
+        or variables.get("reason_ko")
+        or "UNKNOWN"
+    ).strip()[:200]
+
+    broker = str(
+        variables.get("broker_code")
+        or detail.get("broker_code")
+        or detail.get("broker")
+        or "GLOBAL"
+    ).upper()
+
+    uba = str(
+        variables.get("uba_id")
+        or detail.get("user_broker_account_id")
+        or detail.get("uba_id")
+        or detail.get("account_id")
+        or "*"
+    )
+
+    strategy = str(
+        detail.get("strategy_id") or variables.get("strategy_id") or "*"
+    )
+
+    symbol = str(
+        variables.get("symbol") or detail.get("symbol") or "*"
+    ).upper()
+
+    ttl = (
+        _SAFETY_CRITICAL_BLOCK_TTL_SECONDS
+        if et in {"KILL_SWITCH", "KILL_SWITCH_ACTIVATE"}
+        else _STATE_TTL_SECONDS
+    )
+    key = f"BLOCK|{broker}|{uba}|{strategy}|{symbol}|{et}|{reason}"
+    return key, ttl
+
+
 def should_suppress_state_event(
     *,
     event_type: str,
@@ -60,6 +144,29 @@ def should_suppress_state_event(
     et = event_type.upper()
     if str(detail.get("kind") or "").upper() in {"TICK", "HEARTBEAT"}:
         return True, "TICK_OR_HEARTBEAT"
+
+    wait_reason = str(
+        detail.get("reason")
+        or detail.get("reason_code")
+        or variables.get("reason_ko")
+        or ""
+    ).upper()
+    if wait_reason in _ENTRY_WAIT_OBSERVABILITY_ONLY_REASONS:
+        return True, "ENTRY_WAIT_OBSERVABILITY_ONLY"
+
+    block_key = _trading_block_dedupe_key(
+        event_type=et,
+        variables=variables,
+        detail=detail,
+    )
+    if block_key is not None:
+        key, ttl = block_key
+        now = time.time()
+        last = _state_dedupe.get(key)
+        if last and now - last < ttl:
+            return True, "TRADING_BLOCK_STATE_DEDUPE"
+        _state_dedupe[key] = now
+        return False, None
 
     if et == "AI_GATE_RECOMMENDATION_CHANGED":
         prev = str(variables.get("previous_recommendation_ko") or "")
