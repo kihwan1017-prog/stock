@@ -29,11 +29,18 @@ import {
 import * as adminApi from "@/features/admin/api/adminApi";
 import { KiwoomTop10RealPanel } from "@/features/admin/autotrading/KiwoomTop10RealPanel";
 import {
-  autoTradingStateLabelKo,
-  unattendedLeaseLabelKo,
-} from "@/features/admin/autotrading/slotStatusLabels";
+  armDisplayLabel,
+  getKiwoomLeaseDisplay,
+  getKiwoomLeaseTone,
+  getKiwoomReadyDisplay,
+  getRuntimeStackLabel,
+  isArmOn,
+  isLiveOn,
+  liveDisplayLabel,
+  toneFromTriStateOnOff,
+} from "@/features/admin/autotrading/kiwoomAutotradingCanonicalStatus";
+import { autoTradingStateLabelKo } from "@/features/admin/autotrading/slotStatusLabels";
 import {
-  toneFromBoolOnOff,
   toneFromReadiness,
   toneFromRuntime,
   toneToAntdColor,
@@ -105,12 +112,6 @@ export default function AdminAutotradingKiwoomPage() {
     enabled: activeUbaId > 0,
     refetchInterval: 20_000,
   });
-  const readyQ = useQuery({
-    queryKey: ["admin", "autotrading-readiness", activeUbaId],
-    queryFn: () => adminApi.getAdminUbaAutotradingReadiness(activeUbaId),
-    enabled: activeUbaId > 0,
-    refetchInterval: 20_000,
-  });
   const ownQ = useQuery({
     queryKey: ["admin", "symbol-ownership", activeUbaId, "KIWOOM"],
     queryFn: () => adminApi.listAdminSymbolOwnership(activeUbaId, "KIWOOM"),
@@ -130,31 +131,17 @@ export default function AdminAutotradingKiwoomPage() {
   });
 
   const ops = rec(opsQ.data);
-  const ready = rec(readyQ.data);
   const krx = rec(krxQ.data);
   const control = rec(ops.control);
-  const unattended = rec(ops.unattended);
-  const stack = rec(ops.runtime_stack);
-  const liveOn = Boolean(ops.live_on ?? ops.live_order_enabled);
-  const armOn = Boolean(ops.arm_on ?? ops.live_armed);
+  const liveState = isLiveOn(ops);
+  const armState = isArmOn(ops);
   const runtime = String(ops.strategy_runtime ?? control.strategy_runtime ?? "—");
-  const readiness = String(ready.readiness ?? ready.status ?? ops.auto_trading_state ?? "—");
+  const readyDisplay = getKiwoomReadyDisplay(ops);
   const activation = String(ops.activation ?? control.activation ?? "—");
   const feed = String(rec(ops.market_feed).status ?? "—");
-  const lease = String(
-    unattended.lease_status ??
-      unattended.status ??
-      (unattended.unattended_enabled ? "ACTIVE" : "OFF"),
-  );
-  const stackReady = Number(stack.ready_count ?? stack.ready ?? NaN);
-  const stackTotal = Number(stack.total_count ?? stack.total ?? NaN);
-  const stackLabel =
-    Number.isFinite(stackReady) && Number.isFinite(stackTotal)
-      ? `${stackReady}/${stackTotal}`
-      : String(stack.status ?? stack.summary ?? "—");
-  const armExpires = String(
-    ops.arm_expires_at ?? unattended.expires_at ?? unattended.arm_expires_at ?? "",
-  );
+  const leaseLabel = getKiwoomLeaseDisplay(ops);
+  const stackLabel = getRuntimeStackLabel(ops);
+  const armExpires = String(ops.arm_expires_at ?? "");
   const blocker =
     String(
       ops.primary_blocker ??
@@ -256,20 +243,18 @@ export default function AdminAutotradingKiwoomPage() {
               ],
               [
                 "AUTO",
-                autoTradingStateLabelKo(
-                  String(ops.auto_trading_state ?? readiness),
-                ),
-                toneFromReadiness(String(ops.auto_trading_state ?? readiness)),
+                autoTradingStateLabelKo(String(ops.auto_trading_state ?? "")),
+                toneFromReadiness(String(ops.auto_trading_state ?? "")),
               ],
               [
                 UI_LABEL_KO.live,
-                liveOn ? "켜짐" : "꺼짐",
-                toneFromBoolOnOff(liveOn),
+                liveDisplayLabel(liveState),
+                toneFromTriStateOnOff(liveState),
               ],
               [
                 UI_LABEL_KO.arm,
-                armOn ? "승인됨" : "해제",
-                toneFromBoolOnOff(armOn),
+                armDisplayLabel(armState),
+                toneFromTriStateOnOff(armState),
               ],
               [
                 "ARM 만료",
@@ -282,22 +267,18 @@ export default function AdminAutotradingKiwoomPage() {
               ],
               [
                 "LEASE",
-                unattendedLeaseLabelKo(lease),
-                toneFromRuntime(
-                  lease === "ACTIVE"
-                    ? "RUNNING"
-                    : lease === "PROTECTIVE_EXIT_ONLY"
-                      ? "WAITING_SIGNAL"
-                      : "STOPPED",
-                ),
+                leaseLabel,
+                getKiwoomLeaseTone(ops),
               ],
               [
                 "STACK",
                 stackLabel,
                 toneFromRuntime(
-                  stackLabel.includes("/") && stackLabel.startsWith("4/")
+                  stackLabel.includes("RUNNING")
                     ? "RUNNING"
-                    : "WAITING_SIGNAL",
+                    : stackLabel === "확인 불가"
+                      ? "UNKNOWN"
+                      : "WAITING_SIGNAL",
                 ),
               ],
               [
@@ -313,8 +294,8 @@ export default function AdminAutotradingKiwoomPage() {
               [UI_LABEL_KO.strategy, String(ops.strategy_id ?? "—"), "gray" as const],
               [
                 UI_LABEL_KO.readiness,
-                autoTradingStateLabelKo(readiness),
-                toneFromReadiness(readiness),
+                readyDisplay.label,
+                toneFromReadiness(readyDisplay.toneSource),
               ],
             ] as const
           ).map(([label, value, tone]) => (
