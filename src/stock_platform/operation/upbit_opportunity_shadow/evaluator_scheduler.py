@@ -151,6 +151,17 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 error=str(exc)[:200],
             )
         try:
+            from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.scheduler import (
+                UpbitProfitabilityImprovementShadowScheduler,
+            )
+
+            UpbitProfitabilityImprovementShadowScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "profitability_improvement_shadow_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
+        try:
             from stock_platform.operation.upbit_h2_h3_forward_shadow.scheduler import (
                 UpbitH2H3ForwardShadowScheduler,
             )

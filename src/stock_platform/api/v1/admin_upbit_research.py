@@ -539,6 +539,58 @@ def get_exit_optimization_reentry_summary(
     )
 
 
+@router.get("/profitability-lab/summary")
+def get_profitability_lab_summary(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Profitability Improvement Shadow Lab V1 — Candidate/Exit/Reentry."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.service import (
+        summarize_profitability_lab,
+    )
+
+    return summarize_profitability_lab(
+        session, user_broker_account_id=int(uba_id or 1380)
+    )
+
+
+@router.get("/profitability-lab/candidates")
+def get_profitability_lab_candidates(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.service import (
+        summarize_candidates,
+    )
+
+    return summarize_candidates(session, user_broker_account_id=int(uba_id or 1380))
+
+
+@router.get("/profitability-lab/exits")
+def get_profitability_lab_exits(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.service import (
+        summarize_exits,
+    )
+
+    return summarize_exits(session, user_broker_account_id=int(uba_id or 1380))
+
+
+@router.get("/profitability-lab/reentry")
+def get_profitability_lab_reentry(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.service import (
+        summarize_reentry,
+    )
+
+    return summarize_reentry(session, user_broker_account_id=int(uba_id or 1380))
+
+
 @router.get("/entry-signal-shadow/rows")
 def list_entry_signal_shadow_rows_api(
     uba_id: int = Query(default=1380, ge=1),

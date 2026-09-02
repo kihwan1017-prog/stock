@@ -279,6 +279,12 @@ export const queryKeys = {
         "upbit-exit-optimization-v3-summary",
         ubaId ?? null,
       ] as const,
+    upbitProfitabilityLabSummary: (ubaId?: number) =>
+      [
+        "admin",
+        "upbit-profitability-lab-summary",
+        ubaId ?? null,
+      ] as const,
     kiwoomMultiSymbolStatus: (ubaId?: number) =>
       ["admin", "kiwoom-multi-symbol-status", ubaId ?? null] as const,
     upbitWaitingLifecycleLabSummary: (ubaId?: number) =>

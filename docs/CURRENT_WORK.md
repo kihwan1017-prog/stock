@@ -1,7 +1,28 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-01 (KIWOOM-TOP10-REAL-FRONTEND-MOBILE-V1)
+**최종 갱신:** 2026-09-03 (UPBIT-PROFITABILITY-IMPROVEMENT-SHADOW-LAB-V1)
+
+---
+
+## U — Profitability Improvement Shadow Lab V1 (2026-09-03)
+
+- WORK: `WRK-20260903-UPBIT-PROFITABILITY-IMPROVEMENT-SHADOW-LAB-V1` · History **#110** · Parent **#102**
+- Labs: Candidate Selection V2 (A0–A3) · Exit Optimization V4 (B0–B3) · Reentry Anti-Churn (C0–C3)
+- `SHADOW_ONLY` / `FORWARD_ONLY` · REAL candidate/entry/exit/reentry **UNCHANGED** · auto promotion 금지
+- Migration `pislabv1a2b3` · Admin research panel + `/profitability-lab/*`
+- NEXT: `NATURAL_SAMPLE_COLLECTION`
+
+---
+
+## U — REAL Runtime Hot-Reload Isolation (2026-09-01)
+
+- WORK: `WRK-20260901-UPBIT-REAL-RUNTIME-HOTRELOAD-ISOLATION-V1` · Parent History **#92** · History **#93**
+- Commit **`265e072`** · DEV `APP_RUNTIME_MODE=development` + REAL activation fail-closed · PROD reload=false
+- ops-status: `RUNTIME_MODE` / `HOT_RELOAD_ENABLED` / `REAL_RUNTIME_STABLE`
+- **RESTART_COUNT=0** · deploy deferred (#2293 open) · restore/ARM gates unchanged
+- Evidence: `.run/k_upbit_real_runtime_hotreload_isolation_20260901.json`
+- NEXT: `WAIT_OPEN_ORDERS_TERMINAL_THEN_SAFE_DEPLOY`
 
 ---
 

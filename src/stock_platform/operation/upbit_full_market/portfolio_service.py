@@ -1992,6 +1992,64 @@ class UpbitPortfolioService:
         self._session.add(sel)
         self._session.flush()
 
+        # Profitability Lab A — shadow ranking only (REAL selection 불변)
+        try:
+            from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
+                observe_candidate_selection,
+            )
+
+            universe_rows: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            # selected + skip_trace 후보
+            base_rows = [
+                {
+                    "symbol": chosen.symbol,
+                    "rank": chosen.rank,
+                    "score": chosen.score,
+                    "liquidity": chosen.liquidity,
+                    "technical_metrics": dict(chosen.technical_metrics or {}),
+                    "recommendation": chosen.recommendation,
+                    "confidence": chosen.confidence,
+                }
+            ]
+            for tr in skip_all:
+                if not isinstance(tr, dict):
+                    continue
+                sym = str(tr.get("symbol") or "").upper()
+                if not sym or sym in seen:
+                    continue
+                seen.add(sym)
+                universe_rows.append(
+                    {
+                        "symbol": sym,
+                        "rank": tr.get("rank"),
+                        "score": tr.get("score"),
+                        "liquidity": tr.get("liquidity"),
+                        "technical_metrics": dict(tr.get("technical_metrics") or {}),
+                        "recommendation": tr.get("recommendation"),
+                    }
+                )
+            for br in base_rows:
+                sym = str(br.get("symbol") or "").upper()
+                if sym and sym not in seen:
+                    universe_rows.append(br)
+                    seen.add(sym)
+            # chosen이 skip에 없을 수 있음 — 보장
+            if chosen.symbol.upper() not in seen:
+                universe_rows.insert(0, base_rows[0])
+
+            observe_candidate_selection(
+                self._session,
+                user_broker_account_id=uba_id,
+                scanner_run_id=str(scanner_run_id),
+                selection_id=int(sel.selection_id),
+                strategy_id=assignment.strategy_id,
+                observed_at=sel.selected_at,
+                universe_rows=universe_rows,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
         slot.status = SLOT_SELECTED
         slot.symbol = chosen.symbol
         slot.candidate_selection_id = int(sel.selection_id)

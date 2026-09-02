@@ -28,6 +28,7 @@ import { UpbitH2H3ForwardShadowPanel } from "@/features/admin/research/UpbitH2H3
 import { UpbitExitStrategyShadowPanel } from "@/features/admin/research/UpbitExitStrategyShadowPanel";
 import { UpbitExitOptimizationLabPanel } from "@/features/admin/research/UpbitExitOptimizationLabPanel";
 import { UpbitExitOptimizationV3LabPanel } from "@/features/admin/research/UpbitExitOptimizationV3LabPanel";
+import { UpbitProfitabilityImprovementLabPanel } from "@/features/admin/research/UpbitProfitabilityImprovementLabPanel";
 import { UpbitWaitingLifecycleLabPanel } from "@/features/admin/research/UpbitWaitingLifecycleLabPanel";
 import { UpbitExitOrderRecoveryLabPanel } from "@/features/admin/research/UpbitExitOrderRecoveryLabPanel";
 import { upbitResearchDetailTabs } from "@/features/admin/upbit/UpbitResearchDetailWorkspace";
@@ -136,6 +137,10 @@ function ResearchWorkspaceBody() {
               Exit Optimization V3
             </Typography.Title>
             <UpbitExitOptimizationV3LabPanel ubaId={ubaId} />
+            <Typography.Title level={5} style={{ margin: 0 }}>
+              수익성 개선 Shadow Lab
+            </Typography.Title>
+            <UpbitProfitabilityImprovementLabPanel ubaId={ubaId} />
             <Typography.Title level={5} style={{ margin: 0 }}>
               Waiting Lifecycle Lab
             </Typography.Title>

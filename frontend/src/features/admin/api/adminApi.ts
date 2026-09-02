@@ -841,6 +841,15 @@ export async function getAdminUpbitExitOptimizationV3Summary(
   });
 }
 
+/** Profitability Improvement Shadow Lab V1 — RESEARCH ONLY */
+export async function getAdminUpbitProfitabilityLabSummary(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/profitability-lab/summary", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
 /** Waiting Lifecycle Forward Shadow Lab V1 (RESEARCH ONLY) */
 export async function getAdminUpbitWaitingLifecycleLabSummary(
   ubaId?: number,

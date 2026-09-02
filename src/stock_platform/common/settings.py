@@ -400,6 +400,10 @@ class Settings(BaseSettings):
     upbit_exit_optimization_shadow_v3_enabled: bool = True
     upbit_exit_optimization_shadow_v3_deployed_at: str = ""
     upbit_exit_optimization_shadow_v3_interval_seconds: float = 60.0
+    # Profitability Improvement Shadow Lab V1 — Candidate V2 / Exit V4 / Reentry (REAL 0 변경)
+    upbit_profitability_improvement_shadow_enabled: bool = True
+    upbit_profitability_improvement_shadow_deployed_at: str = ""
+    upbit_profitability_improvement_shadow_interval_seconds: float = 60.0
     upbit_scanner_shadow_mismatch_watch_enabled: bool = True
     upbit_scanner_shadow_mismatch_tolerance: float = 5e-4
     upbit_scanner_shadow_cohort_milestone_watch_enabled: bool = True

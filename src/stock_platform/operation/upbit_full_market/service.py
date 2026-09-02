@@ -827,6 +827,25 @@ class UpbitFullMarketAssignmentService:
             except Exception:  # noqa: BLE001
                 pass
             try:
+                from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
+                    enroll_binding_on_open as enroll_pislab_shadow,
+                )
+
+                enroll_pislab_shadow(
+                    self._session,
+                    user_broker_account_id=uba_id,
+                    binding_id=int(binding.binding_id),
+                    symbol=sym,
+                    strategy_id=assignment.strategy_id,
+                    entry_order_id=entry_order_id,
+                    entry_at=binding.opened_at,
+                    entry_price=entry_px,
+                    entry_quantity=entry_qty,
+                    entry_fee=entry_fee,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
                     enroll_reentry_on_open,
                 )
@@ -984,6 +1003,29 @@ class UpbitFullMarketAssignmentService:
                             gross_pnl=gross,
                             fee=fees,
                             net_pnl=net,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        from decimal import Decimal as _D
+
+                        from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
+                            finalize_binding_on_close as finalize_pislab_shadow,
+                        )
+
+                        hold_s = None
+                        if b.opened_at is not None:
+                            hold_s = (now - b.opened_at).total_seconds()
+                        finalize_pislab_shadow(
+                            self._session,
+                            binding_id=int(b.binding_id),
+                            exit_at=now,
+                            exit_price=exit_px,
+                            exit_reason=exit_reason,
+                            gross_pnl=_D(str(gross)),
+                            fees=_D(str(fees)),
+                            net_pnl=_D(str(net)),
+                            hold_seconds=hold_s,
                         )
                     except Exception:  # noqa: BLE001
                         pass
