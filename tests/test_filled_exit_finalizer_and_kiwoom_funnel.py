@@ -235,17 +235,64 @@ def test_detect_ghost_open_binding() -> None:
         strategy_id=17483,
     )
     sell = _exit_sell()
+    # filled qty must match owned for ghost pairing
+    sell.filled_quantity = Decimal("9.19")
     buy = SimpleNamespace(
         order_id=1862,
         status_code="FILLED",
         filled_at=datetime(2026, 8, 25, 18, 52, tzinfo=timezone.utc),
         created_at=datetime(2026, 8, 25, 18, 52, tzinfo=timezone.utc),
     )
-    session.scalars.side_effect = [[binding], [sell]]
+    # scalars: opens bindings → open sells → filled sells
+    session.scalars.side_effect = [[binding], [], [sell]]
     session.get.return_value = buy
     out = detect_filled_exit_with_open_binding(session, user_broker_account_id=1380)
     assert out["count"] == 1
     assert out["symbols"] == ["KRW-SUI"]
+
+
+def test_detect_skips_when_active_open_exit_exists() -> None:
+    """동시 종목: OPEN SELL 진행 중이면 FILLED 타 주문으로 ghost 오탐 금지."""
+
+    session = MagicMock()
+    binding = SimpleNamespace(
+        binding_id=416,
+        user_broker_account_id=1380,
+        symbol="KRW-EGLD",
+        entry_order_id=2640,
+        owned_quantity=Decimal("1.53964588"),
+        strategy_id=17483,
+    )
+    open_sell = SimpleNamespace(
+        order_id=2644,
+        status_code="ACCEPTED",
+        side_code="SELL",
+        remaining_quantity=Decimal("1.53964588"),
+        order_quantity=Decimal("1.53964588"),
+    )
+    session.scalars.side_effect = [[binding], [open_sell]]
+    out = detect_filled_exit_with_open_binding(session, user_broker_account_id=1380)
+    assert out["count"] == 0
+    assert out["skipped_active_exit"] == 1
+
+
+def test_detect_skips_qty_mismatch_filled_sell() -> None:
+    session = MagicMock()
+    binding = SimpleNamespace(
+        binding_id=416,
+        user_broker_account_id=1380,
+        symbol="KRW-EGLD",
+        entry_order_id=2640,
+        owned_quantity=Decimal("1.53964588"),
+        strategy_id=17483,
+    )
+    mismatched = _exit_sell()
+    mismatched.order_id = 2643
+    mismatched.filled_quantity = Decimal("1.53727902")
+    session.scalars.side_effect = [[binding], [], [mismatched]]
+    out = detect_filled_exit_with_open_binding(session, user_broker_account_id=1380)
+    assert out["count"] == 0
+    assert out["skipped_qty_mismatch"] >= 1
 
 
 def test_dry_run_safe_when_linkage_clear() -> None:

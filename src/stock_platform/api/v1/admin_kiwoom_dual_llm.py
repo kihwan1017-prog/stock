@@ -102,6 +102,19 @@ def kiwoom_dual_llm_status(
 
     stage = kiwoom_sample_stage(clean_n)
     fb = aggregate_feedback_metrics(feedback_rows)
+    analysis_calls = int(stats.get("analysis_calls") or 0)
+    trading_calls = int(stats.get("trading_shadow_calls") or 0)
+    teacher_calls = int(stats.get("teacher_calls") or 0)
+    total_calls = analysis_calls + trading_calls + teacher_calls
+    # LLM_RUNNING=false를 BROKEN으로 오해하지 않도록 상태 분리
+    # (장외/Fresh Cross 없으면 invocation=0 이 정상)
+    llm_configured = bool(
+        s.kiwoom_dual_llm_shadow_enabled
+        and s.dual_llm_ollama_enabled
+        and str(a_cfg.model or "").strip()
+        and str(t_cfg.model or "").strip()
+    )
+    ollama_base = bool(str(getattr(s, "ollama_base_url", "") or "").strip())
     return {
         "schema": "kiwoom_dual_llm_rag_status_v1",
         "market": MARKET_KIWOOM,
@@ -111,6 +124,37 @@ def kiwoom_dual_llm_status(
         "TEACHER_LLM_MODEL": te_cfg.model,
         "TRADING_LLM_MODE": "SHADOW",
         "kiwoom_dual_llm_shadow_enabled": bool(s.kiwoom_dual_llm_shadow_enabled),
+        "LLM_CONFIGURED": llm_configured,
+        "LLM_AVAILABLE": bool(llm_configured and ollama_base),
+        "LLM_LAST_INVOCATION": None if total_calls == 0 else "PROCESS_RUNTIME_STATS",
+        "LLM_LAST_SUCCESS": (
+            None
+            if (
+                int(stats.get("analysis_ok") or 0)
+                + int(stats.get("trading_shadow_ok") or 0)
+                + int(stats.get("teacher_ok") or 0)
+            )
+            == 0
+            else "PROCESS_RUNTIME_STATS"
+        ),
+        "LLM_LAST_ERROR": None,
+        "LLM_RUNNING": total_calls > 0,
+        "LLM_IDLE_REASON": (
+            None
+            if total_calls > 0
+            else "NO_FRESH_GOLDEN_CROSS_OR_MARKET_CLOSED_EXPECTED"
+        ),
+        "LLM_BACKED_SHADOW_N": int(
+            sum(
+                1
+                for r in rows
+                if is_dual_llm_schema(
+                    (r.output_json or {}).get("schema_version")
+                    if isinstance(r.output_json, dict)
+                    else None
+                )
+            )
+        ),
         "RAG_IMPLEMENTED": True,
         "RAG_TOP_K": int(s.dual_llm_rag_top_k),
         "PROMPT_VERSION": {

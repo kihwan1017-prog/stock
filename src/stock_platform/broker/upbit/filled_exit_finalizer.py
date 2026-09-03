@@ -301,7 +301,12 @@ def detect_filled_exit_with_open_binding(
     *,
     user_broker_account_id: int | None = None,
 ) -> dict[str, Any]:
-    """Invariant: FILLED protective/AUTO SELL + OPEN binding same symbol."""
+    """Invariant: FILLED protective/AUTO SELL + OPEN binding same symbol.
+
+    동시 종목 재진입/병행 exit 오탐 방지:
+    - OPEN SELL(잔량≈owned)이 있으면 ACTIVE_EXIT → ghost 아님
+    - FILLED SELL 수량이 owned와 불일치하면 해당 sell은 무시
+    """
 
     from stock_platform.order.entities import TradingOrderEntity
     from stock_platform.risk_engine.strategy_owned_entities import (
@@ -320,9 +325,47 @@ def detect_filled_exit_with_open_binding(
         )
     opens = list(session.scalars(open_q))
     ghosts: list[dict[str, Any]] = []
+    skipped_active_exit = 0
+    skipped_qty_mismatch = 0
     for binding in opens:
         uba = int(binding.user_broker_account_id)
         sym = str(binding.symbol or "").upper()
+        owned = Decimal(str(binding.owned_quantity or 0))
+
+        # 활성 exit 주문(대기/부분체결)이 owned 잔량과 맞으면 ghost 아님
+        open_sells = list(
+            session.scalars(
+                select(TradingOrderEntity).where(
+                    TradingOrderEntity.user_broker_account_id == uba,
+                    TradingOrderEntity.broker_code == BROKER_UPBIT,
+                    TradingOrderEntity.symbol == sym,
+                    TradingOrderEntity.side_code == "SELL",
+                    TradingOrderEntity.status_code.in_(
+                        ["NEW", "ACCEPTED", "PARTIALLY_FILLED", "SUBMITTING"]
+                    ),
+                )
+            )
+        )
+        active_exit = False
+        for osell in open_sells:
+            rem = Decimal(
+                str(
+                    getattr(osell, "remaining_quantity", None)
+                    or getattr(osell, "order_quantity", None)
+                    or 0
+                )
+            )
+            if owned > ZERO and abs(rem - owned) <= Decimal("0.00000001"):
+                active_exit = True
+                break
+            if owned > ZERO and rem > ZERO:
+                # 동일 심볼 open exit 존재 + owned>0 → 진행 중으로 간주
+                active_exit = True
+                break
+        if active_exit:
+            skipped_active_exit += 1
+            continue
+
         sells = list(
             session.scalars(
                 select(TradingOrderEntity)
@@ -339,6 +382,12 @@ def detect_filled_exit_with_open_binding(
         for sell in sells:
             if not is_protective_or_auto_exit_sell(sell):
                 continue
+            filled_qty = Decimal(str(getattr(sell, "filled_quantity", None) or 0))
+            # 병행 entry의 다른 exit을 현재 binding ghost로 묶지 않음
+            if owned > ZERO and filled_qty > ZERO:
+                if abs(filled_qty - owned) > Decimal("0.0001"):
+                    skipped_qty_mismatch += 1
+                    continue
             sell_ts = getattr(sell, "filled_at", None) or getattr(
                 sell, "created_at", None
             )
@@ -383,6 +432,8 @@ def detect_filled_exit_with_open_binding(
         "symbols": sorted({g["symbol"] for g in ghosts}),
         "binding_ids": [g["binding_id"] for g in ghosts],
         "items": ghosts,
+        "skipped_active_exit": skipped_active_exit,
+        "skipped_qty_mismatch": skipped_qty_mismatch,
     }
 
 
