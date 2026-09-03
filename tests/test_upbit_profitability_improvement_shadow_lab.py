@@ -155,19 +155,96 @@ def test_reentry_cooldown_boundaries():
     assert decide_reentry_block(variant_id=VARIANT_C2, delay_seconds=180.0)["WOULD_BLOCK"] is False
 
 
-def test_reentry_contextual_requires_confirmation():
-    d = decide_reentry_block(
+def test_reentry_c2_c3_divergence_fixture():
+    """동일 delay>=180에서 C3 confirmation 없으면 block, 있으면 allow → 분화."""
+
+    delay = 200.0
+    c2 = decide_reentry_block(variant_id=VARIANT_C2, delay_seconds=delay)
+    c3_block = decide_reentry_block(
         variant_id=VARIANT_C3,
-        delay_seconds=200,
+        delay_seconds=delay,
         context={"new_signal": False, "ma_improved": False},
     )
-    assert d["WOULD_BLOCK"] is True
-    d2 = decide_reentry_block(
+    c3_allow = decide_reentry_block(
         variant_id=VARIANT_C3,
-        delay_seconds=200,
-        context={"ma_improved": True},
+        delay_seconds=delay,
+        context={"score_improved": True},
     )
-    assert d2["WOULD_BLOCK"] is False
+    assert c2["WOULD_BLOCK"] is False
+    assert c3_block["WOULD_BLOCK"] is True
+    assert c3_allow["WOULD_BLOCK"] is False
+
+
+def test_candidate_variants_distinct_ranks_with_features():
+    rows = [
+        _row("KRW-AAA", score=90, rsi14=50, momentum=2.0, volume_surge=1.1, ma5=101, ma20=100),
+        _row("KRW-BBB", score=88, rsi14=82, momentum=4.0, volume_surge=3.5, ma5=110, ma20=100),
+        _row("KRW-CCC", score=70, rsi14=45, momentum=0.5, volume_surge=1.0, ma5=99, ma20=100, trend="DOWN"),
+        _row("KRW-DDD", score=60, rsi14=55, momentum=1.0, volume_surge=1.2, ma5=102, ma20=100),
+    ]
+    a0 = [x["symbol"] for x in rank_universe(rows, variant="A0", top_n=4)]
+    a1 = [x["symbol"] for x in rank_universe(rows, variant="A1", top_n=4)]
+    assert a0 != a1  # overextension penalty가 A1 순위 변경
+
+
+def test_ma_dc_d0_baseline_equality():
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.ma_dc_engine import (
+        MaDcSnapshot,
+        decide_d0_baseline,
+        decide_d1_confirmed,
+        decide_d3_mfe_aware,
+    )
+
+    snap = MaDcSnapshot(
+        entry_price=100.0,
+        baseline_exit_price=99.0,
+        current_price=99.0,
+        short_ma=98.0,
+        long_ma=100.0,
+    )
+    d0 = decide_d0_baseline(snap)
+    assert d0["WOULD_EXIT"] is True
+    assert d0["EXIT_PRICE"] == 99.0
+    assert d0["DELAY_MINUTES"] == 0.0
+
+
+def test_ma_dc_stop_loss_precedence():
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.ma_dc_engine import (
+        MaDcSnapshot,
+        decide_d1_confirmed,
+        decide_d3_mfe_aware,
+    )
+
+    snap = MaDcSnapshot(
+        entry_price=100.0,
+        baseline_exit_price=99.0,
+        current_price=96.0,
+        short_ma=95.0,
+        long_ma=100.0,
+        stop_loss_hit=True,
+        minutes_since_baseline=5.0,
+        confirmed_dead_cross=False,
+    )
+    assert decide_d1_confirmed(snap)["REASON"] == "STOP_LOSS_PRECEDENCE"
+    assert decide_d3_mfe_aware(snap)["REASON"] == "STOP_LOSS_PRECEDENCE"
+
+
+def test_ma_dc_max_hold_precedence():
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.ma_dc_engine import (
+        MaDcSnapshot,
+        decide_d2_slope_separation,
+    )
+
+    snap = MaDcSnapshot(
+        entry_price=100.0,
+        baseline_exit_price=99.0,
+        current_price=99.5,
+        short_ma=99.0,
+        long_ma=100.0,
+        max_hold_hit=True,
+        minutes_since_baseline=360.0,
+    )
+    assert decide_d2_slope_separation(snap)["REASON"] == "MAX_HOLD_PRECEDENCE"
 
 
 def test_shadow_hooks_never_raise_on_bad_session():

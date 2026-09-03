@@ -48,6 +48,8 @@ from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement
     VARIANT_A0,
     VARIANT_B0,
     VARIANT_C0,
+    VARIANT_C2,
+    VARIANT_C3,
 )
 from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.entities import (
     UpbitProfitabilityCandidateRefreshEntity,
@@ -201,6 +203,9 @@ def observe_candidate_refresh(
                 "symbol": str(r.get("symbol") or "").upper(),
                 "rank": r.get("rank") or r.get("scanner_rank"),
                 "score": r.get("score") or r.get("scanner_score"),
+                "liquidity": r.get("liquidity") or r.get("trade_value_24h"),
+                # feature 스냅샷 — A1~A3 분화용 (미래 수익률 금지)
+                "technical_metrics": dict(r.get("technical_metrics") or {}),
             }
             for r in universe_rows
             if str(r.get("symbol") or "").startswith("KRW-")
@@ -581,7 +586,118 @@ def finalize_exit_on_close(
         if v.shadow_net_pnl is not None and net_pnl is not None:
             v.net_delta = Decimal(str(v.shadow_net_pnl)) - Decimal(str(net_pnl))
     session.flush()
+    # Lab D: REAL MA_DEAD_CROSS만 SHADOW enroll (실제 SELL 시점 변경 없음)
+    # PostgreSQL: 예외 시 트랜잭션 오염 방지 — savepoint 사용
+    try:
+        reason_u = str(exit_reason or "").upper()
+        if "MA_DEAD_CROSS" in reason_u and exit_price is not None:
+            with session.begin_nested():
+                enroll_ma_dc_event(
+                    session,
+                    user_broker_account_id=int(enr.user_broker_account_id),
+                    binding_id=int(binding_id),
+                    symbol=str(enr.symbol),
+                    strategy_id=enr.strategy_id,
+                    entry_order_id=enr.entry_order_id,
+                    entry_at=enr.entry_at,
+                    entry_price=enr.entry_price,
+                    baseline_exit_at=closed,
+                    baseline_exit_price=exit_price,
+                    baseline_net_pnl=net_pnl,
+                    baseline_fees=fees,
+                )
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": True, "SHADOW_ONLY": True, "REAL_POLICY_CHANGED": False}
+
+
+def enroll_ma_dc_event(
+    session: Session,
+    *,
+    user_broker_account_id: int,
+    binding_id: int,
+    symbol: str,
+    strategy_id: int | None,
+    entry_order_id: int | None,
+    entry_at: datetime | None,
+    entry_price: Decimal | None,
+    baseline_exit_at: datetime,
+    baseline_exit_price: Decimal,
+    baseline_net_pnl: Decimal | None,
+    baseline_fees: Decimal | None,
+    settings: Any | None = None,
+) -> dict[str, Any]:
+    """MA Dead Cross Shadow Lab enroll — D0 baseline equality immediate."""
+
+    if not shadow_enabled(settings):
+        return {"ok": False, "reason": "DISABLED"}
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.entities import (
+        UpbitProfitabilityMaDcEventEntity,
+    )
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.ma_dc_engine import (
+        MaDcSnapshot,
+        decide_d0_baseline,
+    )
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.constants import (
+        LAB_D,
+        LAB_D_VARIANTS,
+        VARIANT_D0,
+    )
+
+    dup = session.scalar(
+        select(UpbitProfitabilityMaDcEventEntity).where(
+            UpbitProfitabilityMaDcEventEntity.user_broker_account_id
+            == int(user_broker_account_id),
+            UpbitProfitabilityMaDcEventEntity.binding_id == int(binding_id),
+        )
+    )
+    if dup is not None:
+        return {"ok": True, "duplicate": True, "event_id": int(dup.event_id)}
+
+    be = _as_utc(baseline_exit_at) or _utc_now()
+    snap = MaDcSnapshot(
+        entry_price=float(entry_price or baseline_exit_price),
+        baseline_exit_price=float(baseline_exit_price),
+        current_price=float(baseline_exit_price),
+        short_ma=None,
+        long_ma=None,
+    )
+    outcomes = {VARIANT_D0: decide_d0_baseline(snap)}
+    for vid in LAB_D_VARIANTS:
+        if vid == VARIANT_D0:
+            continue
+        outcomes[vid] = {
+            "WOULD_EXIT": False,
+            "REASON": "PENDING_FORWARD",
+            "STATUS": STATUS_ACTIVE,
+        }
+    row = UpbitProfitabilityMaDcEventEntity(
+        user_broker_account_id=int(user_broker_account_id),
+        strategy_id=strategy_id,
+        symbol=str(symbol).upper(),
+        binding_id=int(binding_id),
+        entry_order_id=entry_order_id,
+        entry_at=_as_utc(entry_at),
+        entry_price=entry_price,
+        baseline_exit_at=be,
+        baseline_exit_price=baseline_exit_price,
+        baseline_net_pnl=baseline_net_pnl,
+        baseline_fees=baseline_fees,
+        rule_version=RULE_VERSION,
+        status=STATUS_ACTIVE,
+        research_only=True,
+        variant_outcomes_json=outcomes,
+        path_state_json={"confirm_ticks": 0, "peak_mfe_pct": 0.0},
+        meta_json={"lab": LAB_D, "label": RESEARCH_ONLY_LABEL, "SHADOW_ONLY": True},
+    )
+    session.add(row)
+    session.flush()
+    return {
+        "ok": True,
+        "event_id": int(row.event_id),
+        "SHADOW_ONLY": True,
+        "REAL_POLICY_CHANGED": False,
+    }
 
 
 # ---------- Lab C ----------
@@ -946,6 +1062,16 @@ def summarize_reentry(
         )
     )
     out: dict[str, Any] = {}
+    triggered_n = 0
+    diverged_n = 0
+    for r in rows:
+        decisions = dict(r.variant_decisions_json or {})
+        c2 = dict(decisions.get(VARIANT_C2) or {})
+        c3 = dict(decisions.get(VARIANT_C3) or {})
+        # trigger = C2 또는 C3가 block 검토 대상 (delay 경계 포함 전체 paired)
+        triggered_n += 1
+        if bool(c2.get("WOULD_BLOCK")) != bool(c3.get("WOULD_BLOCK")):
+            diverged_n += 1
     for vid in LAB_C_VARIANTS:
         blocked = []
         for r in rows:
@@ -986,5 +1112,127 @@ def summarize_reentry(
         "SHADOW_ONLY": True,
         "REAL_POLICY_CHANGED": False,
         "EVENT_N": len(rows),
+        "TRIGGERED_N": triggered_n,
+        "DIVERGED_DECISION_N": diverged_n,
         "VARIANTS": out,
+    }
+
+
+def reconcile_exit_finalizations(
+    session: Session,
+    *,
+    user_broker_account_id: int = 1380,
+    limit: int = 100,
+) -> dict[str, Any]:
+    """CLOSED upbit binding + ACTIVE enrollment → deterministic baseline finalize.
+
+    Fabrication 금지 — closed_at/exit order/entry order가 있을 때만.
+    """
+
+    from sqlalchemy import text
+
+    rows = list(
+        session.execute(
+            text(
+                """
+                SELECT e.enrollment_id, e.binding_id, e.entry_order_id, e.entry_at,
+                       e.entry_price, e.entry_quantity,
+                       b.closed_at, b.meta_json, b.opened_at
+                FROM operation.upbit_profitability_exit_enrollment e
+                JOIN operation.upbit_strategy_position_binding b
+                  ON b.binding_id = e.binding_id
+                WHERE e.user_broker_account_id = :uba
+                  AND e.status = :active
+                  AND e.real_exit_at IS NULL
+                  AND b.status = 'CLOSED'
+                  AND b.closed_at IS NOT NULL
+                ORDER BY b.closed_at ASC
+                LIMIT :lim
+                """
+            ),
+            {
+                "uba": int(user_broker_account_id),
+                "active": STATUS_ACTIVE,
+                "lim": int(limit),
+            },
+        ).mappings()
+    )
+    reconciled = 0
+    skipped = 0
+    for r in rows:
+        meta = dict(r["meta_json"] or {})
+        exit_reason = str(meta.get("exit_reason") or "UNKNOWN")
+        exit_oid = meta.get("exit_order_id")
+        exit_px = None
+        fees = Decimal("0")
+        qty = float(r["entry_quantity"] or 0)
+        buy_notional = 0.0
+        sell_notional = 0.0
+        entry_px = float(r["entry_price"]) if r["entry_price"] is not None else None
+        if r["entry_order_id"] is not None:
+            from stock_platform.order.entities import TradingOrderEntity
+
+            buy = session.get(TradingOrderEntity, int(r["entry_order_id"]))
+            if buy is not None:
+                if buy.average_fill_price is not None:
+                    entry_px = float(buy.average_fill_price)
+                if qty <= 0:
+                    qty = float(buy.filled_quantity or 0)
+                buy_notional = float(buy.filled_amount or 0)
+                if buy_notional <= 0 and entry_px and qty:
+                    buy_notional = entry_px * qty
+        if exit_oid is not None:
+            from stock_platform.order.entities import TradingOrderEntity
+
+            sell = session.get(TradingOrderEntity, int(exit_oid))
+            if sell is not None and sell.average_fill_price is not None:
+                exit_px = Decimal(str(sell.average_fill_price))
+                if qty <= 0:
+                    qty = float(sell.filled_quantity or 0)
+                sell_notional = float(sell.filled_amount or 0)
+                if sell_notional <= 0 and exit_px is not None and qty > 0:
+                    sell_notional = float(exit_px) * qty
+        if exit_px is None and entry_px is None:
+            skipped += 1
+            continue
+        fee_rate = 0.0005
+        fees_f = (buy_notional + sell_notional) * fee_rate
+        if exit_px is not None and entry_px is not None and qty > 0:
+            gross_f = (float(exit_px) - entry_px) * qty
+        elif sell_notional > 0 and buy_notional > 0:
+            gross_f = sell_notional - buy_notional
+        else:
+            # exit price 불명이면 fee만 확정 가능한 경우 skip (fabrication 금지)
+            skipped += 1
+            continue
+        net_f = gross_f - fees_f
+        closed = r["closed_at"]
+        hold_s = None
+        if r["opened_at"] is not None and closed is not None:
+            hold_s = (closed - r["opened_at"]).total_seconds()
+        try:
+            with session.begin_nested():
+                finalize_exit_on_close(
+                    session,
+                    binding_id=int(r["binding_id"]),
+                    exit_at=closed,
+                    exit_price=exit_px,
+                    exit_reason=exit_reason,
+                    gross_pnl=Decimal(str(round(gross_f, 4))),
+                    fees=Decimal(str(round(fees_f, 4))),
+                    net_pnl=Decimal(str(round(net_f, 4))),
+                    hold_seconds=hold_s,
+                )
+            reconciled += 1
+        except Exception:  # noqa: BLE001
+            skipped += 1
+            continue
+    session.flush()
+    return {
+        "ok": True,
+        "RECONCILED_N": reconciled,
+        "SKIPPED_N": skipped,
+        "CANDIDATE_N": len(rows),
+        "SHADOW_ONLY": True,
+        "REAL_POLICY_CHANGED": False,
     }

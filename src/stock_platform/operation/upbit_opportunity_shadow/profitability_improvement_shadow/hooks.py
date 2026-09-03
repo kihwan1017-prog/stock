@@ -99,10 +99,13 @@ def enroll_binding_on_open(
                 strategy_id=strategy_id,
                 prior_exit_binding_id=int(prior.binding_id),
                 context={
-                    "new_signal": True,  # natural new entry path; C3 still needs delay/confirm
+                    # entry 발생만으로 independent confirmation으로 치지 않음
+                    # (C3가 C2와 항상 동일해지는 결함 방지)
+                    "new_signal": False,
                     "score_improved": False,
                     "ma_improved": False,
                     "momentum_reset": False,
+                    "context_source": "ENTRY_HOOK_DEFAULT_UNCONFIRMED",
                 },
             )
     except Exception:  # noqa: BLE001

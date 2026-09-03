@@ -238,3 +238,70 @@ class UpbitProfitabilityReentryEventEntity(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class UpbitProfitabilityMaDcEventEntity(Base):
+    """MA Dead Cross Optimization Shadow Lab V1 — REAL MA_DEAD_CROSS anchor."""
+
+    __tablename__ = "upbit_profitability_ma_dc_event"
+    __table_args__ = (
+        UniqueConstraint(
+            "user_broker_account_id",
+            "binding_id",
+            name="uq_pislab_ma_dc_binding",
+        ),
+        Index(
+            "ix_pislab_ma_dc_uba_at",
+            "user_broker_account_id",
+            "baseline_exit_at",
+        ),
+        {"schema": "operation"},
+    )
+
+    event_id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    user_broker_account_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    strategy_id: Mapped[int | None] = mapped_column(BigInteger)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    binding_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    entry_order_id: Mapped[int | None] = mapped_column(BigInteger)
+    entry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    entry_price: Mapped[Decimal | None] = mapped_column(Numeric(28, 12))
+    baseline_exit_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    baseline_exit_price: Mapped[Decimal] = mapped_column(
+        Numeric(28, 12), nullable=False
+    )
+    baseline_net_pnl: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    baseline_fees: Mapped[Decimal | None] = mapped_column(Numeric(20, 4))
+    rule_version: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=text(f"'{RULE_VERSION}'")
+    )
+    status: Mapped[str] = mapped_column(
+        String(40), nullable=False, server_default=text(f"'{STATUS_ACTIVE}'")
+    )
+    research_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    variant_outcomes_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    path_state_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    meta_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    enrolled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

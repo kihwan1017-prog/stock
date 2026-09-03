@@ -1773,6 +1773,7 @@ class UpbitPortfolioService:
             skip_all=skip_all,
             out=out,
             dry_run=False,
+            research_candidates=candidates,
         )
 
     def preview_allocation(
@@ -1967,6 +1968,7 @@ class UpbitPortfolioService:
         skip_all: list[dict[str, Any]],
         out: dict[str, Any],
         dry_run: bool,
+        research_candidates: list[Any] | None = None,
     ) -> dict[str, Any]:
         """EMPTY slot에 신규 selection 배정 + runtime sync. 주문 없음."""
 
@@ -1998,45 +2000,74 @@ class UpbitPortfolioService:
                 observe_candidate_selection,
             )
 
-            universe_rows: list[dict[str, Any]] = []
-            seen: set[str] = set()
-            # selected + skip_trace 후보
-            base_rows = [
-                {
-                    "symbol": chosen.symbol,
-                    "rank": chosen.rank,
-                    "score": chosen.score,
-                    "liquidity": chosen.liquidity,
-                    "technical_metrics": dict(chosen.technical_metrics or {}),
-                    "recommendation": chosen.recommendation,
-                    "confidence": chosen.confidence,
+            def _cand_row(c: Any) -> dict[str, Any] | None:
+                if isinstance(c, dict):
+                    sym = str(c.get("symbol") or "").upper()
+                    if not sym.startswith("KRW-"):
+                        return None
+                    return {
+                        "symbol": sym,
+                        "rank": c.get("rank"),
+                        "score": c.get("score"),
+                        "liquidity": c.get("liquidity") or c.get("trade_value_24h"),
+                        "technical_metrics": dict(c.get("technical_metrics") or {}),
+                        "recommendation": c.get("recommendation"),
+                        "confidence": c.get("confidence"),
+                    }
+                sym = str(getattr(c, "symbol", "") or "").upper()
+                if not sym.startswith("KRW-"):
+                    return None
+                return {
+                    "symbol": sym,
+                    "rank": getattr(c, "rank", None),
+                    "score": getattr(c, "score", None),
+                    "liquidity": getattr(c, "liquidity", None),
+                    "technical_metrics": dict(
+                        getattr(c, "technical_metrics", None) or {}
+                    ),
+                    "recommendation": getattr(c, "recommendation", None),
+                    "confidence": getattr(c, "confidence", None),
                 }
-            ]
+
+            by_sym: dict[str, dict[str, Any]] = {}
+            # 1) scanner candidates 전체 (feature 포함) — SHADOW research universe
+            for c in list(research_candidates or []):
+                row = _cand_row(c)
+                if row is None:
+                    continue
+                by_sym[row["symbol"]] = row
+            # 2) skip_trace는 보조 (feature 없으면 기존 유지)
             for tr in skip_all:
                 if not isinstance(tr, dict):
                     continue
-                sym = str(tr.get("symbol") or "").upper()
-                if not sym or sym in seen:
+                row = _cand_row(tr)
+                if row is None:
                     continue
-                seen.add(sym)
-                universe_rows.append(
-                    {
-                        "symbol": sym,
-                        "rank": tr.get("rank"),
-                        "score": tr.get("score"),
-                        "liquidity": tr.get("liquidity"),
-                        "technical_metrics": dict(tr.get("technical_metrics") or {}),
-                        "recommendation": tr.get("recommendation"),
-                    }
-                )
-            for br in base_rows:
-                sym = str(br.get("symbol") or "").upper()
-                if sym and sym not in seen:
-                    universe_rows.append(br)
-                    seen.add(sym)
-            # chosen이 skip에 없을 수 있음 — 보장
-            if chosen.symbol.upper() not in seen:
-                universe_rows.insert(0, base_rows[0])
+                prev = by_sym.get(row["symbol"])
+                if prev is None:
+                    by_sym[row["symbol"]] = row
+                else:
+                    # feature가 더 풍부하면 merge
+                    if not prev.get("technical_metrics") and row.get(
+                        "technical_metrics"
+                    ):
+                        prev["technical_metrics"] = row["technical_metrics"]
+                    if prev.get("score") is None and row.get("score") is not None:
+                        prev["score"] = row["score"]
+                    if prev.get("liquidity") is None and row.get("liquidity") is not None:
+                        prev["liquidity"] = row["liquidity"]
+            # 3) chosen rich feature 강제 덮어쓰기
+            chosen_row = {
+                "symbol": str(chosen.symbol).upper(),
+                "rank": chosen.rank,
+                "score": chosen.score,
+                "liquidity": chosen.liquidity,
+                "technical_metrics": dict(chosen.technical_metrics or {}),
+                "recommendation": chosen.recommendation,
+                "confidence": chosen.confidence,
+            }
+            by_sym[chosen_row["symbol"]] = chosen_row
+            universe_rows = list(by_sym.values())
 
             observe_candidate_selection(
                 self._session,

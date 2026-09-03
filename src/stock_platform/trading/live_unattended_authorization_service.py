@@ -2316,11 +2316,25 @@ class LiveUnattendedAuthorizationService:
         }
         did = False
 
-        # Activation successor (만료 임박, horizon 내)
-        if act is not None and act_remaining <= margin:
+        # Activation successor:
+        # - 기존: act_remaining <= margin 만 (ARM clamp 후 margin race로 놓침)
+        # - 보강: full ARM lease를 못 덮으면 horizon 여유 있을 때 선제 successor
+        #   (2026-09-03 17:48 clamp→18:16 LIVE_ARM_EXPIRED recurrence 방지)
+        arm_ttl_seconds = int(row.arm_lease_ttl_seconds)
+        horizon_seconds = max(0, int((until - now).total_seconds()))
+        need_activation_successor = (
+            act is not None
+            and act_remaining > 0
+            and horizon_seconds > int(act_remaining)
+            and (
+                act_remaining <= margin
+                or act_remaining < arm_ttl_seconds
+            )
+        )
+        if need_activation_successor:
             renew_hours = min(
                 int(row.activation_renew_hours),
-                max(1, int((until - now).total_seconds() // 3600)),
+                max(1, int(horizon_seconds // 3600)),
             )
             if renew_hours < 1 and mode == MODE_MARKET_HOURS:
                 # 장 마감까지 1시간 미만이면 activation을 close까지 짧게 유지
@@ -2332,6 +2346,11 @@ class LiveUnattendedAuthorizationService:
                 ttl_hours=max(1, renew_hours),
             )
             detail["activation_renewed"] = True
+            detail["activation_successor_reason"] = (
+                "MARGIN_DUE"
+                if act_remaining <= margin
+                else "ARM_LEASE_COVERAGE"
+            )
             detail["successor_activation_id"] = int(
                 successor.live_trading_transition_id
             )
@@ -2339,6 +2358,9 @@ class LiveUnattendedAuthorizationService:
                 successor.live_trading_transition_id
             )
             did = True
+            # ARM clamp 계산이 새 activation을 보도록 갱신
+            act = successor
+            act_remaining = activation_remaining_seconds(act, now=now)
 
         # ARM renew (만료 임박) — lease ceiling 대비 의미 있는 연장만
         old_arm_expires = arm_exp.isoformat() if arm_exp else None

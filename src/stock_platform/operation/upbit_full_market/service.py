@@ -966,6 +966,65 @@ class UpbitFullMarketAssignmentService:
                                     or mp.get("exit_reason")
                                     or exit_reason
                                 )
+                # Shadow finalize용 PnL — Upbit binding에 realized_pnl/fees/quantity 없음.
+                # entry/exit order fill 기반 (AttributeError로 Lab B/V3 swallow 방지).
+                gross = 0.0
+                fees = 0.0
+                net = 0.0
+                try:
+                    from stock_platform.order.entities import TradingOrderEntity as _TO
+
+                    entry_oid = getattr(b, "entry_order_id", None)
+                    entry_px = None
+                    qty = 0.0
+                    buy_notional = 0.0
+                    sell_notional = 0.0
+                    if entry_oid is not None:
+                        buy = self._session.get(_TO, int(entry_oid))
+                        if buy is not None:
+                            if getattr(buy, "average_fill_price", None) is not None:
+                                entry_px = float(buy.average_fill_price)
+                            qty = float(getattr(buy, "filled_quantity", None) or 0)
+                            buy_notional = float(
+                                getattr(buy, "filled_amount", None) or 0
+                            )
+                            if buy_notional <= 0 and entry_px and qty:
+                                buy_notional = entry_px * qty
+                    if exit_oid is not None:
+                        sell = self._session.get(_TO, int(exit_oid))
+                        if sell is not None:
+                            sell_qty = float(
+                                getattr(sell, "filled_quantity", None) or 0
+                            )
+                            if qty <= 0:
+                                qty = sell_qty
+                            sell_notional = float(
+                                getattr(sell, "filled_amount", None) or 0
+                            )
+                            if (
+                                sell_notional <= 0
+                                and exit_px is not None
+                                and qty > 0
+                            ):
+                                sell_notional = float(exit_px) * qty
+                    # Upbit taker ~0.05% each side — fee 칼럼 없을 때 추정
+                    fee_rate = 0.0005
+                    fees = (buy_notional + sell_notional) * fee_rate
+                    if (
+                        exit_px is not None
+                        and entry_px is not None
+                        and qty > 0
+                    ):
+                        gross = (float(exit_px) - entry_px) * qty
+                        net = gross - fees
+                    elif sell_notional > 0 and buy_notional > 0:
+                        gross = sell_notional - buy_notional
+                        net = gross - fees
+                    else:
+                        net = -fees
+                except Exception:  # noqa: BLE001
+                    gross, fees, net = 0.0, 0.0, 0.0
+
                 if exit_px is not None:
                     finalize_binding_on_close(
                         self._session,
@@ -991,9 +1050,6 @@ class UpbitFullMarketAssignmentService:
                             finalize_binding_on_close as finalize_eosv3_shadow,
                         )
 
-                        gross = float(b.realized_pnl or 0)
-                        fees = float(b.fees or 0)
-                        net = gross - fees
                         finalize_eosv3_shadow(
                             self._session,
                             binding_id=int(b.binding_id),
@@ -1003,29 +1059,6 @@ class UpbitFullMarketAssignmentService:
                             gross_pnl=gross,
                             fee=fees,
                             net_pnl=net,
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
-                    try:
-                        from decimal import Decimal as _D
-
-                        from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
-                            finalize_binding_on_close as finalize_pislab_shadow,
-                        )
-
-                        hold_s = None
-                        if b.opened_at is not None:
-                            hold_s = (now - b.opened_at).total_seconds()
-                        finalize_pislab_shadow(
-                            self._session,
-                            binding_id=int(b.binding_id),
-                            exit_at=now,
-                            exit_price=exit_px,
-                            exit_reason=exit_reason,
-                            gross_pnl=_D(str(gross)),
-                            fees=_D(str(fees)),
-                            net_pnl=_D(str(net)),
-                            hold_seconds=hold_s,
                         )
                     except Exception:  # noqa: BLE001
                         pass
@@ -1044,21 +1077,46 @@ class UpbitFullMarketAssignmentService:
                             int(exit_oid) if exit_oid is not None else None
                         ),
                     )
-                    try:
-                        from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
-                            finalize_reentry_on_close,
-                        )
+                # Exit V4 / Profitability Lab: exit_px 없어도 baseline finalize
+                # (CLOSED binding + canonical IDs만으로 deterministic)
+                try:
+                    from decimal import Decimal as _D
 
-                        finalize_reentry_on_close(
-                            self._session,
-                            entry_order_id=getattr(b, "entry_order_id", None),
-                            user_broker_account_id=int(
-                                b.user_broker_account_id
-                            ),
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
-                else:
+                    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
+                        finalize_binding_on_close as finalize_pislab_shadow,
+                    )
+
+                    hold_s = None
+                    if b.opened_at is not None:
+                        hold_s = (now - b.opened_at).total_seconds()
+                    finalize_pislab_shadow(
+                        self._session,
+                        binding_id=int(b.binding_id),
+                        exit_at=now,
+                        exit_price=exit_px,
+                        exit_reason=exit_reason,
+                        gross_pnl=_D(str(round(gross, 4))),
+                        fees=_D(str(round(fees, 4))),
+                        net_pnl=_D(str(round(net, 4))),
+                        hold_seconds=hold_s,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
+                        finalize_reentry_on_close,
+                    )
+
+                    finalize_reentry_on_close(
+                        self._session,
+                        entry_order_id=getattr(b, "entry_order_id", None),
+                        user_broker_account_id=int(
+                            b.user_broker_account_id
+                        ),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                if exit_px is None:
                     # exit_px 없어도 trailing baseline ledger reconcile 시도
                     try:
                         from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.hooks import (
