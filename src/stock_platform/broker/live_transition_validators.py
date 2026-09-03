@@ -153,11 +153,103 @@ class LiveTradingTransitionValidator(Protocol):
         paper_validation_approved: bool,
         scope: str,
         user_broker_account_id: int | None,
+        allow_auto_protective_open_orders: bool = False,
     ) -> LiveTransitionPlan: ...
 
 
+def _kiwoom_account_option_d_snapshot(
+    session: Session | None,
+    user_broker_account_id: int | None,
+) -> dict[str, Any]:
+    """ACCOUNT Option D 스냅샷 — vault status만 (broker 네트워크 없음)."""
+
+    snap: dict[str, Any] = {
+        "uba_exists": False,
+        "broker_match": False,
+        "uba_active": False,
+        "credential_present": False,
+        "credential_active": False,
+        "credential_verified": False,
+        "credential_broker_match": False,
+        "credential_is_mock": None,
+        "explicit_real": False,
+        "system_shared": False,
+    }
+    if session is None or user_broker_account_id is None:
+        return snap
+    try:
+        uba_id = int(user_broker_account_id)
+    except (TypeError, ValueError):
+        return snap
+    if uba_id <= 0:
+        return snap
+
+    from stock_platform.trading.account_models import UserBrokerAccount
+
+    uba = session.get(UserBrokerAccount, uba_id)
+    if uba is None:
+        return snap
+    snap["uba_exists"] = True
+    broker = str(getattr(uba, "broker_code", "") or "").upper()
+    snap["broker_match"] = broker == "KIWOOM"
+    snap["uba_active"] = bool(getattr(uba, "is_active", False)) and (
+        getattr(uba, "deleted_at", None) is None
+    )
+
+    try:
+        from stock_platform.broker.credential_vault_service import (
+            BrokerCredentialVaultService,
+        )
+
+        st = BrokerCredentialVaultService(session).status(uba_id)
+        ver = str(getattr(st, "verification_status", None) or "").upper()
+        snap["credential_verified"] = ver == "VERIFIED"
+        snap["credential_active"] = bool(getattr(st, "is_active", False))
+        snap["credential_present"] = (
+            snap["credential_active"]
+            or bool(getattr(st, "connected", False))
+            or bool(ver)
+        )
+        snap["credential_broker_match"] = (
+            str(getattr(st, "broker_code", "") or "").upper() == "KIWOOM"
+        )
+        raw_mock = getattr(st, "is_mock", None)
+        is_mock: bool | None
+        if raw_mock is None:
+            is_mock = None
+        else:
+            is_mock = bool(raw_mock)
+        snap["credential_is_mock"] = is_mock
+        # ACCOUNT 완화는 vault eligibility가 전부 증명된 뒤에만
+        snap["explicit_real"] = (
+            snap["uba_exists"]
+            and snap["broker_match"]
+            and snap["uba_active"]
+            and snap["credential_present"]
+            and snap["credential_active"]
+            and snap["credential_verified"]
+            and snap["credential_broker_match"]
+            and is_mock is False
+        )
+    except Exception:  # noqa: BLE001 — fail-closed
+        snap["credential_present"] = False
+        snap["credential_active"] = False
+        snap["credential_verified"] = False
+        snap["credential_broker_match"] = False
+        snap["credential_is_mock"] = None
+        snap["explicit_real"] = False
+    return snap
+
+
 class KiwoomLiveTransitionValidator:
-    """기존 KIWOOM BROKER/ACCOUNT 검증 — 회귀 유지."""
+    """KIWOOM BROKER/ACCOUNT 검증.
+
+    Option D: ACCOUNT + explicit REAL credential 이면
+    shared KIWOOM_USE_MOCK=true 여도 MOCK_MODE_DISABLED 를 통과하고,
+    env KIWOOM_ACCOUNT_NUMBER / WS JSON 은 요구하지 않는다
+    (vault SoT · shared WS 는 수동 LIMIT smoke 비의존).
+    BROKER-wide · SYSTEM_SHARED · MOCK credential 은 계속 거부.
+    """
 
     def __init__(self, session: Session | None = None) -> None:
         self._session = session
@@ -170,10 +262,63 @@ class KiwoomLiveTransitionValidator:
         paper_validation_approved: bool,
         scope: str = "BROKER",
         user_broker_account_id: int | None = None,
+        allow_auto_protective_open_orders: bool = False,
     ) -> LiveTransitionPlan:
+        # KIWOOM Activation은 AUTO protective open 예외를 쓰지 않음(기본 False 유지).
+        _ = allow_auto_protective_open_orders
         settings = get_settings()
         checks: list[LiveTransitionCheckResult] = []
         scope_u = str(scope or "BROKER").strip().upper()
+        shared_mock = settings.kiwoom_use_mock is True
+        account_snap: dict[str, Any] | None = None
+        if scope_u == "ACCOUNT":
+            account_snap = _kiwoom_account_option_d_snapshot(
+                self._session,
+                user_broker_account_id,
+            )
+        # BROKER / SYSTEM_SHARED 는 snapshot 을 보지 않는다 (예외 전파 금지)
+        account_scoped_real = bool(
+            account_snap is not None and account_snap["explicit_real"]
+        )
+
+        mock_ok = not shared_mock
+        mock_message = "KIWOOM_USE_MOCK=false"
+        mock_detail: dict[str, Any] = {
+            "kiwoom_use_mock": shared_mock,
+            "scope": scope_u,
+        }
+        if shared_mock and scope_u == "BROKER":
+            mock_ok = False
+            mock_message = (
+                "BROKER-wide Kiwoom Activation forbidden "
+                "while KIWOOM_USE_MOCK=true"
+            )
+        elif shared_mock and scope_u == "ACCOUNT":
+            assert account_snap is not None
+            mock_ok = bool(account_snap["explicit_real"]) and not bool(
+                account_snap["system_shared"]
+            )
+            mock_message = (
+                "ACCOUNT explicit REAL credential "
+                "(shared KIWOOM_USE_MOCK=true allowed)"
+                if mock_ok
+                else (
+                    "ACCOUNT Activation requires verified "
+                    "explicit is_mock=false credential"
+                )
+            )
+            mock_detail.update(
+                {
+                    "credential_is_mock": account_snap["credential_is_mock"],
+                    "explicit_real": account_snap["explicit_real"],
+                }
+            )
+        elif shared_mock:
+            mock_ok = False
+            mock_message = (
+                "Kiwoom Activation under shared MOCK "
+                "requires scope=ACCOUNT"
+            )
 
         _bool_check(
             checks,
@@ -184,8 +329,9 @@ class KiwoomLiveTransitionValidator:
         _bool_check(
             checks,
             LiveTransitionCheckCode.MOCK_MODE_DISABLED,
-            settings.kiwoom_use_mock is False,
-            "KIWOOM_USE_MOCK=false",
+            mock_ok,
+            mock_message,
+            detail=mock_detail,
         )
         _bool_check(
             checks,
@@ -193,12 +339,21 @@ class KiwoomLiveTransitionValidator:
             settings.kiwoom_live_order_enabled is True,
             "KIWOOM_LIVE_ORDER_ENABLED=true",
         )
-        _bool_check(
-            checks,
-            LiveTransitionCheckCode.ACCOUNT_NUMBER_PRESENT,
-            bool(settings.kiwoom_account_number.strip()),
-            "KIWOOM_ACCOUNT_NUMBER configured",
-        )
+        if account_scoped_real:
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.ACCOUNT_NUMBER_PRESENT,
+                True,
+                "UBA credential-scoped account configuration",
+                detail={"source": "vault", "env_not_required": True},
+            )
+        else:
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.ACCOUNT_NUMBER_PRESENT,
+                bool(settings.kiwoom_account_number.strip()),
+                "KIWOOM_ACCOUNT_NUMBER configured",
+            )
         _bool_check(
             checks,
             LiveTransitionCheckCode.APP_CREDENTIALS_PRESENT,
@@ -206,12 +361,24 @@ class KiwoomLiveTransitionValidator:
             and bool(settings.kiwoom_secret_key.strip()),
             "Kiwoom application credentials configured",
         )
-        _bool_check(
-            checks,
-            LiveTransitionCheckCode.WEBSOCKET_CONFIGURED,
-            bool(settings.kiwoom_order_ws_subscribe_json.strip()),
-            "Kiwoom order WebSocket subscription configured",
-        )
+        if account_scoped_real:
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.WEBSOCKET_CONFIGURED,
+                True,
+                (
+                    "Shared websocket not required for "
+                    "ACCOUNT-scoped manual execution"
+                ),
+                detail={"source": "uba_rest_inquiry", "env_not_required": True},
+            )
+        else:
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.WEBSOCKET_CONFIGURED,
+                bool(settings.kiwoom_order_ws_subscribe_json.strip()),
+                "Kiwoom order WebSocket subscription configured",
+            )
         _bool_check(
             checks,
             LiveTransitionCheckCode.RECOVERY_TRADING_DISABLED,
@@ -228,6 +395,47 @@ class KiwoomLiveTransitionValidator:
                 user_broker_account_id is not None
                 and int(user_broker_account_id) > 0,
                 "ACCOUNT scope requires user_broker_account_id",
+            )
+        if account_snap is not None:
+            # ACCOUNT — UBA/credential fail-closed (broker 네트워크 없음)
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.UBA_EXISTS,
+                bool(account_snap["uba_exists"]),
+                "UBA exists",
+                detail={"user_broker_account_id": user_broker_account_id},
+            )
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.UBA_BROKER_MATCH,
+                bool(account_snap["broker_match"]),
+                "UBA broker_code=KIWOOM",
+            )
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.UBA_ACTIVE,
+                bool(account_snap["uba_active"]),
+                "UBA is_active and not deleted",
+            )
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.CREDENTIAL_PRESENT,
+                bool(account_snap["credential_present"])
+                and bool(account_snap["credential_active"])
+                and bool(account_snap["credential_broker_match"]),
+                "Active KIWOOM credential present",
+                detail={
+                    "credential_active": account_snap["credential_active"],
+                    "credential_broker_match": account_snap[
+                        "credential_broker_match"
+                    ],
+                },
+            )
+            _bool_check(
+                checks,
+                LiveTransitionCheckCode.CREDENTIAL_VERIFIED,
+                bool(account_snap["credential_verified"]),
+                "Credential verification_status=VERIFIED",
             )
         _common_limit_checks(
             checks,
@@ -259,10 +467,13 @@ class UpbitLiveTransitionValidator:
         paper_validation_approved: bool,
         scope: str = "ACCOUNT",
         user_broker_account_id: int | None = None,
+        allow_auto_protective_open_orders: bool = False,
     ) -> LiveTransitionPlan:
         settings = get_settings()
         checks: list[LiveTransitionCheckResult] = []
         scope_u = str(scope or "ACCOUNT").strip().upper()
+        # Unattended successor/restore: LIVE/ARM과 동일하게 AUTO 보호 SELL open 허용
+        exclude_auto_protective = bool(allow_auto_protective_open_orders)
 
         # UPBIT Activation은 ACCOUNT 강제
         account_scope_ok = scope_u == "ACCOUNT" and (
@@ -513,8 +724,9 @@ class UpbitLiveTransitionValidator:
             "account_paused=false",
         )
 
-        # db_open
+        # db_open — unattended successor는 AUTO 보호 청산(SELL)을 db_open에서 제외
         db_open = -1
+        auto_protective_excluded = 0
         if uba_id is not None:
             try:
                 from stock_platform.broker.recovery_conflict_service import (
@@ -523,16 +735,31 @@ class UpbitLiveTransitionValidator:
 
                 blocking = BrokerRecoveryConflictService(
                     self._session
-                ).count_blocking_orders_for_uba(int(uba_id))
+                ).count_blocking_orders_for_uba(
+                    int(uba_id),
+                    exclude_auto_protective_exits=exclude_auto_protective,
+                )
                 db_open = int(blocking.get("db_open") or 0)
+                auto_protective_excluded = int(
+                    blocking.get("auto_protective_open_excluded") or 0
+                )
             except Exception:  # noqa: BLE001
                 db_open = -1
+                auto_protective_excluded = 0
         _bool_check(
             checks,
             LiveTransitionCheckCode.NO_DB_OPEN_ORDERS,
             db_open == 0,
-            "db_open_orders=0",
-            detail={"db_open": db_open},
+            (
+                "db_open_orders=0 (auto protective exits excluded)"
+                if exclude_auto_protective
+                else "db_open_orders=0"
+            ),
+            detail={
+                "db_open": db_open,
+                "allow_auto_protective_open_orders": exclude_auto_protective,
+                "auto_protective_open_excluded": auto_protective_excluded,
+            },
         )
 
         # Activation 시점: LIVE/ARM OFF·Scheduler PAUSE는 허용(경고만)

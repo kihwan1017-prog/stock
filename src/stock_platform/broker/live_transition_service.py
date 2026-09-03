@@ -44,6 +44,7 @@ class LiveTradingTransitionService:
         scope: str = "BROKER",
         broker_code: str | None = None,
         user_broker_account_id: int | None = None,
+        allow_auto_protective_open_orders: bool = False,
     ) -> LiveTransitionPlan:
         try:
             resolved_broker, resolved_scope, uba_id = (
@@ -81,6 +82,9 @@ class LiveTradingTransitionService:
             paper_validation_approved=paper_validation_approved,
             scope=resolved_scope,
             user_broker_account_id=uba_id,
+            allow_auto_protective_open_orders=bool(
+                allow_auto_protective_open_orders
+            ),
         )
 
     def request_transition(
@@ -93,6 +97,7 @@ class LiveTradingTransitionService:
         scope: str = "BROKER",
         broker_code: str | None = None,
         user_broker_account_id: int | None = None,
+        allow_auto_protective_open_orders: bool = False,
     ) -> LiveTradingTransitionEntity:
         plan = self.validate(
             max_order_amount=max_order_amount,
@@ -101,6 +106,9 @@ class LiveTradingTransitionService:
             scope=scope,
             broker_code=broker_code,
             user_broker_account_id=user_broker_account_id,
+            allow_auto_protective_open_orders=bool(
+                allow_auto_protective_open_orders
+            ),
         )
 
         entity = LiveTradingTransitionEntity(
@@ -296,14 +304,20 @@ class LiveTradingTransitionService:
             return True
         return False
 
-    def get_active(
+    def peek_active(
         self,
         *,
         broker_code: str | None = None,
         user_broker_account_id: int | None = None,
+        now: datetime | None = None,
     ) -> LiveTradingTransitionEntity | None:
-        """활성·미만료 Activation. broker/UBA 지정 시 scope 일치 필수."""
+        """활성·미만료 Activation만 조회. 만료 행을 disable하지 않는다."""
 
+        from stock_platform.trading.live_session_expiry import (
+            is_activation_due,
+        )
+
+        current = now or datetime.now(timezone.utc)
         rows = list(
             self._session.scalars(
                 select(LiveTradingTransitionEntity)
@@ -313,33 +327,11 @@ class LiveTradingTransitionService:
                 )
             )
         )
-        now = datetime.now(timezone.utc)
         for entity in rows:
-            expires = entity.expires_at
-            if expires is None:
-                entity.enabled = False
-                entity.activation_status = "EXPIRED"
-                entity.disabled_at = now
-                entity.disable_reason = (
-                    "Activation missing expires_at (indefinite forbidden)"
-                )
-                self._session.commit()
+            if is_activation_due(entity, now=current):
                 continue
-            exp = expires
-            if exp.tzinfo is None:
-                exp = exp.replace(tzinfo=timezone.utc)
-            if exp <= now:
-                entity.enabled = False
-                entity.activation_status = "EXPIRED"
-                entity.disabled_at = now
-                entity.disable_reason = "Activation expired"
-                self._session.commit()
-                continue
-
             if broker_code is None and user_broker_account_id is None:
-                # 레거시 무필터: 첫 유효 ACTIVE (KIWOOM 호환)
                 return entity
-
             if self.transition_matches_dispatch(
                 entity,
                 broker_code=broker_code,
@@ -347,6 +339,41 @@ class LiveTradingTransitionService:
             ):
                 return entity
         return None
+
+    def expire_due_activations(
+        self,
+        *,
+        actor: str = "SYSTEM",
+        commit: bool = True,
+    ) -> int:
+        """만료 enabled Activation cascade. get_active/주기 job 공용."""
+
+        from stock_platform.trading.live_session_expiry import (
+            expire_due_activations,
+        )
+
+        count = expire_due_activations(self._session, actor=actor)
+        if commit and count:
+            self._session.commit()
+        return count
+
+    def get_active(
+        self,
+        *,
+        broker_code: str | None = None,
+        user_broker_account_id: int | None = None,
+    ) -> LiveTradingTransitionEntity | None:
+        """활성·미만료 Activation. 만료 행은 cascade 후 제외.
+
+        broker/UBA 지정 시 scope 일치 필수.
+        """
+
+        # 만료 확정 시 LIVE/ARM OFF + Scheduler PAUSE (타 UBA 플래그 미변경)
+        self.expire_due_activations(actor="SYSTEM", commit=True)
+        return self.peek_active(
+            broker_code=broker_code,
+            user_broker_account_id=user_broker_account_id,
+        )
 
     def list_history(
         self,

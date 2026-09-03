@@ -2664,6 +2664,7 @@ class LiveUnattendedAuthorizationService:
         """기존 Activation 만료 전 canonical successor. expires_at만 UPDATE 금지."""
 
         svc = LiveTradingTransitionService(self._session)
+        # LIVE/ARM unattended restore와 동일 — known-safe AUTO 보호 SELL open은 허용
         plan = svc.validate(
             max_order_amount=previous.max_order_amount,
             max_daily_loss=previous.max_daily_loss,
@@ -2671,11 +2672,18 @@ class LiveUnattendedAuthorizationService:
             scope="ACCOUNT",
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=int(uba.user_broker_account_id),
+            allow_auto_protective_open_orders=True,
         )
         if not plan.ready:
+            failing = [
+                f"{c.code.value}:{c.message}"
+                for c in (plan.checks or [])
+                if str(getattr(c.status, "value", c.status)).upper() == "FAIL"
+            ]
             raise LiveUnattendedError(
                 "ACTIVATION_VALIDATE_FAILED",
-                "successor validate failed",
+                "successor validate failed: "
+                + ("; ".join(failing[:5]) or "ready=false"),
             )
         created = svc.request_transition(
             requested_by=actor[:100],
@@ -2685,6 +2693,7 @@ class LiveUnattendedAuthorizationService:
             scope="ACCOUNT",
             broker_code=str(uba.broker_code or "").upper(),
             user_broker_account_id=int(uba.user_broker_account_id),
+            allow_auto_protective_open_orders=True,
         )
         # 내부 승인 — unattended lease가 phrase 대체 (운영자 최초 enable 시 승인됨)
         return self._approve_successor_internal(
