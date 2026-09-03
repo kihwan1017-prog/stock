@@ -10,6 +10,7 @@ import { Suspense } from "react";
 
 import { adminRoutes } from "@/config/routes";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { NewsIntelligenceObservabilityPanel } from "@/features/admin/news/NewsIntelligenceObservabilityPanel";
 import {
   MarketSection,
   StrategyAnalysisToolbar,
@@ -25,6 +26,8 @@ function Body() {
         market={market}
         purposeKo="뉴스·공시를 시장 뱃지 기준으로 분리해 봅니다."
       />
+
+      <NewsIntelligenceObservabilityPanel />
 
       <MarketSection market={market} forMarket="KIWOOM" title="키움 뉴스·공시">
         <Space orientation="vertical" size={4}>

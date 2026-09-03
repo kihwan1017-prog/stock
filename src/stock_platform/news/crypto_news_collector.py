@@ -85,6 +85,18 @@ class CryptoNewsCollector:
             source=SOURCE_CODE_CRYPTO_NEWS,
             source_type=SOURCE_TYPE_CRYPTO_NEWS,
         )
+        # last_check와 별개로 "새 기사 존재 여부"를 판정하기 위한 스냅샷
+        before_latest = self._repository.latest_published_at(
+            source_code=SOURCE_CODE_CRYPTO_NEWS
+        )
+        before_dt: datetime | None = None
+        if isinstance(before_latest, datetime):
+            if before_latest.tzinfo is None:
+                before_latest = before_latest.replace(tzinfo=timezone.utc)
+            before_dt = before_latest
+            result.cursor_published_at = before_latest.isoformat()
+            result.published_at_before = before_latest.isoformat()
+
         status = resolve_crypto_news_provider(self._settings)
         if not status.available:
             result.last_error = CRYPTO_NEWS_PROVIDER_NOT_AVAILABLE
@@ -98,13 +110,6 @@ class CryptoNewsCollector:
 
         client = self._naver or NaverNewsClient(settings=self._settings)
         try:
-            query = str(
-                getattr(
-                    self._settings,
-                    "crypto_news_collection_query",
-                    "업비트 암호화폐",
-                )
-            ).strip() or "업비트 암호화폐"
             display = max(
                 1,
                 min(
@@ -118,41 +123,49 @@ class CryptoNewsCollector:
                     50,
                 ),
             )
-            body = await client.search(
-                query=query,
-                display=display,
-                start=1,
-                sort="date",
+            queries = self._resolve_queries()
+            result.samples.append(
+                {
+                    "dynamic_queries": queries,
+                    "dynamic_target_n": max(0, len(queries) - 1),
+                }
             )
-            items = body.get("items") or []
-            result.fetched_count = len(items)
+            for query in queries:
+                body = await client.search(
+                    query=query,
+                    display=display,
+                    start=1,
+                    sort="date",
+                )
+                items = body.get("items") or []
+                result.fetched_count += len(items)
 
-            for item in items:
-                if not isinstance(item, dict):
-                    result.parse_failure_count += 1
-                    continue
-                try:
-                    stored = self._normalize_and_store(item, query=query)
-                except Exception as exc:  # noqa: BLE001
-                    result.parse_failure_count += 1
-                    logger.info(
-                        "crypto_news_item_parse_failed",
-                        error=str(exc)[:200],
-                    )
-                    continue
-                if stored is None:
-                    result.parse_failure_count += 1
-                    continue
-                result.normalized_count += 1
-                action = stored["action"]
-                if action == "inserted":
-                    result.inserted_count += 1
-                elif action == "updated":
-                    result.updated_count += 1
-                else:
-                    result.duplicate_count += 1
-                if len(result.samples) < 5:
-                    result.samples.append(stored)
+                for item in items:
+                    if not isinstance(item, dict):
+                        result.parse_failure_count += 1
+                        continue
+                    try:
+                        stored = self._normalize_and_store(item, query=query)
+                    except Exception as exc:  # noqa: BLE001
+                        result.parse_failure_count += 1
+                        logger.info(
+                            "crypto_news_item_parse_failed",
+                            error=str(exc)[:200],
+                        )
+                        continue
+                    if stored is None:
+                        result.parse_failure_count += 1
+                        continue
+                    result.normalized_count += 1
+                    action = stored["action"]
+                    if action == "inserted":
+                        result.inserted_count += 1
+                    elif action == "updated":
+                        result.updated_count += 1
+                    else:
+                        result.duplicate_count += 1
+                    if len(result.samples) < 8:
+                        result.samples.append(stored)
 
             self._session.commit()
         except (NaverNewsError, ValueError) as exc:
@@ -174,7 +187,73 @@ class CryptoNewsCollector:
         finally:
             if self._owns_client:
                 await client.aclose()
+
+        # 새 기사 존재 여부 증명을 위한 after-snapshot
+        after_latest = self._repository.latest_published_at(
+            source_code=SOURCE_CODE_CRYPTO_NEWS
+        )
+        after_dt: datetime | None = None
+        if isinstance(after_latest, datetime):
+            if after_latest.tzinfo is None:
+                after_latest = after_latest.replace(tzinfo=timezone.utc)
+            after_dt = after_latest
+            result.published_at_after = after_latest.isoformat()
+
+        if before_dt is None and after_dt is not None:
+            result.had_new_items = True
+            result.last_new_article_at = result.published_at_after
+        elif before_dt is not None and after_dt is not None:
+            result.had_new_items = after_dt > before_dt
+            result.last_new_article_at = (
+                result.published_at_after
+                if result.had_new_items
+                else result.published_at_before
+            )
+        elif before_dt is not None and after_dt is None:
+            result.last_new_article_at = result.published_at_before
         return result
+
+    def _resolve_queries(self) -> list[str]:
+        """기본 쿼리 + 활성/후보 심볼 기반 bounded dynamic target."""
+
+        base = str(
+            getattr(
+                self._settings,
+                "crypto_news_collection_query",
+                "업비트 암호화폐",
+            )
+        ).strip() or "업비트 암호화폐"
+        max_extra = max(
+            0,
+            min(
+                int(
+                    getattr(
+                        self._settings,
+                        "crypto_news_dynamic_target_max",
+                        8,
+                    )
+                ),
+                15,
+            ),
+        )
+        queries = [base]
+        try:
+            from stock_platform.news.intelligence.upbit_targets import (
+                list_upbit_dynamic_news_targets,
+            )
+
+            for target in list_upbit_dynamic_news_targets(
+                self._session, limit=max_extra
+            ):
+                q = str(target.get("query") or "").strip()
+                if q and q not in queries:
+                    queries.append(q)
+        except Exception as exc:  # noqa: BLE001
+            logger.info(
+                "crypto_news_dynamic_target_failed",
+                error=f"{type(exc).__name__}: {exc}"[:200],
+            )
+        return queries
 
     def _normalize_and_store(
         self,

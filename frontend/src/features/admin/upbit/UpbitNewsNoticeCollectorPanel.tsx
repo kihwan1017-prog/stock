@@ -213,9 +213,15 @@ export function UpbitNewsNoticeCollectorPanel() {
         </Tag>
       </Space>
       <Typography.Text type="secondary">
-        last_run={cell(st.last_run)} · next_run={cell(st.next_run)} · last_error=
-        {cell(st.last_error ?? "-")}
+        LAST_CHECK={cell(st.last_check_at ?? st.last_run)} · LAST_SUCCESS=
+        {cell(st.last_success_at ?? st.last_success)} · LAST_NEW_ITEM=
+        {cell(st.last_new_item_at ?? "-")} · next_run={cell(st.next_run)} ·
+        last_error={cell(st.last_error ?? "-")}
       </Typography.Text>
+      <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
+        새 뉴스가 없어도 check/success면 STALE/BROKEN이 아닙니다. LAST_NEW_ITEM만
+        실제 insert 시각입니다.
+      </Typography.Paragraph>
       <Space wrap>
         <Button
           type="primary"

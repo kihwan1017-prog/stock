@@ -49,6 +49,7 @@ from stock_platform.news.news_ai_analysis_validate import (
 )
 from stock_platform.news.symbol_mapping_quality_constants import (
     N4_CONSUMABLE_QUALITY,
+    QUALITY_TRUSTED,
 )
 
 

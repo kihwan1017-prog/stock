@@ -171,6 +171,26 @@ class UpbitNewsNoticeCollectorScheduler:
             pass
 
         last = self._last_result or {}
+        # LAST_CHECK / LAST_SUCCESS / LAST_NEW_ITEM 분리
+        # — 새 기사 없어도 check/success면 STALE/BROKEN 오판 금지
+        last_new_item_at = self._extract_last_new_item_at(last)
+        freshness = {
+            "last_check_at": (
+                self._last_run_at.isoformat() if self._last_run_at else None
+            ),
+            "last_success_at": (
+                self._last_success_at.isoformat()
+                if self._last_success_at
+                else None
+            ),
+            "last_new_item_at": last_new_item_at,
+            "had_new_items": bool(last.get("had_new_items")),
+            "semantics": (
+                "LAST_CHECK=tick 시도, LAST_SUCCESS=실패 없는 tick, "
+                "LAST_NEW_ITEM=실제 insert된 최신 기사. "
+                "duplicates-only success ≠ STALE/BROKEN"
+            ),
+        }
         return {
             "enabled": self.notice_enabled() or self.crypto_enabled(),
             "running": bool(self._started and self._scheduler.running),
@@ -215,6 +235,10 @@ class UpbitNewsNoticeCollectorScheduler:
                 if self._last_success_at
                 else None
             ),
+            "last_check_at": freshness["last_check_at"],
+            "last_success_at": freshness["last_success_at"],
+            "last_new_item_at": freshness["last_new_item_at"],
+            "freshness": freshness,
             "next_run": next_notice or next_crypto,
             "fetched_count": int(last.get("fetched_count") or 0),
             "inserted_count": int(last.get("inserted_count") or 0),
@@ -234,6 +258,27 @@ class UpbitNewsNoticeCollectorScheduler:
                 "market_feed": "unaffected",
             },
         }
+
+    @staticmethod
+    def _extract_last_new_item_at(last: dict[str, Any]) -> str | None:
+        """source별 last_new_article_at 중 최신값 (없으면 None)."""
+
+        sources = last.get("sources") if isinstance(last, dict) else None
+        if not isinstance(sources, dict):
+            return None
+        best: str | None = None
+        for payload in sources.values():
+            if not isinstance(payload, dict):
+                continue
+            if not payload.get("had_new_items"):
+                continue
+            ts = payload.get("last_new_article_at") or payload.get(
+                "published_at_after"
+            )
+            if isinstance(ts, str) and ts:
+                if best is None or ts > best:
+                    best = ts
+        return best
 
     async def run_once_now(
         self,
@@ -333,6 +378,14 @@ class UpbitNewsNoticeCollectorScheduler:
                 finally:
                     map_session.close()
 
+            # source별 had_new_items 집계 (새 기사 없어도 success 가능)
+            had_any_new = False
+            for payload in aggregate["sources"].values():
+                if isinstance(payload, dict) and payload.get("had_new_items"):
+                    had_any_new = True
+                    break
+            aggregate["had_new_items"] = had_any_new
+
             if aggregate["failure_count"] > 0:
                 self._failure_count += 1
                 self._last_failure_at = datetime.now(timezone.utc)
@@ -346,6 +399,25 @@ class UpbitNewsNoticeCollectorScheduler:
                 self._success_count += 1
                 self._last_success_at = datetime.now(timezone.utc)
                 self._last_error = None
+
+            # collect 성공 후 critical notice → shadow/telegram (fail-isolated)
+            try:
+                from stock_platform.news.intelligence.pipeline_hooks import (
+                    after_upbit_collect_tick,
+                )
+
+                aggregate["intelligence"] = after_upbit_collect_tick(
+                    aggregate
+                )
+            except Exception as hook_exc:  # noqa: BLE001
+                aggregate["intelligence"] = {
+                    "ok": False,
+                    "error": f"{type(hook_exc).__name__}: {hook_exc}"[:300],
+                }
+                logger.warning(
+                    "upbit_news_intelligence_hook_failed",
+                    error=aggregate["intelligence"]["error"],
+                )
 
             self._last_result = aggregate
             return aggregate

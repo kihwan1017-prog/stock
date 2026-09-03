@@ -21,6 +21,8 @@ def test_allowlist_includes_core_ops() -> None:
         "UPBIT_SCANNER_CANDIDATE",
         "UPBIT_SCANNER_SHADOW_OPENED",
         "AUTOTRADING_DAILY_REPORT",
+        "UPBIT_IMPORTANT_NOTICE",
+        "KIWOOM_IMPORTANT_DISCLOSURE",
     ):
         assert is_telegram_event_allowlisted(et)
 

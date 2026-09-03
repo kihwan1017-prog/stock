@@ -385,6 +385,9 @@ from stock_platform.api.v1.admin_upbit_full_market import (
 from stock_platform.api.v1.admin_upbit_news_collector import (
     router as admin_upbit_news_collector_router,
 )
+from stock_platform.api.v1.admin_news_intelligence import (
+    router as admin_news_intelligence_router,
+)
 from stock_platform.api.v1.admin_upbit_news_analysis import (
     router as admin_upbit_news_analysis_router,
 )
@@ -629,6 +632,7 @@ _ROUTER_GROUPS = (
     admin_llm_learning_router,
     admin_upbit_full_market_router,
     admin_upbit_news_collector_router,
+    admin_news_intelligence_router,
     admin_upbit_news_analysis_router,
     admin_upbit_news_signals_router,
     admin_upbit_combined_shadow_router,

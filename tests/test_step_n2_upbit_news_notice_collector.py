@@ -166,6 +166,64 @@ async def test_duplicate_collection_idempotent() -> None:
 
 
 @pytest.mark.asyncio
+async def test_last_new_article_snapshot_detects_new_inserts() -> None:
+    repo = MagicMock()
+    before_dt = datetime(
+        2026, 8, 13, 12, 0, 0, tzinfo=timezone.utc
+    )
+    after_dt = datetime(
+        2026, 8, 13, 13, 0, 0, tzinfo=timezone.utc
+    )
+    # latest_published_at 호출이 start/end로 2번 발생
+    repo.latest_published_at.side_effect = [before_dt, after_dt]
+    repo.find_by_content_hash.return_value = None
+    repo.upsert_collector_article.return_value = "inserted"
+
+    client = MagicMock()
+    client.list_announcements = AsyncMock(
+        return_value={
+            "success": True,
+            "data": {
+                "notices": [
+                    {
+                        "id": 123,
+                        "uuid": "u123",
+                        "title": "테스트 공지",
+                        "category": "안내",
+                        "listed_at": after_dt.isoformat(),
+                        "first_listed_at": after_dt.isoformat(),
+                    }
+                ],
+                "fixed_notices": [],
+            },
+        }
+    )
+    client.aclose = AsyncMock()
+
+    session = MagicMock()
+    settings = SimpleNamespace(
+        upbit_notice_fetch_body=False,
+        upbit_notice_page_size=20,
+        upbit_notice_max_pages=1,
+        upbit_notice_collection_overlap_hours=48.0,
+        upbit_notice_max_body_chars=20000,
+    )
+
+    collector = UpbitNoticeCollector(
+        session,
+        client=client,
+        settings=settings,
+        repository=repo,
+    )
+    result = await collector.collect()
+    assert result.inserted_count == 1
+    assert result.had_new_items is True
+    assert result.published_at_before == before_dt.isoformat()
+    assert result.published_at_after == after_dt.isoformat()
+    assert result.last_new_article_at == after_dt.isoformat()
+
+
+@pytest.mark.asyncio
 async def test_edited_notice_update_policy() -> None:
     repo = MagicMock()
     repo.latest_published_at.return_value = None

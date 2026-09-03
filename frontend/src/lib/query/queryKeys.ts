@@ -365,6 +365,7 @@ export const queryKeys = {
     upbitNewsCollector: () => ["admin", "upbit-news-collector"] as const,
     upbitNewsCollectorRecent: () =>
       ["admin", "upbit-news-collector-recent"] as const,
+    newsIntelligence: () => ["admin", "news-intelligence"] as const,
     upbitNewsAnalysis: () => ["admin", "upbit-news-analysis"] as const,
     upbitNewsAnalysisRecent: () =>
       ["admin", "upbit-news-analysis-recent"] as const,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-RESOLVER_VERSION = "upbit_symbol_resolver_v1"
+RESOLVER_VERSION = "upbit_symbol_resolver_v2"
 
 MARKET_CODE_UPBIT = "UPBIT"
 QUOTE_KRW = "KRW"

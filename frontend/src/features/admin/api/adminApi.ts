@@ -5288,6 +5288,21 @@ export async function runUpbitNewsCollector(body?: {
   });
 }
 
+/** News Intelligence Pipeline V1 — SHADOW ONLY observability */
+export async function getNewsIntelligenceStatus(): Promise<JsonValue> {
+  return getJson("/admin/news-intelligence/status");
+}
+
+export async function runKiwoomNewsIntelligenceCollect(body?: {
+  include_news?: boolean;
+  include_dart?: boolean;
+}): Promise<JsonValue> {
+  return postJson("/admin/news-intelligence/kiwoom/run", {
+    include_news: body?.include_news ?? true,
+    include_dart: body?.include_dart ?? true,
+  });
+}
+
 /** STEP N3 — Symbol Mapping (AI/Scanner 미연동) */
 export async function getUpbitNewsSymbolMappingStatus(): Promise<JsonValue> {
   return getJson("/admin/upbit/news-collector/symbol-mapping/status");

@@ -754,6 +754,18 @@ class ApplicationLifecycle:
                 "upbit_news_combined_shadow_start_failed",
                 error=str(exc)[:300],
             )
+        # News Intelligence V1 — KIWOOM TOP10 news/DART (SHADOW feed only)
+        try:
+            from stock_platform.news.intelligence.kiwoom_scheduler import (
+                kiwoom_top10_news_dart_scheduler,
+            )
+
+            kiwoom_top10_news_dart_scheduler.start()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "kiwoom_top10_news_dart_scheduler_start_failed",
+                error=str(exc)[:300],
+            )
         # STEP 8-5-16 — Upbit Daily Settlement (KRX Calendar 비연동 Cron)
         upbit_daily_settlement_scheduler.start()
         # STEP 8-8A — Post-Fill 재검증 (DB Claim)
@@ -982,6 +994,14 @@ class ApplicationLifecycle:
             )
 
             await upbit_news_combined_shadow_scheduler.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from stock_platform.news.intelligence.kiwoom_scheduler import (
+                kiwoom_top10_news_dart_scheduler,
+            )
+
+            await kiwoom_top10_news_dart_scheduler.shutdown()
         except Exception:  # noqa: BLE001
             pass
         await upbit_daily_settlement_scheduler.shutdown()

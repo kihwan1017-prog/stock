@@ -49,6 +49,10 @@ class CollectorRunResult:
     failure_count: int = 0
     last_error: str | None = None
     cursor_published_at: str | None = None
+    published_at_before: str | None = None
+    published_at_after: str | None = None
+    last_new_article_at: str | None = None
+    had_new_items: bool = False
     samples: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -138,6 +142,7 @@ class UpbitNoticeCollector:
             getattr(self._settings, "upbit_notice_collection_overlap_hours", 48.0)
         )
 
+        before_dt: datetime | None = None
         latest = self._repository.latest_published_at(
             source_code=SOURCE_CODE_UPBIT_NOTICE
         )
@@ -145,8 +150,10 @@ class UpbitNoticeCollector:
         if isinstance(latest, datetime):
             if latest.tzinfo is None:
                 latest = latest.replace(tzinfo=timezone.utc)
+            before_dt = latest
             cutoff = latest - timedelta(hours=overlap_hours)
             result.cursor_published_at = latest.isoformat()
+            result.published_at_before = latest.isoformat()
 
         seen_ids: set[str] = set()
         notices: list[dict[str, Any]] = []
@@ -233,6 +240,33 @@ class UpbitNoticeCollector:
                         "action": action,
                     }
                 )
+
+        # last_check와 별개로 "새 기사 존재 여부" 증명을 위한 스냅샷
+        # - duplicates only면 published_at_after == published_at_before
+        # - new insert면 published_at_after가 앞선 published_at_before보다 최신
+        after_latest = self._repository.latest_published_at(
+            source_code=SOURCE_CODE_UPBIT_NOTICE
+        )
+        after_dt: datetime | None = None
+        if isinstance(after_latest, datetime):
+            if after_latest.tzinfo is None:
+                after_latest = after_latest.replace(tzinfo=timezone.utc)
+            after_dt = after_latest
+            result.published_at_after = after_latest.isoformat()
+
+        if before_dt is None and after_dt is not None:
+            result.had_new_items = True
+            result.last_new_article_at = result.published_at_after
+        elif before_dt is not None and after_dt is not None:
+            result.had_new_items = after_dt > before_dt
+            result.last_new_article_at = (
+                result.published_at_after
+                if result.had_new_items
+                else result.published_at_before
+            )
+        elif before_dt is not None and after_dt is None:
+            # 예외 케이스(저장소 latest_published_at가 반환 불능) — conservative
+            result.last_new_article_at = result.published_at_before
 
     async def _normalize_and_store(
         self,

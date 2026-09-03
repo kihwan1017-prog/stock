@@ -202,25 +202,57 @@ class NewsRepository:
         symbol: str,
         limit: int = 20,
     ) -> list[tuple[NewsArticle, NewsSummary | None]]:
+        """직접 exchange/symbol 행 + news_article_symbol 링크를 모두 포함.
+
+        UPBIT notice/crypto는 placeholder symbol로 저장되므로
+        CandidateContextBuilder가 mapped KRW 뉴스를 보려면 링크 조인이 필수.
+        """
+
+        market = exchange_code.strip().upper()
+        sym = symbol.strip().upper()
+        # UPBIT/KRX 등 market_code ↔ exchange_code 정규화
+        market_aliases = {market}
+        if market == "UPBIT":
+            market_aliases.add("CRYPTO")
+        elif market in {"KRX", "KOSPI", "KOSDAQ"}:
+            market_aliases.update({"KRX", "KOSPI", "KOSDAQ"})
+
+        link_match = (
+            (NewsArticleSymbol.market_code.in_(sorted(market_aliases)))
+            & (NewsArticleSymbol.symbol == sym)
+        )
+        legacy_match = (
+            (NewsArticle.exchange_code == market)
+            & (NewsArticle.symbol == sym)
+        )
+
         stmt = (
             select(NewsArticle, NewsSummary)
             .outerjoin(
                 NewsSummary,
-                NewsSummary.article_id
-                == NewsArticle.article_id,
+                NewsSummary.article_id == NewsArticle.article_id,
             )
-            .where(
-                NewsArticle.exchange_code == exchange_code,
-                NewsArticle.symbol == symbol,
+            .outerjoin(
+                NewsArticleSymbol,
+                NewsArticleSymbol.article_id == NewsArticle.article_id,
             )
+            .where(or_(link_match, legacy_match))
             .order_by(
                 NewsArticle.published_at.desc().nullslast(),
                 NewsArticle.article_id.desc(),
             )
-            .limit(limit)
+            .limit(max(1, int(limit)))
         )
-
-        return list(self._session.execute(stmt).all())
+        # outerjoin으로 중복 행이 생길 수 있어 article_id 기준 고유화
+        seen: set[int] = set()
+        out: list[tuple[NewsArticle, NewsSummary | None]] = []
+        for article, summary in self._session.execute(stmt).all():
+            aid = int(article.article_id)
+            if aid in seen:
+                continue
+            seen.add(aid)
+            out.append((article, summary))
+        return out
 
     def list_for_symbols(
         self,

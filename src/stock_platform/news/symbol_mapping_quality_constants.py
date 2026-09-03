@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-QUALITY_POLICY_VERSION = "symbol_mapping_quality_v1"
+QUALITY_POLICY_VERSION = "symbol_mapping_quality_v2"
 
 QUALITY_TRUSTED = "TRUSTED"
 QUALITY_REVIEW_REQUIRED = "REVIEW_REQUIRED"

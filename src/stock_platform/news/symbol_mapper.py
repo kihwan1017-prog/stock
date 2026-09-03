@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -19,6 +20,9 @@ from stock_platform.news.collector_constants import (
 from stock_platform.news.models import NewsArticle
 from stock_platform.news.repository import NewsRepository
 from stock_platform.news.symbol_mapping_constants import (
+    CONF_EXACT_MARKET,
+    FIELD_BODY,
+    FIELD_TITLE,
     MARKET_CODE_UPBIT,
     MATCH_BODY_ONLY_ALIAS,
     MATCH_ENGLISH_NAME,
@@ -154,10 +158,21 @@ class NewsSymbolMapper:
             aliases=self._aliases,
         )
 
+        # 본문/제목에 명시된 KRW-XXX 토큰을 high-confidence로 보강
+        explicit = _extract_explicit_krw_matches(title=title, body=body)
+        by_symbol: dict[str, SymbolMatch] = {}
+        for match in list(result.mappings) + explicit:
+            key = match.symbol.upper()
+            prev = by_symbol.get(key)
+            if prev is None or float(match.mapping_confidence) >= float(
+                prev.mapping_confidence
+            ):
+                by_symbol[key] = match
+
         # placeholder 는 mapping 결과로 절대 저장하지 않음
         safe_mappings = [
             m
-            for m in result.mappings
+            for m in by_symbol.values()
             if m.symbol.upper() not in _PLACEHOLDERS
             and not m.symbol.upper().startswith("_")
             and m.symbol.upper().startswith("KRW-")
@@ -476,6 +491,45 @@ def _confidence_bucket(conf: float) -> str:
     if conf >= 0.80:
         return "0.80-0.89"
     return "below-0.80"
+
+
+_EXPLICIT_KRW_RE = re.compile(
+    r"\bKRW-[A-Z0-9]{2,20}\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_explicit_krw_matches(
+    *,
+    title: str,
+    body: str,
+) -> list[SymbolMatch]:
+    """제목/본문에 명시된 KRW-XXX를 EXACT_MARKET_SYMBOL로 승격.
+
+    resolver가 놓친 고신뢰 매핑을 보강한다 (AI 금지).
+    """
+
+    out: list[SymbolMatch] = []
+    seen: set[str] = set()
+    for field_name, text in ((FIELD_TITLE, title), (FIELD_BODY, body)):
+        if not text:
+            continue
+        for m in _EXPLICIT_KRW_RE.finditer(text):
+            sym = m.group(0).upper()
+            if sym in seen:
+                continue
+            seen.add(sym)
+            out.append(
+                SymbolMatch(
+                    symbol=sym,
+                    matched_alias=sym,
+                    match_type=MATCH_EXACT_MARKET_SYMBOL,
+                    matched_field=field_name,
+                    mapping_confidence=float(CONF_EXACT_MARKET),
+                    resolver_version=RESOLVER_VERSION,
+                )
+            )
+    return out
 
 
 def _context_excerpt(text: str, alias: str, *, radius: int = 60) -> str:
