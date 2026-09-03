@@ -191,6 +191,7 @@ class NotificationService:
             event_type=event.event_type,
             rendered=rendered,
             result=result,
+            original_payload=detail,
         )
 
         logger.debug(
@@ -298,6 +299,7 @@ class NotificationService:
         event_type: str,
         rendered: Any,
         result: NotificationSendResult,
+        original_payload: dict[str, Any] | None = None,
     ) -> None:
         """채널 전송 결과 + 원본 JSON 보존 (실패해도 전송에 영향 없음)."""
 
@@ -324,7 +326,7 @@ class NotificationService:
                             original_payload_json=(
                                 rendered.original_payload
                                 if rendered
-                                else {}
+                                else dict(original_payload or {})
                             ),
                             status=item.status.value,
                             error_message=(

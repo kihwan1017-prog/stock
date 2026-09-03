@@ -76,10 +76,11 @@ def test_format_long_hold_alert_pnl_label_and_no_json():
             "auto_slot_limit": 6,
         }
     )
+    assert title.startswith("[업비트]")
     assert "장기보유" in title
     assert "평가손익" in body
     assert "순손익" not in body
-    assert "자동매도 알림이 아닙니다" in body
+    assert "자동매도 실행 알림이 아닙니다" in body
     assert "{" not in body
 
 
@@ -95,6 +96,21 @@ def test_format_long_hold_stale_price():
         }
     )
     assert "데이터 확인 필요" in body
+
+
+def test_format_long_hold_alert_exit_pending_message_semantics():
+    _, body = format_long_hold_alert(
+        {
+            "symbol": "KRW-PROM",
+            "holding_seconds": 7 * 3600,
+            "entry_price": "6540",
+            "current_price": "6260",
+            "current_price_stale": False,
+            "exit_state": "EXIT_PENDING",
+        }
+    )
+    assert "매도주문 진행 상태" in body
+    assert "자동매도 실행 알림이 아닙니다" not in body
 
 
 def test_exit_state_labels():
@@ -438,3 +454,35 @@ def test_run_long_hold_no_sell():
         )
     assert out["sell_created"] == 0
     assert len(emitted) == 1
+
+
+def test_run_long_hold_exit_pending_suppressed():
+    from stock_platform.operation.upbit_long_hold_watch.service import (
+        run_long_hold_watch_once,
+    )
+
+    emitted = []
+
+    def _emit(detail):
+        emitted.append(detail)
+        return {"emitted": True, "dedupe_key": detail["dedupe_key"]}
+
+    with patch(
+        "stock_platform.operation.upbit_long_hold_watch.service.evaluate_long_hold_positions",
+        return_value=[
+            {
+                "symbol": "KRW-PROM",
+                "checkpoint": "6H",
+                "dedupe_key": "LONG_HOLD:17483:6H",
+                "exit_state": "EXIT_PENDING",
+            }
+        ],
+    ):
+        out = run_long_hold_watch_once(
+            MagicMock(),
+            user_broker_account_id=1380,
+            emit=True,
+            emit_fn=_emit,
+        )
+    assert len(emitted) == 0
+    assert out["results"][0]["skipped_exit_pending"] is True

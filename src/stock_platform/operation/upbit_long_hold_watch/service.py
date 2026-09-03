@@ -102,7 +102,7 @@ def exit_state_user_label(code: str | None) -> str:
 def format_long_hold_alert(detail: dict[str, Any]) -> tuple[str, str]:
     """사용자용 title/body — raw JSON 금지."""
 
-    title = "[시스템] ⚠️ UPBIT AUTO 장기보유"
+    title = "[업비트] ⚠️ AUTO 장기보유"
     symbol = detail.get("symbol")
     name = detail.get("symbol_name") or detail.get("name")
     hold = format_holding_duration(detail.get("holding_seconds"))
@@ -157,7 +157,10 @@ def format_long_hold_alert(detail: dict[str, Any]) -> tuple[str, str]:
         lines.append("")
         lines.append(slot_line)
     lines.append("")
-    lines.append("※ 장기보유 경고이며 자동매도 알림이 아닙니다.")
+    if str(detail.get("exit_state") or "").upper() in {"ORDER_PENDING", "EXIT_PENDING"}:
+        lines.append("※ 매도주문 진행 상태입니다. 체결/실패 알림은 별도 이벤트로 안내됩니다.")
+    else:
+        lines.append("※ 장기보유 안내이며 자동매도 실행 알림이 아닙니다.")
     return title, "\n".join(lines)
 
 
@@ -320,8 +323,8 @@ def evaluate_long_hold_positions(
         detail = {
             "market": "UPBIT",
             "broker_code": "UPBIT",
-            # 제목 prefix [시스템] 유지 (ensure_market_title_prefix)
-            "telegram_market": "COMMON",
+            # UPBIT 운영 알림 prefix 적용
+            "telegram_market": "UPBIT",
             "user_broker_account_id": int(user_broker_account_id),
             "symbol": symbol,
             "position_id": position_id,
@@ -422,6 +425,18 @@ def run_long_hold_watch_once(
     results = []
     emitter = emit_fn or emit_long_hold_alert
     for detail in items:
+        exit_state = str(detail.get("exit_state") or "").upper()
+        if exit_state in {"ORDER_PENDING", "EXIT_PENDING"}:
+            results.append(
+                {
+                    "symbol": detail["symbol"],
+                    "checkpoint": detail["checkpoint"],
+                    "dedupe_key": str(detail.get("dedupe_key") or ""),
+                    "emitted": False,
+                    "skipped_exit_pending": True,
+                }
+            )
+            continue
         dk = str(detail.get("dedupe_key") or "")
         if dk and _already_delivered_checkpoint(session, dedupe_key=dk):
             results.append(
