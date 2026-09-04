@@ -7,6 +7,7 @@ import { asRecord } from "@/shared/utils/dataHelpers";
 
 export const UPBIT_AUTOTRADING_TAB_KEYS = {
   market: "market",
+  performance: "performance",
   capital: "capital",
   entry: "entry",
   exit: "exit",
@@ -19,6 +20,7 @@ export type UpbitAutotradingTabKey =
 
 export const UPBIT_AUTOTRADING_TAB_ORDER: readonly UpbitAutotradingTabKey[] = [
   UPBIT_AUTOTRADING_TAB_KEYS.market,
+  UPBIT_AUTOTRADING_TAB_KEYS.performance,
   UPBIT_AUTOTRADING_TAB_KEYS.capital,
   UPBIT_AUTOTRADING_TAB_KEYS.entry,
   UPBIT_AUTOTRADING_TAB_KEYS.exit,
@@ -31,6 +33,7 @@ export const UPBIT_AUTOTRADING_TAB_LABELS: Record<
   string
 > = {
   market: "현황",
+  performance: "성과",
   capital: "포지션·자금",
   entry: "매수 설정",
   exit: "매도 설정",

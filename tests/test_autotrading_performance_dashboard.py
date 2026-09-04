@@ -48,10 +48,11 @@ def _geod_closed_binding() -> StrategyPositionBindingEntity:
 
 
 def test_classify_exit_reason_ma_dead_cross() -> None:
-    assert classify_exit_reason("MA_DEAD_CROSS") == "STRATEGY_SIGNAL"
+    assert classify_exit_reason("MA_DEAD_CROSS") == "MA_DEAD_CROSS"
     assert classify_exit_reason("STOP_LOSS") == "STOP_LOSS"
     assert classify_exit_reason("TAKE_PROFIT") == "TAKE_PROFIT"
     assert classify_exit_reason("TRAILING_STOP") == "TRAILING_STOP"
+    assert classify_exit_reason("MAX_HOLD_TIME") == "MAX_HOLD_TIME"
 
 
 def test_geod_closed_trade_metrics() -> None:
@@ -67,13 +68,93 @@ def test_geod_closed_trade_metrics() -> None:
     m = binding_closed_trade_metrics(binding, exit_order=exit_order)
     assert m["entry_order_id"] == 1800
     assert m["exit_order_id"] == 1801
-    assert m["exit_reason_category"] == "STRATEGY_SIGNAL"
+    assert m["exit_reason_category"] == "MA_DEAD_CROSS"
     net = Decimal(str(m["net_pnl"]))
     assert net == Decimal("38.21")
     cost = Decimal(str(m["entry_cost"]))
     assert cost > Decimal("0")
     ret = Decimal(str(m["return_pct"]))
     assert ret > Decimal("0")
+
+
+def test_period_date_window_kst_and_fees_in_net() -> None:
+    """KST date window + NET = GROSS - FEES consistency."""
+
+    from zoneinfo import ZoneInfo
+
+    from stock_platform.operation.autotrading_performance_service import (
+        resolve_period_window,
+    )
+
+    kst = ZoneInfo("Asia/Seoul")
+    start_utc, end_excl, start_d, end_d = resolve_period_window(
+        start_date="2026-09-04",
+        end_date="2026-09-04",
+        today=datetime(2026, 9, 4, tzinfo=kst).date(),
+    )
+    assert start_d.isoformat() == "2026-09-04"
+    assert end_d.isoformat() == "2026-09-04"
+    assert start_utc is not None and end_excl is not None
+    assert (end_excl - start_utc).total_seconds() == 24 * 3600
+
+    closed_at = datetime(2026, 9, 4, 12, 0, tzinfo=kst).astimezone(timezone.utc)
+    win = StrategyPositionBindingEntity(
+        binding_id=201,
+        user_broker_account_id=1380,
+        broker_code="UPBIT",
+        strategy_id=100,
+        symbol="KRW-AAA",
+        status=BINDING_STATUS_CLOSED,
+        ownership_code=OWNERSHIP_STRATEGY,
+        owned_quantity=Decimal("0"),
+        entry_price=Decimal("100"),
+        realized_pnl=Decimal("20"),  # gross
+        fees=Decimal("3"),
+        closed_at=closed_at,
+        meta_json={"exit_fill_price": "120", "closed_quantity": "1"},
+    )
+    session = _mock_session(closed=[win])
+    out = AutotradingPerformanceService(session).build(
+        period="TODAY",
+        start_date="2026-09-04",
+        end_date="2026-09-04",
+        user_broker_account_id=1380,
+    )
+    s = out["summary"]
+    assert Decimal(str(s["period_gross_pnl"])) == Decimal("20.00")
+    assert Decimal(str(s["period_fees"])) == Decimal("3.00")
+    assert Decimal(str(s["period_net_pnl"])) == Decimal("17.00")
+    assert abs(Decimal(str(s["period_gross_minus_fees_delta"]))) <= Decimal("0.01")
+    assert len(out["symbol_performance"]) == 1
+    row = out["symbol_performance"][0]
+    assert row["symbol"] == "KRW-AAA"
+    assert Decimal(str(row["net_pnl"])) == Decimal("17.00")
+
+    session2 = _mock_session(closed=[win])
+    detail = AutotradingPerformanceService(session2).build_symbol_detail(
+        symbol="KRW-AAA",
+        start_date="2026-09-04",
+        end_date="2026-09-04",
+        user_broker_account_id=1380,
+    )
+    assert detail["totals"]["round_trip_count"] == 1
+    assert len(detail["daily"]) == 1
+    assert len(detail["trades"]) == 1
+
+
+def test_max_period_clamped_to_90_days() -> None:
+    from stock_platform.operation.autotrading_performance_service import (
+        resolve_period_window,
+    )
+
+    start_utc, end_excl, start_d, end_d = resolve_period_window(
+        start_date="2026-01-01",
+        end_date="2026-09-04",
+        today=datetime(2026, 9, 4, tzinfo=timezone.utc).date(),
+        max_days=90,
+    )
+    assert (end_d - start_d).days <= 90
+    assert start_utc is not None and end_excl is not None
 
 
 def _mock_session(

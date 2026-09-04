@@ -13,6 +13,7 @@ import {
   Space,
   Statistic,
   theme,
+  Tooltip,
   Typography,
 } from "antd";
 import {
@@ -160,16 +161,31 @@ export function TodayTradingStatusPanel({
               <Statistic title="오늘 취소" value={cancelledCount} />
             </Col>
             <Col xs={12} sm={8} md={4} lg={4}>
-              <Statistic
-                title="오늘 순손익"
-                value={netPnl ?? 0}
-                precision={0}
-                suffix="원"
-                styles={{ content: { color: pnlTone(netPnl) } }}
-                formatter={(v) =>
-                  Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                }
-              />
+              <Tooltip title="수수료를 포함한 실현 손익입니다.">
+                <Statistic
+                  title="오늘 순손익"
+                  value={netPnl ?? 0}
+                  precision={0}
+                  suffix="원"
+                  styles={{ content: { color: pnlTone(netPnl) } }}
+                  formatter={(v) =>
+                    Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
+                  }
+                />
+              </Tooltip>
+            </Col>
+            <Col xs={12} sm={8} md={4} lg={4}>
+              <Tooltip title="선택 기간의 매수·매도 거래 수수료 합계입니다.">
+                <Statistic
+                  title="수수료"
+                  value={fees ?? 0}
+                  precision={0}
+                  suffix="원"
+                  formatter={(v) =>
+                    Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
+                  }
+                />
+              </Tooltip>
             </Col>
           </Row>
 

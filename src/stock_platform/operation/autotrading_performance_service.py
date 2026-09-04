@@ -47,16 +47,16 @@ def classify_exit_reason(raw: str | None) -> str:
         return "OTHER_AUTO"
     if "TRAIL" in u:
         return "TRAILING_STOP"
+    # MA Dead Cross 를 generic SIGNAL 보다 먼저 분리 (analytics SoT)
+    if "DEAD_CROSS" in u or "MA_DEAD" in u:
+        return "MA_DEAD_CROSS"
     if "STOP" in u:
         return "STOP_LOSS"
     if "TAKE" in u or "PROFIT" in u:
         return "TAKE_PROFIT"
-    if (
-        "DEAD_CROSS" in u
-        or "MA_DEAD" in u
-        or "SIGNAL" in u
-        or "STRATEGY" in u
-    ):
+    if "MAX_HOLD" in u or "TIME_EXIT" in u:
+        return "MAX_HOLD_TIME"
+    if "SIGNAL" in u or "STRATEGY" in u:
         return "STRATEGY_SIGNAL"
     return "OTHER_AUTO"
 
@@ -66,6 +66,8 @@ def exit_reason_label_ko(category: str) -> str:
         "TAKE_PROFIT": "익절",
         "STOP_LOSS": "손절",
         "TRAILING_STOP": "트레일링 스탑",
+        "MA_DEAD_CROSS": "MA 데드크로스",
+        "MAX_HOLD_TIME": "최대보유",
         "STRATEGY_SIGNAL": "전략 신호",
         "OTHER_AUTO": "기타(AUTO)",
     }
@@ -205,6 +207,60 @@ def _period_start(period: PeriodFilter, *, today: date) -> datetime | None:
     return (day_start - timedelta(days=days - 1)).astimezone(timezone.utc)
 
 
+def _parse_kst_date(raw: str | date | None) -> date | None:
+    if raw is None:
+        return None
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        return raw
+    text = str(raw).strip()[:10]
+    if not text:
+        return None
+    return date.fromisoformat(text)
+
+
+def resolve_period_window(
+    *,
+    period: PeriodFilter = "30D",
+    start_date: str | date | None = None,
+    end_date: str | date | None = None,
+    today: date | None = None,
+    max_days: int = 90,
+) -> tuple[datetime | None, datetime | None, date, date]:
+    """KST date boundary → UTC window.
+
+    start inclusive 00:00 KST, end inclusive through end-of-day KST.
+    Returns (start_utc, end_utc_exclusive, start_date_kst, end_date_kst).
+    """
+
+    today_kst = today or datetime.now(_KST).date()
+    start_d = _parse_kst_date(start_date)
+    end_d = _parse_kst_date(end_date)
+    if start_d is not None or end_d is not None:
+        end_d = end_d or today_kst
+        start_d = start_d or end_d
+        if start_d > end_d:
+            start_d, end_d = end_d, start_d
+        if (end_d - start_d).days > max_days:
+            start_d = end_d - timedelta(days=max_days)
+        start_utc = datetime(
+            start_d.year, start_d.month, start_d.day, tzinfo=_KST
+        ).astimezone(timezone.utc)
+        end_exclusive = datetime(
+            end_d.year, end_d.month, end_d.day, tzinfo=_KST
+        ) + timedelta(days=1)
+        return start_utc, end_exclusive.astimezone(timezone.utc), start_d, end_d
+
+    start_utc = _period_start(period, today=today_kst)
+    if start_utc is None:
+        # ALL — open-ended; UI still shows today as end
+        return None, None, date(1970, 1, 1), today_kst
+    start_d = start_utc.astimezone(_KST).date()
+    end_exclusive = datetime(
+        today_kst.year, today_kst.month, today_kst.day, tzinfo=_KST
+    ) + timedelta(days=1)
+    return start_utc, end_exclusive.astimezone(timezone.utc), start_d, today_kst
+
+
 def _kst_trading_date(ts: datetime | None) -> date | None:
     if ts is None:
         return None
@@ -224,10 +280,21 @@ class AutotradingPerformanceService:
         period: PeriodFilter = "30D",
         include_ops: bool = False,
         uba_ids: frozenset[int] | None = None,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+        user_broker_account_id: int | None = None,
     ) -> dict[str, Any]:
-        scope_ubas = uba_ids or DEFAULT_PROTECTED_UBA_IDS
+        if user_broker_account_id is not None:
+            scope_ubas = frozenset({int(user_broker_account_id)})
+        else:
+            scope_ubas = uba_ids or DEFAULT_PROTECTED_UBA_IDS
         today = datetime.now(_KST).date()
-        period_start = _period_start(period, today=today)
+        period_start, period_end_excl, start_d, end_d = resolve_period_window(
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            today=today,
+        )
         today_start = datetime(today.year, today.month, today.day, tzinfo=_KST).astimezone(
             timezone.utc
         )
@@ -298,14 +365,19 @@ class AutotradingPerformanceService:
                 binding_closed_trade_metrics(b, exit_order=exit_order)
             )
 
-        period_closed = closed_trades
-        if period_start is not None:
-            period_closed = [
-                t
-                for t in closed_trades
-                if t.get("closed_at")
-                and datetime.fromisoformat(str(t["closed_at"])) >= period_start
-            ]
+        def _in_window(closed_at: Any) -> bool:
+            if not closed_at:
+                return False
+            ts = datetime.fromisoformat(str(closed_at).replace("Z", "+00:00"))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            if period_start is not None and ts < period_start:
+                return False
+            if period_end_excl is not None and ts >= period_end_excl:
+                return False
+            return True
+
+        period_closed = [t for t in closed_trades if _in_window(t.get("closed_at"))]
 
         open_positions = [
             binding_open_position_metrics(
@@ -346,12 +418,18 @@ class AutotradingPerformanceService:
             if broker == "ALL"
             else []
         )
-        symbol_performance = self._build_symbol_performance(period_closed)
+        open_symbols = {
+            str(p.get("symbol") or "").upper() for p in open_positions if p.get("symbol")
+        }
+        symbol_performance = self._build_symbol_performance(
+            period_closed, open_symbols=open_symbols
+        )
+        symbol_totals = self._symbol_totals(symbol_performance)
         exit_reason_performance = self._build_exit_reason_performance(period_closed)
         win_loss = self._build_win_loss(period_closed)
         return_distribution = self._build_return_distribution(period_closed)
         broker_comparison = self._build_broker_comparison(period_closed, closed_trades)
-        recent_closed = period_closed[:10]
+        recent_closed = period_closed[:20]
         round_trips = list(period_closed)
         holding_return = self._build_holding_return(period_closed)
 
@@ -365,10 +443,26 @@ class AutotradingPerformanceService:
 
         closed_count = len(period_closed)
         low_sample = closed_count < 5
+        period_label = (
+            f"{start_d.isoformat()} ~ {end_d.isoformat()}"
+            if period_start is not None or start_date or end_date
+            else period
+        )
 
         return {
             "broker": broker,
             "period": period,
+            "period_window": {
+                "start_date": start_d.isoformat(),
+                "end_date": end_d.isoformat(),
+                "label": period_label,
+                "timezone": "Asia/Seoul",
+                "user_broker_account_id": (
+                    int(user_broker_account_id)
+                    if user_broker_account_id is not None
+                    else None
+                ),
+            },
             "return_formula_note": RETURN_FORMULA_NOTE,
             "inclusion_rule": (
                 "operation.strategy_position_binding 중 "
@@ -386,6 +480,7 @@ class AutotradingPerformanceService:
             "daily_by_broker": daily_by_broker,
             "cumulative_by_broker": cumulative_by_broker,
             "symbol_performance": symbol_performance,
+            "symbol_performance_totals": symbol_totals,
             "exit_reason_performance": exit_reason_performance,
             "win_loss": win_loss,
             "return_distribution": return_distribution,
@@ -403,6 +498,93 @@ class AutotradingPerformanceService:
                 if low_sample
                 else None
             ),
+        }
+
+    def build_symbol_detail(
+        self,
+        *,
+        symbol: str,
+        broker: BrokerFilter = "UPBIT",
+        period: PeriodFilter = "TODAY",
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+        user_broker_account_id: int | None = None,
+    ) -> dict[str, Any]:
+        """종목 Drawer용 — 일별 집계 + 건별 AUTO 거래."""
+
+        payload = self.build(
+            broker=broker,
+            period=period,
+            start_date=start_date,
+            end_date=end_date,
+            user_broker_account_id=user_broker_account_id,
+        )
+        sym = str(symbol or "").strip().upper()
+        trades = [
+            t
+            for t in (payload.get("round_trips") or [])
+            if str(t.get("symbol") or "").upper() == sym
+        ]
+        by_day: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for t in trades:
+            d = _kst_trading_date(
+                datetime.fromisoformat(str(t["closed_at"]).replace("Z", "+00:00"))
+                if t.get("closed_at")
+                else None
+            )
+            if d is not None:
+                by_day[d.isoformat()].append(t)
+
+        daily_rows: list[dict[str, Any]] = []
+        for day in sorted(by_day.keys(), reverse=True):
+            xs = by_day[day]
+            gross = sum((Decimal(str(x["gross_pnl"])) for x in xs), ZERO)
+            fees = sum((Decimal(str(x.get("fees") or 0)) for x in xs), ZERO)
+            net = sum((Decimal(str(x["net_pnl"])) for x in xs), ZERO)
+            wins = sum(1 for x in xs if Decimal(str(x["net_pnl"])) > ZERO)
+            daily_rows.append(
+                {
+                    "date": day,
+                    "buy_count": len(xs),  # round-trip 기준 완료건 = 매수·매도 쌍
+                    "sell_count": len(xs),
+                    "round_trip_count": len(xs),
+                    "gross_pnl": str(gross.quantize(QUANT)),
+                    "fees": str(fees.quantize(QUANT)),
+                    "net_pnl": str(net.quantize(QUANT)),
+                    "win_rate_pct": str(
+                        (Decimal(wins) / Decimal(len(xs)) * Decimal("100")).quantize(
+                            _PCT_QUANT
+                        )
+                        if xs
+                        else ZERO
+                    ),
+                }
+            )
+
+        gross = sum((Decimal(str(x["gross_pnl"])) for x in trades), ZERO)
+        fees = sum((Decimal(str(x.get("fees") or 0)) for x in trades), ZERO)
+        net = sum((Decimal(str(x["net_pnl"])) for x in trades), ZERO)
+        wins = sum(1 for x in trades if Decimal(str(x["net_pnl"])) > ZERO)
+        return {
+            "symbol": sym,
+            "period_window": payload.get("period_window"),
+            "totals": {
+                "round_trip_count": len(trades),
+                "buy_count": len(trades),
+                "sell_count": len(trades),
+                "gross_pnl": str(gross.quantize(QUANT)),
+                "fees": str(fees.quantize(QUANT)),
+                "net_pnl": str(net.quantize(QUANT)),
+                "win_rate_pct": str(
+                    (Decimal(wins) / Decimal(len(trades)) * Decimal("100")).quantize(
+                        _PCT_QUANT
+                    )
+                    if trades
+                    else None
+                ),
+            },
+            "daily": daily_rows,
+            "trades": trades,
         }
 
     def _load_mark_prices(
@@ -513,6 +695,16 @@ class AutotradingPerformanceService:
 
         period_net = _sum_net(period_closed)
         period_cost = _sum_entry_cost(period_closed)
+        period_gross = sum(
+            (Decimal(str(t.get("gross_pnl") or 0)) for t in period_closed),
+            ZERO,
+        ).quantize(QUANT)
+        period_fees = sum(
+            (Decimal(str(t.get("fees") or 0)) for t in period_closed),
+            ZERO,
+        ).quantize(QUANT)
+        # consistency: net ≈ gross - fees (0.01원 허용)
+        consistency_delta = (period_gross - period_fees - period_net).quantize(QUANT)
         all_net = _sum_net(all_closed)
         all_cost = _sum_entry_cost(all_closed)
 
@@ -538,6 +730,33 @@ class AutotradingPerformanceService:
                 (sum(rets, ZERO) / Decimal(closed_n)).quantize(_PCT_QUANT)
             )
 
+        gross_wins = sum(
+            (Decimal(str(t["net_pnl"])) for t in period_closed if Decimal(str(t["net_pnl"])) > ZERO),
+            ZERO,
+        )
+        gross_losses_abs = sum(
+            (
+                abs(Decimal(str(t["net_pnl"])))
+                for t in period_closed
+                if Decimal(str(t["net_pnl"])) < ZERO
+            ),
+            ZERO,
+        )
+        profit_factor = None
+        if gross_losses_abs > ZERO:
+            profit_factor = str((gross_wins / gross_losses_abs).quantize(Decimal("0.0001")))
+        elif gross_wins > ZERO:
+            profit_factor = "INF"
+
+        hold_secs_p = [
+            int(t["duration_sec"])
+            for t in period_closed
+            if isinstance(t.get("duration_sec"), (int, float))
+        ]
+        avg_hold_period = (
+            int(sum(hold_secs_p) / len(hold_secs_p)) if hold_secs_p else None
+        )
+
         return {
             "broker": broker,
             "period": period,
@@ -546,6 +765,12 @@ class AutotradingPerformanceService:
             "today_profit_amount": str(today_profit),
             "today_loss_amount": str(today_loss),
             "today_fees": str(today_fees),
+            "today_gross_pnl": str(
+                sum(
+                    (Decimal(str(t.get("gross_pnl") or 0)) for t in today_closed),
+                    ZERO,
+                ).quantize(QUANT)
+            ),
             "today_wins": today_wins,
             "today_losses": today_losses,
             "today_win_rate_pct": today_win_rate,
@@ -570,6 +795,12 @@ class AutotradingPerformanceService:
             ),
             "today_return_pct": _return_pct(today_net, today_cost),
             "period_realized_pnl": str(period_net),
+            "period_net_pnl": str(period_net),
+            "period_gross_pnl": str(period_gross),
+            "period_fees": str(period_fees),
+            "period_profit_factor": profit_factor,
+            "period_avg_hold_sec": avg_hold_period,
+            "period_gross_minus_fees_delta": str(consistency_delta),
             "period_return_pct": _return_pct(period_net, period_cost),
             "cumulative_realized_pnl": str(all_net),
             "cumulative_return_pct": _return_pct(all_net, all_cost),
@@ -745,28 +976,55 @@ class AutotradingPerformanceService:
         return rows
 
     def _build_symbol_performance(
-        self, period_closed: list[dict[str, Any]]
+        self,
+        period_closed: list[dict[str, Any]],
+        *,
+        open_symbols: set[str] | None = None,
     ) -> list[dict[str, Any]]:
         by_sym: dict[str, list[dict[str, Any]]] = defaultdict(list)
         for t in period_closed:
             by_sym[str(t["symbol"])].append(t)
 
+        open_set = {s.upper() for s in (open_symbols or set())}
         rows: list[dict[str, Any]] = []
         for sym, trades in by_sym.items():
+            gross = sum((Decimal(str(x.get("gross_pnl") or 0)) for x in trades), ZERO)
+            fees = sum((Decimal(str(x.get("fees") or 0)) for x in trades), ZERO)
             net = sum((Decimal(str(x["net_pnl"])) for x in trades), ZERO)
             cost = sum((Decimal(str(x["entry_cost"])) for x in trades), ZERO)
             wins = sum(1 for x in trades if Decimal(str(x["net_pnl"])) > ZERO)
+            losses = sum(1 for x in trades if Decimal(str(x["net_pnl"])) < ZERO)
             n = len(trades)
+            holds = [
+                int(x["duration_sec"])
+                for x in trades
+                if isinstance(x.get("duration_sec"), (int, float))
+            ]
+            exit_dist: dict[str, int] = defaultdict(int)
+            for x in trades:
+                exit_dist[str(x.get("exit_reason_category") or "OTHER_AUTO")] += 1
+            top_exit = (
+                max(exit_dist.items(), key=lambda kv: kv[1])[0] if exit_dist else None
+            )
+            last_closed = max(
+                (x.get("closed_at") for x in trades if x.get("closed_at")),
+                default=None,
+            )
             rows.append(
                 {
                     "symbol": sym,
-                    "realized_pnl": str(net.quantize(QUANT)),
-                    "return_pct": str(
-                        (net / cost * Decimal("100")).quantize(_PCT_QUANT)
-                        if cost > ZERO
-                        else ZERO
-                    ),
-                    "trade_count": n,
+                    "symbol_name": None,  # instrument join optional
+                    "buy_count": n,
+                    "sell_count": n,
+                    "round_trip_count": n,
+                    "buy_amount": str(cost.quantize(QUANT)),
+                    "sell_amount": str((cost + gross).quantize(QUANT)),
+                    "gross_pnl": str(gross.quantize(QUANT)),
+                    "fees": str(fees.quantize(QUANT)),
+                    "net_pnl": str(net.quantize(QUANT)),
+                    "realized_pnl": str(net.quantize(QUANT)),  # legacy alias
+                    "win_count": wins,
+                    "loss_count": losses,
                     "win_rate_pct": str(
                         (Decimal(wins) / Decimal(n) * Decimal("100")).quantize(
                             _PCT_QUANT
@@ -774,10 +1032,55 @@ class AutotradingPerformanceService:
                         if n > 0
                         else ZERO
                     ),
+                    "avg_hold_sec": int(sum(holds) / len(holds)) if holds else None,
+                    "return_pct": str(
+                        (net / cost * Decimal("100")).quantize(_PCT_QUANT)
+                        if cost > ZERO
+                        else ZERO
+                    ),
+                    "trade_count": n,
+                    "primary_exit_reason": top_exit,
+                    "primary_exit_reason_label_ko": (
+                        exit_reason_label_ko(top_exit) if top_exit else None
+                    ),
+                    "last_closed_at": last_closed,
+                    "has_open_auto": sym.upper() in open_set,
                 }
             )
-        rows.sort(key=lambda r: Decimal(str(r["realized_pnl"])), reverse=True)
-        return rows[:10]
+        # 기본: 순손익 오름차순 (최대 손실 → 최대 수익)
+        rows.sort(key=lambda r: Decimal(str(r["net_pnl"])))
+        return rows
+
+    def _symbol_totals(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        if not rows:
+            return {
+                "buy_count": 0,
+                "sell_count": 0,
+                "round_trip_count": 0,
+                "gross_pnl": "0.00",
+                "fees": "0.00",
+                "net_pnl": "0.00",
+            }
+        return {
+            "buy_count": sum(int(r.get("buy_count") or 0) for r in rows),
+            "sell_count": sum(int(r.get("sell_count") or 0) for r in rows),
+            "round_trip_count": sum(int(r.get("round_trip_count") or 0) for r in rows),
+            "gross_pnl": str(
+                sum((Decimal(str(r.get("gross_pnl") or 0)) for r in rows), ZERO).quantize(
+                    QUANT
+                )
+            ),
+            "fees": str(
+                sum((Decimal(str(r.get("fees") or 0)) for r in rows), ZERO).quantize(
+                    QUANT
+                )
+            ),
+            "net_pnl": str(
+                sum((Decimal(str(r.get("net_pnl") or 0)) for r in rows), ZERO).quantize(
+                    QUANT
+                )
+            ),
+        }
 
     def _build_exit_reason_performance(
         self, period_closed: list[dict[str, Any]]

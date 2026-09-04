@@ -12,6 +12,10 @@ describe("parsePerformanceSummary", () => {
     const s = parsePerformanceSummary({
       today_realized_pnl: "38.21",
       today_return_pct: "0.76",
+      period_net_pnl: "-1394",
+      period_gross_pnl: "-925",
+      period_fees: "469",
+      period_profit_factor: "0.13",
       cumulative_realized_pnl: "38.21",
       cumulative_return_pct: "0.76",
       current_unrealized_pnl: "0",
@@ -21,6 +25,10 @@ describe("parsePerformanceSummary", () => {
       avg_trade_return_pct: "0.76",
     });
     expect(s.todayRealizedPnl).toBe(38.21);
+    expect(s.periodNetPnl).toBe(-1394);
+    expect(s.periodFees).toBe(469);
+    expect(s.periodGrossPnl).toBe(-925);
+    expect(s.periodProfitFactor).toBe("0.13");
     expect(s.closedTradeCount).toBe(1);
     expect(s.winRatePct).toBe(100);
   });

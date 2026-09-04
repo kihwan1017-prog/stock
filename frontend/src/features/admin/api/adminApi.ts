@@ -1593,8 +1593,34 @@ export async function getAdminAutotradingPerformance(params?: {
   broker?: "ALL" | "UPBIT" | "KIWOOM";
   period?: "TODAY" | "7D" | "30D" | "90D" | "ALL";
   include_ops?: boolean;
+  start_date?: string;
+  end_date?: string;
+  user_broker_account_id?: number;
 }): Promise<JsonValue> {
   return getJson("/admin/dashboard/autotrading-performance", params);
+}
+
+/** 종목별 AUTO 성과 (performance slice) */
+export async function getAdminAutotradingSymbolPerformance(params?: {
+  broker?: "ALL" | "UPBIT" | "KIWOOM";
+  period?: "TODAY" | "7D" | "30D" | "90D" | "ALL";
+  start_date?: string;
+  end_date?: string;
+  user_broker_account_id?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/dashboard/autotrading-symbol-performance", params);
+}
+
+/** 종목 Drawer 상세 — 일별/건별 AUTO */
+export async function getAdminAutotradingSymbolDetail(params: {
+  symbol: string;
+  broker?: "ALL" | "UPBIT" | "KIWOOM";
+  period?: "TODAY" | "7D" | "30D" | "90D" | "ALL";
+  start_date?: string;
+  end_date?: string;
+  user_broker_account_id?: number;
+}): Promise<JsonValue> {
+  return getJson("/admin/dashboard/autotrading-symbol-detail", params);
 }
 
 /** 자동매매 일일 운영보고 — READ ONLY */

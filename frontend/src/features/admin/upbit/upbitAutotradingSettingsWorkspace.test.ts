@@ -34,9 +34,10 @@ describe("UPBIT autotrading settings workspace", () => {
   const drawer = () =>
     readRel("features/admin/accounts/UpbitPortfolioControls.tsx");
 
-  it("6개 탭 키·라벨이 존재한다", () => {
-    expect(UPBIT_AUTOTRADING_TAB_ORDER).toHaveLength(6);
+  it("7개 탭 키·라벨이 존재한다 (성과 포함)", () => {
+    expect(UPBIT_AUTOTRADING_TAB_ORDER).toHaveLength(7);
     expect(UPBIT_AUTOTRADING_TAB_LABELS.market).toBe("현황");
+    expect(UPBIT_AUTOTRADING_TAB_LABELS.performance).toBe("성과");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.capital).toBe("포지션·자금");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.entry).toBe("매수 설정");
     expect(UPBIT_AUTOTRADING_TAB_LABELS.exit).toBe("매도 설정");
@@ -50,6 +51,7 @@ describe("UPBIT autotrading settings workspace", () => {
       expect(ws).toContain(`UPBIT_AUTOTRADING_TAB_KEYS.${key}`);
     }
     expect(ws).toMatch(/<Tabs\b/);
+    expect(ws).toContain("PeriodPerformanceAnalyticsPanel");
   });
 
   it("보수적 기본값 객체가 안전 지향이다", () => {

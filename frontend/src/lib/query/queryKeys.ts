@@ -51,8 +51,20 @@ export const queryKeys = {
       broker?: string;
       period?: string;
       includeOps?: boolean;
+      startDate?: string | null;
+      endDate?: string | null;
+      ubaId?: number | null;
     }) =>
       ["admin", "autotrading-performance", params ?? {}] as const,
+    autotradingSymbolDetail: (params?: {
+      symbol?: string;
+      broker?: string;
+      period?: string;
+      startDate?: string | null;
+      endDate?: string | null;
+      ubaId?: number | null;
+    }) =>
+      ["admin", "autotrading-symbol-detail", params ?? {}] as const,
     runtimePreflight: (ubaId?: number) =>
       ubaId != null
         ? (["admin", "runtime", "preflight", ubaId] as const)
