@@ -44,6 +44,29 @@ class KiwoomMarketRealtimeRuntime:
         self._generation: int = 0
         self._lock = asyncio.Lock()
 
+    def _loop_safe_lock(self) -> asyncio.Lock:
+        """현재 event loop에 묶인 Lock — loop 교체/stall 시 재생성.
+
+        APScheduler vs FastAPI request loop 불일치로
+        'Lock is bound to a different event loop' 가 나면
+        TOP10 refresh/subscribe 가 실패하고 FIXED-only 로 남을 수 있다.
+        """
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return self._lock
+        lock = self._lock
+        bound = getattr(lock, "_loop", None)
+        if bound is not None and bound is not loop:
+            logger.warning(
+                "kiwoom_market_realtime_lock_recreated",
+                reason="EVENT_LOOP_MISMATCH",
+            )
+            self._lock = asyncio.Lock()
+            return self._lock
+        return lock
+
     def bind(self, client: KiwoomMarketRealtimeClient | None) -> None:
         """테스트/probe용 수동 바인딩."""
 
@@ -136,7 +159,7 @@ class KiwoomMarketRealtimeRuntime:
     ) -> dict[str, Any]:
         """시세 WS START. 다른 UBA/Upbit runner는 건드리지 않는다."""
 
-        async with self._lock:
+        async with self._loop_safe_lock():
             return await self._start_locked(
                 user_broker_account_id=user_broker_account_id,
                 symbols=symbols,
@@ -402,7 +425,7 @@ class KiwoomMarketRealtimeRuntime:
     async def stop(self) -> dict[str, Any]:
         """시세 WS STOP. Upbit/다른 runner는 유지."""
 
-        async with self._lock:
+        async with self._loop_safe_lock():
             return await self._stop_locked()
 
     async def _stop_locked(self) -> dict[str, Any]:

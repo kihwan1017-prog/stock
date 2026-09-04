@@ -164,3 +164,60 @@ def test_union_real_and_shadow_preserves_real(monkeypatch: pytest.MonkeyPatch) -
     )
     assert "034310" in merged
     assert "005930" in merged
+
+
+def test_stack_feed_symbols_union_latest_top10_monitor(monkeypatch: pytest.MonkeyPatch) -> None:
+    """고정 전략 심볼 + 승인 TOP10 monitor union — 임의 목록 금지."""
+    from stock_platform.trading import kiwoom_unattended_stack_restore as restore
+
+    monkeypatch.setattr(
+        restore,
+        "_latest_kiwoom_multi_symbol_monitor_symbols",
+        lambda session, user_broker_account_id: [
+            "000660",
+            "005930",
+            "009150",
+            "005935",
+            "012450",
+            "025980",
+            "036930",
+            "000270",
+            "066570",
+            "257720",
+        ],
+    )
+    # strategy resolve 경로를 건너뛰고 fallback만 쓰게 strategy_id=None + settings
+    monkeypatch.setattr(
+        "stock_platform.common.settings.get_settings",
+        lambda: type("S", (), {"realtime_strategy_symbol": "034310"})(),
+    )
+    out = restore._resolve_kiwoom_stack_feed_symbols(
+        None,  # type: ignore[arg-type]
+        user_broker_account_id=1381,
+        strategy_id=None,
+        symbols=None,
+    )
+    assert "034310" in out
+    assert "000660" in out
+    assert len(out) == 11
+
+
+def test_stack_feed_fixed_only_when_monitor_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    from stock_platform.trading import kiwoom_unattended_stack_restore as restore
+
+    monkeypatch.setattr(
+        restore,
+        "_latest_kiwoom_multi_symbol_monitor_symbols",
+        lambda session, user_broker_account_id: [],
+    )
+    monkeypatch.setattr(
+        "stock_platform.common.settings.get_settings",
+        lambda: type("S", (), {"realtime_strategy_symbol": "034310"})(),
+    )
+    out = restore._resolve_kiwoom_stack_feed_symbols(
+        None,  # type: ignore[arg-type]
+        user_broker_account_id=1381,
+        strategy_id=None,
+        symbols=None,
+    )
+    assert out == ["034310"]

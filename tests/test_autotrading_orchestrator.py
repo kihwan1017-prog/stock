@@ -208,26 +208,66 @@ async def test_full_stop_blocked_when_open_positions():
 
 
 @pytest.mark.asyncio
-async def test_kiwoom_preflight_shell():
+async def test_kiwoom_status_skips_upbit_master_gate():
+    """KIWOOM /status readiness는 ops SoT — UPBIT gate 오탐 금지."""
     uba = SimpleNamespace(
         user_broker_account_id=1381,
         broker_code="KIWOOM",
     )
     session = MagicMock()
     session.get.return_value = uba
-
-    with patch(
-        "stock_platform.trading.autotrading_orchestrator.evaluate_uba_autotrading_ready"
-    ) as ready:
-        ready.return_value = {
-            "status": "BLOCKED",
-            "blockers": ["ARM_OFF"],
-        }
-        out = await AutotradingOrchestrator(session).start(1381, actor="t")
-    assert out["broker"] == "KIWOOM"
-    assert out["status"] in {STATUS_BLOCKED, "PARTIAL"}
-    assert out["message_code"] in {
-        "ORCH_KIWOOM_PREFLIGHT",
-        "ORCH_KRX_CLOSED",
-        "ORCH_KIWOOM_READY",
+    ops = {
+        "user_broker_account_id": 1381,
+        "auto_trading_ready": True,
+        "blockers": [],
+        "warnings": ["ACTIVATION_HORIZON_MISMATCH"],
+        "live": "ON",
+        "arm": "ON",
+        "activation": "ACTIVE",
+        "runtime_stack": {"label": "4/4 RUNNING"},
+        "market_feed": {"status": "REAL_FRESH"},
+        "reliability": {"health_state": "HEALTHY", "health_reasons": []},
     }
+
+    with (
+        patch(
+            "stock_platform.trading.autotrading_orchestrator.evaluate_uba_autotrading_ready"
+        ) as ready,
+        patch(
+            "stock_platform.trading.uba_operational_summary.build_uba_operational_summary",
+            return_value=ops,
+        ),
+    ):
+        out = await AutotradingOrchestrator(session).status(1381)
+
+    ready.assert_not_called()
+    assert out["broker"] == "KIWOOM"
+    assert out["readiness"]["checks"]["upbit_master_gate_skipped"] is True
+    assert out["readiness"]["checks"]["source"] == "KIWOOM_OPS_SUMMARY"
+    assert "UBA_BROKER_MISMATCH" not in (out["readiness"].get("blockers") or [])
+    assert "UPBIT_CREDENTIAL_UNRESOLVED" not in (
+        out["readiness"].get("blockers") or []
+    )
+
+
+def test_kiwoom_status_readiness_filters_upbit_noise():
+    from stock_platform.trading.autotrading_orchestrator import (
+        _kiwoom_status_readiness_from_ops,
+    )
+
+    out = _kiwoom_status_readiness_from_ops(
+        {
+            "user_broker_account_id": 1381,
+            "auto_trading_ready": False,
+            "blockers": [],
+            "warnings": ["UPBIT_LIVE_ORDER_FLAG_ON", "ACTIVATION_HORIZON_MISMATCH"],
+            "reliability": {
+                "health_state": "BROKEN",
+                "health_reasons": ["FEED_UNHEALTHY"],
+            },
+        }
+    )
+    assert "UPBIT_LIVE_ORDER_FLAG_ON" not in out["warnings"]
+    assert "FEED_UNHEALTHY" in out["blockers"]
+    assert out["auto_trading_ready"] is False
+    assert out["status"] == "BLOCKED"

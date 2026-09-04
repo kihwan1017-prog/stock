@@ -194,6 +194,56 @@ def evaluate_kiwoom_stack_restore_gates(
     return {"ok": len(uniq) == 0, "blockers": uniq, "checks": checks}
 
 
+def _latest_kiwoom_multi_symbol_monitor_symbols(
+    session: Session, *, user_broker_account_id: int
+) -> list[str]:
+    """승인된 TOP10 monitor 최신 batch 심볼 — 임의 목록 생성 금지."""
+
+    try:
+        from stock_platform.operation.kiwoom_multi_symbol_universe.entities import (
+            KiwoomMultiSymbolMonitorEntity,
+        )
+        from stock_platform.operation.kiwoom_multi_symbol_universe.mode import (
+            is_kiwoom_multi_symbol_shadow_observability_enabled,
+            resolve_kiwoom_multi_symbol_mode,
+        )
+        from stock_platform.operation.kiwoom_multi_symbol_universe.constants import (
+            MODE_REAL,
+        )
+
+        # SHADOW observability 또는 REAL 모드일 때만 기존 roster 재사용
+        mode = resolve_kiwoom_multi_symbol_mode()
+        if mode != MODE_REAL and not is_kiwoom_multi_symbol_shadow_observability_enabled():
+            return []
+
+        uba_id = int(user_broker_account_id)
+        latest_batch = session.scalar(
+            select(KiwoomMultiSymbolMonitorEntity.refresh_batch_id)
+            .where(
+                KiwoomMultiSymbolMonitorEntity.user_broker_account_id == uba_id
+            )
+            .order_by(KiwoomMultiSymbolMonitorEntity.selected_at.desc())
+            .limit(1)
+        )
+        if not latest_batch:
+            return []
+        rows = session.scalars(
+            select(KiwoomMultiSymbolMonitorEntity.symbol).where(
+                KiwoomMultiSymbolMonitorEntity.user_broker_account_id == uba_id,
+                KiwoomMultiSymbolMonitorEntity.refresh_batch_id == latest_batch,
+            )
+        )
+        return sorted(
+            {
+                str(s).strip().upper()
+                for s in rows
+                if str(s or "").strip()
+            }
+        )
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def _resolve_kiwoom_stack_feed_symbols(
     session: Session,
     *,
@@ -208,6 +258,8 @@ def _resolve_kiwoom_stack_feed_symbols(
       2) ACTIVE strategy_deployment.symbol / payload
       3) definition/backtest/perf 복원 (_resolve_runtime_payload_and_symbol)
       4) settings.realtime_strategy_symbol
+      +) 승인된 multi-symbol TOP10 monitor 최신 batch 를 union
+         (고정 전략 심볼 034310 유지 + TOP10 — canonical #79)
     """
 
     cleaned = sorted(
@@ -218,6 +270,12 @@ def _resolve_kiwoom_stack_feed_symbols(
         }
     )
     if cleaned:
+        # 명시 symbols에도 TOP10 union (부분 복구 시 drift 방지)
+        monitor = _latest_kiwoom_multi_symbol_monitor_symbols(
+            session, user_broker_account_id=int(user_broker_account_id)
+        )
+        if monitor:
+            return sorted(set(cleaned) | set(monitor))
         return cleaned
 
     from stock_platform.common.settings import get_settings
@@ -234,6 +292,7 @@ def _resolve_kiwoom_stack_feed_symbols(
         _resolve_runtime_payload_and_symbol,
     )
 
+    base: list[str] = []
     sid = int(strategy_id) if strategy_id is not None else None
     if sid is not None:
         deployment = session.scalar(
@@ -255,34 +314,42 @@ def _resolve_kiwoom_stack_feed_symbols(
                 definition,
             )
             if symbol:
-                return [str(symbol).strip().upper()]
+                base = [str(symbol).strip().upper()]
 
         # performance run fallback (deployment.symbol 비어 있을 때)
-        try:
-            from stock_platform.performance.entities import (
-                StrategyPerformanceRunEntity,
-            )
-
-            perf = session.scalar(
-                select(StrategyPerformanceRunEntity)
-                .where(StrategyPerformanceRunEntity.strategy_id == sid)
-                .order_by(
-                    StrategyPerformanceRunEntity.strategy_performance_run_id.desc()
+        if not base:
+            try:
+                from stock_platform.performance.entities import (
+                    StrategyPerformanceRunEntity,
                 )
-                .limit(1)
-            )
-            if perf is not None and str(getattr(perf, "symbol", "") or "").strip():
-                return [str(perf.symbol).strip().upper()]
-        except Exception:  # noqa: BLE001
-            pass
 
-    settings = get_settings()
-    fallback = str(
-        getattr(settings, "realtime_strategy_symbol", "") or ""
-    ).strip().upper()
-    if fallback:
-        return [fallback]
-    return []
+                perf = session.scalar(
+                    select(StrategyPerformanceRunEntity)
+                    .where(StrategyPerformanceRunEntity.strategy_id == sid)
+                    .order_by(
+                        StrategyPerformanceRunEntity.strategy_performance_run_id.desc()
+                    )
+                    .limit(1)
+                )
+                if perf is not None and str(getattr(perf, "symbol", "") or "").strip():
+                    base = [str(perf.symbol).strip().upper()]
+            except Exception:  # noqa: BLE001
+                pass
+
+    if not base:
+        settings = get_settings()
+        fallback = str(
+            getattr(settings, "realtime_strategy_symbol", "") or ""
+        ).strip().upper()
+        if fallback:
+            base = [fallback]
+
+    monitor = _latest_kiwoom_multi_symbol_monitor_symbols(
+        session, user_broker_account_id=int(user_broker_account_id)
+    )
+    if monitor:
+        return sorted(set(base) | set(monitor))
+    return base
 
 
 async def restore_kiwoom_trading_stack(

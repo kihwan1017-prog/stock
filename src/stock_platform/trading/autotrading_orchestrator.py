@@ -116,6 +116,76 @@ def _result(
     return payload
 
 
+_UPBIT_ONLY_READINESS_NOISE = frozenset(
+    {
+        "UBA_BROKER_MISMATCH",
+        "UPBIT_CREDENTIAL_UNRESOLVED",
+        "UPBIT_LIVE_ORDER_FLAG_ON",
+        "NO_SHADOW_OR_DRY_RUN_FLAG",
+        "STRATEGY_NOT_LIVE_APPROVED",  # UPBIT master gate 용어 — KIWOOM ops와 불일치
+        "LIVE_EXECUTION_RUNNER_NOT_RUNNING",  # ops SoT와 별도 UPBIT 검사 경로 오탐
+        "ACTIVATION_INACTIVE",  # ops activation ACTIVE인데 UPBIT gate 오탐 가능
+    }
+)
+
+
+def _kiwoom_status_readiness_from_ops(ops: dict[str, Any]) -> dict[str, Any]:
+    """KIWOOM /status readiness — ops SoT 정렬, UPBIT gate 재사용 금지.
+
+    REAL trading gate를 완화하지 않는다. observability/분류만 분리한다.
+    """
+
+    blockers = [
+        str(b)
+        for b in (ops.get("blockers") or [])
+        if str(b) and str(b) not in _UPBIT_ONLY_READINESS_NOISE
+    ]
+    warnings = [
+        str(w)
+        for w in (ops.get("warnings") or [])
+        if str(w) and str(w) not in _UPBIT_ONLY_READINESS_NOISE
+    ]
+    ready_flag = bool(ops.get("auto_trading_ready"))
+    # FEED 등 reliability가 BROKEN이면 ready false 유지 (fail-closed)
+    reliability = (
+        ops.get("reliability") if isinstance(ops.get("reliability"), dict) else {}
+    )
+    health = str(reliability.get("health_state") or "").upper()
+    if health in {"BROKEN", "UNHEALTHY"} and "FEED_UNHEALTHY" not in blockers:
+        if "FEED_UNHEALTHY" in (reliability.get("health_reasons") or []):
+            blockers.append("FEED_UNHEALTHY")
+            ready_flag = False
+    status = (
+        "READY_FOR_AUTO_TRADING" if ready_flag and not blockers else "BLOCKED"
+    )
+    return {
+        "user_broker_account_id": ops.get("user_broker_account_id"),
+        "status": status,
+        "auto_trading_ready": ready_flag and not blockers,
+        "runtime_status": (
+            (
+                (ops.get("runtime") or {})
+                if isinstance(ops.get("runtime"), dict)
+                else {}
+            ).get("status")
+            or ops.get("auto_trading_state")
+        ),
+        "blockers": blockers,
+        "warnings": warnings,
+        "checks": {
+            "source": "KIWOOM_OPS_SUMMARY",
+            "broker_code": "KIWOOM",
+            "upbit_master_gate_skipped": True,
+            "live": ops.get("live"),
+            "arm": ops.get("arm"),
+            "activation": ops.get("activation"),
+            "runtime_stack": ops.get("runtime_stack"),
+            "market_feed": ops.get("market_feed"),
+            "reliability": reliability or None,
+        },
+    }
+
+
 class AutotradingOrchestrator:
     """Broker-aware UBA orchestrator."""
 
@@ -128,9 +198,6 @@ class AutotradingOrchestrator:
         broker = (
             str(uba.broker_code or "").upper() if uba is not None else "UNKNOWN"
         )
-        ready = evaluate_uba_autotrading_ready(
-            self._session, user_broker_account_id=uba_id
-        )
         from stock_platform.trading.uba_operational_summary import (
             build_uba_operational_summary,
         )
@@ -138,6 +205,22 @@ class AutotradingOrchestrator:
         ops = build_uba_operational_summary(
             self._session, user_broker_account_id=uba_id
         )
+        # broker-aware readiness — KIWOOM에 UPBIT master gate 재사용 금지
+        if broker == "UPBIT":
+            ready = evaluate_uba_autotrading_ready(
+                self._session, user_broker_account_id=uba_id
+            )
+        elif broker == "KIWOOM":
+            ready = _kiwoom_status_readiness_from_ops(ops)
+        else:
+            ready = {
+                "user_broker_account_id": uba_id,
+                "status": "BLOCKED",
+                "auto_trading_ready": False,
+                "blockers": ["UNSUPPORTED_BROKER"],
+                "warnings": [],
+                "checks": {"broker": broker},
+            }
         return {
             "uba_id": uba_id,
             "broker": broker,

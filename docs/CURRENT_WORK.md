@@ -1,7 +1,77 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-03 (UPBIT-PROFITABILITY-IMPROVEMENT-SHADOW-LAB-V1)
+**최종 갱신:** 2026-09-04 (KIWOOM-TOP10-REAL-CONFIG-DRIFT-FEED-READINESS-V1)
+
+---
+
+## K — TOP10 REAL Config Drift + Feed/Readiness (2026-09-04)
+
+- WORK: `WRK-20260904-KIWOOM-TOP10-REAL-CONFIG-DRIFT-FEED-READINESS-V1` · History **#120** · Parent **#79**
+- Canonical TOP10 REAL approved (MODE=REAL · Deployment 869 · +034310 → 11)
+- Root: `RUNTIME_RESTORE_REGRESSION` — stack feed FIXED-only + event-loop Lock stall blocked refresh after 09:00
+- Restored: SUBSCRIBED 1→11 · FEED REAL_FRESH · STACK 4/4 · READY=true
+- Readiness: KIWOOM `/status` broker-aware (UPBIT_* contamination fixed) · ops SoT 정렬
+- Restart **×1** · Upbit untouched policy · LIVE/ARM ON both markets
+- Evidence: `.run/kiwoom_top10_real_config_drift_feed_readiness_20260904.json`
+- NEXT: `CONTINUE_NATURAL_FRESH_GC_WAIT`
+
+---
+
+## U — Prod Stable Process + UBA1380 Restore (2026-09-04)
+
+- WORK: `WRK-20260904-UPBIT-PROD-STABLE-PROCESS-AND-RUNTIME-RESTORE-V1` · History **#117** · Parent **#116**
+- Launcher: `ops/start_backend_prod.ps1 -Force` → `RUNTIME_MODE=production` · `HOT_RELOAD=false` · `PROCESS_STABLE=true`
+- LIVE ON / ARM ON / STACK **4/4** SUCCESS · order **2644** ACCEPTED unchanged · MANUAL unchanged
+- Residual: immediate post-restore had `ENTRY_EVALUATOR_STALE`; settled HTTP SoT → `AUTO=RUNNING` · `READY=true` · `PRIMARY_BLOCKER=null`
+- Verdict: `PASS_PROD_STABLE_AND_RUNTIME_RESTORED`
+- Evidence: `.run/upbit_prod_stable_process_runtime_restore_20260904.json`
+- NEXT: `NATURAL_OBSERVATION_LEAVE_2644_UNTIL_FILL`
+
+---
+
+## U — UBA1380 Operator Runtime Restore (2026-09-04)
+
+- WORK: `WRK-20260904-UPBIT-UBA1380-OPERATOR-APPROVED-RUNTIME-RESTORE-V1` · History **#116** · Parent **#115**
+- **FAIL_CLOSED**: LIVE ON → `REAL_RUNTIME_REQUIRES_STABLE_PROCESS` (development/hot_reload) — superseded by #117
+- Evidence: `.run/upbit_uba1380_operator_runtime_restore_20260904.json`
+
+---
+
+## U+K — Post News V1 Followup (2026-09-04)
+
+- WORK: `WRK-20260904-POST-NEWS-V1-RUNTIME-BINDING-KIWOOM-LLM-FOLLOWUP` · History **#115** · Parent **#114**
+- P0: `FILLED_EXIT_WITH_OPEN_BINDING` = false positive (binding 416 / KRW-EGLD / active SELL 2644) → detector fix · reconcile **fail-closed**
+- P1: `KIWOOM_LLM_RUNNING=false` = `NO_FRESH_GOLDEN_CROSS` / market-hours expected · observability split · SHADOW_N=1 · LLM_BACKED=0
+- P2: NEWS_V1 commit `89b82ad` · FOLLOWUP `f73aa7f` · Telegram hotfix `8883ec2` preserved · migration `nintelv1a2b3c4`
+- Restart **×1** → LIVE/ARM OFF by restart_policy (operator restore required) · MANUAL untouched · FILLED_EXIT count=0
+- Evidence: `.run/post_news_v1_runtime_binding_kiwoom_llm_followup_20260904.json`
+- NEXT: superseded by #116 → blocked on stable production process
+
+---
+
+## U+K — News Intelligence Pipeline V1 (2026-09-04)
+
+- WORK: `WRK-20260903-UPBIT-KIWOOM-NEWS-INTELLIGENCE-PIPELINE-V1` · History **#114** · Parent audit + preserve **#113** / `8883ec2`
+- SHADOW ONLY · REAL AI Gate/candidate/entry/exit/risk **UNCHANGED**
+- Migration `nintelv1a2b3c4` · Restart **×2** · production reload=false
+- UPBIT collector freshness LAST_CHECK/SUCCESS/NEW · dynamic targets · mapping 0.76→0.82 · shadow N=5 + Telegram
+- KIWOOM TOP10 news/DART collector · DART map 0.9 · shadow N=1 · Admin observability
+- Commit **`89b82ad`** (followup provenance `f73aa7f`)
+- Evidence: `.run/upbit_kiwoom_news_intelligence_pipeline_v1.json`
+- NEXT: superseded by #115 → `OPERATOR_LIVE_ARM_RESTORE_UBA1380`
+
+---
+
+## U — Profitability Lab V1 Safe Prod Activation (2026-09-03)
+
+- WORK: `WRK-20260903-UPBIT-PROFITABILITY-LAB-V1-SAFE-PROD-ACTIVATION` · History **#111** · Parent **#110**
+- TARGET **`3943566`** · Restart **×1** · unattended restore OK · `PRODUCTION_LOADED=true`
+- MANUAL open=4 / AUTO=0 → **not** restart blocker · isolation proven (orders preserved)
+- `SHADOW_EFFECTIVE_START_AT=2026-09-02T21:43:01Z` (feature ACTIVATED_AT ≠ sample start)
+- Labs ACTIVE (A/B/C) · sample N=0 · Exit V3 pairing `EXPECTED_PENDING`
+- Evidence: `.run/k_upbit_profitability_lab_v1_safe_prod_activation.json`
+- NEXT: `NATURAL_SAMPLE_COLLECTION`
 
 ---
 
@@ -11,7 +81,9 @@
 - Labs: Candidate Selection V2 (A0–A3) · Exit Optimization V4 (B0–B3) · Reentry Anti-Churn (C0–C3)
 - `SHADOW_ONLY` / `FORWARD_ONLY` · REAL candidate/entry/exit/reentry **UNCHANGED** · auto promotion 금지
 - Migration `pislabv1a2b3` · Admin research panel + `/profitability-lab/*`
-- NEXT: `NATURAL_SAMPLE_COLLECTION`
+- Commit **`3943566`** · DB migration applied · **activated under History #111**
+- Evidence: `.run/k_upbit_profitability_improvement_shadow_lab_v1.json`
+- NEXT: superseded by #111 → `NATURAL_SAMPLE_COLLECTION`
 
 ---
 

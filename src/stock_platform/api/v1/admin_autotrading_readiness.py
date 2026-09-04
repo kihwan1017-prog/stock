@@ -988,17 +988,28 @@ async def admin_uba_kiwoom_multi_symbol_refresh(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """SHADOW roster refresh — REAL 주문/executor 미연결."""
+    """TOP10 roster refresh + feed reconcile.
 
+    REAL mode에서도 Fresh GC가 있으면 natural signal dispatch 가능
+    (강제 GC/강제 주문 아님). Scheduler stall 시 idempotent start.
+    """
+
+    from stock_platform.operation.kiwoom_multi_symbol_universe import (
+        kiwoom_multi_symbol_universe_scheduler,
+    )
     from stock_platform.operation.kiwoom_multi_symbol_universe.service import (
         KiwoomMultiSymbolUniverseService,
     )
 
+    # 스케줄러 stall 복구 — 전체 backend restart 없이 idempotent ensure
+    sched_ensure = kiwoom_multi_symbol_universe_scheduler.start()
     svc = KiwoomMultiSymbolUniverseService(session)
     result = await svc.refresh(
         user_broker_account_id=int(user_broker_account_id),
         trigger_source="ADMIN",
     )
+    if isinstance(result, dict):
+        result["scheduler_ensure"] = sched_ensure
     return result
 
 

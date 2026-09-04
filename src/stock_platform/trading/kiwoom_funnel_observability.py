@@ -230,7 +230,12 @@ def build_kiwoom_funnel_snapshot(
             "reason_code": mh.get("reason_code"),
         },
         "universe": {
-            "UNIVERSE_SOURCE": "STRATEGY_FIXED_DEPLOYMENT",
+            # live 구독 ≥2 이면 TOP10 union 복구 상태
+            "UNIVERSE_SOURCE": (
+                "KIWOOM_MULTI_SYMBOL_UNION"
+                if len(symbols) > 1
+                else "STRATEGY_FIXED_DEPLOYMENT"
+            ),
             "UNIVERSE_SYMBOL_COUNT": len(symbols),
             "symbols": symbols,
             "034310_ONLY": symbols == ["034310"]
