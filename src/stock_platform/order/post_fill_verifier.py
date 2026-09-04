@@ -60,8 +60,15 @@ class PostFillBalanceVerifier:
                     str(p.get("quantity") or 0)
                 )
                 for p in db_positions
+                if str(p.get("symbol", "")).strip()
             }
-            symbols = set(broker_map) | set(db_map)
+            # expected가 비어 있지 않으면 주문 범위(expected symbols)만 비교.
+            # 포트폴리오 동시 보유 중 broker-only 타종목을 db_qty=0 오탐으로 kill 하지 않음.
+            # (해당 종목은 자기 post-fill row에서 검증)
+            if db_map:
+                symbols = set(db_map.keys())
+            else:
+                symbols = set(broker_map) | set(db_map)
             for sym in symbols:
                 bq = broker_map.get(sym, Decimal("0"))
                 dq = db_map.get(sym, Decimal("0"))
@@ -71,6 +78,11 @@ class PostFillBalanceVerifier:
                             "symbol": sym,
                             "broker_qty": str(bq),
                             "db_qty": str(dq),
+                            "compare_scope": (
+                                "EXPECTED_SYMBOLS"
+                                if db_map
+                                else "FULL_UNION"
+                            ),
                         }
                     )
                     self._on_mismatch(

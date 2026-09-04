@@ -46,6 +46,7 @@ import {
   buildUpbitAutotradingAggregateStatus,
   parseOpsLiveArm,
 } from "@/features/admin/upbit/upbitAutotradingCanonicalStatus";
+import { parseBlockHistoryView } from "@/features/admin/upbit/upbitBlockHistoryView";
 import { UPBIT_AUTOTRADING_EMPTY_LABELS } from "@/features/admin/upbit/upbitAutotradingSettingsConfig";
 import {
   CANDIDATE_SLOT_TABLE_HINT_KO,
@@ -155,6 +156,7 @@ export function UpbitOpsStatusPanel({
     readiness,
     entryEvaluatorState,
   });
+  const blockView = parseBlockHistoryView(ops);
   const readyDisplay =
     aggregate.tier === "blocked" &&
     readinessRaw === "READY_FOR_AUTO_TRADING"
@@ -256,13 +258,70 @@ export function UpbitOpsStatusPanel({
   return (
     <Space orientation="vertical" size={16} style={{ width: "100%" }}>
       <Alert
-        type={aggregate.tier === "blocked" ? "error" : "success"}
+        type={
+          aggregate.tier === "blocked" || aggregate.tier === "system_blocked"
+            ? "error"
+            : aggregate.tier === "entry_restricted"
+              ? "warning"
+              : "success"
+        }
         showIcon
         title={aggregate.headline}
         description={
           <>
             {aggregate.description}
-            {aggregate.blockers.length > 0 ? (
+            {blockView.status === "BLOCKED" ? (
+              <Space
+                orientation="vertical"
+                size={4}
+                style={{ display: "block", marginTop: 10 }}
+              >
+                <Typography.Text>
+                  차단 일시:{" "}
+                  <Typography.Text strong>
+                    {blockView.blockedAt ?? "—"}
+                  </Typography.Text>
+                  {blockView.durationLabel
+                    ? ` · 지속 ${blockView.durationLabel}`
+                    : ""}
+                </Typography.Text>
+                <Typography.Text>
+                  주요 차단 사유:{" "}
+                  <Typography.Text strong>
+                    {blockView.primaryText}
+                  </Typography.Text>
+                </Typography.Text>
+                {blockView.secondaryText ? (
+                  <Typography.Text type="secondary">
+                    상세 사유: {blockView.secondaryText}
+                  </Typography.Text>
+                ) : null}
+                {blockView.killScope ? (
+                  <Typography.Text type="secondary">
+                    Kill scope: {blockView.killScope}
+                    {blockView.killReason
+                      ? ` · ${blockView.killReason}`
+                      : ""}
+                  </Typography.Text>
+                ) : null}
+                <Typography.Text type="secondary">
+                  현재 상태: 조치 필요 (운영자 승인 후 복구)
+                </Typography.Text>
+              </Space>
+            ) : null}
+            {blockView.status === "RESOLVED" ? (
+              <Typography.Paragraph
+                type="secondary"
+                style={{ marginBottom: 0, marginTop: 8 }}
+              >
+                최근 차단: {blockView.blockedAt ?? "—"} ~{" "}
+                {blockView.unblockedAt ?? "—"} · 복구 완료
+                {blockView.durationLabel
+                  ? ` (${blockView.durationLabel})`
+                  : ""}
+              </Typography.Paragraph>
+            ) : null}
+            {aggregate.blockers.length > 0 && blockView.status !== "BLOCKED" ? (
               <Typography.Paragraph
                 type="secondary"
                 style={{ marginBottom: 0, marginTop: 8 }}

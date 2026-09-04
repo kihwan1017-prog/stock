@@ -724,16 +724,44 @@ class PostFillVerificationService:
         next_retry = int(row.retry_count) + 1
         # 마지막 시도에서만 Kill. 그 전은 sync-pending 재시도.
         final_attempt = next_retry >= int(row.max_attempts)
+        expected_positions = list(row.expected_position or [])
+        # reverify도 즉시경로와 동일: expected symbols로 broker snapshot 필터
+        expected_syms = {
+            str(p.get("symbol") or "").upper()
+            for p in expected_positions
+            if str(p.get("symbol") or "").strip()
+        }
+        broker_positions = None
+        if expected_syms:
+            try:
+                from stock_platform.broker.account_repository import (
+                    BrokerAccountSnapshotRepository,
+                )
+
+                _acct, positions = BrokerAccountSnapshotRepository(
+                    self._session
+                ).get_active_by_uba(int(row.user_broker_account_id))
+                broker_positions = [
+                    {
+                        "symbol": str(p.symbol),
+                        "quantity": str(p.quantity),
+                    }
+                    for p in positions
+                    if str(p.symbol).upper() in expected_syms
+                ]
+            except Exception:  # noqa: BLE001
+                broker_positions = None
         result = runner.verify_uba_against_expected(
             user_broker_account_id=int(row.user_broker_account_id),
             user_id=row.user_id,
             broker_code=row.broker_code,
-            expected_positions=list(row.expected_position or []),
+            expected_positions=expected_positions,
             expected_cash=(
                 Decimal(str(row.expected_cash_delta))
                 if row.expected_cash_delta is not None
                 else None
             ),
+            broker_positions=broker_positions,
             actor="POST_FILL_WORKER",
             allow_live_off_for_submitted=allow_live_off,
             activate_kill_on_mismatch=final_attempt,

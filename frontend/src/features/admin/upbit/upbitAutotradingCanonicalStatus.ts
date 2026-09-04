@@ -75,6 +75,11 @@ export function mergeAutotradingBlockers(
   const readyRoot = asRecordOrEmpty(readiness);
   const merged = new Set<string>();
 
+  const kill = asRecordOrEmpty(opsRoot.kill_switch);
+  if (kill.active === true || String(opsRoot.primary_blocker ?? "").toUpperCase() === "KILL_SWITCH_ACTIVE") {
+    merged.add("KILL_SWITCH_ACTIVE");
+  }
+
   if (!liveOn) merged.add("LIVE_OFF");
   if (!armOn) merged.add("ARM_OFF_OR_EXPIRED");
 
@@ -86,7 +91,15 @@ export function mergeAutotradingBlockers(
     const s = String(code ?? "").trim();
     if (s) merged.add(s);
   }
-  return [...merged];
+  const list = [...merged];
+  // Kill이 있으면 맨 앞 — LIVE/ARM OFF는 후속 효과로 표시
+  if (list.includes("KILL_SWITCH_ACTIVE")) {
+    return [
+      "KILL_SWITCH_ACTIVE",
+      ...list.filter((c) => c !== "KILL_SWITCH_ACTIVE"),
+    ];
+  }
+  return list;
 }
 
 function blockerLabelKo(code: string): string {

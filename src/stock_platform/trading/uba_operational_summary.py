@@ -155,13 +155,69 @@ def build_uba_operational_summary(
 
     blockers: list[str] = []
     warnings: list[str] = []
+    kill_payload: dict[str, Any] = {
+        "active": False,
+        "scope_code": None,
+        "reason": None,
+        "activated_by": None,
+        "activated_at": None,
+        "global_active": False,
+        "uba_active": False,
+    }
     try:
         from stock_platform.risk_engine.kill_switch_service import (
             KillSwitchService,
         )
+        from stock_platform.trading.account_identity import (
+            uba_kill_switch_scope,
+        )
+        from sqlalchemy import select
+        from stock_platform.risk_engine.kill_switch_entities import (
+            KillSwitchEntity,
+        )
 
-        if KillSwitchService(session).is_active():
+        ks = KillSwitchService(session)
+        uba_scope = uba_kill_switch_scope(uba_id)
+        global_on = bool(ks.is_active())
+        uba_on = bool(ks.is_active_for_scopes([uba_scope]))
+        # is_active_for_scopes includes GLOBAL — isolate UBA-only row
+        uba_row = session.scalar(
+            select(KillSwitchEntity).where(
+                KillSwitchEntity.scope_code == uba_scope,
+                KillSwitchEntity.active.is_(True),
+            )
+        )
+        kill_payload["global_active"] = global_on
+        kill_payload["uba_active"] = uba_row is not None
+        if global_on or uba_row is not None:
             blockers.append("KILL_SWITCH_ACTIVE")
+            active_row = uba_row
+            if active_row is None and global_on:
+                active_row = session.scalar(
+                    select(KillSwitchEntity).where(
+                        KillSwitchEntity.scope_code == "GLOBAL",
+                        KillSwitchEntity.active.is_(True),
+                    )
+                )
+            if active_row is not None:
+                kill_payload.update(
+                    {
+                        "active": True,
+                        "scope_code": str(active_row.scope_code),
+                        "reason": active_row.reason,
+                        "activated_by": active_row.activated_by,
+                        "activated_at": (
+                            active_row.activated_at.isoformat()
+                            if active_row.activated_at
+                            else None
+                        ),
+                    }
+                )
+            else:
+                kill_payload["active"] = True
+                kill_payload["scope_code"] = (
+                    uba_scope if uba_on else "GLOBAL"
+                )
     except Exception:  # noqa: BLE001
         pass
 
@@ -297,9 +353,14 @@ def build_uba_operational_summary(
                 warnings.append("GHOST_OPEN_BINDING")
         except Exception:  # noqa: BLE001
             ghost_invariant = None
-    # SoT auto_trading_state
+    # SoT auto_trading_state — UBA/GLOBAL kill 우선
     if "KILL_SWITCH_ACTIVE" in blockers:
         auto_state = "BLOCKED"
+        # Kill이 primary — LIVE/ARM OFF는 secondary로 남기되 표시 순서 조정
+        if blockers and blockers[0] != "KILL_SWITCH_ACTIVE":
+            blockers = ["KILL_SWITCH_ACTIVE"] + [
+                b for b in blockers if b != "KILL_SWITCH_ACTIVE"
+            ]
     elif not live_on or not arm_on or str(ctrl.get("activation")) != "ACTIVE":
         auto_state = "STOPPED"
     elif rt == "RUNNING" and wk == "RUNNING":
@@ -313,6 +374,73 @@ def build_uba_operational_summary(
         auto_state = "DEGRADED" if blockers else "STOPPED"
 
     primary_blocker = blockers[0] if blockers else None
+
+    block_history_ui: dict[str, Any] | None = None
+    try:
+        from stock_platform.trading.autotrading_block_event import (
+            AutotradingBlockEventService,
+        )
+
+        block_svc = AutotradingBlockEventService(session)
+        if not slim:
+            block_svc.record_from_ops_snapshot(
+                user_broker_account_id=uba_id,
+                market=broker_u or "UNKNOWN",
+                blockers=list(blockers),
+                primary_blocker=primary_blocker,
+                kill=kill_payload,
+                runtime_snapshot={
+                    "auto_trading_state": auto_state,
+                    "live": "ON" if live_on else "OFF",
+                    "arm": "ON" if arm_on else "OFF",
+                    "runtime": rt,
+                    "runner": rn,
+                    "outbox_worker": wk,
+                    "exit_monitor": ex,
+                    "stack_label": f"{stack_running}/4 RUNNING",
+                },
+                activation_id=(
+                    int(act.live_trading_transition_id)
+                    if act is not None
+                    else None
+                ),
+            )
+            # transition flush는 호출 세션 commit에 위임 (read API는 보통 commit)
+            try:
+                session.flush()
+            except Exception:  # noqa: BLE001
+                pass
+        block_history_ui = block_svc.ui_payload(
+            user_broker_account_id=uba_id
+        )
+        # 활성 kill이 있는데 open history가 없으면 kill activated_at로 synthetic
+        if (
+            kill_payload.get("active")
+            and (block_history_ui or {}).get("status") == "NONE"
+        ):
+            from stock_platform.trading.autotrading_block_reason_labels import (
+                primary_reason_text_ko,
+            )
+
+            block_history_ui = {
+                "status": "BLOCKED",
+                "blocked_at": kill_payload.get("activated_at"),
+                "primary_reason_code": "KILL_SWITCH_ACTIVE",
+                "primary_reason_text": primary_reason_text_ko(
+                    "KILL_SWITCH_ACTIVE",
+                    kill_reason=kill_payload.get("reason"),
+                ),
+                "secondary_reasons": [
+                    b for b in blockers if b != "KILL_SWITCH_ACTIVE"
+                ],
+                "kill_switch_scope": kill_payload.get("scope_code"),
+                "kill_switch_reason": kill_payload.get("reason"),
+                "source_component": kill_payload.get("activated_by"),
+                "event_id": None,
+                "unblocked_at": None,
+            }
+    except Exception:  # noqa: BLE001
+        block_history_ui = None
 
     full_market: dict[str, Any] = {
         "mode": "FIXED_SYMBOL",
@@ -546,6 +674,8 @@ def build_uba_operational_summary(
         "blockers": blockers,
         "warnings": warnings,
         "primary_blocker": primary_blocker,
+        "kill_switch": kill_payload,
+        "block_history": block_history_ui,
         "control": ctrl,
         "full_market": full_market,
         "scanner": scanner_summary,

@@ -89,6 +89,9 @@ BLOCKER_LABELS_KO = {
     "ACCOUNT_PAUSED": "계좌 일시정지",
     "TRADING_PAUSED": "거래 일시정지",
     "EXIT_PENDING_ZERO_FILL_STUCK": "청산 주문 체결 대기",
+    "LIVE_NOT_APPROVED": "LIVE 미승인",
+    "AUTO_EXIT_QUOTE_STALE": "청산 시세 지연",
+    "POSITION_MISMATCH": "포지션 검증 불일치",
 }
 
 

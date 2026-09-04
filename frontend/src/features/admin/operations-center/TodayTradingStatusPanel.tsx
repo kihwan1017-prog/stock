@@ -23,7 +23,7 @@ import {
   Legend,
   Line,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as ChartTooltip,
   XAxis,
   YAxis,
 } from "recharts";
@@ -317,7 +317,7 @@ export function TodayTradingStatusPanel({
                       })
                     }
                   />
-                  <Tooltip
+                  <ChartTooltip
                     formatter={(value, name) => [
                       formatKrw(Number(value)),
                       name === "realized" ? "실현손익" : "누적손익",
