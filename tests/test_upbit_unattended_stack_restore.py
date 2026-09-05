@@ -689,3 +689,41 @@ def test_restore_from_active_lease_accepts_restore_stack_flag() -> None:
     with patch.object(svc, "get_active", return_value=None):
         out = svc.restore_from_active_lease(1380, restore_stack=False)
     assert out == {"restored": False, "reason": "NO_ACTIVE_LEASE"}
+
+
+def test_restore_from_active_lease_blocks_hot_reload_runtime() -> None:
+    """reboot 후 DEV/hot-reload면 lease가 있어도 REAL restore 금지 (fail-closed)."""
+
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+
+    from stock_platform.operation.runtime_process_stability import (
+        CODE_REAL_RUNTIME_REQUIRES_STABLE_PROCESS,
+        RealRuntimeUnstableError,
+    )
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+    )
+
+    session = MagicMock()
+    svc = LiveUnattendedAuthorizationService(session)
+    lease = SimpleNamespace(
+        status_code="ACTIVE",
+        authorized_until=datetime.now(timezone.utc) + timedelta(hours=12),
+        live_unattended_authorization_id=17,
+        arm_lease_ttl_seconds=3600,
+        source_activation_id=661,
+    )
+    with (
+        patch.object(svc, "get_active", return_value=lease),
+        patch(
+            "stock_platform.operation.runtime_process_stability."
+            "assert_stable_runtime_for_real_trading",
+            side_effect=RealRuntimeUnstableError(),
+        ),
+    ):
+        out = svc.restore_from_active_lease(1380, restore_stack=False)
+
+    assert out["restored"] is False
+    assert out["reason"] == CODE_REAL_RUNTIME_REQUIRES_STABLE_PROCESS
+    assert "START_PRODUCTION_BACKEND" in str(out.get("operator_action") or "")

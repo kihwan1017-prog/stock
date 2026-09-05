@@ -1941,10 +1941,22 @@ class LiveUnattendedAuthorizationService:
                 context="UNATTENDED_RESTORE"
             )
         except RealRuntimeUnstableError as exc:
+            logger.warning(
+                "unattended_restore_blocked_unstable_runtime",
+                user_broker_account_id=int(user_broker_account_id),
+                reason=exc.code,
+                message=exc.message,
+                actor=actor,
+            )
             return {
                 "restored": False,
                 "reason": exc.code,
                 "message": exc.message,
+                "operator_action": (
+                    "START_PRODUCTION_BACKEND "
+                    "(ops/start_backend_prod.ps1; hot_reload=false)"
+                ),
+                "recovery_method": "NOT_ATTEMPTED_UNSTABLE_RUNTIME",
             }
 
         now = _now()
