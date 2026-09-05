@@ -310,8 +310,36 @@ class AutotradingBlockEventService:
                 "source_component": open_row.source_component,
                 "event_id": int(open_row.event_id),
                 "unblocked_at": None,
+                "resolved_at": None,
+                # 복구 lifecycle — 차단 중이면 시작=차단시각, 완료=없음
+                "recovery_started_at": open_row.blocked_at.isoformat()
+                if open_row.blocked_at
+                else None,
+                "recovered_at": None,
+                "recovery_result": "PENDING",
+                "recovery_method": "NOT_ATTEMPTED",
+                "resolution_type": None,
             }
         if resolved is not None:
+            resolution = str(resolved.resolution_type or "").upper()
+            if resolution in {"AUTO_OBSERVED_CLEAR", "AUTO", "SELF_HEAL"}:
+                method = "AUTO"
+                result = "SUCCESS"
+            elif resolution in {"MANUAL", "OPERATOR", "ADMIN"}:
+                method = "MANUAL"
+                result = "SUCCESS"
+            elif resolution in {"REASON_CHANGED"}:
+                method = "AUTO"
+                result = "SUCCESS"
+            elif resolution:
+                method = "MIXED"
+                result = "SUCCESS"
+            else:
+                method = "UNKNOWN"
+                result = "SUCCESS"
+            recovered_at = (
+                resolved.resolved_at or resolved.unblocked_at
+            )
             return {
                 "status": "RESOLVED",
                 "blocked_at": resolved.blocked_at.isoformat()
@@ -328,8 +356,18 @@ class AutotradingBlockEventService:
                 "secondary_reasons": resolved.secondary_reasons_json or [],
                 "resolution_type": resolved.resolution_type,
                 "event_id": int(resolved.event_id),
+                "recovery_started_at": resolved.blocked_at.isoformat()
+                if resolved.blocked_at
+                else None,
+                "recovered_at": recovered_at.isoformat() if recovered_at else None,
+                "recovery_result": result,
+                "recovery_method": method,
             }
-        return {"status": "NONE"}
+        return {
+            "status": "NONE",
+            "recovery_result": "NOT_ATTEMPTED",
+            "recovery_method": "NOT_ATTEMPTED",
+        }
 
 
 def _parse_ts(raw: Any) -> datetime | None:

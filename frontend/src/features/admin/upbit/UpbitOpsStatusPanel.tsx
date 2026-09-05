@@ -286,6 +286,34 @@ export function UpbitOpsStatusPanel({
                     : ""}
                 </Typography.Text>
                 <Typography.Text>
+                  자동 복구 시작:{" "}
+                  <Typography.Text strong>
+                    {blockView.recoveryStartedAt ?? "—"}
+                  </Typography.Text>
+                </Typography.Text>
+                <Typography.Text>
+                  자동 복구 완료:{" "}
+                  <Typography.Text strong>
+                    {blockView.recoveredAt ?? "—"}
+                  </Typography.Text>
+                </Typography.Text>
+                <Typography.Text>
+                  복구 소요시간:{" "}
+                  <Typography.Text strong>
+                    {blockView.recoveryDurationLabel ?? "—"}
+                  </Typography.Text>
+                </Typography.Text>
+                <Typography.Text>
+                  복구 결과:{" "}
+                  <Typography.Text strong>
+                    {blockView.recoveryResultLabel}
+                  </Typography.Text>
+                  {" · 복구 방식: "}
+                  <Typography.Text strong>
+                    {blockView.recoveryMethodLabel}
+                  </Typography.Text>
+                </Typography.Text>
+                <Typography.Text>
                   주요 차단 사유:{" "}
                   <Typography.Text strong>
                     {blockView.primaryText}
@@ -305,21 +333,35 @@ export function UpbitOpsStatusPanel({
                   </Typography.Text>
                 ) : null}
                 <Typography.Text type="secondary">
-                  현재 상태: 조치 필요 (운영자 승인 후 복구)
+                  현재 상태: 조치 필요 (운영자 승인 후 복구) · 위 시각은
+                  차단/복구 이벤트이며 Activation·ARM 갱신 시각과 다릅니다.
                 </Typography.Text>
               </Space>
             ) : null}
             {blockView.status === "RESOLVED" ? (
-              <Typography.Paragraph
-                type="secondary"
-                style={{ marginBottom: 0, marginTop: 8 }}
+              <Space
+                orientation="vertical"
+                size={4}
+                style={{ display: "block", marginTop: 8 }}
               >
-                최근 차단: {blockView.blockedAt ?? "—"} ~{" "}
-                {blockView.unblockedAt ?? "—"} · 복구 완료
-                {blockView.durationLabel
-                  ? ` (${blockView.durationLabel})`
-                  : ""}
-              </Typography.Paragraph>
+                <Typography.Text type="secondary">
+                  최근 차단: {blockView.blockedAt ?? "—"} ~{" "}
+                  {blockView.unblockedAt ?? "—"}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  자동 복구 시작: {blockView.recoveryStartedAt ?? "—"}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  자동 복구 완료: {blockView.recoveredAt ?? "—"}
+                  {blockView.recoveryDurationLabel
+                    ? ` · 소요 ${blockView.recoveryDurationLabel}`
+                    : ""}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  복구 결과: {blockView.recoveryResultLabel} · 복구 방식:{" "}
+                  {blockView.recoveryMethodLabel}
+                </Typography.Text>
+              </Space>
             ) : null}
             {aggregate.blockers.length > 0 && blockView.status !== "BLOCKED" ? (
               <Typography.Paragraph

@@ -54,6 +54,17 @@ def _dec(v: Any) -> float:
         return 0.0
 
 
+def _fmt_krw_signed(v: Any) -> str:
+    """천단위 + 부호 (Telegram 표시용)."""
+    n = _dec(v)
+    sign = "+" if n > 0 else ""
+    return f"{sign}{n:,.0f}원"
+
+
+# 장애 집계 — NORMAL/대기성 classification은 '시스템 장애'에서 제외
+_INCIDENT_FAILURE_CLASSES = frozenset({"SYSTEM_FAILURE", "PIPELINE_STALL"})
+
+
 def _order_day_stats(
     session: Session,
     *,
@@ -61,7 +72,7 @@ def _order_day_stats(
     start_utc: datetime,
     end_utc: datetime,
 ) -> dict[str, Any]:
-    buy = sell = buy_fill = sell_fill = 0
+    buy = sell = buy_fill = sell_fill = open_ord = 0
     buy_amount = sell_amount = 0.0
     last_order_at: datetime | None = None
     last_fill_at: datetime | None = None
@@ -90,7 +101,7 @@ def _order_day_stats(
         elif side in {"SELL", "ASK"}:
             sell += 1
             sell_amount += amt
-        filled = st in {"FILLED", "DONE", "COMPLETED", "PARTIALLY_FILLED"}
+        filled = st in {"FILLED", "DONE", "COMPLETED", "PARTIALLY_FILLED", "PARTIAL"}
         if filled:
             if side in {"BUY", "BID"}:
                 buy_fill += 1
@@ -107,6 +118,8 @@ def _order_day_stats(
                     if order.created_at
                     else None,
                 }
+        if st in {"NEW", "ACCEPTED", "SUBMITTED", "PENDING", "OPEN", "CREATED"}:
+            open_ord += 1
         if last_order_at is None:
             last_order_at = order.created_at
             last_order = {
@@ -124,6 +137,7 @@ def _order_day_stats(
         "sell_order_count": sell,
         "buy_fill_count": buy_fill,
         "sell_fill_count": sell_fill,
+        "open_order_count": open_ord,
         "buy_amount": round(buy_amount, 2),
         "sell_amount": round(sell_amount, 2),
         "last_order": last_order,
@@ -215,12 +229,36 @@ def _is_kiwoom_expected_post_close(ops: dict[str, Any]) -> bool:
     return False
 
 
+def _is_failure_incident(item: dict[str, Any]) -> bool:
+    cls = str(item.get("classification") or "").upper()
+    return cls in _INCIDENT_FAILURE_CLASSES
+
+
+def _dedupe_open_incidents_by_signature(
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """동일 signature 미복구 chain은 최신 leaf만 유지."""
+
+    latest: dict[str, dict[str, Any]] = {}
+    for item in items:
+        sig = str(item.get("signature") or item.get("incident_id") or "")
+        prev = latest.get(sig)
+        if prev is None:
+            latest[sig] = item
+            continue
+        prev_at = str(prev.get("started_at") or "")
+        cur_at = str(item.get("started_at") or "")
+        if cur_at >= prev_at:
+            latest[sig] = item
+    return list(latest.values())
+
+
 def _incidents_active(
     session: Session,
     *,
     market: str | None = None,
 ) -> list[dict[str, Any]]:
-    """미복구 incident — overall health 판정용."""
+    """미복구 실제 장애 — NORMAL/대기성 classification 제외, signature leaf만."""
 
     params: dict[str, Any] = {}
     market_clause = ""
@@ -235,13 +273,15 @@ def _incidents_active(
                    self_heal_level
             FROM operation.autotrading_incident_ledger
             WHERE recovered_at IS NULL
+              AND classification IN ('SYSTEM_FAILURE', 'PIPELINE_STALL')
             {market_clause}
             ORDER BY started_at ASC
             """
         ),
         params,
     ).mappings().all()
-    return [_incident_row_to_dict(row) for row in rows]
+    items = [_incident_row_to_dict(row) for row in rows]
+    return _dedupe_open_incidents_by_signature(items)
 
 
 def _incident_row_to_dict(row: Any) -> dict[str, Any]:
@@ -287,7 +327,8 @@ def _incidents_for_day(
         params,
     ).mappings().all()
     items: list[dict[str, Any]] = [_incident_row_to_dict(row) for row in rows]
-    return items
+    # 일일 '시스템 장애' 건수 = 실패성 classification만
+    return [i for i in items if _is_failure_incident(i)]
 
 
 def _why_no_trade_ko(
@@ -305,16 +346,24 @@ def _why_no_trade_ko(
 
     if broker == "KIWOOM":
         phase = str(ops.get("krx_session_phase") or ops.get("market_session") or "").upper()
-        if phase in {"CLOSED", "AFTER", "HOLIDAY"} or "CLOSE" in phase:
-            messages.append("현재 정규장이 종료되었습니다.")
+        weekend_or_closed = (
+            phase in {"CLOSED", "AFTER", "HOLIDAY", "POST_CLOSE", "WEEKEND"}
+            or "CLOSE" in phase
+            or "HOLIDAY" in phase
+            or _is_kiwoom_expected_post_close(ops)
+        )
+        if weekend_or_closed:
+            # 주말/휴장/장후를 '시스템 점검'으로 오인하지 않음
+            if phase in {"HOLIDAY"} or "HOLIDAY" in phase:
+                return ["오늘은 시장 휴장일입니다."]
+            if phase in {"WEEKEND"} or "WEEKEND" in phase:
+                return ["주말에는 정규장이 열리지 않습니다."]
+            return ["현재 정규장이 종료되었습니다. Fresh Golden Cross를 대기합니다."]
         feed = str((ops.get("market_feed") or {}).get("status") or "").upper()
-        if (
-            feed in {"DISCONNECTED", "UNHEALTHY", "REAL_STALE"}
-            and not _is_kiwoom_expected_post_close(ops)
-        ):
+        if feed in {"DISCONNECTED", "UNHEALTHY", "REAL_STALE"}:
             messages.append("시세 연결 상태를 확인해야 합니다.")
         if funnel_first_zero == "NO_GOLDEN_CROSS_SIGNAL" or cls == "NORMAL_NO_SIGNAL":
-            messages.append("오늘 Golden Cross가 발생하지 않았습니다.")
+            messages.append("오늘 Fresh Golden Cross가 발생하지 않았습니다.")
             return messages
 
     if cls == "NORMAL_NO_SIGNAL":
@@ -413,22 +462,83 @@ def _market_section(
         session, uba_id=uba_id, start_utc=start_utc, end_utc=end_utc
     )
 
+    # Canonical SoT — History #121/#128 동일 Performance service
+    # 과거일도 start_date/end_date로 당일 창을 지정 (wrong key / lifetime 혼입 방지)
     perf = AutotradingPerformanceService(session).build(
         broker=broker,  # type: ignore[arg-type]
         period="TODAY" if report_date == datetime.now(_KST).date() else "ALL",
         include_ops=False,
+        user_broker_account_id=int(uba_id),
+        start_date=report_date,
+        end_date=report_date,
     )
-    broker_perf = perf
-    if broker != "ALL":
-        summary = perf.get("summary") if isinstance(perf.get("summary"), dict) else {}
-    else:
-        summary = {}
-
-    # 당일이 아니면 closed_at 필터로 재집계 — 간단히 summary 사용
     summary = perf.get("summary") if isinstance(perf.get("summary"), dict) else {}
-    realized = _dec(summary.get("realized_pnl") or summary.get("net_pnl"))
-    unrealized = _dec(summary.get("unrealized_pnl"))
-    open_count = len(perf.get("open_positions") or [])
+
+    realized = _dec(
+        summary.get("period_realized_pnl")
+        or summary.get("period_net_pnl")
+        or summary.get("today_realized_pnl")
+    )
+    gross = _dec(
+        summary.get("period_gross_pnl") or summary.get("today_gross_pnl")
+    )
+    fees = _dec(summary.get("period_fees") or summary.get("today_fees"))
+    wins = int(summary.get("wins") or summary.get("today_wins") or 0)
+    losses = int(summary.get("losses") or summary.get("today_losses") or 0)
+    closed_rt = int(
+        summary.get("closed_trade_count")
+        or summary.get("today_closed_trade_count")
+        or 0
+    )
+    wr = summary.get("win_rate_pct") or summary.get("today_win_rate_pct")
+    pf = summary.get("period_profit_factor")
+
+    unrealized = _dec(
+        summary.get("current_unrealized_pnl") or summary.get("unrealized_pnl")
+    )
+    open_count = int(
+        summary.get("open_position_count")
+        or len(perf.get("open_positions") or [])
+    )
+
+    # 종료 사유 / TOP 종목 — period_closed 재사용 (별도 PnL 산식 금지)
+    exit_rows = [
+        r
+        for r in (perf.get("exit_reason_performance") or [])
+        if isinstance(r, dict)
+    ]
+    closed_trades = [
+        t
+        for t in (perf.get("recent_closed_trades") or perf.get("round_trips") or [])
+        if isinstance(t, dict)
+    ]
+    # round_trips가 있으면 당일 TOP용으로 우선
+    rts = [
+        t
+        for t in (perf.get("round_trips") or closed_trades)
+        if isinstance(t, dict)
+    ]
+    ranked = sorted(
+        rts,
+        key=lambda t: _dec(t.get("net_pnl")),
+        reverse=True,
+    )
+    top_winners = [
+        {
+            "symbol": str(t.get("symbol") or "").replace("KRW-", ""),
+            "net_pnl": _dec(t.get("net_pnl")),
+        }
+        for t in ranked[:3]
+        if _dec(t.get("net_pnl")) > 0
+    ]
+    top_losers = [
+        {
+            "symbol": str(t.get("symbol") or "").replace("KRW-", ""),
+            "net_pnl": _dec(t.get("net_pnl")),
+        }
+        for t in sorted(ranked, key=lambda t: _dec(t.get("net_pnl")))[:3]
+        if _dec(t.get("net_pnl")) < 0
+    ]
 
     rel = ops.get("reliability") if isinstance(ops.get("reliability"), dict) else {}
     funnel = rel.get("funnel") if isinstance(rel.get("funnel"), dict) else {}
@@ -521,9 +631,21 @@ def _market_section(
         "trading_summary": {
             **order_stats,
             "realized_pnl": realized,
+            "gross_pnl": gross,
+            "fees": fees,
             "unrealized_pnl": unrealized,
             "open_position_count": open_count,
+            "closed_round_trips": closed_rt,
+            "wins": wins,
+            "losses": losses,
+            "win_rate_pct": wr,
+            "profit_factor": pf,
+            "buy_filled_count": order_stats.get("buy_fill_count"),
+            "sell_filled_count": order_stats.get("sell_fill_count"),
         },
+        "exit_reason_performance": exit_rows,
+        "top_winners": top_winners,
+        "top_losers": top_losers,
         "daily_entry": daily_entry,
         "short_term_operation": short_term,
         "open_positions": (perf.get("open_positions") or [])[:10],
@@ -641,9 +763,23 @@ def build_autotrading_daily_report(
         session, start_utc=start_utc, end_utc=end_utc
     )
     active_incidents = _incidents_active(session)
-    resolved_today = [
-        i for i in incidents_today if i.get("recovered")
-    ]
+    # 당일 복구 완료 — recovered_at이 당일 창인 failure incident
+    resolved_today_rows = session.execute(
+        text(
+            """
+            SELECT incident_id, market, uba_id, signature, classification,
+                   first_zero_stage, root_cause, started_at, recovered_at,
+                   self_heal_level
+            FROM operation.autotrading_incident_ledger
+            WHERE recovered_at IS NOT NULL
+              AND recovered_at >= :start_utc AND recovered_at < :end_utc
+              AND classification IN ('SYSTEM_FAILURE', 'PIPELINE_STALL')
+            ORDER BY recovered_at ASC
+            """
+        ),
+        {"start_utc": start_utc, "end_utc": end_utc},
+    ).mappings().all()
+    resolved_today = [_incident_row_to_dict(row) for row in resolved_today_rows]
 
     research = build_cross_market_research_status_for_daily_report(
         session, upbit_uba_id=upbit_uba, kiwoom_uba_id=kiwoom_uba
@@ -685,6 +821,8 @@ def build_autotrading_daily_report(
             "open_count": len(active_incidents),
             "active_count": len(active_incidents),
             "resolved_today_count": len(resolved_today),
+            "today_incident_count": len(incidents_today),
+            "active_unresolved_incident_count": len(active_incidents),
             "items": incidents_today,
             "active_items": active_incidents,
             "historical_items": incidents_today,
@@ -695,30 +833,146 @@ def build_autotrading_daily_report(
 
 
 def format_daily_report_telegram(report: dict[str, Any]) -> str:
-    """Telegram 본문 — fail-open용 순수 문자열."""
+    """Telegram 본문 V2 — canonical trading_summary 키 사용."""
 
     rd = report.get("report_date") or ""
-    lines = [f"[시스템] 자동매매 일일보고", str(rd), ""]
+    generated = str(report.get("generated_at") or "")
+    cutoff = f"{rd} (KST)"
+    lines = [
+        "[시스템] 자동매매 일일보고",
+        f"보고일: {rd}",
+        f"보고 기준시각: {cutoff}",
+        "",
+    ]
 
     for key, label in (("upbit", "업비트"), ("kiwoom", "키움")):
         sec = report.get(key)
         if not isinstance(sec, dict):
             continue
-        ts = sec.get("trading_summary") if isinstance(sec.get("trading_summary"), dict) else {}
+        ts = (
+            sec.get("trading_summary")
+            if isinstance(sec.get("trading_summary"), dict)
+            else {}
+        )
         why = sec.get("why_no_trade") or []
+        st = (
+            sec.get("short_term_operation")
+            if isinstance(sec.get("short_term_operation"), dict)
+            else {}
+        )
+        auto_state = str(sec.get("auto_trading_state") or "").upper() or "—"
         lines.append(f"[{label}]")
         lines.append(f"상태: {sec.get('health_label', '—')}")
-        lines.append(f"매수: {ts.get('buy_order_count', 0)}")
-        lines.append(f"매도: {ts.get('sell_order_count', 0)}")
-        lines.append(f"실현손익: {ts.get('realized_pnl', 0)}")
-        lines.append(f"보유: {ts.get('open_position_count', 0)}")
+        lines.append("")
+        lines.append("오늘 성과")
+        lines.append(f"• 완료 거래: {int(ts.get('closed_round_trips') or 0)}건")
+        lines.append(
+            f"• 매수 체결: {int(ts.get('buy_filled_count') or ts.get('buy_fill_count') or 0)}건"
+        )
+        lines.append(
+            f"• 매도 체결: {int(ts.get('sell_filled_count') or ts.get('sell_fill_count') or 0)}건"
+        )
+        lines.append(f"• 수익 거래: {int(ts.get('wins') or 0)}건")
+        lines.append(f"• 손실 거래: {int(ts.get('losses') or 0)}건")
+        wr = ts.get("win_rate_pct")
+        try:
+            wr_s = f"{float(wr):.1f}%" if wr is not None and wr != "" else "—"
+        except (TypeError, ValueError):
+            wr_s = "—"
+        lines.append(f"• 승률: {wr_s}")
+        lines.append("")
+        lines.append("손익")
+        lines.append(f"• 매매손익(Gross): {_fmt_krw_signed(ts.get('gross_pnl'))}")
+        lines.append(f"• 수수료: -{_dec(ts.get('fees')):,.0f}원")
+        lines.append(f"• 순손익(Net): {_fmt_krw_signed(ts.get('realized_pnl'))}")
+        pf = ts.get("profit_factor")
+        lines.append(f"• Profit Factor: {pf if pf not in (None, '') else '—'}")
+        lines.append("")
+        lines.append("현재")
+        lines.append(f"• AUTO 보유: {int(ts.get('open_position_count') or 0)}종목")
+        open_orders = int(ts.get("open_order_count") or 0)
+        lines.append(f"• 미체결 AUTO 주문: {open_orders}건")
+        if key == "upbit":
+            cand = st.get("candidate_count")
+            if cand is None:
+                cand = (sec.get("pipeline") or {}).get("candidate_count") if isinstance(sec.get("pipeline"), dict) else None
+            lines.append(f"• 후보: {cand if cand is not None else '—'}개")
+            churn = st.get("churn_guard") if isinstance(st.get("churn_guard"), dict) else {}
+            if churn:
+                lines.append(
+                    "• Churn Guard: "
+                    f"ACTIVE {churn.get('active_count', 0)} / "
+                    f"CRITICAL {churn.get('critical_count', 0)}"
+                )
+        lines.append(f"• 상태: {auto_state}")
+        lines.append("")
+
+        exits = [
+            r
+            for r in (sec.get("exit_reason_performance") or [])
+            if isinstance(r, dict)
+        ]
+        if exits:
+            lines.append("종료 사유")
+            for row in exits[:6]:
+                cat = str(
+                    row.get("exit_reason_label_ko")
+                    or row.get("exit_reason_category")
+                    or "기타"
+                )
+                cnt = int(
+                    row.get("trade_count")
+                    or row.get("closed_trade_count")
+                    or row.get("count")
+                    or 0
+                )
+                net = _fmt_krw_signed(
+                    row.get("total_realized_pnl")
+                    or row.get("net_pnl")
+                    or row.get("period_net_pnl")
+                )
+                lines.append(f"• {cat}: {cnt}건 / {net}")
+            lines.append("")
+
+        winners = [x for x in (sec.get("top_winners") or []) if isinstance(x, dict)]
+        losers = [x for x in (sec.get("top_losers") or []) if isinstance(x, dict)]
+        if winners or losers:
+            lines.append("주요 종목")
+            if winners:
+                lines.append(
+                    "• 수익 TOP: "
+                    + ", ".join(
+                        f"{w.get('symbol')} {_fmt_krw_signed(w.get('net_pnl'))}"
+                        for w in winners
+                    )
+                )
+            if losers:
+                lines.append(
+                    "• 손실 TOP: "
+                    + ", ".join(
+                        f"{w.get('symbol')} {_fmt_krw_signed(w.get('net_pnl'))}"
+                        for w in losers
+                    )
+                )
+            lines.append("")
+
         if why:
-            lines.append(f"미거래 사유: {why[0]}")
+            lines.append(f"대기/미거래 이유: {why[0]}")
         lines.append("")
 
     inc = report.get("incidents") if isinstance(report.get("incidents"), dict) else {}
-    lines.append(f"시스템 장애: {inc.get('today_count', 0)}건")
-    lines.append(f"현재 미복구 장애: {inc.get('open_count', 0)}건")
+    lines.append(
+        f"시스템 장애(당일): {inc.get('today_incident_count', inc.get('today_count', 0))}건"
+    )
+    lines.append(
+        f"당일 복구: {inc.get('resolved_today_count', 0)}건"
+    )
+    lines.append(
+        f"현재 미복구 장애: "
+        f"{inc.get('active_unresolved_incident_count', inc.get('open_count', 0))}건"
+    )
+    if generated:
+        lines.append(f"(생성: {generated})")
     return "\n".join(lines)
 
 

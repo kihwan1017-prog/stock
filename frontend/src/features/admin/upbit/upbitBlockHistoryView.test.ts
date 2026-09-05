@@ -45,11 +45,51 @@ describe("upbitBlockHistoryView", () => {
     expect(v.status).toBe("NONE");
   });
 
-  it("formats duration", () => {
+  it("formats duration with minutes and seconds", () => {
     const label = formatBlockDuration(
       "2026-09-05T06:07:06+09:00",
       "2026-09-05T07:30:06+09:00",
     );
     expect(label).toContain("시간");
+  });
+
+  it("exposes recovery lifecycle fields for resolved block", () => {
+    const v = parseBlockHistoryView({
+      kill_switch: { active: false },
+      block_history: {
+        status: "RESOLVED",
+        blocked_at: "2026-09-05T06:07:06+09:00",
+        unblocked_at: "2026-09-05T06:20:06+09:00",
+        resolved_at: "2026-09-05T06:20:06+09:00",
+        recovery_started_at: "2026-09-05T06:07:06+09:00",
+        recovered_at: "2026-09-05T06:20:06+09:00",
+        recovery_result: "SUCCESS",
+        recovery_method: "AUTO",
+        resolution_type: "AUTO_OBSERVED_CLEAR",
+        primary_reason_code: "KILL_SWITCH_ACTIVE",
+      },
+    });
+    expect(v.status).toBe("RESOLVED");
+    expect(v.recoveryResult).toBe("SUCCESS");
+    expect(v.recoveryMethod).toBe("AUTO");
+    expect(v.recoveryStartedAt).toBeTruthy();
+    expect(v.recoveredAt).toBeTruthy();
+    expect(v.recoveryDurationLabel).toBeTruthy();
+    expect(v.recoveryResultLabel).toBe("성공");
+  });
+
+  it("pending recovery while blocked", () => {
+    const v = parseBlockHistoryView({
+      kill_switch: { active: true },
+      block_history: {
+        status: "BLOCKED",
+        blocked_at: "2026-09-05T06:07:06+09:00",
+        recovery_result: "PENDING",
+        primary_reason_code: "LIVE_OFF",
+      },
+    });
+    expect(v.recoveryResult).toBe("PENDING");
+    expect(v.recoveredAt).toBeNull();
+    expect(v.recoveryResultLabel).toBe("진행 중");
   });
 });

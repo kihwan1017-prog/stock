@@ -7,6 +7,8 @@ import {
   alertEmoji,
   boolOnOff,
   formatClock,
+  formatHoldDuration,
+  formatKrwPlain,
   formatKrwSigned,
   overallEmoji,
   pnlClass,
@@ -35,11 +37,18 @@ function Row({
   );
 }
 
+function formatWinRate(v: unknown): string {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toFixed(1)}%`;
+}
+
 export function MobileHomeDashboard() {
   const q = useMobileOverview(15_000);
   const [online, setOnline] = useState(() =>
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
+  const [bootTimedOut, setBootTimedOut] = useState(false);
 
   useEffect(() => {
     const on = () => setOnline(true);
@@ -51,6 +60,16 @@ export function MobileHomeDashboard() {
       window.removeEventListener("offline", off);
     };
   }, []);
+
+  // 무한 splash 방지 — 초기 로딩이 길면 사용자용 안내 전환
+  useEffect(() => {
+    if (q.data || q.isError) {
+      setBootTimedOut(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setBootTimedOut(true), 12_000);
+    return () => window.clearTimeout(timer);
+  }, [q.data, q.isError, q.isFetching]);
 
   const data = q.data;
   const overall = data?.overall;
@@ -65,6 +84,83 @@ export function MobileHomeDashboard() {
   const orders = data?.recent_orders ?? [];
   const events = data?.recent_events ?? [];
   const ai = data?.ai ?? {};
+
+  const buyCount = Number(today.buy_count ?? today.auto_buy_count ?? 0);
+  const sellCount = Number(today.sell_count ?? today.auto_sell_count ?? 0);
+  const filledCount = Number(today.filled_count ?? today.fill_count ?? 0);
+  const openCount = Number(today.open_count ?? 0);
+  const cancelledCount = Number(today.cancelled_count ?? 0);
+
+  const showBootGate =
+    !data && (q.isLoading || q.isFetching) && !q.isError && !bootTimedOut;
+  const showFailureGate = !data && (q.isError || bootTimedOut || !online);
+
+  if (showBootGate) {
+    return (
+      <div className={styles.page}>
+        <header className={styles.header}>
+          <div>
+            <h1 className={styles.title}>KIKI AI Trading</h1>
+            <p className={styles.overall}>서버에 연결하는 중…</p>
+          </div>
+        </header>
+        <div className={`${styles.banner} ${styles.bannerOffline}`}>
+          앱을 준비하고 있습니다. 잠시만 기다려 주세요.
+        </div>
+      </div>
+    );
+  }
+
+  if (showFailureGate) {
+    const apiMsg = q.isError ? toApiError(q.error).message : "";
+    let title = "앱을 불러오지 못했습니다";
+    let hint =
+      "서버 연결을 확인한 뒤 다시 시도해 주세요. Tailscale이 켜져 있는지 확인하세요.";
+    if (!online) {
+      title = "네트워크 연결 없음";
+      hint =
+        "휴대폰 인터넷 또는 Tailscale 연결을 확인한 뒤 다시 시도해 주세요.";
+    } else if (/401|403|인증|세션|unauthorized/i.test(apiMsg)) {
+      title = "인증 세션이 만료되었습니다";
+      hint = "다시 로그인한 뒤 홈 화면 아이콘으로 진입해 주세요.";
+    } else if (bootTimedOut && !q.isError) {
+      title = "서버 준비 중이거나 응답이 없습니다";
+      hint =
+        "PC에서 stock 프론트엔드가 실행 중인지, Tailscale Serve가 복구됐는지 확인해 주세요.";
+    } else if (/failed to fetch|network|ECONN|timeout/i.test(apiMsg)) {
+      title = "서버 연결 실패";
+      hint =
+        "stock.tail3bf7b2.ts.net 접속과 Tailscale 상태를 확인한 뒤 재시도하세요.";
+    }
+    return (
+      <div className={styles.page}>
+        <header className={styles.header}>
+          <div>
+            <h1 className={styles.title}>KIKI AI Trading</h1>
+            <p className={styles.overall}>{title}</p>
+          </div>
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            onClick={() => {
+              setBootTimedOut(false);
+              void q.refetch();
+            }}
+          >
+            다시 시도
+          </button>
+        </header>
+        <div className={`${styles.banner} ${styles.bannerError}`}>
+          {hint}
+          {apiMsg ? ` (${apiMsg})` : ""}
+        </div>
+        <p className={styles.meta}>
+          앱이 오래되면 홈 화면 아이콘을 제거하고 다시 추가하거나, 브라우저에서
+          사이트를 새로고침해 주세요.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>
@@ -98,34 +194,70 @@ export function MobileHomeDashboard() {
       {q.isError ? (
         <div className={`${styles.banner} ${styles.bannerError}`}>
           {toApiError(q.error).message}
+          <button
+            type="button"
+            className={styles.refreshBtn}
+            style={{ marginLeft: 8 }}
+            onClick={() => void q.refetch()}
+          >
+            다시 시도
+          </button>
         </div>
       ) : null}
 
       <div className={styles.grid}>
-        <section className={styles.card}>
-          <h2 className={styles.cardTitle}>오늘 손익</h2>
+        <section className={`${styles.card} ${styles.spanFull}`}>
+          <h2 className={styles.cardTitle}>오늘 거래현황</h2>
           <Row
-            label="실현손익"
+            label="거래 종목수"
+            value={String(Number(today.symbol_count ?? 0))}
+          />
+          <Row
+            label="완료된 매매"
+            value={String(Number(today.closed_trade_count ?? 0))}
+          />
+          <Row label="오늘 매수/매도" value={`${buyCount} / ${sellCount}`} />
+          <Row
+            label="오늘 체결/미체결"
+            value={`${filledCount} / ${openCount}`}
+          />
+          <Row label="오늘 취소" value={String(cancelledCount)} />
+          <Row
+            label="평균 보유시간"
+            value={formatHoldDuration(today.avg_hold_sec)}
+          />
+          <Row
+            label="오늘 손익"
             value={formatKrwSigned(today.realized_pnl)}
             valueClass={styles[pnlClass(today.realized_pnl)]}
           />
           <Row
-            label="미실현손익"
+            label="손익 / 손실"
+            value={`${formatKrwSigned(today.profit_amount)} / ${formatKrwSigned(today.loss_amount)}`}
+          />
+          <Row label="수수료" value={formatKrwPlain(today.fees)} />
+          <Row
+            label="총 매수/매도금액"
+            value={`${formatKrwPlain(today.buy_amount)} / ${formatKrwPlain(today.sell_amount)}`}
+          />
+          <Row label="승률" value={formatWinRate(today.win_rate_pct)} />
+          <Row
+            label="총손익"
+            value={formatKrwSigned(today.cumulative_realized_pnl)}
+            valueClass={styles[pnlClass(today.cumulative_realized_pnl)]}
+          />
+          <Row
+            label="미실현"
             value={formatKrwSigned(today.unrealized_pnl)}
             valueClass={styles[pnlClass(today.unrealized_pnl)]}
           />
           <Row
-            label="합계"
-            value={formatKrwSigned(today.total_pnl)}
-            valueClass={styles[pnlClass(today.total_pnl)]}
-          />
-          <Row
-            label="UPBIT"
+            label="UPBIT 오늘"
             value={formatKrwSigned(byBroker.UPBIT?.realized_pnl)}
             valueClass={styles[pnlClass(byBroker.UPBIT?.realized_pnl)]}
           />
           <Row
-            label="KIWOOM"
+            label="KIWOOM 오늘"
             value={formatKrwSigned(byBroker.KIWOOM?.realized_pnl)}
             valueClass={styles[pnlClass(byBroker.KIWOOM?.realized_pnl)]}
           />

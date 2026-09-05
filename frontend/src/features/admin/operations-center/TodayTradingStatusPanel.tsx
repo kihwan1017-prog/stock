@@ -1,5 +1,9 @@
 /**
  * 오늘 거래현황 패널 — AUTO performance API 재사용 (조회 전용).
+ *
+ * 배치:
+ * 1) 거래활동: 종목수 · 완료매매 · 매수/매도 · 체결/미체결 · 취소 · 평균보유
+ * 2) 손익: 오늘손익 · 손익/손실 · 수수료 · 매수/매도금액 · 승률 · 총손익(전체)
  */
 
 "use client";
@@ -50,6 +54,10 @@ function num(v: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function krw0(v: number | null | undefined): string {
+  return Number(v ?? 0).toLocaleString("ko-KR", { maximumFractionDigits: 0 });
+}
+
 type Props = {
   broker: BrokerFilter;
   enabled?: boolean;
@@ -85,8 +93,6 @@ export function TodayTradingStatusPanel({
   const profitAmount = num(summaryRaw.today_profit_amount);
   const lossAmount = num(summaryRaw.today_loss_amount);
   const netPnl = num(summaryRaw.today_net_pnl ?? summaryRaw.today_realized_pnl);
-  const todayWins = Number(summaryRaw.today_wins ?? 0);
-  const todayLosses = Number(summaryRaw.today_losses ?? 0);
   const todayWinRate = num(summaryRaw.today_win_rate_pct ?? summary.winRatePct);
   const symbolCount = Number(summaryRaw.today_symbol_count ?? 0);
   const closedCount = Number(
@@ -94,6 +100,14 @@ export function TodayTradingStatusPanel({
   );
   const fees = num(summaryRaw.today_fees);
   const avgHold = durationLabel(num(summaryRaw.today_avg_hold_sec) ?? undefined);
+  // 총순손익 = 자동매매 lifetime AUTO 실현 Net (gross − fees)
+  const totalNetPnl = num(
+    summaryRaw.cumulative_net_pnl ?? summaryRaw.cumulative_realized_pnl,
+  );
+  const totalGrossPnl = num(summaryRaw.cumulative_gross_pnl);
+  const totalFees = num(summaryRaw.cumulative_fees);
+  const totalProfit = num(summaryRaw.cumulative_profit_amount);
+  const totalLoss = num(summaryRaw.cumulative_loss_amount);
   const bestSymbol = summaryRaw.today_best_symbol
     ? String(summaryRaw.today_best_symbol).replace("KRW-", "")
     : null;
@@ -122,6 +136,8 @@ export function TodayTradingStatusPanel({
     return v > 0 ? token.colorSuccess : token.colorError;
   };
 
+  const colProps = { xs: 12, sm: 8, md: 4, lg: 4 } as const;
+
   return (
     <Card
       size="small"
@@ -144,130 +160,163 @@ export function TodayTradingStatusPanel({
         <Empty description="오늘 체결된 거래가 없습니다." />
       ) : (
         <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+          {/* 1행: 거래 활동 */}
           <Row gutter={[12, 12]}>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <Statistic title="오늘 매수" value={buyCount} />
+            <Col {...colProps}>
+              <Statistic title="거래 종목수" value={symbolCount} />
             </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <Statistic title="오늘 매도" value={sellCount} />
+            <Col {...colProps}>
+              <Statistic title="완료된 매매" value={closedCount} />
             </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <Statistic title="오늘 체결" value={filledCount} />
+            <Col {...colProps}>
+              <Statistic
+                title="오늘 매수/매도"
+                value={`${buyCount} / ${sellCount}`}
+              />
             </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <Statistic title="오늘 미체결" value={openCount} />
+            <Col {...colProps}>
+              <Statistic
+                title="오늘 체결/미체결"
+                value={`${filledCount} / ${openCount}`}
+              />
             </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
+            <Col {...colProps}>
               <Statistic title="오늘 취소" value={cancelledCount} />
             </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <Tooltip title="수수료를 포함한 실현 손익입니다.">
+            <Col {...colProps}>
+              <Typography.Text
+                type="secondary"
+                style={{ display: "block", fontSize: 12 }}
+              >
+                평균 보유시간
+              </Typography.Text>
+              <Typography.Text strong style={{ fontSize: 20 }}>
+                {avgHold}
+              </Typography.Text>
+            </Col>
+          </Row>
+
+          {/* 2행: 손익 */}
+          <Row gutter={[12, 12]}>
+            <Col {...colProps}>
+              <Tooltip title="오늘 실현 순손익 = 손익 − 손실 − 수수료(거래별 반영).">
                 <Statistic
-                  title="오늘 순손익"
+                  title="오늘 손익"
                   value={netPnl ?? 0}
                   precision={0}
                   suffix="원"
                   styles={{ content: { color: pnlTone(netPnl) } }}
-                  formatter={(v) =>
-                    Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                  }
+                  formatter={(v) => krw0(Number(v))}
                 />
               </Tooltip>
             </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <Tooltip title="선택 기간의 매수·매도 거래 수수료 합계입니다.">
+            <Col {...colProps}>
+              <Typography.Text
+                type="secondary"
+                style={{ display: "block", fontSize: 12 }}
+              >
+                손익 / 손실
+              </Typography.Text>
+              <Typography.Text strong style={{ fontSize: 16 }}>
+                <span style={{ color: token.colorSuccess }}>
+                  +{krw0(profitAmount)}
+                </span>
+                {" / "}
+                <span style={{ color: token.colorError }}>
+                  {krw0(lossAmount)}
+                </span>
+                원
+              </Typography.Text>
+            </Col>
+            <Col {...colProps}>
+              <Tooltip title="오늘 청산 거래의 매수·매도 수수료 합계입니다.">
                 <Statistic
                   title="수수료"
                   value={fees ?? 0}
                   precision={0}
                   suffix="원"
-                  formatter={(v) =>
-                    Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                  }
+                  formatter={(v) => krw0(Number(v))}
                 />
               </Tooltip>
             </Col>
-          </Row>
-
-          <Row gutter={[12, 12]}>
-            <Col xs={12} sm={8} md={6}>
-              <Statistic
-                title="오늘 수익금액"
-                value={profitAmount ?? 0}
-                precision={0}
-                prefix="+"
-                suffix="원"
-                styles={{ content: { color: token.colorSuccess } }}
-                formatter={(v) =>
-                  Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                }
-              />
+            <Col {...colProps}>
+              <Typography.Text
+                type="secondary"
+                style={{ display: "block", fontSize: 12 }}
+              >
+                총 매수/매도금액
+              </Typography.Text>
+              <Typography.Text strong style={{ fontSize: 14, lineHeight: 1.35 }}>
+                {krw0(buyAmount)}원
+                <br />
+                {krw0(sellAmount)}원
+              </Typography.Text>
             </Col>
-            <Col xs={12} sm={8} md={6}>
-              <Statistic
-                title="오늘 손실금액"
-                value={lossAmount ?? 0}
-                precision={0}
-                suffix="원"
-                styles={{ content: { color: token.colorError } }}
-                formatter={(v) =>
-                  Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                }
-              />
-            </Col>
-            <Col xs={12} sm={8} md={6}>
-              <Statistic title="승/패" value={`${todayWins}/${todayLosses}`} />
-            </Col>
-            <Col xs={12} sm={8} md={6}>
+            <Col {...colProps}>
               <Statistic title="승률" value={formatPct(todayWinRate)} />
             </Col>
           </Row>
 
+          {/* 3행: lifetime 총손익 (Net/Gross 명확 라벨) */}
           <Row gutter={[12, 12]}>
-            <Col xs={12} sm={8} md={6} lg={4}>
-              <Statistic title="거래 종목 수" value={symbolCount} />
+            <Col {...colProps}>
+              <Tooltip title="자동매매 lifetime 총수익(순손익>0 합).">
+                <Statistic
+                  title="총수익"
+                  value={totalProfit ?? 0}
+                  precision={0}
+                  suffix="원"
+                  styles={{ content: { color: token.colorSuccess } }}
+                  formatter={(v) => krw0(Number(v))}
+                />
+              </Tooltip>
             </Col>
-            <Col xs={12} sm={8} md={6} lg={4}>
-              <Statistic title="완료된 매매" value={closedCount} />
+            <Col {...colProps}>
+              <Tooltip title="자동매매 lifetime 총손실(순손익<0 합, 음수 표시).">
+                <Statistic
+                  title="총손실"
+                  value={totalLoss ?? 0}
+                  precision={0}
+                  suffix="원"
+                  styles={{ content: { color: token.colorError } }}
+                  formatter={(v) => krw0(Number(v))}
+                />
+              </Tooltip>
             </Col>
-            <Col xs={12} sm={8} md={6} lg={4}>
-              <Statistic
-                title="총 매수금액"
-                value={buyAmount ?? 0}
-                precision={0}
-                suffix="원"
-                formatter={(v) =>
-                  Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                }
-              />
+            <Col {...colProps}>
+              <Tooltip title="총매매손익(Gross) = 수수료 전 실현 손익 합.">
+                <Statistic
+                  title="총매매손익"
+                  value={totalGrossPnl ?? 0}
+                  precision={0}
+                  suffix="원"
+                  styles={{ content: { color: pnlTone(totalGrossPnl) } }}
+                  formatter={(v) => krw0(Number(v))}
+                />
+              </Tooltip>
             </Col>
-            <Col xs={12} sm={8} md={6} lg={4}>
-              <Statistic
-                title="총 매도금액"
-                value={sellAmount ?? 0}
-                precision={0}
-                suffix="원"
-                formatter={(v) =>
-                  Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                }
-              />
+            <Col {...colProps}>
+              <Tooltip title="자동매매 lifetime 총수수료.">
+                <Statistic
+                  title="총수수료"
+                  value={totalFees ?? 0}
+                  precision={0}
+                  suffix="원"
+                  formatter={(v) => krw0(Number(v))}
+                />
+              </Tooltip>
             </Col>
-            <Col xs={12} sm={8} md={6} lg={4}>
-              <Statistic
-                title="총 수수료"
-                value={fees ?? 0}
-                precision={0}
-                suffix="원"
-                formatter={(v) =>
-                  Number(v).toLocaleString("ko-KR", { maximumFractionDigits: 0 })
-                }
-              />
-            </Col>
-            <Col xs={12} sm={8} md={6} lg={4}>
-              <Typography.Text type="secondary" style={{ display: "block", fontSize: 12 }}>
-                평균 보유시간
-              </Typography.Text>
-              <Typography.Text strong>{avgHold}</Typography.Text>
+            <Col {...colProps}>
+              <Tooltip title="총순손익(Net) = 총매매손익 − 총수수료. MANUAL/미실현 제외.">
+                <Statistic
+                  title="총순손익"
+                  value={totalNetPnl ?? 0}
+                  precision={0}
+                  suffix="원"
+                  styles={{ content: { color: pnlTone(totalNetPnl) } }}
+                  formatter={(v) => krw0(Number(v))}
+                />
+              </Tooltip>
             </Col>
           </Row>
 

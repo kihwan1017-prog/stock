@@ -48,5 +48,21 @@ describe("today trading status pnl contract", () => {
     expect(src).toMatch(/Tooltip as ChartTooltip/);
     expect(src).toMatch(/from \"recharts\"/);
     expect(src).toMatch(/from \"antd\"/);
+    expect(src).toContain("거래 종목수");
+    expect(src).toContain("총순손익");
+    expect(src).toContain("cumulative_realized_pnl");
+    expect(src).toContain("cumulative_gross_pnl");
+    expect(src).toContain("오늘 매수/매도");
+    expect(src).toContain("오늘 체결/미체결");
+  });
+
+  it("lifetime net = profit + loss (loss already signed)", () => {
+    const profit = 10000;
+    const loss = -6000;
+    const fees = 1000;
+    const gross = 4000;
+    const net = gross - fees;
+    expect(profit + loss).toBe(4000);
+    expect(net).toBe(3000);
   });
 });

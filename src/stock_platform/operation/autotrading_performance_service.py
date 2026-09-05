@@ -707,6 +707,49 @@ class AutotradingPerformanceService:
         consistency_delta = (period_gross - period_fees - period_net).quantize(QUANT)
         all_net = _sum_net(all_closed)
         all_cost = _sum_entry_cost(all_closed)
+        all_gross = sum(
+            (Decimal(str(t.get("gross_pnl") or 0)) for t in all_closed),
+            ZERO,
+        ).quantize(QUANT)
+        all_fees = sum(
+            (Decimal(str(t.get("fees") or 0)) for t in all_closed),
+            ZERO,
+        ).quantize(QUANT)
+        # lifetime 수익/손실 — gross 기준 (수수료 전). 손실은 음수.
+        all_winning_gross = sum(
+            (
+                Decimal(str(t.get("gross_pnl") or 0))
+                for t in all_closed
+                if Decimal(str(t.get("gross_pnl") or 0)) > ZERO
+            ),
+            ZERO,
+        ).quantize(QUANT)
+        all_losing_gross = sum(
+            (
+                Decimal(str(t.get("gross_pnl") or 0))
+                for t in all_closed
+                if Decimal(str(t.get("gross_pnl") or 0)) < ZERO
+            ),
+            ZERO,
+        ).quantize(QUANT)
+        # net 기준 표시용 (기존 today_* 와 동일 semantics)
+        all_profit_net = sum(
+            (
+                Decimal(str(t["net_pnl"]))
+                for t in all_closed
+                if Decimal(str(t["net_pnl"])) > ZERO
+            ),
+            ZERO,
+        ).quantize(QUANT)
+        all_loss_net_abs = sum(
+            (
+                abs(Decimal(str(t["net_pnl"])))
+                for t in all_closed
+                if Decimal(str(t["net_pnl"])) < ZERO
+            ),
+            ZERO,
+        ).quantize(QUANT)
+        lifetime_formula_delta = (all_gross - all_fees - all_net).quantize(QUANT)
 
         unrealized = sum(
             (Decimal(str(p["unrealized_pnl"])) for p in open_positions),
@@ -803,6 +846,15 @@ class AutotradingPerformanceService:
             "period_gross_minus_fees_delta": str(consistency_delta),
             "period_return_pct": _return_pct(period_net, period_cost),
             "cumulative_realized_pnl": str(all_net),
+            "cumulative_net_pnl": str(all_net),
+            "cumulative_gross_pnl": str(all_gross),
+            "cumulative_fees": str(all_fees),
+            "cumulative_winning_gross": str(all_winning_gross),
+            "cumulative_losing_gross": str(all_losing_gross),
+            "cumulative_profit_amount": str(all_profit_net),
+            "cumulative_loss_amount": str((-all_loss_net_abs).quantize(QUANT)),
+            "cumulative_closed_trade_count": len(all_closed),
+            "cumulative_gross_minus_fees_delta": str(lifetime_formula_delta),
             "cumulative_return_pct": _return_pct(all_net, all_cost),
             "current_unrealized_pnl": str(unrealized),
             "win_rate_pct": win_rate,
@@ -1047,8 +1099,13 @@ class AutotradingPerformanceService:
                     "has_open_auto": sym.upper() in open_set,
                 }
             )
-        # 기본: 순손익 오름차순 (최대 손실 → 최대 수익)
-        rows.sort(key=lambda r: Decimal(str(r["net_pnl"])))
+        # 기본: 매수 건수 내림차순, 동점이면 순손익 오름차순
+        rows.sort(
+            key=lambda r: (
+                -int(r.get("buy_count") or 0),
+                Decimal(str(r["net_pnl"])),
+            )
+        )
         return rows
 
     def _symbol_totals(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
