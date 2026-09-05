@@ -310,12 +310,14 @@ def _slot_counts(session: Session, *, uba_id: int) -> dict[str, int]:
     open_n = counts.get("OPEN", 0)
     waiting_n = counts.get("WAITING_SIGNAL", 0)
     empty_n = counts.get("EMPTY", 0)
-    max_slots = 5
+    # 후보 슬롯 free = EMPTY 행 (하드코딩 capacity=5는 portfolio.max_positions와 불일치 → SLOT_FULL 오탐)
+    total_known = sum(int(v) for v in counts.values())
     return {
         "open_count": open_n,
         "waiting_count": waiting_n,
         "empty_count": empty_n,
-        "free_slot_count": max(0, max_slots - open_n - waiting_n),
+        "slot_row_count": total_known,
+        "free_slot_count": max(0, int(empty_n)),
     }
 
 

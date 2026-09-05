@@ -967,6 +967,9 @@ def build_24x7_ops_health() -> dict[str, Any]:
             "scheduler_running": exit_st.get("scheduler_running"),
             "live_upbit_enabled": exit_st.get("live_upbit_scan_enabled"),
             "last_error": exit_st.get("last_error"),
+            # ops-status reliability heartbeat SoT (누락 시 null 오탐)
+            "last_evaluated_at": exit_st.get("last_evaluated_at"),
+            "scan_count": exit_st.get("scan_count"),
         },
         "upbit_market_data_24x7": UPBIT_MARKET_DATA_24X7,
         "worker_running_not_dispatch_allowed": True,

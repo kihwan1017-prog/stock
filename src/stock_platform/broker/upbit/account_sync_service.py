@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
 from stock_platform.broker.account_repository import (
@@ -83,6 +86,26 @@ class UpbitAccountSyncService:
             result, user_broker_account_id=uba_id
         )
 
+        # 스냅샷 저장과 별도로 UBA last_synced_at 갱신 (ops BALANCE_SYNC SoT)
+        # text UPDATE: 부분 metadata(auth.user FK 미로드) 환경에서도 안전
+        synced_at = result.synchronized_at
+        if synced_at is None:
+            synced_at = datetime.now(timezone.utc)
+        self._session.execute(
+            sql_text(
+                """
+                UPDATE trading.user_broker_account
+                SET last_synced_at = :ts,
+                    connection_status = 'CONNECTED',
+                    updated_at = :ts
+                WHERE user_broker_account_id = :uba
+                """
+            ),
+            {"ts": synced_at, "uba": uba_id},
+        )
+        # repository.save가 이미 commit했을 수 있으므로 재커밋
+        self._session.commit()
+
         return {
             "broker_account_snapshot_id": (
                 entity.broker_account_snapshot_id
@@ -100,6 +123,11 @@ class UpbitAccountSyncService:
             "total_profit_loss": result.total_profit_loss,
             "position_count": len(result.positions),
             "synchronized_at": result.synchronized_at,
+            "last_synced_at": (
+                synced_at.isoformat()
+                if hasattr(synced_at, "isoformat")
+                else synced_at
+            ),
             "snapshot_generation": int(entity.snapshot_generation),
             "snapshot_hash": entity.snapshot_hash,
             "snapshot_status": entity.snapshot_status,

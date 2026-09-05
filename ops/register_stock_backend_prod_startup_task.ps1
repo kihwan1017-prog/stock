@@ -30,11 +30,15 @@ if (-not (Test-Path -LiteralPath $scriptPath)) {
 
 if ($Unregister) {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-    Write-Host "[register] removed $taskName"
+    Unregister-ScheduledTask -TaskName "StockBackendProdHealthEnsure" -Confirm:$false -ErrorAction SilentlyContinue
+    Write-Host "[register] removed $taskName + StockBackendProdHealthEnsure"
     exit 0
 }
 
 # AtStartup + delay: Tailscale/DB 기동 여유
+# Periodic health ensure는 별도 태스크(StockBackendProdHealthEnsure)로 등록
+#   — Highest RunLevel 부트 태스크 변경이 UAC로 막혀도 Limited로 5분 ensure 가능
+#   start_backend_prod.ps1 은 healthy listen 이면 skip (무한 restart loop 아님)
 $arg = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -ProjectRoot `"$ProjectRoot`""
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $arg -WorkingDirectory $ProjectRoot
 $boot = New-ScheduledTaskTrigger -AtStartup
@@ -64,6 +68,32 @@ try {
     } catch {
         Write-Host "[register] HUMAN_ACTION: elevated PowerShell에서 재실행 필요: $($_.Exception.Message)"
     }
+}
+
+# 24x7 mid-session death recovery (reboot 없이)
+$healthTaskName = "StockBackendProdHealthEnsure"
+$healthSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -WakeToRun `
+    -MultipleInstances IgnoreNew `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+$healthPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+$periodic = New-ScheduledTaskTrigger -Once -At ((Get-Date).Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes 5) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+try {
+    Register-ScheduledTask `
+        -TaskName $healthTaskName `
+        -Action $action `
+        -Trigger $periodic `
+        -Settings $healthSettings `
+        -Principal $healthPrincipal `
+        -Force | Out-Null
+    Write-Host "[register] $healthTaskName PT5M ensure + WakeToRun -> $scriptPath"
+} catch {
+    Write-Host "[register] HEALTH ensure failed: $($_.Exception.Message)"
 }
 
 if ($RunNow) {
