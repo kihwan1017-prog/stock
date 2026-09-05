@@ -15,12 +15,15 @@ function syncAuthCookie(name: string, value: string | null): void {
   if (!canUseBrowserStorage()) {
     return;
   }
+  // HTTPS(Tailscale)에서는 Secure 필요 — localhost http는 Secure 생략
+  const secure =
+    window.location.protocol === "https:" ? "; Secure" : "";
   if (!value) {
-    document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+    document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax${secure}`;
     return;
   }
   // session cookie (Max-Age 미지정) — 탭 종료 시 브라우저가 정리
-  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; SameSite=Lax`;
+  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; SameSite=Lax${secure}`;
 }
 
 function readSession(key: string): string | null {

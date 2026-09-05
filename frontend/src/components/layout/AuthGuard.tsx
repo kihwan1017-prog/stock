@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Button, Result } from "antd";
 
@@ -13,6 +13,10 @@ import {
   hasPermission,
 } from "@/features/auth/utils/permissions";
 import { hasValidAppRole } from "@/features/auth/utils/roles";
+import {
+  SPLASH_MAX_DURATION_MS,
+  logMobileBoot,
+} from "@/features/mobile/mobileBootRecovery";
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -39,6 +43,7 @@ export function AuthGuard({
   const router = useRouter();
   const pathname = usePathname();
   const { authenticated, hydrated, hydrateFromStorage, user } = useAuth();
+  const [bootTimedOut, setBootTimedOut] = useState(false);
 
   const menuPermission = enforceMenuPermission
     ? permissionForPath(pathname)
@@ -57,26 +62,76 @@ export function AuthGuard({
   );
 
   const roleFallback = forbiddenRedirect ?? authRoutes.forbidden;
+  // 동일 경로로 replace가 반복되면 로그인↔가드 바운스를 1회로 제한
+  const redirectKeyRef = useRef<string | null>(null);
 
-  useEffect(() => {
+  // paint 전에 sessionStorage hydrate — "세션 확인 중" 깜빡임·리다이렉트 레이스 완화
+  useLayoutEffect(() => {
     hydrateFromStorage();
   }, [hydrateFromStorage]);
+
+  // 부트 완료 마커 — 무한 PWA splash/timeout 가드가 정상 경로를 오판하지 않게
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+    document.documentElement.setAttribute("data-mobile-boot-ready", "1");
+    logMobileBoot(
+      authenticated ? "MOBILE_BOOT_AUTH_CHECK" : "MOBILE_BOOT_AUTH_REQUIRED",
+      { path: pathname },
+    );
+  }, [authenticated, hydrated, pathname]);
+
+  // 무한 splash 금지 — hydrate/redirect가 멈추면 하드 네비게이션
+  useEffect(() => {
+    if (hydrated && authenticated) {
+      setBootTimedOut(false);
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setBootTimedOut(true);
+      logMobileBoot("MOBILE_BOOT_TIMEOUT", {
+        path: pathname,
+        hydrated,
+        authenticated,
+      });
+      if (!hydrated) {
+        hydrateFromStorage();
+      }
+      if (!authenticated) {
+        const target = `${authRoutes.login}?next=${encodeURIComponent(pathname)}`;
+        window.location.replace(target);
+      }
+    }, SPLASH_MAX_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [authenticated, hydrated, hydrateFromStorage, pathname]);
 
   useEffect(() => {
     if (!hydrated) {
       return;
     }
     if (!authenticated) {
-      router.replace(
-        `${authRoutes.login}?next=${encodeURIComponent(pathname)}`,
-      );
+      const target = `${authRoutes.login}?next=${encodeURIComponent(pathname)}`;
+      if (redirectKeyRef.current === target) {
+        return;
+      }
+      redirectKeyRef.current = target;
+      router.replace(target);
       return;
     }
     if (lacksValidAppRole) {
+      if (redirectKeyRef.current === authRoutes.forbidden) {
+        return;
+      }
+      redirectKeyRef.current = authRoutes.forbidden;
       router.replace(authRoutes.forbidden);
       return;
     }
     if (lacksRole) {
+      if (redirectKeyRef.current === roleFallback) {
+        return;
+      }
+      redirectKeyRef.current = roleFallback;
       router.replace(roleFallback);
     }
   }, [
@@ -90,11 +145,29 @@ export function AuthGuard({
   ]);
 
   if (!hydrated) {
-    return <AppLoading fullScreen tip="세션 확인 중..." />;
+    return (
+      <AppLoading
+        fullScreen
+        tip={
+          bootTimedOut
+            ? "세션 확인이 지연되고 있습니다…"
+            : "세션 확인 중..."
+        }
+      />
+    );
   }
 
   if (!authenticated) {
-    return <AppLoading fullScreen tip="로그인 페이지로 이동 중..." />;
+    return (
+      <AppLoading
+        fullScreen
+        tip={
+          bootTimedOut
+            ? "로그인 화면으로 이동하지 못해 다시 시도합니다…"
+            : "로그인 페이지로 이동 중..."
+        }
+      />
+    );
   }
 
   if (lacksValidAppRole) {
