@@ -23,12 +23,12 @@ const NAV = [
   },
   {
     href: "/mobile/positions",
-    label: "포지션",
+    label: "성과",
     match: (p: string) => p.startsWith("/mobile/positions"),
   },
   {
     href: "/mobile/alerts",
-    label: "알림",
+    label: "설정",
     match: (p: string) => p.startsWith("/mobile/alerts"),
   },
 ] as const;

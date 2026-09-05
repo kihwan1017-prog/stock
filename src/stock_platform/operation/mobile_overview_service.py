@@ -36,7 +36,7 @@ from stock_platform.trading.uba_operational_summary import (
 )
 
 _KST = ZoneInfo("Asia/Seoul")
-_CACHE_KEY = "mobile:overview:v1"
+_CACHE_KEY = "mobile:overview:v3"
 _CACHE_TTL = 8.0
 
 # FE dashboard 와 동일 기본 UBA
@@ -328,6 +328,18 @@ def build_mobile_overview(session: Session) -> dict[str, Any]:
     if realized is not None or unrealized is not None:
         total = float(realized or 0) + float(unrealized or 0)
 
+    activity = (
+        perf_all.get("today_order_activity")
+        if isinstance(perf_all.get("today_order_activity"), dict)
+        else {}
+    )
+    # 평균 보유시간 초 → 표시용 분/초는 FE에서 포맷
+    avg_hold_sec = summary.get("today_avg_hold_sec")
+    try:
+        avg_hold_sec_i = int(avg_hold_sec) if avg_hold_sec is not None else None
+    except (TypeError, ValueError):
+        avg_hold_sec_i = None
+
     a_cfg = analysis_config()
     t_cfg = trading_config()
     te_cfg = teacher_config()
@@ -368,8 +380,57 @@ def build_mobile_overview(session: Session) -> dict[str, Any]:
         kill_active=kill_active, upbit=upbit_card, kiwoom=kiwoom_card
     )
 
+    # 사용자용 Why No Trade (raw JSON 비노출 — 요약 필드만)
+    why_no_trade: dict[str, Any] = {
+        "trade_ready": bool(upbit_card.get("auto_trading_ready")),
+        "trade_running": str(upbit_card.get("auto_trading_state") or "").upper()
+        == "RUNNING",
+        "no_trade_reason_code": None,
+        "no_trade_reason_text": None,
+        "last_entry_signal_at": None,
+        "last_order_at": None,
+        "uba_id": upbit_uba,
+        "broker_code": "UPBIT",
+    }
+    try:
+        from stock_platform.trading.pipeline_liveness_service import (
+            build_pipeline_liveness_snapshot,
+        )
+
+        live_snap = build_pipeline_liveness_snapshot(
+            session, user_broker_account_id=upbit_uba
+        )
+        why_no_trade["trade_ready"] = bool(
+            live_snap.get("auto_trading_ready", why_no_trade["trade_ready"])
+        )
+        why_no_trade["no_trade_reason_code"] = (
+            live_snap.get("classification")
+            or live_snap.get("first_zero_stage")
+            or upbit_card.get("no_trade_classification")
+        )
+        why_no_trade["no_trade_reason_text"] = (
+            live_snap.get("user_friendly_reason")
+            or live_snap.get("user_status")
+            or upbit_card.get("operational_label_ko")
+        )
+        last_trade = live_snap.get("last_trade") if isinstance(live_snap.get("last_trade"), dict) else {}
+        why_no_trade["last_order_at"] = live_snap.get("last_trade_at") or last_trade.get(
+            "at"
+        )
+        # ENTRY 신호 시각 — heartbeat/funnel 없으면 None 유지
+        for hb in live_snap.get("stage_heartbeats") or []:
+            if not isinstance(hb, dict):
+                continue
+            if str(hb.get("stage") or "") in {"entry_pass", "entry_evaluation", "selection"}:
+                if hb.get("last_at"):
+                    why_no_trade["last_entry_signal_at"] = hb.get("last_at")
+                    break
+    except Exception:  # noqa: BLE001
+        why_no_trade["no_trade_reason_code"] = upbit_card.get("no_trade_classification")
+        why_no_trade["no_trade_reason_text"] = upbit_card.get("operational_label_ko")
+
     return {
-        "schema": "mobile_overview_v1",
+        "schema": "mobile_overview_v2",
         "updated_at": checked_at.isoformat(),
         "overall": {
             "status": tone,
@@ -379,6 +440,7 @@ def build_mobile_overview(session: Session) -> dict[str, Any]:
                 "STOPPED": "자동매매 중지",
             }.get(tone, "확인 필요"),
         },
+        "why_no_trade": why_no_trade,
         "system": {
             "status": system_status,
             "backend": "UP",
@@ -404,6 +466,23 @@ def build_mobile_overview(session: Session) -> dict[str, Any]:
             "realized_pnl": realized,
             "unrealized_pnl": unrealized,
             "total_pnl": total,
+            # 오늘 손익 분해 (손익−손실−수수료 = realized_pnl)
+            "profit_amount": _dec(summary.get("today_profit_amount")),
+            "loss_amount": _dec(summary.get("today_loss_amount")),
+            "fees": _dec(summary.get("today_fees")),
+            "win_rate_pct": _dec(summary.get("today_win_rate_pct")),
+            "closed_trade_count": int(summary.get("today_closed_trade_count") or 0),
+            "symbol_count": int(summary.get("today_symbol_count") or 0),
+            "avg_hold_sec": avg_hold_sec_i,
+            # 총손익 = 자동매매 전체 거래 실현 순손익
+            "cumulative_realized_pnl": _dec(summary.get("cumulative_realized_pnl")),
+            "buy_count": int(activity.get("buy_count") or 0),
+            "sell_count": int(activity.get("sell_count") or 0),
+            "filled_count": int(activity.get("filled_count") or 0),
+            "open_count": int(activity.get("open_count") or 0),
+            "cancelled_count": int(activity.get("cancelled_count") or 0),
+            "buy_amount": _dec(activity.get("buy_amount")),
+            "sell_amount": _dec(activity.get("sell_amount")),
             "auto_buy_count": upbit_sides["auto_buy_count"]
             + kiwoom_sides["auto_buy_count"],
             "auto_sell_count": upbit_sides["auto_sell_count"]

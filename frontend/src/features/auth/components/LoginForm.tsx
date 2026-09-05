@@ -56,7 +56,7 @@ export function LoginForm() {
 
   useEffect(() => {
     if (oauthError) {
-      setErrorMessage(oauthError);
+      setErrorMessage("Google 로그인에 실패했습니다. 다시 로그인해 주세요.");
     }
   }, [oauthError]);
 
@@ -108,8 +108,14 @@ export function LoginForm() {
   const onGoogleLogin = () => {
     setGoogleLoading(true);
     setErrorMessage(null);
-    // same-origin /api rewrite → backend Google authorize redirect
-    window.location.assign(googleLoginStartUrl(redirectTo));
+    const next =
+      redirectTo ||
+      (typeof window !== "undefined" &&
+      (window.matchMedia("(display-mode: standalone)").matches ||
+        window.innerWidth < 768)
+        ? "/mobile"
+        : undefined);
+    window.location.assign(googleLoginStartUrl(next));
   };
 
   if (hydrated && authenticated) {

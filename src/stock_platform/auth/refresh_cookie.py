@@ -13,16 +13,28 @@ def refresh_cookie_enabled() -> bool:
     return bool(get_settings().auth_refresh_cookie_enabled)
 
 
-def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+def set_refresh_cookie(
+    response: Response,
+    refresh_token: str,
+    *,
+    request: Request | None = None,
+) -> None:
     if not refresh_cookie_enabled():
         return
     settings = get_settings()
     max_age = int(settings.jwt_refresh_token_expire_days) * 86400
+    # APP_ENV=local 이어도 HTTPS(Tailscale PWA)면 Secure 필수
+    https_hint = False
+    if request is not None:
+        https_hint = str(request.url.scheme).lower() == "https"
+        xf = (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()
+        if xf == "https":
+            https_hint = True
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
         value=refresh_token,
         httponly=True,
-        secure=bool(settings.is_production_env),
+        secure=bool(settings.is_production_env or https_hint),
         samesite="lax",
         max_age=max_age,
         path="/api/v1/auth",

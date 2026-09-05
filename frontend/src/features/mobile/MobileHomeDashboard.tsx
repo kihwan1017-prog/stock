@@ -77,6 +77,7 @@ export function MobileHomeDashboard() {
   const upbit = data?.upbit ?? {};
   const kiwoom = data?.kiwoom ?? {};
   const today = data?.today ?? {};
+  const why = data?.why_no_trade;
   const byBroker =
     (today.by_broker as Record<string, Record<string, unknown>> | undefined) ??
     {};
@@ -90,6 +91,18 @@ export function MobileHomeDashboard() {
   const filledCount = Number(today.filled_count ?? today.fill_count ?? 0);
   const openCount = Number(today.open_count ?? 0);
   const cancelledCount = Number(today.cancelled_count ?? 0);
+
+  const autoLabel = (() => {
+    if (system.kill_switch) return "차단";
+    if (why?.trade_running && why?.trade_ready) return "운영 중";
+    if (String(upbit.auto_trading_state || "").toUpperCase() === "RUNNING") {
+      return why?.trade_ready ? "운영 중" : "대기";
+    }
+    if (upbit.system_blocked || String(upbit.operational_tier || "") === "SYSTEM_BLOCKED") {
+      return "차단";
+    }
+    return "대기";
+  })();
 
   const showBootGate =
     !data && (q.isLoading || q.isFetching) && !q.isError && !bootTimedOut;
@@ -166,9 +179,10 @@ export function MobileHomeDashboard() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
-          <h1 className={styles.title}>오늘 운영</h1>
+          <h1 className={styles.title}>KIKI AI Trading</h1>
           <p className={styles.overall}>
             {overallEmoji(overall?.status)} {overall?.label_hint || "확인 중"}
+            {online ? " · 연결됨" : " · 오프라인"}
           </p>
           <p className={styles.meta}>
             마지막 갱신: {formatClock(data?.updated_at)}
@@ -206,6 +220,46 @@ export function MobileHomeDashboard() {
       ) : null}
 
       <div className={styles.grid}>
+        <section className={`${styles.card} ${styles.spanFull}`}>
+          <h2 className={styles.cardTitle}>자동매매 상태</h2>
+          <Row label="운영" value={autoLabel} />
+          <Row label="LIVE" value={boolOnOff(upbit.live)} />
+          <Row label="ARM" value={boolOnOff(upbit.arm)} />
+          <Row
+            label="매매 준비"
+            value={why?.trade_ready ? "준비 완료" : "준비 안 됨"}
+          />
+          <Row
+            label="엔진"
+            value={
+              String(upbit.runtime || "") === "RUNNING" &&
+              String(upbit.runner || "") === "RUNNING"
+                ? "자동매매 엔진 정상"
+                : "엔진 확인 필요"
+            }
+          />
+          <Row
+            label="시세"
+            value={
+              String(upbit.feed || "") === "REAL_FRESH"
+                ? "실시간 시세 정상"
+                : statusKo(upbit.feed)
+            }
+          />
+        </section>
+
+        <section className={`${styles.card} ${styles.spanFull}`}>
+          <h2 className={styles.cardTitle}>지금 거래가 없는 이유</h2>
+          <p className={styles.meta} style={{ marginBottom: 8 }}>
+            {why?.no_trade_reason_text ||
+              "상태를 확인하는 중입니다. 잠시 후 다시 확인해 주세요."}
+          </p>
+          <Row
+            label="마지막 주문"
+            value={formatClock(why?.last_order_at ?? undefined)}
+          />
+        </section>
+
         <section className={`${styles.card} ${styles.spanFull}`}>
           <h2 className={styles.cardTitle}>오늘 거래현황</h2>
           <Row

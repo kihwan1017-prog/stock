@@ -185,29 +185,70 @@ class GoogleOAuthService:
         return id_token
 
     def _verify_id_token(self, id_token: str, *, expected_nonce: str) -> GoogleIdentity:
+        """서명·aud·iss·exp 검증 유지. 실패 stage는 로그에만 (사용자 메시지 고정)."""
+
+        import logging
+
+        log = logging.getLogger(__name__)
+        expected_aud = self._settings.google_oauth_client_id.strip()
+        stage = "ID_TOKEN_VERIFY"
         try:
             signing_key = self._jwks.get_signing_key_from_jwt(id_token)
+            stage = "ID_TOKEN_JWT_DECODE"
             claims = jwt.decode(
                 id_token,
                 signing_key.key,
                 algorithms=["RS256"],
-                audience=self._settings.google_oauth_client_id.strip(),
+                audience=expected_aud,
                 issuer=list(GOOGLE_ISSUERS),
+                # HTTPS/PWA 단말 시계 오차 허용 — 서명·aud·만료 검증은 유지
+                leeway=120,
                 options={"require": ["exp", "iat", "iss", "aud", "sub"]},
             )
-        except Exception as exc:  # noqa: BLE001 — 검증 실패는 동일 메시지로
+        except Exception as exc:  # noqa: BLE001 — 검증 실패는 동일 사용자 메시지
+            # 미검증 claims는 aud fingerprint만 (시크릿/원문 금지)
+            aud_fp = "unknown"
+            try:
+                raw = jwt.decode(
+                    id_token,
+                    options={"verify_signature": False, "verify_aud": False, "verify_exp": False},
+                    algorithms=["RS256"],
+                )
+                aud_val = raw.get("aud")
+                aud_s = (
+                    aud_val
+                    if isinstance(aud_val, str)
+                    else (",".join(aud_val) if isinstance(aud_val, list) else "")
+                )
+                if aud_s and len(aud_s) > 10:
+                    aud_fp = f"{aud_s[:6]}…{aud_s[-4:]}(len={len(aud_s)})"
+                elif aud_s:
+                    aud_fp = f"len={len(aud_s)}"
+            except Exception:  # noqa: BLE001
+                aud_fp = "unreadable"
+            exp_fp = f"{expected_aud[:6]}…{expected_aud[-4:]}(len={len(expected_aud)})" if len(expected_aud) > 10 else "EMPTY"
+            log.warning(
+                "GOOGLE_AUTH_FAILURE_STAGE=%s exc_type=%s token_aud=%s expected_aud=%s",
+                stage,
+                type(exc).__name__,
+                aud_fp,
+                exp_fp,
+            )
             raise AuthError("Google 토큰 검증에 실패했습니다.") from exc
 
         nonce = claims.get("nonce")
         if not isinstance(nonce, str) or nonce != expected_nonce:
+            log.warning("GOOGLE_AUTH_FAILURE_STAGE=NONCE_MISMATCH")
             raise AuthError("Google 토큰 nonce 검증에 실패했습니다.")
 
         email = claims.get("email")
         if not isinstance(email, str) or not email.strip():
+            log.warning("GOOGLE_AUTH_FAILURE_STAGE=EMAIL_MISSING")
             raise AuthError("Google 계정 이메일을 확인할 수 없습니다.")
         email_verified = bool(claims.get("email_verified"))
         subject = claims.get("sub")
         if not isinstance(subject, str) or not subject:
+            log.warning("GOOGLE_AUTH_FAILURE_STAGE=SUBJECT_MISSING")
             raise AuthError("Google 계정 식별자를 확인할 수 없습니다.")
 
         return GoogleIdentity(

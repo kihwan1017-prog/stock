@@ -38,10 +38,16 @@ router = APIRouter(
 )
 
 
-def _token_response(pair, view, response: Response | None = None) -> TokenResponse:
+def _token_response(
+    pair,
+    view,
+    response: Response | None = None,
+    *,
+    request: Request | None = None,
+) -> TokenResponse:
     user = AuthUserResponse(**user_view_dict(view))
     if response is not None:
-        set_refresh_cookie(response, pair.refresh_token)
+        set_refresh_cookie(response, pair.refresh_token, request=request)
     return TokenResponse(
         access_token=pair.access_token,
         refresh_token=pair.refresh_token,
@@ -180,7 +186,7 @@ def login(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
-    return _token_response(pair, view, response)
+    return _token_response(pair, view, response, request=http_request)
 
 
 @router.get("/google/status")
@@ -282,17 +288,27 @@ def google_oauth_callback(
         session.commit()
     except AuthError as exc:
         session.rollback()
+        # 사용자에게는 고정 문구 — raw AuthError는 audit/log 전용
+        fail_msg = str(exc)
+        user_msg = "Google 로그인에 실패했습니다. 다시 로그인해 주세요."
+        if "만료" in fail_msg:
+            user_msg = "로그인 요청이 만료되었습니다. 다시 시도해 주세요."
+        elif "취소" in fail_msg:
+            user_msg = "Google 인증이 취소되었습니다. 다시 로그인해 주세요."
         try:
             AuditLogService(session).record(
                 event_type="AUTH_GOOGLE_LOGIN_FAILURE",
                 actor="anonymous",
-                detail={"provider": "google"},
+                detail={
+                    "provider": "google",
+                    "reason_preview": fail_msg[:120],
+                },
             )
             session.commit()
         except Exception:
             session.rollback()
         return RedirectResponse(
-            url=f"{complete}?error={quote(str(exc))}",
+            url=f"{complete}?error={quote(user_msg)}",
             status_code=status.HTTP_302_FOUND,
         )
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
@@ -324,7 +340,7 @@ def google_oauth_complete(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
-    return _token_response(pair, view, response)
+    return _token_response(pair, view, response, request=http_request)
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -359,7 +375,7 @@ def refresh(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=str(exc),
         ) from exc
-    return _token_response(pair, view, response)
+    return _token_response(pair, view, response, request=http_request)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

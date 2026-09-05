@@ -10,9 +10,9 @@ import React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import {
+  formatHoldDuration,
+  formatKrwPlain,
   formatKrwSigned,
-  overallEmoji,
-  sideKo,
 } from "@/features/mobile/mobileFormat";
 import { MobileHomeDashboard } from "@/features/mobile/MobileHomeDashboard";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -24,11 +24,10 @@ describe("mobileFormat", () => {
     expect(formatKrwSigned(0)).toBe("0원");
   });
 
-  it("maps side and overall emoji", () => {
-    expect(sideKo("BUY")).toBe("매수");
-    expect(sideKo("SELL")).toBe("매도");
-    expect(overallEmoji("HEALTHY")).toContain("🟢");
-    expect(overallEmoji("STOPPED")).toContain("🔴");
+  it("formats hold duration and plain KRW", () => {
+    expect(formatHoldDuration(90)).toBe("1분 30초");
+    expect(formatHoldDuration(3661)).toBe("1시간 1분");
+    expect(formatKrwPlain(1234)).toBe("1,234원");
   });
 });
 
@@ -82,6 +81,21 @@ describe("mobile read-only guarantee", () => {
         realized_pnl: 1000,
         unrealized_pnl: -100,
         total_pnl: 900,
+        profit_amount: 5000,
+        loss_amount: -4000,
+        fees: 50,
+        win_rate_pct: 55.5,
+        closed_trade_count: 3,
+        symbol_count: 2,
+        avg_hold_sec: 120,
+        cumulative_realized_pnl: 12000,
+        buy_count: 4,
+        sell_count: 3,
+        filled_count: 7,
+        open_count: 1,
+        cancelled_count: 0,
+        buy_amount: 100000,
+        sell_amount: 101000,
         by_broker: {
           UPBIT: { realized_pnl: 1000 },
           KIWOOM: { realized_pnl: 0 },
@@ -108,8 +122,13 @@ describe("mobile read-only guarantee", () => {
         React.createElement(MobileHomeDashboard),
       ),
     );
-    expect(html).toContain("오늘 운영");
+    expect(html).toContain("KIKI AI Trading");
     expect(html).toContain("정상 운영");
+    expect(html).toContain("자동매매 상태");
+    expect(html).toContain("지금 거래가 없는 이유");
+    expect(html).toContain("오늘 거래현황");
+    expect(html).toContain("총손익");
+    expect(html).toContain("평균 보유시간");
     expect(html).toContain("UPBIT");
     expect(html).toContain("KIWOOM");
     expect(html).toContain("SHADOW");

@@ -1,10 +1,12 @@
 import type { MetadataRoute } from "next";
 
+/** Single installable PWA — mobile shell at /mobile (legacy start_url 호환). */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Stock Platform",
-    short_name: "Stock",
-    description: "자동매매 상태 조회 (읽기 전용)",
+    id: "/",
+    name: "KIKI AI Trading",
+    short_name: "KIKI",
+    description: "KIKI AI 자동매매 상태 · 모바일 PWA",
     start_url: "/mobile",
     scope: "/",
     display: "standalone",

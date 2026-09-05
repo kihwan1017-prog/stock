@@ -15,6 +15,16 @@ export type MobileOverview = {
   recent_orders?: Record<string, unknown>[];
   recent_events?: Record<string, unknown>[];
   ai?: Record<string, unknown>;
+  why_no_trade?: {
+    trade_ready?: boolean;
+    trade_running?: boolean;
+    no_trade_reason_code?: string | null;
+    no_trade_reason_text?: string | null;
+    last_entry_signal_at?: string | null;
+    last_order_at?: string | null;
+    uba_id?: number;
+    broker_code?: string;
+  };
 };
 
 export function formatKrwSigned(value: unknown): string {
@@ -64,6 +74,24 @@ export function formatLiveArmLabel(live: unknown, arm: unknown): string {
   if (liveOn && !armOn) return "LIVE만 켜짐 — ARM 필요";
   if (!liveOn && armOn) return "ARM만 켜짐 — LIVE 필요";
   return "자동매매 중지";
+}
+
+export function formatHoldDuration(sec: unknown): string {
+  const n = Number(sec);
+  if (!Number.isFinite(n) || n < 0) return "—";
+  const h = Math.floor(n / 3600);
+  const m = Math.floor((n % 3600) / 60);
+  const s = Math.floor(n % 60);
+  if (h > 0) return `${h}시간 ${m}분`;
+  if (m > 0) return `${m}분 ${s}초`;
+  return `${s}초`;
+}
+
+export function formatKrwPlain(value: unknown): string {
+  if (value == null || value === "") return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${Math.round(n).toLocaleString("ko-KR")}원`;
 }
 
 export function formatClock(iso: string | undefined): string {
