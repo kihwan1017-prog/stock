@@ -35,7 +35,13 @@ from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement
     LAB_C,
     LAB_C_LABELS,
     LAB_C_VARIANTS,
+    LAB_D,
+    LAB_D_LABELS,
+    LAB_D_VARIANTS,
     LAB_ID,
+    MA_DC_EARLY_REVIEW_N,
+    MA_DC_PRIMARY_REVIEW_N,
+    MA_DC_PROMOTION_REVIEW_N,
     REENTRY_EARLY_REVIEW_N,
     REENTRY_PRIMARY_REVIEW_N,
     REENTRY_PROMOTION_REVIEW_N,
@@ -48,14 +54,20 @@ from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement
     VARIANT_A0,
     VARIANT_B0,
     VARIANT_C0,
+    VARIANT_C1,
     VARIANT_C2,
     VARIANT_C3,
+    VARIANT_D0,
 )
 from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.entities import (
     UpbitProfitabilityCandidateRefreshEntity,
     UpbitProfitabilityExitEnrollmentEntity,
     UpbitProfitabilityExitVariantEntity,
+    UpbitProfitabilityMaDcEventEntity,
     UpbitProfitabilityReentryEventEntity,
+)
+from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.lineage import (
+    build_bounded_price_path,
 )
 from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.exit_engine import (
     PathSnapshot,
@@ -700,6 +712,209 @@ def enroll_ma_dc_event(
     }
 
 
+def observe_ma_dc_price(
+    session: Session,
+    *,
+    event_id: int,
+    price: Decimal,
+    observed_at: datetime | None = None,
+    short_ma: Decimal | None = None,
+    long_ma: Decimal | None = None,
+    macd: float | None = None,
+) -> dict[str, Any]:
+    """Lab D forward tick — REAL MA_DEAD_CROSS SELL 시점 불변."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.ma_dc_engine import (
+        DECISION_FNS,
+        MaDcSnapshot,
+    )
+
+    row = session.get(UpbitProfitabilityMaDcEventEntity, int(event_id))
+    if row is None or row.status != STATUS_ACTIVE:
+        return {"ok": False, "reason": "NOT_ACTIVE"}
+
+    obs = _as_utc(observed_at) or _utc_now()
+    baseline = _as_utc(row.baseline_exit_at) or obs
+    minutes = max(0.0, (obs - baseline).total_seconds() / 60.0)
+    entry_px = float(row.entry_price or row.baseline_exit_price)
+    cur = float(price)
+    path = dict(row.path_state_json or {})
+    confirm_ticks = int(path.get("confirm_ticks") or 0)
+    peak_mfe = float(path.get("peak_mfe_pct") or 0.0)
+    unreal = ((cur - entry_px) / entry_px * 100.0) if entry_px > 0 else 0.0
+    if unreal > peak_mfe:
+        peak_mfe = unreal
+
+    short_f = float(short_ma) if short_ma is not None else path.get("short_ma")
+    long_f = float(long_ma) if long_ma is not None else path.get("long_ma")
+    short_prev = path.get("short_ma")
+    long_prev = path.get("long_ma")
+    dead = (
+        short_f is not None
+        and long_f is not None
+        and float(short_f) < float(long_f)
+    )
+    if dead:
+        confirm_ticks += 1
+    else:
+        confirm_ticks = 0
+
+    short_slope = None
+    long_slope = None
+    if short_f is not None and short_prev is not None:
+        short_slope = float(short_f) - float(short_prev)
+    if long_f is not None and long_prev is not None:
+        long_slope = float(long_f) - float(long_prev)
+
+    stop_hit = entry_px > 0 and ((cur - entry_px) / entry_px * 100.0) <= -3.0
+    max_hold = minutes >= (21600 / 60.0)
+    snap = MaDcSnapshot(
+        entry_price=entry_px,
+        baseline_exit_price=float(row.baseline_exit_price),
+        current_price=cur,
+        short_ma=float(short_f) if short_f is not None else None,
+        long_ma=float(long_f) if long_f is not None else None,
+        short_ma_prev=float(short_prev) if short_prev is not None else None,
+        long_ma_prev=float(long_prev) if long_prev is not None else None,
+        short_ma_slope=short_slope,
+        long_ma_slope=long_slope,
+        mfe_pct=peak_mfe,
+        unrealized_pnl_pct=unreal,
+        minutes_since_baseline=minutes,
+        stop_loss_hit=stop_hit,
+        max_hold_hit=max_hold,
+        confirmed_dead_cross=confirm_ticks >= 2,
+        momentum_deteriorating=(macd is not None and float(macd) < 0)
+        or (short_slope is not None and short_slope < 0),
+        price_below_long_ma=(
+            long_f is not None and cur < float(long_f)
+        ),
+    )
+
+    outcomes = dict(row.variant_outcomes_json or {})
+    # D0 already finalized at enroll
+    all_done = True
+    for vid in LAB_D_VARIANTS:
+        if vid == VARIANT_D0:
+            continue
+        prev = dict(outcomes.get(vid) or {})
+        if prev.get("WOULD_EXIT"):
+            continue
+        fn = DECISION_FNS.get(vid)
+        if fn is None:
+            all_done = False
+            continue
+        decision = fn(snap)
+        outcomes[vid] = {
+            **decision,
+            "STATUS": STATUS_COMPLETED if decision.get("WOULD_EXIT") else STATUS_ACTIVE,
+            "OBSERVED_AT": obs.isoformat(),
+        }
+        if not decision.get("WOULD_EXIT"):
+            all_done = False
+
+    path.update(
+        {
+            "confirm_ticks": confirm_ticks,
+            "peak_mfe_pct": peak_mfe,
+            "last_price": cur,
+            "last_observed_at": obs.isoformat(),
+            "short_ma": short_f,
+            "long_ma": long_f,
+            "macd": macd,
+            "price_path": build_bounded_price_path(
+                session,
+                symbol=str(row.symbol),
+                entry_at=_as_utc(row.entry_at),
+                entry_price=entry_px,
+                exit_at=baseline,
+                exit_price=float(row.baseline_exit_price),
+            ),
+        }
+    )
+    row.path_state_json = path
+    row.variant_outcomes_json = outcomes
+    if all_done or minutes >= 360.0:
+        row.status = STATUS_COMPLETED
+        row.completed_at = obs
+    session.flush()
+    return {"ok": True, "event_id": int(row.event_id), "status": row.status}
+
+
+def observe_ma_dc_price_for_binding(
+    session: Session,
+    *,
+    binding_id: int,
+    price: Decimal,
+    observed_at: datetime | None = None,
+    short_ma: Decimal | None = None,
+    long_ma: Decimal | None = None,
+    macd: float | None = None,
+) -> dict[str, Any]:
+    row = session.scalar(
+        select(UpbitProfitabilityMaDcEventEntity).where(
+            UpbitProfitabilityMaDcEventEntity.binding_id == int(binding_id),
+            UpbitProfitabilityMaDcEventEntity.status == STATUS_ACTIVE,
+        )
+    )
+    if row is None:
+        return {"ok": False, "reason": "NO_ACTIVE_EVENT"}
+    return observe_ma_dc_price(
+        session,
+        event_id=int(row.event_id),
+        price=price,
+        observed_at=observed_at,
+        short_ma=short_ma,
+        long_ma=long_ma,
+        macd=macd,
+    )
+
+
+def fill_pending_reentry_price_paths(
+    session: Session, *, limit: int = 40
+) -> dict[str, Any]:
+    """post_exit_returns_json 비어있거나 UNAVAILABLE인 reentry 행 보강."""
+
+    rows = list(
+        session.scalars(
+            select(UpbitProfitabilityReentryEventEntity)
+            .order_by(UpbitProfitabilityReentryEventEntity.reentry_at.desc())
+            .limit(limit)
+        )
+    )
+    filled = 0
+    for row in rows:
+        meta = dict(row.meta_json or {})
+        existing = dict((row.post_exit_returns_json or {}).get("price_path") or {})
+        if existing.get("status") == "COMPLETE":
+            continue
+        lineage = dict(meta.get("lineage") or {})
+        path = build_bounded_price_path(
+            session,
+            symbol=str(row.symbol),
+            entry_at=_as_utc(row.reentry_at),
+            entry_price=(
+                float(lineage["new_entry_price"])
+                if lineage.get("new_entry_price") is not None
+                else None
+            ),
+            exit_at=_as_utc(row.prior_exit_at),
+            exit_price=(
+                float(lineage["previous_exit_price"])
+                if lineage.get("previous_exit_price") is not None
+                else None
+            ),
+        )
+        if path.get("status") in {"UNAVAILABLE", None} and existing:
+            continue
+        row.post_exit_returns_json = {"price_path": path}
+        meta["price_path"] = path
+        row.meta_json = meta
+        filled += 1
+    session.flush()
+    return {"ok": True, "filled": filled}
+
+
 # ---------- Lab C ----------
 
 
@@ -740,12 +955,56 @@ def observe_reentry(
             return {"ok": True, "duplicate": True, "event_id": int(dup.event_id)}
 
     delay = (re - pe).total_seconds()
+    ctx = dict(context or {})
     decisions = {
         vid: decide_reentry_block(
-            variant_id=vid, delay_seconds=delay, context=context
+            variant_id=vid, delay_seconds=delay, context=ctx
         )
         for vid in LAB_C_VARIANTS
     }
+    # exit-reason-aware lineage (필수 필드 — meta에 평탄화 저장)
+    lineage = {
+        "previous_exit_reason": str(
+            ctx.get("previous_exit_reason") or "UNKNOWN"
+        ).upper(),
+        "previous_exit_at": ctx.get("previous_exit_at") or pe.isoformat(),
+        "previous_exit_price": ctx.get("previous_exit_price"),
+        "previous_binding_id": ctx.get("previous_binding_id")
+        or prior_exit_binding_id,
+        "new_entry_reason": ctx.get("new_entry_reason") or "NOT_RECORDED",
+        "new_entry_at": ctx.get("new_entry_at") or re.isoformat(),
+        "new_entry_price": ctx.get("new_entry_price"),
+        "new_signal_id": ctx.get("new_signal_id") or "NOT_RECORDED",
+        "reentry_delay_seconds": round(delay, 3),
+        "candidate_selection_id": ctx.get(
+            "candidate_selection_id", "NOT_RECORDED"
+        ),
+        "scanner_rank": ctx.get("scanner_rank", "NOT_RECORDED"),
+        "scanner_score": ctx.get("scanner_score", "NOT_RECORDED"),
+        "candidate_universe_size": ctx.get(
+            "candidate_universe_size", "NOT_RECORDED"
+        ),
+        "candidate_selected_at": ctx.get(
+            "candidate_selected_at", "NOT_RECORDED"
+        ),
+        "variant_scores": ctx.get("variant_scores") or {},
+    }
+    price_path = build_bounded_price_path(
+        session,
+        symbol=str(symbol).upper(),
+        entry_at=re,
+        entry_price=(
+            float(ctx["new_entry_price"])
+            if ctx.get("new_entry_price") is not None
+            else None
+        ),
+        exit_at=pe,
+        exit_price=(
+            float(ctx["previous_exit_price"])
+            if ctx.get("previous_exit_price") is not None
+            else None
+        ),
+    )
     row = UpbitProfitabilityReentryEventEntity(
         user_broker_account_id=int(user_broker_account_id),
         strategy_id=strategy_id,
@@ -760,8 +1019,15 @@ def observe_reentry(
         research_only=True,
         status=STATUS_PENDING_OUTCOME,
         variant_decisions_json=decisions,
-        post_exit_returns_json={},
-        meta_json={"lab": LAB_C, "label": RESEARCH_ONLY_LABEL, "context": context or {}},
+        post_exit_returns_json={"price_path": price_path},
+        meta_json={
+            "lab": LAB_C,
+            "label": RESEARCH_ONLY_LABEL,
+            "SHADOW_ONLY": True,
+            "context": ctx,
+            "lineage": lineage,
+            "price_path": price_path,
+        },
     )
     session.add(row)
     session.flush()
@@ -770,6 +1036,9 @@ def observe_reentry(
         "event_id": int(row.event_id),
         "SHADOW_ONLY": True,
         "REAL_POLICY_CHANGED": False,
+        "PREVIOUS_EXIT_REASON": lineage["previous_exit_reason"],
+        "C2_C3_DIVERGED": bool(decisions.get(VARIANT_C2, {}).get("WOULD_BLOCK"))
+        != bool(decisions.get(VARIANT_C3, {}).get("WOULD_BLOCK")),
     }
 
 
@@ -834,6 +1103,22 @@ def summarize_profitability_lab(
             )
         )
     )
+    ma_dc_n = len(
+        list(
+            session.scalars(
+                select(UpbitProfitabilityMaDcEventEntity).where(
+                    UpbitProfitabilityMaDcEventEntity.user_broker_account_id
+                    == int(user_broker_account_id)
+                )
+            )
+        )
+    )
+    reentry_summary = summarize_reentry(
+        session, user_broker_account_id=user_broker_account_id
+    )
+    ma_dc_summary = summarize_ma_dc(
+        session, user_broker_account_id=user_broker_account_id
+    )
     return {
         "LAB_ID": LAB_ID,
         "SHADOW_ONLY": True,
@@ -857,11 +1142,18 @@ def summarize_profitability_lab(
                 REENTRY_PRIMARY_REVIEW_N,
                 REENTRY_PROMOTION_REVIEW_N,
             ),
+            LAB_D: _readiness(
+                ma_dc_n,
+                MA_DC_EARLY_REVIEW_N,
+                MA_DC_PRIMARY_REVIEW_N,
+                MA_DC_PROMOTION_REVIEW_N,
+            ),
         },
         "SAMPLE_N": {
             "CANDIDATE_REFRESH_N": cand_n,
             "EXIT_ENROLLMENT_N": exit_n,
             "REENTRY_EVENT_N": re_n,
+            "MA_DC_EVENT_N": ma_dc_n,
         },
         "GATES": {
             LAB_A: {
@@ -879,15 +1171,23 @@ def summarize_profitability_lab(
                 "PRIMARY": REENTRY_PRIMARY_REVIEW_N,
                 "PROMOTION": REENTRY_PROMOTION_REVIEW_N,
             },
+            LAB_D: {
+                "EARLY": MA_DC_EARLY_REVIEW_N,
+                "PRIMARY": MA_DC_PRIMARY_REVIEW_N,
+                "PROMOTION": MA_DC_PROMOTION_REVIEW_N,
+            },
         },
         "VARIANT_LABELS": {
             **{f"A:{k}": v for k, v in LAB_A_LABELS.items()},
             **{f"B:{k}": v for k, v in LAB_B_LABELS.items()},
             **{f"C:{k}": v for k, v in LAB_C_LABELS.items()},
+            **{f"D:{k}": v for k, v in LAB_D_LABELS.items()},
         },
         "CANDIDATES": summarize_candidates(session, user_broker_account_id=user_broker_account_id),
         "EXITS": summarize_exits(session, user_broker_account_id=user_broker_account_id),
-        "REENTRY": summarize_reentry(session, user_broker_account_id=user_broker_account_id),
+        "REENTRY": reentry_summary,
+        "MA_DC": ma_dc_summary,
+        "MA_DC_REENTRY_CHURN": reentry_summary.get("MA_DC_CHURN") or {},
         "COMBINED_ESTIMATE": "INSUFFICIENT_DATA",
         "COMBINED_NOTE": "Need independent PRIMARY samples on all three labs before hypothetical combine",
     }
@@ -1064,43 +1364,68 @@ def summarize_reentry(
     out: dict[str, Any] = {}
     triggered_n = 0
     diverged_n = 0
+    unknown_ctx_n = 0
+
+    def _lineage(r: UpbitProfitabilityReentryEventEntity) -> dict[str, Any]:
+        meta = dict(r.meta_json or {})
+        lin = dict(meta.get("lineage") or {})
+        ctx = dict(meta.get("context") or {})
+        if not lin.get("previous_exit_reason"):
+            lin["previous_exit_reason"] = str(
+                ctx.get("previous_exit_reason") or "UNKNOWN"
+            ).upper()
+        return lin
+
+    def _delta_for(blocked_rows: list) -> dict[str, float]:
+        avoided_loss = 0.0
+        avoided_fees = 0.0
+        missed_profit = 0.0
+        baseline_real_net = 0.0
+        for r in blocked_rows:
+            net = float(r.real_net_pnl) if r.real_net_pnl is not None else None
+            fee = float(r.real_fees) if r.real_fees is not None else 0.0
+            if net is None:
+                continue
+            baseline_real_net += net
+            if net < 0:
+                avoided_loss += -net
+                avoided_fees += fee
+            else:
+                missed_profit += net
+        return {
+            "baseline_real_net": round(baseline_real_net, 4),
+            "estimated_avoided_loss": round(avoided_loss + avoided_fees, 4),
+            "estimated_missed_profit": round(missed_profit, 4),
+            "estimated_net_delta": round(
+                avoided_loss + avoided_fees - missed_profit, 4
+            ),
+        }
+
     for r in rows:
         decisions = dict(r.variant_decisions_json or {})
         c2 = dict(decisions.get(VARIANT_C2) or {})
         c3 = dict(decisions.get(VARIANT_C3) or {})
-        # trigger = C2 또는 C3가 block 검토 대상 (delay 경계 포함 전체 paired)
         triggered_n += 1
         if bool(c2.get("WOULD_BLOCK")) != bool(c3.get("WOULD_BLOCK")):
             diverged_n += 1
+        if str(c3.get("REASON") or "") == "CONTEXTUAL_CONFIRMATION_UNKNOWN":
+            unknown_ctx_n += 1
+
     for vid in LAB_C_VARIANTS:
         blocked = []
         for r in rows:
             dec = dict((r.variant_decisions_json or {}).get(vid) or {})
             if dec.get("WOULD_BLOCK"):
                 blocked.append(r)
-        avoided_loss = 0.0
-        avoided_fees = 0.0
-        missed_profit = 0.0
-        for r in blocked:
-            net = float(r.real_net_pnl) if r.real_net_pnl is not None else None
-            fee = float(r.real_fees) if r.real_fees is not None else 0.0
-            if net is None:
-                continue
-            if net < 0:
-                avoided_loss += -net
-                avoided_fees += fee
-            else:
-                missed_profit += net
+        deltas = _delta_for(blocked)
         out[vid] = {
             "LABEL": LAB_C_LABELS[vid],
             "N": len(rows),
             "BLOCKED_N": len(blocked),
-            "AVOIDED_LOSS": round(avoided_loss, 4),
-            "AVOIDED_FEES": round(avoided_fees, 4),
-            "MISSED_PROFIT": round(missed_profit, 4),
-            "NET_ESTIMATED_DELTA": round(
-                avoided_loss + avoided_fees - missed_profit, 4
-            ),
+            "AVOIDED_LOSS": deltas["estimated_avoided_loss"],
+            "AVOIDED_FEES": 0.0,
+            "MISSED_PROFIT": deltas["estimated_missed_profit"],
+            "NET_ESTIMATED_DELTA": deltas["estimated_net_delta"],
             "READINESS": _readiness(
                 len(rows),
                 REENTRY_EARLY_REVIEW_N,
@@ -1108,13 +1433,186 @@ def summarize_reentry(
                 REENTRY_PROMOTION_REVIEW_N,
             ),
         }
+
+    # MA_DEAD_CROSS → reentry churn buckets
+    ma_dc_rows = [
+        r
+        for r in rows
+        if "MA_DEAD_CROSS" in str(_lineage(r).get("previous_exit_reason") or "")
+    ]
+    # exit count: distinct prior bindings with MA_DC (also count from Lab D events)
+    ma_dc_exit_n = len(
+        list(
+            session.scalars(
+                select(UpbitProfitabilityMaDcEventEntity).where(
+                    UpbitProfitabilityMaDcEventEntity.user_broker_account_id
+                    == int(user_broker_account_id)
+                )
+            )
+        )
+    )
+    buckets = {
+        "MA_DC_REENTRY_LT_60S": [r for r in ma_dc_rows if float(r.reentry_delay_seconds or 0) < 60],
+        "MA_DC_REENTRY_LT_180S": [
+            r for r in ma_dc_rows if float(r.reentry_delay_seconds or 0) < 180
+        ],
+        "MA_DC_REENTRY_LT_300S": [
+            r for r in ma_dc_rows if float(r.reentry_delay_seconds or 0) < 300
+        ],
+        "MA_DC_REENTRY_LT_600S": [
+            r for r in ma_dc_rows if float(r.reentry_delay_seconds or 0) < 600
+        ],
+    }
+    bucket_stats: dict[str, Any] = {}
+    for name, grp in buckets.items():
+        # counterfactual: C1/C2/C3 would_block subset within bucket
+        c_stats = {}
+        for vid in (VARIANT_C1, VARIANT_C2, VARIANT_C3):
+            blocked = [
+                r
+                for r in grp
+                if bool(
+                    dict((r.variant_decisions_json or {}).get(vid) or {}).get(
+                        "WOULD_BLOCK"
+                    )
+                )
+            ]
+            c_stats[vid] = _delta_for(blocked)
+        bucket_stats[name] = {
+            "N": len(grp),
+            **_delta_for(grp),
+            "BY_VARIANT": c_stats,
+        }
+
+    # 종목별 churn 순위
+    by_sym: dict[str, dict[str, Any]] = {}
+    for r in ma_dc_rows:
+        sym = str(r.symbol).upper()
+        slot = by_sym.setdefault(
+            sym,
+            {
+                "symbol": sym,
+                "MA_DC_EXIT_N": 0,
+                "REENTRY_N": 0,
+                "NET_PNL": 0.0,
+                "C1_DELTA": 0.0,
+                "C2_DELTA": 0.0,
+                "C3_DELTA": 0.0,
+            },
+        )
+        slot["REENTRY_N"] += 1
+        if r.real_net_pnl is not None:
+            slot["NET_PNL"] += float(r.real_net_pnl)
+        for vid, key in (
+            (VARIANT_C1, "C1_DELTA"),
+            (VARIANT_C2, "C2_DELTA"),
+            (VARIANT_C3, "C3_DELTA"),
+        ):
+            if bool(
+                dict((r.variant_decisions_json or {}).get(vid) or {}).get(
+                    "WOULD_BLOCK"
+                )
+            ):
+                d = _delta_for([r])
+                slot[key] += d["estimated_net_delta"]
+    # MA_DC exit N per symbol from Lab D
+    for ev in session.scalars(
+        select(UpbitProfitabilityMaDcEventEntity).where(
+            UpbitProfitabilityMaDcEventEntity.user_broker_account_id
+            == int(user_broker_account_id)
+        )
+    ):
+        sym = str(ev.symbol).upper()
+        slot = by_sym.setdefault(
+            sym,
+            {
+                "symbol": sym,
+                "MA_DC_EXIT_N": 0,
+                "REENTRY_N": 0,
+                "NET_PNL": 0.0,
+                "C1_DELTA": 0.0,
+                "C2_DELTA": 0.0,
+                "C3_DELTA": 0.0,
+            },
+        )
+        slot["MA_DC_EXIT_N"] += 1
+
+    symbol_rank = sorted(
+        by_sym.values(),
+        key=lambda x: (-int(x["REENTRY_N"]), float(x["NET_PNL"])),
+    )
+    for s in symbol_rank:
+        s["NET_PNL"] = round(float(s["NET_PNL"]), 4)
+        s["C1_DELTA"] = round(float(s["C1_DELTA"]), 4)
+        s["C2_DELTA"] = round(float(s["C2_DELTA"]), 4)
+        s["C3_DELTA"] = round(float(s["C3_DELTA"]), 4)
+
     return {
         "SHADOW_ONLY": True,
         "REAL_POLICY_CHANGED": False,
         "EVENT_N": len(rows),
         "TRIGGERED_N": triggered_n,
         "DIVERGED_DECISION_N": diverged_n,
+        "C3_UNKNOWN_CONTEXT_N": unknown_ctx_n,
+        "C2_C3_CONTEXT_DISTINGUISHABLE": diverged_n > 0 or unknown_ctx_n > 0,
         "VARIANTS": out,
+        "MA_DC_CHURN": {
+            "MA_DC_EXIT_COUNT": ma_dc_exit_n,
+            "MA_DC_REENTRY_COUNT": len(ma_dc_rows),
+            **{k: v for k, v in bucket_stats.items()},
+            "SYMBOL_RANK": symbol_rank[:20],
+        },
+    }
+
+
+def summarize_ma_dc(
+    session: Session, *, user_broker_account_id: int = 1380
+) -> dict[str, Any]:
+    rows = list(
+        session.scalars(
+            select(UpbitProfitabilityMaDcEventEntity).where(
+                UpbitProfitabilityMaDcEventEntity.user_broker_account_id
+                == int(user_broker_account_id)
+            )
+        )
+    )
+    active_n = sum(1 for r in rows if r.status == STATUS_ACTIVE)
+    completed_n = sum(1 for r in rows if r.status == STATUS_COMPLETED)
+    variants: dict[str, Any] = {}
+    for vid in LAB_D_VARIANTS:
+        exited = 0
+        for r in rows:
+            oc = dict((r.variant_outcomes_json or {}).get(vid) or {})
+            if oc.get("WOULD_EXIT"):
+                exited += 1
+        variants[vid] = {
+            "LABEL": LAB_D_LABELS.get(vid, vid),
+            "N": len(rows),
+            "WOULD_EXIT_N": exited,
+        }
+    return {
+        "SHADOW_ONLY": True,
+        "REAL_POLICY_CHANGED": False,
+        "EVENT_N": len(rows),
+        "ACTIVE_N": active_n,
+        "COMPLETED_N": completed_n,
+        "READINESS": _readiness(
+            len(rows),
+            MA_DC_EARLY_REVIEW_N,
+            MA_DC_PRIMARY_REVIEW_N,
+            MA_DC_PROMOTION_REVIEW_N,
+        ),
+        "HOOK_STATUS": (
+            "ACTIVE_FORWARD"
+            if active_n > 0 or completed_n > 0
+            else "ENROLLED_WAITING_SAMPLE"
+        ),
+        "VARIANTS": variants,
+        "SAMPLE_NOTE": (
+            "N=0 is normal until REAL MA_DEAD_CROSS finalize enrolls Lab D"
+            if not rows
+            else None
+        ),
     }
 
 

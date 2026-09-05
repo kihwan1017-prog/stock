@@ -1,4 +1,4 @@
-"""Scheduler — candidate outcomes + exit V4 price ticks (research only)."""
+"""Scheduler — candidate outcomes + exit V4 + MA-DC + reentry price paths (research only)."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement
 )
 from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.entities import (
     UpbitProfitabilityExitEnrollmentEntity,
+    UpbitProfitabilityMaDcEventEntity,
 )
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,9 @@ JOB_ID = "upbit_profitability_improvement_shadow"
 def run_profitability_lab_tick() -> dict[str, Any]:
     from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.service import (
         fill_candidate_outcomes,
+        fill_pending_reentry_price_paths,
         observe_exit_price,
+        observe_ma_dc_price,
         shadow_enabled,
     )
     from stock_platform.position.exit_monitor_live import resolve_upbit_live_price
@@ -34,7 +37,9 @@ def run_profitability_lab_tick() -> dict[str, Any]:
         return {"ok": False, "reason": "DISABLED"}
 
     observed = 0
+    madc_observed = 0
     filled = 0
+    price_path_filled = 0
     with get_session_factory() as session:
         r = fill_candidate_outcomes(session, limit=40)
         filled = int(r.get("filled") or 0)
@@ -58,8 +63,39 @@ def run_profitability_lab_tick() -> dict[str, Any]:
                 observed_at=datetime.now(timezone.utc),
             )
             observed += 1
+
+        # Lab D forward ticks (REAL SELL unchanged)
+        madc_rows = list(
+            session.scalars(
+                select(UpbitProfitabilityMaDcEventEntity).where(
+                    UpbitProfitabilityMaDcEventEntity.status == STATUS_ACTIVE
+                )
+            )
+        )
+        for row in madc_rows:
+            px = resolve_upbit_live_price(
+                session, symbol=str(row.symbol), stale_seconds=30.0
+            )
+            if px is None or px <= Decimal("0"):
+                continue
+            observe_ma_dc_price(
+                session,
+                event_id=int(row.event_id),
+                price=px,
+                observed_at=datetime.now(timezone.utc),
+            )
+            madc_observed += 1
+
+        pp = fill_pending_reentry_price_paths(session, limit=40)
+        price_path_filled = int(pp.get("filled") or 0)
         session.commit()
-    return {"ok": True, "candidate_filled": filled, "exit_observed": observed}
+    return {
+        "ok": True,
+        "candidate_filled": filled,
+        "exit_observed": observed,
+        "ma_dc_observed": madc_observed,
+        "reentry_price_path_filled": price_path_filled,
+    }
 
 
 class UpbitProfitabilityImprovementShadowScheduler:
