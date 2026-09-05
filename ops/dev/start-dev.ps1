@@ -254,7 +254,9 @@ Set-Location -LiteralPath '$ProjectRoot'
     'KIWOOM_USE_MOCK'
 )
 foreach (`$key in `$liveEnvKeys) {
-    Remove-Item -LiteralPath ("Env:" + `$key) -ErrorAction SilentlyContinue
+    if (`$key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { continue }
+    # -Command 인자 전달 시 "Env:" 이중따옴표가 깨져 (Env:+$key)가 되므로 단일따옴표 사용
+    Remove-Item -LiteralPath ('Env:' + `$key) -ErrorAction SilentlyContinue
 }
 Write-Host '[start-dev] LIVE-related process env overrides cleared; env file is source of truth'
 # frontend/docs 제외: --reload-dir src 만 감시 (frontend 변경 → backend restart 금지)

@@ -99,7 +99,9 @@ Set-Location -LiteralPath '$ProjectRoot'
     'KIWOOM_LIVE_ORDER_ENABLED','KIWOOM_USE_MOCK'
 )
 foreach (`$key in `$liveEnvKeys) {
-    Remove-Item -LiteralPath ("Env:" + `$key) -ErrorAction SilentlyContinue
+    if (`$key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { continue }
+    # -Command 인자 전달 시 "Env:" 이중따옴표가 깨져 (Env:+$key)가 되므로 단일따옴표 사용
+    Remove-Item -LiteralPath ('Env:' + `$key) -ErrorAction SilentlyContinue
 }
 # production: never pass --reload
 & '$VenvPython' -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --app-dir src --workers 1 *>> '$BackendLog'
