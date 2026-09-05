@@ -111,6 +111,8 @@ def observe_reentry_on_new_entry(
         variants[code] = {
             "cooldown_seconds": int(secs),
             "WOULD_BLOCK": wb,
+            # NULL 금지 — ALLOW|BLOCK (이 lab은 시간 cooldown만, UNKNOWN 없음)
+            "SHADOW_DECISION": "BLOCK" if wb else "ALLOW",
             "avoided_net_impact": None,  # close 시 채움
         }
 

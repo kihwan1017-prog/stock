@@ -115,7 +115,9 @@ def test_begin_entry_rejects_when_pending_at_max() -> None:
         assert out.get("max_concurrent_entries") == 2
 
 
-def test_begin_entry_duplicate_symbol_already() -> None:
+def test_begin_entry_duplicate_symbol_pending_order_blocks() -> None:
+    """ENTRY_PENDING + entry_order_id 는 already 통과가 아니라 fail-closed."""
+
     session = MagicMock()
     svc = UpbitPortfolioService(session)
     policy = SimpleNamespace(
@@ -130,12 +132,53 @@ def test_begin_entry_duplicate_symbol_already() -> None:
         reserved_amount_krw=10000,
         allocated_amount_krw=10000,
         candidate_selection_id=None,
+        entry_order_id=555,
     )
     with (
         patch.object(svc, "get_or_create_policy", return_value=policy),
         patch(
             "stock_platform.operation.upbit_full_market.buy_concurrency.acquire_buy_admission_xact_lock",
             return_value=nullcontext(),
+        ),
+        patch(
+            "stock_platform.operation.upbit_full_market.entry_occupancy.inspect_symbol_auto_occupancy",
+            return_value={"occupied": False, "reason": None, "details": {}},
+        ),
+    ):
+        session.scalar = MagicMock(return_value=existing)
+        out = svc.begin_entry_from_signal(
+            1380, symbol="KRW-XRP", available_krw=Decimal("50000")
+        )
+        assert out.get("ok") is False
+        assert "ENTRY_SKIPPED" in str(out.get("reason") or "")
+
+
+def test_begin_entry_duplicate_symbol_orderless_already() -> None:
+    session = MagicMock()
+    svc = UpbitPortfolioService(session)
+    policy = SimpleNamespace(
+        portfolio_max_pending_entries=2,
+        enabled=True,
+        entry_state="RUNNING",
+        max_positions=6,
+    )
+    existing = SimpleNamespace(
+        slot_id=99,
+        status=SLOT_ENTRY_PENDING,
+        reserved_amount_krw=10000,
+        allocated_amount_krw=10000,
+        candidate_selection_id=None,
+        entry_order_id=None,
+    )
+    with (
+        patch.object(svc, "get_or_create_policy", return_value=policy),
+        patch(
+            "stock_platform.operation.upbit_full_market.buy_concurrency.acquire_buy_admission_xact_lock",
+            return_value=nullcontext(),
+        ),
+        patch(
+            "stock_platform.operation.upbit_full_market.entry_occupancy.inspect_symbol_auto_occupancy",
+            return_value={"occupied": False, "reason": None, "details": {}},
         ),
     ):
         session.scalar = MagicMock(return_value=existing)

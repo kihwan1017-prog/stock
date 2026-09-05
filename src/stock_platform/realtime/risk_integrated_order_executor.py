@@ -322,7 +322,14 @@ class RiskIntegratedRealtimeOrderExecutor:
                         symbol=str(getattr(signal, "symbol", "") or ""),
                         available_krw=None,
                     )
-                    if not begin.get("ok") and not begin.get("already"):
+                    # already=True 는 동일 심볼 ENTRY_PENDING 예약 존재 —
+                    # 두 번째 BUY를 절대 생성하지 않음 (overlapping entry 방지)
+                    if begin.get("already"):
+                        return self._skipped(
+                            signal,
+                            "PORTFOLIO_ENTRY_ALREADY_PENDING",
+                        )
+                    if not begin.get("ok"):
                         return self._skipped(
                             signal,
                             f"PORTFOLIO_{begin.get('reason') or 'BEGIN_ENTRY_FAILED'}",
@@ -666,6 +673,31 @@ class RiskIntegratedRealtimeOrderExecutor:
             val = getattr(signal, key, None)
             if val is not None:
                 meta[key] = val
+        # AUTO entry provenance — ranking 미변경, selection 관측만 stamp
+        sel_id = getattr(signal, "candidate_selection_id", None)
+        if sel_id is not None:
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.lineage import (
+                    resolve_candidate_provenance,
+                )
+
+                prov = resolve_candidate_provenance(
+                    self._session,
+                    selection_id=int(sel_id),
+                    order_meta=meta,
+                )
+                for pk in (
+                    "scanner_rank",
+                    "scanner_score",
+                    "candidate_universe_size",
+                    "candidate_selected_at",
+                    "variant_scores",
+                    "scanner_run_id",
+                ):
+                    if prov.get(pk) not in (None, "NOT_RECORDED", {}):
+                        meta[pk] = prov[pk]
+            except Exception:  # noqa: BLE001
+                pass
         if getattr(signal, "execution_trace_id", None):
             self._trace_order_intent(signal, user_broker_account_id)
         if environment == "LIVE" and is_live_dry_run_mode():

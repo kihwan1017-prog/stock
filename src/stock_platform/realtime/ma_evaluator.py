@@ -666,6 +666,42 @@ class MovingAverageStrategyEvaluator:
                         self.scope, "strategy_version", None
                     ),
                     quantity=position.quantity,
+                    detail={
+                        # REAL exit 조건 불변 — 관측값만 forward-only 저장
+                        "exit_reason": "MA_DEAD_CROSS",
+                        "decision_at": (
+                            (event.event_time or datetime.now(timezone.utc)).isoformat()
+                        ),
+                        "current_price": (
+                            float(event.price) if event.price is not None else None
+                        ),
+                        "entry_price": (
+                            float(position.average_entry_price)
+                            if position.average_entry_price is not None
+                            else None
+                        ),
+                        "sma_fast_value": (
+                            float(short_avg) if short_avg is not None else None
+                        ),
+                        "sma_slow_value": (
+                            float(long_avg) if long_avg is not None else None
+                        ),
+                        "ma_state": "DEAD_CROSS",
+                        "ma_cross_detected_at": (
+                            first_at.isoformat() if first_at else None
+                        ),
+                        "ma_separation_pct": gate.get("ma_separation_pct"),
+                        "holding_seconds": gate.get("holding_seconds"),
+                        "peak_price": (
+                            float(getattr(position, "high_water_price", None))
+                            if getattr(position, "high_water_price", None)
+                            is not None
+                            else None
+                        ),
+                        "mfe_pct": gate.get("mfe_pct"),
+                        "mae_pct": gate.get("mae_pct"),
+                        "fee_aware": gate.get("fee_aware"),
+                    },
                 )
             except Exception:  # noqa: BLE001
                 intent_id = None

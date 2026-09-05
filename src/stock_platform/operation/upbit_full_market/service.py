@@ -705,20 +705,51 @@ class UpbitFullMarketAssignmentService:
         assignment = self.get_or_create(uba_id)
         if not is_any_full_market(assignment.mode):
             return {"ok": False, "reason": "MODE_FIXED_SYMBOL"}
-        binding = UpbitStrategyPositionBindingEntity(
-            user_broker_account_id=uba_id,
-            strategy_id=assignment.strategy_id,
-            deployment_id=assignment.deployment_id,
-            selection_id=selection_id or assignment.active_selection_id,
-            slot_id=slot_id,
-            symbol=sym,
-            status=BINDING_STATUS_OPEN,
-            entry_order_id=entry_order_id,
-            opened_at=_now(),
-            meta_json={},
+
+        # 동일 심볼 OPEN binding 재사용 — overlapping OPEN INSERT 금지
+        existing_open = self._session.scalar(
+            select(UpbitStrategyPositionBindingEntity).where(
+                UpbitStrategyPositionBindingEntity.user_broker_account_id
+                == uba_id,
+                UpbitStrategyPositionBindingEntity.symbol == sym,
+                UpbitStrategyPositionBindingEntity.status
+                == BINDING_STATUS_OPEN,
+            )
         )
-        self._session.add(binding)
-        self._session.flush()
+        if existing_open is not None:
+            # 같은 entry_order면 idempotent reuse
+            if (
+                entry_order_id is not None
+                and existing_open.entry_order_id is not None
+                and int(existing_open.entry_order_id) != int(entry_order_id)
+            ):
+                return {
+                    "ok": False,
+                    "reason": "ENTRY_SKIPPED_EXISTING_SYMBOL_EXPOSURE",
+                    "binding_id": int(existing_open.binding_id),
+                    "existing_entry_order_id": int(existing_open.entry_order_id),
+                }
+            binding = existing_open
+            reused = True
+        else:
+            binding = UpbitStrategyPositionBindingEntity(
+                user_broker_account_id=uba_id,
+                strategy_id=assignment.strategy_id,
+                deployment_id=assignment.deployment_id,
+                selection_id=selection_id or assignment.active_selection_id,
+                slot_id=slot_id,
+                symbol=sym,
+                status=BINDING_STATUS_OPEN,
+                entry_order_id=entry_order_id,
+                opened_at=_now(),
+                meta_json={},
+            )
+            self._session.add(binding)
+            self._session.flush()
+            reused = False
+
+        if reused:
+            self._session.flush()
 
         if is_full_market_portfolio(assignment.mode):
             from stock_platform.operation.upbit_full_market.entities import (
@@ -750,69 +781,39 @@ class UpbitFullMarketAssignmentService:
             assignment.current_symbol = sym
         self._session.flush()
         # Forward shadow cohort 등록 (연구용 — REAL 정책 무관)
-        try:
-            from decimal import Decimal as _Dec
-
-            from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.hooks import (
-                enroll_binding_on_open,
-            )
-
-            entry_px = _Dec("0")
-            entry_qty = None
-            entry_fee = None
-            if entry_order_id is not None:
-                from stock_platform.order.entities import TradingOrderEntity
-
-                order = self._session.get(TradingOrderEntity, int(entry_order_id))
-                if order is not None:
-                    avg = getattr(order, "average_fill_price", None) or getattr(
-                        order, "limit_price", None
-                    )
-                    if avg is not None:
-                        entry_px = _Dec(str(avg))
-                    q = getattr(order, "filled_quantity", None) or getattr(
-                        order, "quantity", None
-                    )
-                    if q is not None:
-                        entry_qty = _Dec(str(q))
-            if entry_px <= _Dec("0"):
-                entry_px = _Dec("1")
-
-            enroll_binding_on_open(
-                self._session,
-                user_broker_account_id=uba_id,
-                binding_id=int(binding.binding_id),
-                symbol=sym,
-                strategy_id=assignment.strategy_id,
-                entry_order_id=entry_order_id,
-                entry_at=binding.opened_at,
-                entry_price=entry_px,
-                entry_quantity=entry_qty,
-                entry_fee=entry_fee,
-            )
-            # Trailing forward shadow (동일 entry provenance)
-            from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.hooks import (
-                enroll_binding_on_open as enroll_trailing_shadow,
-            )
-
-            enroll_trailing_shadow(
-                self._session,
-                user_broker_account_id=uba_id,
-                binding_id=int(binding.binding_id),
-                symbol=sym,
-                strategy_id=assignment.strategy_id,
-                entry_order_id=entry_order_id,
-                entry_at=binding.opened_at,
-                entry_price=entry_px,
-                entry_quantity=entry_qty,
-                entry_fee=entry_fee,
-            )
+        # binding reuse 시 중복 enroll 금지
+        if not reused:
             try:
-                from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.hooks import (
-                    enroll_binding_on_open as enroll_eosv3_shadow,
+                from decimal import Decimal as _Dec
+
+                from stock_platform.operation.upbit_opportunity_shadow.ma_exit_forward_shadow.hooks import (
+                    enroll_binding_on_open,
                 )
 
-                enroll_eosv3_shadow(
+                entry_px = _Dec("0")
+                entry_qty = None
+                entry_fee = None
+                if entry_order_id is not None:
+                    from stock_platform.order.entities import TradingOrderEntity
+
+                    order = self._session.get(
+                        TradingOrderEntity, int(entry_order_id)
+                    )
+                    if order is not None:
+                        avg = getattr(order, "average_fill_price", None) or getattr(
+                            order, "limit_price", None
+                        )
+                        if avg is not None:
+                            entry_px = _Dec(str(avg))
+                        q = getattr(order, "filled_quantity", None) or getattr(
+                            order, "quantity", None
+                        )
+                        if q is not None:
+                            entry_qty = _Dec(str(q))
+                if entry_px <= _Dec("0"):
+                    entry_px = _Dec("1")
+
+                enroll_binding_on_open(
                     self._session,
                     user_broker_account_id=uba_id,
                     binding_id=int(binding.binding_id),
@@ -824,14 +825,11 @@ class UpbitFullMarketAssignmentService:
                     entry_quantity=entry_qty,
                     entry_fee=entry_fee,
                 )
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
-                    enroll_binding_on_open as enroll_pislab_shadow,
+                from stock_platform.operation.upbit_opportunity_shadow.trailing_forward_shadow.hooks import (
+                    enroll_binding_on_open as enroll_trailing_shadow,
                 )
 
-                enroll_pislab_shadow(
+                enroll_trailing_shadow(
                     self._session,
                     user_broker_account_id=uba_id,
                     binding_id=int(binding.binding_id),
@@ -843,51 +841,88 @@ class UpbitFullMarketAssignmentService:
                     entry_quantity=entry_qty,
                     entry_fee=entry_fee,
                 )
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
-                    enroll_reentry_on_open,
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.exit_optimization_shadow_v3.hooks import (
+                        enroll_binding_on_open as enroll_eosv3_shadow,
+                    )
+
+                    enroll_eosv3_shadow(
+                        self._session,
+                        user_broker_account_id=uba_id,
+                        binding_id=int(binding.binding_id),
+                        symbol=sym,
+                        strategy_id=assignment.strategy_id,
+                        entry_order_id=entry_order_id,
+                        entry_at=binding.opened_at,
+                        entry_price=entry_px,
+                        entry_quantity=entry_qty,
+                        entry_fee=entry_fee,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.hooks import (
+                        enroll_binding_on_open as enroll_pislab_shadow,
+                    )
+
+                    enroll_pislab_shadow(
+                        self._session,
+                        user_broker_account_id=uba_id,
+                        binding_id=int(binding.binding_id),
+                        symbol=sym,
+                        strategy_id=assignment.strategy_id,
+                        entry_order_id=entry_order_id,
+                        entry_at=binding.opened_at,
+                        entry_price=entry_px,
+                        entry_quantity=entry_qty,
+                        entry_fee=entry_fee,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.reentry_cooldown_shadow.hooks import (
+                        enroll_reentry_on_open,
+                    )
+
+                    enroll_reentry_on_open(
+                        self._session,
+                        user_broker_account_id=uba_id,
+                        symbol=sym,
+                        entry_order_id=entry_order_id,
+                        entry_at=binding.opened_at,
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
+                    enroll_binding_on_open as enroll_exit_strategy_shadow,
                 )
 
-                enroll_reentry_on_open(
+                order_meta = None
+                if entry_order_id is not None:
+                    from stock_platform.order.entities import TradingOrderEntity
+
+                    _ord = self._session.get(
+                        TradingOrderEntity, int(entry_order_id)
+                    )
+                    if _ord is not None and isinstance(
+                        getattr(_ord, "metadata_payload", None), dict
+                    ):
+                        order_meta = dict(_ord.metadata_payload)
+                enroll_exit_strategy_shadow(
                     self._session,
                     user_broker_account_id=uba_id,
+                    binding_id=int(binding.binding_id),
                     symbol=sym,
+                    strategy_id=assignment.strategy_id,
                     entry_order_id=entry_order_id,
                     entry_at=binding.opened_at,
+                    entry_price=entry_px,
+                    entry_quantity=entry_qty,
+                    entry_fee=entry_fee,
+                    metadata=order_meta,
                 )
             except Exception:  # noqa: BLE001
                 pass
-            # Exit strategy shadow V1 (SL/TP/Trail/Time — research only)
-            from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.hooks import (
-                enroll_binding_on_open as enroll_exit_strategy_shadow,
-            )
-
-            order_meta = None
-            if entry_order_id is not None:
-                from stock_platform.order.entities import TradingOrderEntity
-
-                _ord = self._session.get(TradingOrderEntity, int(entry_order_id))
-                if _ord is not None and isinstance(
-                    getattr(_ord, "metadata_payload", None), dict
-                ):
-                    order_meta = dict(_ord.metadata_payload)
-            enroll_exit_strategy_shadow(
-                self._session,
-                user_broker_account_id=uba_id,
-                binding_id=int(binding.binding_id),
-                symbol=sym,
-                strategy_id=assignment.strategy_id,
-                entry_order_id=entry_order_id,
-                entry_at=binding.opened_at,
-                entry_price=entry_px,
-                entry_quantity=entry_qty,
-                entry_fee=entry_fee,
-                metadata=order_meta,
-            )
-        except Exception:  # noqa: BLE001
-            pass
         # OPEN binding → protective quote feed (slot 없어도 GEOD 등 구독)
         feed: dict[str, Any] = {}
         try:
@@ -912,6 +947,7 @@ class UpbitFullMarketAssignmentService:
             "ok": True,
             "binding_id": int(binding.binding_id),
             "slot_id": binding.slot_id,
+            "reused": reused,
             "protective_quote_feed": feed,
         }
 

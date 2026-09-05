@@ -2777,7 +2777,31 @@ class UpbitPortfolioService:
         )
 
         with process_lock:
-            # 동일 심볼 이미 ENTRY_PENDING → already (중복 BUY 방지)
+            # 동일 심볼 AUTO occupancy (OPEN/EXIT_PENDING/ENTRY_PENDING/open order)
+            from stock_platform.operation.upbit_full_market.entry_occupancy import (
+                REASON_ACTIVE_ENTRY_LIFECYCLE,
+                inspect_symbol_auto_occupancy,
+            )
+
+            occupancy = inspect_symbol_auto_occupancy(
+                self._session,
+                user_broker_account_id=uba_id,
+                symbol=sym,
+            )
+            if occupancy.get("occupied"):
+                return _finish(
+                    {
+                        "ok": False,
+                        "reason": str(
+                            occupancy.get("reason")
+                            or REASON_ACTIVE_ENTRY_LIFECYCLE
+                        ),
+                        "occupancy": occupancy.get("details") or {},
+                    }
+                )
+
+            # 동일 심볼 이미 ENTRY_PENDING — 두 번째 begin은 신규 BUY 금지
+            # (executor는 already=True를 skip 처리해야 함)
             existing_same = self._session.scalar(
                 select(UpbitPositionSlotEntity).where(
                     UpbitPositionSlotEntity.user_broker_account_id == uba_id,
@@ -2791,6 +2815,18 @@ class UpbitPortfolioService:
                     if existing_same.allocated_amount_krw is not None
                     else existing_same.reserved_amount_krw
                 )
+                # entry_order_id 있으면 활성 lifecycle — fail-closed
+                if existing_same.entry_order_id is not None:
+                    return _finish(
+                        {
+                            "ok": False,
+                            "reason": REASON_ACTIVE_ENTRY_LIFECYCLE,
+                            "already_pending": True,
+                            "slot_id": int(existing_same.slot_id),
+                            "entry_order_id": int(existing_same.entry_order_id),
+                        },
+                        existing_same,
+                    )
                 return _finish(
                     {
                         "ok": True,

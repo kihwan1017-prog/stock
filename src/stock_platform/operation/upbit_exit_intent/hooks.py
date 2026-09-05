@@ -26,6 +26,7 @@ def create_intent_on_ma_emit(
     strategy_id: int | None,
     strategy_version: str | None,
     quantity: Decimal | None,
+    detail: dict[str, Any] | None = None,
 ) -> int | None:
     """Confirmed MA_DEAD_CROSS EMIT 직전 — durable intent (idempotent)."""
 
@@ -51,6 +52,7 @@ def create_intent_on_ma_emit(
             strategy_version=strategy_version,
             signal_id=signal_id,
             quantity=quantity,
+            detail=detail,
         )
         session.commit()
         return int(row.exit_intent_id) if row is not None else None
