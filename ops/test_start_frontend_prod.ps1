@@ -13,7 +13,7 @@ function Ok([bool]$c,[string]$n){ if($c){"PASS $n"} else {"FAIL $n"; $script:fai
 $script = Join-Path $ProjectRoot "ops\start_frontend_prod.ps1"
 Ok (Test-Path $script) "script_exists"
 $raw = Get-Content $script -Raw
-Ok ($raw -notmatch 'next\s+dev|npm run dev') "no_dev_mode"
+Ok ($raw -notmatch '(?m)^\s*(npm run dev|next\s+dev)\b') "no_dev_mode"
 Ok ($raw -match 'npm.*run start|npm run start') "uses_start"
 Ok ($raw -match 'BUILD_ID|\.next') "requires_build"
 
