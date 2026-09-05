@@ -850,6 +850,34 @@ export async function getAdminUpbitProfitabilityLabSummary(
   });
 }
 
+/** Churn Guard Shadow V1 — READ ONLY observability (REAL block 없음) */
+export async function getAdminUpbitChurnGuardStatus(
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/churn-guard/status", {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
+export async function getAdminUpbitChurnGuardEpisodes(
+  ubaId?: number,
+  params?: { status?: string; limit?: number },
+): Promise<JsonValue> {
+  return getJson("/admin/upbit/research/churn-guard/episodes", {
+    uba_id: ubaId ?? 1380,
+    ...params,
+  });
+}
+
+export async function getAdminUpbitChurnGuardEpisode(
+  eventId: number,
+  ubaId?: number,
+): Promise<JsonValue> {
+  return getJson(`/admin/upbit/research/churn-guard/episodes/${eventId}`, {
+    uba_id: ubaId ?? 1380,
+  });
+}
+
 /** Waiting Lifecycle Forward Shadow Lab V1 (RESEARCH ONLY) */
 export async function getAdminUpbitWaitingLifecycleLabSummary(
   ubaId?: number,

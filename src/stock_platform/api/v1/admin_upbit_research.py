@@ -591,6 +591,82 @@ def get_profitability_lab_reentry(
     return summarize_reentry(session, user_broker_account_id=int(uba_id or 1380))
 
 
+@router.get("/profitability-lab/ma-dc")
+def get_profitability_lab_ma_dc(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """MA Dead Cross Shadow Lab — RESEARCH ONLY."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.service import (
+        summarize_ma_dc,
+    )
+
+    return summarize_ma_dc(session, user_broker_account_id=int(uba_id or 1380))
+
+
+@router.get("/churn-guard/status")
+def get_churn_guard_status(
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Churn Guard Shadow — mode/status (REAL block 없음)."""
+
+    from stock_platform.operation.upbit_opportunity_shadow.churn_guard_shadow.service import (
+        list_episodes,
+        status_payload,
+    )
+
+    base = status_payload()
+    listed = list_episodes(
+        session, user_broker_account_id=int(uba_id or 1380), status="ACTIVE", limit=20
+    )
+    return {
+        **base,
+        "user_broker_account_id": int(uba_id or 1380),
+        "active_count": listed.get("active_count", 0),
+        "active_episodes": listed.get("episodes", []),
+        "notice_ko": "현재는 감시/경고 전용이며 자동 매매를 차단하지 않습니다.",
+    }
+
+
+@router.get("/churn-guard/episodes")
+def list_churn_guard_episodes(
+    uba_id: int | None = Query(default=1380),
+    status: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.churn_guard_shadow.service import (
+        list_episodes,
+    )
+
+    return list_episodes(
+        session,
+        user_broker_account_id=int(uba_id or 1380),
+        status=status,
+        limit=limit,
+    )
+
+
+@router.get("/churn-guard/episodes/{event_id}")
+def get_churn_guard_episode(
+    event_id: int,
+    uba_id: int | None = Query(default=1380),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    from stock_platform.operation.upbit_opportunity_shadow.churn_guard_shadow.service import (
+        get_episode,
+    )
+
+    row = get_episode(
+        session, event_id=int(event_id), user_broker_account_id=int(uba_id or 1380)
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="CHURN_EPISODE_NOT_FOUND")
+    return row
+
+
 @router.get("/entry-signal-shadow/rows")
 def list_entry_signal_shadow_rows_api(
     uba_id: int = Query(default=1380, ge=1),

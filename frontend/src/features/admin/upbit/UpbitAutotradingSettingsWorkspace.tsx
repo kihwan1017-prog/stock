@@ -39,6 +39,7 @@ import {
 } from "@/features/admin/upbit/upbitPortfolioPolicyHelpers";
 import { UpbitOneClickAutotradingControl } from "@/features/admin/autotrading/UpbitOneClickAutotradingControl";
 import { PeriodPerformanceAnalyticsPanel } from "@/features/admin/operations-center/PeriodPerformanceAnalyticsPanel";
+import { UpbitChurnGuardShadowPanel } from "@/features/admin/operations-center/UpbitChurnGuardShadowPanel";
 import { UpbitResearchCollectionSummaryCard } from "@/features/admin/upbit/UpbitResearchCollectionSummaryCard";
 import { asRecord } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
@@ -724,14 +725,21 @@ export function UpbitAutotradingSettingsWorkspace({
         label,
         forceRender: false,
         children: (
-          <PeriodPerformanceAnalyticsPanel
-            broker="UPBIT"
-            enabled={activeTab === UPBIT_AUTOTRADING_TAB_KEYS.performance}
-            userBrokerAccountId={ubaId}
-            refreshMs={60_000}
-            defaultPreset="TODAY"
-            showChartSelector
-          />
+          <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+            <PeriodPerformanceAnalyticsPanel
+              broker="UPBIT"
+              enabled={activeTab === UPBIT_AUTOTRADING_TAB_KEYS.performance}
+              userBrokerAccountId={ubaId}
+              refreshMs={60_000}
+              defaultPreset="TODAY"
+              showChartSelector
+            />
+            <UpbitChurnGuardShadowPanel
+              userBrokerAccountId={ubaId}
+              enabled={activeTab === UPBIT_AUTOTRADING_TAB_KEYS.performance}
+              refreshMs={60_000}
+            />
+          </Space>
         ),
       };
     }

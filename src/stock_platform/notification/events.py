@@ -51,6 +51,9 @@ class NotificationEventType(StrEnum):
     MONITORING_ALERT = "MONITORING_ALERT"
     TEST_NOTIFICATION = "TEST_NOTIFICATION"
     UPBIT_AUTO_LONG_HOLD = "UPBIT_AUTO_LONG_HOLD"
+    UPBIT_IMPORTANT_NOTICE = "UPBIT_IMPORTANT_NOTICE"
+    KIWOOM_IMPORTANT_DISCLOSURE = "KIWOOM_IMPORTANT_DISCLOSURE"
+    UPBIT_CHURN_GUARD_SHADOW = "UPBIT_CHURN_GUARD_SHADOW"
 
 
 class NotificationLevel(IntEnum):
@@ -108,6 +111,9 @@ EVENT_LEVELS: dict[str, NotificationLevel] = {
     NotificationEventType.MONITORING_ALERT: NotificationLevel.WARN,
     NotificationEventType.TEST_NOTIFICATION: NotificationLevel.INFO,
     NotificationEventType.UPBIT_AUTO_LONG_HOLD: NotificationLevel.WARN,
+    NotificationEventType.UPBIT_IMPORTANT_NOTICE: NotificationLevel.WARN,
+    NotificationEventType.KIWOOM_IMPORTANT_DISCLOSURE: NotificationLevel.WARN,
+    NotificationEventType.UPBIT_CHURN_GUARD_SHADOW: NotificationLevel.WARN,
 }
 
 

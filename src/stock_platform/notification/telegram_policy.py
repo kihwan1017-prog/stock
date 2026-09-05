@@ -136,6 +136,8 @@ TELEGRAM_OPERATIONAL_ALLOWLIST = frozenset(
         # News Intelligence — critical informational (REAL gate 비연동)
         "UPBIT_IMPORTANT_NOTICE",
         "KIWOOM_IMPORTANT_DISCLOSURE",
+        # Churn Guard Shadow — observability only (REAL block 없음)
+        "UPBIT_CHURN_GUARD_SHADOW",
     }
 )
 

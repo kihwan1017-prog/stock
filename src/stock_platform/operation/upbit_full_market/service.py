@@ -1152,6 +1152,20 @@ class UpbitFullMarketAssignmentService:
                     )
                 except Exception:  # noqa: BLE001
                     pass
+                # Churn Guard Shadow — fail-open, REAL admission 무영향
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.churn_guard_shadow.hooks import (
+                        observe_churn_on_binding_closed,
+                    )
+
+                    observe_churn_on_binding_closed(
+                        self._session,
+                        user_broker_account_id=int(b.user_broker_account_id),
+                        symbol=str(b.symbol or ""),
+                        binding_id=int(b.binding_id),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
                 if exit_px is None:
                     # exit_px 없어도 trailing baseline ledger reconcile 시도
                     try:
