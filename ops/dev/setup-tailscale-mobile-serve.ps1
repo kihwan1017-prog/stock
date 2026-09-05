@@ -162,9 +162,13 @@ if (-not $frontendListening) {
     throw "Frontend port $FrontendPort is not listening. Start Next.js first."
 }
 
-Write-Step "Configuring Serve --bg -> http://127.0.0.1:$FrontendPort (NO Funnel)"
-# Official syntax: reverse proxy to localhost port; --bg persists across reboot
-Invoke-Ts -Exe $ts -Args @("serve", "--bg", "http://127.0.0.1:$FrontendPort") | Out-Host
+Write-Step "Configuring Stock service Serve (svc:stock) — Lotto machine Serve 보존, reset 금지"
+# 금지: classic `serve --bg http://127.0.0.1:3000` (lottolab machine endpoint를 :3000으로 덮어씀)
+$ensure = Join-Path $root "ops\ensure_stock_mobile_access.ps1"
+if (-not (Test-Path -LiteralPath $ensure)) {
+    throw "missing ensure script: $ensure"
+}
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ensure -ProjectRoot $root | Out-Host
 
 $serveStatus = (Invoke-Ts -Exe $ts -Args @("serve", "status") | Out-String)
 Write-Step "SERVE STATUS:`n$serveStatus"
@@ -172,8 +176,8 @@ Write-Step "SERVE STATUS:`n$serveStatus"
 $funnelAfter = (Invoke-Ts -Exe $ts -Args @("funnel", "status") | Out-String)
 Write-Step "FUNNEL STATUS:`n$funnelAfter"
 
-$httpsUrl = $null
-if ($serveStatus -match 'https://[^\s]+') {
+$httpsUrl = "https://stock.tail3bf7b2.ts.net"
+if ($serveStatus -match 'https://stock\.[^\s]+') {
     $httpsUrl = $Matches[0].TrimEnd('/', '.')
 }
 
@@ -201,7 +205,7 @@ $evidence = [ordered]@{
     LOGGED_IN                  = $true
     TAILSCALE_IPV4             = $ip
     SERVE_ENABLED              = $true
-    SERVE_TARGET               = "http://127.0.0.1:$FrontendPort"
+    SERVE_TARGET               = "svc:stock -> http://127.0.0.1:$FrontendPort"
     HTTPS_URL                  = $httpsUrl
     MOBILE_ACCESS_URL          = if ($httpsUrl) { "$httpsUrl/mobile" } else { $null }
     FUNNEL_ENABLED             = $false

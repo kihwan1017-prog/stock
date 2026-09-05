@@ -75,11 +75,14 @@ https://lottolab.tail3bf7b2.ts.net   # 기존 유지
 
 - Tailscale Serve/Service 설정은 Tailscale 측에 persist (`--bg`).
 - 그래도 `svc:stock` mapping이 빠지는 경우가 있어 **idempotent ensure**를 둔다:
-  - `ops/ensure_stock_mobile_access.ps1` — frontend `:3000` + `svc:stock→3000`만 점검/복구
-  - `ops/register_stock_mobile_tailscale_ensure_task.ps1` — AtStartup(+90s) Task 등록
+  - `ops/ensure_stock_mobile_access.ps1` — JSON SoT + drift + Lotto fingerprint + Stock-only repair
+  - `ops/register_stock_mobile_tailscale_ensure_task.ps1` — AtStartup(+90s)+AtLogOn Task 등록 (elevate 권장)
+  - `ops/dev/start-dev.ps1` — frontend ready 후 ensure post-check (HEALTHY면 no-op)
+  - `ops/test_stock_mobile_serve_ensure.ps1` — CASE1–8 회귀
+- **금지:** `tailscale serve reset`, classic `serve --bg http://127.0.0.1:3000` (Lotto machine endpoint 덮어씀)
 - Stock 앱은 canonical `ops/dev/start-dev.ps1` (또는 운영 NSSM)로 기동.
 - **Backend / LIVE / ARM 은 ensure 경로에서 restart하지 않는다.**
-- `tailscale serve reset` 은 LottoLab까지 지우므로 **사용 금지**.
+- Mobile/Tailscale failure ≠ LIVE/ARM/Kill cascade (trading fail-open).
 
 ---
 
@@ -89,4 +92,6 @@ https://lottolab.tail3bf7b2.ts.net   # 기존 유지
 - [ ] `https://stock.tail3bf7b2.ts.net/login` 200  
 - [ ] Stock 로그인 → `/api/v1/auth/me` → Admin Dashboard  
 - [ ] 8000/5432 인터넷 미노출 · Funnel OFF  
-- [ ] `ops/ensure_stock_mobile_access.ps1` 2회 실행 시 2회차 `NO_CHANGE`  
+- [ ] `ops/ensure_stock_mobile_access.ps1` 2회 실행 시 2회차 `ALREADY_OK` / `ACTION=NONE`
+- [ ] `ops/test_stock_mobile_serve_ensure.ps1` PASS
+- [ ] Task `StockMobileTailscaleEnsure` LastRun 최신 · AtStartup 트리거 존재(elevate 후)

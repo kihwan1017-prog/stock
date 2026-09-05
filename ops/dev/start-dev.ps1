@@ -313,6 +313,17 @@ cmd.exe /c "npm run dev -- --hostname $FrontendHost --port $FrontendPort >> `"$F
         Write-Step "frontend listen PID=$listenFrontend (launcher PID kept in frontend.pid)"
     }
 
+    # Tailscale stock Serve post-check (HEALTHY면 no-op; trading/backend 미변경)
+    $ensureStock = Join-Path $ProjectRoot "ops\ensure_stock_mobile_access.ps1"
+    if (Test-Path -LiteralPath $ensureStock) {
+        Write-Step "stock mobile Tailscale ensure (idempotent post-check)"
+        try {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $ensureStock -ProjectRoot $ProjectRoot | Out-Host
+        } catch {
+            Write-Step "stock mobile ensure non-fatal: $($_.Exception.Message)"
+        }
+    }
+
     # Ops health (optional)
     if (Test-HttpOk $OpsHealthUrl) {
         Write-Step "ops health OK: $OpsHealthUrl"
