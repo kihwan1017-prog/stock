@@ -135,6 +135,26 @@ class LiveFillLedgerService:
                     BrokerPositionSnapshotEntity.symbol == symbol,
                 )
             )
+        # 동일 flush 내 다중 체결: 아직 DB에 없는 pending INSERT 재사용
+        # (미flush 신규 INSERT → uq_broker_position_snapshot_symbol 방지)
+        if pos is None:
+            # mock session 등 .new 없는 경우 빈 iterable
+            pending_new = getattr(self._session, "new", ()) or ()
+            for pending in pending_new:
+                if not isinstance(pending, BrokerPositionSnapshotEntity):
+                    continue
+                if str(pending.broker_code or "").upper() != broker_code:
+                    continue
+                if str(pending.symbol or "").upper() != symbol:
+                    continue
+                pending_uba = getattr(pending, "user_broker_account_id", None)
+                pending_acct = str(getattr(pending, "account_number", "") or "")
+                if pending_uba is not None and int(pending_uba) == int(uba_id):
+                    pos = pending
+                    break
+                if pending_acct == account_number:
+                    pos = pending
+                    break
         if pos is not None:
             raw_pos = dict(pos.raw_data or {})
             applied_ids = set(raw_pos.get("applied_execution_ids") or [])

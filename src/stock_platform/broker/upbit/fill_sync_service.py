@@ -714,39 +714,45 @@ class UpbitFillSyncService:
             )
 
             ledger = LiveFillLedgerService(self._session)
-            for eid in new_execution_ids:
-                row = self._session.get(TradingExecution, int(eid))
-                if row is None:
-                    continue
-                qty = Decimal(str(row.execution_quantity or 0))
-                price = Decimal(str(row.execution_price or 0))
-                if qty <= ZERO or price <= ZERO:
-                    continue
-                event = KiwoomExecutionEvent(
-                    broker_order_id=str(
-                        row.broker_order_id or order.broker_order_id or ""
-                    ),
-                    broker_execution_id=str(row.broker_execution_id),
-                    symbol=str(order.symbol),
-                    side_code=str(order.side_code or ""),
-                    execution_price=price,
-                    execution_quantity=qty,
-                    remaining_quantity=Decimal(
-                        str(order.remaining_quantity or 0)
-                    ),
-                    executed_at=row.executed_at
-                    or datetime.now(timezone.utc),
-                    raw_payload={
-                        "source": "UPBIT_FILL_SYNC",
-                        "remote": _safe_remote(remote),
-                    },
-                )
-                ledger.apply_execution(
-                    order=order, event=event, actor=actor
-                )
-            self._session.flush()
+            # 원장 실패가 세션을 PendingRollback으로 오염시키지 않도록 savepoint
+            nested = self._session.begin_nested()
+            try:
+                for eid in new_execution_ids:
+                    row = self._session.get(TradingExecution, int(eid))
+                    if row is None:
+                        continue
+                    qty = Decimal(str(row.execution_quantity or 0))
+                    price = Decimal(str(row.execution_price or 0))
+                    if qty <= ZERO or price <= ZERO:
+                        continue
+                    event = KiwoomExecutionEvent(
+                        broker_order_id=str(
+                            row.broker_order_id or order.broker_order_id or ""
+                        ),
+                        broker_execution_id=str(row.broker_execution_id),
+                        symbol=str(order.symbol),
+                        side_code=str(order.side_code or ""),
+                        execution_price=price,
+                        execution_quantity=qty,
+                        remaining_quantity=Decimal(
+                            str(order.remaining_quantity or 0)
+                        ),
+                        executed_at=row.executed_at
+                        or datetime.now(timezone.utc),
+                        raw_payload={
+                            "source": "UPBIT_FILL_SYNC",
+                            "remote": _safe_remote(remote),
+                        },
+                    )
+                    ledger.apply_execution(
+                        order=order, event=event, actor=actor
+                    )
+                self._session.flush()
+                nested.commit()
+            except Exception:  # noqa: BLE001
+                # 원장 실패가 fill sync(주문/체결) 성공을 롤백하지 않음
+                nested.rollback()
         except Exception:  # noqa: BLE001
-            # 원장 실패가 fill sync 성공을 롤백하지 않음
             pass
 
         # Kiwoom과 동일 — strategy-owned binding OPEN/CLOSED
@@ -971,6 +977,20 @@ class UpbitFillSyncService:
                     meta_o = dict(getattr(order, "metadata_payload", None) or {})
                     meta_b = dict(binding.meta_json or {})
                     entry_obs = dict(meta_b.get("entry_observation") or {})
+                    # provenance 보강 (ranking 정책 불변 — selection row 관측만)
+                    try:
+                        from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.lineage import (
+                            resolve_candidate_provenance,
+                        )
+
+                        prov = resolve_candidate_provenance(
+                            self._session,
+                            selection_id=getattr(binding, "selection_id", None),
+                            order_meta=meta_o,
+                            binding_meta=meta_b,
+                        )
+                    except Exception:  # noqa: BLE001
+                        prov = {}
                     entry_obs.update(
                         {
                             "entry_order_id": int(order.order_id),
@@ -984,8 +1004,29 @@ class UpbitFillSyncService:
                             if filled_at is not None
                             and hasattr(filled_at, "isoformat")
                             else None,
-                            "scanner_score": meta_o.get("scanner_score", "NOT_RECORDED"),
-                            "scanner_rank": meta_o.get("scanner_rank", "NOT_RECORDED"),
+                            "signal_id": meta_o.get("signal_id")
+                            or getattr(order, "source_signal_id", None)
+                            or entry_obs.get("signal_id")
+                            or "NOT_RECORDED",
+                            "scanner_score": meta_o.get(
+                                "scanner_score",
+                                prov.get("scanner_score", "NOT_RECORDED"),
+                            ),
+                            "scanner_rank": meta_o.get(
+                                "scanner_rank",
+                                prov.get("scanner_rank", "NOT_RECORDED"),
+                            ),
+                            "candidate_selection_id": meta_o.get(
+                                "candidate_selection_id",
+                                prov.get("candidate_selection_id", "NOT_RECORDED"),
+                            ),
+                            "candidate_universe_size": prov.get(
+                                "candidate_universe_size", "NOT_RECORDED"
+                            ),
+                            "candidate_selected_at": prov.get(
+                                "candidate_selected_at", "NOT_RECORDED"
+                            ),
+                            "variant_scores": prov.get("variant_scores") or {},
                             "analysis_recommendation": meta_o.get(
                                 "analysis_recommendation", "NOT_RECORDED"
                             ),
