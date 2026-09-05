@@ -297,6 +297,7 @@ class AutotradingBlockEventService:
             user_broker_account_id=user_broker_account_id
         )
         if open_row is not None:
+            # block_event에는 자동복구 스케줄 컬럼이 없음 — 임의 timestamp 생성 금지
             return {
                 "status": "BLOCKED",
                 "blocked_at": open_row.blocked_at.isoformat()
@@ -311,21 +312,30 @@ class AutotradingBlockEventService:
                 "event_id": int(open_row.event_id),
                 "unblocked_at": None,
                 "resolved_at": None,
-                # 복구 lifecycle — 차단 중이면 시작=차단시각, 완료=없음
-                "recovery_started_at": open_row.blocked_at.isoformat()
-                if open_row.blocked_at
-                else None,
+                "recovery_scheduled_at": None,
+                "next_recovery_attempt_at": None,
+                "next_retry_at": None,
+                "recovery_attempted_at": None,
+                "recovery_started_at": None,  # legacy alias — 시도 전엔 null
                 "recovered_at": None,
-                "recovery_result": "PENDING",
+                "recovery_result": "NOT_ATTEMPTED",
+                "recovery_status": "AWAITING_OPERATOR",
                 "recovery_method": "NOT_ATTEMPTED",
                 "resolution_type": None,
             }
         if resolved is not None:
             resolution = str(resolved.resolution_type or "").upper()
-            if resolution in {"AUTO_OBSERVED_CLEAR", "AUTO", "SELF_HEAL"}:
+            if resolution in {
+                "OPERATOR_APPROVED",
+                "OPERATOR",
+                "ADMIN_APPROVED",
+            }:
+                method = "OPERATOR_APPROVED"
+                result = "SUCCESS"
+            elif resolution in {"AUTO_OBSERVED_CLEAR", "AUTO", "SELF_HEAL"}:
                 method = "AUTO"
                 result = "SUCCESS"
-            elif resolution in {"MANUAL", "OPERATOR", "ADMIN"}:
+            elif resolution in {"MANUAL", "ADMIN"}:
                 method = "MANUAL"
                 result = "SUCCESS"
             elif resolution in {"REASON_CHANGED"}:
@@ -340,6 +350,8 @@ class AutotradingBlockEventService:
             recovered_at = (
                 resolved.resolved_at or resolved.unblocked_at
             )
+            # 시도 시각: 전용 컬럼 없음. 완료 시각만 SoT로 노출 (blocked_at 대용 금지)
+            attempted_at = recovered_at if method != "NOT_ATTEMPTED" else None
             return {
                 "status": "RESOLVED",
                 "blocked_at": resolved.blocked_at.isoformat()
@@ -356,17 +368,29 @@ class AutotradingBlockEventService:
                 "secondary_reasons": resolved.secondary_reasons_json or [],
                 "resolution_type": resolved.resolution_type,
                 "event_id": int(resolved.event_id),
-                "recovery_started_at": resolved.blocked_at.isoformat()
-                if resolved.blocked_at
+                "recovery_scheduled_at": None,
+                "next_recovery_attempt_at": None,
+                "next_retry_at": None,
+                "recovery_attempted_at": attempted_at.isoformat()
+                if attempted_at
+                else None,
+                "recovery_started_at": attempted_at.isoformat()
+                if attempted_at
                 else None,
                 "recovered_at": recovered_at.isoformat() if recovered_at else None,
                 "recovery_result": result,
+                "recovery_status": "SUCCESS",
                 "recovery_method": method,
             }
         return {
             "status": "NONE",
             "recovery_result": "NOT_ATTEMPTED",
+            "recovery_status": "NOT_APPLICABLE",
             "recovery_method": "NOT_ATTEMPTED",
+            "recovery_scheduled_at": None,
+            "recovery_attempted_at": None,
+            "recovered_at": None,
+            "next_retry_at": None,
         }
 
 

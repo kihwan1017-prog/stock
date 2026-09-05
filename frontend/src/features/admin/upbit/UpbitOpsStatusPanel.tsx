@@ -286,27 +286,35 @@ export function UpbitOpsStatusPanel({
                     : ""}
                 </Typography.Text>
                 <Typography.Text>
-                  자동 복구 시작:{" "}
+                  자동 복구 예정 일시:{" "}
                   <Typography.Text strong>
-                    {blockView.recoveryStartedAt ?? "—"}
+                    {blockView.recoveryScheduledAt ?? "—"}
                   </Typography.Text>
                 </Typography.Text>
                 <Typography.Text>
-                  자동 복구 완료:{" "}
+                  복구 시도 일시:{" "}
+                  <Typography.Text strong>
+                    {blockView.recoveryAttemptedAt ?? "—"}
+                  </Typography.Text>
+                </Typography.Text>
+                <Typography.Text>
+                  복구 완료 일시:{" "}
                   <Typography.Text strong>
                     {blockView.recoveredAt ?? "—"}
                   </Typography.Text>
                 </Typography.Text>
-                <Typography.Text>
-                  복구 소요시간:{" "}
-                  <Typography.Text strong>
-                    {blockView.recoveryDurationLabel ?? "—"}
+                {blockView.nextRetryAt ? (
+                  <Typography.Text>
+                    다음 자동 복구 예정:{" "}
+                    <Typography.Text strong>
+                      {blockView.nextRetryAt}
+                    </Typography.Text>
                   </Typography.Text>
-                </Typography.Text>
+                ) : null}
                 <Typography.Text>
-                  복구 결과:{" "}
+                  복구 상태:{" "}
                   <Typography.Text strong>
-                    {blockView.recoveryResultLabel}
+                    {blockView.recoveryStatusLabel}
                   </Typography.Text>
                   {" · 복구 방식: "}
                   <Typography.Text strong>
@@ -333,8 +341,9 @@ export function UpbitOpsStatusPanel({
                   </Typography.Text>
                 ) : null}
                 <Typography.Text type="secondary">
-                  현재 상태: 조치 필요 (운영자 승인 후 복구) · 위 시각은
-                  차단/복구 이벤트이며 Activation·ARM 갱신 시각과 다릅니다.
+                  현재 상태: 조치 필요 (운영자 승인 후 복구) · 예정/시도/완료
+                  시각은 Activation·ARM 갱신 시각과 다르며, 스케줄이 없으면
+                  예정 시각을 생성하지 않습니다.
                 </Typography.Text>
               </Space>
             ) : null}
@@ -348,17 +357,22 @@ export function UpbitOpsStatusPanel({
                   최근 차단: {blockView.blockedAt ?? "—"} ~{" "}
                   {blockView.unblockedAt ?? "—"}
                 </Typography.Text>
+                {blockView.recoveryScheduledAt ? (
+                  <Typography.Text type="secondary">
+                    자동 복구 예정 일시: {blockView.recoveryScheduledAt}
+                  </Typography.Text>
+                ) : null}
                 <Typography.Text type="secondary">
-                  자동 복구 시작: {blockView.recoveryStartedAt ?? "—"}
+                  복구 시도 일시: {blockView.recoveryAttemptedAt ?? "—"}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  자동 복구 완료: {blockView.recoveredAt ?? "—"}
+                  복구 완료 일시: {blockView.recoveredAt ?? "—"}
                   {blockView.recoveryDurationLabel
                     ? ` · 소요 ${blockView.recoveryDurationLabel}`
                     : ""}
                 </Typography.Text>
                 <Typography.Text type="secondary">
-                  복구 결과: {blockView.recoveryResultLabel} · 복구 방식:{" "}
+                  복구 상태: {blockView.recoveryStatusLabel} · 복구 방식:{" "}
                   {blockView.recoveryMethodLabel}
                 </Typography.Text>
               </Space>

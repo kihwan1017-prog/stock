@@ -25,6 +25,8 @@ describe("upbitBlockHistoryView", () => {
         secondary_reasons: ["LIVE_OFF", "ARM_OFF"],
         kill_switch_scope: "UBA:1380",
         kill_switch_reason: "POSITION_MISMATCH",
+        recovery_status: "AWAITING_OPERATOR",
+        recovery_method: "NOT_ATTEMPTED",
       },
     });
     expect(v.status).toBe("BLOCKED");
@@ -33,6 +35,9 @@ describe("upbitBlockHistoryView", () => {
     expect(v.killScope).toBe("UBA:1380");
     expect(v.blockedAt).toBeTruthy();
     expect(v.durationLabel).toBeTruthy();
+    expect(v.recoveryScheduledAt).toBeNull();
+    expect(v.recoveryAttemptedAt).toBeNull();
+    expect(v.recoveryStatus).toBe("AWAITING_OPERATOR");
   });
 
   it("READY + NO_CANDIDATES is not forced BLOCKED without kill", () => {
@@ -53,6 +58,37 @@ describe("upbitBlockHistoryView", () => {
     expect(label).toContain("시간");
   });
 
+  it("does not treat blocked_at alias as recovery attempt", () => {
+    const v = parseBlockHistoryView({
+      kill_switch: { active: false },
+      block_history: {
+        status: "BLOCKED",
+        blocked_at: "2026-09-06T00:09:56+09:00",
+        // H129 legacy: recovery_started_at == blocked_at 는 시도로 보지 않음
+        recovery_started_at: "2026-09-06T00:09:56+09:00",
+        recovery_method: "NOT_ATTEMPTED",
+      },
+    });
+    expect(v.recoveryAttemptedAt).toBeNull();
+    expect(v.recoveryScheduledAt).toBeNull();
+    expect(v.recoveryStatusLabel).toContain("운영자");
+  });
+
+  it("shows scheduled timestamp only when canonical field exists", () => {
+    const v = parseBlockHistoryView({
+      kill_switch: { active: false },
+      block_history: {
+        status: "BLOCKED",
+        blocked_at: "2026-09-06T00:09:56+09:00",
+        recovery_scheduled_at: "2026-09-06T01:00:00+09:00",
+        recovery_status: "SCHEDULED",
+      },
+    });
+    expect(v.recoveryScheduledAt).toBeTruthy();
+    expect(v.recoveryStatus).toBe("SCHEDULED");
+    expect(v.recoveryStatusLabel).toBe("대기 중");
+  });
+
   it("exposes recovery lifecycle fields for resolved block", () => {
     const v = parseBlockHistoryView({
       kill_switch: { active: false },
@@ -61,35 +97,21 @@ describe("upbitBlockHistoryView", () => {
         blocked_at: "2026-09-05T06:07:06+09:00",
         unblocked_at: "2026-09-05T06:20:06+09:00",
         resolved_at: "2026-09-05T06:20:06+09:00",
-        recovery_started_at: "2026-09-05T06:07:06+09:00",
+        recovery_attempted_at: "2026-09-05T06:15:00+09:00",
         recovered_at: "2026-09-05T06:20:06+09:00",
         recovery_result: "SUCCESS",
-        recovery_method: "AUTO",
-        resolution_type: "AUTO_OBSERVED_CLEAR",
-        primary_reason_code: "KILL_SWITCH_ACTIVE",
-      },
-    });
-    expect(v.status).toBe("RESOLVED");
-    expect(v.recoveryResult).toBe("SUCCESS");
-    expect(v.recoveryMethod).toBe("AUTO");
-    expect(v.recoveryStartedAt).toBeTruthy();
-    expect(v.recoveredAt).toBeTruthy();
-    expect(v.recoveryDurationLabel).toBeTruthy();
-    expect(v.recoveryResultLabel).toBe("성공");
-  });
-
-  it("pending recovery while blocked", () => {
-    const v = parseBlockHistoryView({
-      kill_switch: { active: true },
-      block_history: {
-        status: "BLOCKED",
-        blocked_at: "2026-09-05T06:07:06+09:00",
-        recovery_result: "PENDING",
+        recovery_status: "SUCCESS",
+        recovery_method: "OPERATOR_APPROVED",
+        resolution_type: "OPERATOR_APPROVED",
         primary_reason_code: "LIVE_OFF",
       },
     });
-    expect(v.recoveryResult).toBe("PENDING");
-    expect(v.recoveredAt).toBeNull();
-    expect(v.recoveryResultLabel).toBe("진행 중");
+    expect(v.status).toBe("RESOLVED");
+    expect(v.recoveryStatus).toBe("SUCCESS");
+    expect(v.recoveryMethod).toBe("OPERATOR_APPROVED");
+    expect(v.recoveryMethodLabel).toContain("운영자");
+    expect(v.recoveryAttemptedAt).toBeTruthy();
+    expect(v.recoveredAt).toBeTruthy();
+    expect(v.recoveryDurationLabel).toBeTruthy();
   });
 });
