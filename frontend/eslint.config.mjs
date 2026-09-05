@@ -49,6 +49,18 @@ const antdCompatRestrictions = {
     },
     {
       selector:
+        "JSXOpeningElement[name.name='Drawer'] > JSXAttribute[name.name='width']",
+      message:
+        "antd Drawer: deprecated `width` — use `size` instead (antd 6).",
+    },
+    {
+      selector:
+        "JSXOpeningElement[name.name='Drawer'] > JSXAttribute[name.name='height']",
+      message:
+        "antd Drawer: deprecated `height` — use `size` instead (antd 6).",
+    },
+    {
+      selector:
         "ImportDeclaration[source.value='antd'] > ImportDefaultSpecifier",
       message:
         "antd: default import 금지 — named import만 사용 (예: import { Table } from 'antd').",

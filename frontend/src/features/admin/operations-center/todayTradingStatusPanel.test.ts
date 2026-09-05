@@ -34,4 +34,19 @@ describe("today trading status pnl contract", () => {
       today_net_pnl: "100",
     });
   });
+
+  it("keeps Recharts Tooltip alias (antd Tooltip collision fix)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const src = fs.readFileSync(
+      path.join(
+        process.cwd(),
+        "src/features/admin/operations-center/TodayTradingStatusPanel.tsx",
+      ),
+      "utf8",
+    );
+    expect(src).toMatch(/Tooltip as ChartTooltip/);
+    expect(src).toMatch(/from \"recharts\"/);
+    expect(src).toMatch(/from \"antd\"/);
+  });
 });

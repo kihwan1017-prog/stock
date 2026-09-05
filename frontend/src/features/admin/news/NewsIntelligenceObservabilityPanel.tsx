@@ -5,7 +5,7 @@ import { App, Button, Space, Tag, Typography } from "antd";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
-import { asRecord, cell } from "@/features/admin/utils/dataHelpers";
+import { asRecordOrEmpty, cell } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -35,14 +35,15 @@ export function NewsIntelligenceObservabilityPanel() {
     onError: (e) => message.error(toApiError(e).message),
   });
 
-  const data = asRecord(status.data);
-  const upbit = asRecord(data.upbit_collector);
-  const kiwoom = asRecord(data.kiwoom_collector);
-  const shadow = asRecord(data.shadow);
-  const upbitShadow = asRecord(shadow.upbit);
-  const kiwoomShadow = asRecord(shadow.kiwoom);
-  const mapping = asRecord(data.symbol_mapping);
-  const dynamic = asRecord(data.upbit_dynamic_targets);
+  // loading/error는 아래 Tag에서 cell "-"로 표시 — empty record로 null 접근 방지
+  const data = asRecordOrEmpty(status.data);
+  const upbit = asRecordOrEmpty(data.upbit_collector);
+  const kiwoom = asRecordOrEmpty(data.kiwoom_collector);
+  const shadow = asRecordOrEmpty(data.shadow);
+  const upbitShadow = asRecordOrEmpty(shadow.upbit);
+  const kiwoomShadow = asRecordOrEmpty(shadow.kiwoom);
+  const mapping = asRecordOrEmpty(data.symbol_mapping);
+  const dynamic = asRecordOrEmpty(data.upbit_dynamic_targets);
 
   return (
     <Space orientation="vertical" size={12} style={{ width: "100%" }}>

@@ -20,7 +20,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import { asRecord } from "@/shared/utils/dataHelpers";
+import { asRecordOrEmpty } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -99,10 +99,11 @@ export function UpbitExitOrderRecoveryLabPanel({
     );
   }
 
-  const root = asRecord(summaryQ.data);
-  const variants = asRecord(root.VARIANTS);
+  // loading/error early-return 이후 — 표시용 empty fallback
+  const root = asRecordOrEmpty(summaryQ.data);
+  const variants = asRecordOrEmpty(root.VARIANTS);
   const rows: VariantRow[] = ["R0", "R1", "R2", "R3"].map((v) => {
-    const vr = asRecord(variants[v]);
+    const vr = asRecordOrEmpty(variants[v]);
     return {
       key: v,
       label: VARIANT_LABEL[v] ?? v,
@@ -167,7 +168,7 @@ export function UpbitExitOrderRecoveryLabPanel({
     { title: "Mkt FB", dataIndex: "marketFb", key: "marketFb" },
   ];
 
-  const obsRoot = asRecord(obsQ.data);
+  const obsRoot = asRecordOrEmpty(obsQ.data);
   const obsItems = Array.isArray(obsRoot.items) ? obsRoot.items : [];
   const obsColumns: ColumnsType<Record<string, unknown>> = [
     { title: "Symbol", dataIndex: "symbol", key: "symbol" },

@@ -20,7 +20,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import { asRecord } from "@/shared/utils/dataHelpers";
+import { asRecordOrEmpty } from "@/shared/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -83,10 +83,10 @@ export function UpbitWaitingLifecycleLabPanel({
     );
   }
 
-  const root = asRecord(summaryQ.data);
-  const variants = asRecord(root.variants);
+  const root = asRecordOrEmpty(summaryQ.data);
+  const variants = asRecordOrEmpty(root.variants);
   const rows: VariantRow[] = ["R0", "R1", "R2", "R3"].map((v) => {
-    const vr = asRecord(variants[v]);
+    const vr = asRecordOrEmpty(variants[v]);
     return {
       key: v,
       variant: v,
@@ -177,7 +177,7 @@ export function UpbitWaitingLifecycleLabPanel({
             <Statistic
               title="Primary Forward Start"
               value={String(root.primary_forward_start ?? "—")}
-              valueStyle={{ fontSize: 14 }}
+              styles={{ content: { fontSize: 14 } }}
             />
           </Card>
         </Col>
@@ -200,7 +200,7 @@ export function UpbitWaitingLifecycleLabPanel({
                     ? "Early Review Ready"
                     : "표본 수집 중"
               }
-              valueStyle={{ fontSize: 16 }}
+              styles={{ content: { fontSize: 16 } }}
             />
           </Card>
         </Col>

@@ -67,7 +67,8 @@ export function SymbolPerformanceDrawer({
   symbolName = null,
 }: Props) {
   const screens = Grid.useBreakpoint();
-  const width = screens.md ? 820 : "100%";
+  // AntD 6: Drawer width deprecated → size (동일 UX: md 820px / 모바일 full)
+  const drawerSize = screens.md ? 820 : "100%";
 
   const detailQ = useQuery({
     queryKey: queryKeys.admin.autotradingSymbolDetail({
@@ -106,7 +107,7 @@ export function SymbolPerformanceDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      width={width}
+      size={drawerSize}
       destroyOnHidden
       title={`${symbol ?? ""}${titleName} 거래 상세`}
     >

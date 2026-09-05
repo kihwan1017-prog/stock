@@ -2,6 +2,9 @@
 /**
  * Static antd-compat gate — CI/pre-commit용 빠른 검사.
  * ESLint와 중복이지만 lockfile 없이 즉시 실패할 수 있게 유지.
+ *
+ * Drawer width/height 탐지는 Ant Design <Drawer ...> 블록만 대상으로 하여
+ * Recharts / ResponsiveContainer 등의 width 오탐을 피한다.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,20 +22,60 @@ function walk(dir, out = []) {
   return out;
 }
 
+/** JSX 시작 태그에서 매칭 닫는 '>'까지 (nested JSX 태그 제외한 속성 구간) */
+function matchJsxOpenTags(text, tagName) {
+  const re = new RegExp(`<${tagName}\\b`, "g");
+  const blocks = [];
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const start = m.index;
+    let i = start + m[0].length;
+    let quote = null;
+    while (i < text.length) {
+      const ch = text[i];
+      if (quote) {
+        if (ch === quote && text[i - 1] !== "\\") quote = null;
+        i += 1;
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === "`") {
+        quote = ch;
+        i += 1;
+        continue;
+      }
+      if (ch === ">") {
+        blocks.push(text.slice(start, i + 1));
+        break;
+      }
+      i += 1;
+    }
+  }
+  return blocks;
+}
+
 const offenders = [];
 for (const file of walk(root)) {
   const text = fs.readFileSync(file, "utf8");
   const rel = path.relative(path.join(root, ".."), file).replace(/\\/g, "/");
 
-  for (const block of text.match(/<Alert\b[\s\S]*?>/g) || []) {
+  for (const block of matchJsxOpenTags(text, "Alert")) {
     if (/\bmessage=/.test(block)) {
       offenders.push(`${rel}: Alert deprecated message=`);
     }
   }
   // AntD Statistic only — false positive 방지 (다른 컴포넌트 valueStyle 제외)
-  for (const block of text.match(/<Statistic\b[\s\S]*?>/g) || []) {
+  for (const block of matchJsxOpenTags(text, "Statistic")) {
     if (/\bvalueStyle=/.test(block)) {
       offenders.push(`${rel}: Statistic deprecated valueStyle=`);
+    }
+  }
+  // AntD Drawer only — Recharts width 오탐 방지
+  for (const block of matchJsxOpenTags(text, "Drawer")) {
+    if (/\bwidth=/.test(block)) {
+      offenders.push(`${rel}: Drawer deprecated width= (use size=)`);
+    }
+    if (/\bheight=/.test(block)) {
+      offenders.push(`${rel}: Drawer deprecated height= (use size=)`);
     }
   }
   if (/Tabs\.TabPane/.test(text)) {
@@ -55,5 +98,5 @@ if (offenders.length) {
   process.exit(1);
 }
 console.log(
-  "antd-compat OK (Alert.message / Statistic.valueStyle / TabPane / Collapse.Panel / default import)",
+  "antd-compat OK (Alert.message / Statistic.valueStyle / Drawer.width|height / TabPane / Collapse.Panel / default import)",
 );
