@@ -235,44 +235,68 @@ print('DB_OK')
         Write-Host "[start-dev] REAL LIVE/ARM 는 ops/start_backend_prod.ps1 사용 (History #92 hot-reload fail-closed 방지)" -ForegroundColor Yellow
         # OS/PowerShell process env가 secrets env 파일보다 우선하므로,
         # LIVE 관련 override를 자식 프로세스에서 제거해 env 파일을 공식 source로 둔다.
-        # cmd.exe 글로브/따옴표 깨짐 방지: PowerShell 에서 python 을 직접 실행한다.
-        $backendCmd = @"
-`$ErrorActionPreference='Continue'
-Set-Location -LiteralPath '$ProjectRoot'
-`$env:STOCK_PLATFORM_ENV_FILE='$EnvFile'
-`$env:PYTHONPATH='$(Join-Path $ProjectRoot "src")'
-`$env:APP_RUNTIME_MODE='development'
-`$env:STOCK_PLATFORM_LAUNCH_MODE='DEV'
-`$env:HOT_RELOAD_ENABLED='true'
-`$liveEnvKeys = @(
-    'GLOBAL_LIVE_ORDER_ENABLED',
-    'UPBIT_LIVE_ORDER_ENABLED',
-    'UPBIT_USE_MOCK',
-    'LIVE_OUTBOX_WORKER_ENABLED',
-    'LIVE_OUTBOX_WORKER_AUTO_START',
-    'KIWOOM_LIVE_ORDER_ENABLED',
-    'KIWOOM_USE_MOCK'
+        # expandable @" "@ + 주석 bare $key 는 StrictMode outer 평가로 실패 → @' '@ + -File child.
+        $pythonPathSrc = Join-Path $ProjectRoot "src"
+        $childScriptPath = Join-Path $RunDir "backend_dev_child.ps1"
+        $childTemplate = @'
+#Requires -Version 5.1
+$ErrorActionPreference = "Continue"
+Set-StrictMode -Version Latest
+Set-Location -LiteralPath "__PROJECT_ROOT__"
+$env:STOCK_PLATFORM_ENV_FILE = "__ENV_FILE__"
+$env:PYTHONPATH = "__PYTHONPATH__"
+$env:APP_RUNTIME_MODE = "development"
+$env:STOCK_PLATFORM_LAUNCH_MODE = "DEV"
+$env:HOT_RELOAD_ENABLED = "true"
+$liveEnvKeys = @(
+    "GLOBAL_LIVE_ORDER_ENABLED",
+    "UPBIT_LIVE_ORDER_ENABLED",
+    "UPBIT_USE_MOCK",
+    "LIVE_OUTBOX_WORKER_ENABLED",
+    "LIVE_OUTBOX_WORKER_AUTO_START",
+    "KIWOOM_LIVE_ORDER_ENABLED",
+    "KIWOOM_USE_MOCK"
 )
-foreach (`$key in `$liveEnvKeys) {
-    if (`$key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { continue }
-    # -Command 인자 전달 시 "Env:" 이중따옴표가 깨져 (Env:+$key)가 되므로 단일따옴표 사용
-    Remove-Item -LiteralPath ('Env:' + `$key) -ErrorAction SilentlyContinue
+foreach ($key in $liveEnvKeys) {
+    if ($key -notmatch "^[A-Za-z_][A-Za-z0-9_]*$") { continue }
+    Remove-Item -LiteralPath ('Env:' + $key) -ErrorAction SilentlyContinue
 }
-Write-Host '[start-dev] LIVE-related process env overrides cleared; env file is source of truth'
+Write-Host "[start-dev] LIVE-related process env overrides cleared; env file is source of truth"
 # frontend/docs 제외: --reload-dir src 만 감시 (frontend 변경 → backend restart 금지)
-cmd.exe /c "`"$VenvPython`" -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --reload --reload-dir src --app-dir src >> `"$BackendLog`" 2>&1"
-"@
+$venvPython = "__VENV_PYTHON__"
+$backendLog = "__BACKEND_LOG__"
+$backendHost = "__BACKEND_HOST__"
+$backendPort = "__BACKEND_PORT__"
+cmd.exe /c "`"$venvPython`" -m uvicorn stock_platform.api.main:app --host $backendHost --port $backendPort --reload --reload-dir src --app-dir src >> `"$backendLog`" 2>&1"
+'@
+        $childBody = $childTemplate
+        $childReplacements = [ordered]@{
+            "__PROJECT_ROOT__" = $ProjectRoot
+            "__ENV_FILE__"     = $EnvFile
+            "__PYTHONPATH__"   = $pythonPathSrc
+            "__VENV_PYTHON__"  = $VenvPython
+            "__BACKEND_HOST__" = $BackendHost
+            "__BACKEND_PORT__" = [string]$BackendPort
+            "__BACKEND_LOG__"  = $BackendLog
+        }
+        foreach ($placeholder in $childReplacements.Keys) {
+            $childBody = $childBody.Replace([string]$placeholder, [string]$childReplacements[$placeholder])
+        }
+        if ($childBody -match "__[A-Z0-9_]+__") {
+            throw "unresolved start-dev child script placeholder remains"
+        }
+        [System.IO.File]::WriteAllText($childScriptPath, $childBody, (New-Object System.Text.UTF8Encoding $false))
         $backendProc = Start-Process -FilePath "powershell.exe" `
             -ArgumentList @(
                 "-NoProfile",
                 "-ExecutionPolicy", "Bypass",
-                "-Command", $backendCmd
+                "-File", $childScriptPath
             ) `
             -WorkingDirectory $ProjectRoot `
             -WindowStyle Minimized `
             -PassThru
         Set-Content -LiteralPath $BackendPidFile -Value $backendProc.Id -Encoding ascii
-        Write-Step "backend launcher PID=$($backendProc.Id) log=$BackendLog"
+        Write-Step "backend launcher PID=$($backendProc.Id) child=$childScriptPath log=$BackendLog"
     }
 
     # --- start frontend ---

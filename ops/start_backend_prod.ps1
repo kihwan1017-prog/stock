@@ -85,35 +85,66 @@ if ($Force -and $null -ne $existing) {
 }
 
 Write-Step "NO --reload · workers=1 · env=$EnvFile · APP_RUNTIME_MODE=production"
-$backendCmd = @"
-`$ErrorActionPreference='Continue'
-Set-Location -LiteralPath '$ProjectRoot'
-`$env:STOCK_PLATFORM_ENV_FILE='$EnvFile'
-`$env:PYTHONPATH='$(Join-Path $ProjectRoot "src")'
-`$env:STOCK_PLATFORM_LAUNCH_MODE='PROD'
-`$env:APP_RUNTIME_MODE='production'
-`$env:HOT_RELOAD_ENABLED='false'
-`$liveEnvKeys = @(
-    'GLOBAL_LIVE_ORDER_ENABLED','UPBIT_LIVE_ORDER_ENABLED','UPBIT_USE_MOCK',
-    'LIVE_OUTBOX_WORKER_ENABLED','LIVE_OUTBOX_WORKER_AUTO_START',
-    'KIWOOM_LIVE_ORDER_ENABLED','KIWOOM_USE_MOCK'
+
+# Child 스크립트는 single-quoted here-string으로 작성한다.
+# expandable @" "@ 는 주석의 bare $key 까지 outer StrictMode에서 평가되어 실패한다 (H136 residual / H138).
+# outer 값은 PLACEHOLDER만 Replace — Invoke-Expression 금지.
+$pythonPathSrc = Join-Path $ProjectRoot "src"
+$childScriptPath = Join-Path $RunDir "backend_prod_child.ps1"
+$childTemplate = @'
+#Requires -Version 5.1
+$ErrorActionPreference = "Continue"
+Set-StrictMode -Version Latest
+Set-Location -LiteralPath "__PROJECT_ROOT__"
+$env:STOCK_PLATFORM_ENV_FILE = "__ENV_FILE__"
+$env:PYTHONPATH = "__PYTHONPATH__"
+$env:STOCK_PLATFORM_LAUNCH_MODE = "PROD"
+$env:APP_RUNTIME_MODE = "production"
+$env:HOT_RELOAD_ENABLED = "false"
+$liveEnvKeys = @(
+    "GLOBAL_LIVE_ORDER_ENABLED",
+    "UPBIT_LIVE_ORDER_ENABLED",
+    "UPBIT_USE_MOCK",
+    "LIVE_OUTBOX_WORKER_ENABLED",
+    "LIVE_OUTBOX_WORKER_AUTO_START",
+    "KIWOOM_LIVE_ORDER_ENABLED",
+    "KIWOOM_USE_MOCK"
 )
-foreach (`$key in `$liveEnvKeys) {
-    if (`$key -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { continue }
-    # -Command 인자 전달 시 "Env:" 이중따옴표가 깨져 (Env:+$key)가 되므로 단일따옴표 사용
-    Remove-Item -LiteralPath ('Env:' + `$key) -ErrorAction SilentlyContinue
+foreach ($key in $liveEnvKeys) {
+    if ($key -notmatch "^[A-Za-z_][A-Za-z0-9_]*$") { continue }
+    # Env: + $key 는 child scope에서만 평가 (outer expansion 경계 밖)
+    Remove-Item -LiteralPath ('Env:' + $key) -ErrorAction SilentlyContinue
 }
 # production: never pass --reload
-& '$VenvPython' -m uvicorn stock_platform.api.main:app --host $BackendHost --port $BackendPort --app-dir src --workers 1 *>> '$BackendLog'
-"@
+& "__VENV_PYTHON__" -m uvicorn stock_platform.api.main:app --host __BACKEND_HOST__ --port __BACKEND_PORT__ --app-dir src --workers 1 *>> "__BACKEND_LOG__"
+'@
+
+$childBody = $childTemplate
+$childReplacements = [ordered]@{
+    "__PROJECT_ROOT__"  = $ProjectRoot
+    "__ENV_FILE__"      = $EnvFile
+    "__PYTHONPATH__"    = $pythonPathSrc
+    "__VENV_PYTHON__"   = $VenvPython
+    "__BACKEND_HOST__"  = $BackendHost
+    "__BACKEND_PORT__"  = [string]$BackendPort
+    "__BACKEND_LOG__"   = $BackendLog
+}
+foreach ($placeholder in $childReplacements.Keys) {
+    $childBody = $childBody.Replace([string]$placeholder, [string]$childReplacements[$placeholder])
+}
+if ($childBody -match "__[A-Z0-9_]+__") {
+    throw "unresolved child script placeholder remains"
+}
+# UTF8 BOM 없는 바이트로 기록 (PowerShell 5.1 -File 호환)
+[System.IO.File]::WriteAllText($childScriptPath, $childBody, (New-Object System.Text.UTF8Encoding $false))
 
 $backendProc = Start-Process -FilePath "powershell.exe" `
-    -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $backendCmd) `
+    -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $childScriptPath) `
     -WorkingDirectory $ProjectRoot `
     -WindowStyle Minimized `
     -PassThru
 Set-Content -LiteralPath $BackendPidFile -Value $backendProc.Id -Encoding ascii
-Write-Step "launcher PID=$($backendProc.Id) log=$BackendLog"
+Write-Step "launcher PID=$($backendProc.Id) child=$childScriptPath log=$BackendLog"
 
 $deadline = (Get-Date).AddSeconds($ReadyTimeoutSec)
 $health = "http://${BackendHost}:${BackendPort}/health/live"
