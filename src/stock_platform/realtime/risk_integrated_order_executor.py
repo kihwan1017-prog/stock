@@ -652,6 +652,9 @@ class RiskIntegratedRealtimeOrderExecutor:
             ),
             "order_source": "AUTO",
         }
+        # SELL provenance — exit_reason과 signal_reason 동시 stamp (집계 단일화)
+        if str(signal.action.value).upper() == "SELL" and signal.reason_code:
+            meta["exit_reason"] = signal.reason_code
         # WRK-014 exit intent lineage
         sig_meta = getattr(signal, "metadata", None) or {}
         if isinstance(sig_meta, dict):

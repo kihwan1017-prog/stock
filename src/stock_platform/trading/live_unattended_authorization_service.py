@@ -2258,6 +2258,24 @@ class LiveUnattendedAuthorizationService:
         if uba is None:
             return {"renewed": False, "reason": "UBA_NOT_FOUND"}
 
+        # Truth Layer — 24H unattended 중 BALANCE_SYNC freshness 유지 (on-demand)
+        sync_refresh: dict[str, Any] = {}
+        try:
+            from stock_platform.trading.uba_truth_layer import (
+                ensure_account_sync_fresh_for_uba,
+            )
+
+            sync_refresh = ensure_account_sync_fresh_for_uba(
+                self._session,
+                user_broker_account_id=int(user_broker_account_id),
+            )
+        except Exception as exc:  # noqa: BLE001
+            sync_refresh = {
+                "synced": False,
+                "reason": "SYNC_HELPER_ERROR",
+                "error": type(exc).__name__,
+            }
+
         # MARKET_HOURS: 장 마감 후 ENTRY lease expire (다음 장 자동 시작 없음)
         if mode == MODE_MARKET_HOURS:
             from stock_platform.trading.market_hours_authorization import (
@@ -2483,6 +2501,22 @@ class LiveUnattendedAuthorizationService:
                         "arm_expires_at"
                     )
                     detail["old_arm_expires_at"] = old_arm_expires
+                    from stock_platform.trading.uba_truth_layer import (
+                        append_arm_renewal_history,
+                    )
+
+                    detail = append_arm_renewal_history(
+                        detail,
+                        entry={
+                            "at": now.isoformat(),
+                            "actor": renew_actor,
+                            "old_arm_expires_at": old_arm_expires,
+                            "new_arm_expires_at": arm_result.get(
+                                "arm_expires_at"
+                            ),
+                            "arm_ttl_seconds": arm_ttl,
+                        },
+                    )
                     did = True
                     if mode == MODE_MARKET_HOURS:
                         self._emit_market_hours_renew_telegram(
@@ -2546,6 +2580,13 @@ class LiveUnattendedAuthorizationService:
         row.last_renewed_at = now
         row.last_renewal_actor = renew_actor[:100]
         detail["horizon_auto_renew"] = horizon_result
+        if sync_refresh:
+            detail["account_sync_refresh"] = {
+                "synced": sync_refresh.get("synced"),
+                "reason": sync_refresh.get("reason"),
+                "BALANCE_SYNC": sync_refresh.get("BALANCE_SYNC"),
+                "sync_age_seconds": sync_refresh.get("sync_age_seconds"),
+            }
         row.last_renewal_detail = self._preserve_mode_detail(row, detail)
         row.updated_at = now
         self._session.flush()

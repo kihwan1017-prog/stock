@@ -861,6 +861,51 @@ def build_uba_operational_summary(
     except Exception:  # noqa: BLE001
         out.setdefault("exit_policy", {"error": "EXIT_POLICY_RESOLVE_FAILED"})
         out.setdefault("exit_shadow", {"error": "EXIT_SHADOW_STATUS_FAILED"})
+
+    # Truth Layer — position/sync/risk semantics (WAITING ≠ OPEN)
+    try:
+        from stock_platform.trading.uba_truth_layer import (
+            balance_sync_status,
+            position_truth,
+            risk_semantics_snapshot,
+        )
+
+        sync_st = balance_sync_status(session, user_broker_account_id=uba_id)
+        pos_st = position_truth(session, user_broker_account_id=uba_id)
+        risk_sem = risk_semantics_snapshot(session, user_broker_account_id=uba_id)
+        out["truth_layer"] = {
+            "ACCOUNT_SYNC": sync_st.get("ACCOUNT_SYNC"),
+            "BALANCE_SYNC": sync_st.get("BALANCE_SYNC"),
+            "last_synced_at": sync_st.get("last_synced_at"),
+            "sync_age_seconds": sync_st.get("sync_age_seconds"),
+            "ACCOUNT_SYNC_NOT_READY_ROOT_CAUSE": sync_st.get(
+                "ACCOUNT_SYNC_NOT_READY_ROOT_CAUSE"
+            ),
+            "ACTUAL_OPEN_AUTO_POSITION_COUNT": pos_st.get(
+                "ACTUAL_OPEN_AUTO_POSITION_COUNT"
+            ),
+            "WAITING_SIGNAL_COUNT": pos_st.get("WAITING_SIGNAL_COUNT"),
+            "POSITION_SLOT_CONSUMING_COUNT": pos_st.get(
+                "POSITION_SLOT_CONSUMING_COUNT"
+            ),
+            "MAX_POSITION_INVARIANT_PASS": pos_st.get(
+                "MAX_POSITION_INVARIANT_PASS"
+            ),
+            "DAILY_ORDER_LIMIT_ENFORCED": risk_sem.get(
+                "DAILY_ORDER_LIMIT_ENFORCED"
+            ),
+            "portfolio_daily_entry_limit": risk_sem.get(
+                "portfolio_daily_entry_limit"
+            ),
+            "portfolio_daily_entry_mode": risk_sem.get(
+                "portfolio_daily_entry_mode"
+            ),
+        }
+        out["ACCOUNT_SYNC"] = sync_st.get("ACCOUNT_SYNC")
+        out["BALANCE_SYNC"] = sync_st.get("BALANCE_SYNC")
+    except Exception:  # noqa: BLE001
+        out.setdefault("truth_layer", {"error": "TRUTH_LAYER_BUILD_FAILED"})
+
     # Canonical reliability health (watchdog SoT)
     try:
         from stock_platform.trading.autotrading_health_service import (
