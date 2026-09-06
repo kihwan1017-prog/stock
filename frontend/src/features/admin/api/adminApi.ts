@@ -1371,6 +1371,17 @@ export async function disableAdminUbaUnattended(
   return postJson(`/admin/autotrading/uba/${ubaId}/unattended/disable`, body);
 }
 
+/** 명시적 Operator Authorization 철회 — Unattended disable과 분리 */
+export async function revokeAdminUbaOperatorAuthorization(
+  ubaId: number,
+  body: { confirmation_text: string; reason: string },
+): Promise<JsonValue> {
+  return postJson(
+    `/admin/autotrading/uba/${ubaId}/operator-authorization/revoke`,
+    body,
+  );
+}
+
 /** 24H lease 자동 갱신 opt-in/out — ACTIVE lease 필수 */
 export async function setAdminUbaUnattendedAutoRenew(
   ubaId: number,

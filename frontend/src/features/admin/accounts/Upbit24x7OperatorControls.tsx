@@ -196,7 +196,7 @@ export function Upbit24x7OperatorControls({
         reason: "admin_ui_disable",
       }),
     onSuccess: async () => {
-      messageApi.success("24H Unattended disabled");
+      messageApi.success("자동운영(Unattended) 중지 — Operator Authorization 유지");
       await invalidate();
     },
     onError: (err) => messageApi.error(toApiError(err).message),
@@ -509,15 +509,15 @@ export function Upbit24x7OperatorControls({
               loading={unattendedDisable.isPending}
               onClick={() =>
                 confirmThen(
-                  "24시간 무인운영 중지",
-                  "Unattended lease를 해제합니다. LIVE/ARM/스택은 유지됩니다.",
+                  "자동운영 중지",
+                  "Unattended 실행만 중지합니다. Operator Authorization(승인 Horizon)은 유지됩니다. 승인 철회는 별도 작업입니다.",
                   "중지",
                   true,
                   () => unattendedDisable.mutate(),
                 )
               }
             >
-              24시간 무인운영 중지
+              자동운영 중지
             </Button>
           ) : (
             <Tooltip title={unattendedStartReason ?? undefined}>
@@ -527,8 +527,8 @@ export function Upbit24x7OperatorControls({
                 onClick={() => onUnattendedEnable?.()}
               >
                 {snap?.needsReauthorize
-                  ? "24H 무인운영 재승인"
-                  : "24시간 무인운영 시작"}
+                  ? "24H 운영 승인 재발급"
+                  : "24시간 자동운영 시작"}
               </Button>
             </Tooltip>
           )

@@ -59,6 +59,8 @@ CONFIRM_ENABLE = "ENABLE 24H UNATTENDED"
 CONFIRM_DISABLE = "DISABLE 24H UNATTENDED"
 CONFIRM_ENABLE_MARKET_HOURS = "ENABLE MARKET HOURS UNATTENDED"
 CONFIRM_DISABLE_MARKET_HOURS = "DISABLE MARKET HOURS UNATTENDED"
+# Operator Authorization 명시 철회 — Unattended OFF 와 분리
+CONFIRM_REVOKE_AUTHORIZATION = "REVOKE OPERATOR AUTHORIZATION"
 
 # Unattended 전용 승인 모델 — LIVE ON approval_phrase 와 역할 분리
 APPROVAL_MODEL_UNATTENDED_LEASE = "UNATTENDED_LEASE_ACK"
@@ -127,15 +129,20 @@ class LiveUnattendedAuthorizationService:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def get_active(
+    def get_authorization(
         self, user_broker_account_id: int
     ) -> LiveUnattendedAuthorizationEntity | None:
+        """Operator Authorization horizon SoT.
+
+        Unattended execution(`enabled`)과 분리한다.
+        ACTIVE/PROTECTIVE 만 반환 — REVOKED/EXPIRED 제외.
+        """
+
         return self._session.scalar(
             select(LiveUnattendedAuthorizationEntity)
             .where(
                 LiveUnattendedAuthorizationEntity.user_broker_account_id
                 == int(user_broker_account_id),
-                LiveUnattendedAuthorizationEntity.enabled.is_(True),
                 LiveUnattendedAuthorizationEntity.status_code.in_(
                     (STATUS_ACTIVE, STATUS_PROTECTIVE)
                 ),
@@ -145,6 +152,32 @@ class LiveUnattendedAuthorizationService:
             )
             .limit(1)
         )
+
+    def get_active(
+        self, user_broker_account_id: int
+    ) -> LiveUnattendedAuthorizationEntity | None:
+        """호환 alias — Operator Authorization 조회 (enabled 무관).
+
+        Unattended 실행 ON 여부는 status_dict의 entry_lease_active /
+        ``is_unattended_execution_on`` 을 사용한다.
+        """
+
+        return self.get_authorization(int(user_broker_account_id))
+
+    def is_unattended_execution_on(
+        self, user_broker_account_id: int
+    ) -> bool:
+        """Unattended execution authority (lease renewal / Class A·B)."""
+
+        row = self.get_authorization(int(user_broker_account_id))
+        if row is None:
+            return False
+        if str(row.status_code or "").upper() != STATUS_ACTIVE:
+            return False
+        until = aware_utc(row.authorized_until)
+        if until is None or until <= _now():
+            return False
+        return bool(row.enabled) and bool(row.entry_authorized)
 
     def status_dict(self, user_broker_account_id: int) -> dict[str, Any]:
         uba = self._session.get(
@@ -189,13 +222,17 @@ class LiveUnattendedAuthorizationService:
             max(0, int((until - now).total_seconds())) if until else 0
         )
         status_u = str(row.status_code or "").upper()
+        until_ok = remaining > 0
+        operator_auth_active = status_u == STATUS_ACTIVE and until_ok
         entry_lease_active = (
             bool(row.enabled)
             and status_u == STATUS_ACTIVE
             and bool(row.entry_authorized)
-            and remaining > 0
+            and until_ok
         )
-        needs_reauthorize = not entry_lease_active
+        # Unattended OFF + Auth ACTIVE 이면 재승인(신규 Auth)이 아니라 resume만 필요
+        needs_reauthorize = not operator_auth_active
+        needs_unattended_enable = operator_auth_active and not entry_lease_active
         mode = self._authorization_mode(row)
         detail = dict(row.last_renewal_detail or {})
         mh_meta = detail.get("market_hours") if isinstance(detail.get("market_hours"), dict) else {}
@@ -207,7 +244,11 @@ class LiveUnattendedAuthorizationService:
             # UI/게이트: PROTECTIVE·만료는 '무인 ENTRY 세션 ON'이 아님
             "unattended_enabled": entry_lease_active,
             "entry_lease_active": entry_lease_active,
+            "unattended_execution_enabled": entry_lease_active,
+            "operator_authorization_active": operator_auth_active
+            or status_u == STATUS_PROTECTIVE,
             "needs_reauthorize": needs_reauthorize,
+            "needs_unattended_enable": needs_unattended_enable,
             "status_code": row.status_code,
             "broker_code": broker or str(row.broker_code or "").upper(),
             "authorization_mode": mode,
@@ -518,12 +559,66 @@ class LiveUnattendedAuthorizationService:
                 f"Cannot enable unattended: {gates['blockers']}",
             )
 
-        existing = self.get_active(int(user_broker_account_id))
+        existing = self.get_authorization(int(user_broker_account_id))
         if existing is not None:
-            raise LiveUnattendedError(
-                "ALREADY_ENABLED",
-                "Active unattended authorization already exists",
+            exist_until = aware_utc(existing.authorized_until)
+            exist_remaining = (
+                max(0, int((exist_until - now).total_seconds()))
+                if exist_until
+                else 0
             )
+            exist_status = str(existing.status_code or "").upper()
+            # 동일 ACTIVE Authorization 안에서 Unattended 재개 (신규 Auth 금지)
+            if exist_status == STATUS_ACTIVE and exist_remaining > 0:
+                if bool(existing.enabled) and bool(existing.entry_authorized):
+                    raise LiveUnattendedError(
+                        "ALREADY_ENABLED",
+                        "Active unattended authorization already exists",
+                    )
+                existing.enabled = True
+                existing.entry_authorized = True
+                existing.protective_exit_authorized = True
+                existing.updated_at = now
+                detail = dict(existing.last_renewal_detail or {})
+                detail["unattended_resume"] = {
+                    "at": now.isoformat(),
+                    "actor": actor[:100],
+                    "reason": (reason or "")[:500],
+                    "correlation_id": (correlation_id or "")[:128],
+                    "source": source_u,
+                }
+                existing.last_renewal_detail = detail
+                self._session.flush()
+                emit_live_safety_audit(
+                    self._session,
+                    event_type="UNATTENDED_ENABLED",
+                    actor=actor,
+                    run_id=None,
+                    user_id=None,
+                    account_id=int(user_broker_account_id),
+                    strategy_id=None,
+                    detail={
+                        "authorization_id": int(
+                            existing.live_unattended_authorization_id
+                        ),
+                        "mode": "RESUME_SAME_AUTHORIZATION",
+                        "authorized_until": exist_until.isoformat()
+                        if exist_until
+                        else None,
+                        "reason": (reason or "")[:500],
+                    },
+                    commit=False,
+                )
+                self._session.commit()
+                out = self.status_dict(int(user_broker_account_id))
+                out["resumed_existing_authorization"] = True
+                return out
+            # PROTECTIVE / 만료 직전 등은 신규 생성 대신 명시 처리
+            if exist_status == STATUS_PROTECTIVE:
+                raise LiveUnattendedError(
+                    "AUTHORIZATION_PROTECTIVE",
+                    "Protective authorization present — use reauthorize or wait expiry",
+                )
 
         act = LiveTradingTransitionService(self._session).peek_active(
             broker_code=broker,
@@ -583,6 +678,22 @@ class LiveUnattendedAuthorizationService:
             "Market-Hours Unattended ON"
             if mode == MODE_MARKET_HOURS
             else "24H Unattended ON"
+        )
+        emit_live_safety_audit(
+            self._session,
+            event_type="OPERATOR_AUTHORIZATION_CREATED",
+            actor=actor,
+            run_id=None,
+            user_id=int(uba.user_id),
+            account_id=int(user_broker_account_id),
+            strategy_id=None,
+            detail={
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "authorized_until": row.authorized_until.isoformat(),
+                "horizon_hours": hours,
+                "authorization_mode": mode,
+            },
+            commit=False,
         )
         emit_live_safety_audit(
             self._session,
@@ -865,8 +976,13 @@ class LiveUnattendedAuthorizationService:
         reason: str,
         fail_closed: bool = True,
     ) -> dict[str, Any]:
+        """Unattended execution OFF — Operator Authorization horizon 유지.
+
+        ACTIVE → REVOKED 금지. Authorization 철회는 ``revoke_authorization``.
+        """
+
         text_u = (confirmation_text or "").strip().upper()
-        row = self.get_active(int(user_broker_account_id))
+        row = self.get_authorization(int(user_broker_account_id))
         mode = self._authorization_mode(row)
         expect_disable = (
             CONFIRM_DISABLE_MARKET_HOURS
@@ -881,14 +997,105 @@ class LiveUnattendedAuthorizationService:
         if row is None:
             return self.status_dict(int(user_broker_account_id))
         now = _now()
+        status_u = str(row.status_code or "").upper()
+        # Unattended OFF only — Auth ACTIVE/PROTECTIVE 유지
+        row.enabled = False
+        row.entry_authorized = False
+        if status_u == STATUS_REVOKED:
+            # 방어: 이미 철회된 행은 disable로 건드리지 않음
+            return self.status_dict(int(user_broker_account_id))
+        # status_code 변경 금지 (ACTIVE / PROTECTIVE 유지)
+        row.updated_at = now
+        detail = dict(row.last_renewal_detail or {})
+        detail["unattended_disabled"] = {
+            "at": now.isoformat(),
+            "actor": actor[:100],
+            "reason": (reason or "OPERATOR_DISABLE")[:500],
+            "authorization_status_preserved": status_u,
+        }
+        row.last_renewal_detail = detail
+        self._session.flush()
+        emit_live_safety_audit(
+            self._session,
+            event_type="UNATTENDED_DISABLED",
+            actor=actor,
+            run_id=None,
+            user_id=None,
+            account_id=int(user_broker_account_id),
+            strategy_id=None,
+            detail={
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "reason": (reason or "OPERATOR_DISABLE")[:500],
+                "fail_closed": fail_closed,
+                "authorization_status": status_u,
+                "authorization_revoked": False,
+            },
+            commit=False,
+        )
+        if fail_closed:
+            self._fail_closed_on_expiry(
+                int(user_broker_account_id),
+                actor=actor,
+                reason="UNATTENDED_DISABLED",
+                keep_protective_exit=True,
+            )
+        self._session.commit()
+        return self.status_dict(int(user_broker_account_id))
+
+    def revoke_authorization(
+        self,
+        user_broker_account_id: int,
+        *,
+        actor: str,
+        confirmation_text: str,
+        reason: str,
+        fail_closed: bool = True,
+    ) -> dict[str, Any]:
+        """명시적 Operator Authorization 철회 (ACTIVE → REVOKED).
+
+        Unattended disable의 부수효과로 호출하지 않는다.
+        """
+
+        text_u = (confirmation_text or "").strip().upper()
+        if CONFIRM_REVOKE_AUTHORIZATION not in text_u:
+            raise LiveUnattendedError(
+                "CONFIRMATION_REQUIRED",
+                f"confirmation_text must include '{CONFIRM_REVOKE_AUTHORIZATION}'",
+            )
+        if not (reason or "").strip():
+            raise LiveUnattendedError(
+                "REASON_REQUIRED",
+                "explicit revoke requires a non-empty reason",
+            )
+        row = self.get_authorization(int(user_broker_account_id))
+        if row is None:
+            return self.status_dict(int(user_broker_account_id))
+        now = _now()
         row.enabled = False
         row.status_code = STATUS_REVOKED
         row.entry_authorized = False
         row.revoked_at = now
         row.revoked_by = actor[:100]
-        row.revoke_reason = (reason or "OPERATOR_DISABLE")[:200]
+        row.revoke_reason = reason.strip()[:200]
         row.updated_at = now
         self._session.flush()
+        emit_live_safety_audit(
+            self._session,
+            event_type="OPERATOR_AUTHORIZATION_REVOKED",
+            actor=actor,
+            run_id=None,
+            user_id=None,
+            account_id=int(user_broker_account_id),
+            strategy_id=None,
+            detail={
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "reason": row.revoke_reason,
+                "fail_closed": fail_closed,
+                "explicit_operator_revoke": True,
+            },
+            commit=False,
+        )
+        # 호환 이벤트 (기존 감사 쿼리)
         emit_live_safety_audit(
             self._session,
             event_type="UNATTENDED_AUTHORIZATION_REVOKED",
@@ -900,7 +1107,7 @@ class LiveUnattendedAuthorizationService:
             detail={
                 "authorization_id": int(row.live_unattended_authorization_id),
                 "reason": row.revoke_reason,
-                "fail_closed": fail_closed,
+                "via": "explicit_revoke_authorization",
             },
             commit=False,
         )
@@ -908,7 +1115,7 @@ class LiveUnattendedAuthorizationService:
             self._fail_closed_on_expiry(
                 int(user_broker_account_id),
                 actor=actor,
-                reason="UNATTENDED_REVOKED",
+                reason="OPERATOR_AUTHORIZATION_REVOKED",
                 keep_protective_exit=True,
             )
         self._session.commit()
@@ -2234,6 +2441,10 @@ class LiveUnattendedAuthorizationService:
         if row is None:
             return {"renewed": False, "reason": "NO_ACTIVE_LEASE"}
 
+        # Unattended execution OFF면 lease renewal 금지 (Auth ACTIVE 유지)
+        if not bool(row.enabled) or not bool(row.entry_authorized):
+            return {"renewed": False, "reason": "UNATTENDED_EXECUTION_OFF"}
+
         mode = self._authorization_mode(row)
         renew_actor = (
             ACTOR_MARKET_HOURS_ARM_RENEW
@@ -2887,11 +3098,27 @@ class LiveUnattendedAuthorizationService:
             row.enabled = False
             row.status_code = STATUS_EXPIRED
             row.protective_exit_authorized = False
-            row.revoked_at = now
-            row.revoked_by = actor[:100]
-            row.revoke_reason = reason[:200]
+            # EXPIRED ≠ REVOKED — revoked_* 는 명시적 revoke 전용
+            row.revoked_at = None
+            row.revoked_by = None
+            row.revoke_reason = None
         row.updated_at = now
         self._session.flush()
+        emit_live_safety_audit(
+            self._session,
+            event_type="OPERATOR_AUTHORIZATION_EXPIRED",
+            actor=actor,
+            run_id=None,
+            user_id=None,
+            account_id=uba_id,
+            strategy_id=None,
+            detail={
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "reason": reason,
+                "protective": has_pos,
+            },
+            commit=False,
+        )
         emit_live_safety_audit(
             self._session,
             event_type="UNATTENDED_AUTHORIZATION_EXPIRED",

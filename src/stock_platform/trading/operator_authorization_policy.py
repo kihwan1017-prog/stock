@@ -57,16 +57,26 @@ def validate_operator_authorization_hours(
 
 
 def authorization_active_from_unattended(unattended: dict[str, Any] | None) -> bool:
-    """ops/status unattended 블록 → Operator Authorization ACTIVE 판정."""
+    """ops/status unattended 블록 → Operator Authorization ACTIVE 판정.
+
+    Unattended execution OFF 여도 status_code=ACTIVE + remaining>0 이면 Auth ACTIVE.
+    """
 
     if not isinstance(unattended, dict):
         return False
+    if bool(unattended.get("operator_authorization_active")):
+        return True
+    status = str(unattended.get("status_code") or "").upper()
+    remaining = int(unattended.get("remaining_seconds") or 0)
+    if status == "ACTIVE" and remaining > 0:
+        return True
+    if status in {"PROTECTIVE", "PROTECTIVE_EXIT_ONLY"}:
+        return True
     if bool(unattended.get("unattended_enabled")) or bool(
         unattended.get("entry_lease_active")
     ):
         return True
-    status = str(unattended.get("status_code") or "").upper()
-    return status in {"ACTIVE", "ON", "ENABLED"}
+    return status in {"ON", "ENABLED"}
 
 
 def build_operator_authorization_view(

@@ -301,6 +301,13 @@ class UnattendedDisableBody(BaseModel):
     reason: str = Field(..., min_length=3, max_length=2000)
 
 
+class OperatorAuthorizationRevokeBody(BaseModel):
+    """명시적 Operator Authorization 철회 — Unattended disable과 분리."""
+
+    confirmation_text: str = Field(..., min_length=8)
+    reason: str = Field(..., min_length=3, max_length=2000)
+
+
 @router.get("/uba/{user_broker_account_id}/unattended")
 def admin_uba_unattended_status(
     user_broker_account_id: int,
@@ -396,6 +403,35 @@ def admin_uba_unattended_disable(
 
     try:
         return LiveUnattendedAuthorizationService(session).disable(
+            int(user_broker_account_id),
+            actor=user.username,
+            confirmation_text=body.confirmation_text,
+            reason=body.reason,
+            fail_closed=True,
+        )
+    except LiveUnattendedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
+
+
+@router.post("/uba/{user_broker_account_id}/operator-authorization/revoke")
+def admin_uba_operator_authorization_revoke(
+    user_broker_account_id: int,
+    body: OperatorAuthorizationRevokeBody,
+    session: Session = Depends(get_db_session),
+    user: AuthenticatedUser = Depends(require_admin),
+):
+    """Operator Authorization 명시 철회 (ACTIVE→REVOKED). Unattended OFF ≠ revoke."""
+
+    from stock_platform.trading.live_unattended_authorization_service import (
+        LiveUnattendedAuthorizationService,
+        LiveUnattendedError,
+    )
+
+    try:
+        return LiveUnattendedAuthorizationService(session).revoke_authorization(
             int(user_broker_account_id),
             actor=user.username,
             confirmation_text=body.confirmation_text,

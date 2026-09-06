@@ -1,6 +1,7 @@
 /**
- * 24H Operator Authorization (Unattended lease SoT) 운영 카드.
- * 기간은 24/48/72h만 선택 — 무기한 금지.
+ * 24H Operator Authorization / Unattended execution 운영 카드.
+ * - 자동운영 중지 = Unattended OFF (Authorization 유지)
+ * - 운영 승인 철회 = Authorization REVOKE (별도 확인)
  */
 
 import { Alert, Button, Select, Space, Tag, Tooltip, Typography } from "antd";
@@ -18,8 +19,11 @@ export type UnattendedCardProps = {
   activationExpiresAt?: string | null;
   armExpiresAt?: string | null;
   autoRenewEnabled?: boolean;
+  /** Authorization ACTIVE but Unattended OFF */
+  authorizationActive?: boolean;
   onStart: () => void;
   onStop: () => void;
+  onRevokeAuthorization?: () => void;
 };
 
 function formatRemaining(seconds: number): string {
@@ -42,27 +46,38 @@ export function UnattendedControlCard({
   activationExpiresAt,
   armExpiresAt,
   autoRenewEnabled,
+  authorizationActive,
   onStart,
   onStop,
+  onRevokeAuthorization,
 }: UnattendedCardProps) {
+  const authActive =
+    authorizationActive ??
+    (String(statusCode || "").toUpperCase() === "ACTIVE" &&
+      remainingSeconds > 0);
   const statusLabel = enabled
-    ? `ON · 남은 ${formatRemaining(remainingSeconds)}`
-    : "OFF";
+    ? `자동운영 ON · 남은 ${formatRemaining(remainingSeconds)}`
+    : authActive
+      ? `자동운영 OFF · 승인 ACTIVE (${formatRemaining(remainingSeconds)})`
+      : "OFF";
 
   return (
     <Alert
-      type={enabled ? "success" : "info"}
+      type={enabled ? "success" : authActive ? "warning" : "info"}
       showIcon
-      title="24H 운영 승인 (Operator Authorization)"
+      title="24H 운영 승인 / 자동운영 (분리)"
       description={
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            SoT: Unattended lease. Activation/ARM 자동 갱신·Class A/B 복구 권한.
-            승인기간 종료 시 ENTRY fail-closed · 보유 포지션은 protective EXIT 유지.
+            Operator Authorization = 승인 Horizon. 자동운영(Unattended) = Horizon
+            안 lease 갱신·Class A/B 권한. 「자동운영 중지」는 승인을 철회하지
+            않습니다.
           </Typography.Text>
           <Space wrap>
             <Typography.Text>상태:</Typography.Text>
-            <Tag color={enabled ? "success" : "default"}>{statusLabel}</Tag>
+            <Tag color={enabled ? "success" : authActive ? "gold" : "default"}>
+              {statusLabel}
+            </Tag>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {statusCode}
             </Typography.Text>
@@ -76,15 +91,13 @@ export function UnattendedControlCard({
               size="small"
               style={{ width: 120 }}
               value={durationHours}
-              disabled={enabled || loading}
+              disabled={enabled || authActive || loading}
               options={[
                 { value: 24, label: "24시간" },
                 { value: 48, label: "48시간" },
                 { value: 72, label: "72시간" },
               ]}
-              onChange={(v) =>
-                onDurationHoursChange?.(v as 24 | 48 | 72)
-              }
+              onChange={(v) => onDurationHoursChange?.(v as 24 | 48 | 72)}
             />
           </Space>
           {(activationExpiresAt || armExpiresAt) && (
@@ -99,7 +112,9 @@ export function UnattendedControlCard({
                 title={
                   startDisabled
                     ? startDisabledReason || "시작 불가"
-                    : `${durationHours}H Operator Authorization 활성화. LIVE/ARM/Activation은 별도 승인.`
+                    : authActive
+                      ? "동일 Operator Authorization 안에서 자동운영 재개"
+                      : `${durationHours}H Operator Authorization + 자동운영 시작`
                 }
               >
                 <Button
@@ -108,14 +123,27 @@ export function UnattendedControlCard({
                   disabled={startDisabled}
                   onClick={onStart}
                 >
-                  {durationHours}H 운영 승인 시작
+                  {authActive
+                    ? "자동운영 재개"
+                    : `${durationHours}H 운영 승인 시작`}
                 </Button>
               </Tooltip>
             ) : (
-              <Button danger loading={loading} onClick={onStop}>
-                운영 승인 중지
+              <Button loading={loading} onClick={onStop}>
+                자동운영 중지
               </Button>
             )}
+            {authActive && onRevokeAuthorization ? (
+              <Tooltip title="Operator Authorization을 REVOKED로 철회합니다. 자동운영 중지와 다릅니다.">
+                <Button
+                  danger
+                  loading={loading}
+                  onClick={onRevokeAuthorization}
+                >
+                  운영 승인 철회
+                </Button>
+              </Tooltip>
+            ) : null}
           </Space>
         </Space>
       }
