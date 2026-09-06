@@ -1,7 +1,19 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-04 (KIWOOM-TOP10-REAL-CONFIG-DRIFT-FEED-READINESS-V1)
+**최종 갱신:** 2026-09-06 (UBA1380 Operator Authorization 24H policy)
+
+---
+
+## U — Operator Authorization 24/48/72H Policy (2026-09-06)
+
+- WORK: `WRK-20260906-UBA1380-OPERATOR-AUTHORIZATION-24H-V1`
+- SoT: `operation.live_unattended_authorization` (= Operator Authorization) — 신규 테이블 없음
+- Class A/B recovery는 Authorization ACTIVE 필수 · Class C/Circuit/Kill 우선
+- Admin UI: 24/48/72h 기간 선택 · Activation #662 / LIVE·ARM·UNATTENDED 운영상태 **미변경**
+- Evidence: `.run/uba1380_operator_authorization_24h_20260906.json`
+- Doc: `docs/trading/UPBIT_OPERATOR_AUTHORIZATION_24H.md`
+- NEXT: ChatGPT 검토 후 Authorization 실적용(별도 승인) · Backend recycle로 정책 로드
 
 ---
 

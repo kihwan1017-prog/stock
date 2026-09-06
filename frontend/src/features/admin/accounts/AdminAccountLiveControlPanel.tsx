@@ -18,6 +18,7 @@ import {
   InputNumber,
   Modal,
   Segmented,
+  Select,
   Space,
   Switch,
   Table,
@@ -94,6 +95,10 @@ export function AdminAccountLiveControlPanel() {
   const [armReveal, setArmReveal] = useState<ArmTokenOnceReveal | null>(null);
   const [unattendedEnableOpen, setUnattendedEnableOpen] = useState(false);
   const [unattendedEnableBusy, setUnattendedEnableBusy] = useState(false);
+  // Operator Authorization 승인기간 — 24/48/72만 (무기한 금지)
+  const [unattendedHorizonHours, setUnattendedHorizonHours] = useState<
+    24 | 48 | 72
+  >(24);
   const [createForm] = Form.useForm();
   const [credForm] = Form.useForm();
   const [editForm] = Form.useForm();
@@ -1894,9 +1899,9 @@ export function AdminAccountLiveControlPanel() {
             const body = {
               confirmation_text: "ENABLE 24H UNATTENDED",
               reason: useReauth
-                ? "admin_ui_24h_unattended_reauthorize"
-                : "admin_ui_24h_unattended",
-              horizon_hours: 24,
+                ? "admin_ui_operator_authorization_reauthorize"
+                : "admin_ui_operator_authorization",
+              horizon_hours: unattendedHorizonHours,
               correlation_id: newCorrelationId("unatt"),
               source: "ADMIN_UI" as const,
             };
@@ -1994,9 +1999,24 @@ export function AdminAccountLiveControlPanel() {
             <Space orientation="vertical" size={12} style={{ width: "100%" }}>
               <Typography.Text strong>
                 {isReauth
-                  ? "UPBIT REAL 자동매매를 24시간 동안 허용합니다. 안전 조건 위반 시 자동으로 중지됩니다."
-                  : "24시간 무인운영을 시작하시겠습니까?"}
+                  ? `UPBIT REAL 자동매매를 ${unattendedHorizonHours}시간 동안 허용합니다. 안전 조건 위반 시 자동으로 중지됩니다.`
+                  : `${unattendedHorizonHours}H 운영 승인(Operator Authorization)을 시작하시겠습니까?`}
               </Typography.Text>
+              <Space wrap>
+                <Typography.Text>승인기간:</Typography.Text>
+                <Select
+                  style={{ width: 140 }}
+                  value={unattendedHorizonHours}
+                  options={[
+                    { value: 24, label: "24시간" },
+                    { value: 48, label: "48시간" },
+                    { value: 72, label: "72시간" },
+                  ]}
+                  onChange={(v) =>
+                    setUnattendedHorizonHours(v as 24 | 48 | 72)
+                  }
+                />
+              </Space>
               <Descriptions size="small" column={1} bordered>
                 <Descriptions.Item label="UBA">
                   {detailUbaId ?? "—"}
@@ -2004,7 +2024,7 @@ export function AdminAccountLiveControlPanel() {
                 <Descriptions.Item label="Broker">
                   {detailBroker ?? "—"}
                 </Descriptions.Item>
-                <Descriptions.Item label="무인운영">
+                <Descriptions.Item label="운영 승인">
                   {isReauth
                     ? `만료 · ${opsSnap?.unattendedStatusCode ?? "OFF"}`
                     : (opsSum?.unattendedLabel ?? "—")}
@@ -2025,7 +2045,7 @@ export function AdminAccountLiveControlPanel() {
                   {opsSum?.activationLabel ?? "—"}
                 </Descriptions.Item>
                 <Descriptions.Item label="승인 시간">
-                  24h
+                  {unattendedHorizonHours}h
                 </Descriptions.Item>
               </Descriptions>
               <Alert

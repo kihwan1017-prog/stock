@@ -30,11 +30,32 @@ def test_class_a_activation_valid_live_off():
             "kill_active": False,
         },
         activation_active=True,
-        unattended_active=False,
+        unattended_active=True,
     )
     assert r.recovery_class == RecoveryClass.A
     assert r.auto_recover_allowed is True
     assert r.operator_required is False
+
+
+def test_class_a_without_authorization_blocked():
+    r = classify_incident(
+        primary_blocker="LIVE_OFF",
+        blockers=["LIVE_OFF"],
+        precheck={
+            "stuck_count": 0,
+            "ambiguous_count": 0,
+            "unresolved_exit_count": 0,
+            "recovery_conflict_count": 0,
+            "broker_local": "PASS",
+            "balance_sync": "READY",
+            "position_recon": "PASS",
+            "kill_active": False,
+        },
+        activation_active=True,
+        unattended_active=False,
+    )
+    assert r.recovery_class == RecoveryClass.C
+    assert r.reason == "AUTHORIZATION_NOT_ACTIVE"
 
 
 def test_class_c_ambiguous():
@@ -109,6 +130,7 @@ def test_class_b_zero_fill():
             "kill_active": False,
         },
         activation_active=True,
+        unattended_active=True,
     )
     assert r.recovery_class == RecoveryClass.B
     assert r.requires_broker_reconcile is True
@@ -148,6 +170,7 @@ def test_class_a_requires_activation():
             "kill_active": False,
         },
         activation_active=False,
+        unattended_active=True,
     )
     assert r.recovery_class == RecoveryClass.C
     assert r.reason == "ACTIVATION_NOT_ACTIVE"

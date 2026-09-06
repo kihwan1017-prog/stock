@@ -722,6 +722,11 @@ def build_uba_operational_summary(
         "activation_remaining_seconds": activation_remaining,
         "activation_remaining_label": _remaining_label(activation_remaining),
         "unattended": unattended,
+        "operator_authorization": (
+            unattended.get("operator_authorization")
+            if isinstance(unattended, dict)
+            else None
+        ),
         "runtime": rt,
         "runner": rn,
         "outbox_worker": wk,
@@ -1022,6 +1027,28 @@ def build_uba_operational_summary(
             out["ACTIVATION_REFRESH_RESULT"] = None
         if not align.get("ACTIVATION_HORIZON_ALIGNED") and act_exp is not None:
             warnings.append("ACTIVATION_HORIZON_MISMATCH")
+        # Operator Authorization view에 Activation/ARM 만료 보강
+        try:
+            from stock_platform.trading.operator_authorization_policy import (
+                build_operator_authorization_view,
+            )
+
+            unatt_block = (
+                out.get("unattended")
+                if isinstance(out.get("unattended"), dict)
+                else {}
+            )
+            out["operator_authorization"] = build_operator_authorization_view(
+                unatt_block,
+                activation_expires_at=out.get("activation_expires_at"),
+                arm_expires_at=out.get("arm_expires_at"),
+            )
+            if isinstance(out.get("unattended"), dict):
+                out["unattended"]["operator_authorization"] = out[
+                    "operator_authorization"
+                ]
+        except Exception:  # noqa: BLE001
+            pass
     except Exception:  # noqa: BLE001
         out["AUTHORIZED_UNTIL"] = unattended.get("authorized_until")
         out["ACTIVATION_EXPIRES_AT"] = out.get("activation_expires_at")

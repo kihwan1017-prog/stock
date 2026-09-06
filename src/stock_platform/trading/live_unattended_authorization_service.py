@@ -159,7 +159,11 @@ class LiveUnattendedAuthorizationService:
             default_mode = (
                 MODE_MARKET_HOURS if broker == "KIWOOM" else MODE_HOURS_24
             )
-            return {
+            from stock_platform.trading.operator_authorization_policy import (
+                build_operator_authorization_view,
+            )
+
+            off = {
                 "unattended_enabled": False,
                 "entry_lease_active": False,
                 "needs_reauthorize": True,
@@ -176,6 +180,10 @@ class LiveUnattendedAuthorizationService:
                     broker, authorization_mode=default_mode
                 ),
             }
+            off["operator_authorization"] = build_operator_authorization_view(
+                off
+            )
+            return off
         until = aware_utc(row.authorized_until)
         remaining = (
             max(0, int((until - now).total_seconds())) if until else 0
@@ -191,7 +199,11 @@ class LiveUnattendedAuthorizationService:
         mode = self._authorization_mode(row)
         detail = dict(row.last_renewal_detail or {})
         mh_meta = detail.get("market_hours") if isinstance(detail.get("market_hours"), dict) else {}
-        return {
+        from stock_platform.trading.operator_authorization_policy import (
+            build_operator_authorization_view,
+        )
+
+        payload = {
             # UI/게이트: PROTECTIVE·만료는 '무인 ENTRY 세션 ON'이 아님
             "unattended_enabled": entry_lease_active,
             "entry_lease_active": entry_lease_active,
@@ -248,6 +260,11 @@ class LiveUnattendedAuthorizationService:
             ),
             **self._required_phrase_meta(broker, authorization_mode=mode),
         }
+        # Operator Authorization alias (동일 SoT)
+        payload["operator_authorization"] = build_operator_authorization_view(
+            payload
+        )
+        return payload
 
     @staticmethod
     def _authorization_mode(
@@ -461,19 +478,33 @@ class LiveUnattendedAuthorizationService:
             )
             max_h = hours
         else:
+            # UPBIT Operator Authorization: 명시 24/48/72h만 허용 (무기한 금지)
+            from stock_platform.trading.operator_authorization_policy import (
+                OPERATOR_AUTHORIZATION_ALLOWED_HOURS,
+                validate_operator_authorization_hours,
+            )
+
             default_h = int(
                 getattr(settings, "live_unattended_default_horizon_hours", 24)
             )
             max_h = int(
                 getattr(settings, "live_unattended_max_horizon_hours", 168)
             )
-            hours = int(
-                horizon_hours if horizon_hours is not None else default_h
-            )
-            if hours < 1 or hours > max_h:
+            try:
+                hours = validate_operator_authorization_hours(
+                    horizon_hours if horizon_hours is not None else default_h
+                )
+            except ValueError as exc:
                 raise LiveUnattendedError(
                     "INVALID_HORIZON",
-                    f"horizon_hours must be 1..{max_h}",
+                    f"Operator Authorization hours must be one of "
+                    f"{list(OPERATOR_AUTHORIZATION_ALLOWED_HOURS)} "
+                    f"(got={horizon_hours})",
+                ) from exc
+            if hours > max_h:
+                raise LiveUnattendedError(
+                    "INVALID_HORIZON",
+                    f"horizon_hours must be <= {max_h}",
                 )
             until = now + timedelta(hours=hours)
 
@@ -641,17 +672,32 @@ class LiveUnattendedAuthorizationService:
             )
 
         settings = get_settings()
+        from stock_platform.trading.operator_authorization_policy import (
+            OPERATOR_AUTHORIZATION_ALLOWED_HOURS,
+            validate_operator_authorization_hours,
+        )
+
         default_h = int(
             getattr(settings, "live_unattended_default_horizon_hours", 24)
         )
         max_h = int(
             getattr(settings, "live_unattended_max_horizon_hours", 168)
         )
-        hours = int(horizon_hours if horizon_hours is not None else default_h)
-        if hours < 1 or hours > max_h:
+        try:
+            hours = validate_operator_authorization_hours(
+                horizon_hours if horizon_hours is not None else default_h
+            )
+        except ValueError as exc:
             raise LiveUnattendedError(
                 "INVALID_HORIZON",
-                f"horizon_hours must be 1..{max_h}",
+                f"Operator Authorization hours must be one of "
+                f"{list(OPERATOR_AUTHORIZATION_ALLOWED_HOURS)} "
+                f"(got={horizon_hours})",
+            ) from exc
+        if hours > max_h:
+            raise LiveUnattendedError(
+                "INVALID_HORIZON",
+                f"horizon_hours must be <= {max_h}",
             )
 
         # LIVE/ARM/Activation 꺼짐은 허용 — Kill/Credential/Recovery 등만 강제

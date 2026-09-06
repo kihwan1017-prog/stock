@@ -274,7 +274,12 @@ class UnattendedEnableBody(BaseModel):
 
     confirmation_text: str = Field(..., min_length=8)
     reason: str = Field(..., min_length=3, max_length=2000)
-    horizon_hours: int | None = Field(default=None, ge=1, le=168)
+    horizon_hours: int | None = Field(
+        default=None,
+        description="Operator Authorization duration hours — UPBIT allows 24|48|72 only",
+        ge=1,
+        le=72,
+    )
     correlation_id: str | None = Field(default=None, max_length=128)
     source: str = Field(default="ADMIN_UI", min_length=3, max_length=32)
     # HOURS_24 (UPBIT) | MARKET_HOURS (KIWOOM). Noneì´ë©´ brokerë¡ ì¶ë¡ .

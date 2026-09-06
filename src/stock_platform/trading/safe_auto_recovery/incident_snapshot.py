@@ -67,6 +67,13 @@ def build_incident_snapshot(
     feed = ops.get("market_feed") or {}
     unatt = ops.get("unattended") or {}
     incident_id = f"inc-{user_broker_account_id}-{uuid.uuid4().hex[:12]}"
+    op_auth = (
+        unatt.get("operator_authorization")
+        if isinstance(unatt, dict)
+        else None
+    )
+    if not isinstance(op_auth, dict):
+        op_auth = {}
     return {
         "incident_id": incident_id,
         "occurred_at": _now().isoformat(),
@@ -85,6 +92,19 @@ def build_incident_snapshot(
         "unattended": unatt.get("status_code")
         if isinstance(unatt, dict)
         else unatt,
+        # Operator Authorization (SoT = unattended lease)
+        "authorization_id": op_auth.get("authorization_id")
+        or (unatt.get("authorization_id") if isinstance(unatt, dict) else None),
+        "authorization_status": op_auth.get("status")
+        or (unatt.get("status_code") if isinstance(unatt, dict) else None),
+        "authorization_expires_at": op_auth.get("valid_until")
+        or (unatt.get("authorized_until") if isinstance(unatt, dict) else None),
+        "renewal_status": op_auth.get("renewal_status"),
+        "renewal_failure_reason": (
+            (op_auth.get("last_horizon_auto_renew") or {}).get("reason")
+            if isinstance(op_auth.get("last_horizon_auto_renew"), dict)
+            else None
+        ),
         "stack": stack,
         "backend_pid": os.getpid(),
         "feed_status": feed.get("status") if isinstance(feed, dict) else None,

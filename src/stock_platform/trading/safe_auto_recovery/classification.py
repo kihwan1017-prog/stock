@@ -172,7 +172,26 @@ def classify_incident(
             details={"unsafe_flags": unsafe_flags},
         )
 
+    # Operator Authorization SoT = unattended lease ACTIVE
+    authorization_active = bool(unattended_active)
+
     if any(c in CLASS_B_CODES for c in ordered):
+        if not authorization_active:
+            return ClassificationResult(
+                recovery_class=RecoveryClass.C,
+                eligibility=RecoveryEligibility.OPERATOR_REQUIRED,
+                reason_codes=ordered,
+                primary_code=primary,
+                reason="AUTHORIZATION_NOT_ACTIVE",
+                requires_broker_reconcile=True,
+                auto_recover_allowed=False,
+                operator_required=True,
+                details={
+                    "activation_active": activation_active,
+                    "authorization_active": authorization_active,
+                    "note": "Class B requires Operator Authorization ACTIVE",
+                },
+            )
         return ClassificationResult(
             recovery_class=RecoveryClass.B,
             eligibility=RecoveryEligibility.ELIGIBLE,
@@ -185,32 +204,53 @@ def classify_incident(
             details={
                 "activation_active": activation_active,
                 "unattended_active": unattended_active,
+                "authorization_active": authorization_active,
             },
         )
 
-    # Class A: transient LIVE/ARM off after restart/shadow — Activation ACTIVE면
-    # unattended 없이도 복구 후보 (Activation=운영자 승인 horizon)
+    # Class A: Authorization ACTIVE + Activation ACTIVE + precheck PASS
     class_a_hit = any(c in CLASS_A_CODES for c in ordered) or primary in {
         "LIVE_OFF",
         "ARM_OFF",
         "ARM_OFF_OR_EXPIRED",
     }
-    if class_a_hit and activation_active and not unsafe_flags:
+    if (
+        class_a_hit
+        and authorization_active
+        and activation_active
+        and not unsafe_flags
+    ):
         return ClassificationResult(
             recovery_class=RecoveryClass.A,
             eligibility=RecoveryEligibility.ELIGIBLE,
             reason_codes=ordered,
             primary_code=primary,
-            reason="CLASS_A_ACTIVATION_VALID_PRECHECK_PASS",
+            reason="CLASS_A_AUTHORIZATION_AND_ACTIVATION_VALID",
             auto_recover_allowed=True,
             operator_required=False,
             details={
                 "activation_active": activation_active,
                 "unattended_active": unattended_active,
+                "authorization_active": authorization_active,
                 "note": (
-                    "Unattended OFF does not block Class A when Activation "
-                    "ACTIVE and reconcile precheck PASS"
+                    "Operator Authorization (unattended lease) ACTIVE required "
+                    "for Class A auto-recovery"
                 ),
+            },
+        )
+
+    if class_a_hit and not authorization_active:
+        return ClassificationResult(
+            recovery_class=RecoveryClass.C,
+            eligibility=RecoveryEligibility.OPERATOR_REQUIRED,
+            reason_codes=ordered,
+            primary_code=primary,
+            reason="AUTHORIZATION_NOT_ACTIVE",
+            operator_required=True,
+            auto_recover_allowed=False,
+            details={
+                "activation_active": activation_active,
+                "authorization_active": False,
             },
         )
 
