@@ -52,8 +52,13 @@ def detect_exit_pending_zero_fill_stuck(
             """
             SELECT s.slot_id, s.symbol, s.status, s.updated_at,
                    o.order_id, o.status_code AS order_status,
+                   o.broker_order_id,
                    o.filled_quantity, o.created_at AS order_created_at,
-                   o.side_code
+                   o.side_code,
+                   o.order_type_code,
+                   o.client_order_identifier,
+                   ox.outbox_id, ox.status_code AS outbox_status,
+                   ox.confirmation_status
             FROM operation.upbit_position_slot s
             JOIN trading.trading_order o
               ON o.user_broker_account_id = s.user_broker_account_id
@@ -61,9 +66,17 @@ def detect_exit_pending_zero_fill_stuck(
              AND o.symbol = s.symbol
              AND UPPER(o.side_code) = 'SELL'
              AND UPPER(o.status_code) IN (
-                   'OPEN','PENDING','SUBMITTED','ACCEPTED','PARTIAL','NEW'
+                   'OPEN','PENDING','SUBMITTED','ACCEPTED','PARTIAL','NEW',
+                   'AMBIGUOUS_SUBMISSION','REMOTE_LOOKUP_PENDING'
                  )
              AND COALESCE(o.filled_quantity, 0) = 0
+            LEFT JOIN LATERAL (
+                SELECT outbox_id, status_code, confirmation_status
+                FROM trading.order_outbox
+                WHERE order_id = o.order_id
+                ORDER BY outbox_id DESC
+                LIMIT 1
+            ) ox ON TRUE
             WHERE s.user_broker_account_id = :uba
               AND s.status = 'EXIT_PENDING'
               AND o.created_at <= :cutoff
@@ -88,6 +101,14 @@ def detect_exit_pending_zero_fill_stuck(
                 "symbol": r["symbol"],
                 "order_id": int(r["order_id"]),
                 "order_status": r["order_status"],
+                "order_type": r.get("order_type_code"),
+                "broker_order_id": r.get("broker_order_id"),
+                "client_order_identifier": r.get("client_order_identifier"),
+                "outbox_id": (
+                    int(r["outbox_id"]) if r.get("outbox_id") is not None else None
+                ),
+                "outbox_status": r.get("outbox_status"),
+                "confirmation_status": r.get("confirmation_status"),
                 "age_seconds": round(age, 1) if age is not None else None,
             }
         )

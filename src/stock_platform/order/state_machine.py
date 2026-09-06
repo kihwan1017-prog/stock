@@ -15,6 +15,8 @@ class OrderStateMachine:
             OrderStatus.SUBMITTING,
             OrderStatus.SENT,
             OrderStatus.CANCEL_REQUESTED,
+            # intent 이후 outbox AMBIGUOUS — 원격 조회로 전환
+            OrderStatus.AMBIGUOUS_SUBMISSION,
             # 미전송 LIVE 내부 폐기 — 브로커 미호출 terminal
             OrderStatus.CANCELLED,
             OrderStatus.REJECTED,

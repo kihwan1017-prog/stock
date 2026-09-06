@@ -158,8 +158,16 @@ class UpbitStartupOpenOrderReconciliationService:
                 continue
 
             if not str(order.broker_order_id or "").strip():
-                # MISSING UUID: AMBIGUOUS + deterministic reject 증명 시
-                # CONFIRMED_NOT_SUBMITTED 경로만 허용 (신규 SELL/cancel 금지)
+                # 1) identifier 원격 FOUND → fill-sync (DONE/CANCEL)
+                linked = self._try_resolve_missing_uuid_via_identifier(
+                    order=order,
+                    uba_id=uba_id,
+                    actor=actor,
+                )
+                if linked is not None:
+                    actions.append(linked)
+                    continue
+                # 2) AMBIGUOUS + deterministic reject → CONFIRMED_NOT_SUBMITTED
                 resolved = self._try_resolve_missing_uuid_not_submitted(
                     order=order,
                     actor=actor,
@@ -272,6 +280,98 @@ class UpbitStartupOpenOrderReconciliationService:
             manual_skipped=manual_skipped,
         )
         return result
+
+    def _try_resolve_missing_uuid_via_identifier(
+        self,
+        *,
+        order: TradingOrderEntity,
+        uba_id: int,
+        actor: str,
+    ) -> StartupOrderReconcileAction | None:
+        """broker_uuid 없는 AUTO open — identifier GET → fill-sync.
+
+        신규 CREATE/CANCEL 금지. NOT_FOUND면 None (다음 경로로).
+        """
+
+        from stock_platform.broker.upbit.ambiguous_resolver import (
+            UpbitAmbiguousOrderResolver,
+        )
+        from stock_platform.broker.upbit.fill_sync_service import (
+            UpbitFillSyncService,
+        )
+        from stock_platform.broker.upbit.order_status import (
+            normalize_upbit_order_status,
+        )
+
+        order_id = int(order.order_id)
+        side = str(order.side_code or "").upper()
+        try:
+            client = build_upbit_adapter_for_uba(
+                self._session, int(uba_id)
+            )._client  # noqa: SLF001
+            resolver = UpbitAmbiguousOrderResolver(
+                self._session, order_client=client
+            )
+            identifier = resolver.ensure_identifier(order)
+            remote = client.get_order(identifier=identifier)
+        except UpbitError:
+            return None
+        except Exception:  # noqa: BLE001
+            return None
+
+        remote_state = str(remote.get("state") or "").lower()
+        target = normalize_upbit_order_status(remote)
+        if target is None and remote_state not in _REMOTE_DONE | _REMOTE_CANCEL | _REMOTE_WAIT:
+            return None
+        if remote_state in _REMOTE_WAIT:
+            uuid = str(remote.get("uuid") or "").strip()
+            if uuid:
+                order.broker_order_id = uuid
+                self._session.flush()
+            return StartupOrderReconcileAction(
+                order_id=order_id,
+                owner=OWNER_AUTO,
+                side=side,
+                action="LINKED_WAIT_VIA_IDENTIFIER",
+                remote_state_before=remote_state,
+                remote_state_after=remote_state,
+                local_status_after=str(order.status_code or ""),
+                detail={
+                    "identifier": identifier,
+                    "uuid": uuid or None,
+                },
+            )
+
+        sync = UpbitFillSyncService(
+            self._session, order_client=client
+        ).sync_by_order_id(
+            order_id,
+            actor=f"{actor}:ID_LOOKUP",
+            remote=remote,
+        )
+        refreshed = self._session.get(TradingOrderEntity, order_id)
+        return StartupOrderReconcileAction(
+            order_id=order_id,
+            owner=OWNER_AUTO,
+            side=side,
+            action=(
+                "FILL_SYNC_VIA_IDENTIFIER"
+                if remote_state in _REMOTE_DONE
+                else "RECONCILE_CANCEL_VIA_IDENTIFIER"
+            ),
+            remote_state_before=remote_state,
+            remote_state_after=remote_state,
+            local_status_after=(
+                str(refreshed.status_code)
+                if refreshed is not None
+                else sync.order_status
+            ),
+            detail={
+                "identifier": identifier,
+                "uuid": str(remote.get("uuid") or ""),
+                "new_executions": sync.new_executions,
+            },
+        )
 
     def _try_resolve_missing_uuid_not_submitted(
         self,

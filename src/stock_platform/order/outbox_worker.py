@@ -504,6 +504,15 @@ class OrderOutboxWorker:
                                 fencing_token=fencing_token,
                                 worker_id=self._worker_id,
                             )
+                            # outbox만 AMBIGUOUS로 두면 EXIT stuck가 영구화됨
+                            self._mark_ambiguous_order(
+                                session=amb_session,
+                                order_id=int(amb_entity.order_id),
+                                result={
+                                    "reject_code": "AMBIGUOUS",
+                                    "reject_message": str(exc)[:200],
+                                },
+                            )
                             self._finalize_smoke_one_shot_if_needed(
                                 amb_session,
                                 order_id=int(amb_entity.order_id),
@@ -533,25 +542,40 @@ class OrderOutboxWorker:
                             )
                             or "PAPER"
                         ).upper()
+                        msg_u = msg.upper()
                         uncertain = env != "MOCK" and any(
-                            x in msg.upper()
+                            x in msg_u
                             for x in (
                                 "TIMEOUT",
                                 "5XX",
                                 "CONNECTION",
                                 "AMBIGUOUS",
                                 "UNAVAILABLE",
+                                "DEADLOCK",
+                                "ROLLBACK",
                             )
                         )
                         if (
                             retry_entity.dispatch_intent_at is not None
-                            and uncertain
+                            and (
+                                uncertain
+                                or env in {"LIVE", "PAPER"}
+                            )
                         ):
+                            # intent 이후 예외는 재전송 금지 — outbox+order 동시 AMBIGUOUS
                             retry_repository.mark_ambiguous(
                                 entity=retry_entity,
                                 reason=msg,
                                 fencing_token=fencing_token,
                                 worker_id=self._worker_id,
+                            )
+                            self._mark_ambiguous_order(
+                                session=retry_session,
+                                order_id=int(retry_entity.order_id),
+                                result={
+                                    "reject_code": "AMBIGUOUS",
+                                    "reject_message": msg[:200],
+                                },
                             )
                             self._finalize_smoke_one_shot_if_needed(
                                 retry_session,
@@ -607,6 +631,15 @@ class OrderOutboxWorker:
                                 retry_entity.status_code
                                 == OutboxStatus.AMBIGUOUS.value
                             ):
+                                # mark_retry → RETRY_BLOCKED_AFTER_INTENT → AMBIGUOUS
+                                self._mark_ambiguous_order(
+                                    session=retry_session,
+                                    order_id=int(retry_entity.order_id),
+                                    result={
+                                        "reject_code": "AMBIGUOUS",
+                                        "reject_message": msg[:200],
+                                    },
+                                )
                                 ambiguous += 1
                             else:
                                 retried += 1
@@ -961,6 +994,13 @@ class OrderOutboxWorker:
         order = TradingOrderRepository(session).get(order_id)
         if order is None:
             return
+        resolver = UpbitAmbiguousOrderResolver(session)
+        # 결정적 identifier 없으면 원격 조회 자체가 불가
+        try:
+            if str(order.broker_code or "").upper() == "UPBIT":
+                resolver.ensure_identifier(order)
+        except Exception:  # noqa: BLE001
+            pass
         code = str(result.get("reject_code") or "")
         if "RATE_LIMIT" in code:
             attempt = SubmissionAttemptResult.AMBIGUOUS_429.value
@@ -968,7 +1008,7 @@ class OrderOutboxWorker:
             attempt = SubmissionAttemptResult.AMBIGUOUS_5XX.value
         else:
             attempt = SubmissionAttemptResult.AMBIGUOUS_TIMEOUT.value
-        UpbitAmbiguousOrderResolver(session).mark_ambiguous(
+        resolver.mark_ambiguous(
             order,
             reason=str(result.get("reject_message") or code)[:200],
             attempt_result=attempt,

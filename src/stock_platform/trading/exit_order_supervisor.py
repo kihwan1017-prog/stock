@@ -221,9 +221,29 @@ class ExitOrderSupervisor:
                 action = "FAIL_CLOSED_UNKNOWN"
                 heal = "UNKNOWN_PROTECTED"
             elif not broker_uuid:
-                wait_class = UNKNOWN_REMOTE
-                action = "FAIL_CLOSED_NO_BROKER_UUID"
-                heal = "FAIL_CLOSED"
+                # UUID 없음 — identifier 원격 조회로 DONE/CANCEL/WAIT 정합화
+                # (outbox AMBIGUOUS + local PENDING 영구 stuck 방지)
+                resolved = self._heal_missing_broker_uuid(
+                    order=order,
+                    client=client,
+                    sync=sync,
+                    actor=actor,
+                )
+                wait_class = str(resolved.get("wait_class") or UNKNOWN_REMOTE)
+                action = str(resolved.get("action") or "FAIL_CLOSED_NO_BROKER_UUID")
+                heal = str(resolved.get("heal") or "FAIL_CLOSED")
+                remote_state = resolved.get("remote_state")
+                executed = _dec(resolved.get("executed")) if resolved.get("executed") is not None else filled
+                detail = dict(resolved.get("detail") or {})
+                if action == "FILL_SYNC_DONE":
+                    alerts.append(
+                        {
+                            "edge": "RECOVERED",
+                            "order_id": oid,
+                            "symbol": str(order.symbol or ""),
+                            "via": "IDENTIFIER_LOOKUP",
+                        }
+                    )
             else:
                 try:
                     remote = client.get_order(uuid=broker_uuid)
@@ -394,6 +414,120 @@ class ExitOrderSupervisor:
             "lifecycle": life,
             "edge_alerts": edge_alerts,
             "supervisor": "EXIT_ORDER_SUPERVISOR",
+        }
+
+    def _heal_missing_broker_uuid(
+        self,
+        *,
+        order: TradingOrderEntity,
+        client: Any,
+        sync: Any,
+        actor: str,
+    ) -> dict[str, Any]:
+        """AUTO open SELL without UUID — identifier GET만으로 원격 정합.
+
+        신규 주문/cancel 없음. 원격 DONE/CANCEL이면 fill-sync.
+        NOT_FOUND면 fail-closed (수동/ambiguous resolver 대기).
+        """
+
+        from stock_platform.broker.upbit.ambiguous_resolver import (
+            UpbitAmbiguousOrderResolver,
+        )
+        from stock_platform.broker.upbit.exceptions import (
+            UpbitOrderNotFoundError,
+        )
+
+        oid = int(order.order_id)
+        detail: dict[str, Any] = {}
+        try:
+            resolver = UpbitAmbiguousOrderResolver(
+                self._session, order_client=client
+            )
+            identifier = resolver.ensure_identifier(order)
+            detail["identifier"] = identifier
+            remote = client.get_order(identifier=identifier)
+        except UpbitOrderNotFoundError:
+            return {
+                "wait_class": UNKNOWN_REMOTE,
+                "action": "FAIL_CLOSED_NO_BROKER_UUID",
+                "heal": "IDENTIFIER_NOT_FOUND",
+                "remote_state": None,
+                "executed": None,
+                "detail": {**detail, "lookup": "NOT_FOUND"},
+            }
+        except Exception as exc:  # noqa: BLE001
+            return {
+                "wait_class": UNKNOWN_REMOTE,
+                "action": "REMOTE_QUERY_FAILED",
+                "heal": "ERROR",
+                "remote_state": None,
+                "executed": None,
+                "detail": {
+                    **detail,
+                    "error": type(exc).__name__,
+                    "message": str(exc)[:200],
+                },
+            }
+
+        remote_state = str(remote.get("state") or "").lower()
+        executed = _dec(remote.get("executed_volume"))
+        wait_class = classify_remote_wait(
+            remote_state=remote_state,
+            executed=executed,
+            order=order,
+        )
+        detail["uuid"] = str(remote.get("uuid") or "")[:64]
+        detail["remote_state"] = remote_state
+
+        if wait_class == TERMINAL_DONE:
+            sync.sync_by_order_id(
+                oid, actor=f"{actor}:ID_DONE", remote=remote
+            )
+            return {
+                "wait_class": wait_class,
+                "action": "FILL_SYNC_DONE",
+                "heal": "RECONCILED",
+                "remote_state": remote_state,
+                "executed": str(executed),
+                "detail": detail,
+            }
+        if wait_class == TERMINAL_CANCEL:
+            sync.sync_by_order_id(
+                oid, actor=f"{actor}:ID_CANCEL", remote=remote
+            )
+            return {
+                "wait_class": wait_class,
+                "action": "RECONCILE_CANCELLED",
+                "heal": "RECONCILED",
+                "remote_state": remote_state,
+                "executed": str(executed),
+                "detail": detail,
+            }
+        if wait_class in {WAIT_NORMAL, WAIT_PARTIAL, WAIT_STALE_ZERO, WAIT_STALE_PARTIAL}:
+            # WAIT — UUID 연결만 (cancel은 uuid 경로에서만)
+            uuid = str(remote.get("uuid") or "").strip()
+            if uuid and not order.broker_order_id:
+                order.broker_order_id = uuid
+                self._session.flush()
+            if wait_class == WAIT_PARTIAL:
+                sync.sync_by_order_id(
+                    oid, actor=f"{actor}:ID_PARTIAL", remote=remote
+                )
+            return {
+                "wait_class": wait_class,
+                "action": "IDENTIFIER_LINKED_WAIT",
+                "heal": "MONITORING",
+                "remote_state": remote_state,
+                "executed": str(executed),
+                "detail": detail,
+            }
+        return {
+            "wait_class": wait_class,
+            "action": "OBSERVE_UNKNOWN_REMOTE",
+            "heal": "FAIL_CLOSED",
+            "remote_state": remote_state,
+            "executed": str(executed),
+            "detail": detail,
         }
 
 
