@@ -62,6 +62,14 @@ export type BlockHistoryView = {
   killScope: string | null;
   killReason: string | null;
   resolutionType: string | null;
+  incidentId: string | null;
+  recoveryClass: "A" | "B" | "C" | null;
+  classificationReason: string | null;
+  autoRecoveryEligible: boolean | null;
+  operatorActionRequired: boolean | null;
+  circuitBreakerStatus: string | null;
+  recoveryAttemptCount: number | null;
+  skipReason: string | null;
 };
 
 function formatKst(iso: string | null): string | null {
@@ -337,5 +345,33 @@ export function parseBlockHistoryView(ops: unknown): BlockHistoryView {
           : null,
     killReason,
     resolutionType,
+    incidentId: hist.incident_id != null ? String(hist.incident_id) : null,
+    recoveryClass: (() => {
+      const c = String(hist.recovery_class ?? "").toUpperCase();
+      return c === "A" || c === "B" || c === "C" ? c : null;
+    })(),
+    classificationReason:
+      hist.classification_reason != null
+        ? String(hist.classification_reason)
+        : null,
+    autoRecoveryEligible:
+      typeof hist.auto_recovery_eligible === "boolean"
+        ? hist.auto_recovery_eligible
+        : null,
+    operatorActionRequired:
+      typeof hist.operator_action_required === "boolean"
+        ? hist.operator_action_required
+        : effectiveStatus === "BLOCKED"
+          ? true
+          : null,
+    circuitBreakerStatus:
+      hist.circuit_breaker_status != null
+        ? String(hist.circuit_breaker_status)
+        : null,
+    recoveryAttemptCount:
+      hist.recovery_attempt_count != null
+        ? Number(hist.recovery_attempt_count)
+        : null,
+    skipReason: hist.skip_reason != null ? String(hist.skip_reason) : null,
   };
 }

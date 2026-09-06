@@ -382,8 +382,9 @@ def build_uba_operational_summary(
         )
 
         block_svc = AutotradingBlockEventService(session)
+        block_record: dict[str, Any] | None = None
         if not slim:
-            block_svc.record_from_ops_snapshot(
+            block_record = block_svc.record_from_ops_snapshot(
                 user_broker_account_id=uba_id,
                 market=broker_u or "UNKNOWN",
                 blockers=list(blockers),
@@ -408,6 +409,71 @@ def build_uba_operational_summary(
             # transition flush는 호출 세션 commit에 위임 (read API는 보통 commit)
             try:
                 session.flush()
+            except Exception:  # noqa: BLE001
+                pass
+            # Class A/B 안전 자동복구 — 신규 BLOCK만 (폴링 폭주 방지)
+            try:
+                from stock_platform.common.settings import get_settings
+                from stock_platform.trading.safe_auto_recovery import (
+                    SafeAutoRecoveryOrchestrator,
+                )
+
+                settings = get_settings()
+                if (
+                    bool(getattr(settings, "safe_auto_recovery_enabled", True))
+                    and broker_u == "UPBIT"
+                    and block_record
+                    and str(block_record.get("action") or "")
+                    in {"BLOCKED", "REASON_CHANGED"}
+                    and str(primary_blocker or "").upper()
+                    in {
+                        "LIVE_OFF",
+                        "ARM_OFF",
+                        "ARM_OFF_OR_EXPIRED",
+                        "RUNTIME_COMPONENT_STOPPED",
+                        "EXECUTION_STACK_DOWN",
+                        "LIVE_EXECUTION_RUNNER_NOT_RUNNING",
+                    }
+                ):
+                    SafeAutoRecoveryOrchestrator(
+                        session
+                    ).evaluate_and_maybe_recover(
+                        user_broker_account_id=uba_id,
+                        broker_code=broker_u,
+                        ops={
+                            "auto_trading_state": auto_state,
+                            "live": "ON" if live_on else "OFF",
+                            "arm": "ON" if arm_on else "OFF",
+                            "activation": ctrl.get("activation"),
+                            "activation_id": (
+                                int(act.live_trading_transition_id)
+                                if act is not None
+                                else None
+                            ),
+                            "activation_expires_at": ctrl.get(
+                                "activation_expires_at"
+                            ),
+                            "arm_expires_at": ctrl.get("arm_expires_at"),
+                            "unattended": unattended,
+                            "runtime_stack": {
+                                "runtime": rt,
+                                "runner": rn,
+                                "outbox_worker": wk,
+                                "exit_monitor": ex,
+                                "running_count": stack_running,
+                                "total": 4,
+                            },
+                            "market_feed": market_feed,
+                            "blockers": list(blockers),
+                            "warnings": list(warnings),
+                            "ai_state": ai_state,
+                        },
+                        primary_blocker=primary_blocker,
+                        blockers=list(blockers),
+                        failure_event_type=str(primary_blocker or "LIVE_OFF"),
+                        execute_recover=False,
+                        actor="SAFE_AUTO_RECOVERY_DETECT",
+                    )
             except Exception:  # noqa: BLE001
                 pass
         block_history_ui = block_svc.ui_payload(

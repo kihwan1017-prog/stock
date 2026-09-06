@@ -1122,14 +1122,108 @@ def _discover_watch_targets(session: Any) -> list[tuple[str, int]]:
     return targets
 
 
+def _discover_safe_auto_recovery_targets(session: Any) -> list[int]:
+    """Activation ACTIVE + LIVE/ARM OFF 인 UPBIT UBA — unattended OFF여도 Class A 후보.
+
+    과거: unattended만 watch → lease OFF 시 fail-closed restart 후 복구 공백.
+    """
+
+    from sqlalchemy import select, text
+
+    from stock_platform.trading.account_models import UserBrokerAccount
+
+    out: list[int] = []
+    rows = list(
+        session.scalars(
+            select(UserBrokerAccount).where(
+                UserBrokerAccount.broker_code == "UPBIT",
+                UserBrokerAccount.is_active.is_(True),
+            )
+        )
+    )
+    for uba in rows:
+        if bool(uba.live_order_enabled) and bool(uba.live_armed):
+            continue
+        # activation peek
+        act = session.execute(
+            text(
+                """
+                SELECT 1
+                FROM operation.live_trading_transition
+                WHERE user_broker_account_id = :uba
+                  AND UPPER(activation_status) = 'ACTIVE'
+                  AND expires_at > now()
+                ORDER BY live_trading_transition_id DESC
+                LIMIT 1
+                """
+            ),
+            {"uba": int(uba.user_broker_account_id)},
+        ).scalar()
+        if act:
+            out.append(int(uba.user_broker_account_id))
+    return out
+
+
 async def run_watchdog_cycle(*, actor: str = "AUTOTRADING_RELIABILITY_WATCHDOG") -> dict[str, Any]:
     factory = get_session_factory()
     session = factory()
     results: list[dict[str, Any]] = []
+    safe_recovery_results: list[dict[str, Any]] = []
     try:
         targets = _discover_watch_targets(session)
+        safe_targets = _discover_safe_auto_recovery_targets(session)
     finally:
         session.close()
+
+    # Class A/B safe auto-recovery (Activation horizon 내, unattended 불필요)
+    try:
+        from stock_platform.common.settings import get_settings
+        from stock_platform.trading.safe_auto_recovery import (
+            SafeAutoRecoveryOrchestrator,
+        )
+        from stock_platform.trading.uba_operational_summary import (
+            build_uba_operational_summary,
+        )
+
+        if bool(getattr(get_settings(), "safe_auto_recovery_enabled", True)):
+            for uba_id in safe_targets:
+                sf = get_session_factory()
+                s = sf()
+                try:
+                    ops = build_uba_operational_summary(
+                        s,
+                        user_broker_account_id=int(uba_id),
+                        projection="daily_report",
+                    )
+                    if str(ops.get("live") or "").upper() == "ON" and str(
+                        ops.get("arm") or ""
+                    ).upper() in {"ON", "ACTIVE", "ARMED"}:
+                        continue
+                    orch = SafeAutoRecoveryOrchestrator(s)
+                    rec = orch.evaluate_and_maybe_recover(
+                        user_broker_account_id=int(uba_id),
+                        broker_code="UPBIT",
+                        ops=ops,
+                        primary_blocker=ops.get("primary_blocker"),
+                        blockers=list(ops.get("blockers") or []),
+                        failure_event_type=str(
+                            ops.get("primary_blocker") or "LIVE_OFF"
+                        ),
+                        execute_recover=True,
+                        actor=actor,
+                    )
+                    safe_recovery_results.append(rec)
+                except Exception as exc:  # noqa: BLE001
+                    safe_recovery_results.append(
+                        {
+                            "uba": uba_id,
+                            "error": type(exc).__name__,
+                        }
+                    )
+                finally:
+                    s.close()
+    except Exception as exc:  # noqa: BLE001
+        safe_recovery_results.append({"error": type(exc).__name__})
 
     for market, uba_id in targets:
         res = await reconcile_market_health(
@@ -1167,6 +1261,7 @@ async def run_watchdog_cycle(*, actor: str = "AUTOTRADING_RELIABILITY_WATCHDOG")
         "ok": True,
         "count": len(results),
         "results": results,
+        "safe_auto_recovery": safe_recovery_results,
         "at": datetime.now(timezone.utc).isoformat(),
     }
 

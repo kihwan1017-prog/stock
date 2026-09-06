@@ -298,7 +298,7 @@ class AutotradingBlockEventService:
         )
         if open_row is not None:
             # block_event에는 자동복구 스케줄 컬럼이 없음 — 임의 timestamp 생성 금지
-            return {
+            payload = {
                 "status": "BLOCKED",
                 "blocked_at": open_row.blocked_at.isoformat()
                 if open_row.blocked_at
@@ -322,7 +322,82 @@ class AutotradingBlockEventService:
                 "recovery_status": "AWAITING_OPERATOR",
                 "recovery_method": "NOT_ATTEMPTED",
                 "resolution_type": None,
+                "incident_id": None,
+                "recovery_class": None,
+                "classification_reason": None,
+                "auto_recovery_eligible": None,
+                "operator_action_required": True,
+                "circuit_breaker_status": None,
+                "recovery_attempt_count": None,
+                "skip_reason": None,
             }
+            # 최신 safe-recovery incident 로 UI enrichment
+            try:
+                from sqlalchemy import text
+
+                inc = self._session.execute(
+                    text(
+                        """
+                        SELECT incident_id, recovery_class, eligibility, status,
+                               root_cause, attempt_count, snapshot_json
+                        FROM operation.autotrading_recovery_incident
+                        WHERE user_broker_account_id = :uba
+                        ORDER BY created_at DESC
+                        LIMIT 1
+                        """
+                    ),
+                    {"uba": int(user_broker_account_id)},
+                ).mappings().first()
+                if inc:
+                    snap = inc.get("snapshot_json") or {}
+                    if isinstance(snap, str):
+                        import json
+
+                        snap = json.loads(snap)
+                    cls = (snap or {}).get("classification") or {}
+                    payload["incident_id"] = inc.get("incident_id")
+                    payload["recovery_class"] = inc.get("recovery_class") or cls.get(
+                        "recovery_class"
+                    )
+                    payload["classification_reason"] = cls.get("reason")
+                    payload["auto_recovery_eligible"] = (
+                        str(inc.get("eligibility") or "").upper() == "ELIGIBLE"
+                    )
+                    payload["operator_action_required"] = not payload[
+                        "auto_recovery_eligible"
+                    ]
+                    payload["recovery_attempt_count"] = int(
+                        inc.get("attempt_count") or 0
+                    )
+                    payload["skip_reason"] = cls.get("reason")
+                    st = str(inc.get("status") or "").upper()
+                    if st == "RECOVER_SUCCESS":
+                        payload["recovery_status"] = "SUCCESS"
+                        payload["recovery_method"] = "AUTO"
+                        payload["recovery_result"] = "SUCCESS"
+                    elif st in {"RECOVER_ATTEMPTED", "SNAPSHOT"}:
+                        if payload["auto_recovery_eligible"]:
+                            payload["recovery_status"] = "SCHEDULED"
+                            payload["recovery_method"] = "AUTO"
+                            payload["recovery_result"] = "PENDING"
+                        else:
+                            payload["recovery_status"] = "AWAITING_OPERATOR"
+                            payload["skip_reason"] = cls.get("reason")
+                    elif st == "CIRCUIT_OPEN":
+                        payload["recovery_status"] = "FAILED"
+                        payload["circuit_breaker_status"] = "OPEN"
+                        payload["operator_action_required"] = True
+                    elif st == "RECOVER_FAILED":
+                        payload["recovery_status"] = "FAILED"
+                        payload["recovery_method"] = "AUTO"
+                    circ = ((snap or {}).get("recovery") or {}).get("circuit") or {}
+                    if circ.get("open"):
+                        payload["circuit_breaker_status"] = "OPEN"
+                    elif circ:
+                        payload["circuit_breaker_status"] = "CLOSED"
+            except Exception:  # noqa: BLE001
+                pass
+            return payload
         if resolved is not None:
             resolution = str(resolved.resolution_type or "").upper()
             if resolution in {

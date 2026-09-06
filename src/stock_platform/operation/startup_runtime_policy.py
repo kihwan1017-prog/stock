@@ -33,6 +33,83 @@ def build_process_instance_id() -> str:
     return f"pid-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
+def _detect_shadow_startup_listen_owner(
+    *, port: int = 8000
+) -> dict[str, Any]:
+    """이미 다른 살아있는 PID가 canonical listener면 shadow startup으로 판정.
+
+    HealthEnsure 등이 health 일시 실패로 두 번째 process를 띄우면
+    phase1 fail-closed가 공유 DB의 LIVE/ARM을 끄는 사고가 난다.
+    """
+
+    self_pid = int(os.getpid())
+    owner: int | None = None
+    try:
+        from pathlib import Path
+
+        listen_file = (
+            Path(__file__).resolve().parents[3] / ".run" / "backend.listen.pid"
+        )
+        if listen_file.is_file():
+            raw = listen_file.read_text(encoding="utf-8").strip()
+            if raw.isdigit():
+                owner = int(raw)
+    except OSError:
+        owner = None
+
+    if owner is None:
+        try:
+            import psutil  # type: ignore
+
+            for conn in psutil.net_connections(kind="inet"):
+                if (
+                    conn.laddr
+                    and int(getattr(conn.laddr, "port", 0) or 0) == int(port)
+                    and str(conn.status).upper() == "LISTEN"
+                    and conn.pid
+                ):
+                    owner = int(conn.pid)
+                    break
+        except Exception:  # noqa: BLE001
+            owner = None
+
+    if owner is None or int(owner) == self_pid:
+        return {
+            "is_shadow": False,
+            "reason": "NO_OTHER_CANONICAL_LISTENER",
+            "self_pid": self_pid,
+            "listen_owner_pid": owner,
+        }
+
+    # listen.pid / port owner 가 다른 살아 있는 process인지 확인
+    owner_alive = False
+    try:
+        import psutil  # type: ignore
+
+        owner_alive = psutil.pid_exists(int(owner))
+    except Exception:  # noqa: BLE001
+        try:
+            os.kill(int(owner), 0)
+            owner_alive = True
+        except OSError:
+            owner_alive = False
+
+    if not owner_alive:
+        return {
+            "is_shadow": False,
+            "reason": "STALE_LISTEN_PID",
+            "self_pid": self_pid,
+            "listen_owner_pid": owner,
+        }
+
+    return {
+        "is_shadow": True,
+        "reason": "OTHER_LISTEN_OWNER",
+        "self_pid": self_pid,
+        "listen_owner_pid": owner,
+    }
+
+
 def migration_at_head(session: Session) -> bool:
     """Alembic head 적용 여부 (실패 시 Fail Closed)."""
 
@@ -112,6 +189,35 @@ class RuntimeStartupPolicy:
             result["runtime_stability_error"] = type(exc).__name__
 
         result["migration_at_head"] = migration_at_head(self._session)
+
+        # 다른 PID가 이미 listen 중이면 shadow startup — LIVE/ARM DB 강제 OFF 금지
+        shadow = _detect_shadow_startup_listen_owner()
+        result["shadow_startup_guard"] = shadow
+        if shadow.get("is_shadow"):
+            logger.warning(
+                "runtime_startup_policy_phase1_shadow_abort",
+                **{k: v for k, v in shadow.items() if k != "detail"},
+            )
+            result["live_forced_off_count"] = 0
+            result["arm_forced_off_count"] = 0
+            result["phase1_aborted"] = "SHADOW_STARTUP_OTHER_LISTEN_OWNER"
+            result["scheduler_desired_loaded"] = None
+            emit_live_safety_audit(
+                self._session,
+                event_type="STARTUP_SHADOW_ABORT",
+                actor="STARTUP",
+                run_id=None,
+                user_id=None,
+                account_id=None,
+                strategy_id=None,
+                detail={
+                    "process_instance_id": self._process_id,
+                    "startup_at": self._startup_at,
+                    **shadow,
+                },
+                commit=False,
+            )
+            return result
 
         row = self._repo.get_trading_scheduler_row(create_if_missing=True)
         assert row is not None

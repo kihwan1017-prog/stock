@@ -187,6 +187,17 @@ class Settings(BaseSettings):
     live_session_expiry_scan_interval_seconds: float = Field(
         default=15.0, ge=5.0, le=60.0
     )
+    # Safe auto-recovery circuit breaker (settings-driven; no hardcode flood)
+    safe_auto_recovery_enabled: bool = Field(default=True)
+    safe_auto_recovery_circuit_max_attempts: int = Field(
+        default=3, ge=1, le=20
+    )
+    safe_auto_recovery_circuit_window_seconds: int = Field(
+        default=3600, ge=60, le=86400
+    )
+    safe_auto_recovery_circuit_cooldown_seconds: int = Field(
+        default=1800, ge=60, le=86400
+    )
     # LIVE Dry Run / 소액 한도 (설정 없으면 Fail Closed는 Risk/Transition 경로)
     live_small_max_order_amount: float = Field(default=100_000.0, gt=0)
     live_small_max_daily_order_amount: float = Field(default=300_000.0, gt=0)
@@ -684,6 +695,21 @@ class Settings(BaseSettings):
     crypto_news_collection_interval_seconds: float = 900.0
     crypto_news_collection_query: str = "업비트 암호화폐"
     crypto_news_collection_display: int = Field(default=20, ge=1, le=50)
+    # News Intelligence V1 — dynamic candidate news targets (bounded)
+    crypto_news_dynamic_target_max: int = Field(default=8, ge=0, le=15)
+
+    # KIWOOM TOP10 news/DART collector (SHADOW feed, REAL Fresh Cross 비연동)
+    kiwoom_top10_news_collection_enabled: bool = True
+    kiwoom_top10_news_collection_interval_seconds: float = 900.0
+    kiwoom_top10_news_target_max: int = Field(default=10, ge=1, le=20)
+    kiwoom_top10_news_display: int = Field(default=10, ge=1, le=30)
+    kiwoom_top10_dart_collection_enabled: bool = True
+    kiwoom_top10_dart_collection_interval_seconds: float = 1800.0
+    kiwoom_top10_dart_lookback_days: int = Field(default=7, ge=1, le=30)
+
+    # News Intelligence Shadow + informational Telegram (REAL gate 비연동)
+    news_intelligence_shadow_enabled: bool = True
+    news_intelligence_telegram_enabled: bool = True
 
     # STEP N4 — UPBIT AI News Analysis (기본 OFF, INFORMATIONAL ONLY)
     upbit_news_ai_analysis_enabled: bool = False

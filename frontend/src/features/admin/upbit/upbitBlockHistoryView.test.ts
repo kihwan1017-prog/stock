@@ -114,4 +114,29 @@ describe("upbitBlockHistoryView", () => {
     expect(v.recoveredAt).toBeTruthy();
     expect(v.recoveryDurationLabel).toBeTruthy();
   });
+
+  it("exposes recovery class and incident fields when present", () => {
+    const v = parseBlockHistoryView({
+      primary_blocker: "LIVE_OFF",
+      block_history: {
+        status: "BLOCKED",
+        blocked_at: "2026-09-06T04:16:38+00:00",
+        primary_reason_code: "LIVE_OFF",
+        incident_id: "inc-1380-abc",
+        recovery_class: "A",
+        classification_reason: "CLASS_A_ACTIVATION_VALID_PRECHECK_PASS",
+        auto_recovery_eligible: true,
+        operator_action_required: false,
+        circuit_breaker_status: "CLOSED",
+        recovery_attempt_count: 1,
+        recovery_status: "SCHEDULED",
+        recovery_method: "AUTO",
+      },
+    });
+    expect(v.incidentId).toBe("inc-1380-abc");
+    expect(v.recoveryClass).toBe("A");
+    expect(v.autoRecoveryEligible).toBe(true);
+    expect(v.operatorActionRequired).toBe(false);
+    expect(v.circuitBreakerStatus).toBe("CLOSED");
+  });
 });

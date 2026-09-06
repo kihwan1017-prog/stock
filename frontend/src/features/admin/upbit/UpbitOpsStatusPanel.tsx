@@ -321,6 +321,44 @@ export function UpbitOpsStatusPanel({
                     {blockView.recoveryMethodLabel}
                   </Typography.Text>
                 </Typography.Text>
+                {blockView.incidentId ? (
+                  <Typography.Text>
+                    Incident ID:{" "}
+                    <Typography.Text strong code>
+                      {blockView.incidentId}
+                    </Typography.Text>
+                    {blockView.recoveryClass
+                      ? ` · 등급 ${blockView.recoveryClass}`
+                      : ""}
+                  </Typography.Text>
+                ) : null}
+                {blockView.classificationReason ? (
+                  <Typography.Text type="secondary">
+                    분류 사유: {blockView.classificationReason}
+                  </Typography.Text>
+                ) : null}
+                <Typography.Text>
+                  자동복구 가능:{" "}
+                  <Typography.Text strong>
+                    {blockView.autoRecoveryEligible === true
+                      ? "YES"
+                      : blockView.autoRecoveryEligible === false
+                        ? "NO"
+                        : "—"}
+                  </Typography.Text>
+                  {blockView.skipReason
+                    ? ` · 미실행 사유: ${blockView.skipReason}`
+                    : ""}
+                </Typography.Text>
+                <Typography.Text>
+                  Circuit:{" "}
+                  <Typography.Text strong>
+                    {blockView.circuitBreakerStatus ?? "—"}
+                  </Typography.Text>
+                  {blockView.recoveryAttemptCount != null
+                    ? ` · 시도 ${blockView.recoveryAttemptCount}`
+                    : ""}
+                </Typography.Text>
                 <Typography.Text>
                   주요 차단 사유:{" "}
                   <Typography.Text strong>
@@ -341,9 +379,10 @@ export function UpbitOpsStatusPanel({
                   </Typography.Text>
                 ) : null}
                 <Typography.Text type="secondary">
-                  현재 상태: 조치 필요 (운영자 승인 후 복구) · 예정/시도/완료
-                  시각은 Activation·ARM 갱신 시각과 다르며, 스케줄이 없으면
-                  예정 시각을 생성하지 않습니다.
+                  {blockView.operatorActionRequired
+                    ? "현재 상태: 운영자 조치 필요 (Class C 또는 precheck 실패). Fail-closed 유지."
+                    : "현재 상태: 안전등급 자동복구 대상 — broker/local 정합·precheck PASS 시에만 복구."}{" "}
+                  예정/시도/완료 시각은 임의 생성하지 않습니다.
                 </Typography.Text>
               </Space>
             ) : null}

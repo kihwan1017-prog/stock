@@ -71,11 +71,16 @@ function Test-HttpOk([string]$Url) {
 
 $existing = Test-PortListening $BackendPort
 if ($null -ne $existing -and -not $Force) {
-    if (Test-HttpOk "http://${BackendHost}:${BackendPort}/health/live") {
+    # Port occupied이면 health 실패여도 절대 두 번째 prod process를 띄우지 않는다.
+    # (과거: health transient fail → 중복 기동 → startup fail-closed가 LIVE/ARM DB를 꺼버림)
+    $healthOk = Test-HttpOk "http://${BackendHost}:${BackendPort}/health/live"
+    if ($healthOk) {
         Write-Step "already listening PID=$existing — skip (use -Force to replace)"
-        Set-Content -LiteralPath $ListenPidFile -Value $existing -Encoding ascii
-        exit 0
+    } else {
+        Write-Step "port $BackendPort listening PID=$existing but health not OK — skip duplicate start (use -Force only after stop). Refuse shadow startup to protect LIVE/ARM DB state."
     }
+    Set-Content -LiteralPath $ListenPidFile -Value $existing -Encoding ascii
+    exit 0
 }
 
 if ($Force -and $null -ne $existing) {
