@@ -74,8 +74,13 @@ def exit_reason_label_ko(category: str) -> str:
     return labels.get(category, category)
 
 
-def _closed_quantity(binding: StrategyPositionBindingEntity) -> Decimal:
-    """CLOSED binding — owned_quantity=0이므로 meta/가격으로 역산."""
+def _closed_quantity(
+    binding: StrategyPositionBindingEntity,
+    *,
+    entry_order: TradingOrderEntity | None = None,
+    exit_order: TradingOrderEntity | None = None,
+) -> Decimal:
+    """CLOSED binding — owned_quantity=0이므로 meta/order/가격으로 역산."""
 
     meta = dict(binding.meta_json or {})
     cached = meta.get("closed_quantity")
@@ -83,6 +88,14 @@ def _closed_quantity(binding: StrategyPositionBindingEntity) -> Decimal:
         qty = Decimal(str(cached))
         if qty > ZERO:
             return qty
+
+    # order filled_quantity가 있으면 gross=0(손실 미stamp)에서도 수량 복원
+    for order in (entry_order, exit_order):
+        if order is None:
+            continue
+        fq = Decimal(str(getattr(order, "filled_quantity", 0) or 0))
+        if fq > ZERO:
+            return fq
 
     entry = Decimal(str(binding.entry_price or 0))
     gross = Decimal(str(binding.realized_pnl or 0))
@@ -94,19 +107,53 @@ def _closed_quantity(binding: StrategyPositionBindingEntity) -> Decimal:
     return ZERO
 
 
+def _order_filled_amount(order: TradingOrderEntity | None) -> Decimal:
+    if order is None:
+        return ZERO
+    amt = Decimal(str(getattr(order, "filled_amount", 0) or 0))
+    if amt > ZERO:
+        return amt
+    qty = Decimal(str(getattr(order, "filled_quantity", 0) or 0))
+    px = Decimal(str(getattr(order, "average_fill_price", 0) or 0))
+    if qty > ZERO and px > ZERO:
+        return (qty * px).quantize(QUANT)
+    return ZERO
+
+
 def binding_closed_trade_metrics(
     binding: StrategyPositionBindingEntity,
     *,
     exit_order: TradingOrderEntity | None = None,
+    entry_order: TradingOrderEntity | None = None,
 ) -> dict[str, Any]:
-    """Canonical: gross=realized_pnl, net=gross-fees, return=net/entry_cost."""
+    """Canonical: gross≈realized_pnl(또는 fill 금액 차), net=gross-fees, return=net/entry_cost."""
 
     entry = Decimal(str(binding.entry_price or 0))
-    gross = Decimal(str(binding.realized_pnl or 0))
     fees = Decimal(str(binding.fees or 0))
+    qty = _closed_quantity(
+        binding, entry_order=entry_order, exit_order=exit_order
+    )
+
+    buy_amount = _order_filled_amount(entry_order)
+    sell_amount = _order_filled_amount(exit_order)
+    if buy_amount <= ZERO and entry > ZERO and qty > ZERO:
+        buy_amount = (entry * qty).quantize(QUANT)
+
+    gross = Decimal(str(binding.realized_pnl or 0))
+    # 손실 미stamp(realized_pnl=0) 시 order filled_amount로 gross 복원
+    if gross == ZERO and buy_amount > ZERO and sell_amount > ZERO:
+        gross = (sell_amount - buy_amount).quantize(QUANT)
+    elif sell_amount <= ZERO and buy_amount > ZERO:
+        # sell 금액만 없을 때: buy + gross (gross가 유효할 때)
+        sell_amount = (buy_amount + gross).quantize(QUANT)
+    elif sell_amount <= ZERO and buy_amount <= ZERO:
+        sell_amount = ZERO
+
+    entry_cost = buy_amount if buy_amount > ZERO else ZERO
+    if entry_cost <= ZERO and entry > ZERO and qty > ZERO:
+        entry_cost = (entry * qty).quantize(QUANT)
+
     net = (gross - fees).quantize(QUANT)
-    qty = _closed_quantity(binding)
-    entry_cost = (entry * qty).quantize(QUANT) if entry > ZERO and qty > ZERO else ZERO
     return_pct = (
         (net / entry_cost * Decimal("100")).quantize(_PCT_QUANT)
         if entry_cost > ZERO
@@ -129,6 +176,10 @@ def binding_closed_trade_metrics(
 
     meta = dict(binding.meta_json or {})
     exit_px = meta.get("exit_fill_price")
+    if exit_px is None and exit_order is not None:
+        avg = getattr(exit_order, "average_fill_price", None)
+        if avg is not None:
+            exit_px = str(avg)
 
     return {
         "binding_id": int(binding.binding_id),
@@ -139,7 +190,9 @@ def binding_closed_trade_metrics(
         "entry_price": str(entry),
         "exit_price": str(exit_px) if exit_px is not None else None,
         "quantity": str(qty),
-        "entry_cost": str(entry_cost),
+        "entry_cost": str(entry_cost.quantize(QUANT) if entry_cost else ZERO),
+        "buy_amount": str(buy_amount.quantize(QUANT) if buy_amount else ZERO),
+        "sell_amount": str(sell_amount.quantize(QUANT) if sell_amount else ZERO),
         "gross_pnl": str(gross.quantize(QUANT)),
         "fees": str(fees.quantize(QUANT)),
         "net_pnl": str(net),
@@ -331,6 +384,7 @@ class AutotradingPerformanceService:
         )
 
         exit_ids: set[int] = set()
+        entry_ids: set[int] = set()
         for b in closed_rows:
             meta = dict(b.meta_json or {})
             eid = meta.get("exit_order_id")
@@ -339,15 +393,26 @@ class AutotradingPerformanceService:
                     exit_ids.add(int(eid))
                 except (TypeError, ValueError):
                     pass
+            if b.entry_order_id is not None:
+                try:
+                    entry_ids.add(int(b.entry_order_id))
+                except (TypeError, ValueError):
+                    pass
 
         exit_orders: dict[int, TradingOrderEntity] = {}
-        if exit_ids:
+        entry_orders: dict[int, TradingOrderEntity] = {}
+        load_ids = exit_ids | entry_ids
+        if load_ids:
             for order in self.session.scalars(
                 select(TradingOrderEntity).where(
-                    TradingOrderEntity.order_id.in_(exit_ids)
+                    TradingOrderEntity.order_id.in_(load_ids)
                 )
             ):
-                exit_orders[int(order.order_id)] = order
+                oid = int(order.order_id)
+                if oid in exit_ids:
+                    exit_orders[oid] = order
+                if oid in entry_ids:
+                    entry_orders[oid] = order
 
         mark_prices = self._load_mark_prices(scope_ubas)
 
@@ -361,8 +426,16 @@ class AutotradingPerformanceService:
                     exit_order = exit_orders.get(int(eid))
                 except (TypeError, ValueError):
                     pass
+            entry_order = None
+            if b.entry_order_id is not None:
+                try:
+                    entry_order = entry_orders.get(int(b.entry_order_id))
+                except (TypeError, ValueError):
+                    pass
             closed_trades.append(
-                binding_closed_trade_metrics(b, exit_order=exit_order)
+                binding_closed_trade_metrics(
+                    b, exit_order=exit_order, entry_order=entry_order
+                )
             )
 
         def _in_window(closed_at: Any) -> bool:
@@ -1043,7 +1116,28 @@ class AutotradingPerformanceService:
             gross = sum((Decimal(str(x.get("gross_pnl") or 0)) for x in trades), ZERO)
             fees = sum((Decimal(str(x.get("fees") or 0)) for x in trades), ZERO)
             net = sum((Decimal(str(x["net_pnl"])) for x in trades), ZERO)
-            cost = sum((Decimal(str(x["entry_cost"])) for x in trades), ZERO)
+            cost = sum(
+                (
+                    Decimal(
+                        str(
+                            x.get("buy_amount")
+                            or x.get("entry_cost")
+                            or 0
+                        )
+                    )
+                    for x in trades
+                ),
+                ZERO,
+            )
+            sell_amt = sum(
+                (
+                    Decimal(str(x.get("sell_amount") or 0))
+                    for x in trades
+                ),
+                ZERO,
+            )
+            if sell_amt <= ZERO:
+                sell_amt = (cost + gross).quantize(QUANT)
             wins = sum(1 for x in trades if Decimal(str(x["net_pnl"])) > ZERO)
             losses = sum(1 for x in trades if Decimal(str(x["net_pnl"])) < ZERO)
             n = len(trades)
@@ -1070,7 +1164,7 @@ class AutotradingPerformanceService:
                     "sell_count": n,
                     "round_trip_count": n,
                     "buy_amount": str(cost.quantize(QUANT)),
-                    "sell_amount": str((cost + gross).quantize(QUANT)),
+                    "sell_amount": str(sell_amt.quantize(QUANT)),
                     "gross_pnl": str(gross.quantize(QUANT)),
                     "fees": str(fees.quantize(QUANT)),
                     "net_pnl": str(net.quantize(QUANT)),

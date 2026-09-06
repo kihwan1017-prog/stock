@@ -306,7 +306,8 @@ class StrategyOwnedRiskService:
                     break
                 owned = Decimal(str(row.owned_quantity or 0))
                 # BUY fill 재동기화 인플레 self-heal — entry order filled qty가 SoT
-                if row.entry_order_id is not None:
+                entry_oid = getattr(row, "entry_order_id", None)
+                if entry_oid is not None:
                     try:
                         from stock_platform.order.entities import (
                             TradingOrderEntity,
@@ -332,12 +333,14 @@ class StrategyOwnedRiskService:
                     lot_pnl = (sell_px - entry) * take
                 current_pnl = Decimal(str(row.realized_pnl or 0))
                 full_lot_close = take > ZERO and take == owned
+                # 손익 모두 stamp — 이전 `lot_pnl > ZERO`만 반영하면 손실 RT의
+                # realized_pnl=0 → 성과 매수/매도금액 0원 오표시
                 already_stamped = (
                     full_lot_close
-                    and lot_pnl > ZERO
+                    and lot_pnl != ZERO
                     and abs(current_pnl - lot_pnl) <= Decimal("0.05")
                 )
-                if lot_pnl > ZERO and not already_stamped:
+                if lot_pnl != ZERO and not already_stamped:
                     row.realized_pnl = current_pnl + lot_pnl
                 if fee_add > ZERO and not already_stamped:
                     row.fees = Decimal(str(row.fees or 0)) + fee_add
@@ -350,6 +353,9 @@ class StrategyOwnedRiskService:
                         meta["exit_order_id"] = int(exit_order_id)
                     if sell_px is not None:
                         meta["exit_fill_price"] = str(sell_px)
+                    # 성과 집계용 — CLOSED 후 owned_quantity=0이므로 수량 보존
+                    if take > ZERO:
+                        meta["closed_quantity"] = str(take)
                     row.meta_json = meta
                     # full close 시 fees를 entry+exit order meta로 정규화(가능하면)
                     try:
