@@ -239,25 +239,32 @@ def lease_renewal_audit_counts(
     arm_audit = 0
     act_audit = 0
     auth_audit = 0
+    # SoT: operation.audit_event (emit_live_safety_audit). UBA는 detail JSON에 보관.
+    rows: list[Any] = []
     try:
-        rows = session.execute(
-            text(
-                """
-                SELECT event_type, COUNT(*)::int AS cnt
-                FROM operation.live_safety_audit
-                WHERE account_id = :uba
-                  AND created_at >= :since
-                  AND event_type IN (
-                    'UNATTENDED_AUTHORIZATION_RENEWED',
-                    'UNATTENDED_ARM_RENEW_ATTEMPT',
-                    'UNATTENDED_ACTIVATION_RENEWED',
-                    'ACTIVATION_AUTO_RENEWED'
-                  )
-                GROUP BY event_type
-                """
-            ),
-            {"uba": uba, "since": since_a},
-        ).mappings().all()
+        rows = list(
+            session.execute(
+                text(
+                    """
+                    SELECT event_type, COUNT(*)::int AS cnt
+                    FROM operation.audit_event
+                    WHERE created_at >= :since
+                      AND (
+                        (detail->>'user_broker_account_id')::bigint = :uba
+                        OR (detail->>'account_id')::bigint = :uba
+                      )
+                      AND event_type IN (
+                        'UNATTENDED_AUTHORIZATION_RENEWED',
+                        'UNATTENDED_ARM_RENEW_ATTEMPT',
+                        'UNATTENDED_ACTIVATION_RENEWED',
+                        'ACTIVATION_AUTO_RENEWED'
+                      )
+                    GROUP BY event_type
+                    """
+                ),
+                {"uba": uba, "since": since_a},
+            ).mappings().all()
+        )
         for r in rows:
             et = str(r["event_type"])
             if "ARM" in et:
@@ -268,7 +275,7 @@ def lease_renewal_audit_counts(
                 auth_audit += int(r["cnt"])
     except Exception as exc:  # noqa: BLE001
         session.rollback()
-        rows = [{"_error": type(exc).__name__}]
+        rows = [{"_error": type(exc).__name__, "message": str(exc)[:200]}]
 
     # Activation successors in window
     acts = session.execute(
