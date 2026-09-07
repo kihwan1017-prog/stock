@@ -219,15 +219,15 @@ def test_sync_activation_fails_without_active_activation() -> None:
     create_mock.assert_not_called()
 
 
-# --- P0.7: horizon path never extends Operator Authorization ---
+# --- Horizon path: allowlist UBA1380 vs finite others ---
 
 
-def test_horizon_path_never_extends_authorized_until() -> None:
+def test_horizon_path_non_allowlisted_never_extends_authorized_until() -> None:
     session = MagicMock()
     now = _now()
     old_until = now + timedelta(minutes=20)
-    row = _row(authorized_until=old_until)
-    uba = _uba()
+    row = _row(user_broker_account_id=1381, authorized_until=old_until)
+    uba = _uba(user_broker_account_id=1381)
     svc = LiveUnattendedAuthorizationService(session)
     with (
         patch(
@@ -247,7 +247,7 @@ def test_horizon_path_never_extends_authorized_until() -> None:
     assert row.authorized_until == old_until
 
 
-def test_horizon_path_outside_warning_window_is_noop() -> None:
+def test_horizon_path_outside_renew_margin_is_noop() -> None:
     session = MagicMock()
     now = _now()
     old_until = now + timedelta(hours=5)
@@ -260,7 +260,7 @@ def test_horizon_path_outside_warning_window_is_noop() -> None:
     ):
         out = svc._try_horizon_auto_renew(row, uba, actor=ACTOR_HORIZON_AUTO_RENEW)
     assert out["horizon_renewed"] is False
-    assert out["reason"] == "NOT_IN_EXPIRY_WARNING_WINDOW"
+    assert out["reason"] == "NOT_IN_RENEW_MARGIN"
     assert row.authorized_until == old_until
 
 

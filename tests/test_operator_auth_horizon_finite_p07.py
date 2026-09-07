@@ -102,11 +102,15 @@ def test_case1_validate_24h_duration() -> None:
     assert (expires - approved).total_seconds() == 24 * 3600
 
 
-def test_case2_expiring_soon_warning_only() -> None:
+def test_case2_non_allowlisted_uba_expiring_soon_warning_only() -> None:
+    """Kiwoom 등 allowlist 외 UBA는 Horizon 연장 없이 경고만."""
     session = MagicMock()
     now = _now()
     old_until = now + timedelta(minutes=45)
-    row = _row(authorized_until=old_until)
+    row = _row(
+        user_broker_account_id=1381,
+        authorized_until=old_until,
+    )
     svc = LiveUnattendedAuthorizationService(session)
     with (
         patch(
@@ -121,10 +125,11 @@ def test_case2_expiring_soon_warning_only() -> None:
         ),
     ):
         out = svc._try_horizon_auto_renew(
-            row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW
+            row, _uba(user_broker_account_id=1381), actor=ACTOR_HORIZON_AUTO_RENEW
         )
     assert out["horizon_renewed"] is False
     assert out["authorization_expiring_soon"] is True
+    assert out["reason"] == "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED"
     assert row.authorized_until == old_until
     assert audit.call_args.kwargs["event_type"] == "AUTHORIZATION_EXPIRING_SOON"
 
@@ -230,16 +235,35 @@ def test_case9_restore_blocked_after_auth_expiry() -> None:
     expire.assert_called_once()
 
 
-def test_case10_system_horizon_auto_extend_denied() -> None:
+def test_case10_uba1380_system_horizon_auto_extend_success() -> None:
+    """UBA1380 24x7: safety gate PASS 시 authorized_until rolling 연장."""
     session = MagicMock()
     now = _now()
     old_until = now + timedelta(minutes=20)
     row = _row(auto_renew_enabled=True, authorized_until=old_until)
     svc = LiveUnattendedAuthorizationService(session)
+    lock = MagicMock()
+    lock.acquire.return_value = True
     with (
         patch(
             "stock_platform.trading.live_unattended_authorization_service._now",
             return_value=now,
+        ),
+        patch.object(
+            svc,
+            "evaluate_horizon_auto_renew_gates",
+            return_value={"ok": True, "blockers": [], "checks": {}},
+        ),
+        patch.object(
+            svc,
+            "_sync_activation_with_horizon_renew",
+            return_value={"required": False, "ok": True},
+        ),
+        patch.object(svc, "_record_activation_refresh_observability"),
+        patch.object(svc, "_maybe_emit_horizon_renew_success_telegram"),
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service._horizon_renew_lock",
+            return_value=lock,
         ),
         patch(
             "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
@@ -251,9 +275,37 @@ def test_case10_system_horizon_auto_extend_denied() -> None:
         out = svc._try_horizon_auto_renew(
             row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW
         )
+    assert out["horizon_renewed"] is True
+    assert row.authorized_until == now + timedelta(hours=24)
+    assert out["operator_authorization_auto_extend"] is True
+
+
+def test_case10b_uba1380_horizon_blocked_by_safety_gates() -> None:
+    session = MagicMock()
+    now = _now()
+    old_until = now + timedelta(minutes=20)
+    row = _row(auto_renew_enabled=True, authorized_until=old_until)
+    svc = LiveUnattendedAuthorizationService(session)
+    with (
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service._now",
+            return_value=now,
+        ),
+        patch.object(
+            svc,
+            "evaluate_horizon_auto_renew_gates",
+            return_value={"ok": False, "blockers": ["KILL_SWITCH"], "checks": {}},
+        ),
+        patch.object(svc, "_maybe_emit_horizon_renew_failure_telegram"),
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
+        ),
+    ):
+        out = svc._try_horizon_auto_renew(
+            row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW
+        )
     assert out["horizon_renewed"] is False
-    assert out["reason"] == "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED"
-    assert out["operator_authorization_auto_extend"] is False
+    assert out["reason"] == "SAFETY_GATES_FAILED"
     assert row.authorized_until == old_until
 
 

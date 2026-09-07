@@ -78,6 +78,16 @@ ACTIVATION_HORIZON_MISMATCH_ALERT_COOLDOWN_SECONDS = 3600
 MARKET_HOURS_RENEW_SUCCESS_TELEGRAM_INTERVAL_SECONDS = 3600
 MARKET_HOURS_RENEW_FAILURE_TELEGRAM_COOLDOWN_SECONDS = 1800
 
+# 24x7 원래 설계: Operator Authorization Horizon rolling renew 허용 UBA.
+# Kiwoom 등 다른 UBA는 P0.7 finite-horizon 유지.
+OPERATOR_AUTH_HORIZON_AUTO_EXTEND_UBA_IDS: frozenset[int] = frozenset({1380})
+
+
+def operator_auth_horizon_auto_extend_allowed(user_broker_account_id: int) -> bool:
+    """UBA1380 ONLY — 동일 권한 범위 rolling renewal 허용 여부."""
+
+    return int(user_broker_account_id) in OPERATOR_AUTH_HORIZON_AUTO_EXTEND_UBA_IDS
+
 _READINESS_BLOCKERS_FOR_HORIZON_RENEW = frozenset(
     {
         "RUNTIME_BLOCKED",
@@ -273,20 +283,29 @@ class LiveUnattendedAuthorizationService:
             "last_renewal_actor": row.last_renewal_actor,
             "last_renewal_detail": detail,
             "auto_renew_enabled": bool(getattr(row, "auto_renew_enabled", False)),
-            # P0.7 — auto_renew_enabled = Activation/ARM 등 내부 lease 갱신만.
-            # Operator Authorization Horizon(authorized_until) 자동연장 금지.
+            # allowlist UBA: auto_renew = 내부 lease + Operator Auth Horizon.
+            # 그 외 UBA: P0.7 — 내부 lease만.
             "lease_auto_renew_enabled": bool(
                 getattr(row, "auto_renew_enabled", False)
             ),
-            "operator_authorization_auto_extend": False,
-            "operator_authorization_auto_extend_supported": False,
+            "operator_authorization_auto_extend_supported": (
+                operator_auth_horizon_auto_extend_allowed(
+                    int(row.user_broker_account_id)
+                )
+            ),
+            "operator_authorization_auto_extend": bool(
+                operator_auth_horizon_auto_extend_allowed(
+                    int(row.user_broker_account_id)
+                )
+                and getattr(row, "auto_renew_enabled", False)
+            ),
             "next_trading_day_auto_start": bool(
                 detail.get("next_trading_day_auto_start")
             ),
             "horizon_renew_margin_seconds": self._horizon_renew_margin_seconds(
                 row
             ),
-            "next_horizon_renew_check_at": self._next_authorization_expiry_warning_at(
+            "next_horizon_renew_check_at": self._next_horizon_renew_check_at(
                 row, until=until, now=now
             ),
             "next_authorization_expiry_warning_at": self._next_authorization_expiry_warning_at(
@@ -1491,7 +1510,7 @@ class LiveUnattendedAuthorizationService:
         check_at = until - timedelta(seconds=margin)
         return check_at.isoformat()
 
-    # 호환 alias — 과거 next_horizon_renew_check_at 이름 유지
+    # allowlist UBA + auto_renew: renew 후보 시각 / 그 외는 만료 경고 시각
     def _next_horizon_renew_check_at(
         self,
         row: LiveUnattendedAuthorizationEntity,
@@ -1499,6 +1518,18 @@ class LiveUnattendedAuthorizationService:
         until: datetime | None,
         now: datetime,
     ) -> str | None:
+        if operator_auth_horizon_auto_extend_allowed(
+            int(row.user_broker_account_id)
+        ) and bool(getattr(row, "auto_renew_enabled", False)):
+            if until is None:
+                return None
+            margin = self._horizon_renew_margin_seconds(row)
+            remaining = max(0, int((until - now).total_seconds()))
+            if remaining <= 0:
+                return None
+            if remaining <= margin:
+                return now.isoformat()
+            return (until - timedelta(seconds=margin)).isoformat()
         return self._next_authorization_expiry_warning_at(
             row, until=until, now=now
         )
@@ -1509,10 +1540,14 @@ class LiveUnattendedAuthorizationService:
     ) -> dict[str, Any]:
         detail = dict(row.last_renewal_detail or {})
         hz = detail.get("horizon_auto_renew")
+        allowed = operator_auth_horizon_auto_extend_allowed(
+            int(getattr(row, "user_broker_account_id", 0) or 0)
+        )
+        extend_on = bool(allowed and getattr(row, "auto_renew_enabled", False))
         if not isinstance(hz, dict):
             return {
                 "status": "NONE",
-                "operator_authorization_auto_extend": False,
+                "operator_authorization_auto_extend": extend_on,
             }
         return {
             "status": hz.get("result") or "UNKNOWN",
@@ -1521,7 +1556,7 @@ class LiveUnattendedAuthorizationService:
             "new_authorized_until": hz.get("new_authorized_until"),
             "reason": hz.get("reason"),
             "blockers": hz.get("blockers"),
-            "operator_authorization_auto_extend": False,
+            "operator_authorization_auto_extend": extend_on,
         }
 
     def set_auto_renew_enabled(
@@ -1533,7 +1568,8 @@ class LiveUnattendedAuthorizationService:
     ) -> dict[str, Any]:
         """내부 Lease(Activation/ARM) 자동 갱신 opt-in.
 
-        Operator Authorization Horizon(authorized_until) 자동연장은 지원하지 않는다.
+        UBA1380 allowlist에서는 Operator Authorization Horizon rolling renew도
+        동일 스위치로 제어한다. 그 외 UBA는 내부 lease만.
         """
 
         row = self.get_active(int(user_broker_account_id))
@@ -1547,6 +1583,14 @@ class LiveUnattendedAuthorizationService:
                 "LEASE_NOT_ACTIVE",
                 "Auto-renew can only be set on ACTIVE entry lease",
             )
+        horizon_ok = operator_auth_horizon_auto_extend_allowed(
+            int(user_broker_account_id)
+        )
+        scope = (
+            "INTERNAL_LEASE_AND_OPERATOR_AUTH_HORIZON"
+            if horizon_ok
+            else "INTERNAL_LEASE_ONLY"
+        )
         row.auto_renew_enabled = bool(enabled)
         row.updated_at = _now()
         detail = dict(row.last_renewal_detail or {})
@@ -1554,8 +1598,8 @@ class LiveUnattendedAuthorizationService:
             "enabled": bool(enabled),
             "actor": actor[:100],
             "at": _now().isoformat(),
-            "scope": "INTERNAL_LEASE_ONLY",
-            "operator_authorization_auto_extend": False,
+            "scope": scope,
+            "operator_authorization_auto_extend": bool(horizon_ok and enabled),
         }
         row.last_renewal_detail = detail
         self._session.flush()
@@ -1569,8 +1613,8 @@ class LiveUnattendedAuthorizationService:
             strategy_id=None,
             detail={
                 "enabled": bool(enabled),
-                "scope": "INTERNAL_LEASE_ONLY",
-                "operator_authorization_auto_extend": False,
+                "scope": scope,
+                "operator_authorization_auto_extend": bool(horizon_ok and enabled),
             },
             commit=False,
         )
@@ -1647,21 +1691,23 @@ class LiveUnattendedAuthorizationService:
     def dry_horizon_auto_renew_evaluation(
         self, user_broker_account_id: int
     ) -> dict[str, Any]:
-        """READ-ONLY — Operator Auth Horizon 자동연장 미지원 평가.
+        """READ-ONLY — Operator Auth Horizon renew 가능성 평가.
 
-        would_renew / would_extend_operator_authorization 은 항상 False.
-        auto_renew_enabled 는 내부 lease(Activation/ARM) 갱신 opt-in 의미만.
+        allowlist UBA(1380)만 would_extend 가능. 그 외는 항상 False.
         """
 
         row = self.get_active(int(user_broker_account_id))
         now = _now()
+        horizon_ok = operator_auth_horizon_auto_extend_allowed(
+            int(user_broker_account_id)
+        )
         if row is None:
             return {
                 "ok": False,
                 "reason": "NO_ACTIVE_LEASE",
                 "would_renew": False,
                 "would_extend_operator_authorization": False,
-                "operator_authorization_auto_extend_supported": False,
+                "operator_authorization_auto_extend_supported": horizon_ok,
             }
         until = aware_utc(row.authorized_until)
         remaining = (
@@ -1671,26 +1717,83 @@ class LiveUnattendedAuthorizationService:
         gates = self.evaluate_horizon_auto_renew_gates(int(user_broker_account_id))
         in_margin = remaining > 0 and remaining <= margin
         until_iso = until.isoformat() if until else None
+        auto_on = bool(getattr(row, "auto_renew_enabled", False))
+        if not horizon_ok:
+            return {
+                "authorization_id": int(row.live_unattended_authorization_id),
+                "auto_renew_enabled": auto_on,
+                "lease_auto_renew_enabled": auto_on,
+                "authorized_until": until_iso,
+                "remaining_seconds": remaining,
+                "renew_margin_seconds": margin,
+                "in_renew_margin": in_margin,
+                "authorization_expiring_soon": in_margin,
+                "precheck": gates,
+                "would_renew": False,
+                "would_extend_operator_authorization": False,
+                "operator_authorization_auto_extend": False,
+                "operator_authorization_auto_extend_supported": False,
+                "projected_authorized_until": until_iso,
+                "meaningful_extension": False,
+                "reason": "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED",
+            }
+
+        settings = get_settings()
+        default_h = int(
+            getattr(settings, "live_unattended_default_horizon_hours", 24)
+        )
+        projected = (now + timedelta(hours=default_h)) if until else None
+        min_ext = self._horizon_min_extension_seconds()
+        meaningful = bool(
+            projected is not None
+            and until is not None
+            and projected > until + timedelta(seconds=min_ext)
+        )
+        would = bool(
+            auto_on
+            and in_margin
+            and gates.get("ok")
+            and meaningful
+            and self._authorization_mode(row) != MODE_MARKET_HOURS
+        )
+        reason = "ELIGIBLE" if would else (
+            "AUTO_RENEW_OFF"
+            if not auto_on
+            else (
+                "NOT_IN_RENEW_MARGIN"
+                if not in_margin
+                else (
+                    "SAFETY_GATES_FAILED"
+                    if not gates.get("ok")
+                    else (
+                        "NO_MEANINGFUL_EXTENSION"
+                        if not meaningful
+                        else "MARKET_HOURS_NO_HORIZON_ROLL"
+                        if self._authorization_mode(row) == MODE_MARKET_HOURS
+                        else "NOT_ELIGIBLE"
+                    )
+                )
+            )
+        )
         return {
             "authorization_id": int(row.live_unattended_authorization_id),
-            "auto_renew_enabled": bool(getattr(row, "auto_renew_enabled", False)),
-            "lease_auto_renew_enabled": bool(
-                getattr(row, "auto_renew_enabled", False)
-            ),
+            "auto_renew_enabled": auto_on,
+            "lease_auto_renew_enabled": auto_on,
             "authorized_until": until_iso,
             "remaining_seconds": remaining,
             "renew_margin_seconds": margin,
             "in_renew_margin": in_margin,
             "authorization_expiring_soon": in_margin,
             "precheck": gates,
-            # P0.7 — Operator Authorization Horizon 자동연장 금지
-            "would_renew": False,
-            "would_extend_operator_authorization": False,
-            "operator_authorization_auto_extend": False,
-            "operator_authorization_auto_extend_supported": False,
-            "projected_authorized_until": until_iso,
-            "meaningful_extension": False,
-            "reason": "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED",
+            "would_renew": would,
+            "would_extend_operator_authorization": would,
+            "operator_authorization_auto_extend": bool(auto_on),
+            "operator_authorization_auto_extend_supported": True,
+            "projected_authorized_until": (
+                projected.isoformat() if projected is not None else until_iso
+            ),
+            "meaningful_extension": meaningful,
+            "reason": reason,
         }
 
     def _activation_horizon_mismatch_margin_seconds(
@@ -1991,17 +2094,65 @@ class LiveUnattendedAuthorizationService:
         *,
         actor: str,
     ) -> dict[str, Any]:
-        """P0.7 — Operator Authorization Horizon 자동연장 금지.
+        """Operator Authorization Horizon renew.
 
-        expiry-margin 구간에서는 AUTHORIZATION_EXPIRING_SOON 경고만.
-        authorized_until 은 절대 변경하지 않는다.
-        MARKET_HOURS 모드는 당일 close ceiling만 사용 — rolling 연장 금지.
+        UBA1380 allowlist: safety gate PASS 시 +default_h rolling extension.
+        그 외 UBA: P0.7 — AUTHORIZATION_EXPIRING_SOON 경고만 (연장 금지).
+        MARKET_HOURS 모드는 당일 close ceiling만 — rolling 금지.
         """
+
+        uba_id = int(row.user_broker_account_id)
+        horizon_ok = operator_auth_horizon_auto_extend_allowed(uba_id)
 
         if self._authorization_mode(row) == MODE_MARKET_HOURS:
             return {
                 "horizon_renewed": False,
                 "reason": "MARKET_HOURS_NO_HORIZON_ROLL",
+                "operator_authorization_auto_extend": False,
+            }
+
+        if not horizon_ok:
+            now = _now()
+            until = aware_utc(row.authorized_until)
+            if until is None or until <= now:
+                return {
+                    "horizon_renewed": False,
+                    "reason": "HORIZON_EXPIRED",
+                    "operator_authorization_auto_extend": False,
+                }
+            margin = self._horizon_renew_margin_seconds(row)
+            remaining = int((until - now).total_seconds())
+            if remaining > margin:
+                return {
+                    "horizon_renewed": False,
+                    "reason": "NOT_IN_EXPIRY_WARNING_WINDOW",
+                    "remaining_seconds": remaining,
+                    "margin_seconds": margin,
+                    "operator_authorization_auto_extend": False,
+                }
+            warning_emitted = self._maybe_emit_authorization_expiring_soon(
+                row,
+                uba,
+                until=until,
+                remaining=remaining,
+                actor=actor,
+                now=now,
+            )
+            return {
+                "horizon_renewed": False,
+                "reason": "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED",
+                "authorization_expiring_soon": True,
+                "expiring_soon_warning_emitted": warning_emitted,
+                "remaining_seconds": remaining,
+                "authorized_until": until.isoformat(),
+                "operator_authorization_auto_extend": False,
+            }
+
+        # --- UBA1380 continuous renew path (original 24x7) ---
+        if not bool(getattr(row, "auto_renew_enabled", False)):
+            return {
+                "horizon_renewed": False,
+                "reason": "AUTO_RENEW_OFF",
                 "operator_authorization_auto_extend": False,
             }
 
@@ -2011,7 +2162,7 @@ class LiveUnattendedAuthorizationService:
             return {
                 "horizon_renewed": False,
                 "reason": "HORIZON_EXPIRED",
-                "operator_authorization_auto_extend": False,
+                "operator_authorization_auto_extend": True,
             }
 
         margin = self._horizon_renew_margin_seconds(row)
@@ -2019,29 +2170,167 @@ class LiveUnattendedAuthorizationService:
         if remaining > margin:
             return {
                 "horizon_renewed": False,
-                "reason": "NOT_IN_EXPIRY_WARNING_WINDOW",
+                "reason": "NOT_IN_RENEW_MARGIN",
                 "remaining_seconds": remaining,
                 "margin_seconds": margin,
-                "operator_authorization_auto_extend": False,
+                "operator_authorization_auto_extend": True,
             }
 
-        warning_emitted = self._maybe_emit_authorization_expiring_soon(
-            row,
-            uba,
-            until=until,
-            remaining=remaining,
-            actor=actor,
-            now=now,
+        detail_prev = dict(row.last_renewal_detail or {})
+        hz_prev = detail_prev.get("horizon_auto_renew")
+        if isinstance(hz_prev, dict) and hz_prev.get("renewed_at"):
+            try:
+                last_at = datetime.fromisoformat(
+                    str(hz_prev["renewed_at"]).replace("Z", "+00:00")
+                )
+                if last_at.tzinfo is None:
+                    last_at = last_at.replace(tzinfo=timezone.utc)
+                interval = self._horizon_renew_interval_seconds()
+                if (now - last_at.astimezone(timezone.utc)).total_seconds() < interval:
+                    return {
+                        "horizon_renewed": False,
+                        "reason": "RENEW_INTERVAL_NOT_ELAPSED",
+                        "operator_authorization_auto_extend": True,
+                    }
+            except Exception:  # noqa: BLE001
+                pass
+
+        settings = get_settings()
+        default_h = int(
+            getattr(settings, "live_unattended_default_horizon_hours", 24)
         )
-        return {
-            "horizon_renewed": False,
-            "reason": "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED",
-            "authorization_expiring_soon": True,
-            "expiring_soon_warning_emitted": warning_emitted,
-            "remaining_seconds": remaining,
-            "authorized_until": until.isoformat(),
-            "operator_authorization_auto_extend": False,
-        }
+        new_until = now + timedelta(hours=default_h)
+        min_ext = self._horizon_min_extension_seconds()
+        if new_until <= until + timedelta(seconds=min_ext):
+            return {
+                "horizon_renewed": False,
+                "reason": "NO_MEANINGFUL_EXTENSION",
+                "extension_seconds": int((new_until - until).total_seconds()),
+                "operator_authorization_auto_extend": True,
+            }
+
+        gates = self.evaluate_horizon_auto_renew_gates(uba_id)
+        if not gates.get("ok"):
+            self._maybe_emit_horizon_renew_failure_telegram(
+                row,
+                blockers=list(gates.get("blockers") or []),
+                until=until,
+            )
+            hz_fail = {
+                "result": "BLOCKED",
+                "attempted_at": now.isoformat(),
+                "blockers": list(gates.get("blockers") or []),
+                "old_authorized_until": until.isoformat(),
+                "operator_authorization_auto_extend": True,
+            }
+            detail_prev["horizon_auto_renew"] = hz_fail
+            row.last_renewal_detail = detail_prev
+            row.updated_at = now
+            self._session.flush()
+            return {
+                "horizon_renewed": False,
+                "reason": "SAFETY_GATES_FAILED",
+                "blockers": gates.get("blockers"),
+                "operator_authorization_auto_extend": True,
+            }
+
+        lock = _horizon_renew_lock(uba_id)
+        if not lock.acquire(blocking=False):
+            return {
+                "horizon_renewed": False,
+                "reason": "RENEW_IN_FLIGHT",
+                "operator_authorization_auto_extend": True,
+            }
+
+        try:
+            old_until = until
+            row.authorized_until = new_until
+            row.last_renewed_at = now
+            row.last_renewal_actor = actor[:100]
+            hz_ok = {
+                "result": "SUCCESS",
+                "renewed_at": now.isoformat(),
+                "actor": actor,
+                "previous_authorization_id": int(
+                    row.live_unattended_authorization_id
+                ),
+                "old_authorized_until": old_until.isoformat(),
+                "new_authorized_until": new_until.isoformat(),
+                "extension_hours": default_h,
+                "precheck": gates,
+                "operator_authorization_auto_extend": True,
+                "scope": "UBA1380_24X7_CONTINUOUS",
+            }
+            activation_refresh = self._sync_activation_with_horizon_renew(
+                row,
+                uba,
+                new_until=new_until,
+                actor=actor,
+                now=now,
+            )
+            hz_ok["activation_refresh"] = activation_refresh
+            self._record_activation_refresh_observability(
+                row, activation_refresh
+            )
+
+            if activation_refresh.get("required") and not activation_refresh.get(
+                "ok"
+            ):
+                # 부분 성공 금지 — horizon 연장 롤백
+                row.authorized_until = old_until
+                hz_ok["result"] = "ACTIVATION_REFRESH_FAILED"
+                hz_ok["activation_refresh_failed"] = True
+                detail_prev["horizon_auto_renew"] = hz_ok
+                row.last_renewal_detail = detail_prev
+                row.updated_at = _now()
+                self._session.flush()
+                emit_live_safety_audit(
+                    self._session,
+                    event_type="UNATTENDED_HORIZON_AUTO_RENEW_FAILED",
+                    actor=actor,
+                    run_id=None,
+                    user_id=int(uba.user_id),
+                    account_id=uba_id,
+                    strategy_id=None,
+                    detail=hz_ok,
+                    commit=False,
+                )
+                return {
+                    "horizon_renewed": False,
+                    "reason": "ACTIVATION_REFRESH_FAILED",
+                    "activation_refresh": activation_refresh,
+                    "detail": hz_ok,
+                    "operator_authorization_auto_extend": True,
+                }
+
+            detail_prev["horizon_auto_renew"] = hz_ok
+            row.last_renewal_detail = detail_prev
+            row.updated_at = now
+            self._session.flush()
+            emit_live_safety_audit(
+                self._session,
+                event_type="UNATTENDED_HORIZON_AUTO_RENEWED",
+                actor=actor,
+                run_id=None,
+                user_id=int(uba.user_id),
+                account_id=uba_id,
+                strategy_id=None,
+                detail=hz_ok,
+                commit=False,
+            )
+            self._maybe_emit_horizon_renew_success_telegram(
+                row, old_until=old_until, new_until=new_until
+            )
+            return {
+                "horizon_renewed": True,
+                "old_authorized_until": old_until.isoformat(),
+                "new_authorized_until": new_until.isoformat(),
+                "detail": hz_ok,
+                "activation_refresh": activation_refresh,
+                "operator_authorization_auto_extend": True,
+            }
+        finally:
+            lock.release()
 
     def _maybe_emit_horizon_renew_success_telegram(
         self,

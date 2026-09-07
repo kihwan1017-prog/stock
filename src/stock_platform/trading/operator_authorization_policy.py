@@ -107,12 +107,22 @@ def build_operator_authorization_view(
         "lease_auto_renew_enabled": bool(
             u.get("lease_auto_renew_enabled", u.get("auto_renew_enabled"))
         ),
-        "operator_authorization_auto_extend": False,
-        "operator_authorization_auto_extend_supported": False,
+        "operator_authorization_auto_extend": bool(
+            u.get("operator_authorization_auto_extend")
+        ),
+        "operator_authorization_auto_extend_supported": bool(
+            u.get("operator_authorization_auto_extend_supported")
+        ),
         "renewal_status": (
-            "LEASE_AUTO_RENEW_ON"
-            if active and bool(u.get("auto_renew_enabled"))
-            else ("ACTIVE_MANUAL" if active else "OFF")
+            "AUTH_AND_LEASE_AUTO_RENEW_ON"
+            if active
+            and bool(u.get("auto_renew_enabled"))
+            and bool(u.get("operator_authorization_auto_extend_supported"))
+            else (
+                "LEASE_AUTO_RENEW_ON"
+                if active and bool(u.get("auto_renew_enabled"))
+                else ("ACTIVE_MANUAL" if active else "OFF")
+            )
         ),
         "next_authorization_expiry_warning_at": u.get(
             "next_authorization_expiry_warning_at"

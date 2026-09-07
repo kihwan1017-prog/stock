@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * 내부 Lease 자동 갱신 패널 (P0.7).
- * Operator Authorization Horizon 자동연장은 지원하지 않는다.
+ * 운영 승인 / 내부 Lease 자동갱신 패널.
+ * UBA1380: Operator Authorization Horizon rolling renew 지원(API flag).
+ * 그 외 UBA: 내부 Lease만 (finite horizon).
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -39,7 +40,7 @@ function formatIsoLocal(iso: string | null | undefined): string {
 
 function renewStatusTag(status: string | null | undefined) {
   const s = String(status ?? "").toUpperCase();
-  if (s === "SUCCESS") return <Tag color="green">성공(레거시)</Tag>;
+  if (s === "SUCCESS") return <Tag color="green">성공</Tag>;
   if (s === "DENIED") return <Tag color="default">승인연장 거부</Tag>;
   if (s === "BLOCKED") return <Tag color="red">차단</Tag>;
   if (s === "NONE" || !s) return <Tag>—</Tag>;
@@ -67,6 +68,10 @@ export function UpbitUnattendedAutoRenewPanel({
     Boolean(opsSnap?.unattendedEnabled) &&
     String(opsSnap?.unattendedStatusCode ?? "").toUpperCase() === "ACTIVE";
   const authExpiringSoon = Boolean(unattended.authorization_expiring_soon);
+  const authExtendSupported = Boolean(
+    unattended.operator_authorization_auto_extend_supported,
+  );
+  const authExtendOn = Boolean(unattended.operator_authorization_auto_extend);
 
   const previewQ = useQuery({
     queryKey: ["admin", "uba-horizon-auto-renew-preview", ubaId],
@@ -82,8 +87,10 @@ export function UpbitUnattendedAutoRenewPanel({
     onSuccess: async (_data, enabled) => {
       message.success(
         enabled
-          ? "내부 Lease 자동갱신이 켜졌습니다 (승인 Horizon 연장 아님)"
-          : "내부 Lease 자동갱신이 꺼졌습니다",
+          ? authExtendSupported
+            ? "자동갱신 ON (내부 Lease + 승인 Horizon)"
+            : "내부 Lease 자동갱신이 켜졌습니다 (승인 Horizon 연장 아님)"
+          : "자동갱신이 꺼졌습니다",
       );
       await Promise.all([
         queryClient.invalidateQueries({
@@ -114,9 +121,9 @@ export function UpbitUnattendedAutoRenewPanel({
     <Card size="small" title="운영 승인 / 내부 Lease 자동갱신">
       <Space orientation="vertical" size={12} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          운영 승인(Operator Authorization)은 유한 Horizon이며 시스템이 자동으로
-          연장하지 않습니다. 아래 스위치는 Activation/ARM 등 내부 Lease만
-          갱신하며, 승인 만료시각을 넘지 않습니다.
+          {authExtendSupported
+            ? "UBA1380 24x7 정책: 안전 gate PASS 시 시스템이 승인 Horizon을 rolling 연장할 수 있습니다. 스위치는 Activation/ARM lease와 승인 Horizon을 함께 제어합니다."
+            : "운영 승인(Operator Authorization)은 유한 Horizon이며 시스템이 자동으로 연장하지 않습니다. 아래 스위치는 Activation/ARM 등 내부 Lease만 갱신하며, 승인 만료시각을 넘지 않습니다."}
         </Typography.Paragraph>
 
         {!active ? (
@@ -124,16 +131,25 @@ export function UpbitUnattendedAutoRenewPanel({
             type="info"
             showIcon
             title="ACTIVE 운영 승인 lease 필요"
-            description="내부 Lease 자동갱신은 활성 무인운영에서만 설정할 수 있습니다."
+            description="자동갱신은 활성 무인운영에서만 설정할 수 있습니다."
           />
         ) : null}
 
-        {authExpiringSoon ? (
+        {authExpiringSoon && !authExtendOn ? (
           <Alert
             type="warning"
             showIcon
             title="재승인 필요 (만료 임박)"
-            description="승인 Horizon 자동연장은 없습니다. 만료 전 명시적 재승인이 필요합니다."
+            description="승인 Horizon 자동연장이 꺼져 있습니다. 만료 전 명시적 재승인이 필요합니다."
+          />
+        ) : null}
+
+        {authExpiringSoon && authExtendOn ? (
+          <Alert
+            type="info"
+            showIcon
+            title="승인 Horizon 자동연장 대기"
+            description="만료 임박 구간입니다. 안전 gate PASS 시 시스템이 Horizon을 연장합니다."
           />
         ) : null}
 
@@ -147,7 +163,13 @@ export function UpbitUnattendedAutoRenewPanel({
               : null}
           </Descriptions.Item>
           <Descriptions.Item label="승인 자동연장">
-            <Tag>OFF / 지원 안 함</Tag>
+            {authExtendSupported ? (
+              <Tag color={authExtendOn ? "green" : "default"}>
+                {authExtendOn ? "ON (안전 gate)" : "OFF"}
+              </Tag>
+            ) : (
+              <Tag>OFF / 지원 안 함</Tag>
+            )}
           </Descriptions.Item>
           <Descriptions.Item label="내부 Lease 자동갱신">
             <Space>
@@ -170,7 +192,9 @@ export function UpbitUnattendedAutoRenewPanel({
                   : null),
             )}
           </Descriptions.Item>
-          <Descriptions.Item label="만료 임박 경고 시각">
+          <Descriptions.Item
+            label={authExtendOn ? "다음 Horizon 갱신 후보" : "만료 임박 경고 시각"}
+          >
             {formatIsoLocal(
               opsSnap?.nextHorizonRenewCheckAt ??
                 (unattended.next_authorization_expiry_warning_at != null
@@ -215,7 +239,11 @@ export function UpbitUnattendedAutoRenewPanel({
           <Alert
             type="info"
             showIcon
-            title="Dry 평가 (READ-ONLY) — 승인 자동연장 미지원"
+            title={
+              authExtendSupported
+                ? "Dry 평가 (READ-ONLY) — 승인 Horizon renew"
+                : "Dry 평가 (READ-ONLY) — 승인 자동연장 미지원"
+            }
             description={
               <Space orientation="vertical" size={4}>
                 <Typography.Text>
@@ -228,16 +256,18 @@ export function UpbitUnattendedAutoRenewPanel({
                     )}
                   </Typography.Text>
                   {preview.authorized_until
-                    ? ` · 승인 만료 유지 ${formatIsoLocal(String(preview.authorized_until))}`
+                    ? ` · 현재 만료 ${formatIsoLocal(String(preview.authorized_until))}`
                     : null}
                 </Typography.Text>
                 {precheckBlockers.length ? (
                   <Typography.Text type="warning">
-                    lease precheck blockers: {precheckBlockers.join(", ")}
+                    precheck blockers: {precheckBlockers.join(", ")}
                   </Typography.Text>
                 ) : (
                   <Typography.Text type="secondary">
-                    lease precheck: PASS (Auth Horizon은 연장되지 않음)
+                    {authExtendSupported
+                      ? "precheck: PASS (gate 통과 시 Horizon 연장 가능)"
+                      : "lease precheck: PASS (Auth Horizon은 연장되지 않음)"}
                   </Typography.Text>
                 )}
               </Space>
