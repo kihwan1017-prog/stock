@@ -65,7 +65,11 @@ def load_strategy_owned_open_quantity(
     symbol: str,
     broker_code: str | None = None,
 ) -> Decimal:
-    """OPEN STRATEGY_OWNED binding owned_quantity 합 — MANUAL/UNKNOWN 제외."""
+    """OPEN/PARTIAL_EXIT STRATEGY_OWNED owned_quantity 합 — MANUAL/UNKNOWN 제외."""
+
+    from stock_platform.risk_engine.strategy_owned_entities import (
+        BINDING_STATUS_PARTIAL_EXIT,
+    )
 
     sym = str(symbol or "").strip().upper()
     if not sym or not user_broker_account_id:
@@ -74,7 +78,9 @@ def load_strategy_owned_open_quantity(
         StrategyPositionBindingEntity.user_broker_account_id
         == int(user_broker_account_id),
         StrategyPositionBindingEntity.symbol == sym,
-        StrategyPositionBindingEntity.status == BINDING_STATUS_OPEN,
+        StrategyPositionBindingEntity.status.in_(
+            (BINDING_STATUS_OPEN, BINDING_STATUS_PARTIAL_EXIT)
+        ),
         StrategyPositionBindingEntity.ownership_code == OWNERSHIP_STRATEGY,
         StrategyPositionBindingEntity.owned_quantity > ZERO,
     )

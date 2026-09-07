@@ -704,37 +704,86 @@ def _reconcile_one_slot(
         except Exception:  # noqa: BLE001
             pass
 
-    # FILLED SELL → CLOSED / slot release
+    # FILLED SELL → CLOSED / slot release (잔량 invariant 필수)
     if exit_sell is not None and _is_filled(exit_sell):
         if str(slot.status) in {SLOT_OPEN, SLOT_EXIT_PENDING, SLOT_ENTRY_PENDING}:
-            closed = fm.mark_position_closed(
-                int(slot.user_broker_account_id), symbol=sym
-            )
-            if closed.get("ok"):
-                changes.append("POSITION_CLOSED")
-                # WRK-014: full fill → COMPLETED
-                try:
-                    from stock_platform.operation.upbit_exit_intent.hooks import (
-                        on_exit_sell_full_fill,
-                    )
+            from decimal import Decimal as _Dec
 
-                    on_exit_sell_full_fill(
-                        user_broker_account_id=int(
-                            slot.user_broker_account_id
-                        ),
-                        symbol=sym,
+            from stock_platform.risk_engine.exit_sell_quantity import (
+                load_strategy_owned_open_quantity,
+            )
+            from stock_platform.risk_engine.position_close_integrity import (
+                classify_residual_for_close,
+                qty_is_flat,
+            )
+
+            owned_rem = load_strategy_owned_open_quantity(
+                session,
+                user_broker_account_id=int(slot.user_broker_account_id),
+                symbol=sym,
+                broker_code="UPBIT",
+            )
+            sell_px = None
+            try:
+                avg = getattr(exit_sell, "average_fill_price", None)
+                if avg is not None:
+                    sell_px = _Dec(str(avg))
+            except Exception:  # noqa: BLE001
+                sell_px = None
+            verdict = classify_residual_for_close(
+                owned_rem, mark_price=sell_px
+            )
+            if verdict.decision == "KEEP_PARTIAL_EXIT" and not qty_is_flat(
+                owned_rem
+            ):
+                # 매도가능 residual → slot/portfolio CLOSED 금지
+                if str(slot.status) != SLOT_EXIT_PENDING:
+                    slot.status = SLOT_EXIT_PENDING
+                    slot.version = int(slot.version or 1) + 1
+                changes.append("PARTIAL_EXIT_KEEP_OPEN")
+                logger.info(
+                    "portfolio_close_blocked_sellable_residual",
+                    uba=int(slot.user_broker_account_id),
+                    symbol=sym,
+                    owned_remaining=str(owned_rem),
+                    verdict=verdict.to_dict(),
+                    exit_order_id=int(exit_sell.order_id),
+                )
+            else:
+                closed = fm.mark_position_closed(
+                    int(slot.user_broker_account_id), symbol=sym
+                )
+                if closed.get("ok"):
+                    changes.append("POSITION_CLOSED")
+                    # WRK-014: full fill → COMPLETED
+                    try:
+                        from stock_platform.operation.upbit_exit_intent.hooks import (
+                            on_exit_sell_full_fill,
+                        )
+
+                        on_exit_sell_full_fill(
+                            user_broker_account_id=int(
+                                slot.user_broker_account_id
+                            ),
+                            symbol=sym,
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    # mark_position_closed → COOLDOWN; entry_order_id는 cooldown tick에서 정리
+                    refreshed = session.get(
+                        UpbitPositionSlotEntity, int(slot.slot_id)
                     )
-                except Exception:  # noqa: BLE001
-                    pass
-                # mark_position_closed → COOLDOWN; entry_order_id는 cooldown tick에서 정리
-                refreshed = session.get(UpbitPositionSlotEntity, int(slot.slot_id))
-                if refreshed is not None:
-                    refreshed.entry_order_id = eid if (eid := entry_order_id) else refreshed.entry_order_id
-                    meta_exit = int(exit_sell.order_id)
-                    if binding is not None:
-                        bmeta = dict(binding.meta_json or {})
-                        bmeta["exit_order_id"] = meta_exit
-                        binding.meta_json = bmeta
+                    if refreshed is not None:
+                        refreshed.entry_order_id = (
+                            eid if (eid := entry_order_id) else refreshed.entry_order_id
+                        )
+                        meta_exit = int(exit_sell.order_id)
+                        if binding is not None:
+                            bmeta = dict(binding.meta_json or {})
+                            bmeta["exit_order_id"] = meta_exit
+                            if verdict.decision == "CLOSE_AS_AUTO_DUST":
+                                bmeta["portfolio_close_dust"] = verdict.to_dict()
+                            binding.meta_json = bmeta
 
     if not changes:
         return None

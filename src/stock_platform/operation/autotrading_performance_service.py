@@ -17,6 +17,7 @@ from stock_platform.order.entities import TradingOrderEntity
 from stock_platform.risk_engine.strategy_owned_entities import (
     BINDING_STATUS_CLOSED,
     BINDING_STATUS_OPEN,
+    BINDING_STATUS_PARTIAL_EXIT,
     OWNERSHIP_STRATEGY,
     StrategyPositionBindingEntity,
 )
@@ -378,10 +379,46 @@ class AutotradingPerformanceService:
             self.session.scalars(
                 select(StrategyPositionBindingEntity).where(
                     *base_filters,
-                    StrategyPositionBindingEntity.status == BINDING_STATUS_OPEN,
+                    StrategyPositionBindingEntity.status.in_(
+                        (BINDING_STATUS_OPEN, BINDING_STATUS_PARTIAL_EXIT)
+                    ),
                 )
             )
         )
+
+        # PnL integrity warning — 동일 exit_order_id 다중 CLOSED binding
+        from collections import Counter
+
+        exit_oid_counts: Counter[int] = Counter()
+        sell_gt_buy = 0
+        for b in closed_rows:
+            meta = dict(b.meta_json or {})
+            eid = meta.get("exit_order_id")
+            if eid is not None:
+                try:
+                    exit_oid_counts[int(eid)] += 1
+                except (TypeError, ValueError):
+                    pass
+            try:
+                cq = Decimal(str(meta.get("closed_quantity") or 0))
+                # sell_gt_buy는 entry/exit order 조회 비용이 커서 closed_quantity vs
+                # entry fill은 별도 audit helper에서 전수. 여기서는 dup exit만.
+                del cq
+            except Exception:  # noqa: BLE001
+                pass
+        dup_exit = sum(1 for _oid, n in exit_oid_counts.items() if n > 1)
+        pnl_integrity = {
+            "PNL_INTEGRITY_WARNING": dup_exit > 0,
+            "DUPLICATE_EXIT_ORDER_BINDING_COUNT": dup_exit,
+            "DATA_QUALITY_WARNING": dup_exit > 0,
+            "note": (
+                "동일 exit_order_id가 복수 CLOSED binding에 연결되면 "
+                "과거 sell_amt-buy_amt 재계산이 PnL을 과대계상할 수 있음. "
+                "신규 코드는 allocated closed_qty 비율 사용."
+                if dup_exit > 0
+                else None
+            ),
+        }
 
         exit_ids: set[int] = set()
         entry_ids: set[int] = set()
@@ -585,6 +622,8 @@ class AutotradingPerformanceService:
             "fee_incomplete_display_note_ko": fee_flags[
                 "fee_incomplete_display_note_ko"
             ],
+            "pnl_integrity": pnl_integrity,
+            "DATA_QUALITY_WARNING": bool(pnl_integrity.get("DATA_QUALITY_WARNING")),
         }
 
     def build_symbol_detail(

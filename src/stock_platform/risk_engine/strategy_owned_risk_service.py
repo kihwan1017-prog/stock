@@ -12,9 +12,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from stock_platform.order.entities import TradingOrderEntity
+from stock_platform.risk_engine.position_close_integrity import (
+    append_exit_allocation,
+    allocated_qty_for_exit_order,
+    build_auto_dust_record,
+    classify_residual_for_close,
+    incremental_exit_qty,
+    qty_is_flat,
+    QTY_EPS,
+)
 from stock_platform.risk_engine.strategy_owned_entities import (
     BINDING_STATUS_CLOSED,
     BINDING_STATUS_OPEN,
+    BINDING_STATUS_PARTIAL_EXIT,
     OWNERSHIP_MANUAL,
     OWNERSHIP_STRATEGY,
     OWNERSHIP_UNKNOWN,
@@ -116,8 +126,9 @@ class StrategyOwnedRiskService:
                     StrategyPositionBindingEntity.user_broker_account_id
                     == uba,
                     StrategyPositionBindingEntity.broker_code == broker,
-                    StrategyPositionBindingEntity.status
-                    == BINDING_STATUS_OPEN,
+                    StrategyPositionBindingEntity.status.in_(
+                        (BINDING_STATUS_OPEN, BINDING_STATUS_PARTIAL_EXIT)
+                    ),
                 )
             )
         )
@@ -262,9 +273,9 @@ class StrategyOwnedRiskService:
             return row
 
         if side_u == "SELL":
-            # 동일 exit_order 재동기화 멱등 — 이미 CLOSED면 재차감/재수수료 금지
+            # 동일 exit_order 전량 반영 멱등 (CLOSED 포함 스캔)
             if exit_order_id is not None:
-                prior = list(
+                prior_all = list(
                     self._session.scalars(
                         select(StrategyPositionBindingEntity).where(
                             StrategyPositionBindingEntity.user_broker_account_id
@@ -275,11 +286,19 @@ class StrategyOwnedRiskService:
                         )
                     )
                 )
-                for cand in prior:
+                for cand in prior_all:
+                    if not isinstance(cand, StrategyPositionBindingEntity):
+                        continue
                     meta_c = dict(cand.meta_json or {})
                     if int(meta_c.get("exit_order_id") or 0) == int(exit_order_id):
                         return cand
+                    allocated = allocated_qty_for_exit_order(
+                        meta_c, exit_order_id=int(exit_order_id)
+                    )
+                    if allocated + QTY_EPS >= qty and allocated > ZERO:
+                        return cand
 
+            # OPEN + PARTIAL_EXIT lot만 차감 (CLOSED 제외)
             opens = list(
                 self._session.scalars(
                     select(StrategyPositionBindingEntity)
@@ -289,30 +308,50 @@ class StrategyOwnedRiskService:
                         StrategyPositionBindingEntity.broker_code == broker,
                         StrategyPositionBindingEntity.strategy_id == sid,
                         StrategyPositionBindingEntity.symbol == sym,
-                        StrategyPositionBindingEntity.status
-                        == BINDING_STATUS_OPEN,
+                        StrategyPositionBindingEntity.status.in_(
+                            (
+                                BINDING_STATUS_OPEN,
+                                BINDING_STATUS_PARTIAL_EXIT,
+                            )
+                        ),
                     )
                     .order_by(StrategyPositionBindingEntity.opened_at.asc())
                 )
             )
+            opens = [
+                r
+                for r in opens
+                if isinstance(r, StrategyPositionBindingEntity)
+                and Decimal(str(r.owned_quantity or 0)) > ZERO
+            ]
             remain = qty
+            # cumulative fill → 증분만 배분 (부분체결 재동기화 이중차감 방지)
+            if exit_order_id is not None:
+                already_all = ZERO
+                for cand in opens:
+                    already_all += allocated_qty_for_exit_order(
+                        dict(cand.meta_json or {}),
+                        exit_order_id=int(exit_order_id),
+                    )
+                remain = incremental_exit_qty(
+                    cumulative_fill_qty=qty,
+                    already_allocated_on_binding=already_all,
+                )
+                if remain <= ZERO:
+                    return opens[0] if opens else None
+
             last: StrategyPositionBindingEntity | None = None
             sell_px = (
                 Decimal(str(fill_price)) if fill_price is not None else None
             )
             close_ts = filled_at or datetime.now(timezone.utc)
+            alloc_budget = remain
             for row in opens:
                 if remain <= ZERO:
                     break
                 owned = Decimal(str(row.owned_quantity or 0))
-                # BUY fill 재동기화 인플레 self-heal — entry order filled qty가 SoT
-                entry_oid = getattr(row, "entry_order_id", None)
-                if entry_oid is not None:
+                if getattr(row, "entry_order_id", None) is not None:
                     try:
-                        from stock_platform.order.entities import (
-                            TradingOrderEntity,
-                        )
-
                         buy = self._session.get(
                             TradingOrderEntity, int(row.entry_order_id)
                         )
@@ -324,45 +363,48 @@ class StrategyOwnedRiskService:
                     except Exception:  # noqa: BLE001
                         pass
                 take = min(owned, remain)
+                if take <= ZERO:
+                    continue
                 entry = Decimal(str(row.entry_price or 0))
                 row.owned_quantity = owned - take
                 fee_add = Decimal(str(fees or 0))
-                # 이미 동일 lot PnL이 반영된 OPEN 잔존(인플레 버그 잔여) 시 재가산 금지
                 lot_pnl = ZERO
                 if sell_px is not None and entry > ZERO and take > ZERO:
                     lot_pnl = (sell_px - entry) * take
                 current_pnl = Decimal(str(row.realized_pnl or 0))
-                full_lot_close = take > ZERO and take == owned
-                # 손익 모두 stamp — 이전 `lot_pnl > ZERO`만 반영하면 손실 RT의
-                # realized_pnl=0 → 성과 매수/매도금액 0원 오표시
-                already_stamped = (
-                    full_lot_close
-                    and lot_pnl != ZERO
-                    and abs(current_pnl - lot_pnl) <= Decimal("0.05")
-                )
-                if lot_pnl != ZERO and not already_stamped:
+                if lot_pnl != ZERO:
                     row.realized_pnl = current_pnl + lot_pnl
-                if fee_add > ZERO and not already_stamped:
-                    row.fees = Decimal(str(row.fees or 0)) + fee_add
-                if row.owned_quantity <= ZERO:
+                if fee_add > ZERO:
+                    share = (
+                        take / alloc_budget if alloc_budget > ZERO else ZERO
+                    )
+                    row.fees = Decimal(str(row.fees or 0)) + (
+                        fee_add * share
+                    ).quantize(QUANT)
+
+                meta = dict(row.meta_json or {})
+                if exit_order_id is not None:
+                    meta = append_exit_allocation(
+                        meta,
+                        exit_order_id=int(exit_order_id),
+                        qty=take,
+                        fill_price=sell_px,
+                    )
+
+                remaining_after = Decimal(str(row.owned_quantity or 0))
+                if qty_is_flat(remaining_after):
                     row.owned_quantity = ZERO
                     row.status = BINDING_STATUS_CLOSED
                     row.closed_at = close_ts
-                    meta = dict(row.meta_json or {})
                     if exit_order_id is not None:
                         meta["exit_order_id"] = int(exit_order_id)
                     if sell_px is not None:
                         meta["exit_fill_price"] = str(sell_px)
-                    # 성과 집계용 — CLOSED 후 owned_quantity=0이므로 수량 보존
-                    if take > ZERO:
-                        meta["closed_quantity"] = str(take)
+                    meta["closed_quantity"] = str(take)
+                    meta.pop("lifecycle_state", None)
+                    meta.pop("auto_dust", None)
                     row.meta_json = meta
-                    # full close 시 fees를 entry+exit order meta로 정규화(가능하면)
                     try:
-                        from stock_platform.order.entities import (
-                            TradingOrderEntity,
-                        )
-
                         buy_fee = ZERO
                         sell_fee = fee_add
                         if row.entry_order_id is not None:
@@ -393,12 +435,10 @@ class StrategyOwnedRiskService:
                                         or 0
                                     )
                                 )
-                        canon_fees = buy_fee + sell_fee
                         if buy_fee > ZERO and sell_fee > ZERO:
-                            row.fees = canon_fees
+                            row.fees = buy_fee + sell_fee
                     except Exception:  # noqa: BLE001
                         pass
-                    # portfolio UpbitStrategyPositionBinding도 동기 CLOSED
                     if broker == "UPBIT":
                         try:
                             from stock_platform.operation.upbit_full_market.service import (
@@ -407,17 +447,62 @@ class StrategyOwnedRiskService:
 
                             UpbitFullMarketAssignmentService(
                                 self._session
-                            ).mark_position_closed(
-                                uba, symbol=sym
-                            )
+                            ).mark_position_closed(uba, symbol=sym)
                         except Exception:  # noqa: BLE001
                             pass
+                else:
+                    verdict = classify_residual_for_close(
+                        remaining_after, mark_price=sell_px or entry
+                    )
+                    if verdict.decision == "CLOSE_AS_AUTO_DUST":
+                        dust = build_auto_dust_record(
+                            qty=remaining_after,
+                            estimated_value_krw=verdict.estimated_value_krw,
+                            reason=verdict.reason,
+                            exit_order_id=exit_order_id,
+                            symbol=sym,
+                            binding_id=getattr(row, "binding_id", None),
+                        )
+                        meta["auto_dust"] = dust
+                        meta["lifecycle_state"] = "AUTO_DUST"
+                        meta["closed_quantity"] = str(take)
+                        if exit_order_id is not None:
+                            meta["exit_order_id"] = int(exit_order_id)
+                        if sell_px is not None:
+                            meta["exit_fill_price"] = str(sell_px)
+                        row.owned_quantity = ZERO
+                        row.status = BINDING_STATUS_CLOSED
+                        row.closed_at = close_ts
+                        row.meta_json = meta
+                        if broker == "UPBIT":
+                            try:
+                                from stock_platform.operation.upbit_full_market.service import (
+                                    UpbitFullMarketAssignmentService,
+                                )
+
+                                UpbitFullMarketAssignmentService(
+                                    self._session
+                                ).mark_position_closed(uba, symbol=sym)
+                            except Exception:  # noqa: BLE001
+                                pass
+                    else:
+                        # 매도가능 residual → CLOSED 금지
+                        row.status = BINDING_STATUS_PARTIAL_EXIT
+                        meta["lifecycle_state"] = "PARTIAL_EXIT"
+                        meta["partial_exit_verdict"] = verdict.to_dict()
+                        meta["last_partial_exit_order_id"] = (
+                            int(exit_order_id)
+                            if exit_order_id is not None
+                            else None
+                        )
+                        meta.pop("exit_order_id", None)
+                        row.closed_at = None
+                        row.meta_json = meta
                 remain -= take
                 last = row
             self._session.flush()
             return last
 
-        return None
 
     def compute_and_persist(
         self,
@@ -482,7 +567,9 @@ class StrategyOwnedRiskService:
                     StrategyPositionBindingEntity.user_broker_account_id == uba,
                     StrategyPositionBindingEntity.broker_code == broker,
                     StrategyPositionBindingEntity.strategy_id == sid,
-                    StrategyPositionBindingEntity.status == BINDING_STATUS_OPEN,
+                    StrategyPositionBindingEntity.status.in_(
+                        (BINDING_STATUS_OPEN, BINDING_STATUS_PARTIAL_EXIT)
+                    ),
                 )
             )
         )

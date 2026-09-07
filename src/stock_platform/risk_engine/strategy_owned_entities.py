@@ -26,9 +26,12 @@ from stock_platform.database.base import Base
 
 BINDING_STATUS_OPEN = "OPEN"
 BINDING_STATUS_CLOSED = "CLOSED"
+# Partial exit 후 매도가능 잔량 유지 — CLOSED 금지 invariant
+BINDING_STATUS_PARTIAL_EXIT = "PARTIAL_EXIT"
 OWNERSHIP_STRATEGY = "STRATEGY_OWNED"
 OWNERSHIP_MANUAL = "MANUAL"
 OWNERSHIP_UNKNOWN = "UNKNOWN"
+OWNERSHIP_AUTO_DUST = "AUTO_DUST"
 
 
 class StrategyPositionBindingEntity(Base):
