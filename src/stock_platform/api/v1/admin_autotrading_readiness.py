@@ -456,7 +456,10 @@ def admin_uba_unattended_auto_renew_toggle(
     session: Session = Depends(get_db_session),
     user: AuthenticatedUser = Depends(require_admin),
 ):
-    """24H lease ìë ê°±ì  opt-in/out â ACTIVE lease íì."""
+    """내부 Lease(Activation/ARM) 자동 갱신 opt-in/out — ACTIVE lease 필수.
+
+    Operator Authorization Horizon(authorized_until) 자동연장은 지원하지 않는다.
+    """
 
     from stock_platform.trading.live_unattended_authorization_service import (
         LiveUnattendedAuthorizationService,
@@ -482,7 +485,7 @@ def admin_uba_unattended_horizon_auto_renew_preview(
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
 ):
-    """READ-ONLY dry evaluation â would_renew / projected expiry."""
+    """READ-ONLY — Operator Auth 자동연장 미지원 확인 + 만료 임박 여부."""
 
     from stock_platform.trading.live_unattended_authorization_service import (
         LiveUnattendedAuthorizationService,

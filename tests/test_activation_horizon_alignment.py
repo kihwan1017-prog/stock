@@ -219,44 +219,10 @@ def test_sync_activation_fails_without_active_activation() -> None:
     create_mock.assert_not_called()
 
 
-# --- A + K: horizon renew refreshes activation; partial failure rolls back ---
+# --- P0.7: horizon path never extends Operator Authorization ---
 
 
-def test_horizon_renew_success_refreshes_active_activation() -> None:
-    session = MagicMock()
-    now = _now()
-    row = _row(authorized_until=now + timedelta(minutes=20))
-    uba = _uba()
-    svc = LiveUnattendedAuthorizationService(session)
-    successor = _activation(activation_id=121, expires_at=now + timedelta(hours=8))
-    with (
-        patch(
-            "stock_platform.trading.live_unattended_authorization_service._now",
-            return_value=now,
-        ),
-        patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value={"ok": True, "blockers": [], "checks": {}}),
-        patch.object(
-            svc,
-            "_sync_activation_with_horizon_renew",
-            return_value={
-                "required": True,
-                "ok": True,
-                "refreshed": True,
-                "successor_activation_id": 121,
-                "activation_expires_at": successor.expires_at.isoformat(),
-            },
-        ),
-        patch.object(svc, "_maybe_emit_horizon_renew_success_telegram"),
-        patch(
-            "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
-        ),
-    ):
-        out = svc._try_horizon_auto_renew(row, uba, actor=ACTOR_HORIZON_AUTO_RENEW)
-    assert out["horizon_renewed"] is True
-    assert out["activation_refresh"]["refreshed"] is True
-
-
-def test_horizon_renew_rolls_back_when_activation_refresh_fails() -> None:
+def test_horizon_path_never_extends_authorized_until() -> None:
     session = MagicMock()
     now = _now()
     old_until = now + timedelta(minutes=20)
@@ -268,24 +234,33 @@ def test_horizon_renew_rolls_back_when_activation_refresh_fails() -> None:
             "stock_platform.trading.live_unattended_authorization_service._now",
             return_value=now,
         ),
-        patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value={"ok": True, "blockers": [], "checks": {}}),
-        patch.object(
-            svc,
-            "_sync_activation_with_horizon_renew",
-            return_value={
-                "required": True,
-                "ok": False,
-                "reason": "ACTIVATION_VALIDATE_FAILED",
-                "refreshed": False,
-            },
-        ),
         patch(
             "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_order_telegram"
         ),
     ):
         out = svc._try_horizon_auto_renew(row, uba, actor=ACTOR_HORIZON_AUTO_RENEW)
     assert out["horizon_renewed"] is False
-    assert out["reason"] == "ACTIVATION_REFRESH_FAILED"
+    assert out["reason"] == "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED"
+    assert row.authorized_until == old_until
+
+
+def test_horizon_path_outside_warning_window_is_noop() -> None:
+    session = MagicMock()
+    now = _now()
+    old_until = now + timedelta(hours=5)
+    row = _row(authorized_until=old_until, auto_renew_enabled=True)
+    uba = _uba()
+    svc = LiveUnattendedAuthorizationService(session)
+    with patch(
+        "stock_platform.trading.live_unattended_authorization_service._now",
+        return_value=now,
+    ):
+        out = svc._try_horizon_auto_renew(row, uba, actor=ACTOR_HORIZON_AUTO_RENEW)
+    assert out["horizon_renewed"] is False
+    assert out["reason"] == "NOT_IN_EXPIRY_WARNING_WINDOW"
     assert row.authorized_until == old_until
 
 

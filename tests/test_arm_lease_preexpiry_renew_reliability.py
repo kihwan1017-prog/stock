@@ -36,6 +36,8 @@ def _lease(*, margin: int = 600, ttl: int = 3600, until_hours: int = 12):
         user_broker_account_id=1380,
         status_code=STATUS_ACTIVE,
         enabled=True,
+        entry_authorized=True,
+        protective_exit_authorized=True,
         authorized_until=now + timedelta(hours=until_hours),
         renewal_margin_seconds=margin,
         arm_lease_ttl_seconds=ttl,

@@ -1,4 +1,4 @@
-"""24H unattended horizon auto-renew — focused unit tests (no REAL orders)."""
+"""P0.7 — Operator Authorization Horizon 자동연장 금지 / Lease Auto-Renew 분리."""
 
 from __future__ import annotations
 
@@ -13,6 +13,9 @@ from stock_platform.trading.live_unattended_authorization_service import (
     STATUS_ACTIVE,
     LiveUnattendedAuthorizationService,
     LiveUnattendedError,
+)
+from stock_platform.trading.operator_authorization_policy import (
+    build_operator_authorization_view,
 )
 
 
@@ -86,128 +89,92 @@ def _patch_settings() -> None:
         yield
 
 
-def test_auto_renew_off_no_horizon_mutation() -> None:
-    session = MagicMock()
-    row = _row(auto_renew_enabled=False)
-    uba = _uba()
-    out = _svc(session)._try_horizon_auto_renew(row, uba, actor=ACTOR_HORIZON_AUTO_RENEW)
-    assert out["horizon_renewed"] is False
-    assert out["reason"] == "AUTO_RENEW_OFF"
-
-
-def test_auto_renew_on_pass_in_margin_extends_horizon() -> None:
+def test_auto_renew_off_still_never_extends_horizon() -> None:
     session = MagicMock()
     now = datetime.now(timezone.utc)
-    row = _row(
-        auto_renew_enabled=True,
-        authorized_until=now + timedelta(minutes=30),
-    )
+    old_until = now + timedelta(minutes=45)
+    row = _row(auto_renew_enabled=False, authorized_until=old_until)
     uba = _uba()
-    svc = _svc(session)
     with (
-        patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value=_pass_gates()),
-        patch.object(
-            svc,
-            "_sync_activation_with_horizon_renew",
-            return_value={
-                "required": False,
-                "ok": True,
-                "skipped": True,
-                "reason": "ALREADY_ALIGNED",
-            },
-        ),
-        patch.object(svc, "_maybe_emit_horizon_renew_success_telegram"),
         patch(
             "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
         ),
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_order_telegram"
+        ),
     ):
-        out = svc._try_horizon_auto_renew(row, uba, actor=ACTOR_HORIZON_AUTO_RENEW)
-    assert out["horizon_renewed"] is True
-    assert row.authorized_until > now + timedelta(hours=23)
+        out = _svc(session)._try_horizon_auto_renew(
+            row, uba, actor=ACTOR_HORIZON_AUTO_RENEW
+        )
+    assert out["horizon_renewed"] is False
+    assert out["reason"] == "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED"
+    assert row.authorized_until == old_until
+
+
+def test_auto_renew_on_in_margin_does_not_extend_horizon() -> None:
+    session = MagicMock()
+    now = datetime.now(timezone.utc)
+    old_until = now + timedelta(minutes=30)
+    row = _row(auto_renew_enabled=True, authorized_until=old_until)
+    uba = _uba()
+    with (
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
+        ) as audit,
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_order_telegram"
+        ),
+    ):
+        out = _svc(session)._try_horizon_auto_renew(
+            row, uba, actor=ACTOR_HORIZON_AUTO_RENEW
+        )
+    assert out["horizon_renewed"] is False
+    assert out["reason"] == "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED"
+    assert out["authorization_expiring_soon"] is True
+    assert row.authorized_until == old_until
+    assert audit.call_args.kwargs["event_type"] == "AUTHORIZATION_EXPIRING_SOON"
 
 
 def test_remaining_outside_margin_is_noop() -> None:
     now = datetime.now(timezone.utc)
-    row = _row(
-        auto_renew_enabled=True,
-        authorized_until=now + timedelta(hours=5),
-    )
+    old_until = now + timedelta(hours=5)
+    row = _row(auto_renew_enabled=True, authorized_until=old_until)
     out = _svc()._try_horizon_auto_renew(row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW)
     assert out["horizon_renewed"] is False
-    assert out["reason"] == "NOT_IN_RENEW_MARGIN"
+    assert out["reason"] == "NOT_IN_EXPIRY_WARNING_WINDOW"
+    assert row.authorized_until == old_until
 
 
-def test_repeated_tick_blocks_duplicate_renew() -> None:
+def test_expiring_soon_warning_cooldown() -> None:
     now = datetime.now(timezone.utc)
+    old_until = now + timedelta(minutes=20)
     row = _row(
         auto_renew_enabled=True,
-        authorized_until=now + timedelta(minutes=20),
+        authorized_until=old_until,
         last_renewal_detail={
-            "horizon_auto_renew": {
-                "renewed_at": (now - timedelta(seconds=120)).isoformat(),
-                "result": "SUCCESS",
+            "authorization_expiring_soon": {
+                "at": (now - timedelta(seconds=120)).isoformat(),
             }
         },
     )
-    svc = _svc()
-    with patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value=_pass_gates()):
-        out = svc._try_horizon_auto_renew(row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW)
-    assert out["horizon_renewed"] is False
-    assert out["reason"] == "RENEW_INTERVAL_NOT_ELAPSED"
-
-
-def test_no_meaningful_extension_is_noop() -> None:
-    now = datetime.now(timezone.utc)
-    # 만료 10분 전 — margin 내이나 +24h 연장이 min_extension 미만
-    row = _row(
-        auto_renew_enabled=True,
-        authorized_until=now + timedelta(minutes=10),
-    )
-    svc = _svc()
     with (
-        patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value=_pass_gates()),
         patch(
-            "stock_platform.trading.live_unattended_authorization_service.get_settings",
-            return_value=SimpleNamespace(
-                live_unattended_default_horizon_hours=0,
-                live_unattended_horizon_renew_margin_seconds=3600,
-                live_unattended_horizon_renew_interval_seconds=3600,
-                live_unattended_horizon_min_extension_seconds=3600,
-            ),
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_safety_audit"
+        ) as audit,
+        patch(
+            "stock_platform.trading.live_unattended_authorization_service.emit_live_order_telegram"
         ),
     ):
-        out = svc._try_horizon_auto_renew(row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW)
+        out = _svc()._try_horizon_auto_renew(
+            row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW
+        )
     assert out["horizon_renewed"] is False
-    assert out["reason"] == "NO_MEANINGFUL_EXTENSION"
+    assert out["expiring_soon_warning_emitted"] is False
+    assert row.authorized_until == old_until
+    audit.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "blockers",
-    [
-        ["KILL_SWITCH_ACTIVE"],
-        ["RECOVERY_CONFLICT_HIGH"],
-        ["CREDENTIAL_INVALID"],
-    ],
-)
-def test_safety_gate_blocks_renew(blockers: list[str]) -> None:
-    now = datetime.now(timezone.utc)
-    row = _row(
-        auto_renew_enabled=True,
-        authorized_until=now + timedelta(minutes=15),
-    )
-    svc = _svc()
-    with patch.object(
-        svc,
-        "evaluate_horizon_auto_renew_gates",
-        return_value={"ok": False, "blockers": blockers, "checks": {}},
-    ):
-        out = svc._try_horizon_auto_renew(row, _uba(), actor=ACTOR_HORIZON_AUTO_RENEW)
-    assert out["horizon_renewed"] is False
-    assert out["reason"] == "SAFETY_GATES_FAILED"
-    assert out["blockers"] == blockers
-
-
-def test_manual_open_order_does_not_block_renew() -> None:
+def test_manual_open_order_does_not_block_lease_gates() -> None:
     session = MagicMock()
     svc = _svc(session)
     exposure = SimpleNamespace(unknown_open_count=0, manual_open_count=2)
@@ -235,7 +202,7 @@ def test_manual_open_order_does_not_block_renew() -> None:
     assert out["ok"] is True
 
 
-def test_unknown_open_order_blocks_renew() -> None:
+def test_unknown_open_order_blocks_lease_gates() -> None:
     session = MagicMock()
     svc = _svc(session)
     exposure = SimpleNamespace(unknown_open_count=1)
@@ -256,35 +223,7 @@ def test_unknown_open_order_blocks_renew() -> None:
     assert "UNKNOWN_OPEN_ORDER" in out["blockers"]
 
 
-def test_auto_position_healthy_exit_allows_renew() -> None:
-    session = MagicMock()
-    svc = _svc(session)
-    exposure = SimpleNamespace(unknown_open_count=0)
-    exposure.as_detail = lambda: {"unknown_open_count": 0}
-    with (
-        patch.object(svc, "evaluate_enable_gates", return_value=_pass_gates()),
-        patch(
-            "stock_platform.order.live_open_order_exposure.evaluate_live_open_order_exposure",
-            return_value=exposure,
-        ),
-        patch(
-            "stock_platform.trading.autotrading_master_gate._evaluate_auto_exit_quote_freshness",
-            return_value={"applicable": True, "ok": True},
-        ),
-        patch(
-            "stock_platform.trading.autotrading_master_gate.evaluate_uba_autotrading_ready",
-            return_value={"ok": True, "blockers": [], "status": "READY"},
-        ),
-        patch(
-            "stock_platform.trading.live_unattended_authorization_service.UserBrokerAccount"
-        ),
-    ):
-        session.get.return_value = _uba()
-        out = svc.evaluate_horizon_auto_renew_gates(1380)
-    assert out["ok"] is True
-
-
-def test_stale_protective_quote_blocks_renew() -> None:
+def test_stale_protective_quote_blocks_lease_gates() -> None:
     session = MagicMock()
     svc = _svc(session)
     exposure = SimpleNamespace(unknown_open_count=0)
@@ -313,7 +252,7 @@ def test_stale_protective_quote_blocks_renew() -> None:
     assert "AUTO_EXIT_QUOTE_STALE" in out["blockers"]
 
 
-def test_set_auto_renew_persists_on_active_lease() -> None:
+def test_set_auto_renew_persists_lease_scope_on_active_lease() -> None:
     session = MagicMock()
     row = _row(auto_renew_enabled=False)
     svc = _svc(session)
@@ -326,6 +265,7 @@ def test_set_auto_renew_persists_on_active_lease() -> None:
     ):
         svc.set_auto_renew_enabled(1380, enabled=True, actor="admin")
     assert row.auto_renew_enabled is True
+    assert row.last_renewal_detail["auto_renew_toggle"]["scope"] == "INTERNAL_LEASE_ONLY"
     session.commit.assert_called_once()
 
 
@@ -337,7 +277,7 @@ def test_set_auto_renew_requires_active_lease() -> None:
     assert exc.value.code == "NO_ACTIVE_LEASE"
 
 
-def test_dry_evaluation_would_renew_read_only() -> None:
+def test_dry_evaluation_never_would_extend_operator_auth() -> None:
     now = datetime.now(timezone.utc)
     row = _row(
         auto_renew_enabled=True,
@@ -349,13 +289,14 @@ def test_dry_evaluation_would_renew_read_only() -> None:
         patch.object(svc, "evaluate_horizon_auto_renew_gates", return_value=_pass_gates()),
     ):
         out = svc.dry_horizon_auto_renew_evaluation(1380)
-    assert out["would_renew"] is True
-    assert out["in_renew_margin"] is True
-    assert out["meaningful_extension"] is True
-    assert "projected_authorized_until" in out
+    assert out["would_renew"] is False
+    assert out["would_extend_operator_authorization"] is False
+    assert out["operator_authorization_auto_extend_supported"] is False
+    assert out["authorization_expiring_soon"] is True
+    assert out["projected_authorized_until"] == out["authorized_until"]
 
 
-def test_dry_evaluation_off_keeps_legacy_behavior() -> None:
+def test_dry_evaluation_off_still_never_extends() -> None:
     now = datetime.now(timezone.utc)
     row = _row(
         auto_renew_enabled=False,
@@ -370,7 +311,7 @@ def test_dry_evaluation_off_keeps_legacy_behavior() -> None:
     assert out["would_renew"] is False
 
 
-def test_telegram_success_dedupe_within_day() -> None:
+def test_telegram_legacy_success_helper_dedupe_within_day() -> None:
     now = datetime.now(timezone.utc)
     row = _row(last_renewal_detail={})
     svc = _svc()
@@ -390,29 +331,11 @@ def test_telegram_success_dedupe_within_day() -> None:
     assert tg.call_count == 1
 
 
-def test_telegram_failure_emitted_with_cooldown() -> None:
-    now = datetime.now(timezone.utc)
-    row = _row(authorized_until=now + timedelta(hours=1))
-    svc = _svc()
-    with patch(
-        "stock_platform.trading.live_unattended_authorization_service.emit_live_order_telegram"
-    ) as tg:
-        svc._maybe_emit_horizon_renew_failure_telegram(
-            row,
-            blockers=["KILL_SWITCH_ACTIVE"],
-            until=now + timedelta(hours=1),
-        )
-    assert tg.call_count == 1
-    assert tg.call_args.kwargs["event_type"] == "UNATTENDED_HORIZON_AUTO_RENEW_FAILED"
-
-
-def test_renew_due_reports_horizon_renewed_without_arm_spam() -> None:
+def test_renew_due_reports_horizon_not_extended() -> None:
     session = MagicMock()
     now = datetime.now(timezone.utc)
-    row = _row(
-        auto_renew_enabled=True,
-        authorized_until=now + timedelta(minutes=25),
-    )
+    old_until = now + timedelta(minutes=25)
+    row = _row(auto_renew_enabled=True, authorized_until=old_until)
     uba = _uba(arm_expires_at=now + timedelta(hours=2))
     svc = _svc(session)
     session.get.return_value = uba
@@ -422,8 +345,9 @@ def test_renew_due_reports_horizon_renewed_without_arm_spam() -> None:
             svc,
             "_try_horizon_auto_renew",
             return_value={
-                "horizon_renewed": True,
-                "new_authorized_until": (now + timedelta(hours=24)).isoformat(),
+                "horizon_renewed": False,
+                "reason": "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED",
+                "authorized_until": old_until.isoformat(),
             },
         ),
         patch.object(
@@ -447,8 +371,28 @@ def test_renew_due_reports_horizon_renewed_without_arm_spam() -> None:
             expires_at=now + timedelta(hours=2),
         )
         out = svc.renew_due_for_uba(1380)
-    assert out["renewed"] is True
-    assert out.get("horizon_renewed") is True
+    assert out.get("horizon_renewed") is not True
+    assert row.authorized_until == old_until
+    hz = out.get("horizon") or {}
+    assert hz.get("horizon_renewed") is False
+    assert hz.get("reason") == "OPERATOR_AUTHORIZATION_AUTO_EXTEND_NOT_SUPPORTED"
+
+
+def test_operator_view_renewal_status_is_lease_not_auth_extend() -> None:
+    view = build_operator_authorization_view(
+        {
+            "status_code": "ACTIVE",
+            "unattended_enabled": True,
+            "remaining_seconds": 3600,
+            "authorized_until": "2026-09-08T00:00:00+00:00",
+            "auto_renew_enabled": True,
+            "lease_auto_renew_enabled": True,
+            "authorization_id": 19,
+        }
+    )
+    assert view["renewal_status"] == "LEASE_AUTO_RENEW_ON"
+    assert view["operator_authorization_auto_extend"] is False
+    assert view["operator_authorization_auto_extend_supported"] is False
 
 
 def test_uba1381_not_touched_by_1380_tests() -> None:
@@ -456,7 +400,7 @@ def test_uba1381_not_touched_by_1380_tests() -> None:
     assert _uba(user_broker_account_id=1381).user_broker_account_id == 1381
 
 
-def test_status_dict_includes_auto_renew_fields() -> None:
+def test_status_dict_includes_p07_fields() -> None:
     session = MagicMock()
     now = datetime.now(timezone.utc)
     row = _row(
@@ -467,5 +411,9 @@ def test_status_dict_includes_auto_renew_fields() -> None:
     session.scalar.return_value = row
     out = _svc(session).status_dict(1380)
     assert out["auto_renew_enabled"] is True
+    assert out["lease_auto_renew_enabled"] is True
+    assert out["operator_authorization_auto_extend"] is False
+    assert out["operator_authorization_auto_extend_supported"] is False
     assert out["horizon_renew_margin_seconds"] == 3600
+    assert out["next_authorization_expiry_warning_at"] is not None
     assert out["next_horizon_renew_check_at"] is not None

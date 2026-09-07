@@ -104,11 +104,24 @@ def build_operator_authorization_view(
         "remaining_seconds": remaining,
         "authorization_mode": u.get("authorization_mode"),
         "auto_renew_enabled": bool(u.get("auto_renew_enabled")),
+        "lease_auto_renew_enabled": bool(
+            u.get("lease_auto_renew_enabled", u.get("auto_renew_enabled"))
+        ),
+        "operator_authorization_auto_extend": False,
+        "operator_authorization_auto_extend_supported": False,
         "renewal_status": (
-            "AUTO_RENEW_ON"
+            "LEASE_AUTO_RENEW_ON"
             if active and bool(u.get("auto_renew_enabled"))
             else ("ACTIVE_MANUAL" if active else "OFF")
         ),
+        "next_authorization_expiry_warning_at": u.get(
+            "next_authorization_expiry_warning_at"
+        )
+        or u.get("next_horizon_renew_check_at"),
+        "authorization_expiring_soon": bool(
+            u.get("authorization_expiring_soon")
+        )
+        or (active and 0 < remaining <= 3600),
         "last_horizon_auto_renew": u.get("last_horizon_auto_renew"),
         "activation_expires_at": activation_expires_at,
         "arm_expires_at": arm_expires_at,

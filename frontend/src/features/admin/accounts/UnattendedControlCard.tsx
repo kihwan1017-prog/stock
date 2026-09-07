@@ -2,6 +2,7 @@
  * 24H Operator Authorization / Unattended execution 운영 카드.
  * - 자동운영 중지 = Unattended OFF (Authorization 유지)
  * - 운영 승인 철회 = Authorization REVOKE (별도 확인)
+ * - 내부 Lease 자동갱신 ≠ 승인 Horizon 자동연장
  */
 
 import { Alert, Button, Select, Space, Tag, Tooltip, Typography } from "antd";
@@ -18,7 +19,10 @@ export type UnattendedCardProps = {
   onDurationHoursChange?: (hours: 24 | 48 | 72) => void;
   activationExpiresAt?: string | null;
   armExpiresAt?: string | null;
+  /** 내부 Lease(Activation/ARM) 자동갱신 — Auth Horizon 연장 아님 */
   autoRenewEnabled?: boolean;
+  authorizedUntil?: string | null;
+  authorizationExpiringSoon?: boolean;
   /** Authorization ACTIVE but Unattended OFF */
   authorizationActive?: boolean;
   onStart: () => void;
@@ -46,6 +50,8 @@ export function UnattendedControlCard({
   activationExpiresAt,
   armExpiresAt,
   autoRenewEnabled,
+  authorizedUntil,
+  authorizationExpiringSoon,
   authorizationActive,
   onStart,
   onStop,
@@ -69,9 +75,9 @@ export function UnattendedControlCard({
       description={
         <Space orientation="vertical" size={8} style={{ width: "100%" }}>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            Operator Authorization = 승인 Horizon. 자동운영(Unattended) = Horizon
-            안 lease 갱신·Class A/B 권한. 「자동운영 중지」는 승인을 철회하지
-            않습니다.
+            Operator Authorization = 유한 승인 Horizon(자동연장 없음). 자동운영 =
+            Horizon 안 내부 Lease 갱신·Class A/B. 「자동운영 중지」는 승인을
+            철회하지 않습니다.
           </Typography.Text>
           <Space wrap>
             <Typography.Text>상태:</Typography.Text>
@@ -81,10 +87,23 @@ export function UnattendedControlCard({
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               {statusCode}
             </Typography.Text>
+          </Space>
+          <Space wrap>
+            <Tag color="default">승인 자동연장: OFF</Tag>
             {autoRenewEnabled ? (
-              <Tag color="processing">Auto Renewal ON</Tag>
+              <Tag color="processing">내부 Lease 자동갱신: ON</Tag>
+            ) : (
+              <Tag>내부 Lease 자동갱신: OFF</Tag>
+            )}
+            {authorizationExpiringSoon ? (
+              <Tag color="warning">재승인 필요(만료 임박)</Tag>
             ) : null}
           </Space>
+          {authorizedUntil ? (
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              운영 승인 만료: {authorizedUntil}
+            </Typography.Text>
+          ) : null}
           <Space wrap>
             <Typography.Text>승인기간:</Typography.Text>
             <Select
