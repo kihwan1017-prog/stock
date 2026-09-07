@@ -135,14 +135,20 @@ export function UpbitOpsStatusPanel({
       unattended.status ??
       (unattended.unattended_enabled ? "ACTIVE" : "OFF"),
   );
-  const leaseAutoRenewOn = Boolean(unattended.auto_renew_enabled);
+  const leaseAutoRenewOn = Boolean(
+    unattended.lease_auto_renew_enabled ?? unattended.auto_renew_enabled,
+  );
+  // P0.7 — Operator Authorization Horizon 자동연장 미지원 (표시 전용 OFF)
   const authAutoExtendOn = Boolean(
-    unattended.auth_auto_extend_enabled ??
-      unattended.authorization_auto_extend_enabled ??
-      rec(unattended.last_renewal_detail).auth_auto_extend_enabled,
+    unattended.operator_authorization_auto_extend === true ||
+      unattended.auth_auto_extend_enabled === true ||
+      unattended.authorization_auto_extend_enabled === true,
   );
   const authUntilRaw =
-    unattended.authorized_until ?? ops.AUTHORIZED_UNTIL ?? null;
+    unattended.authorized_until ??
+    rec(unattended.operator_authorization).valid_until ??
+    ops.AUTHORIZED_UNTIL ??
+    null;
   const authExpired =
     unattended.auth_expired === true ||
     (typeof authUntilRaw === "string" &&
@@ -541,10 +547,10 @@ export function UpbitOpsStatusPanel({
             ],
             [
               "Auth auto extend",
-              authAutoExtendOn ? "ON" : "OFF",
-              toneFromBoolOnOff(authAutoExtendOn),
-              "기본 OFF — Authorization 자동 연장 플래그",
-              authAutoExtendOn ? "ON" : "OFF",
+              "OFF / 지원 안 함",
+              "gray" as StatusTone,
+              "operator_authorization_auto_extend_supported=false (P0.7)",
+              authAutoExtendOn ? "ON(legacy)" : "OFF",
             ],
             [
               UI_LABEL_KO.live,
