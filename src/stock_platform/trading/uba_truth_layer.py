@@ -446,3 +446,42 @@ def append_arm_renewal_history(
     out["arm_renewal_history"] = hist[-keep:]
     out["arm_renewed"] = True
     return out
+
+# UBA1380 P1 — truth bundle helpers re-export (구현은 autotrading_truth_bundle)
+def fee_truth_summary(session, *, user_broker_account_id: int):
+    from stock_platform.operation.autotrading_truth_bundle import fee_truth_summary as _impl
+    return _impl(session, user_broker_account_id=user_broker_account_id)
+
+
+def position_lifecycle_anomalies(session, *, user_broker_account_id: int):
+    from stock_platform.operation.autotrading_truth_bundle import (
+        position_lifecycle_anomalies as _impl,
+    )
+    return _impl(session, user_broker_account_id=user_broker_account_id)
+
+
+def pnl_truth_compare(session, *, user_broker_account_id: int):
+    from stock_platform.operation.autotrading_truth_bundle import pnl_truth_compare as _impl
+    return _impl(session, user_broker_account_id=user_broker_account_id)
+
+
+def build_risk_decision_snapshot(**kwargs):
+    from stock_platform.operation.autotrading_truth_bundle import (
+        build_risk_decision_snapshot as _impl,
+    )
+    return _impl(**kwargs)
+
+
+def maybe_stamp_risk_decision_snapshot(metadata, snapshot, *, side=None):
+    from stock_platform.operation.autotrading_truth_bundle import (
+        maybe_stamp_risk_decision_snapshot as _impl,
+    )
+    return _impl(metadata, snapshot, side=side)
+
+
+def build_scanner_to_fill_provenance(session, *, order_id=None, binding_id=None):
+    from stock_platform.operation.autotrading_truth_bundle import (
+        build_scanner_to_fill_provenance as _impl,
+    )
+    return _impl(session, order_id=order_id, binding_id=binding_id)
+

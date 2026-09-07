@@ -487,6 +487,67 @@ class OrderExecutionService:
                         ),
                         "broker_code": str(command.broker_code),
                     }
+                # UBA1380 P1 — FUTURE BUY risk snapshot (이미 있으면 유지)
+                if side_text == "BUY":
+                    try:
+                        from stock_platform.operation.autotrading_truth_bundle import (
+                            build_risk_decision_snapshot,
+                            maybe_stamp_risk_decision_snapshot,
+                        )
+
+                        snap = build_risk_decision_snapshot(
+                            allowed=True,
+                            result=str(
+                                getattr(safety, "reason_code", None)
+                                or "LIVE_SAFETY_PASS"
+                            ),
+                            reason_codes=[
+                                str(
+                                    getattr(safety, "reason_code", None)
+                                    or "LIVE_SAFETY_PASS"
+                                )
+                            ],
+                            limits={
+                                k: safety_detail.get(k)
+                                for k in (
+                                    "daily_entry_limit",
+                                    "daily_order_limit",
+                                    "max_order_amount",
+                                    "max_order_quantity",
+                                )
+                                if k in safety_detail
+                            },
+                            usage={
+                                k: safety_detail.get(k)
+                                for k in (
+                                    "daily_entry_used",
+                                    "daily_order_count",
+                                    "daily_submit_count",
+                                )
+                                if k in safety_detail
+                            },
+                            extra={
+                                "pipeline": "LiveOrderSafetyPipeline",
+                                "order_source": safety_detail.get(
+                                    "order_source"
+                                ),
+                            },
+                        )
+                        stamped = maybe_stamp_risk_decision_snapshot(
+                            dict(command.metadata_payload or {}),
+                            snap,
+                            side="BUY",
+                        )
+                        # frozen dataclass — 필드 재할당 대신 dict in-place
+                        if command.metadata_payload is None:
+                            object.__setattr__(
+                                command, "metadata_payload", stamped
+                            )
+                        else:
+                            command.metadata_payload.clear()
+                            command.metadata_payload.update(stamped)
+                    except Exception:  # noqa: BLE001
+                        pass
 
                 try:
                     assert_live_orders_allowed(self._session)

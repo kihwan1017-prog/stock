@@ -1081,6 +1081,74 @@ def admin_uba_why_no_trade(
     )
 
 
+@router.get("/uba/{user_broker_account_id}/truth-bundle")
+def admin_uba_truth_bundle(
+    user_broker_account_id: int,
+    exit_since_hours: int = Query(default=168, ge=1, le=24 * 90),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """UBA1380 P1 truth bundle — fee/pnl/position/exit/auth READ-ONLY."""
+
+    from stock_platform.operation.autotrading_truth_bundle import (
+        build_uba_truth_bundle,
+    )
+
+    return build_uba_truth_bundle(
+        session,
+        user_broker_account_id=int(user_broker_account_id),
+        exit_since_hours=int(exit_since_hours),
+    )
+
+
+@router.get("/uba/{user_broker_account_id}/orders/{order_id}/provenance")
+def admin_uba_order_provenance(
+    user_broker_account_id: int,
+    order_id: int,
+    binding_id: int | None = Query(default=None),
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """scanner→fill provenance join (UNKNOWN if missing). READ-ONLY."""
+
+    from stock_platform.operation.autotrading_truth_bundle import (
+        build_scanner_to_fill_provenance,
+    )
+
+    # UBA scope 확인 — 타 계좌 order 노출 방지
+    from sqlalchemy import text as sa_text
+
+    row = session.execute(
+        sa_text(
+            """
+            SELECT user_broker_account_id
+            FROM trading.trading_order
+            WHERE order_id = :oid
+            """
+        ),
+        {"oid": int(order_id)},
+    ).mappings().first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "ORDER_NOT_FOUND", "order_id": int(order_id)},
+        )
+    if int(row["user_broker_account_id"]) != int(user_broker_account_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "ORDER_UBA_MISMATCH",
+                "order_id": int(order_id),
+                "user_broker_account_id": int(user_broker_account_id),
+            },
+        )
+    return build_scanner_to_fill_provenance(
+        session,
+        order_id=int(order_id),
+        binding_id=int(binding_id) if binding_id is not None else None,
+    )
+
+
 @router.get("/uba/{user_broker_account_id}/pipeline-liveness")
 def admin_uba_pipeline_liveness(
     user_broker_account_id: int,

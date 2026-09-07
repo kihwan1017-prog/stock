@@ -106,6 +106,10 @@ export function AutoTradingPerformancePanel({ refreshMs = 60_000 }: Props) {
 
   const hasClosed = summary.closedTradeCount > 0;
   const lowSample = data.low_sample_warning === true;
+  const feeIncomplete =
+    data.fee_incomplete === true ||
+    rec(data.summary).fee_incomplete === true ||
+    Boolean(data.fee_incomplete_display_note_ko);
 
   const filters = (
     <Space wrap>
@@ -142,6 +146,20 @@ export function AutoTradingPerformancePanel({ refreshMs = 60_000 }: Props) {
 
       {lowSample && data.low_sample_message ? (
         <Alert type="warning" showIcon title={String(data.low_sample_message)} />
+      ) : null}
+
+      {feeIncomplete ? (
+        <Alert
+          type="warning"
+          showIcon
+          title="수수료 기록 불완전"
+          description={
+            String(
+              data.fee_incomplete_display_note_ko ??
+                "일부 체결에 upbit_paid_fee/binding.fees가 비어 NET PnL이 왜곡될 수 있습니다.",
+            )
+          }
+        />
       ) : null}
 
       <Card

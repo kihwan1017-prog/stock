@@ -522,6 +522,13 @@ class AutotradingPerformanceService:
             else period
         )
 
+        # UBA1380 P1 — 표시용 fee incompleteness (Risk/숫자 산식 미변경)
+        from stock_platform.operation.autotrading_truth_bundle import (
+            pnl_fee_incomplete_from_trades,
+        )
+
+        fee_flags = pnl_fee_incomplete_from_trades(period_closed)
+
         return {
             "broker": broker,
             "period": period,
@@ -571,6 +578,13 @@ class AutotradingPerformanceService:
                 if low_sample
                 else None
             ),
+            "fee_incomplete": fee_flags["fee_incomplete"],
+            "fee_incomplete_trade_count": fee_flags[
+                "fee_incomplete_trade_count"
+            ],
+            "fee_incomplete_display_note_ko": fee_flags[
+                "fee_incomplete_display_note_ko"
+            ],
         }
 
     def build_symbol_detail(

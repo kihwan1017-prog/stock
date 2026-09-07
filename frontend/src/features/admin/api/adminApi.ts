@@ -1161,6 +1161,26 @@ export async function getAdminUbaOpsStatus(
   return getJson(`/admin/autotrading/uba/${ubaId}/ops-status${qs}`);
 }
 
+/** UBA1380 P1 truth bundle — fee/pnl/position/auth READ-ONLY */
+export async function getAdminUbaTruthBundle(
+  ubaId: number,
+  params?: { exit_since_hours?: number },
+): Promise<JsonValue> {
+  return getJson(`/admin/autotrading/uba/${ubaId}/truth-bundle`, params);
+}
+
+/** scanner→fill provenance (UNKNOWN if missing) */
+export async function getAdminUbaOrderProvenance(
+  ubaId: number,
+  orderId: number,
+  params?: { binding_id?: number },
+): Promise<JsonValue> {
+  return getJson(
+    `/admin/autotrading/uba/${ubaId}/orders/${orderId}/provenance`,
+    params,
+  );
+}
+
 /** Kiwoom TOP10 REAL / SHADOW multi-symbol — READ-ONLY status (trading 변경 없음) */
 export async function getAdminKiwoomMultiSymbolStatus(
   ubaId: number,

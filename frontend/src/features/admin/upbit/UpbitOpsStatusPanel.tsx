@@ -135,6 +135,20 @@ export function UpbitOpsStatusPanel({
       unattended.status ??
       (unattended.unattended_enabled ? "ACTIVE" : "OFF"),
   );
+  const leaseAutoRenewOn = Boolean(unattended.auto_renew_enabled);
+  const authAutoExtendOn = Boolean(
+    unattended.auth_auto_extend_enabled ??
+      unattended.authorization_auto_extend_enabled ??
+      rec(unattended.last_renewal_detail).auth_auto_extend_enabled,
+  );
+  const authUntilRaw =
+    unattended.authorized_until ?? ops.AUTHORIZED_UNTIL ?? null;
+  const authExpired =
+    unattended.auth_expired === true ||
+    (typeof authUntilRaw === "string" &&
+      authUntilRaw.length > 0 &&
+      Number.isFinite(Date.parse(authUntilRaw)) &&
+      Date.parse(authUntilRaw) < Date.now());
   const runtime = String(
     ops.runtime ?? ops.strategy_runtime ?? control.strategy_runtime ?? "—",
   ).toUpperCase();
@@ -504,6 +518,33 @@ export function UpbitOpsStatusPanel({
               ),
               undefined,
               lease,
+            ],
+            [
+              "Auth 만료",
+              authExpired ? "EXPIRED" : authUntilRaw ? "ACTIVE" : "NONE",
+              authExpired
+                ? ("red" as StatusTone)
+                : authUntilRaw
+                  ? ("green" as StatusTone)
+                  : ("gray" as StatusTone),
+              authUntilRaw
+                ? `authorized_until: ${String(authUntilRaw)}`
+                : "Operator Authorization 만료 시각 없음",
+              authUntilRaw ? String(authUntilRaw) : undefined,
+            ],
+            [
+              "Lease auto renew",
+              leaseAutoRenewOn ? "ON" : "OFF",
+              toneFromBoolOnOff(leaseAutoRenewOn),
+              "unattended.auto_renew_enabled",
+              leaseAutoRenewOn ? "ON" : "OFF",
+            ],
+            [
+              "Auth auto extend",
+              authAutoExtendOn ? "ON" : "OFF",
+              toneFromBoolOnOff(authAutoExtendOn),
+              "기본 OFF — Authorization 자동 연장 플래그",
+              authAutoExtendOn ? "ON" : "OFF",
             ],
             [
               UI_LABEL_KO.live,

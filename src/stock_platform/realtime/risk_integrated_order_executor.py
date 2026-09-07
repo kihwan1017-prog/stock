@@ -652,6 +652,37 @@ class RiskIntegratedRealtimeOrderExecutor:
             ),
             "order_source": "AUTO",
         }
+        # UBA1380 P1 — FUTURE BUY만 immutable risk snapshot (기존 주문 백필 금지)
+        if str(signal.action.value).upper() == "BUY":
+            try:
+                from stock_platform.operation.autotrading_truth_bundle import (
+                    build_risk_decision_snapshot,
+                    maybe_stamp_risk_decision_snapshot,
+                )
+
+                snap = build_risk_decision_snapshot(
+                    allowed=True,
+                    result="PASS",
+                    reason_codes=["RISK_PASS", "LIVE_SAFETY_PASS"],
+                    limits={
+                        "open_position_count": int(open_position_count),
+                    },
+                    usage={
+                        "broker_code": str(broker_code or "").upper(),
+                        "order_source": "AUTO",
+                    },
+                    extra={
+                        "risk_blocked": risk_blocked,
+                        "safety_reason": getattr(
+                            decision, "reason_code", None
+                        ),
+                    },
+                )
+                meta = maybe_stamp_risk_decision_snapshot(
+                    meta, snap, side="BUY"
+                )
+            except Exception:  # noqa: BLE001
+                pass
         # SELL provenance — exit_reason과 signal_reason 동시 stamp (집계 단일화)
         if str(signal.action.value).upper() == "SELL" and signal.reason_code:
             meta["exit_reason"] = signal.reason_code
