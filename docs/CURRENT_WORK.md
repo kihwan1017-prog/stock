@@ -5,6 +5,15 @@
 
 ---
 
+## U — Final Integrated Completion (2026-09-08)
+
+- WORK: `WRK-20260908-UBA1380-FINAL-INTEGRATED-COMPLETION-V1`
+- Mode: Production APPLY path + runtime rollout + optional NEAR#537 ONE-TIME YES
+- Base: P3-C `8e780b4` · Runtime was `16c704d`
+- NEXT: in progress (rollout → preview → operator YES/NO)
+
+---
+
 ## U — P3-C Controlled Auto Residual Cleanup (2026-09-08)
 
 - WORK: `WRK-20260908-UBA1380-P3C-CONTROLLED-RESIDUAL-CLEANUP-DRYRUN-V1`
@@ -13,6 +22,7 @@
 - Verdict: `PASS_P3C_CONTROLLED_RESIDUAL_CLEANUP_READY`
 - NEAR#537 eligible preview qty=1.61768791 · PROM/TRUMP below min · dust/historical blocked
 - Evidence: `.run/uba1380_p3c_controlled_residual_cleanup_dryrun_20260908_003239.json`
+- Commit: **`8e780b4`** · RUNTIME_RESTARTED=NO
 - NEXT: ChatGPT 검토 · real approve/submit 전 STOP · `CURSOR_NEXT_ACTION=NONE`
 
 ---
