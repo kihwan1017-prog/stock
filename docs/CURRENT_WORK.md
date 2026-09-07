@@ -1,7 +1,86 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-06 (UBA1380 Operator Authorization 24H policy)
+**최종 갱신:** 2026-09-08 (UBA1380 P3-C Controlled Residual Cleanup DRY-RUN)
+
+---
+
+## U — P3-C Controlled Auto Residual Cleanup (2026-09-08)
+
+- WORK: `WRK-20260908-UBA1380-P3C-CONTROLLED-RESIDUAL-CLEANUP-DRYRUN-V1`
+- Mode: **PREVIEW/DRY-RUN ONLY** — no broker SELL · no CLOSED reopen · no slot
+- Path: `operation/upbit_auto_residual_cleanup` · Admin GET `.../controlled-residual-cleanup/preview`
+- Verdict: `PASS_P3C_CONTROLLED_RESIDUAL_CLEANUP_READY`
+- NEAR#537 eligible preview qty=1.61768791 · PROM/TRUMP below min · dust/historical blocked
+- Evidence: `.run/uba1380_p3c_controlled_residual_cleanup_dryrun_20260908_003239.json`
+- NEXT: ChatGPT 검토 · real approve/submit 전 STOP · `CURSOR_NEXT_ACTION=NONE`
+
+---
+
+## U — P3-B Residual / Lifecycle Safe Metadata APPLY (2026-09-08)
+
+- WORK: `WRK-20260908-UBA1380-P3B-RESIDUAL-LIFECYCLE-SAFE-METADATA-APPLY-V1`
+- Mode: Atomic `meta_json.auto_residual_truth` merge · NEAR reopen **deferred**
+- Verdict: `PASS_P3B_SAFE_METADATA_APPLIED_NEAR_DEFERRED`
+- Updated: **9/9** (`meta_json`/`updated_at` only) · NEAR status reopen=NO · BUY/SELL/CANCEL=0
+- TRUMP owned = **1.50573694** (#240 only; #207 historical-only) · P2-B unchanged
+- Evidence: `.run/uba1380_p3b_residual_lifecycle_safe_metadata_apply_20260908_001258.json`
+- NEXT: ChatGPT 검토 · NEAR reopen/sell 정책 전 STOP · `CURSOR_NEXT_ACTION=NONE`
+
+---
+
+## U — P3-A Historical Residual / Lifecycle Remediation Dry-Run (2026-09-07)
+
+- WORK: `WRK-20260907-UBA1380-P3A-HISTORICAL-RESIDUAL-LIFECYCLE-DRYRUN-V1`
+- Mode: **DRY-RUN ONLY** — no DB write / no SELL / no PnL rewrite
+- Verdict: `PASS_P3A_RESIDUAL_LIFECYCLE_DRYRUN_READY`
+- NEAR#537 sellable residual exact · PROM#480/TRUMP#240 unsellable AUTO_RESIDUAL · XRP/WLD dust
+- Evidence: `.run/uba1380_p3a_historical_residual_lifecycle_dryrun_20260907_235719.json`
+- NEXT: ChatGPT 검토 후 APPLY 전까지 STOP
+
+---
+
+## U — P2-B Historical PnL Atomic Correction APPLY (2026-09-07)
+
+- WORK: `WRK-20260907-UBA1380-P2B-HISTORICAL-PNL-ATOMIC-CORRECTION-APPLY-V1`
+- Mode: Atomic UPDATE `realized_pnl`/`fees` only · **36/36 COMMITTED**
+- Verdict: `PASS_P2B_HISTORICAL_PNL_ATOMIC_CORRECTION_APPLIED`
+- After PnL: **-20767.68** (P2-A absolute -20708.52 + baseline drift -59.17)
+- Evidence: `.run/uba1380_p2b_historical_pnl_atomic_correction_20260907_234500.json`
+- NEXT: ChatGPT 검토 · residual/lifecycle deferred
+
+---
+
+## U — P2-A Historical PnL Correction Dry-Run (2026-09-07)
+
+- WORK: `WRK-20260907-UBA1380-P2A-HISTORICAL-PNL-CORRECTION-DRYRUN-V1`
+- Mode: **DRY-RUN ONLY** — SQL 생성·미실행 · PROD WRITE 금지
+- Target: P1 `DERIVED_PNL_ERROR` 36 bindings (shared exit) · **SAFE=36** · Golden BCH PASS
+- Verdict: `PASS_P2A_PNL_CORRECTION_DRYRUN_READY`
+- Evidence: `.run/uba1380_p2a_historical_pnl_correction_dryrun_20260907_233006.json`
+- SQL (not executed): `.run/uba1380_p2a_historical_pnl_correction_plan_20260907_233006.sql`
+- NEXT: ChatGPT 검토 후 APPLY 승인 전까지 STOP
+
+---
+
+## U — P1 Historical PnL / Binding Integrity Audit (2026-09-07)
+
+- WORK: `WRK-20260907-UBA1380-P1-HISTORICAL-PNL-BINDING-INTEGRITY-AUDIT-V1`
+- Mode: **READ ONLY** — no prod rewrite / orders / restart / policy change
+- Scope: UBA1380 AUTO from first LIVE FILLED BUY · parent P0 `16c704d`
+- Verdict: `PASS_P1_HISTORICAL_INTEGRITY_AUDIT_COMPLETE`
+- Evidence: `.run/uba1380_p1_historical_pnl_binding_integrity_audit_20260907_231520.json`
+- NEXT: ChatGPT 검토 후 정정 승인 전까지 STOP
+
+---
+
+## U — P0 Position Residual / PnL Allocation Integrity (2026-09-07)
+
+- WORK: `WRK-20260907-UBA1380-P0-POSITION-INTEGRITY-V1`
+- Commit: **`16c704d`** · Runtime loaded · LIVE/ARM/UNATTENDED/STACK 4/4 restored
+- Fix: sellable residual cannot CLOSE · AUTO_DUST provenance · exit fill allocation idempotency · PnL closed_qty ratio
+- Historical rewrite: **NO** · Evidence: `.run/uba1380_p0_position_integrity_fix_*.json`
+- NEXT: ChatGPT review · residual inventory ops policy (no auto-sell this work)
 
 ---
 

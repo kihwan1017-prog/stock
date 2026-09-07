@@ -949,6 +949,81 @@ def admin_uba_historical_exit_recovery_dry_run(
     )
 
 
+@router.get("/uba/{user_broker_account_id}/controlled-residual-cleanup/preview")
+def admin_uba_controlled_residual_cleanup_preview(
+    user_broker_account_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """CONTROLLED_AUTO_RESIDUAL_CLEANUP PREVIEW — 주문/상태변경 없음.
+
+    broker balance·mark price는 스냅샷 기반(실시간 체결 아님).
+    실제 SELL/APPROVE/APPLY 엔드포인트는 이 단계에서 노출하지 않는다.
+    """
+
+    from decimal import Decimal
+
+    from sqlalchemy import text
+
+    from stock_platform.operation.upbit_auto_residual_cleanup.inventory import (
+        preview_uba_residual_cleanup,
+    )
+    from stock_platform.risk_engine.exit_risk import load_held_quantity
+
+    uba = int(user_broker_account_id)
+    # 스냅샷 held + 최근 시세(가능하면 trade_tick)
+    truth_syms = session.execute(
+        text(
+            """
+            SELECT DISTINCT symbol
+            FROM operation.strategy_position_binding
+            WHERE user_broker_account_id = :uba
+              AND meta_json ? 'auto_residual_truth'
+            """
+        ),
+        {"uba": uba},
+    ).scalars().all()
+
+    broker_balances: dict[str, Decimal] = {}
+    mark_prices: dict[str, Decimal] = {}
+    for sym in truth_syms:
+        s = str(sym).upper()
+        held = load_held_quantity(
+            session,
+            symbol=s,
+            exchange_code="UPBIT",
+            user_broker_account_id=uba,
+            paper_account_id=None,
+            environment="LIVE",
+        )
+        currency = s.split("-", 1)[-1] if "-" in s else s
+        broker_balances[currency] = Decimal(str(held or 0))
+        broker_balances[s] = Decimal(str(held or 0))
+        tick = session.execute(
+            text(
+                """
+                SELECT t.price
+                FROM market.trade_tick t
+                JOIN market.instrument i ON i.instrument_id = t.instrument_id
+                WHERE i.symbol = :sym
+                ORDER BY t.traded_at DESC
+                LIMIT 1
+                """
+            ),
+            {"sym": s},
+        ).scalar()
+        if tick is not None:
+            mark_prices[s] = Decimal(str(tick))
+            mark_prices[currency] = Decimal(str(tick))
+
+    return preview_uba_residual_cleanup(
+        session,
+        user_broker_account_id=uba,
+        broker_balances=broker_balances,
+        mark_prices=mark_prices,
+    )
+
+
 @router.post("/uba/{user_broker_account_id}/filled-exit-open-binding/reconcile")
 def admin_uba_reconcile_filled_exit_open_binding(
     user_broker_account_id: int,
