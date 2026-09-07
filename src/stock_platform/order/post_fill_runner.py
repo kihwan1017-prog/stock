@@ -108,13 +108,13 @@ class PostFillVerifyRunner:
             activate_kill_on_mismatch=activate_kill_on_mismatch,
         )
 
-    def build_expected_positions_from_orders(
+    def build_expected_positions_order_net_legacy(
         self,
         *,
         user_broker_account_id: int,
         symbol: str | None = None,
     ) -> list[dict[str, Any]]:
-        """FILLED/PARTIALLY_FILLED 주문 순매수량을 기대 Position으로 집계."""
+        """LEGACY — lifetime FILLED 주문 순매수 (cleanup 미기록 SELL에 취약)."""
 
         from stock_platform.order.entities import TradingOrderEntity
 
@@ -142,6 +142,91 @@ class PostFillVerifyRunner:
             for sym, qty in nets.items()
             if qty != 0
         ]
+
+    def build_expected_positions_from_orders(
+        self,
+        *,
+        user_broker_account_id: int,
+        symbol: str | None = None,
+        seed_order_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Ownership-aware expected AUTO qty (OPEN/PARTIAL_EXIT bindings).
+
+        CLOSED + CLEARED_VIA_CONTROLLED_CLEANUP 는 0 기여.
+        fill→binding race: seed_order_id BUY fill을 binding 없을 때만 가산.
+        lifetime order-net은 사용하지 않음 (cleanup SELL 미기록 오탐 방지).
+        """
+
+        from stock_platform.order.entities import TradingOrderEntity
+        from stock_platform.risk_engine.strategy_owned_entities import (
+            BINDING_STATUS_OPEN,
+            BINDING_STATUS_PARTIAL_EXIT,
+            StrategyPositionBindingEntity,
+        )
+
+        uba = int(user_broker_account_id)
+        sym_filter = str(symbol or "").strip().upper() or None
+        nets: dict[str, Decimal] = {}
+        binding_breakdown: dict[str, list[dict[str, Any]]] = {}
+
+        stmt = select(StrategyPositionBindingEntity).where(
+            StrategyPositionBindingEntity.user_broker_account_id == uba,
+            StrategyPositionBindingEntity.ownership_code == "STRATEGY_OWNED",
+            StrategyPositionBindingEntity.status.in_(
+                (BINDING_STATUS_OPEN, BINDING_STATUS_PARTIAL_EXIT)
+            ),
+        )
+        if sym_filter:
+            stmt = stmt.where(
+                StrategyPositionBindingEntity.symbol == sym_filter
+            )
+        for row in self._session.scalars(stmt):
+            sym = str(row.symbol or "").upper()
+            qty = Decimal(str(row.owned_quantity or 0))
+            if qty <= 0:
+                continue
+            nets[sym] = nets.get(sym, Decimal("0")) + qty
+            binding_breakdown.setdefault(sym, []).append(
+                {
+                    "binding_id": int(row.binding_id),
+                    "status": str(row.status),
+                    "owned_quantity": str(qty),
+                    "entry_order_id": row.entry_order_id,
+                }
+            )
+
+        # fill 직후 binding 미생성 race — seed BUY fill만 가산
+        if seed_order_id is not None:
+            order = self._session.get(TradingOrderEntity, int(seed_order_id))
+            if order is not None:
+                o_sym = str(order.symbol or "").upper()
+                if (sym_filter is None or o_sym == sym_filter) and str(
+                    order.side_code or ""
+                ).upper() == "BUY" and str(
+                    order.status_code or ""
+                ).upper() in {"FILLED", "PARTIALLY_FILLED"}:
+                    has_binding = any(
+                        int(b.get("entry_order_id") or 0) == int(seed_order_id)
+                        for b in binding_breakdown.get(o_sym, [])
+                    )
+                    if not has_binding:
+                        fill_qty = Decimal(str(order.filled_quantity or 0))
+                        if fill_qty > 0:
+                            nets[o_sym] = nets.get(o_sym, Decimal("0")) + fill_qty
+
+        out: list[dict[str, Any]] = []
+        for sym, qty in nets.items():
+            if qty == 0:
+                continue
+            out.append(
+                {
+                    "symbol": sym,
+                    "quantity": str(qty),
+                    "source": "STRATEGY_OWNED_OPEN_BINDINGS",
+                    "bindings": binding_breakdown.get(sym, []),
+                }
+            )
+        return out
 
     def verify_after_order_fill(
         self,
@@ -172,6 +257,7 @@ class PostFillVerifyRunner:
         expected = self.build_expected_positions_from_orders(
             user_broker_account_id=int(uba_id),
             symbol=symbol or None,
+            seed_order_id=int(getattr(order, "order_id", 0) or 0) or None,
         )
         svc = PostFillVerificationService(self._session)
         row = svc.enqueue_from_order(

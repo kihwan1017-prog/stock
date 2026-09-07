@@ -357,6 +357,26 @@ def execute_production_cleanup(
             if final["final_state"] in {STATUS_FILLED, STATUS_PARTIAL_FILLED}
             else None,
         )
+        # defense-in-depth: local SELL ledger so lifetime order-net stays aligned
+        if final["final_state"] == STATUS_FILLED and Decimal(
+            str(final["executed_qty"] or 0)
+        ) > ZERO:
+            from stock_platform.operation.upbit_auto_residual_cleanup.cleanup_order_ledger import (
+                persist_cleanup_sell_trading_order,
+            )
+
+            persist_cleanup_sell_trading_order(
+                session,
+                uba_id=ctx.uba_id,
+                symbol=ctx.symbol,
+                executed_qty=Decimal(str(final["executed_qty"])),
+                broker_order_uuid=broker_uuid,
+                identifier=identifier,
+                binding_id=ctx.binding_id,
+                approval_id=approval.approval_id,
+                paid_fee=(remote or {}).get("paid_fee"),
+                average_price=elig.mark_price,
+            )
         # CLOSED status 유지 — owned_quantity 런타임 필드도 변경하지 않음
         session.commit()
     else:

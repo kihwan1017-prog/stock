@@ -724,7 +724,13 @@ class PostFillVerificationService:
         next_retry = int(row.retry_count) + 1
         # 마지막 시도에서만 Kill. 그 전은 sync-pending 재시도.
         final_attempt = next_retry >= int(row.max_attempts)
-        expected_positions = list(row.expected_position or [])
+        # ownership-aware expected를 매 retry마다 재계산 (frozen order-net 오탐 방지)
+        expected_positions = runner.build_expected_positions_from_orders(
+            user_broker_account_id=int(row.user_broker_account_id),
+            symbol=str(row.symbol or "").upper() or None,
+            seed_order_id=int(row.order_id) if row.order_id else None,
+        )
+        row.expected_position = expected_positions
         # reverify도 즉시경로와 동일: expected symbols로 broker snapshot 필터
         expected_syms = {
             str(p.get("symbol") or "").upper()

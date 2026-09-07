@@ -2799,6 +2799,15 @@ class LiveUnattendedAuthorizationService:
         if horizon_renewed:
             until = aware_utc(row.authorized_until)
 
+        # LIVE/ARM OFF여도 Activation이 Auth보다 먼저 만료되지 않게 continuity 유지
+        # (POST_FILL DISARM 이후 Activation만 만료되어 복구 불가해지는 split-brain 방지)
+        continuity = self.ensure_activation_continuity_within_auth(
+            row,
+            uba,
+            actor=f"{renew_actor}_ACTIVATION_CONTINUITY",
+            now=now,
+        )
+
         # LIVE/ARM이 꺼져 있으면 renew 대신 lease restore (startup fail-closed 복구)
         if not bool(uba.live_order_enabled) or not bool(uba.live_armed):
             # MARKET_HOURS: 장중 restore만 (다음 장 자동 기동 금지)
@@ -3241,6 +3250,160 @@ class LiveUnattendedAuthorizationService:
         if until is None or until <= _now():
             return False
         return bool(row.entry_authorized) and row.status_code == STATUS_ACTIVE
+
+    def ensure_activation_continuity_within_auth(
+        self,
+        row: LiveUnattendedAuthorizationEntity,
+        uba: UserBrokerAccount,
+        *,
+        actor: str,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Auth ACTIVE 범위 안에서 Activation이 먼저 만료되지 않도록 successor.
+
+        - authorization보다 멀리 연장 금지
+        - kill / recovery conflict / inactive auth 면 refresh 금지
+        - LIVE OFF 상태에서도 continuity 유지 (DISARM 후 Activation만 고사 방지)
+        """
+
+        current = aware_utc(now) or _now()
+        until = aware_utc(row.authorized_until)
+        if until is None or until <= current:
+            return {"refreshed": False, "reason": "AUTH_EXPIRED_OR_MISSING"}
+        if str(row.status_code or "").upper() != STATUS_ACTIVE:
+            return {"refreshed": False, "reason": "AUTH_NOT_ACTIVE"}
+        if not bool(row.enabled):
+            return {"refreshed": False, "reason": "AUTH_DISABLED"}
+
+        # safety gates — kill / recovery conflict 시 refresh 금지
+        try:
+            from stock_platform.risk_engine.kill_switch_service import (
+                KillSwitchService,
+            )
+            from stock_platform.trading.account_identity import (
+                uba_kill_switch_scope,
+            )
+
+            if KillSwitchService(self._session).is_active_for_scopes(
+                [
+                    uba_kill_switch_scope(int(row.user_broker_account_id)),
+                    KillSwitchService.GLOBAL_SCOPE,
+                ]
+            ):
+                return {"refreshed": False, "reason": "KILL_SWITCH_ACTIVE"}
+        except Exception:  # noqa: BLE001
+            return {"refreshed": False, "reason": "KILL_CHECK_FAILED"}
+
+        try:
+            from sqlalchemy import text as sql_text
+
+            conflict_n = self._session.execute(
+                sql_text(
+                    """
+                    SELECT COUNT(*) FROM trading.recovery_conflict
+                    WHERE user_broker_account_id = :uba
+                      AND UPPER(status) IN
+                        ('OPEN','ACTIVE','PENDING','MANUAL_REVIEW')
+                    """
+                ),
+                {"uba": int(row.user_broker_account_id)},
+            ).scalar()
+            if int(conflict_n or 0) > 0:
+                return {
+                    "refreshed": False,
+                    "reason": "RECOVERY_CONFLICT_PRESENT",
+                }
+        except Exception:  # noqa: BLE001
+            self._session.rollback()
+
+        transition_svc = LiveTradingTransitionService(self._session)
+        act = transition_svc.peek_active(
+            broker_code=str(uba.broker_code or "").upper(),
+            user_broker_account_id=int(row.user_broker_account_id),
+            now=current,
+        )
+        eligible, elig_reason = is_activation_eligible_for_horizon_refresh(
+            act, now=current
+        )
+        if not eligible or act is None:
+            return {
+                "refreshed": False,
+                "reason": elig_reason or "NO_ACTIVE_ACTIVATION",
+            }
+
+        act_exp = aware_utc(act.expires_at)
+        if act_exp is None:
+            return {"refreshed": False, "reason": "ACTIVATION_MISSING_EXPIRES_AT"}
+
+        margin = self._activation_horizon_mismatch_margin_seconds(row)
+        remaining = int((act_exp - current).total_seconds())
+        if remaining > margin:
+            return {
+                "refreshed": False,
+                "reason": "NOT_DUE",
+                "activation_remaining_seconds": remaining,
+                "margin_seconds": margin,
+            }
+
+        renew_hours = compute_horizon_activation_refresh_hours(
+            authorized_until=until,
+            activation_renew_hours=int(row.activation_renew_hours),
+            now=current,
+        )
+        projected = projected_successor_expires_at(
+            now=current,
+            renew_hours=renew_hours,
+            authorized_until=until,
+        )
+        if projected > until:
+            return {
+                "refreshed": False,
+                "reason": "SUCCESSOR_EXCEEDS_HORIZON",
+            }
+
+        try:
+            successor = self._create_successor_activation(
+                uba=uba,
+                previous=act,
+                actor=actor[:100],
+                ttl_hours=renew_hours,
+            )
+        except LiveUnattendedError as exc:
+            return {
+                "refreshed": False,
+                "reason": exc.code,
+                "message": exc.message,
+            }
+
+        row.source_activation_id = int(successor.live_trading_transition_id)
+        succ_exp = aware_utc(successor.expires_at)
+        detail = dict(row.last_renewal_detail or {})
+        detail["last_activation_continuity"] = {
+            "at": current.isoformat(),
+            "previous_activation_id": int(act.live_trading_transition_id),
+            "successor_activation_id": int(
+                successor.live_trading_transition_id
+            ),
+            "activation_expires_at": (
+                succ_exp.isoformat() if succ_exp else None
+            ),
+            "authorized_until": until.isoformat(),
+            "actor": actor,
+        }
+        row.last_renewal_detail = detail
+        self._session.flush()
+        return {
+            "refreshed": True,
+            "reason": "SUCCESSOR_CREATED",
+            "previous_activation_id": int(act.live_trading_transition_id),
+            "successor_activation_id": int(
+                successor.live_trading_transition_id
+            ),
+            "activation_expires_at": (
+                succ_exp.isoformat() if succ_exp else None
+            ),
+            "renew_hours": renew_hours,
+        }
 
     def _create_successor_activation(
         self,

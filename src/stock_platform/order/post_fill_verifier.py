@@ -69,22 +69,60 @@ class PostFillBalanceVerifier:
                 symbols = set(db_map.keys())
             else:
                 symbols = set(broker_map) | set(db_map)
+            # expected payload에서 ownership 메타 보존
+            expected_meta = {
+                str(p.get("symbol", "")).upper(): p
+                for p in (db_positions or [])
+                if str(p.get("symbol", "")).strip()
+            }
             for sym in symbols:
                 bq = broker_map.get(sym, Decimal("0"))
                 dq = db_map.get(sym, Decimal("0"))
-                if abs(bq - dq) > tolerance:
-                    detail.update(
-                        {
-                            "symbol": sym,
-                            "broker_qty": str(bq),
-                            "db_qty": str(dq),
-                            "compare_scope": (
-                                "EXPECTED_SYMBOLS"
-                                if db_map
-                                else "FULL_UNION"
-                            ),
-                        }
+                diff = bq - dq
+                meta = expected_meta.get(sym) or {}
+                operand = {
+                    "symbol": sym,
+                    "broker_qty": str(bq),
+                    "db_qty": str(dq),
+                    "expected_auto_qty": str(dq),
+                    "actual_broker_total_qty": str(bq),
+                    "difference": str(diff),
+                    "tolerance": str(tolerance),
+                    "compare_scope": (
+                        "EXPECTED_SYMBOLS" if db_map else "FULL_UNION"
+                    ),
+                    "ownership_source": meta.get("source"),
+                    "binding_breakdown": meta.get("bindings"),
+                }
+                # AUTO expected와 broker exact match
+                if abs(diff) <= tolerance:
+                    continue
+                # broker > AUTO expected: manual/unknown excess — AUTO post-fill
+                # false mismatch 방지 (manual 보호 심볼 또는 excess만 존재)
+                if diff > tolerance:
+                    currency = sym.split("-", 1)[-1] if "-" in sym else sym
+                    manual_protected = currency in {
+                        "BTC",
+                        "ETH",
+                        "DOGE",
+                        "SKY",
+                    }
+                    operand["manual_attributed_qty"] = (
+                        str(diff) if manual_protected else "0"
                     )
+                    operand["unknown_qty"] = (
+                        "0" if manual_protected else str(diff)
+                    )
+                    if manual_protected:
+                        # manual excess만 있고 AUTO qty는 broker에 포함됨
+                        operand["compare_result"] = "PASS_MANUAL_EXCESS"
+                        detail.setdefault("manual_excess_passes", []).append(
+                            operand
+                        )
+                        continue
+                    # unknown excess — still mismatch (fail closed)
+                    detail.update(operand)
+                    detail["compare_result"] = "FAIL_UNKNOWN_EXCESS"
                     self._on_mismatch(
                         event_type=POSITION_MISMATCH,
                         user_id=user_id,
@@ -98,6 +136,24 @@ class PostFillBalanceVerifier:
                         reason_code="POSITION_MISMATCH",
                         detail=detail,
                     )
+                # broker < expected AUTO — true shortfall
+                detail.update(operand)
+                detail["manual_attributed_qty"] = "0"
+                detail["unknown_qty"] = "0"
+                detail["compare_result"] = "FAIL_BROKER_SHORTFALL"
+                self._on_mismatch(
+                    event_type=POSITION_MISMATCH,
+                    user_id=user_id,
+                    account_id=user_broker_account_id,
+                    detail=detail,
+                    actor=actor,
+                    activate_kill=activate_kill_on_mismatch,
+                )
+                return PostFillVerifyResult(
+                    ok=False,
+                    reason_code="POSITION_MISMATCH",
+                    detail=detail,
+                )
 
         if broker_cash is not None and db_cash is not None:
             if abs(Decimal(str(broker_cash)) - Decimal(str(db_cash))) > tolerance:
