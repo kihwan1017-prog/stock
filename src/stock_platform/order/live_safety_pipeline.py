@@ -229,17 +229,33 @@ class LiveOrderSafetyPipeline:
                     detail=detail,
                     commit=False,
                 )
-                emit_live_order_telegram(
-                    event_type=audit_type,
-                    title=f"LIVE order rejected: {reason}",
-                    message=(
-                        f"{broker} {sym} {side_u} qty={qty} "
-                        f"price={px if px is not None else 'N/A'} "
-                        f"amount={amount if amount is not None else 'N/A'} "
-                        f"— {reason}"
-                    ),
-                    detail=detail,
-                )
+                # DAILY_LOSS: KST day 당 UBA 최초/상태변화 1회만 Telegram (audit는 유지)
+                send_telegram = True
+                if reason == "DAILY_LOSS_LIMIT_REACHED":
+                    try:
+                        from stock_platform.risk_engine.strategy_daily_loss_entry_gate import (
+                            should_emit_daily_loss_telegram,
+                        )
+
+                        send_telegram = should_emit_daily_loss_telegram(
+                            user_broker_account_id=uba_id,
+                            reason_code=reason,
+                        )
+                        detail["telegram_deduped"] = not send_telegram
+                    except Exception:  # noqa: BLE001
+                        send_telegram = True
+                if send_telegram:
+                    emit_live_order_telegram(
+                        event_type=audit_type,
+                        title=f"LIVE order rejected: {reason}",
+                        message=(
+                            f"{broker} {sym} {side_u} qty={qty} "
+                            f"price={px if px is not None else 'N/A'} "
+                            f"amount={amount if amount is not None else 'N/A'} "
+                            f"— {reason}"
+                        ),
+                        detail=detail,
+                    )
             return LiveSafetyDecision(
                 allowed=False,
                 reason_code=reason,
@@ -748,15 +764,28 @@ class LiveOrderSafetyPipeline:
                     {"error": type(exc).__name__},
                 )
 
-        # 8b) Strategy Daily Loss — strategy-owned PnL만 (account_daily_loss 미사용)
+        # 8b) Strategy Daily Loss — AUTO/strategy-owned 는 canonical PnL만.
+        # account_daily_loss telemetry(예: monitor 300k) 와 policy limit 혼합 금지.
         loss_hit, loss_detail = self._strategy_or_legacy_daily_loss_breached(
             user_broker_account_id=uba_id,
             broker_code=broker,
             strategy_id=strategy_id,
             strategy_deployment_id=strategy_deployment_id,
             limit=policy.daily_max_loss_amount,
+            order_source=order_source,
         )
         base_detail["strategy_daily_loss"] = loss_detail
+        if (not verified_exit) and str(
+            (loss_detail or {}).get("mode") or ""
+        ) == "STRATEGY_IDENTITY_INVALID":
+            return _fail(
+                "STRATEGY_IDENTITY_INVALID",
+                LIVE_REJECTED,
+                {
+                    "limit": str(policy.daily_max_loss_amount),
+                    **loss_detail,
+                },
+            )
         if (not verified_exit) and loss_hit:
             return _fail(
                 "DAILY_LOSS_LIMIT_REACHED",
@@ -1222,35 +1251,47 @@ class LiveOrderSafetyPipeline:
         strategy_id: str | None,
         strategy_deployment_id: int | None,
         limit: Decimal,
+        order_source: str | None = None,
     ) -> tuple[bool, dict[str, Any]]:
         """
-        Strategy scope가 있으면 strategy-owned PnL만 사용.
-        strategy_id 없는 수동 LIVE 주문만 legacy account_daily_loss 유지.
+        AUTO/strategy-owned: canonical StrategyOwnedRiskService 만.
+        LEGACY account_daily_loss 는 MANUAL/unknown 진입에만 명시 분리.
+        AUTO 인데 numeric strategy_id 없으면 silent LEGACY fallback 금지.
         """
 
         if limit <= ZERO:
             return False, {"mode": "NO_LIMIT"}
         try:
-            from stock_platform.risk_engine.strategy_owned_risk_service import (
-                StrategyOwnedRiskService,
-                _parse_strategy_id,
+            from stock_platform.risk_engine.strategy_daily_loss_entry_gate import (
+                is_auto_order_source,
+                resolve_canonical_strategy_id,
+                strategy_owned_daily_loss_hit,
             )
 
-            sid = _parse_strategy_id(strategy_id)
+            sid = resolve_canonical_strategy_id(strategy_id=strategy_id)
+            auto = is_auto_order_source(order_source)
+
             if sid is not None:
-                hit, detail = StrategyOwnedRiskService(
-                    self._session
-                ).strategy_daily_loss_breached(
+                hit, detail = strategy_owned_daily_loss_hit(
+                    self._session,
                     user_broker_account_id=user_broker_account_id,
                     broker_code=broker_code,
                     strategy_id=sid,
                     deployment_id=strategy_deployment_id,
                     limit=limit,
                 )
-                detail = {**detail, "mode": "STRATEGY_OWNED"}
                 return hit, detail
 
-            # legacy: 수동/무전략 주문만 account_daily_loss
+            # AUTO entry 는 identity 없으면 fail-closed (LEGACY 조용히 타지 않음)
+            if auto:
+                return True, {
+                    "mode": "STRATEGY_IDENTITY_INVALID",
+                    "reason_code": "STRATEGY_IDENTITY_INVALID",
+                    "strategy_id_raw": strategy_id,
+                    "order_source": order_source,
+                }
+
+            # legacy: 수동/무전략 주문만 account_daily_loss (telemetry 경로)
             from stock_platform.risk_engine.daily_loss_entities import (
                 AccountDailyLossEntity,
             )
@@ -1267,13 +1308,17 @@ class LiveOrderSafetyPipeline:
                 return False, {"mode": "LEGACY_ACCOUNT", "row": None}
             status = str(row.status_code).upper()
             current_loss = Decimal(str(row.current_loss_amount or 0))
-            hit = status in {"BREACHED", "LIMIT_REACHED", "KILL"} or (
-                current_loss >= limit
-            )
+            # MANUAL: effective policy limit 과 비교 (sticky status만으로 차단하지 않음)
+            # — 단 BREACHED/KILL 은 hard safety 유지
+            hit = status in {"BREACHED", "KILL"} or (current_loss >= limit)
             return hit, {
                 "mode": "LEGACY_ACCOUNT",
                 "status_code": row.status_code,
                 "current_loss_amount": str(current_loss),
+                "policy_limit": str(limit),
+                "sticky_limit_reached_ignored_for_policy": status
+                == "LIMIT_REACHED"
+                and current_loss < limit,
             }
         except Exception as exc:  # noqa: BLE001
             # fail-closed on strategy path errors would block first order —

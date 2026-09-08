@@ -782,6 +782,52 @@ class RiskIntegratedRealtimeOrderExecutor:
             ),
         )
 
+        # Canonical numeric strategy identity (reason_code 는 label 전용)
+        canonical_strategy_id = getattr(signal, "strategy_id", None)
+        try:
+            if canonical_strategy_id is not None:
+                canonical_strategy_id = int(canonical_strategy_id)
+        except (TypeError, ValueError):
+            canonical_strategy_id = None
+
+        # Upstream daily-loss BUY suppress (final pipeline gate 는 별도 유지)
+        if (
+            environment == "LIVE"
+            and str(signal.action.value).upper() == "BUY"
+            and user_broker_account_id is not None
+        ):
+            try:
+                from stock_platform.risk_engine.resolved_policy import (
+                    ResolvedRiskPolicyResolver,
+                )
+                from stock_platform.risk_engine.strategy_daily_loss_entry_gate import (
+                    should_suppress_auto_buy_for_daily_loss,
+                )
+
+                uid = getattr(self._execution_config, "user_id", None) or getattr(
+                    signal, "user_id", None
+                )
+                policy = ResolvedRiskPolicyResolver(self._session).resolve(
+                    user_id=int(uid) if uid is not None else 0,
+                    user_broker_account_id=int(user_broker_account_id),
+                )
+                suppress, suppress_detail = should_suppress_auto_buy_for_daily_loss(
+                    self._session,
+                    user_broker_account_id=int(user_broker_account_id),
+                    broker_code=str(broker_code or ""),
+                    strategy_id=canonical_strategy_id,
+                    deployment_id=None,
+                    limit=policy.daily_max_loss_amount,
+                )
+                if suppress:
+                    reason = str(
+                        suppress_detail.get("reason_code")
+                        or "DAILY_LOSS_LIMIT_REACHED"
+                    )
+                    return self._skipped(signal, reason)
+            except Exception:  # noqa: BLE001 — final safety gate 가 재검증
+                pass
+
         result = OrderExecutionService(self._session).submit(
             OrderExecutionCommand(
                 account_id=exec_account_id,
@@ -793,7 +839,9 @@ class RiskIntegratedRealtimeOrderExecutor:
                 quantity=quantity,
                 order_amount=None,
                 price=signal.signal_price,
-                strategy_code=signal.reason_code,
+                # reason_code 를 strategy_code 로 넣지 않음 (identity 혼동 금지)
+                strategy_code=None,
+                strategy_id=canonical_strategy_id,
                 account_number=account_number or None,
                 # LIVE: LiveSafety(ARM/daily/vault) 우회 금지 — 상단 Risk만으로 부족
                 # PAPER: 기존 상단 검증 재사용 (이중 검사 부담 완화)

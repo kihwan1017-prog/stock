@@ -1,16 +1,163 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-08 (UBA1380 P3-C Controlled Residual Cleanup DRY-RUN)
+**최종 갱신:** 2026-09-08 (UBA1380 daily-loss false-positive fix + rollout)
+
+---
+
+## U — UBA1380 Daily Loss False Positive Fix And Rollout (2026-09-08)
+
+- WORK: `UBA1380_DAILY_LOSS_FALSE_POSITIVE_FIX_AND_ROLLOUT` (history #158)
+- Basis: `.run/uba1380_daily_loss_limit_incident_audit_20260908_161539.json`
+- Fix: numeric `strategy_id` propagation · STRATEGY_OWNED PnL · AUTO no LEGACY fallback · upstream BUY suppress · Telegram day-dedupe · final fail-closed 유지
+- Tests: `tests/test_uba1380_daily_loss_canonical_gate.py` (+ managed-symbol regression)
+- Commit: (pending rollout)
+- NEXT: production Force restart once → AUTO 4/4 proof → `WAIT_FOR_CHATGPT_REVIEW`
+
+---
+
+## U — UBA1380 DAILY_LOSS_LIMIT_REACHED Immediate Audit (2026-09-08)
+
+- WORK: `UBA1380_DAILY_LOSS_LIMIT_REACHED_IMMEDIATE_AUDIT`
+- Scope: READ-ONLY (code/DB/restart/order 변경 없음)
+- Window: 2026-09-08 15:20 KST ~ audit time
+- Verdict: **`BLOCK_DAILY_LOSS_LIMIT_FALSE_POSITIVE`**
+- Classification: `DAILY_LOSS_LIMIT_FALSE_POSITIVE`
+- Repeat root cause: **A** (upstream keeps generating entry intents)
+- Key: AUTO entry used `strategy_id=PORTFOLIO_BULLISH_STATE_ENTRY` → LEGACY_ACCOUNT path; policy limit 10M vs strategy-owned loss ~1.5k; reject on sticky account `LIMIT_REACHED` (~3.4M)
+- ONDO: reject×3 (15:39/40/41) + Telegram×3; reject attempts broker_submit=0; later BUY#3209 @15:44 then SELL#3210
+- e6edf9d managed-symbol regression: **0** in window (distinct from this incident)
+- Evidence: `.run/uba1380_daily_loss_limit_incident_audit_20260908_161539.json`
+- NEXT: `WAIT_FOR_CHATGPT_REVIEW` (추가 수정 금지)
+
+---
+
+## K — Kiwoom UBA1381 Final AUTO Activation After Restart (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_FINAL_AUTO_ACTIVATION_AFTER_RESTART`
+- Prior YES: `.run/kiwoom_uba1381_controlled_auto_activation_20260908_150013.json`
+- UAC Force restart: **YES** · PID **7584 → 14956** · count=1 · commit `e6edf9d`
+- Exit flag process loaded: **true** · Binding677 **managed=true** · exit decision **HOLD**
+- UBA1380 after restart: AUTO RUNNING / 4/4 (isolation preserved)
+- AUTO start attempt after **15:30 KST** → MARKET_HOURS past_close → LIVE/ARM renew failed
+- Runtime briefly RUNNING+realtime then **fail-closed PAUSE/STOP** (mixed state cleared)
+- Verdict: **`BLOCK_KIWOOM_AUTO_RUNTIME_STATE_MISMATCH`**
+- Evidence: `.run/kiwoom_uba1381_final_auto_activation_20260908_153114.json`
+- NEXT: next regular session — LIVE/ARM/MARKET_HOURS enable → AUTO start (restart already done; exit flag loaded)
+- Additional restart / smoke BUY: **금지**
+
+---
+
+## K — Kiwoom UBA1381 Controlled AUTO Activation (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_CONTROLLED_AUTO_ACTIVATION`
+- Human approval: **YES**
+- Exit dry: **HOLD** (entry 12530 / px ~12860 / SL 11903 / TP 13783)
+- Env prepared: `POSITION_EXIT_MONITOR_LIVE_KIWOOM_ENABLED=true`
+- Production process still **OFF** until restart (PID 7584 unchanged)
+- AUTO/runtime/realtime **NOT started** (blocked by instruction)
+- Verdict: **`BLOCK_KIWOOM_EXIT_ENABLE_RESTART_REQUIRED`**
+- Evidence: `.run/kiwoom_uba1381_controlled_auto_activation_20260908_150013.json`
+- NEXT: ChatGPT review → approved Force restart once → then resume activation
+- Smoke BUY / daily reset / manual SELL: **금지**
+
+---
+
+## J — Joint Production Rollout Continuation (2026-09-08)
+
+- WORK: `JOINT_UPBIT_KIWOOM_PRODUCTION_ROLLOUT_CONTINUATION`
+- Basis: `.run/joint_upbit_kiwoom_production_rollout_20260908_135816.json` (prior UAC block)
+- UAC Force restart: **APPROVED** · PID **9888 → 7584** · restart_count=1
+- Loaded: **`5f1a5a0`** + **`e6edf9d`** (runtime HEAD=`e6edf9d`)
+- Verdict: **`PASS_JOINT_UPBIT_KIWOOM_PRODUCTION_ROLLOUT`**
+- Evidence: `.run/joint_upbit_kiwoom_production_rollout_continuation_20260908_143026.json`
+- Note: restart 직후 pause_reason=`startup_forced_idle`(still PAUSED); OPERATOR_PAUSE 재설정 후 watchdog 3-cycle 유지
+- Linked to work history #156 (Kiwoom) · #157 (Upbit)
+- NEXT: `WAIT_FOR_CHATGPT_REVIEW`
+- AUTO START / Scheduler RUN / realtime START / Kiwoom exit prod enable: **금지**
+
+---
+
+## K — Kiwoom UBA1381 Final AUTO Readiness Precheck (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_FINAL_AUTO_READINESS_PRECHECK`
+- Verdict: `BLOCK_KIWOOM_RUNTIME_NOT_SAFELY_PAUSED` (+ sizing + protective exit blockers)
+- Evidence: `.run/kiwoom_uba1381_final_auto_readiness_precheck_20260908_115824.json`
+- NEXT: superseded by blocker remediation
+
+---
+
+## K — Kiwoom UBA1381 Post-Smoke Runtime State Alignment (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_POST_SMOKE_RUNTIME_STATE_ALIGNMENT`
+- Verdict: `PASS_KIWOOM_POST_SMOKE_RUNTIME_SAFELY_PAUSED` (at alignment time)
+- Evidence: `.run/kiwoom_uba1381_post_smoke_runtime_alignment_20260908_110125.json`
+- NOTE: later precheck found runtime re-RUNNING — treat alignment PASS as historical
+
+---
+
+## K — Kiwoom UBA1381 First LIVE Order Reconcile Only (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_FIRST_LIVE_ORDER_RECONCILE_ONLY`
+- Verdict: `PASS_KIWOOM_FIRST_REAL_LIVE_ORDER_SMOKE`
+- Evidence: `.run/kiwoom_uba1381_first_live_order_reconcile_20260908_104039.json`
+- NEXT: superseded by post-smoke runtime alignment
+
+---
+
+## K — Kiwoom UBA1381 First Real LIVE Order Smoke (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_FIRST_REAL_LIVE_ORDER_SMOKE`
+- Order: local **#3176** · broker **`0050719`** · BUY 034310 qty1 @12530 · was ACCEPTED then reconciled FILLED
+- Evidence (pre-reconcile): `.run/kiwoom_uba1381_first_real_live_order_smoke_20260908_101218.json`
+- NEXT: superseded by reconcile-only PASS
+
+---
+
+## K — Kiwoom UBA1381 Resume From Existing State (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_RESUME_FROM_EXISTING_STATE`
+- Verdict: `PASS_KIWOOM_UBA1381_REACTIVATED_READY_FOR_FIRST_LIVE_ORDER_SMOKE`
+- Evidence: `.run/kiwoom_uba1381_resume_reactivation_20260908_085404.json`
+- NEXT: superseded by first LIVE order smoke
+
+---
+
+## K — Kiwoom UBA1381 Resume Safe Precheck (2026-09-08)
+
+- WORK: `KIWOOM_UBA1381_RESUME_SAFE_PRECHECK`
+- Mode: **READ-ONLY** · no orders · no LIVE/ARM/Activation · no UBA1380 mutation · no runtime restart
+- Runtime: **`50bc134`** PID 21476 · UBA1380 isolation **YES**
+- Canonical: Strategy **17579** · Deployment **869** ACTIVE LIVE · Link **2356** · Activation **#20 EXPIRED**
+- Verdict: `PASS_KIWOOM_UBA1381_READY_FOR_CONTROLLED_LIVE_SMOKE_REACTIVATION_REQUIRED`
+- Soft blocker: account sync stale — cleared by resume reactivation fresh sync
+- Evidence: `.run/kiwoom_uba1381_resume_safe_precheck_20260908_083016.json`
+- NEXT: superseded by resume reactivation
+
+---
+
+## U — Post-Fill POSITION_MISMATCH + Activation Expiry (2026-09-08)
+
+- WORK: `WRK-20260908-UBA1380-POSTFILL-ACTIVATION-INCIDENT-FIX-V1`
+- Incident runtime: **`d447bc9`** · Fix commit/runtime: **`50bc134`** PID **21476** · head match
+- Root: cleanup SELL not in `trading_order` → post-fill order-net expected included residual **1.61768791** (`4.78224487` vs broker `3.16455696`)
+- Fix: ownership-aware expected · reverify recompute · cleanup SELL ledger · activation continuity within auth · mismatch telemetry
+- Safe recovery: false-positive kill `UBA:1380` cleared · LIVE/ARM/UNATTENDED restored · STACK **4/4**
+- NEAR#659 later closed by strategy **MA_DEAD_CROSS** SELL #3147 (not cleanup/test) · broker NEAR=0
+- Verdict: `PASS_POSTFILL_ACTIVATION_INCIDENT_FIXED_AND_RECOVERED`
+- Evidence: `.run/uba1380_postfill_activation_incident_fix_20260908_064514.json`
+- NEXT: `CURSOR_NEXT_ACTION=NONE`
 
 ---
 
 ## U — Final Integrated Completion (2026-09-08)
 
 - WORK: `WRK-20260908-UBA1380-FINAL-INTEGRATED-COMPLETION-V1`
-- Mode: Production APPLY path + runtime rollout + optional NEAR#537 ONE-TIME YES
-- Base: P3-C `8e780b4` · Runtime was `16c704d`
-- NEXT: in progress (rollout → preview → operator YES/NO)
+- Commit: **`d447bc9`** · Runtime **`d447bc9`** PID 2744 · head match
+- NEAR#537: operator **YES** · Upbit SELL FILLED uuid `827a8239-e683-4414-b25a-c1a7b1627626` · qty 1.61768791 · NEAR broker=0
+- Verdict: `PASS_FINAL_UBA1380_READY_FOR_24X7_AUTO`
+- Evidence: `.run/uba1380_final_integrated_completion_20260908_010329.json`
+- NEXT: superseded by post-fill incident fix · `CURSOR_NEXT_ACTION=NONE`
 
 ---
 

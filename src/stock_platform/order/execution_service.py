@@ -408,16 +408,22 @@ class OrderExecutionService:
                     side=command.side.value,
                     quantity=quantity,
                     price=price,
+                    # canonical numeric only — strategy_code(reason label) fallback 금지
                     strategy_id=(
                         str(command.strategy_id)
                         if command.strategy_id is not None
                         else (
-                            command.strategy_code
-                            or (
-                                str(command.strategy_deployment_id)
-                                if command.strategy_deployment_id
-                                else None
+                            str(
+                                (command.metadata_payload or {}).get(
+                                    "strategy_id"
+                                )
                             )
+                            if isinstance(command.metadata_payload, dict)
+                            and (command.metadata_payload or {}).get(
+                                "strategy_id"
+                            )
+                            is not None
+                            else None
                         )
                     ),
                     strategy_deployment_id=command.strategy_deployment_id,
@@ -1069,6 +1075,7 @@ class OrderExecutionService:
                         price=price,
                         time_in_force=command.time_in_force,
                         strategy_code=command.strategy_code,
+                        strategy_id=command.strategy_id,
                         strategy_deployment_id=(
                             command.strategy_deployment_id
                         ),
