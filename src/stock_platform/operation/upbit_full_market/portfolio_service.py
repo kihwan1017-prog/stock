@@ -2922,7 +2922,8 @@ class UpbitPortfolioService:
                 slot,
             )
 
-        # Symbol Ownership — exclusion/hold/unknown (AUTO_ALREADY_MANAGED는 이 slot 자체)
+        # Symbol Ownership — MANUAL/UNKNOWN/hold/진짜 AUTO occupancy 차단
+        # WAITING_SIGNAL 자기 슬롯만으로는 ALREADY_MANAGED 를 내지 않음 (decision SoT)
         try:
             from stock_platform.trading.symbol_ownership import (
                 SymbolOwnershipService,
@@ -2933,6 +2934,7 @@ class UpbitPortfolioService:
                 SKIP_OWNERSHIP_UNKNOWN,
                 SKIP_AUTO_EXCLUDED,
                 SKIP_SYMBOL_HOLD,
+                SKIP_AUTO_ALREADY_MANAGED,
             )
 
             allowed, skip_reason, ownership = SymbolOwnershipService(
@@ -2942,7 +2944,7 @@ class UpbitPortfolioService:
                 user_broker_account_id=uba_id,
                 symbol=sym,
             )
-            if not allowed and skip_reason != "AUTO_SYMBOL_ALREADY_MANAGED":
+            if not allowed:
                 reserve = float(slot.reserved_amount_krw or 0)
                 can_release = (
                     slot.entry_order_id is None
@@ -2953,6 +2955,7 @@ class UpbitPortfolioService:
                         SKIP_OWNERSHIP_UNKNOWN,
                         SKIP_AUTO_EXCLUDED,
                         SKIP_SYMBOL_HOLD,
+                        SKIP_AUTO_ALREADY_MANAGED,
                     }
                 )
                 released = False

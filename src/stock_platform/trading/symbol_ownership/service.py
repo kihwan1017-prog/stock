@@ -22,6 +22,7 @@ from stock_platform.trading.symbol_ownership.constants import (
     CONFLICT_REMOTE_AUTO_MISMATCH,
     CONFLICT_REMOTE_MANUAL_ACTIVITY,
     CONFLICT_SAME_SYMBOL_MANUAL_AUTO,
+    ENTRY_OCCUPYING_SLOT_STATUSES,
     OPEN_ORDER_STATUSES,
     OWNER_AUTO,
     OWNER_AUTO_EXCLUDED,
@@ -135,7 +136,9 @@ class SymbolOwnershipService:
             auto_qty, strategy_id, deployment_id, auto_entry = self._auto_binding_qty(
                 uba, broker, sym, broker_qty_hint=broker_qty
             )
-        slot_id, slot_no, slot_active = self._auto_slot(uba, broker, sym)
+        slot_id, slot_no, slot_active, slot_occupies_entry = self._auto_slot(
+            uba, broker, sym
+        )
         auto_orders = self._auto_open_order_count(uba, broker, sym)
         pending_manualish = self._broker_pending_without_local(
             uba, broker, sym
@@ -154,6 +157,7 @@ class SymbolOwnershipService:
                 auto_binding_qty=auto_qty,
                 auto_open_orders=auto_orders,
                 auto_slot_active=slot_active,
+                auto_slot_occupies_entry=slot_occupies_entry,
                 manual_open_orders=manual_orders,
                 user_excluded=user_excluded,
                 symbol_hold_active=hold is not None,
@@ -528,9 +532,11 @@ class SymbolOwnershipService:
 
     def _auto_slot(
         self, uba: int, broker: str, sym: str
-    ) -> tuple[int | None, int | None, bool]:
+    ) -> tuple[int | None, int | None, bool, bool]:
+        """(slot_id, slot_no, active_any, occupies_entry)."""
+
         if broker != "UPBIT":
-            return None, None, False
+            return None, None, False, False
         try:
             from stock_platform.operation.upbit_full_market.entities import (
                 UpbitPositionSlotEntity,
@@ -546,16 +552,19 @@ class SymbolOwnershipService:
                 )
             )
             if row is None:
-                return None, None, False
+                return None, None, False, False
+            status = str(getattr(row, "status", "") or "").upper()
+            occupies = status in ENTRY_OCCUPYING_SLOT_STATUSES
             return (
                 int(row.slot_id)
                 if getattr(row, "slot_id", None) is not None
                 else None,
                 int(row.slot_no) if row.slot_no is not None else None,
                 True,
+                occupies,
             )
         except Exception:  # noqa: BLE001
-            return None, None, False
+            return None, None, False, False
 
     def _broker_position_qty(
         self, uba: int, broker: str, sym: str

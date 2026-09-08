@@ -34,6 +34,8 @@ class OwnershipFacts:
     auto_binding_qty: Decimal = ZERO
     auto_open_orders: int = 0
     auto_slot_active: bool = False
+    # OPEN/EXIT_PENDING/COOLDOWN 등 재진입 불가 occupancy (WAITING 제외)
+    auto_slot_occupies_entry: bool = False
     manual_open_orders: int = 0
     user_excluded: bool = False
     symbol_hold_active: bool = False
@@ -105,6 +107,12 @@ def decide_ownership(facts: OwnershipFacts) -> OwnershipDecision:
 
     entry_allowed = False
     skip: str | None = None
+    # 진짜 재진입 차단 occupancy (WAITING_SIGNAL 자기 슬롯만으로는 차단하지 않음)
+    reentry_occupied = (
+        auto_binding
+        or facts.auto_open_orders > 0
+        or bool(facts.auto_slot_occupies_entry)
+    )
     if facts.symbol_hold_active:
         skip = SKIP_SYMBOL_HOLD
     elif facts.user_excluded:
@@ -112,7 +120,11 @@ def decide_ownership(facts: OwnershipFacts) -> OwnershipDecision:
     elif owner == OWNER_MANUAL:
         skip = SKIP_MANUAL_SYMBOL_EXCLUDED
     elif owner == OWNER_AUTO:
-        skip = SKIP_AUTO_ALREADY_MANAGED
+        if reentry_occupied:
+            skip = SKIP_AUTO_ALREADY_MANAGED
+        else:
+            # WAITING_SIGNAL 등 — 첫 ENTRY 진행 허용 (final gate·occupancy가 병행)
+            entry_allowed = True
     elif owner == OWNER_UNKNOWN:
         skip = SKIP_OWNERSHIP_UNKNOWN
     elif owner == OWNER_FREE:

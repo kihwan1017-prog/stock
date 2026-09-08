@@ -54,3 +54,14 @@ ACTIVE_SLOT_STATUSES = frozenset(
         "COOLDOWN",
     }
 )
+
+# ENTRY 차단용 — WAITING_SIGNAL/ENTRY_PENDING(자기 진행)은 제외.
+# WAITING만으로 AUTO_SYMBOL_ALREADY_MANAGED 를 내면
+# begin→live_safety→rollback 루프 + Telegram 폭주가 난다.
+ENTRY_OCCUPYING_SLOT_STATUSES = frozenset(
+    {
+        "OPEN",
+        "EXIT_PENDING",
+        "COOLDOWN",
+    }
+)

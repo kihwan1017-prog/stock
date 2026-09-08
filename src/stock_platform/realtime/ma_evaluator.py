@@ -871,6 +871,43 @@ class MovingAverageStrategyEvaluator:
                 except Exception:  # noqa: BLE001
                     pass
             return None
+        # Upstream: OPEN/ENTRY_PENDING/EXIT_PENDING/binding occupancy면 signal 미생성
+        # (WAITING_SIGNAL 자기 슬롯은 occupancy에 포함되지 않음 — 첫 ENTRY 허용)
+        if uba_id:
+            try:
+                from stock_platform.database.session import get_session_factory
+                from stock_platform.operation.upbit_full_market.entry_occupancy import (
+                    inspect_symbol_auto_occupancy,
+                )
+
+                _sf = get_session_factory()
+                _sess = _sf()
+                try:
+                    occ = inspect_symbol_auto_occupancy(
+                        _sess,
+                        user_broker_account_id=int(uba_id),
+                        symbol=event.symbol.upper(),
+                    )
+                    if occ.get("occupied"):
+                        block_occ = str(
+                            occ.get("reason") or "ENTRY_SKIPPED_AUTO_OCCUPIED"
+                        )
+                        portfolio_entry_telemetry.record(
+                            uba_id,
+                            event.symbol.upper(),
+                            decision="BLOCK",
+                            block_reason=block_occ,
+                            reason_code=None,
+                            snapshot={
+                                **detail,
+                                "occupancy": occ.get("details") or {},
+                            },
+                        )
+                        return None
+                finally:
+                    _sess.close()
+            except Exception:  # noqa: BLE001
+                pass
         # 새 selection이면 이전 opportunity의 entry dedup/cooldown을 소비하지 않음
         if (
             selection_id is not None

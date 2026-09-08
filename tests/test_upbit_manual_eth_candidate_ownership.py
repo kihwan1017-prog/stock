@@ -40,10 +40,38 @@ def test_b_free_xrp_entry_allowed() -> None:
 
 
 def test_c_auto_slot_duplicate_entry_blocked() -> None:
-    auto = decide_ownership(OwnershipFacts(auto_slot_active=True))
+    # OPEN/EXIT/COOLDOWN occupancy — 재진입 차단
+    auto = decide_ownership(
+        OwnershipFacts(
+            auto_slot_active=True,
+            auto_slot_occupies_entry=True,
+        )
+    )
     assert auto.owner == OWNER_AUTO
     assert auto.entry_allowed is False
     assert auto.entry_skip_reason == SKIP_AUTO_ALREADY_MANAGED
+
+
+def test_c2_waiting_signal_only_allows_first_entry() -> None:
+    # WAITING_SIGNAL 자기 슬롯만 — 첫 ENTRY 진행 허용 (false-positive 루프 방지)
+    waiting = decide_ownership(
+        OwnershipFacts(auto_slot_active=True, auto_slot_occupies_entry=False)
+    )
+    assert waiting.owner == OWNER_AUTO
+    assert waiting.entry_allowed is True
+    assert waiting.entry_skip_reason is None
+
+
+def test_c3_open_binding_still_blocks() -> None:
+    bound = decide_ownership(
+        OwnershipFacts(
+            auto_binding_qty=Decimal("1"),
+            auto_slot_active=True,
+            auto_slot_occupies_entry=False,
+        )
+    )
+    assert bound.entry_allowed is False
+    assert bound.entry_skip_reason == SKIP_AUTO_ALREADY_MANAGED
 
 
 def test_d_auto_excluded_blocks() -> None:
