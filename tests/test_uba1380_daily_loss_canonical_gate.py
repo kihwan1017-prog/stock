@@ -279,7 +279,9 @@ def test_k_executor_no_longer_assigns_reason_as_strategy_code() -> None:
     src = inspect.getsource(mod.RiskIntegratedRealtimeOrderExecutor)
     assert "strategy_code=signal.reason_code" not in src
     assert "strategy_id=canonical_strategy_id" in src
-    assert "should_suppress_auto_buy_for_daily_loss" in src
+    assert "EntryAdmissionService" in src
+    # daily-loss 는 common admission 내부에서 재사용
+    assert "evaluate_auto_buy" in src
 
 
 def test_execution_service_no_strategy_code_as_identity_fallback() -> None:

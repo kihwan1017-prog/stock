@@ -229,18 +229,34 @@ class LiveOrderSafetyPipeline:
                     detail=detail,
                     commit=False,
                 )
-                # DAILY_LOSS: KST day 당 UBA 최초/상태변화 1회만 Telegram (audit는 유지)
+                # persistent reject: KST day+UBA+reason 당 Telegram 1회 (audit는 유지)
                 send_telegram = True
-                if reason == "DAILY_LOSS_LIMIT_REACHED":
+                if reason in {
+                    "DAILY_LOSS_LIMIT_REACHED",
+                    "OPEN_ORDER_LIMIT_EXCEEDED",
+                    "AUTO_SYMBOL_ALREADY_MANAGED",
+                    "POSITION_LIMIT_EXCEEDED",
+                    "AUTO_POSITION_LIMIT_REACHED",
+                }:
                     try:
-                        from stock_platform.risk_engine.strategy_daily_loss_entry_gate import (
-                            should_emit_daily_loss_telegram,
-                        )
+                        if reason == "DAILY_LOSS_LIMIT_REACHED":
+                            from stock_platform.risk_engine.strategy_daily_loss_entry_gate import (
+                                should_emit_daily_loss_telegram,
+                            )
 
-                        send_telegram = should_emit_daily_loss_telegram(
-                            user_broker_account_id=uba_id,
-                            reason_code=reason,
-                        )
+                            send_telegram = should_emit_daily_loss_telegram(
+                                user_broker_account_id=uba_id,
+                                reason_code=reason,
+                            )
+                        else:
+                            from stock_platform.trading.entry_admission_service import (
+                                should_emit_admission_telegram,
+                            )
+
+                            send_telegram = should_emit_admission_telegram(
+                                user_broker_account_id=uba_id,
+                                reason_code=reason,
+                            )
                         detail["telegram_deduped"] = not send_telegram
                     except Exception:  # noqa: BLE001
                         send_telegram = True

@@ -790,41 +790,63 @@ class RiskIntegratedRealtimeOrderExecutor:
         except (TypeError, ValueError):
             canonical_strategy_id = None
 
-        # Upstream daily-loss BUY suppress (final pipeline gate 는 별도 유지)
+        # Common Entry Admission — AUTO LIVE BUY only (final LiveOrderSafetyPipeline 유지)
         if (
             environment == "LIVE"
             and str(signal.action.value).upper() == "BUY"
             and user_broker_account_id is not None
         ):
             try:
-                from stock_platform.risk_engine.resolved_policy import (
-                    ResolvedRiskPolicyResolver,
-                )
-                from stock_platform.risk_engine.strategy_daily_loss_entry_gate import (
-                    should_suppress_auto_buy_for_daily_loss,
+                from stock_platform.trading.entry_admission_service import (
+                    EntryAdmissionService,
+                    should_emit_admission_telegram,
                 )
 
                 uid = getattr(self._execution_config, "user_id", None) or getattr(
                     signal, "user_id", None
                 )
-                policy = ResolvedRiskPolicyResolver(self._session).resolve(
-                    user_id=int(uid) if uid is not None else 0,
-                    user_broker_account_id=int(user_broker_account_id),
-                )
-                suppress, suppress_detail = should_suppress_auto_buy_for_daily_loss(
-                    self._session,
+                admission = EntryAdmissionService(
+                    self._session
+                ).evaluate_auto_buy(
+                    user_id=int(uid) if uid is not None else None,
                     user_broker_account_id=int(user_broker_account_id),
                     broker_code=str(broker_code or ""),
+                    symbol=str(signal.symbol or ""),
                     strategy_id=canonical_strategy_id,
-                    deployment_id=None,
-                    limit=policy.daily_max_loss_amount,
+                    strategy_deployment_id=getattr(
+                        signal, "strategy_deployment_id", None
+                    ),
+                    environment="LIVE",
                 )
-                if suppress:
-                    reason = str(
-                        suppress_detail.get("reason_code")
-                        or "DAILY_LOSS_LIMIT_REACHED"
-                    )
-                    return self._skipped(signal, reason)
+                if not admission.allowed:
+                    # persistent block: intent 미생성 + Telegram day-dedupe
+                    try:
+                        if should_emit_admission_telegram(
+                            user_broker_account_id=int(
+                                user_broker_account_id
+                            ),
+                            reason_code=admission.reason_code,
+                        ):
+                            from stock_platform.order.live_safety_audit import (
+                                emit_live_order_telegram,
+                            )
+
+                            emit_live_order_telegram(
+                                event_type="ENTRY_ADMISSION_DENIED",
+                                title=(
+                                    "AUTO entry admission denied: "
+                                    f"{admission.reason_code}"
+                                ),
+                                message=(
+                                    f"{broker_code} {signal.symbol} BUY "
+                                    f"— {admission.reason_code} "
+                                    f"(source={admission.source})"
+                                ),
+                                detail=admission.to_dict(),
+                            )
+                    except Exception:  # noqa: BLE001
+                        pass
+                    return self._skipped(signal, admission.reason_code)
             except Exception:  # noqa: BLE001 — final safety gate 가 재검증
                 pass
 
