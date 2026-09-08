@@ -75,8 +75,9 @@ async def pause_admin_runtime(
     audit: AuditLogService = Depends(get_audit_service),
 ):
     try:
+                # OPERATOR_PAUSE — watchdog/restore 자동 resume 금지 provenance
         entry = await dynamic_strategy_runtime_manager.pause_runtime(
-            scope_key, reason=body.reason or "admin_pause"
+            scope_key, reason=body.reason or "OPERATOR_PAUSE"
         )
     except (LookupError, RuntimeScopeRequiredError) as exc:
         raise HTTPException(

@@ -580,6 +580,18 @@ async def restore_kiwoom_trading_stack(
                         )
                         if str(e.scope.broker_code or "").upper() == "KIWOOM"
                     ]
+                    from stock_platform.trading.entry_stack_pause_authority import (
+                        evaluate_kiwoom_entry_stack_hold,
+                        is_explicit_entry_pause_reason,
+                    )
+
+                    entry_hold = evaluate_kiwoom_entry_stack_hold(
+                        session,
+                        user_broker_account_id=uba_id,
+                        strategy_id=int(strategy_id),
+                    )
+                    detail["entry_stack_hold"] = entry_hold
+
                     running = [
                         e
                         for e in entries
@@ -600,15 +612,38 @@ async def restore_kiwoom_trading_stack(
                         runtime_running = True
                     elif paused:
                         entry = paused[0]
-                        await dynamic_strategy_runtime_manager.resume_runtime(
-                            entry.scope.scope_key
-                        )
+                        # Explicit/operator PAUSE — watchdog/restore가 덮어쓰지 않음
+                        if is_explicit_entry_pause_reason(entry.pause_reason) or (
+                            entry_hold.get("hold")
+                            and "SCHEDULER_DESIRED_PAUSE"
+                            in (entry_hold.get("reasons") or [])
+                        ):
+                            detail["runtime"] = {
+                                "resumed": False,
+                                "reason": "EXPLICIT_PAUSE_HOLD",
+                                "pause_reason": entry.pause_reason,
+                                "scope_key": entry.scope.scope_key,
+                                "entry_stack_hold": entry_hold,
+                            }
+                            runtime_running = False
+                        else:
+                            await dynamic_strategy_runtime_manager.resume_runtime(
+                                entry.scope.scope_key
+                            )
+                            detail["runtime"] = {
+                                "resumed": True,
+                                "reason": "RESUMED",
+                                "scope_key": entry.scope.scope_key,
+                            }
+                            runtime_running = True
+                    elif entry_hold.get("hold"):
+                        # STOPPED 이더라도 Scheduler PAUSE / hold 면 ENTRY 자동 기동 금지
                         detail["runtime"] = {
-                            "resumed": True,
-                            "reason": "RESUMED",
-                            "scope_key": entry.scope.scope_key,
+                            "resumed": False,
+                            "reason": "ENTRY_STACK_HOLD",
+                            "entry_stack_hold": entry_hold,
                         }
-                        runtime_running = True
+                        runtime_running = False
                     else:
                         # STOPPED/미등록 — desired RUNNING 이면 start=True 로 기동
                         await dynamic_strategy_runtime_manager.initialize_scoped(

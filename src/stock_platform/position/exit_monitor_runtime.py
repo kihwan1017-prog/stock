@@ -152,6 +152,13 @@ class PositionExitMonitorManager:
                     False,
                 )
             ),
+            "live_kiwoom_enabled": bool(
+                getattr(
+                    settings,
+                    "position_exit_monitor_live_kiwoom_enabled",
+                    False,
+                )
+            ),
             "scan_count": self._scan_count,
             "last_error": self._last_error,
             "last_evaluated_at": self._last_evaluated_at,

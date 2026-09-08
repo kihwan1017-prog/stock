@@ -427,6 +427,44 @@ def resolve_upbit_live_price(
     return price
 
 
+def resolve_kiwoom_live_price(
+    session: Session,
+    *,
+    symbol: str,
+    stale_seconds: float,
+) -> Decimal | None:
+    """KRX QuoteSnapshot만 사용. broker REST 금지. stale이면 None."""
+
+    from stock_platform.markets.repository import (
+        InstrumentRepository,
+        QuoteSnapshotRepository,
+    )
+    from stock_platform.markets.service import (
+        InstrumentNotFoundError,
+        InstrumentService,
+        QuoteSnapshotService,
+    )
+
+    try:
+        service = QuoteSnapshotService(
+            QuoteSnapshotRepository(session),
+            InstrumentService(InstrumentRepository(session)),
+        )
+        snap = service.get("KRX", str(symbol).upper())
+    except InstrumentNotFoundError:
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+    if snap is None:
+        return None
+    price = _as_decimal(getattr(snap, "trade_price", None))
+    if price <= ZERO:
+        return None
+    if not quote_snapshot_is_fresh(snap, stale_seconds=stale_seconds):
+        return None
+    return price
+
+
 def has_blocking_live_exit_sell(
     session: Session,
     *,

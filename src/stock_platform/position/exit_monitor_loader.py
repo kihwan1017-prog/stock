@@ -683,7 +683,7 @@ class PositionExitMonitorLoader:
     ) -> tuple[list[ManagedPosition], list[str]]:
         """KIWOOM LIVE — OPEN strategy binding 만. 수동 보유 제외.
 
-        플래그 OFF면 빈 목록. 시세는 QuoteSnapshot/price repo (REST 금지).
+        플래그 OFF면 빈 목록(+ flag_off skip). 시세는 KRX QuoteSnapshot (REST 금지).
         """
 
         settings = get_settings()
@@ -694,21 +694,36 @@ class PositionExitMonitorLoader:
                 False,
             )
         ):
-            return [], []
+            # 관측: OFF 로 unmanaged 인 이유를 남긴다 (주문 없음)
+            return [], ["flag_off:LIVE_KIWOOM"]
 
         from stock_platform.broker.recovery_lock import (
             RecoveryAccountLockService,
+        )
+        from stock_platform.position.exit_monitor_live import (
+            has_blocking_live_exit_sell,
+            is_live_exit_eligible,
+            resolve_kiwoom_live_price,
         )
         from stock_platform.risk_engine.strategy_owned_entities import (
             BINDING_STATUS_OPEN,
             OWNERSHIP_STRATEGY,
             StrategyPositionBindingEntity,
         )
+        from stock_platform.trading.account_models import UserBrokerAccount
 
         lock = RecoveryAccountLockService(self._session)
         positions: list[ManagedPosition] = []
         skipped: list[str] = []
         threshold_by_uba: dict[int, ExitThresholds] = {}
+        stale_seconds = float(
+            getattr(
+                settings,
+                "autotrading_market_feed_stale_seconds",
+                30.0,
+            )
+            or 30.0
+        )
 
         bindings = list(
             self._session.scalars(
@@ -739,10 +754,29 @@ class PositionExitMonitorLoader:
                 skipped.append(f"no_entry:LIVE:{uba_id}/{symbol}")
                 continue
 
-            current_price = self._resolve_current_price(
-                exchange_code="KRX",
+            # pending/inflight EXIT 있으면 로드 제외 (Upbit 패리티)
+            blocking = has_blocking_live_exit_sell(
+                self._session,
+                user_broker_account_id=uba_id,
                 symbol=symbol,
-                fallback=entry,
+                snapshot_synchronized_at=None,
+            )
+            eligible, skip_reason = is_live_exit_eligible(
+                quantity=qty,
+                binding=binding,
+                has_active_exit_order=blocking,
+            )
+            if not eligible:
+                skipped.append(
+                    f"TRAILING_EVALUATION_SKIPPED:{skip_reason}"
+                    f":LIVE:{uba_id}/{symbol}"
+                )
+                continue
+
+            current_price = resolve_kiwoom_live_price(
+                self._session,
+                symbol=symbol,
+                stale_seconds=stale_seconds,
             )
             if current_price is None:
                 skipped.append(
@@ -750,9 +784,15 @@ class PositionExitMonitorLoader:
                 )
                 continue
 
-            # owner_user_id — UBA row 조회 없이 threshold만 계좌 단위 resolve
+            uba = self._session.get(UserBrokerAccount, uba_id)
+            owner_id = (
+                int(uba.user_id)
+                if uba is not None and getattr(uba, "user_id", None) is not None
+                else None
+            )
             if uba_id not in threshold_by_uba:
                 threshold_by_uba[uba_id] = self._resolve_thresholds(
+                    user_id=owner_id,
                     user_broker_account_id=uba_id,
                 )
             thresholds = threshold_by_uba[uba_id]
@@ -779,10 +819,11 @@ class PositionExitMonitorLoader:
                     relative_loss_ratio=thresholds.relative_loss_ratio,
                     broker_code="KIWOOM",
                     user_broker_account_id=uba_id,
-                    owner_user_id=None,
+                    owner_user_id=owner_id,
                     environment="LIVE",
                     snapshot_synchronized_at=None,
                     binding_id=int(binding.binding_id),
+                    trailing_armed=True,
                 )
             )
         return positions, skipped

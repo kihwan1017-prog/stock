@@ -509,22 +509,22 @@ class DynamicStrategyRuntimeManager:
                 )
                 and e.status != RuntimeLifecycleStatus.STOPPED
             ]
+            resumed: list[str] = []
             for key in keys:
                 entry = self._runtimes[key]
-                if entry.pause_reason in {
-                    "manual_review_required",
-                    "UPBIT_REMOTE_ONLY_ORDER_REVIEW",
-                    "recovery_failed",
-                    "credential_error",
-                    "kill_switch",
-                }:
-                    # DB 안전 상태가 우선 — 호출측에서 사전 검증 후 resume
-                    pass
+                from stock_platform.trading.entry_stack_pause_authority import (
+                    is_explicit_entry_pause_reason,
+                )
+
+                # Explicit PAUSE — 자동 resume 금지 (운영자 resume_runtime만 허용)
+                if is_explicit_entry_pause_reason(entry.pause_reason):
+                    continue
                 entry.status = RuntimeLifecycleStatus.RUNNING
                 entry.pause_reason = None
                 entry.last_started_at = datetime.now(timezone.utc)
                 entry.updated_at = datetime.now(timezone.utc)
-            return keys
+                resumed.append(key)
+            return resumed
 
     async def pause_user_runtimes(
         self, user_id: int, *, reason: str

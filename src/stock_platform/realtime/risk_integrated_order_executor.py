@@ -421,9 +421,36 @@ class RiskIntegratedRealtimeOrderExecutor:
         if order_amount <= 0:
             return self._skipped(signal, "AI_GATE_REDUCE_ZERO_AMOUNT")
 
-        quantity = (order_amount / signal.signal_price).quantize(
-            Decimal("0.00000001")
-        )
+        # BUY ENTRY: nominal config(order_amount) → effective Risk clamp
+        # (100000 default 를 그대로 qty 산정에 쓰지 않음)
+        side_u = str(signal.action.value or "").upper()
+        if side_u == "BUY":
+            from stock_platform.realtime.risk_aware_entry_sizing import (
+                resolve_risk_aware_entry_size,
+            )
+
+            sized = resolve_risk_aware_entry_size(
+                self._session,
+                user_broker_account_id=user_broker_account_id,
+                user_id=(
+                    getattr(signal, "user_id", None)
+                    or getattr(self._execution_config, "user_id", None)
+                ),
+                signal_price=Decimal(str(signal.signal_price)),
+                nominal_order_amount=order_amount,
+                exchange_code=str(signal.exchange_code or "KRX"),
+            )
+            if not sized.get("ok"):
+                return self._skipped(
+                    signal,
+                    str(sized.get("skip_reason") or "ENTRY_SIZING_FAILED"),
+                )
+            quantity = Decimal(str(sized["quantity"]))
+            order_amount = Decimal(str(sized["order_amount"]))
+        else:
+            quantity = (order_amount / signal.signal_price).quantize(
+                Decimal("0.00000001")
+            )
         if quantity <= 0:
             return self._skipped(signal, "AI_GATE_REDUCE_ZERO_QTY")
 
@@ -768,7 +795,9 @@ class RiskIntegratedRealtimeOrderExecutor:
                 price=signal.signal_price,
                 strategy_code=signal.reason_code,
                 account_number=account_number or None,
-                skip_risk_checks=True,  # 이미 상단에서 검증
+                # LIVE: LiveSafety(ARM/daily/vault) 우회 금지 — 상단 Risk만으로 부족
+                # PAPER: 기존 상단 검증 재사용 (이중 검사 부담 완화)
+                skip_risk_checks=(environment == "PAPER"),
                 metadata_payload=meta,
                 actor="REALTIME_EXECUTION",
                 order_source="AUTO",

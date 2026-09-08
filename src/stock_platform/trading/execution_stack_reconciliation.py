@@ -148,6 +148,23 @@ def execution_stack_needs_restore(
         elif got != want:
             down.append(key)
 
+    # Kiwoom: Scheduler PAUSE / explicit scoped PAUSE 면 ENTRY(runtime/runner)
+    # 자동 복구 대상에서 제외 (UBA1380 Upbit 경로 영향 없음)
+    entry_hold: dict[str, Any] | None = None
+    broker_u = str(desired.get("broker") or "").upper()
+    if broker_u == "KIWOOM" and down:
+        from stock_platform.trading.entry_stack_pause_authority import (
+            evaluate_kiwoom_entry_stack_hold,
+        )
+
+        entry_hold = evaluate_kiwoom_entry_stack_hold(
+            session,
+            user_broker_account_id=int(user_broker_account_id),
+        )
+        if entry_hold.get("hold"):
+            entry_components = set(entry_hold.get("entry_components") or ())
+            down = [c for c in down if c not in entry_components]
+
     all_core_down = all(
         str(actual.get(k) or "STOPPED").upper() != "RUNNING"
         for k in ("runtime", "runner", "worker", "exit_monitor")
@@ -169,6 +186,7 @@ def execution_stack_needs_restore(
         "down_components": down,
         "health_state": snap.get("health_state"),
         "partial_restore": snap.get("partial_restore"),
+        "entry_stack_hold": entry_hold,
     }
 
 

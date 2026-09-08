@@ -360,7 +360,7 @@ def test_kiwoom_exit_loader_respects_flag_off() -> None:
         rows, skipped = loader._load_kiwoom_strategy_owned_live_positions(
             threshold_by_user={}
         )
-    assert rows == [] and skipped == []
+    assert rows == [] and skipped == ["flag_off:LIVE_KIWOOM"]
 
 
 def test_post_fill_mismatch_stays_pending_not_terminal() -> None:
