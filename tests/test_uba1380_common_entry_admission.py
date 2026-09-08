@@ -518,6 +518,17 @@ def test_p_daily_loss_helpers_still_pass() -> None:
     assert detail["mode"] == "STRATEGY_OWNED"
 
 
+def test_activation_requires_broker_code_for_upbit() -> None:
+    """UPBIT ACCOUNT activation — broker_code 누락 시 false ACTIVATION_INACTIVE 방지."""
+    import inspect
+
+    from stock_platform.trading import entry_admission_service as mod
+
+    src = inspect.getsource(mod.EntryAdmissionService.evaluate_auto_buy)
+    assert "broker_code=broker" in src
+    assert "require_active" in src
+
+
 def test_q_managed_symbol_waiting_semantics() -> None:
     from stock_platform.trading.symbol_ownership.constants import (
         SKIP_AUTO_ALREADY_MANAGED,

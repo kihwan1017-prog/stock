@@ -287,14 +287,16 @@ class EntryAdmissionService:
                 LiveTradingTransitionGuard,
             )
 
+            # UPBIT ACCOUNT scope — broker_code 없이 get_active 하면 None
             LiveTradingTransitionGuard(self._session).require_active(
-                user_broker_account_id=uba
+                broker_code=broker,
+                user_broker_account_id=uba,
             )
         except Exception as exc:  # noqa: BLE001
             return _deny(
                 "ACTIVATION_INACTIVE",
                 "RUNTIME",
-                {"error": type(exc).__name__},
+                {"error": type(exc).__name__, "message": str(exc)[:200]},
             )
 
         try:
