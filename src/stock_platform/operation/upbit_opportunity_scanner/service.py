@@ -299,6 +299,22 @@ class UpbitOpportunityScannerService:
                 )
 
             result["candidates"] = top
+            # Observability V1 — full ranked universe (SELECTED later at assign)
+            try:
+                from stock_platform.operation.upbit_strategy_observability.hooks import (
+                    observe_scanner_universe,
+                )
+
+                # SELECTED는 portfolio assign에서 확정 — 여기선 universe만 기록
+                observe_scanner_universe(
+                    scanner_run_id=str(result.get("scanner_run_id") or ""),
+                    ranked_rows=list(ranked),
+                    selected_symbols=None,
+                    observed_at=self._now,
+                    scanner_source="UPBIT_OPPORTUNITY_SCANNER_RANKED",
+                )
+            except Exception:  # noqa: BLE001
+                pass
             if notify:
                 result["notifications"] = publish_scanner_alerts(
                     candidates=top,

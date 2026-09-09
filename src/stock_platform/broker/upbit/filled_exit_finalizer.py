@@ -283,6 +283,43 @@ def finalize_filled_exit(
         binding_status=binding_status,
         actor=str(actor)[:80],
     )
+    # Observability V1 — post-trade MFE/MAE/post-exit (analytics only, fail-open)
+    try:
+        if (
+            binding is not None
+            and str(binding_status or "").upper() == "CLOSED"
+            and getattr(binding, "binding_id", None)
+        ):
+            from stock_platform.operation.upbit_strategy_observability.post_trade import (
+                compute_post_trade_analytics_safe,
+            )
+
+            compute_post_trade_analytics_safe(
+                binding_id=int(binding.binding_id),
+                user_broker_account_id=int(uba_id),
+                strategy_id=int(strategy_id),
+                symbol=str(getattr(order, "symbol", "") or ""),
+                opened_at=getattr(binding, "opened_at", None),
+                closed_at=getattr(binding, "closed_at", None) or filled_at,
+                entry_price=getattr(binding, "entry_price", None),
+                exit_price=px if px > ZERO else None,
+            )
+            # fill stamp on timeline
+            from stock_platform.operation.upbit_strategy_observability.hooks import (
+                observe_order_timeline_stamp,
+            )
+
+            observe_order_timeline_stamp(
+                user_broker_account_id=int(uba_id),
+                symbol=str(getattr(order, "symbol", "") or ""),
+                side_code="SELL",
+                order_id=int(order.order_id),
+                strategy_id=int(strategy_id),
+                binding_id=int(binding.binding_id),
+                stamps={"fill_at": filled_at},
+            )
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "ok": True,
         "order_id": int(order.order_id),

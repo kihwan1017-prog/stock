@@ -1188,6 +1188,44 @@ class MovingAverageStrategyEvaluator:
         state.last_fingerprint = fingerprint
         state.last_signal_at = now
         state.last_signal_type = signal_type.value
+        # Observability V1 — signal/exit snapshot (fail-open)
+        try:
+            from stock_platform.operation.upbit_strategy_observability.hooks import (
+                observe_exit_event,
+                observe_signal_event,
+            )
+
+            uba = getattr(self.scope, "user_broker_account_id", None) or getattr(
+                self.scope, "account_id", None
+            )
+            if str(signal_type.value).upper() == "BUY":
+                observe_signal_event(
+                    side="BUY",
+                    signal_id=signal.signal_id,
+                    symbol=event.symbol,
+                    strategy_id=self.scope.strategy_id,
+                    user_broker_account_id=int(uba) if uba else None,
+                    price=event.price,
+                    short_ma=short_avg,
+                    long_ma=long_avg,
+                    reason=reason,
+                    selection_id=(meta or {}).get("candidate_selection_id"),
+                    extra={"ma_input_unit": state.input_unit},
+                )
+            else:
+                observe_exit_event(
+                    symbol=event.symbol,
+                    strategy_id=self.scope.strategy_id,
+                    user_broker_account_id=int(uba) if uba else None,
+                    exit_reason=str(reason or ""),
+                    price=event.price,
+                    short_ma=short_avg,
+                    long_ma=long_avg,
+                    signal_id=signal.signal_id,
+                    extra={"ma_input_unit": state.input_unit},
+                )
+        except Exception:  # noqa: BLE001
+            pass
         return signal
 
     @staticmethod

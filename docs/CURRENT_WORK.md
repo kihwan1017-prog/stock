@@ -1,7 +1,33 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-08 (UBA1380 daily-loss false-positive fix + rollout)
+**최종 갱신:** 2026-09-09 (UPBIT_AUTO_STRATEGY_OBSERVABILITY_V1)
+
+---
+
+## U — Upbit AUTO Strategy Observability V1 (2026-09-09)
+
+- WORK: `UPBIT_AUTO_STRATEGY_OBSERVABILITY_V1`
+- Scope: **OBSERVABILITY ONLY** — BUY/SELL/MA/candidate/risk/LIVE/ARM 판단 변경 **0**
+- Tables: `operation.upbit_strategy_obs_*` (migration `uobs1v1a2b3c4`)
+- Hooks: scanner universe · admission · signal/exit · order timeline · post-trade analytics (fail-open / own session)
+- Tests: `tests/test_upbit_strategy_observability_v1.py` **16 passed**
+- Production: **not loaded** — migration+restart **ROLLOUT_REQUIRED** (UBA1380 24x7; ChatGPT 승인 전 restart 금지)
+- Verdict: **`PASS_UPBIT_OBSERVABILITY_CODE_READY_ROLLOUT_REQUIRED`**
+- Evidence: `.run/upbit_strategy_observability_v1_20260909_140053.json`
+- NEXT: `WAIT_FOR_CHATGPT_REVIEW`
+
+---
+
+## U — Upbit AUTO Strategy Diagnostic Data Package (2026-09-09)
+
+- WORK: `UPBIT_AUTO_STRATEGY_DIAGNOSTIC_DATA_PACKAGE_20260909`
+- Scope: **READ ONLY**
+- Sample: strategy **17483** / UBA1380 · **747** CLOSED · win rate 14.06% · net PnL -29,689
+- Verdict: **`PASS_WITH_DATA_GAPS_UPBIT_STRATEGY_DIAGNOSTIC`**
+- Evidence: `.run/upbit_auto_strategy_diagnostic_20260909_20260909_132804.json`
+- Gap: `CANDIDATE_COUNTERFACTUAL_NOT_AVAILABLE` → addressed by observability V1
+- NEXT: `WAIT_FOR_CHATGPT_ANALYSIS`
 
 ---
 

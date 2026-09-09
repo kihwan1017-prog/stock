@@ -1,0 +1,26 @@
+# -*- coding: utf-8 -*-
+"""Constants for strategy observability V1."""
+
+from __future__ import annotations
+
+SCHEMA = "operation"
+RULE_VERSION = "UPBIT_STRATEGY_OBS_V1"
+
+EVENT_SCANNER_UNIVERSE = "SCANNER_UNIVERSE"
+EVENT_SIGNAL_BUY = "SIGNAL_BUY"
+EVENT_SIGNAL_SELL = "SIGNAL_SELL"
+EVENT_ADMISSION = "ADMISSION"
+EVENT_EXIT = "EXIT"
+EVENT_REGIME = "REGIME"
+EVENT_ORDER_TIMELINE = "ORDER_TIMELINE"
+
+# Market regime — OBSERVATION ONLY (never feed into BUY/SELL)
+REGIME_BTC_UP_PCT = 0.30
+REGIME_BTC_DOWN_PCT = -0.30
+SIDEWAYS_MOVE_VS_RANGE = 0.45
+
+ORDERBOOK_POLICY = "NOT_COLLECTED_RATE_LIMIT_SAFETY"
+
+# Forward analytics horizons (minutes) — LOOK-AHEAD; analytics tables only
+FORWARD_HORIZONS_M = (5, 15, 30, 60)
+POST_EXIT_HORIZONS_M = (1, 3, 5, 10, 15, 30, 60)

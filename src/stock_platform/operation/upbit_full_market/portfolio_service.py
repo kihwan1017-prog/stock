@@ -2078,6 +2078,21 @@ class UpbitPortfolioService:
                 observed_at=sel.selected_at,
                 universe_rows=universe_rows,
             )
+            # Strategy observability V1 — SELECTED + peers (own session, fail-open)
+            try:
+                from stock_platform.operation.upbit_strategy_observability.hooks import (
+                    observe_mark_selected_symbols,
+                )
+
+                observe_mark_selected_symbols(
+                    scanner_run_id=str(scanner_run_id),
+                    selected_symbols=[str(chosen.symbol).upper()],
+                    user_broker_account_id=uba_id,
+                    strategy_id=assignment.strategy_id,
+                    universe_rows=universe_rows,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         except Exception:  # noqa: BLE001
             pass
 

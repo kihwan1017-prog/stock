@@ -818,6 +818,24 @@ class RiskIntegratedRealtimeOrderExecutor:
                     ),
                     environment="LIVE",
                 )
+                # Observability V1 — admission snapshot (fail-open; does not alter decision)
+                try:
+                    from stock_platform.operation.upbit_strategy_observability.hooks import (
+                        observe_admission,
+                    )
+
+                    observe_admission(
+                        admission=admission,
+                        symbol=str(signal.symbol or ""),
+                        user_broker_account_id=int(user_broker_account_id),
+                        strategy_id=canonical_strategy_id,
+                        signal_id=getattr(signal, "signal_id", None),
+                        selection_id=getattr(
+                            signal, "candidate_selection_id", None
+                        ),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
                 if not admission.allowed:
                     # persistent block: intent 미생성 + Telegram day-dedupe
                     try:
@@ -1185,6 +1203,41 @@ class RiskIntegratedRealtimeOrderExecutor:
                     order_id=int(order_id),
                     outbox_id=int(outbox_id),
                 )
+            # Observability V1 — order timeline stamp
+            try:
+                from datetime import datetime, timezone
+
+                from stock_platform.operation.upbit_strategy_observability.hooks import (
+                    observe_order_timeline_stamp,
+                )
+
+                uba = base.get("user_broker_account_id")
+                if uba is not None:
+                    now = datetime.now(timezone.utc)
+                        action = getattr(signal, "action", None)
+                        side_code = str(
+                            getattr(action, "value", None)
+                            or getattr(signal, "signal_type", None)
+                            or ""
+                        )
+                        observe_order_timeline_stamp(
+                            user_broker_account_id=int(uba),
+                            symbol=str(getattr(signal, "symbol", "") or ""),
+                            side_code=side_code,
+                        order_id=int(order_id),
+                        strategy_id=getattr(signal, "strategy_id", None),
+                        signal_id=getattr(signal, "signal_id", None),
+                        selection_id=getattr(
+                            signal, "candidate_selection_id", None
+                        ),
+                        stamps={
+                            "signal_at": getattr(signal, "generated_at", None),
+                            "intent_created_at": now,
+                        },
+                        note={"outbox_id": outbox_id},
+                    )
+            except Exception:  # noqa: BLE001
+                pass
         except Exception:  # noqa: BLE001
             pass
 
