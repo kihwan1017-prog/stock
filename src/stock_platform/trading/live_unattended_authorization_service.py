@@ -2579,6 +2579,8 @@ class LiveUnattendedAuthorizationService:
             ),
             enforce_enable_gates=True,
             allow_auto_protective_open_orders=True,
+            # ARM force_renew와 대칭 — broker-confirmed AUTO ENTRY BUY는 restore 허용
+            allow_known_auto_entry_buys=True,
         )
         detail["live_restored"] = True
         detail["live_already_enabled"] = bool(

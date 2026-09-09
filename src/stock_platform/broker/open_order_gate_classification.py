@@ -138,7 +138,9 @@ def _classify_local_order(
     known_safe_entry = False
 
     if semantic == OPEN_CLASS_AUTO_EXIT_SELL:
+        # 보호 청산 open — renew/restore 모두 허용, initial ARM은 계속 block
         blocks_arm_renew = False
+        blocks_restore = False
     elif semantic == OPEN_CLASS_AUTO_ENTRY_BUY:
         if broker_code == "UPBIT" and broker_remote_state is not None:
             if broker_remote_state in _UPBIT_BROKER_CONFIRMED:
@@ -147,7 +149,9 @@ def _classify_local_order(
             # KIWOOM 등 — local AUTO BUY + UUID 있으면 renew 허용 (broker sync 별도)
             known_safe_entry = True
         if known_safe_entry:
+            # ARM force_renew와 lease restore LIVE ON 대칭 — initial ARM은 계속 block
             blocks_arm_renew = False
+            blocks_restore = False
 
     return ClassifiedOpenOrder(
         order_id=int(order.order_id),
@@ -228,21 +232,32 @@ def evaluate_open_order_gate_for_uba(
     auto_entry_excluded = 0
     db_open_blocking = 0
 
+    # arm_renew / restore: broker-confirmed AUTO ENTRY BUY + AUTO EXIT 제외
+    # initial_arm: 모든 open이 blocking (strict)
+    renew_like = gate_mode in {"arm_renew", "restore"}
+
     for row in classified:
         class_counts[row.semantic_class] = (
             int(class_counts.get(row.semantic_class, 0)) + 1
         )
-        if gate_mode == "arm_renew":
+        if renew_like:
             if row.semantic_class == OPEN_CLASS_AUTO_EXIT_SELL:
                 auto_protective_excluded += 1
                 continue
-            if (
-                row.semantic_class == OPEN_CLASS_AUTO_ENTRY_BUY
-                and not row.blocks_arm_renew
-            ):
-                auto_entry_excluded += 1
+            if row.semantic_class == OPEN_CLASS_AUTO_ENTRY_BUY:
+                blocks_entry = (
+                    row.blocks_arm_renew
+                    if gate_mode == "arm_renew"
+                    else row.blocks_restore
+                )
+                if not blocks_entry:
+                    auto_entry_excluded += 1
+                    continue
+                db_open_blocking += 1
                 continue
-            if row.blocks_arm_renew:
+            if gate_mode == "arm_renew" and row.blocks_arm_renew:
+                db_open_blocking += 1
+            elif gate_mode == "restore" and row.blocks_restore:
                 db_open_blocking += 1
         else:
             db_open_blocking += 1
@@ -266,11 +281,14 @@ def evaluate_open_order_gate_for_uba(
     )
 
     block_reason: str | None = None
-    if gate_mode == "arm_renew" and db_open_blocking > 0:
+    if renew_like and db_open_blocking > 0:
         blockers = [
             f"{o.semantic_class}:{o.order_id}"
             for o in classified
-            if o.blocks_arm_renew
+            if (
+                (gate_mode == "arm_renew" and o.blocks_arm_renew)
+                or (gate_mode == "restore" and o.blocks_restore)
+            )
         ]
         block_reason = "db_open_orders:" + ",".join(blockers[:5])
     elif submission_unknown > 0:

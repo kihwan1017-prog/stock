@@ -155,6 +155,8 @@ def test_scan_renew_isolates_uba_errors() -> None:
 
     svc = LiveUnattendedAuthorizationService(session)
     svc.renew_due_for_uba = MagicMock(side_effect=RuntimeError("db_open"))  # type: ignore[method-assign]
+    # mismatch alert 스캔은 이 테스트 범위 밖 — renew error isolation만 검증
+    svc._scan_activation_horizon_mismatch_alerts = MagicMock(return_value=[])  # type: ignore[method-assign]
     out = svc.scan_renew_and_expire(actor="TEST")
     assert out["scanned"] == 1
     assert out["skipped"] == 1

@@ -296,12 +296,50 @@ class SafeAutoRecoveryOrchestrator:
         actor: str,
         correlation_id: str,
     ) -> dict[str, Any]:
-        """LIVE/ARM/stack 복구 — 가능하면 canonical HTTP(운영 process gate 준수).
+        """LIVE/ARM/stack 복구 — ACTIVE lease면 canonical restore_from_active_lease 재사용.
 
-        CLI/다른 process에서 ORM으로 LIVE ON 하면 development hot_reload 게이트에 걸린다.
+        HTTP raw LIVE ON은 known AUTO ENTRY BUY를 허용하지 않아 ARM_EXPIRED 이후
+        복구가 영구 실패할 수 있다. lease ACTIVE이면 unattended restore 경로를 우선한다.
         """
 
         detail: dict[str, Any] = {}
+
+        # 1) ACTIVE unattended lease → canonical restore (ARM renew와 대칭 open-order gate)
+        try:
+            from stock_platform.trading.live_unattended_authorization_service import (
+                LiveUnattendedAuthorizationService,
+            )
+
+            unatt = LiveUnattendedAuthorizationService(self._session)
+            if unatt.get_active(int(user_broker_account_id)) is not None:
+                restored = unatt.restore_from_active_lease(
+                    int(user_broker_account_id),
+                    actor=actor,
+                    restore_stack=False,
+                )
+                detail["lease_restore"] = restored
+                if restored.get("restored"):
+                    try:
+                        self._session.commit()
+                    except Exception as exc:  # noqa: BLE001
+                        self._session.rollback()
+                        return {
+                            "ok": False,
+                            "reason": f"LEASE_RESTORE_COMMIT_{type(exc).__name__}",
+                            "detail": detail,
+                        }
+                    self._start_stack_components_sync(
+                        user_broker_account_id, detail
+                    )
+                    return {
+                        "ok": True,
+                        "detail": detail,
+                        "path": "UNATTENDED_LEASE_RESTORE",
+                    }
+                detail["lease_restore_failed_reason"] = restored.get("reason")
+        except Exception as exc:  # noqa: BLE001
+            detail["lease_restore_error"] = type(exc).__name__
+
         http = self._restore_via_http(
             user_broker_account_id=user_broker_account_id,
             ops=ops,
@@ -317,7 +355,7 @@ class SafeAutoRecoveryOrchestrator:
             LiveOrderApprovalService,
         )
 
-        # LIVE ON (in-process fallback — production worker 내부 전용)
+        # LIVE ON (in-process fallback — lease 없을 때만; open-order는 strict fail-closed)
         try:
             live = LiveOrderApprovalService(self._session).set_live_enabled(
                 user_broker_account_id,

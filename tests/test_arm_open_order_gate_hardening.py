@@ -107,6 +107,166 @@ def test_initial_arm_strict_blocks_auto_entry_buy() -> None:
     assert summary.db_open_blocking == 1
 
 
+def test_restore_gate_allows_broker_confirmed_auto_entry_buy() -> None:
+    """lease restore LIVE ON은 ARM force_renew와 대칭 — wait AUTO ENTRY BUY 허용."""
+
+    session = MagicMock()
+    auto_buy = _order(oid=3337, side="BUY", uuid="f4349578-89b3-4ce8-97a6-3426afd407b8")
+    session.scalars = MagicMock(return_value=[auto_buy])
+    session.get = MagicMock(
+        return_value=SimpleNamespace(broker_code="UPBIT", user_broker_account_id=1380)
+    )
+    session.scalar = MagicMock(side_effect=[0, 0, 0])
+
+    with patch(
+        "stock_platform.broker.credential_adapter_factory.build_upbit_adapter_for_uba"
+    ) as ad:
+        ad.return_value._client.get_order.return_value = {"state": "wait"}
+        summary = evaluate_open_order_gate_for_uba(
+            session,
+            1380,
+            gate_mode="restore",
+            verify_upbit_broker_state=True,
+        )
+    assert summary.db_open_blocking == 0
+    assert summary.auto_entry_buy_excluded == 1
+    assert summary.orders[0].blocks_restore is False
+    assert summary.orders[0].blocks_initial_arm is True
+
+
+def test_restore_gate_blocks_manual_open() -> None:
+    session = MagicMock()
+    # strategy_id 없이 MANUAL ownership이 유지되도록
+    manual = _order(oid=99, side="BUY", source="MANUAL", strategy_id=None, uuid="manual-uuid")
+    manual.strategy_deployment_id = None
+    manual.metadata_payload = {"order_source": "MANUAL", "environment": "LIVE"}
+    session.scalars = MagicMock(return_value=[manual])
+    session.get = MagicMock(
+        return_value=SimpleNamespace(broker_code="UPBIT", user_broker_account_id=1380)
+    )
+    session.scalar = MagicMock(side_effect=[0, 0, 0])
+
+    with patch(
+        "stock_platform.broker.credential_adapter_factory.build_upbit_adapter_for_uba"
+    ) as ad:
+        ad.return_value._client.get_order.return_value = {"state": "wait"}
+        summary = evaluate_open_order_gate_for_uba(
+            session,
+            1380,
+            gate_mode="restore",
+            verify_upbit_broker_state=True,
+        )
+    assert summary.class_counts.get("MANUAL_OPEN", 0) == 1
+    assert summary.db_open_blocking == 1
+    assert summary.auto_entry_buy_excluded == 0
+
+
+def test_recovery_conflict_service_restore_uses_restore_gate_mode() -> None:
+    session = MagicMock()
+    with patch(
+        "stock_platform.broker.open_order_gate_classification.evaluate_open_order_gate_for_uba"
+    ) as ev:
+        ev.return_value = SimpleNamespace(
+            blocking_dict=lambda: {
+                "db_open": 0,
+                "submission_unknown": 0,
+                "cancel_pending": 0,
+                "replace_pending": 0,
+                "auto_protective_open_excluded": 0,
+                "auto_entry_buy_excluded": 1,
+            },
+            class_counts={OPEN_CLASS_AUTO_ENTRY_BUY: 1},
+            arm_renew_block_reason=None,
+        )
+        out = BrokerRecoveryConflictService(session).count_blocking_orders_for_uba(
+            1380,
+            exclude_auto_protective_exits=True,
+            exclude_known_auto_entry_buys=True,
+            verify_upbit_broker_for_entry_buys=True,
+        )
+    assert out["db_open"] == 0
+    assert ev.call_args.kwargs.get("gate_mode") == "restore"
+    assert ev.call_args.kwargs.get("verify_upbit_broker_state") is True
+
+
+def test_live_enable_restore_flags_exclude_known_entry_buy() -> None:
+    """Unattended restore LIVE ON — protective+known entry flags가 count에 전달되는지."""
+
+    from stock_platform.trading.live_order_approval_service import (
+        LiveOrderApprovalService,
+    )
+
+    session = MagicMock()
+    uba = SimpleNamespace(
+        user_broker_account_id=1380,
+        user_id=61,
+        is_active=True,
+        live_armed=False,
+        broker_code="UPBIT",
+        live_order_enabled=False,
+    )
+    session.get = MagicMock(return_value=uba)
+    session.scalar = MagicMock(return_value=0)
+    seen: dict = {}
+
+    with (
+        patch(
+            "stock_platform.operation.runtime_process_stability.assert_stable_runtime_for_real_trading"
+        ),
+        patch(
+            "stock_platform.trading.live_order_approval_service.assert_uba_connection_ready"
+        ),
+        patch(
+            "stock_platform.trading.live_order_approval_service.assert_recovery_ready",
+            return_value={"recovery_status": "SUCCESS"},
+        ),
+        patch(
+            "stock_platform.trading.live_order_approval_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False},
+        ),
+        patch(
+            "stock_platform.trading.live_order_approval_service.BrokerRecoveryConflictService"
+        ) as brc,
+        patch(
+            "stock_platform.trading.live_order_approval_service.BrokerCredentialVaultService"
+        ) as vault,
+        patch(
+            "stock_platform.trading.live_order_approval_service.KillSwitchService"
+        ) as ks,
+        patch(
+            "stock_platform.trading.live_order_approval_service.evaluate_live_order_health",
+            return_value={"live_orders_allowed": True, "status": "HEALTHY"},
+        ),
+        patch(
+            "stock_platform.trading.live_order_approval_service.collect_scheduler_readiness",
+            return_value=SimpleNamespace(
+                trading_scheduler_actual_state="PAUSED",
+                trading_scheduler_desired_state="PAUSE",
+            ),
+        ),
+    ):
+        def _count(uid, **kwargs):  # noqa: ANN001
+            seen.update(kwargs)
+            return {
+                "db_open": 0,
+                "submission_unknown": 0,
+                "cancel_pending": 0,
+                "replace_pending": 0,
+            }
+
+        brc.return_value.count_blocking_orders_for_uba = _count
+        vault.return_value.assert_live_order_allowed = MagicMock()
+        ks.return_value.is_active_for_scopes = MagicMock(return_value=False)
+        LiveOrderApprovalService(session).assert_live_enable_preconditions(
+            1380,
+            allow_auto_protective_open_orders=True,
+            allow_known_auto_entry_buys=True,
+        )
+    assert seen.get("exclude_auto_protective_exits") is True
+    assert seen.get("exclude_known_auto_entry_buys") is True
+    assert seen.get("verify_upbit_broker_for_entry_buys") is True
+
+
 def test_recovery_conflict_service_arm_renew_entry_exclude() -> None:
     session = MagicMock()
     with patch(

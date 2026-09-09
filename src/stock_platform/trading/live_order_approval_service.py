@@ -198,11 +198,15 @@ class LiveOrderApprovalService:
         user_broker_account_id: int,
         *,
         allow_auto_protective_open_orders: bool = False,
+        allow_known_auto_entry_buys: bool = False,
     ) -> dict[str, Any]:
         """LIVE ON 사전조건 — ARM/Scheduler는 변경하지 않음.
 
         allow_auto_protective_open_orders:
           Unattended lease restore — AUTO SELL open 허용, UNKNOWN fail-closed.
+        allow_known_auto_entry_buys:
+          Unattended lease restore 전용 — broker-confirmed AUTO ENTRY BUY open 허용.
+          ARM force_renew와 대칭. 수동 LIVE ON / initial ARM에는 사용하지 않음.
         """
         uba_id = int(user_broker_account_id)
         uba = self._session.get(UserBrokerAccount, uba_id)
@@ -258,6 +262,11 @@ class LiveOrderApprovalService:
                 "unresolved_conflicts",
                 f"Unresolved conflicts remain: {active}",
             )
+        # lease restore: protective EXIT + known AUTO ENTRY BUY (broker verify)
+        # 수동 LIVE ON: 둘 다 False → 모든 open fail-closed
+        allow_entry = bool(
+            allow_auto_protective_open_orders and allow_known_auto_entry_buys
+        )
         blocking = BrokerRecoveryConflictService(
             self._session
         ).count_blocking_orders_for_uba(
@@ -265,6 +274,8 @@ class LiveOrderApprovalService:
             exclude_auto_protective_exits=bool(
                 allow_auto_protective_open_orders
             ),
+            exclude_known_auto_entry_buys=allow_entry,
+            verify_upbit_broker_for_entry_buys=allow_entry,
         )
         for key, code in (
             ("db_open", "db_open_orders"),
@@ -345,12 +356,14 @@ class LiveOrderApprovalService:
         run_id: str | None = None,
         enforce_enable_gates: bool = True,
         allow_auto_protective_open_orders: bool = False,
+        allow_known_auto_entry_buys: bool = False,
     ) -> dict[str, Any]:
         """LIVE 플래그 변경.
 
         LIVE OFF 시 Scheduler가 RUN이면 Fail Closed로 자동 PAUSE한다.
         ARM은 변경하지 않으며, LIVE OFF 전 ARM OFF는 계속 강제한다.
         allow_auto_protective_open_orders: unattended restore — AUTO SELL open 허용.
+        allow_known_auto_entry_buys: unattended restore — broker-confirmed AUTO ENTRY BUY 허용.
         """
         uba = self._session.get(
             UserBrokerAccount, int(user_broker_account_id)
@@ -401,6 +414,9 @@ class LiveOrderApprovalService:
                     int(user_broker_account_id),
                     allow_auto_protective_open_orders=bool(
                         allow_auto_protective_open_orders
+                    ),
+                    allow_known_auto_entry_buys=bool(
+                        allow_known_auto_entry_buys
                     ),
                 )
         else:

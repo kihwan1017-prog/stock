@@ -932,9 +932,9 @@ class BrokerRecoveryConflictService:
           UNKNOWN/AMBIGUOUS·cancel/replace·MANUAL open은 계속 fail-closed.
 
         exclude_known_auto_entry_buys:
-          ACTIVE ARM force_renew 전용.
-          broker-confirmed known AUTO_ENTRY_BUY_OPEN 은 renew blocker에서 제외.
-          initial ARM activation 은 이 flag 를 사용하지 않는다 (strict).
+          ACTIVE ARM force_renew 및 unattended lease restore(LIVE ON) 전용.
+          broker-confirmed known AUTO_ENTRY_BUY_OPEN 은 renew/restore blocker에서 제외.
+          initial ARM / 수동 LIVE ON 은 이 flag 를 사용하지 않는다 (strict).
         """
         from stock_platform.order.entities import TradingOrderEntity
 
@@ -973,10 +973,16 @@ class BrokerRecoveryConflictService:
                 evaluate_open_order_gate_for_uba,
             )
 
+            # restore LIVE ON과 ARM renew 대칭 — known AUTO ENTRY BUY 제외 시 restore 모드
+            gate_mode = (
+                "restore"
+                if exclude_known_auto_entry_buys
+                else "arm_renew"
+            )
             summary = evaluate_open_order_gate_for_uba(
                 self._session,
                 int(uba_id),
-                gate_mode="arm_renew",
+                gate_mode=gate_mode,  # type: ignore[arg-type]
                 verify_upbit_broker_state=bool(
                     verify_upbit_broker_for_entry_buys
                     and exclude_known_auto_entry_buys
