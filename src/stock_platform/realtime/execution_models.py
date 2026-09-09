@@ -24,6 +24,8 @@ class RealtimeExecutionConfig:
     # STEP8-2 — ResolvedRiskPolicy 해석용 (Paper는 user_id만)
     user_id: int | None = None
     user_broker_account_id: int | None = None
+    # LIVE Runner 범위. PAPER는 None.
+    broker_code: str | None = None
 
     def __post_init__(self) -> None:
         if self.account_id <= 0:
