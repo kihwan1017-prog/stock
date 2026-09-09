@@ -53,7 +53,7 @@ def test_b_manual_btc_sell_open_no_account_pause_signal() -> None:
     assert RemoteConflictClassification(
         pause_account=False,
         conflict_kind=CONFLICT_REMOTE_MANUAL_ACTIVITY,
-        risk_level="INFO",
+        risk_level="LOW",
         symbol="KRW-BTC",
         owner=OWNER_MANUAL,
     ).pause_account is False

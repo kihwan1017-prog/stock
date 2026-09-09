@@ -200,6 +200,20 @@ class UpbitRecoveryAdapter:
                         elif not classification.pause_account:
                             # MANUAL remote activity — 계좌 pause/resume 차단 금지
                             row.pause_reason = classification.conflict_kind
+                            # INFO 등 비허용 risk_level 은 CHECK 위반으로 flush 실패 →
+                            # recovery FAILED + trading_paused 고착을 막기 위해 clamp
+                            allowed_risk = {
+                                "LOW",
+                                "MEDIUM",
+                                "HIGH",
+                                "CRITICAL",
+                            }
+                            risk = str(
+                                classification.risk_level or "LOW"
+                            ).upper()
+                            row.risk_level = (
+                                risk if risk in allowed_risk else "LOW"
+                            )
                             row.review_status = (
                                 RecoveryConflictReviewStatus.IGNORED
                             )

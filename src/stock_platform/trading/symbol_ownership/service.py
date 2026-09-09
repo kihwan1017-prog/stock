@@ -329,7 +329,8 @@ class SymbolOwnershipService:
             return RemoteConflictClassification(
                 pause_account=False,
                 conflict_kind=CONFLICT_REMOTE_MANUAL_ACTIVITY,
-                risk_level="INFO",
+                # DB ck_recovery_conflict_risk = LOW|MEDIUM|HIGH|CRITICAL (INFO 금지)
+                risk_level="LOW",
                 symbol=sym,
                 owner=resolved.owner,
                 reasons=resolved.reasons + [CONFLICT_REMOTE_MANUAL_ACTIVITY],
@@ -340,7 +341,8 @@ class SymbolOwnershipService:
             return RemoteConflictClassification(
                 pause_account=False,
                 conflict_kind=CONFLICT_REMOTE_MANUAL_ACTIVITY,
-                risk_level="INFO",
+                # DB ck_recovery_conflict_risk = LOW|MEDIUM|HIGH|CRITICAL (INFO 금지)
+                risk_level="LOW",
                 symbol=sym,
                 owner=resolved.owner,
                 reasons=resolved.reasons + [CONFLICT_REMOTE_MANUAL_ACTIVITY],
