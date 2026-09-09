@@ -5,16 +5,20 @@
 .DESCRIPTION
   Canonical production entrypoint.
   Env: E:\StockTrading\secrets\stock-platform.env (기본)
+  Source: CLEAN production root (STOCK_PLATFORM_PRODUCTION_ROOT /
+          D:\Projects\stock-platform-runtime) — dirty development worktree 금지.
   Source file change로는 restart 하지 않음.
 #>
 [CmdletBinding()]
 param(
     [string]$ProjectRoot = "",
     [string]$EnvFile = "E:\StockTrading\secrets\stock-platform.env",
+    [string]$VenvPython = "",
     [string]$BackendHost = "127.0.0.1",
     [int]$BackendPort = 8000,
     [int]$ReadyTimeoutSec = 120,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$AllowDirtyDevRoot
 )
 
 $ErrorActionPreference = "Stop"
@@ -24,14 +28,51 @@ function Write-Step([string]$Message) {
     Write-Host "[start-backend-prod] $Message"
 }
 
+$resolveScript = Join-Path $PSScriptRoot "resolve_production_app_root.ps1"
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
-    $ProjectRoot = Split-Path -Parent $PSScriptRoot
-    if ((Split-Path -Leaf $PSScriptRoot) -ieq "ops") {
+    if (Test-Path -LiteralPath $resolveScript) {
+        $ProjectRoot = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $resolveScript).Trim()
+    } else {
         $ProjectRoot = Split-Path -Parent $PSScriptRoot
+        if ((Split-Path -Leaf $PSScriptRoot) -ieq "ops") {
+            $ProjectRoot = Split-Path -Parent $PSScriptRoot
+        }
+    }
+}
+$ProjectRoot = $ProjectRoot.TrimEnd("\", "/")
+
+# dirty development tree를 production PYTHONPATH로 쓰지 않도록 방어
+$devRoot = "D:\Projects\stock-platform"
+if (-not $AllowDirtyDevRoot) {
+    $normProj = $ProjectRoot.ToLowerInvariant()
+    $normDev = $devRoot.ToLowerInvariant()
+    if ($normProj -eq $normDev) {
+        if (Test-Path -LiteralPath $resolveScript) {
+            $alt = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $resolveScript `
+                -PreferredRoot "D:\Projects\stock-platform-runtime").Trim()
+            if ($alt.ToLowerInvariant() -ne $normDev -and (Test-Path -LiteralPath (Join-Path $alt "src\stock_platform\api\main.py"))) {
+                Write-Step "redirect dirty-dev root -> clean production root: $alt"
+                $ProjectRoot = $alt
+            } else {
+                throw "REFUSE_DIRTY_DEV_PRODUCTION_ROOT: set STOCK_PLATFORM_PRODUCTION_ROOT or create D:\Projects\stock-platform-runtime"
+            }
+        } else {
+            throw "REFUSE_DIRTY_DEV_PRODUCTION_ROOT"
+        }
     }
 }
 
-$VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+if ([string]::IsNullOrWhiteSpace($VenvPython)) {
+    $VenvPython = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+}
+# clean worktree는 venv를 junction/공유할 수 있음 — 없으면 development venv fallback
+if (-not (Test-Path -LiteralPath $VenvPython)) {
+    $fallbackVenv = Join-Path $devRoot ".venv\Scripts\python.exe"
+    if (Test-Path -LiteralPath $fallbackVenv) {
+        Write-Step "venv missing in production root — using shared development venv (code still from $ProjectRoot)"
+        $VenvPython = $fallbackVenv
+    }
+}
 if (-not (Test-Path -LiteralPath $VenvPython)) {
     throw "venv python missing: $VenvPython"
 }
@@ -44,7 +85,22 @@ $LogDir = Join-Path $ProjectRoot "logs"
 New-Item -ItemType Directory -Force -Path $RunDir, $LogDir | Out-Null
 $BackendPidFile = Join-Path $RunDir "backend.pid"
 $ListenPidFile = Join-Path $RunDir "backend.listen.pid"
+$LoadedCommitFile = Join-Path $RunDir "production_loaded_commit.txt"
 $BackendLog = Join-Path $LogDir ("uvicorn_prod_{0:yyyyMMdd_HHmmss}.log" -f (Get-Date))
+
+# loaded commit stamp (best-effort)
+$loadedCommit = "UNKNOWN"
+try {
+    Push-Location -LiteralPath $ProjectRoot
+    $loadedCommit = (& git rev-parse --short=7 HEAD 2>$null)
+    if ([string]::IsNullOrWhiteSpace($loadedCommit)) { $loadedCommit = "UNKNOWN" }
+} catch {
+    $loadedCommit = "UNKNOWN"
+} finally {
+    Pop-Location -ErrorAction SilentlyContinue
+}
+Set-Content -LiteralPath $LoadedCommitFile -Value $loadedCommit -Encoding ascii
+Write-Step "production_root=$ProjectRoot loaded_commit=$loadedCommit"
 
 function Test-PortListening([int]$Port) {
     try {
@@ -85,11 +141,11 @@ if ($null -ne $existing -and -not $Force) {
 
 if ($Force -and $null -ne $existing) {
     Write-Step "Force: stopping port $BackendPort listener via ops/stop_backend.ps1"
-    & (Join-Path $PSScriptRoot "stop_backend.ps1") -BackendPort $BackendPort
+    & (Join-Path $PSScriptRoot "stop_backend.ps1") -BackendPort $BackendPort -ProjectRoot $ProjectRoot
     Start-Sleep -Seconds 2
 }
 
-Write-Step "NO --reload · workers=1 · env=$EnvFile · APP_RUNTIME_MODE=production"
+Write-Step "NO --reload · workers=1 · env=$EnvFile · APP_RUNTIME_MODE=production · root=$ProjectRoot"
 
 # Child 스크립트는 single-quoted here-string으로 작성한다.
 # expandable @" "@ 는 주석의 bare $key 까지 outer StrictMode에서 평가되어 실패한다 (H136 residual / H138).
@@ -106,6 +162,7 @@ $env:PYTHONPATH = "__PYTHONPATH__"
 $env:STOCK_PLATFORM_LAUNCH_MODE = "PROD"
 $env:APP_RUNTIME_MODE = "production"
 $env:HOT_RELOAD_ENABLED = "false"
+$env:STOCK_PLATFORM_PRODUCTION_ROOT = "__PROJECT_ROOT__"
 $liveEnvKeys = @(
     "GLOBAL_LIVE_ORDER_ENABLED",
     "UPBIT_LIVE_ORDER_ENABLED",
@@ -159,7 +216,7 @@ while ((Get-Date) -lt $deadline) {
         if ($null -ne $listen) {
             Set-Content -LiteralPath $ListenPidFile -Value $listen -Encoding ascii
         }
-        Write-Step "READY health=$health listenPID=$listen"
+        Write-Step "READY health=$health listenPID=$listen loaded_commit=$loadedCommit"
         exit 0
     }
     Start-Sleep -Milliseconds 800

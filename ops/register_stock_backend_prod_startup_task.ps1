@@ -19,7 +19,27 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
-    $ProjectRoot = Split-Path -Parent $PSScriptRoot
+    $resolveScript = Join-Path $PSScriptRoot "resolve_production_app_root.ps1"
+    if (Test-Path -LiteralPath $resolveScript) {
+        $ProjectRoot = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $resolveScript).Trim()
+    } else {
+        $ProjectRoot = Split-Path -Parent $PSScriptRoot
+    }
+}
+$ProjectRoot = $ProjectRoot.TrimEnd("\", "/")
+
+# dirty development root로 boot/health ensure가 붙지 않도록 방어
+$devRoot = "D:\Projects\stock-platform"
+if ($ProjectRoot.ToLowerInvariant() -eq $devRoot.ToLowerInvariant()) {
+    $resolveScript = Join-Path $PSScriptRoot "resolve_production_app_root.ps1"
+    if (Test-Path -LiteralPath $resolveScript) {
+        $alt = (& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $resolveScript `
+            -PreferredRoot "D:\Projects\stock-platform-runtime").Trim()
+        if ($alt.ToLowerInvariant() -ne $devRoot.ToLowerInvariant()) {
+            Write-Host "[register] redirect ProjectRoot dirty-dev -> $alt"
+            $ProjectRoot = $alt
+        }
+    }
 }
 
 $taskName = "StockBackendProdEnsure"
@@ -27,6 +47,7 @@ $scriptPath = Join-Path $ProjectRoot "ops\start_backend_prod.ps1"
 if (-not (Test-Path -LiteralPath $scriptPath)) {
     throw "missing $scriptPath"
 }
+Write-Host "[register] production_root=$ProjectRoot"
 
 if ($Unregister) {
     Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue

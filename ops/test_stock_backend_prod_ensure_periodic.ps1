@@ -48,9 +48,22 @@ if ($null -ne $health) {
     Assert-True ([bool]$health.Settings.WakeToRun) "live_health_WakeToRun"
 }
 
-# start_backend_prod idempotent when healthy
-$start = Join-Path $ProjectRoot "ops\start_backend_prod.ps1"
-$out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $start -ProjectRoot $ProjectRoot 2>&1 | Out-String
+# start_backend_prod idempotent when healthy — clean runtime root 우선
+$runtimeRoot = "D:\Projects\stock-platform-runtime"
+$startRoot = $ProjectRoot
+if (Test-Path -LiteralPath (Join-Path $runtimeRoot "ops\start_backend_prod.ps1")) {
+    $startRoot = $runtimeRoot
+}
+$start = Join-Path $startRoot "ops\start_backend_prod.ps1"
+$startArgs = @(
+    "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $start,
+    "-ProjectRoot", $startRoot
+)
+# development dirty root로 직접 호출하는 경우만 AllowDirtyDevRoot (smoke)
+if ($startRoot.ToLowerInvariant() -eq $ProjectRoot.ToLowerInvariant()) {
+    $startArgs += "-AllowDirtyDevRoot"
+}
+$out = & powershell.exe @startArgs 2>&1 | Out-String
 Assert-True ($LASTEXITCODE -eq 0) "ensure_idempotent_exit0"
 Assert-True ($out -match 'already listening|READY') "ensure_idempotent_skip_or_ready"
 
