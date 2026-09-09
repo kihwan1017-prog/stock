@@ -238,18 +238,21 @@ def observe_mark_selected_symbols(
     strategy_id: int | None = None,
     universe_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Re-upsert universe with selected flags after portfolio assign."""
+    """Mark SELECTED only — never re-upsert a peer subset (preserves full ranked)."""
 
     try:
-        if not universe_rows:
-            return {"ok": True, "note": "NO_ROWS"}
-        return observe_scanner_universe(
-            scanner_run_id=scanner_run_id,
-            ranked_rows=universe_rows,
+        from stock_platform.operation.upbit_strategy_observability.service import (
+            mark_selected_symbols_only,
+        )
+
+        # universe_rows intentionally ignored for persistence size —
+        # canonical universe is scanner full-ranked snapshot.
+        _ = universe_rows
+        return mark_selected_symbols_only(
+            scanner_run_id=str(scanner_run_id),
             selected_symbols=selected_symbols,
             strategy_id=strategy_id,
             user_broker_account_id=user_broker_account_id,
-            scanner_source="UPBIT_PORTFOLIO_ASSIGN",
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(

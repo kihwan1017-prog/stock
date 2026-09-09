@@ -223,3 +223,94 @@ class UpbitStrategyObsPostTradeEntity(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class UpbitStrategyObsScannerRunMetaEntity(Base):
+    """Per scanner_run universe completeness — observation only."""
+
+    __tablename__ = "upbit_strategy_obs_scanner_run_meta"
+    __table_args__ = (
+        Index("ix_upbit_obs_run_meta_observed", "observed_at"),
+        {"schema": "operation"},
+    )
+
+    scanner_run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    strategy_id: Mapped[int | None] = mapped_column(BigInteger)
+    user_broker_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    expected_universe_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    persisted_universe_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    universe_complete: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    meta_json: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    rule_version: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        server_default=text("'UPBIT_STRATEGY_OBS_V1_1'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class UpbitStrategyObsCounterfactualEntity(Base):
+    """Per-symbol forward returns — ANALYTICS ONLY / LOOK-AHEAD.
+
+    Must never feed scanner, signal, admission, or order paths.
+    """
+
+    __tablename__ = "upbit_strategy_obs_counterfactual"
+    __table_args__ = (
+        UniqueConstraint(
+            "scanner_run_id",
+            "symbol",
+            "horizon_m",
+            name="uq_upbit_obs_cf_run_sym_horizon",
+        ),
+        Index("ix_upbit_obs_cf_status_observed", "status", "observed_at"),
+        Index("ix_upbit_obs_cf_run_selected", "scanner_run_id", "selected"),
+        {"schema": "operation"},
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    scanner_run_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    horizon_m: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    forward_return_pct: Mapped[Decimal | None] = mapped_column(Numeric(18, 8))
+    base_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    forward_price: Mapped[Decimal | None] = mapped_column(Numeric(24, 8))
+    status: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        server_default=text("'PENDING_FUTURE_DATA'"),
+    )
+    status_reason: Mapped[str | None] = mapped_column(String(120))
+    selected: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    computed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lookahead_forbidden_for_trading: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("true")
+    )
+    rule_version: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        server_default=text("'UPBIT_STRATEGY_OBS_V1_1'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

@@ -173,6 +173,17 @@ class UpbitOpportunityShadowEvaluatorScheduler:
                 error=str(exc)[:200],
             )
         try:
+            from stock_platform.operation.upbit_strategy_observability.scheduler import (
+                UpbitStrategyObsCounterfactualScheduler,
+            )
+
+            UpbitStrategyObsCounterfactualScheduler().configure(self._scheduler)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "upbit_strategy_obs_batch_scheduler_configure_failed",
+                error=str(exc)[:200],
+            )
+        try:
             from stock_platform.operation.upbit_opportunity_shadow.exit_strategy_shadow.scheduler import (
                 UpbitExitStrategyShadowScheduler,
             )

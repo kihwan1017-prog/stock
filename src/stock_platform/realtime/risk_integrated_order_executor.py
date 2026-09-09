@@ -1214,16 +1214,16 @@ class RiskIntegratedRealtimeOrderExecutor:
                 uba = base.get("user_broker_account_id")
                 if uba is not None:
                     now = datetime.now(timezone.utc)
-                        action = getattr(signal, "action", None)
-                        side_code = str(
-                            getattr(action, "value", None)
-                            or getattr(signal, "signal_type", None)
-                            or ""
-                        )
-                        observe_order_timeline_stamp(
-                            user_broker_account_id=int(uba),
-                            symbol=str(getattr(signal, "symbol", "") or ""),
-                            side_code=side_code,
+                    action = getattr(signal, "action", None)
+                    side_code = str(
+                        getattr(action, "value", None)
+                        or getattr(signal, "signal_type", None)
+                        or ""
+                    )
+                    observe_order_timeline_stamp(
+                        user_broker_account_id=int(uba),
+                        symbol=str(getattr(signal, "symbol", "") or ""),
+                        side_code=side_code,
                         order_id=int(order_id),
                         strategy_id=getattr(signal, "strategy_id", None),
                         signal_id=getattr(signal, "signal_id", None),

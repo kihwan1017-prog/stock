@@ -1,7 +1,21 @@
 # CURRENT_WORK
 
 **역할:** 현재 진행 중인 작업만 기록한다.  
-**최종 갱신:** 2026-09-09 (UPBIT_AUTO_STRATEGY_OBSERVABILITY_V1)
+**최종 갱신:** 2026-09-09 (UPBIT_STRATEGY_OBSERVABILITY_V1_1_PRE_ROLLOUT_COMPLETION)
+
+---
+
+## U — Upbit Strategy Observability V1.1 Pre-Rollout Completion (2026-09-09)
+
+- WORK: `UPBIT_STRATEGY_OBSERVABILITY_V1_1_PRE_ROLLOUT_COMPLETION`
+- Base: `0855ac5` (+ V1.1 completion commit)
+- Scope: counterfactual batch · universe integrity · chasing/regime candle enrichment · DQ states
+- Migration: `uobs1v11a2b3c4` (revises `uobs1v1a2b3c4`) — **not applied**
+- Tests: observability V1+V1.1 + daily-loss gate — **PASS**
+- Production: loaded/migrate/restart **false** (single rollout after ChatGPT review)
+- Verdict: **`PASS_UPBIT_OBSERVABILITY_V1_1_READY_FOR_SINGLE_ROLLOUT`**
+- Evidence: `.run/upbit_strategy_observability_v1_1_*.json`
+- NEXT: `WAIT_FOR_CHATGPT_REVIEW`
 
 ---
 

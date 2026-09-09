@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -21,11 +21,13 @@ from stock_platform.operation.upbit_strategy_observability.constants import (
     EVENT_SIGNAL_SELL,
     ORDERBOOK_POLICY,
     RULE_VERSION,
+    RULE_VERSION_V1_1,
 )
 from stock_platform.operation.upbit_strategy_observability.entities import (
     UpbitStrategyObsEventEntity,
     UpbitStrategyObsOrderTimelineEntity,
     UpbitStrategyObsPostTradeEntity,
+    UpbitStrategyObsScannerRunMetaEntity,
     UpbitStrategyObsScannerUniverseEntity,
 )
 from stock_platform.operation.upbit_strategy_observability.leakage import (
@@ -200,11 +202,30 @@ def persist_scanner_universe(
         )
         session.execute(stmt)
         session.commit()
+
+        # Run meta — expected count from this canonical full-ranked write
+        try:
+            _upsert_run_meta(
+                scanner_run_id=str(scanner_run_id),
+                observed_at=at,
+                strategy_id=strategy_id,
+                user_broker_account_id=user_broker_account_id,
+                expected_universe_count=len(payload_rows),
+                # Re-count after upsert (includes prior rows for same run)
+                refresh_persisted=True,
+            )
+        except Exception as meta_exc:  # noqa: BLE001
+            logger.warning(
+                "OBSERVABILITY_WRITE_FAILED",
+                extra={"code": "RUN_META", "error": type(meta_exc).__name__},
+            )
+
         return {
             "ok": True,
             "inserted": len(payload_rows),
             "selected_count": sum(1 for r in payload_rows if r["selected"]),
             "not_selected_count": sum(1 for r in payload_rows if not r["selected"]),
+            "expected_universe_count": len(payload_rows),
         }
     except Exception as exc:  # noqa: BLE001
         try:
@@ -212,6 +233,243 @@ def persist_scanner_universe(
         except Exception:  # noqa: BLE001
             pass
         return _fail("SCANNER_UNIVERSE", exc)
+    finally:
+        session.close()
+
+
+def _count_persisted_universe(session: Session, scanner_run_id: str) -> int:
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(UpbitStrategyObsScannerUniverseEntity)
+            .where(
+                UpbitStrategyObsScannerUniverseEntity.scanner_run_id
+                == str(scanner_run_id)
+            )
+        )
+        or 0
+    )
+
+
+def _upsert_run_meta(
+    *,
+    scanner_run_id: str,
+    observed_at: datetime,
+    strategy_id: int | None,
+    user_broker_account_id: int | None,
+    expected_universe_count: int | None = None,
+    refresh_persisted: bool = True,
+) -> dict[str, Any]:
+    """Maintain expected vs persisted universe completeness (own session)."""
+
+    session = _own_session()
+    try:
+        persisted = (
+            _count_persisted_universe(session, scanner_run_id)
+            if refresh_persisted
+            else 0
+        )
+        existing = session.get(
+            UpbitStrategyObsScannerRunMetaEntity, str(scanner_run_id)
+        )
+        if existing is None:
+            expected = int(expected_universe_count or persisted)
+            complete = persisted >= expected and expected > 0
+            session.add(
+                UpbitStrategyObsScannerRunMetaEntity(
+                    scanner_run_id=str(scanner_run_id),
+                    observed_at=observed_at,
+                    strategy_id=int(strategy_id) if strategy_id else None,
+                    user_broker_account_id=(
+                        int(user_broker_account_id)
+                        if user_broker_account_id
+                        else None
+                    ),
+                    expected_universe_count=expected,
+                    persisted_universe_count=persisted,
+                    universe_complete=complete,
+                    meta_json={"canonical_source": "SCANNER_FULL_RANKED"},
+                    rule_version=RULE_VERSION_V1_1,
+                    updated_at=_now(),
+                )
+            )
+        else:
+            # Never shrink expected once set from full ranked
+            if expected_universe_count is not None:
+                if int(existing.expected_universe_count or 0) < int(
+                    expected_universe_count
+                ):
+                    existing.expected_universe_count = int(expected_universe_count)
+            existing.persisted_universe_count = persisted
+            existing.universe_complete = persisted >= int(
+                existing.expected_universe_count or 0
+            ) and int(existing.expected_universe_count or 0) > 0
+            if strategy_id and not existing.strategy_id:
+                existing.strategy_id = int(strategy_id)
+            if user_broker_account_id and not existing.user_broker_account_id:
+                existing.user_broker_account_id = int(user_broker_account_id)
+            existing.updated_at = _now()
+        session.commit()
+        meta = session.get(UpbitStrategyObsScannerRunMetaEntity, str(scanner_run_id))
+        return {
+            "ok": True,
+            "expected_universe_count": int(meta.expected_universe_count) if meta else 0,
+            "persisted_universe_count": int(meta.persisted_universe_count)
+            if meta
+            else 0,
+            "universe_complete": bool(meta.universe_complete) if meta else False,
+        }
+    except Exception as exc:  # noqa: BLE001
+        try:
+            session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return _fail("RUN_META", exc)
+    finally:
+        session.close()
+
+
+def mark_selected_symbols_only(
+    *,
+    scanner_run_id: str,
+    selected_symbols: set[str] | list[str],
+    strategy_id: int | None = None,
+    user_broker_account_id: int | None = None,
+) -> dict[str, Any]:
+    """Update selected flags only — never delete / never shrink universe rows.
+
+    Canonical full-ranked snapshot remains the first scanner persist.
+    """
+
+    selected = {str(s).upper() for s in (selected_symbols or set()) if s}
+    if not scanner_run_id:
+        return {"ok": True, "note": "NO_RUN_ID"}
+    session = _own_session()
+    try:
+        # Clear previous selected for this run, then mark chosen (preserves all rows)
+        session.execute(
+            update(UpbitStrategyObsScannerUniverseEntity)
+            .where(
+                UpbitStrategyObsScannerUniverseEntity.scanner_run_id
+                == str(scanner_run_id)
+            )
+            .values(selected=False)
+        )
+        if selected:
+            values: dict[str, Any] = {"selected": True, "rejected": False}
+            if strategy_id is not None:
+                values["strategy_id"] = int(strategy_id)
+            if user_broker_account_id is not None:
+                values["user_broker_account_id"] = int(user_broker_account_id)
+            session.execute(
+                update(UpbitStrategyObsScannerUniverseEntity)
+                .where(
+                    UpbitStrategyObsScannerUniverseEntity.scanner_run_id
+                    == str(scanner_run_id),
+                    UpbitStrategyObsScannerUniverseEntity.symbol.in_(
+                        list(selected)
+                    ),
+                )
+                .values(**values)
+            )
+        # Optional: if chosen missing from universe, insert minimal selected row
+        for sym in selected:
+            exists = session.scalar(
+                select(UpbitStrategyObsScannerUniverseEntity.id).where(
+                    UpbitStrategyObsScannerUniverseEntity.scanner_run_id
+                    == str(scanner_run_id),
+                    UpbitStrategyObsScannerUniverseEntity.symbol == sym,
+                )
+            )
+            if exists is None:
+                session.add(
+                    UpbitStrategyObsScannerUniverseEntity(
+                        scanner_run_id=str(scanner_run_id),
+                        observed_at=_now(),
+                        strategy_id=int(strategy_id) if strategy_id else None,
+                        user_broker_account_id=(
+                            int(user_broker_account_id)
+                            if user_broker_account_id
+                            else None
+                        ),
+                        symbol=sym,
+                        selected=True,
+                        rejected=False,
+                        scanner_source="UPBIT_PORTFOLIO_ASSIGN_SELECTED_ONLY",
+                        metrics_json={
+                            "note": "SELECTED_NOT_IN_INITIAL_UNIVERSE",
+                            "observation_only": True,
+                        },
+                        rule_version=RULE_VERSION_V1_1,
+                    )
+                )
+        session.commit()
+        persisted = _count_persisted_universe(session, scanner_run_id)
+        selected_count = int(
+            session.scalar(
+                select(func.count())
+                .select_from(UpbitStrategyObsScannerUniverseEntity)
+                .where(
+                    UpbitStrategyObsScannerUniverseEntity.scanner_run_id
+                    == str(scanner_run_id),
+                    UpbitStrategyObsScannerUniverseEntity.selected.is_(True),
+                )
+            )
+            or 0
+        )
+    except Exception as exc:  # noqa: BLE001
+        try:
+            session.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return _fail("MARK_SELECTED", exc)
+    finally:
+        session.close()
+
+    meta = _upsert_run_meta(
+        scanner_run_id=str(scanner_run_id),
+        observed_at=_now(),
+        strategy_id=strategy_id,
+        user_broker_account_id=user_broker_account_id,
+        expected_universe_count=None,
+        refresh_persisted=True,
+    )
+    return {
+        "ok": True,
+        "scanner_run_id": str(scanner_run_id),
+        "selected_count": selected_count,
+        "persisted_universe_count": persisted,
+        "universe_complete": meta.get("universe_complete"),
+        "expected_universe_count": meta.get("expected_universe_count"),
+        "non_selected_preserved": True,
+    }
+
+
+def universe_completeness(scanner_run_id: str) -> dict[str, Any]:
+    session = _own_session()
+    try:
+        meta = session.get(
+            UpbitStrategyObsScannerRunMetaEntity, str(scanner_run_id)
+        )
+        persisted = _count_persisted_universe(session, scanner_run_id)
+        if meta is None:
+            return {
+                "scanner_run_id": str(scanner_run_id),
+                "expected_universe_count": None,
+                "persisted_universe_count": persisted,
+                "universe_complete": False,
+                "status": "SOURCE_DATA_MISSING",
+            }
+        return {
+            "scanner_run_id": str(scanner_run_id),
+            "expected_universe_count": int(meta.expected_universe_count),
+            "persisted_universe_count": persisted,
+            "universe_complete": bool(
+                persisted >= int(meta.expected_universe_count)
+                and int(meta.expected_universe_count) > 0
+            ),
+            "status": "AVAILABLE",
+        }
     finally:
         session.close()
 

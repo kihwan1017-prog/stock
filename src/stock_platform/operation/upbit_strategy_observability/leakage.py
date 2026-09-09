@@ -51,7 +51,7 @@ def assert_no_lookahead_in_trading_payload(payload: dict[str, Any] | None) -> No
 
 
 def trading_modules_must_not_import_post_trade() -> tuple[str, ...]:
-    """Documented forbidden importers for post-trade analytics module."""
+    """Documented forbidden importers for look-ahead analytics modules."""
 
     return (
         "stock_platform.trading.entry_admission_service",
@@ -60,3 +60,16 @@ def trading_modules_must_not_import_post_trade() -> tuple[str, ...]:
         "stock_platform.order.live_safety_pipeline",
         "stock_platform.order.execution_service",
     )
+
+
+def trading_modules_must_not_import_counterfactual() -> tuple[str, ...]:
+    return trading_modules_must_not_import_post_trade()
+
+
+FORBIDDEN_ANALYTICS_MODULES = frozenset(
+    {
+        "stock_platform.operation.upbit_strategy_observability.post_trade",
+        "stock_platform.operation.upbit_strategy_observability.counterfactual",
+        "stock_platform.operation.upbit_strategy_observability.analysis",
+    }
+)
