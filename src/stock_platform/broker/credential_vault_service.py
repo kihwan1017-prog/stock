@@ -66,6 +66,29 @@ class ResolvedBrokerCredential:
     verification_status: str
 
 
+# Kiwoom OAuth base — verify 전용 (주문 endpoint와 분리)
+KIWOOM_OAUTH_MOCK_BASE = "https://mockapi.kiwoom.com"
+KIWOOM_OAUTH_REAL_BASE = "https://api.kiwoom.com"
+
+
+def kiwoom_oauth_base_url(*, is_mock: bool) -> str:
+    """Credential verify용 OAuth host. 주문 경로와 혼용 금지."""
+
+    return KIWOOM_OAUTH_MOCK_BASE if is_mock else KIWOOM_OAUTH_REAL_BASE
+
+
+def resolve_kiwoom_is_mock(
+    payload: dict[str, Any] | None,
+    *,
+    legacy_kiwoom_use_mock: bool,
+) -> bool:
+    """explicit/stored is_mock > legacy settings.kiwoom_use_mock."""
+
+    if payload and "is_mock" in payload and payload.get("is_mock") is not None:
+        return bool(payload.get("is_mock"))
+    return bool(legacy_kiwoom_use_mock)
+
+
 @dataclass(frozen=True, slots=True)
 class CredentialStatusView:
     user_broker_account_id: int
@@ -81,6 +104,8 @@ class CredentialStatusView:
     expires_at: datetime | None
     verification_message: str | None
     vault_available: bool
+    # Kiwoom만 — 저장된 환경(없으면 null). secret 미포함
+    is_mock: bool | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -113,6 +138,7 @@ class CredentialStatusView:
             ),
             "verification_message": self.verification_message,
             "vault_available": self.vault_available,
+            "is_mock": self.is_mock,
         }
 
 
@@ -157,8 +183,14 @@ def _validate_payload(broker_code: str, payload: dict[str, Any]) -> dict[str, An
         product = str(payload.get("account_product_code") or "").strip()
         if product:
             cleaned["account_product_code"] = product
-        if "is_mock" in payload:
+        # 환경은 credential payload에 영속화 (schema 변경 없음)
+        if "is_mock" in payload and payload.get("is_mock") is not None:
             cleaned["is_mock"] = bool(payload.get("is_mock"))
+        else:
+            # legacy upsert: 당시 글로벌 값을 저장해 이후 verify가 재의존하지 않게 함
+            from stock_platform.common.settings import get_settings
+
+            cleaned["is_mock"] = bool(get_settings().kiwoom_use_mock)
         return cleaned
     if code == "UPBIT":
         access_key = str(payload.get("access_key") or "").strip()
@@ -226,6 +258,43 @@ class BrokerCredentialVaultService:
         )
         return self._session.scalars(stmt).first()
 
+    def sync_uba_connection_status(
+        self,
+        user_broker_account_id: int,
+    ) -> str | None:
+        """Credential VERIFIED인데 UBA가 PENDING이면 CONNECTED로 치유.
+
+        등록(upsert) 성공 경로 누락으로 생긴 기존 불일치를 읽기 시점에 맞춘다.
+        flush만 수행 — commit은 호출자가 담당한다.
+        """
+
+        uba = self.get_uba(user_broker_account_id)
+        if uba is None:
+            return None
+        entity = self.get_active_entity(user_broker_account_id)
+        before = str(uba.connection_status or "")
+        if entity is None:
+            return before or None
+        verified = (
+            str(entity.verification_status or "").upper() == "VERIFIED"
+        )
+        pending = before.upper() in {
+            "CREDENTIAL_PENDING",
+            "PENDING",
+        }
+        if verified and pending:
+            uba.connection_status = "CONNECTED"
+            uba.updated_at = _utcnow()
+            self._session.flush()
+            logger.info(
+                "uba_connection_status_healed uba_id=%s before=%s "
+                "after=CONNECTED credential_status=VERIFIED",
+                int(user_broker_account_id),
+                before,
+            )
+            return "CONNECTED"
+        return before or None
+
     def status(
         self,
         user_broker_account_id: int,
@@ -233,6 +302,8 @@ class BrokerCredentialVaultService:
         broker_code: str | None = None,
     ) -> CredentialStatusView:
         uba = self.get_uba(user_broker_account_id)
+        # 기존 불일치 치유 (flush only)
+        self.sync_uba_connection_status(user_broker_account_id)
         code = (
             broker_code
             or (uba.broker_code if uba else "")
@@ -254,7 +325,16 @@ class BrokerCredentialVaultService:
                 expires_at=None,
                 verification_message=None,
                 vault_available=vault_available(),
+                is_mock=None,
             )
+        stored_is_mock: bool | None = None
+        if str(entity.broker_code).upper() == "KIWOOM":
+            try:
+                payload = self._decrypt_entity(entity)
+                if "is_mock" in payload and payload.get("is_mock") is not None:
+                    stored_is_mock = bool(payload.get("is_mock"))
+            except Exception:  # noqa: BLE001 — status는 환경만 노출, 실패 시 null
+                stored_is_mock = None
         return CredentialStatusView(
             user_broker_account_id=int(user_broker_account_id),
             broker_code=str(entity.broker_code).upper(),
@@ -269,6 +349,7 @@ class BrokerCredentialVaultService:
             expires_at=entity.expires_at,
             verification_message=entity.verification_message,
             vault_available=vault_available(),
+            is_mock=stored_is_mock,
         )
 
     def upsert(
@@ -338,11 +419,26 @@ class BrokerCredentialVaultService:
         # 외부 검증 — 실패해도 저장 유지
         try:
             self._verify_entity(entity, cleaned)
+            # verify() 경로와 동일하게 성공 시 CONNECTED로 맞춤
+            uba.connection_status = "CONNECTED"
+            uba.updated_at = _utcnow()
+            logger.info(
+                "credential_upsert_verified uba_id=%s broker=%s "
+                "connection_status=CONNECTED verification_status=VERIFIED",
+                int(user_broker_account_id),
+                broker_code,
+            )
         except BrokerCredentialVaultError as exc:
             entity.verification_status = "FAILED"
             entity.verification_message = exc.message[:500]
             entity.last_verified_at = _utcnow()
             uba.connection_status = "CREDENTIAL_FAILED"
+            logger.warning(
+                "credential_upsert_failed uba_id=%s code=%s "
+                "connection_status=CREDENTIAL_FAILED",
+                int(user_broker_account_id),
+                exc.code,
+            )
         except Exception as exc:  # noqa: BLE001
             entity.verification_status = "FAILED"
             # Secret 미포함 요약만
@@ -351,6 +447,12 @@ class BrokerCredentialVaultService:
             )[:500]
             entity.last_verified_at = _utcnow()
             uba.connection_status = "CREDENTIAL_FAILED"
+            logger.warning(
+                "credential_upsert_error uba_id=%s exc=%s "
+                "connection_status=CREDENTIAL_FAILED",
+                int(user_broker_account_id),
+                exc.__class__.__name__,
+            )
 
         self._session.commit()
         return self.status(user_broker_account_id)
@@ -614,15 +716,13 @@ class BrokerCredentialVaultService:
         from stock_platform.common.settings import get_settings
 
         settings = get_settings()
-        is_mock = payload.get("is_mock")
-        if is_mock is None:
-            is_mock = bool(settings.kiwoom_use_mock)
+        # stored/request is_mock 우선 — global kiwoom_use_mock은 legacy fallback만
+        is_mock = resolve_kiwoom_is_mock(
+            payload,
+            legacy_kiwoom_use_mock=bool(settings.kiwoom_use_mock),
+        )
         config = KiwoomOrderConfig(
-            base_url=(
-                "https://mockapi.kiwoom.com"
-                if is_mock
-                else "https://api.kiwoom.com"
-            ),
+            base_url=kiwoom_oauth_base_url(is_mock=is_mock),
             app_key=str(payload["app_key"]),
             secret_key=str(payload["secret_key"]),
             use_mock=bool(is_mock),
@@ -632,6 +732,7 @@ class BrokerCredentialVaultService:
         try:
             KiwoomTokenClient(config).issue()
         except Exception as exc:  # noqa: BLE001
+            # secret/키 원문은 예외 메시지에 넣지 않음
             raise BrokerCredentialVaultError(
                 ERR_CREDENTIAL_INVALID,
                 f"Kiwoom verification failed: {exc.__class__.__name__}",
