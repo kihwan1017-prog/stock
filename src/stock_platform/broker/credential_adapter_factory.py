@@ -152,6 +152,77 @@ def build_kiwoom_account_client_for_uba(
     return KiwoomAccountClient(rest_client), account_number
 
 
+def build_kiwoom_order_http_client_for_uba(
+    session: Session,
+    user_broker_account_id: int,
+) -> KiwoomOrderRestClient:
+    """TradingOrder inquiry/recovery용 sync HTTP client (request_type 계약).
+
+    account sync용 async ``client.KiwoomRestClient`` 와 분리한다.
+    """
+
+    resolved = resolve_uba_credential(
+        session, user_broker_account_id, expected_broker="KIWOOM"
+    )
+    config = build_kiwoom_order_config_from_vault(resolved)
+    token_client = KiwoomTokenClient(config)
+    return KiwoomOrderRestClient(
+        config=config,
+        token_cache=KiwoomTokenCache(token_client),
+        rate_limiters=KiwoomRateLimiters(),
+    )
+
+
+def build_kiwoom_order_inquiry_client_for_uba(
+    session: Session,
+    user_broker_account_id: int,
+):
+    """UBA Vault → sync inquiry client (TradingOrder recovery 전용)."""
+
+    from stock_platform.broker.kiwoom.inquiry_client import (
+        KiwoomOrderInquiryClient,
+    )
+
+    return KiwoomOrderInquiryClient(
+        build_kiwoom_order_http_client_for_uba(
+            session, user_broker_account_id
+        )
+    )
+
+
+def build_kiwoom_pending_order_client_for_uba(
+    session: Session,
+    user_broker_account_id: int,
+):
+    """UBA Vault credential → pending client (execution env SoT)."""
+
+    from stock_platform.broker.kiwoom.pending_client import (
+        KiwoomPendingOrderClient,
+    )
+
+    account_client, _account_number = build_kiwoom_account_client_for_uba(
+        session, user_broker_account_id
+    )
+    return KiwoomPendingOrderClient(account_client._client)
+
+
+def build_kiwoom_order_inquiry_client_from_env():
+    """시스템 env 경로용 sync inquiry client."""
+
+    from stock_platform.broker.kiwoom.inquiry_client import (
+        KiwoomOrderInquiryClient,
+    )
+
+    config = KiwoomOrderConfig.from_env()
+    token_client = KiwoomTokenClient(config)
+    rest_client = KiwoomOrderRestClient(
+        config=config,
+        token_cache=KiwoomTokenCache(token_client),
+        rate_limiters=KiwoomRateLimiters(),
+    )
+    return KiwoomOrderInquiryClient(rest_client)
+
+
 def build_upbit_settings_from_vault(
     resolved: ResolvedBrokerCredential,
 ):
