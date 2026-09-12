@@ -65,3 +65,10 @@ memory/
 .ruff_cache/
 .next/
 coverage/
+
+# Test run artifacts
+frontend/test-results/
+frontend/playwright-report/
+
+# One-off verification logs (do not commit)
+tmp_*_88a.txt
