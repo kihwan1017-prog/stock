@@ -151,6 +151,119 @@ def test_clone_clears_approval_meta() -> None:
     assert clone.source_strategy_id == 5
 
 
+def test_clone_for_user_requires_admin() -> None:
+    session = MagicMock()
+    source = _strategy(
+        strategy_id=17486,
+        user_id=7,
+        visibility="PRIVATE",
+        strategy_code="NICE",
+        name="NICE",
+        parameter_payload={"x": 1},
+        approved_at=None,
+        published_at=None,
+        definition_hash="abc",
+        strategy_request_id=23766,
+        candidate_id=875,
+        approval_id=212,
+    )
+    session.get.return_value = source
+    service = StrategyDefinitionService(session)
+    with pytest.raises(StrategyOwnershipError):
+        service.clone_strategy(
+            _user(user_id=7),
+            17486,
+            actor="admin",
+            for_user_id=61,
+        )
+
+
+def test_admin_clone_for_user61_keeps_source_and_clears_live_meta() -> None:
+    session = MagicMock()
+    source = _strategy(
+        strategy_id=17486,
+        user_id=7,
+        visibility="PRIVATE",
+        strategy_code="NICE",
+        name="NICE",
+        parameter_payload={"fast": 5},
+        approved_at=datetime.now(timezone.utc),
+        published_at=None,
+        definition_hash="abc",
+        strategy_request_id=23766,
+        candidate_id=875,
+        approval_id=212,
+        source_draft_id=315,
+    )
+    session.get.return_value = source
+    clone = StrategyDefinitionService(session).clone_strategy(
+        _user(user_id=7, is_admin=True),
+        17486,
+        actor="admin",
+        name="NICE for kikicom",
+        for_user_id=61,
+    )
+    assert clone.user_id == 61
+    assert clone.visibility == "PRIVATE"
+    assert clone.is_active is False
+    assert clone.approved_at is None
+    assert clone.source_strategy_id == 17486
+    assert clone.source_draft_id is None
+    assert clone.strategy_request_id == 23766
+    assert clone.definition_hash == "abc"
+    assert clone.parameter_payload == {"fast": 5}
+
+
+def test_link_eligibility_private_cross_user_rejected() -> None:
+    session = MagicMock()
+    source = _strategy(
+        strategy_id=17486,
+        user_id=7,
+        visibility="PRIVATE",
+        is_active=True,
+        market_type="STOCK",
+        approved_at=datetime.now(timezone.utc),
+    )
+    session.get.return_value = source
+    result = StrategyDefinitionService(session).evaluate_link_eligibility(
+        _user(user_id=61),
+        strategy_id=17486,
+        user_broker_account_id=1381,
+        paper_account_id=None,
+        account_broker="KIWOOM",
+    )
+    assert result["accessible"] is False
+    assert result["link_eligible"] is False
+    assert "STRATEGY_NOT_ACCESSIBLE" in result["blockers"]
+    assert result["market_compatible"] is True
+    assert result["live_eligible"] is False
+    assert result["link_created"] is False
+
+
+def test_link_eligibility_owner_inactive_clone() -> None:
+    session = MagicMock()
+    clone = _strategy(
+        strategy_id=99,
+        user_id=61,
+        visibility="PRIVATE",
+        is_active=False,
+        market_type="STOCK",
+        approved_at=None,
+    )
+    session.get.return_value = clone
+    result = StrategyDefinitionService(session).evaluate_link_eligibility(
+        _user(user_id=61),
+        strategy_id=99,
+        user_broker_account_id=1381,
+        paper_account_id=None,
+        account_broker="KIWOOM",
+    )
+    assert result["accessible"] is True
+    assert result["market_compatible"] is True
+    assert "STRATEGY_INACTIVE" in result["blockers"]
+    assert result["link_eligible"] is False
+
+
 def test_runtime_scope_keys_isolated() -> None:
     a = build_runtime_scope_key(
         user_id=1,

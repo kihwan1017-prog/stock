@@ -192,6 +192,16 @@ def test_arm_on_rejected_when_scheduler_running() -> None:
             "stock_platform.trading.live_arm_service.collect_scheduler_readiness",
             return_value=_sched_running(),
         ),
+        patch.object(
+            svc,
+            "_require_session_activation",
+            return_value=SimpleNamespace(
+                live_trading_transition_id=9,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
+                broker_code="UPBIT",
+                user_broker_account_id=1380,
+            ),
+        ),
     ):
         risk.return_value.resolve.return_value = _risk_ok()
         conflicts.return_value.count_blocking_orders_for_uba.return_value = {
@@ -471,6 +481,16 @@ def test_arm_on_success_path_mock() -> None:
                 "arm_expires_at": datetime.now(timezone.utc).isoformat(),
             },
         ),
+        patch.object(
+            svc,
+            "_require_session_activation",
+            return_value=SimpleNamespace(
+                live_trading_transition_id=9,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
+                broker_code="UPBIT",
+                user_broker_account_id=1380,
+            ),
+        ),
     ):
         policy.return_value.resolve.return_value = _risk_ok()
         out = svc.arm(
@@ -541,7 +561,7 @@ def test_admin_ui_panel_has_tooltips_and_confirm() -> None:
     from pathlib import Path
 
     text = Path(
-        "frontend/src/features/admin/accounts/AdminUpbitLiveUbaPanel.tsx"
+        "frontend/src/features/admin/accounts/AdminAccountLiveControlPanel.tsx"
     ).read_text(encoding="utf-8")
     assert "Tooltip" in text
     assert "runtimeGateBlockers" in text

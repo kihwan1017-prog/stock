@@ -25,6 +25,7 @@ class RealtimeMarketEvent:
     ask: Decimal | None = None
     raw_sequence: int | None = None
     change_rate: Decimal | None = None
+    source_code: str | None = None
 
     @property
     def subscription_key(self) -> str:

@@ -95,6 +95,48 @@ def admin_live_ops_readiness(
         )
     use_mock = bool(settings.upbit_use_mock)
 
+    actual_state = str(
+        sched_snap.get("trading_scheduler_actual_state") or ""
+    ).upper()
+    desired_state = str(
+        sched_snap.get("trading_scheduler_desired_state") or ""
+    ).upper()
+    source = str(sched_snap.get("source") or "")
+
+    # Scheduler 상태 분류 — RUN/RUNNING 은 정상 운영 (BLOCKED 아님)
+    failure_states = {
+        "DOWN",
+        "CRASH",
+        "ERROR",
+        "FAILED",
+        "FAILURE",
+        "JOB_FAILURE",
+        "UNHEALTHY",
+    }
+    running_states = {"RUNNING", "RUN", "READY"}
+    paused_states = {"PAUSED", "PAUSE", "STOPPED", "IDLE"}
+
+    if trading_running is True or actual_state in running_states:
+        trading_status = "RUNNING"
+        trading_ok = True
+    elif actual_state in failure_states:
+        trading_status = actual_state
+        trading_ok = False
+    elif trading_running is False or actual_state in paused_states:
+        trading_status = "PAUSED"
+        trading_ok = True
+    elif trading_running is None and source in {
+        "unavailable",
+        "unknown",
+        "",
+    }:
+        # 프로세스/상태 조회 실패 → DOWN 취급 (BLOCKED)
+        trading_status = "DOWN"
+        trading_ok = False
+    else:
+        trading_status = actual_state or "UNKNOWN"
+        trading_ok = False
+
     # Dry-run 준비 게이트 (실주문 게이트와 분리)
     blockers: list[str] = []
     warnings: list[str] = []
@@ -102,9 +144,19 @@ def admin_live_ops_readiness(
         blockers.append("UPBIT_UBA_MISSING")
     if use_mock:
         blockers.append("UPBIT_USE_MOCK_TRUE")
-    if trading_running is True:
-        blockers.append("TRADING_SCHEDULER_RUNNING")
-    elif trading_running is None:
+    # Scheduler RUN/RUNNING/PAUSED 는 BLOCKED 아님
+    if trading_status in failure_states or trading_status == "DOWN":
+        if trading_status == "DOWN":
+            blockers.append("TRADING_SCHEDULER_DOWN")
+        elif trading_status in {"CRASH"}:
+            blockers.append("TRADING_SCHEDULER_CRASH")
+        elif trading_status in {"ERROR", "UNHEALTHY"}:
+            blockers.append("TRADING_SCHEDULER_ERROR")
+        elif trading_status in {"FAILED", "FAILURE", "JOB_FAILURE"}:
+            blockers.append("TRADING_SCHEDULER_JOB_FAILURE")
+        else:
+            blockers.append("TRADING_SCHEDULER_ERROR")
+    elif trading_status == "UNKNOWN":
         warnings.append("TRADING_SCHEDULER_STATUS_UNKNOWN")
     if not track_enabled:
         blockers.append("TRACKING_SCHEDULER_DISABLED")
@@ -118,11 +170,13 @@ def admin_live_ops_readiness(
         blockers.append("KILL_SWITCH_ACTIVE")
 
     dry_run_ready = len(blockers) == 0
+    # LIVE 실행 준비: Scheduler RUN 은 정상 운영 상태이므로 허용
     live_execution_ready = (
         dry_run_ready
         and live_on_count > 0
         and armed_count > 0
-        and trading_running is False
+        and trading_ok
+        and trading_status in {"RUNNING", "READY", "PAUSED"}
     )
 
     pipeline: dict = {}
@@ -157,13 +211,14 @@ def admin_live_ops_readiness(
         "pipeline": pipeline,
         "schedulers": {
             "trading": {
-                "desired": "PAUSE",
+                "desired": desired_state or "PAUSE",
                 "running": trading_running,
-                "actual": sched_snap.get(
+                "actual": actual_state or sched_snap.get(
                     "trading_scheduler_actual_state"
                 ),
+                "status": trading_status,
                 "paused": sched_snap.get("trading_scheduler_paused"),
-                "ok": trading_running is False,
+                "ok": trading_ok,
                 "source": sched_snap.get("source"),
                 "control": {
                     "status": "GET /api/v1/realtime-sessions/status",
@@ -192,6 +247,8 @@ def admin_live_ops_readiness(
             "이 API는 조회 전용이다.",
             "ARM / LIVE ON / create_order / cancel_order 를 수행하지 않는다.",
             "dry_run_ready 와 live_execution_ready 를 분리한다.",
+            "Trading Scheduler RUN/RUNNING 은 정상 운영 상태이며 BLOCKED 가 아니다.",
+            "Scheduler BLOCKED 는 DOWN/CRASH/ERROR/Job Failure 에만 적용한다.",
             "pipeline 은 Shadow/Dry-run·Fill·Recovery 훅 준비 상태다.",
         ],
     }

@@ -52,13 +52,17 @@ class KiwoomRestClient:
         settings: Settings | None = None,
         http_client: httpx.AsyncClient | None = None,
         token_manager: KiwoomTokenManager | None = None,
+        base_url: str | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._http_client = http_client
         self._owns_http_client = http_client is None
+        # 시장데이터 collector가 process mock ENV와 host를 분리할 때 사용
+        self._base_url_override = (base_url or "").rstrip("/") or None
         self._token_manager = token_manager or KiwoomTokenManager(
             settings=self._settings,
             http_client=http_client,
+            base_url=self._base_url_override,
         )
         self._owns_token_manager = token_manager is None
 
@@ -146,7 +150,8 @@ class KiwoomRestClient:
         if next_key:
             headers[HEADER_NEXT_KEY] = next_key
 
-        url = f"{self._settings.kiwoom_base_url}{endpoint}"
+        host = self._base_url_override or self._settings.kiwoom_base_url
+        url = f"{host}{endpoint}"
 
         try:
             response = await client.post(

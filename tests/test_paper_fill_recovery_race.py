@@ -139,8 +139,11 @@ def rec_harness():
                     {"u": uid},
                 )
             session.commit()
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             session.rollback()
+            raise RuntimeError(
+                f"PAPER_REC harness cleanup failed (account_id={aid}): {exc}"
+            ) from exc
         session.close()
 
 

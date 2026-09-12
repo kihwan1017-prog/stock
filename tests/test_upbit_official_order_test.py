@@ -100,8 +100,10 @@ def test_order_test_pass_without_create_order() -> None:
             self.test_calls += 1
             assert body["market"] == "KRW-BTC"
             assert body["side"] == "bid"
-            assert body["ord_type"] == "limit"
-            return {"uuid": "t1", "side": "bid", "ord_type": "limit"}
+            assert body["ord_type"] == "price"
+            assert body["price"] == "5000"
+            assert "volume" not in body
+            return {"uuid": "t1", "side": "bid", "ord_type": "price"}
 
     fake = FakeClient()
     with patch(
@@ -114,8 +116,10 @@ def test_order_test_pass_without_create_order() -> None:
             market="KRW-BTC",
             side="BUY",
             amount=Decimal("5000"),
-            limit_price=Decimal("100000000"),
+            limit_price=None,
+            order_type="MARKET",
             order_client=fake,
+            reference_price=Decimal("100000000"),
         )
     assert out["test_passed"] is True
     assert out["status"] == "ORDER_TEST_PASSED"
@@ -123,6 +127,9 @@ def test_order_test_pass_without_create_order() -> None:
     assert fake.create_calls == 0
     assert fake.test_calls == 1
     assert out["minimum_order_amount"] == "5000"
+    assert out["request"]["ord_type"] == "price"
+    assert out["diagnostics"]["volume_present"] is False
+    assert "volume" not in out["diagnostics"]["query_string_for_hash"]
 
 
 def test_order_test_error_surface() -> None:
@@ -153,8 +160,10 @@ def test_order_test_error_surface() -> None:
             market="KRW-BTC",
             side="BUY",
             amount=Decimal("5000"),
-            limit_price=Decimal("100000000"),
+            limit_price=None,
+            order_type="MARKET",
             order_client=FakeClient(),
+            reference_price=Decimal("100000000"),
         )
     assert out["test_passed"] is False
     assert out["status"] == "ORDER_TEST_FAILED"

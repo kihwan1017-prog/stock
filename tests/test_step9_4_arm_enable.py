@@ -51,12 +51,26 @@ def _policy(**overrides) -> ResolvedRiskPolicy:
     return ResolvedRiskPolicy(**base)
 
 
+def _activation(*, uba_id: int = 58, broker: str = "UPBIT", hours: int = 8):
+    now = datetime.now(timezone.utc)
+    return SimpleNamespace(
+        live_trading_transition_id=1,
+        enabled=True,
+        activation_status="ACTIVE",
+        expires_at=now + timedelta(hours=hours),
+        broker_code=broker,
+        scope="ACCOUNT",
+        user_broker_account_id=uba_id,
+    )
+
+
 def _uba(*, live: bool = True, armed: bool = False):
     return SimpleNamespace(
         user_broker_account_id=58,
         user_id=7,
         broker_code="UPBIT",
         is_active=True,
+        connection_status="CONNECTED",
         live_order_enabled=live,
         live_armed=armed,
         arm_token_hash=None,
@@ -160,6 +174,15 @@ def test_arm_does_not_change_live() -> None:
         patch(
             "stock_platform.trading.live_arm_service.collect_scheduler_readiness"
         ) as sched,
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=_activation(),
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False, "arm_ttl_seconds": 300},
+        ),
     ):
         R.return_value.resolve.return_value = _policy()
         sched.return_value = SimpleNamespace(
@@ -221,8 +244,13 @@ def test_arm_blocks_paused() -> None:
     uba = _uba(live=True)
     session.get.return_value = uba
     session.scalar.return_value = SimpleNamespace(trading_paused=True)
-    with pytest.raises(LiveArmError) as ei:
-        LiveArmService(session).assert_arm_enable_preconditions(58)
+    with patch.object(
+        LiveArmService,
+        "_require_session_activation",
+        return_value=_activation(),
+    ):
+        with pytest.raises(LiveArmError) as ei:
+            LiveArmService(session).assert_arm_enable_preconditions(58)
     assert ei.value.code == "trading_paused"
 
 
@@ -233,8 +261,19 @@ def test_arm_blocks_active_review() -> None:
         SimpleNamespace(trading_paused=False),
         1,  # active
     ]
-    with pytest.raises(LiveArmError) as ei:
-        LiveArmService(session).assert_arm_enable_preconditions(58)
+    with (
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=_activation(),
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False, "arm_ttl_seconds": 300},
+        ),
+    ):
+        with pytest.raises(LiveArmError) as ei:
+            LiveArmService(session).assert_arm_enable_preconditions(58)
     assert ei.value.code == "unresolved_conflicts"
 
 
@@ -246,8 +285,19 @@ def test_arm_blocks_pending_review() -> None:
         0,  # active
         2,  # pending
     ]
-    with pytest.raises(LiveArmError) as ei:
-        LiveArmService(session).assert_arm_enable_preconditions(58)
+    with (
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=_activation(),
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False, "arm_ttl_seconds": 300},
+        ),
+    ):
+        with pytest.raises(LiveArmError) as ei:
+            LiveArmService(session).assert_arm_enable_preconditions(58)
     assert ei.value.code == "pending_review"
 
 
@@ -259,9 +309,20 @@ def test_arm_blocks_db_open() -> None:
         0,
         0,
     ]
-    with patch(
-        "stock_platform.trading.live_arm_service.BrokerRecoveryConflictService"
-    ) as svc:
+    with (
+        patch(
+            "stock_platform.trading.live_arm_service.BrokerRecoveryConflictService"
+        ) as svc,
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=_activation(),
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False, "arm_ttl_seconds": 300},
+        ),
+    ):
         svc.return_value.count_blocking_orders_for_uba.return_value = {
             "db_open": 1,
             "submission_unknown": 0,
@@ -291,6 +352,15 @@ def test_arm_blocks_kill_switch() -> None:
         patch(
             "stock_platform.trading.live_arm_service.KillSwitchService"
         ) as ks,
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=_activation(),
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False, "arm_ttl_seconds": 300},
+        ),
     ):
         svc.return_value.count_blocking_orders_for_uba.return_value = {
             "db_open": 0,
@@ -336,6 +406,15 @@ def test_arm_blocks_scheduler_not_paused() -> None:
         patch(
             "stock_platform.trading.live_arm_service.collect_scheduler_readiness",
             return_value=ready,
+        ),
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=_activation(),
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.assert_risk_account_not_paused",
+            return_value={"account_paused": False, "arm_ttl_seconds": 300},
         ),
     ):
         svc.return_value.count_blocking_orders_for_uba.return_value = {
@@ -385,7 +464,7 @@ def test_disarm_keeps_live_by_default() -> None:
     assert uba.live_armed is False
     assert uba.live_order_enabled is True
     assert result["live_unchanged"] is True
-    assert audit.call_args.kwargs["event_type"] == "LIVE_DISARM"
+    assert audit.call_args.kwargs["event_type"] == "ARM_OFF"
 
 
 def test_disarm_requires_correlation_when_flagged() -> None:

@@ -46,6 +46,9 @@ class CredentialUpsertRequest(BaseModel):
         has_upbit = bool(self.access_key and self.secret_key)
         if not has_kiwoom and not has_upbit:
             raise ValueError("Credential fields incomplete for broker")
+        # Kiwoom은 REAL/MOCK을 명시 — global settings 암묵 의존 금지
+        if has_kiwoom and self.is_mock is None:
+            raise ValueError("is_mock is required for Kiwoom credentials")
         return self
 
     def as_payload(self) -> dict[str, Any]:

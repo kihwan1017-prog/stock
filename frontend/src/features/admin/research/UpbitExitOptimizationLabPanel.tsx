@@ -196,7 +196,7 @@ export function UpbitExitOptimizationLabPanel({
             <Statistic
               title="AUTO_PROMOTION"
               value="FORBIDDEN"
-              valueStyle={{ fontSize: 16 }}
+              styles={{ content: { fontSize: 16 } }}
             />
           </Card>
         </Col>

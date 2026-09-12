@@ -184,6 +184,9 @@ def _run_preflight(
         ARM.return_value.validate_arm_token.return_value = (
             (True, "ARM_OK") if arm_token_ok else (False, "ARM_TOKEN_INVALID")
         )
+        ARM.return_value.validate_arm_authorization.return_value = (
+            (True, "ARM_OK") if arm_token_ok else (False, "ARM_TOKEN_INVALID")
+        )
         R.return_value.resolve.return_value = policy
         if not broker_ok:
             with patch.object(
@@ -443,7 +446,11 @@ def test_kill_switch_blocks() -> None:
 
 def test_open_orders_block() -> None:
     session = MagicMock()
-    result = _run_preflight(session, open_orders=1)
+    result = _run_preflight(
+        session,
+        open_orders=1,
+        policy=_policy(max_open_orders=1),
+    )
     assert result.ready is False
     assert any("OPEN_ORDER" in b for b in result.blockers)
 

@@ -17,6 +17,7 @@ from stock_platform.api.deps_admin import (
 from stock_platform.broker.live_transition_service import (
     LiveTradingTransitionService,
 )
+from stock_platform.common.settings import LIVE_ACTIVATION_TTL_HOURS_MAX
 from stock_platform.database.session import get_db_session
 
 
@@ -56,7 +57,9 @@ class ApproveTransitionRequest(BaseModel):
         max_length=100,
     )
     reason: str | None = Field(default=None, max_length=500)
-    ttl_hours: int | None = Field(default=None, ge=1, le=72)
+    ttl_hours: int | None = Field(
+        default=None, ge=1, le=LIVE_ACTIVATION_TTL_HOURS_MAX
+    )
     scope: str | None = Field(default=None, max_length=40)
     broker_code: str | None = Field(default=None, max_length=30)
     user_broker_account_id: int | None = None

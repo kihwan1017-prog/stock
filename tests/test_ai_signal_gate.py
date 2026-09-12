@@ -759,6 +759,10 @@ def test_exit_policy_unit():
     assert should_bypass_ai_gate(buy) == (False, None)
     sl = _signal(action=RealtimeSignalAction.SELL, reason_code="STOP_LOSS")
     assert should_bypass_ai_gate(sl)[1] == "AI_GATE_BYPASS_STOP_LOSS"
+    trail = _signal(
+        action=RealtimeSignalAction.SELL, reason_code="TRAILING_STOP"
+    )
+    assert should_bypass_ai_gate(trail)[1] == "AI_GATE_BYPASS_TRAILING_STOP"
 
 
 

@@ -379,6 +379,9 @@ class Settings(BaseSettings):
     upbit_ma_exit_forward_shadow_enabled: bool = True
     upbit_entry_signal_shadow_enabled: bool = True
     upbit_entry_signal_shadow_interval_seconds: float = 120.0
+    # Entry Gate V2 shadow — research only (LIVE E0 thresholds/orders 불변)
+    upbit_entry_gate_v2_shadow_enabled: bool = True
+    upbit_entry_gate_v2_shadow_interval_seconds: float = 120.0
     # H2/H3 frozen forward-shadow — research only, no REAL publish
     upbit_h2_h3_forward_shadow_enabled: bool = True
     upbit_h2_h3_forward_shadow_interval_seconds: float = 180.0

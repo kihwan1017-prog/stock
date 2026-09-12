@@ -60,6 +60,24 @@ def test_ownership_denied_for_other_user() -> None:
     assert exc.value.code == ERR_OWNERSHIP
 
 
+def test_sync_uba_connection_status_heals_pending_when_verified() -> None:
+    """VERIFIED credential + CREDENTIAL_PENDING UBA → CONNECTED 치유."""
+
+    session = MagicMock()
+    uba = MagicMock()
+    uba.connection_status = "CREDENTIAL_PENDING"
+    entity = MagicMock()
+    entity.verification_status = "VERIFIED"
+    service = BrokerCredentialVaultService(session)
+    service.get_uba = MagicMock(return_value=uba)  # type: ignore[method-assign]
+    service.get_active_entity = MagicMock(return_value=entity)  # type: ignore[method-assign]
+
+    result = service.sync_uba_connection_status(1380)
+    assert result == "CONNECTED"
+    assert uba.connection_status == "CONNECTED"
+    session.flush.assert_called()
+
+
 def test_status_without_credential() -> None:
     session = MagicMock()
     uba = MagicMock()

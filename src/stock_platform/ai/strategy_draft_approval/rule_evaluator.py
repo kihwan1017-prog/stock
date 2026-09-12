@@ -9,11 +9,10 @@ docstring이 "단위 테스트·레거시 STEP34 호환"이라 명시해 재사�
 제외했다).
 
 Right Operand 정책(§4, §6): DraftRule은 `threshold`(필수)와
-`comparison_target`(선택, 자유 문자열)을 함께 가진다. 이번 STEP은
-"Indicator vs 고정 threshold" 비교만 지원한다 — `comparison_target`이
-설정된 Rule(다른 Indicator/필드와의 비교를 암시)은 의미가 모호하고
-검증되지 않았으므로 **지원하지 않음**으로 fail-closed 처리한다(임의
-해석 금지, §2.3/§4).
+`comparison_target`(선택)을 함께 가진다. 기본은 "Indicator vs 고정
+threshold"다. `comparison_target`이 있으면 **화이트리스트 형식
+`SMA:{period}` / `EMA:{period}`만** 허용해 두 Indicator 비교(예: MA5
+CROSS_ABOVE MA20)를 수행한다. 그 외 문자열은 fail-closed.
 
 Cross 정책(§6): 이전 값이 없으면(첫 유효 index, 또는 lookback 기간
 미충족으로 Indicator 값이 아직 없음) `insufficient_data`로 처리하고
@@ -25,14 +24,34 @@ Decimal 비교 정책: EQ/NE는 프로젝트에 확립된 tolerance 정책이 �
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from stock_platform.indicators.engine import _ema, _rolling_mean, _rsi_wilder
 
+# comparison_target 화이트리스트 — 임의 필드명/심볼 비교 금지.
+_INDICATOR_REF_PATTERN = re.compile(r"^(SMA|EMA):([1-9][0-9]{0,2})$", re.IGNORECASE)
+
 SUPPORTED_INDICATORS = frozenset({"SMA", "EMA", "RSI"})
 _DEFAULT_RSI_PERIOD = 14
+
+
+def parse_comparison_indicator_ref(raw: str | None) -> tuple[str, int] | None:
+    """`SMA:20` / `EMA:20`만 해석한다. 그 외는 None(호출측 fail-closed)."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    matched = _INDICATOR_REF_PATTERN.match(text)
+    if matched is None:
+        return None
+    period = int(matched.group(2))
+    if period > 500:
+        return None
+    return matched.group(1).upper(), period
 
 
 class RuleEvaluationError(Exception):
@@ -106,7 +125,8 @@ def evaluate_rule(
     절대 사용하지 않는다(§2.4 — IndicatorCache가 캐시하는 시계열 자체가
     이미 각 위치까지의 데이터만으로 계산되어 있어 구조적으로 보장된다)."""
 
-    if rule.comparison_target is not None:
+    comparison_ref = parse_comparison_indicator_ref(getattr(rule, "comparison_target", None))
+    if rule.comparison_target is not None and comparison_ref is None:
         return RuleEvaluationResult(
             matched=False,
             left_value=None,
@@ -124,13 +144,21 @@ def evaluate_rule(
         )
 
     period = _resolve_period(rule)
-    right_value = Decimal(str(rule.threshold))
     left_value = cache.value_at(rule.indicator, period, index)
+    if comparison_ref is None:
+        right_value = Decimal(str(rule.threshold))
+        previous_right = right_value
+    else:
+        right_indicator, right_period = comparison_ref
+        right_value = cache.value_at(right_indicator, right_period, index)
+        previous_right = (
+            cache.value_at(right_indicator, right_period, index - 1) if index > 0 else None
+        )
 
-    if left_value is None:
+    if left_value is None or right_value is None:
         return RuleEvaluationResult(
             matched=False,
-            left_value=None,
+            left_value=left_value,
             right_value=right_value,
             error_code="INSUFFICIENT_DATA",
             reason="indicator 값이 아직 없습니다(lookback 기간 미충족).",
@@ -152,26 +180,26 @@ def evaluate_rule(
 
     if operator in {"CROSS_ABOVE", "CROSS_BELOW"}:
         previous_left = cache.value_at(rule.indicator, period, index - 1) if index > 0 else None
-        if previous_left is None:
+        if previous_left is None or previous_right is None:
             return RuleEvaluationResult(
                 matched=False,
                 left_value=left_value,
                 right_value=right_value,
-                previous_left_value=None,
-                previous_right_value=right_value,
+                previous_left_value=previous_left,
+                previous_right_value=previous_right,
                 error_code="INSUFFICIENT_DATA",
                 reason="이전 index 값이 없어 Cross를 판정할 수 없습니다(첫 유효 시점).",
             )
         if operator == "CROSS_ABOVE":
-            matched = previous_left <= right_value and left_value > right_value
+            matched = previous_left <= previous_right and left_value > right_value
         else:
-            matched = previous_left >= right_value and left_value < right_value
+            matched = previous_left >= previous_right and left_value < right_value
         return RuleEvaluationResult(
             matched=matched,
             left_value=left_value,
             right_value=right_value,
             previous_left_value=previous_left,
-            previous_right_value=right_value,
+            previous_right_value=previous_right,
         )
 
     return RuleEvaluationResult(

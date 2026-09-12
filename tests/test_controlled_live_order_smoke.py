@@ -195,11 +195,124 @@ def test_preview_never_calls_adapter() -> None:
             market="KRW-BTC",
             side="BUY",
             amount=Decimal("5000"),
-            limit_price=Decimal("100000000"),
+            limit_price=None,
+            order_type="MARKET",
+            reference_price=Decimal("100000000"),
         )
     assert out["adapter_create_order_calls"] == 0
     assert out["broker_order_id"] is None
     assert out["stage"] in {"PRE_SUBMIT_READY", "PREFLIGHT_BLOCKED", "PREFLIGHT_STALE"}
+    # 5000 / 100_000_000 = 0.00005 (현재가 기준, 가격=금액 혼동 없음)
+    assert Decimal(out["quantity"]) == Decimal("0.00005")
+    assert out["upbit_ord_type"] == "price"
+    assert out["broker_body"]["price"] == "5000"
+    assert "volume" not in out["broker_body"]
+
+
+def test_preview_qty_matches_upbit_four_paths() -> None:
+    from stock_platform.trading.controlled_live_order_smoke_service import (
+        compute_upbit_order_preview,
+    )
+
+    ref = Decimal("100000000")
+    amount = Decimal("5000")
+
+    market_buy = compute_upbit_order_preview(
+        market="KRW-BTC",
+        side="BUY",
+        order_type="MARKET",
+        amount=amount,
+        limit_price=None,
+        reference_price=ref,
+    )
+    assert market_buy["quantity"] == Decimal("0.00005")
+    assert market_buy["upbit_ord_type"] == "price"
+    assert market_buy["broker_body"]["price"] == "5000"
+    assert "volume" not in market_buy["broker_body"]
+
+    limit_buy = compute_upbit_order_preview(
+        market="KRW-BTC",
+        side="BUY",
+        order_type="LIMIT",
+        amount=amount,
+        limit_price=ref,
+        reference_price=ref,
+    )
+    assert limit_buy["quantity"] == Decimal("0.00005")
+    assert limit_buy["upbit_ord_type"] == "limit"
+    assert Decimal(limit_buy["broker_body"]["volume"]) == Decimal("0.00005")
+    assert limit_buy["broker_body"]["price"] == "100000000"
+
+    market_sell = compute_upbit_order_preview(
+        market="KRW-BTC",
+        side="SELL",
+        order_type="MARKET",
+        amount=amount,
+        limit_price=None,
+        reference_price=ref,
+    )
+    assert market_sell["quantity"] == Decimal("0.00005")
+    assert market_sell["upbit_ord_type"] == "market"
+    assert Decimal(market_sell["broker_body"]["volume"]) == Decimal("0.00005")
+    assert "price" not in market_sell["broker_body"]
+
+    limit_sell = compute_upbit_order_preview(
+        market="KRW-BTC",
+        side="SELL",
+        order_type="LIMIT",
+        amount=amount,
+        limit_price=ref,
+        reference_price=ref,
+    )
+    assert limit_sell["quantity"] == Decimal("0.00005")
+    assert limit_sell["broker_body"]["ord_type"] == "limit"
+
+
+def test_preview_market_buy_ignores_fake_limit_price_5000() -> None:
+    """UI에서 금액 5000을 가격란에 넣어도 MARKET면 현재가로 산출."""
+    session = MagicMock()
+    session.get.return_value = _uba()
+    svc = ControlledLiveOrderSmokeService(session)
+    with (
+        patch.object(
+            RuntimePreflightService,
+            "run_for_uba",
+            return_value={
+                "overall_status": "READY_FOR_LIVE",
+                "live_on_allowed": True,
+                "manual_order_allowed": False,
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "checks": [],
+                "blockers": [],
+                "warnings": [],
+            },
+        ),
+        patch(
+            "stock_platform.trading.controlled_live_order_smoke_service.UpbitLivePreflightService.run",
+            return_value=SimpleNamespace(
+                to_dict=lambda: {"ready": True},
+                live_execution_ready=False,
+            ),
+        ),
+        patch(
+            "stock_platform.trading.controlled_live_order_smoke_service.emit_live_safety_audit"
+        ),
+    ):
+        out = svc.preview(
+            uba_id=1380,
+            user_id=1,
+            actor="tester",
+            market="KRW-BTC",
+            side="BUY",
+            amount=Decimal("5000"),
+            limit_price=Decimal("5000"),  # 잘못된 가격 입력
+            order_type="MARKET",
+            reference_price=Decimal("160000000"),
+        )
+    assert out["adapter_create_order_calls"] == 0
+    assert Decimal(out["quantity"]) == Decimal("0.00003125")  # 5000/160000000
+    assert out["quantity"] != "1"
+    assert out["reference_price"] == "160000000"
 
 
 def test_confirm_mismatch_zero_orders() -> None:

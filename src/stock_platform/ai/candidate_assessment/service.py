@@ -373,17 +373,19 @@ class AICandidateAssessmentService:
             }
 
         input_payload = {
+            # prompt variable_schema(additionalProperties=false)는 허용 키만 strict하게 받는다.
+            # 따라서 서비스 내부에 존재하는 메타키(e.g. instrument_id, evidence_bundle_hash 등)는
+            # prompt 렌더링 input에 포함하지 않는다.
             "market_type": market_type,
             "exchange_code": elig["exchange_code"],
             "symbol": elig["symbol"],
-            "instrument_id": str(instrument_id or instrument_key),
-            "evidence_bundle_hash": bundle["hash"],
-            "evidence_count": str(bundle["counts"].get("included", 0)),
             "evidence_quality": str(bundle.get("evidence_quality") or ""),
             "data_quality": str(bundle.get("data_quality") or ""),
             "conflict_status": str(bundle.get("conflict_status") or ""),
-            "temporal_status": str(bundle.get("temporal_status") or ""),
-            "evidence_json": json.dumps(
+            # Prompt variable schema는 아래 두 키를 기대한다.
+            # (seed_data/활성 prompt variable_schema ↔ 서비스 input_payload key mismatch 방지)
+            "temporal_alignment_status": str(bundle.get("temporal_status") or ""),
+            "evidence_bundle_json": json.dumps(
                 [
                     i.get("safe_result_summary") or {"summary": i.get("summary")}
                     for i in bundle["items"]

@@ -40,7 +40,7 @@ def compute_pre_entry_features(
         t0 = as_utc(entry_at)
         out: dict[str, Any] = {"ok": True}
 
-        for m in (1, 3, 5, 10):
+        for m in (1, 3, 5, 10, 15):
             window = _bars_before(bars, entry_at=t0, minutes=m)
             if not window:
                 out[f"pre_entry_return_{m}m"] = "NOT_AVAILABLE"
@@ -55,14 +55,23 @@ def compute_pre_entry_features(
             window = _bars_before(bars, entry_at=t0, minutes=m)
             if not window:
                 out[f"dist_from_{m}m_high_pct"] = "NOT_AVAILABLE"
+                out[f"dist_from_{m}m_low_pct"] = "NOT_AVAILABLE"
             else:
                 hi = max(b.high for b in window)
+                lo = min(b.low for b in window)
                 if hi <= 0:
                     out[f"dist_from_{m}m_high_pct"] = "NOT_AVAILABLE"
                 else:
                     # 0 = at high; negative = below high
                     out[f"dist_from_{m}m_high_pct"] = round(
                         float(return_pct(hi, entry)), 6
+                    )
+                if lo <= 0:
+                    out[f"dist_from_{m}m_low_pct"] = "NOT_AVAILABLE"
+                else:
+                    # 0 = at low; positive = above low
+                    out[f"dist_from_{m}m_low_pct"] = round(
+                        float(return_pct(lo, entry)), 6
                     )
 
         # 최근 변동성 proxy: 15m high-low / entry
@@ -86,6 +95,8 @@ def compute_pre_entry_features(
             out["ma_slope"] = "NOT_AVAILABLE"
 
         out["volume_acceleration"] = "NOT_AVAILABLE"
+        # volume 캔들 미보유 — exhaustion은 volume_surge 외부 stamp에 의존
+        out["volume_exhaustion"] = "NOT_AVAILABLE"
         return out
     except Exception as exc:  # noqa: BLE001
         return {
@@ -95,8 +106,11 @@ def compute_pre_entry_features(
             "pre_entry_return_3m": "NOT_AVAILABLE",
             "pre_entry_return_5m": "NOT_AVAILABLE",
             "pre_entry_return_10m": "NOT_AVAILABLE",
+            "pre_entry_return_15m": "NOT_AVAILABLE",
             "dist_from_5m_high_pct": "NOT_AVAILABLE",
             "dist_from_15m_high_pct": "NOT_AVAILABLE",
             "dist_from_30m_high_pct": "NOT_AVAILABLE",
             "dist_from_60m_high_pct": "NOT_AVAILABLE",
+            "dist_from_5m_low_pct": "NOT_AVAILABLE",
+            "dist_from_15m_low_pct": "NOT_AVAILABLE",
         }

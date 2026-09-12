@@ -719,6 +719,18 @@ def build_operation_health() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         components["queue"] = {"status": "UNKNOWN", "message": _safe(exc)}
 
+    try:
+        from stock_platform.trading.upbit_24x7_control import (
+            build_24x7_ops_health,
+        )
+
+        components["upbit_24x7"] = build_24x7_ops_health()
+    except Exception as exc:  # noqa: BLE001
+        components["upbit_24x7"] = {
+            "status": "UNKNOWN",
+            "message": _safe(exc),
+        }
+
     # WebSocket
     try:
         from stock_platform.broker.kiwoom.ws_manager import (

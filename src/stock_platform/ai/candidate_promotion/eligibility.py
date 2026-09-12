@@ -1,4 +1,7 @@
-"""STEP 11-12 — Promotion eligibility (Candidate INSERT 0)."""
+"""STEP 11-12 — Promotion eligibility (Candidate INSERT 0).
+
+is_expired는 keyword-only 인자(expires_at=)로만 호출한다.
+"""
 
 from __future__ import annotations
 
@@ -71,7 +74,7 @@ class AICandidatePromotionEligibilityService:
                 )
             )
 
-        if is_expired(queue.expires_at):
+        if is_expired(expires_at=queue.expires_at):
             blockers.append("QUEUE_EXPIRED")
             checks.append(
                 self._check(

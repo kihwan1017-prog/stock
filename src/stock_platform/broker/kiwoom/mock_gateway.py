@@ -183,6 +183,22 @@ class KiwoomMockOrderGateway:
         result = ExecutionSyncService(self._session).synchronize(
             sync_event, actor=actor
         )
+        # P0-2 K_ONLY — ledger 재적용 (idempotent)
+        if result.order_found and not result.duplicate:
+            from stock_platform.broker.kiwoom.fill_position_write import (
+                ensure_kiwoom_position_after_sync,
+            )
+
+            order = self._orders.get_by_broker_order_id(
+                broker_code="KIWOOM",
+                broker_order_id=str(broker_order_id),
+            )
+            ensure_kiwoom_position_after_sync(
+                self._session,
+                order=order,
+                event=sync_event,
+                actor=actor,
+            )
         self._last_filled[str(broker_order_id)] = Decimal(str(filled_quantity))
         return result
 

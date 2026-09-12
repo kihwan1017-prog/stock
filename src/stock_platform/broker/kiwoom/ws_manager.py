@@ -52,10 +52,33 @@ class KiwoomOrderWebSocketManager:
                     previous_filled_quantity=previous_filled,
                 )
                 if sync_event is not None:
-                    ExecutionSyncService(session).synchronize(
+                    sync_result = ExecutionSyncService(session).synchronize(
                         sync_event,
                         actor="KIWOOM_ORDER_WS",
                     )
+                    # P0-2 K_ONLY — ExecutionSync silent ledger 실패 대비 idempotent 재적용
+                    if sync_result.order_found and not sync_result.duplicate:
+                        from stock_platform.broker.kiwoom.fill_position_write import (
+                            ensure_kiwoom_position_after_sync,
+                        )
+                        from stock_platform.order.repository import (
+                            TradingOrderRepository,
+                        )
+
+                        order = TradingOrderRepository(
+                            session
+                        ).get_by_broker_order_id(
+                            broker_code="KIWOOM",
+                            broker_order_id=str(
+                                getattr(event, "broker_order_id", "") or ""
+                            ),
+                        )
+                        ensure_kiwoom_position_after_sync(
+                            session,
+                            order=order,
+                            event=sync_event,
+                            actor="KIWOOM_ORDER_WS",
+                        )
             except Exception:  # noqa: BLE001
                 # TradingOrder 미매칭/중복은 Pending 성공을 깨지 않음
                 # apply()가 이미 commit했을 수 있으므로 rollback만 시도

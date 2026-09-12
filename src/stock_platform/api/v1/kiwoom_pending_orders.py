@@ -4,8 +4,11 @@ from sqlalchemy.orm import Session
 
 from stock_platform.api.deps_admin import require_admin
 from stock_platform.database.session import get_db_session
-from stock_platform.broker.kiwoom.pending_factory import (
-    build_kiwoom_pending_order_client,
+from stock_platform.broker.credential_adapter_factory import (
+    build_kiwoom_pending_order_client_for_uba,
+)
+from stock_platform.broker.credential_vault_service import (
+    BrokerCredentialVaultError,
 )
 from stock_platform.broker.kiwoom.pending_service import (
     KiwoomPendingOrderService,
@@ -32,7 +35,22 @@ class CancelOrderRequest(BaseModel):
     quantity: str = Field(min_length=1)
 
 
-def service(session):
+def service(session: Session, user_broker_account_id: int):
+    return KiwoomPendingOrderService(
+        session,
+        build_kiwoom_pending_order_client_for_uba(
+            session, user_broker_account_id
+        ),
+    )
+
+
+def service_legacy_env(session: Session):
+    """레거시 order_id 경로 — env client (SYSTEM_SHARED, UBA 미지정)."""
+
+    from stock_platform.broker.kiwoom.pending_factory import (
+        build_kiwoom_pending_order_client,
+    )
+
     return KiwoomPendingOrderService(
         session, build_kiwoom_pending_order_client()
     )
@@ -44,9 +62,14 @@ async def sync_orders_by_uba(
     session: Session = Depends(get_db_session),
 ):
     try:
-        return await service(session).synchronize(
+        return await service(session, user_broker_account_id).synchronize(
             user_broker_account_id=user_broker_account_id,
         )
+    except BrokerCredentialVaultError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
     except AccountIdentityError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,7 +130,7 @@ async def modify(
     request: ModifyOrderRequest,
     session: Session = Depends(get_db_session),
 ):
-    return await service(session).modify(
+    return await service_legacy_env(session).modify(
         original_order_id=order_id,
         symbol=request.symbol,
         quantity=request.quantity,
@@ -122,7 +145,7 @@ async def cancel(
     request: CancelOrderRequest,
     session: Session = Depends(get_db_session),
 ):
-    return await service(session).cancel(
+    return await service_legacy_env(session).cancel(
         original_order_id=order_id,
         symbol=request.symbol,
         quantity=request.quantity,

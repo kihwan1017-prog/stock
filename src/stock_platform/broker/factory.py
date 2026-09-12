@@ -51,18 +51,38 @@ class BrokerAdapterFactory:
                 "transition approval check"
             )
 
+        uba_id = user_broker_account_id
+        if uba_id is None:
+            uba_id = parse_user_broker_credential_ref(credential_ref)
+
         # 키움 LIVE 경로만 환경 불일치 Fail Closed
         if code == "KIWOOM":
+            from stock_platform.broker.kiwoom.execution_env import (
+                kiwoom_global_mock_blocks_live_execution,
+            )
             from stock_platform.broker.live_config_gate import (
                 evaluate_live_flag_consistency,
                 record_live_config_audit,
             )
 
-            cfg = evaluate_live_flag_consistency()
-            if cfg.code in {
-                "LIVE_MOCK_CONFLICT",
-                "LIVE_FLAG_MISMATCH_KIWOOM",
-            }:
+            cfg = evaluate_live_flag_consistency(
+                broker_code="KIWOOM",
+                session=session,
+                user_broker_account_id=uba_id,
+                uses_system_shared_credential=uses_system_shared_credential,
+                credential_ref=credential_ref,
+            )
+            if cfg.code == "LIVE_FLAG_MISMATCH_KIWOOM":
+                record_live_config_audit(
+                    session, actor="BROKER_FACTORY", result=cfg
+                )
+                raise PermissionError(f"{cfg.code}: {cfg.message}")
+            if cfg.code == "LIVE_MOCK_CONFLICT" and kiwoom_global_mock_blocks_live_execution(
+                session,
+                user_broker_account_id=uba_id,
+                uses_system_shared_credential=uses_system_shared_credential,
+                credential_ref=credential_ref,
+            ):
                 record_live_config_audit(
                     session, actor="BROKER_FACTORY", result=cfg
                 )
@@ -70,14 +90,8 @@ class BrokerAdapterFactory:
 
         LiveTradingTransitionGuard(session).require_active(
             broker_code=code,
-            user_broker_account_id=user_broker_account_id
-            if user_broker_account_id is not None
-            else parse_user_broker_credential_ref(credential_ref),
+            user_broker_account_id=uba_id,
         )
-
-        uba_id = user_broker_account_id
-        if uba_id is None:
-            uba_id = parse_user_broker_credential_ref(credential_ref)
 
         # 사용자 UBA LIVE → Vault 필수 (env 자동 대체 금지)
         if uba_id is not None and not uses_system_shared_credential:

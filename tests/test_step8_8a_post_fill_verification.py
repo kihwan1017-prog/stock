@@ -147,6 +147,16 @@ def test_arm_token_hash_only_and_compare_digest() -> None:
         patch(
             "stock_platform.trading.live_arm_service.emit_live_order_telegram"
         ),
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=SimpleNamespace(
+                live_trading_transition_id=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
+                broker_code="KIWOOM",
+                user_broker_account_id=10,
+            ),
+        ),
     ):
         from stock_platform.risk_engine.resolved_policy import (
             ResolvedRiskPolicy,
@@ -221,6 +231,16 @@ def test_rearm_invalidates_previous_token() -> None:
         ),
         patch(
             "stock_platform.trading.live_arm_service.emit_live_order_telegram"
+        ),
+        patch.object(
+            LiveArmService,
+            "_require_session_activation",
+            return_value=SimpleNamespace(
+                live_trading_transition_id=1,
+                expires_at=datetime.now(timezone.utc) + timedelta(hours=8),
+                broker_code="KIWOOM",
+                user_broker_account_id=10,
+            ),
         ),
     ):
         from stock_platform.risk_engine.resolved_policy import (

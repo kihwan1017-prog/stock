@@ -30,6 +30,15 @@ def krx_tick_size(price: Decimal) -> Decimal:
     return Decimal("1000")
 
 
+def is_krx_tick_aligned(price: Decimal) -> bool:
+    """지정가가 로컬 KRX 호가단위 배수인지. broker REST 없음."""
+    value = Decimal(str(price))
+    if value <= ZERO:
+        return False
+    tick = krx_tick_size(value)
+    return (value % tick) == ZERO
+
+
 def tick_size_for_exchange(
     exchange_code: str,
     price: Decimal,

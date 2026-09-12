@@ -5,7 +5,11 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from stock_platform.broker.kiwoom.price import normalize_kiwoom_price
 from stock_platform.collectors.kiwoom.dto import DailyPriceDTO
+from stock_platform.collectors.kiwoom.trade_value_normalization import (
+    normalize_kiwoom_trade_value_to_krw,
+)
 
 
 class KiwoomDailyParseError(ValueError):
@@ -118,29 +122,23 @@ class KiwoomDailyParser:
             "%Y%m%d",
         ).date()
 
-        open_price = self._absolute_decimal(
-            self._pick(row, self._OPEN_KEYS)
-        )
-        high_price = self._absolute_decimal(
-            self._pick(row, self._HIGH_KEYS)
-        )
-        low_price = self._absolute_decimal(
-            self._pick(row, self._LOW_KEYS)
-        )
-        close_price = self._absolute_decimal(
-            self._pick(row, self._CLOSE_KEYS)
-        )
+        open_price = self._require_price(self._pick(row, self._OPEN_KEYS))
+        high_price = self._require_price(self._pick(row, self._HIGH_KEYS))
+        low_price = self._require_price(self._pick(row, self._LOW_KEYS))
+        close_price = self._require_price(self._pick(row, self._CLOSE_KEYS))
 
         volume = self._absolute_decimal(
             self._pick_optional(row, self._VOLUME_KEYS, "0")
         )
-        trade_value = self._absolute_decimal(
+        # trde_prica: 공식 단위 백만원 → canonical KRW 원
+        raw_trade_value = self._absolute_decimal(
             self._pick_optional(
                 row,
                 self._TRADE_VALUE_KEYS,
                 "0",
             )
         )
+        trade_value = normalize_kiwoom_trade_value_to_krw(raw_trade_value)
 
         change_rate_raw = self._pick_optional(
             row,
@@ -157,6 +155,27 @@ class KiwoomDailyParser:
             raise ValueError(
                 f"high_price({high_price}) is below low_price({low_price})"
             )
+
+        # Candidate에 잘못된 OHLC가 들어가지 않도록 품질 검증
+        for label, price in (
+            ("open", open_price),
+            ("high", high_price),
+            ("low", low_price),
+            ("close", close_price),
+        ):
+            if price <= 0:
+                raise ValueError(f"{label}_price must be > 0")
+
+        if not (low_price <= open_price <= high_price):
+            raise ValueError(
+                f"open_price({open_price}) outside low/high"
+            )
+        if not (low_price <= close_price <= high_price):
+            raise ValueError(
+                f"close_price({close_price}) outside low/high"
+            )
+        if volume < 0:
+            raise ValueError("volume must be >= 0")
 
         return DailyPriceDTO(
             trade_date=trade_date,
@@ -197,6 +216,14 @@ class KiwoomDailyParser:
             if key in row and row[key] not in (None, ""):
                 return row[key]
         return default
+
+    @staticmethod
+    def _require_price(value: Any) -> Decimal:
+        # OHLC만 가격 정규화. 등락률(flu_rt)은 _decimal 부호 유지.
+        parsed = normalize_kiwoom_price(value)
+        if parsed is None:
+            raise InvalidOperation(f"invalid kiwoom price: {value!r}")
+        return parsed
 
     @classmethod
     def _absolute_decimal(cls, value: Any) -> Decimal:

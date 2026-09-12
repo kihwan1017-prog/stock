@@ -163,7 +163,7 @@ def test_reentry_c2_c3_divergence_fixture():
     c3_block = decide_reentry_block(
         variant_id=VARIANT_C3,
         delay_seconds=delay,
-        context={"new_signal": False, "ma_improved": False},
+        context={"new_signal": False, "ma_improved": False, "momentum_reset": False, "score_improved": False},
     )
     c3_allow = decide_reentry_block(
         variant_id=VARIANT_C3,
@@ -173,6 +173,39 @@ def test_reentry_c2_c3_divergence_fixture():
     assert c2["WOULD_BLOCK"] is False
     assert c3_block["WOULD_BLOCK"] is True
     assert c3_allow["WOULD_BLOCK"] is False
+
+
+def test_reentry_c3_unknown_context_diverges_from_c2():
+    """UNKNOWN이면 날조하지 않고 C2(allow)와 다른 결정."""
+
+    delay = 250.0
+    c2 = decide_reentry_block(variant_id=VARIANT_C2, delay_seconds=delay)
+    c3 = decide_reentry_block(
+        variant_id=VARIANT_C3,
+        delay_seconds=delay,
+        context={
+            "new_signal": "UNKNOWN",
+            "ma_improved": "UNKNOWN",
+            "momentum_reset": "UNKNOWN",
+            "score_improved": "UNKNOWN",
+        },
+    )
+    assert c2["WOULD_BLOCK"] is False
+    assert c3["WOULD_BLOCK"] is True
+    assert c3["REASON"] == "CONTEXTUAL_CONFIRMATION_UNKNOWN"
+
+
+def test_lineage_tri_state_and_price_path_keys():
+    from stock_platform.operation.upbit_opportunity_shadow.profitability_improvement_shadow.lineage import (
+        PRICE_PATH_HORIZONS_SEC,
+        _tri_state,
+    )
+
+    assert _tri_state(None) == "UNKNOWN"
+    assert _tri_state("UNKNOWN") == "UNKNOWN"
+    assert _tri_state(True) is True
+    assert _tri_state(False) is False
+    assert PRICE_PATH_HORIZONS_SEC == (30, 60, 180, 300)
 
 
 def test_candidate_variants_distinct_ranks_with_features():

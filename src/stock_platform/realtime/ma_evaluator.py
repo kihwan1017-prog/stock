@@ -870,6 +870,27 @@ class MovingAverageStrategyEvaluator:
                     )
                 except Exception:  # noqa: BLE001
                     pass
+                try:
+                    from stock_platform.operation.upbit_opportunity_shadow.entry_gate_v2.hooks import (
+                        maybe_enroll_entry_gate_v2_shadow,
+                    )
+
+                    _closes = [float(p) for p in (state.prices or []) if p is not None]
+                    maybe_enroll_entry_gate_v2_shadow(
+                        uba_id=int(uba_id),
+                        symbol=event.symbol.upper(),
+                        short_ma=short_avg,
+                        long_ma=long_avg,
+                        snap=snap,
+                        live_e0_decision="HOLD",
+                        live_e0_block_reason=block,
+                        closes=_closes,
+                        detail=detail,
+                        strategy_id=strategy_id,
+                        entry_price=getattr(event, "price", None),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
             return None
         # Upstream: OPEN/ENTRY_PENDING/EXIT_PENDING/binding occupancy면 signal 미생성
         # (WAITING_SIGNAL 자기 슬롯은 occupancy에 포함되지 않음 — 첫 ENTRY 허용)
@@ -1002,6 +1023,29 @@ class MovingAverageStrategyEvaluator:
                         None if signal is not None else "SIGNAL_EMIT_SUPPRESSED"
                     ),
                     detail=detail,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.entry_gate_v2.hooks import (
+                    maybe_enroll_entry_gate_v2_shadow,
+                )
+
+                _closes = [float(p) for p in (state.prices or []) if p is not None]
+                maybe_enroll_entry_gate_v2_shadow(
+                    uba_id=int(uba_id),
+                    symbol=event.symbol.upper(),
+                    short_ma=short_avg,
+                    long_ma=long_avg,
+                    snap=snap,
+                    live_e0_decision="ALLOW" if signal is not None else "HOLD",
+                    live_e0_block_reason=(
+                        None if signal is not None else "SIGNAL_EMIT_SUPPRESSED"
+                    ),
+                    closes=_closes,
+                    detail=detail,
+                    strategy_id=strategy_id,
+                    entry_price=getattr(event, "price", None),
                 )
             except Exception:  # noqa: BLE001
                 pass

@@ -233,7 +233,7 @@ def test_live_on_server_revalidates_preflight() -> None:
     session.get.return_value = uba
     svc = LiveOrderApprovalService(session)
     with patch(
-        "stock_platform.operation.runtime_preflight_service.RuntimePreflightService.run",
+        "stock_platform.operation.runtime_preflight_service.RuntimePreflightService.run_for_uba",
         return_value={
             "overall_status": "BLOCKED",
             "blockers": [{"code": "CONFLICT", "message": "x"}],
@@ -253,3 +253,50 @@ def test_live_on_server_revalidates_preflight() -> None:
             raised = True
             assert exc.code == "preflight_blocked"
     assert raised is True
+
+
+def test_recovery_null_uba_id_no_typeerror() -> None:
+    """paper/null user_broker_account_id 행에서도 TypeError 없이 WARN/PASS."""
+    from stock_platform.operation.runtime_preflight_service import (
+        _check_recovery,
+    )
+
+    session = MagicMock()
+    rows = [
+        SimpleNamespace(
+            trading_paused=False,
+            recovery_status="SUCCESS",
+            user_broker_account_id=1380,
+            paper_account_id=None,
+        ),
+        SimpleNamespace(
+            trading_paused=False,
+            recovery_status="MANUAL_REVIEW",
+            user_broker_account_id=None,  # TypeError 유발 후보
+            paper_account_id=99,
+        ),
+    ]
+    session.scalars.return_value = rows
+    out = _check_recovery(session)
+    assert out["status"] == "WARN"
+    assert out["blocking"] is False
+    sample = out["detail"]["abnormal_sample"]
+    assert sample[0]["uba_id"] is None
+    assert sample[0]["paper_account_id"] == 99
+
+
+def test_assert_ready_for_live_on_uses_uba_scope() -> None:
+    session = MagicMock()
+    with patch.object(
+        RuntimePreflightService,
+        "run_for_uba",
+        return_value={
+            "overall_status": "READY_FOR_LIVE",
+            "blockers": [],
+            "user_broker_account_id": 1380,
+        },
+    ) as run_uba:
+        out = RuntimePreflightService(session).assert_ready_for_live_on(1380)
+    run_uba.assert_called_once()
+    assert out["overall_status"] == "READY_FOR_LIVE"
+    assert run_uba.call_args.kwargs["user_broker_account_id"] == 1380

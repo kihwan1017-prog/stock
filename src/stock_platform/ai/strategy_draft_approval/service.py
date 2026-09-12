@@ -287,41 +287,48 @@ class StrategyDraftApprovalService:
         )
 
         # ---- AI 생성 Draft라면 Generation Run/Attempt 검증 ----
+        # mock 라벨만 있고 Generation Run이 없으면 수동 Draft로 본다.
+        # (LIVE 적격으로 보지 않음. mock 신호를 실주문에 쓰지 않음.)
         generation_run: StrategyDraftGenerationRunEntity | None = None
         attempt: StrategyDraftGenerationAttemptEntity | None = None
-        if draft.llm_provider is not None:
+        provider_key = (draft.llm_provider or "").strip().lower()
+        if provider_key:
             generation_run = self._session.scalar(
                 select(StrategyDraftGenerationRunEntity)
                 .where(StrategyDraftGenerationRunEntity.draft_id == int(draft_id))
                 .with_for_update()
             )
             if generation_run is None:
-                raise StrategyDraftApprovalError(
-                    "DRAFT_RUN_MISMATCH", "이 Draft를 생성한 Generation Run을 찾을 수 없습니다."
+                if provider_key != "mock":
+                    raise StrategyDraftApprovalError(
+                        "DRAFT_RUN_MISMATCH",
+                        "이 Draft를 생성한 Generation Run을 찾을 수 없습니다.",
+                    )
+            else:
+                if generation_run.status != "SUCCEEDED":
+                    raise StrategyDraftApprovalError(
+                        "GENERATION_NOT_SUCCEEDED",
+                        f"Generation Run이 SUCCEEDED 상태가 아닙니다: {generation_run.status}",
+                    )
+                if int(generation_run.draft_id or 0) != int(draft_id):
+                    raise StrategyDraftApprovalError(
+                        "DRAFT_RUN_MISMATCH",
+                        "Generation Run의 draft_id가 일치하지 않습니다.",
+                    )
+                attempt = self._session.scalar(
+                    select(StrategyDraftGenerationAttemptEntity)
+                    .where(
+                        StrategyDraftGenerationAttemptEntity.generation_run_id
+                        == generation_run.generation_run_id,
+                        StrategyDraftGenerationAttemptEntity.status == "SUCCEEDED",
+                    )
+                    .order_by(StrategyDraftGenerationAttemptEntity.attempt_no.desc())
+                    .limit(1)
                 )
-            if generation_run.status != "SUCCEEDED":
-                raise StrategyDraftApprovalError(
-                    "GENERATION_NOT_SUCCEEDED",
-                    f"Generation Run이 SUCCEEDED 상태가 아닙니다: {generation_run.status}",
-                )
-            if int(generation_run.draft_id or 0) != int(draft_id):
-                raise StrategyDraftApprovalError(
-                    "DRAFT_RUN_MISMATCH", "Generation Run의 draft_id가 일치하지 않습니다."
-                )
-            attempt = self._session.scalar(
-                select(StrategyDraftGenerationAttemptEntity)
-                .where(
-                    StrategyDraftGenerationAttemptEntity.generation_run_id
-                    == generation_run.generation_run_id,
-                    StrategyDraftGenerationAttemptEntity.status == "SUCCEEDED",
-                )
-                .order_by(StrategyDraftGenerationAttemptEntity.attempt_no.desc())
-                .limit(1)
-            )
-            if attempt is None:
-                raise StrategyDraftApprovalError(
-                    "NO_SUCCESSFUL_ATTEMPT", "성공한 Attempt가 없습니다."
-                )
+                if attempt is None:
+                    raise StrategyDraftApprovalError(
+                        "NO_SUCCESSFUL_ATTEMPT", "성공한 Attempt가 없습니다."
+                    )
 
         # ---- Structured Output 재검증(§12) ----
         draft_dict = {

@@ -51,15 +51,26 @@ class UpbitDailyParser:
             else None
         )
 
+        open_price = self._decimal(row["opening_price"])
+        high_price = self._decimal(row["high_price"])
+        low_price = self._decimal(row["low_price"])
+        close_price = self._decimal(row["trade_price"])
+        volume = self._decimal(row.get("candle_acc_trade_volume", 0))
+        self.validate_ohlc(
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            close_price=close_price,
+            volume=volume,
+        )
+
         return UpbitDailyPriceDTO(
             trade_date=trade_date,
-            open_price=self._decimal(row["opening_price"]),
-            high_price=self._decimal(row["high_price"]),
-            low_price=self._decimal(row["low_price"]),
-            close_price=self._decimal(row["trade_price"]),
-            volume=self._decimal(
-                row.get("candle_acc_trade_volume", 0)
-            ),
+            open_price=open_price,
+            high_price=high_price,
+            low_price=low_price,
+            close_price=close_price,
+            volume=volume,
             trade_value=self._decimal(
                 row.get("candle_acc_trade_price", 0)
             ),
@@ -74,3 +85,23 @@ class UpbitDailyParser:
     @staticmethod
     def _decimal(value: Any) -> Decimal:
         return Decimal(str(value).replace(",", "").strip())
+
+    @staticmethod
+    def validate_ohlc(
+        *,
+        open_price: Decimal,
+        high_price: Decimal,
+        low_price: Decimal,
+        close_price: Decimal,
+        volume: Decimal,
+    ) -> None:
+        """완료 일봉 OHLC 계약. 0·음수·고저 역전은 거부."""
+
+        if min(open_price, high_price, low_price, close_price) <= Decimal("0"):
+            raise UpbitDailyParseError("OHLC must be greater than zero")
+        if volume < Decimal("0"):
+            raise UpbitDailyParseError("volume must not be negative")
+        if high_price < max(open_price, close_price):
+            raise UpbitDailyParseError("high must be >= max(open, close)")
+        if low_price > min(open_price, close_price):
+            raise UpbitDailyParseError("low must be <= min(open, close)")

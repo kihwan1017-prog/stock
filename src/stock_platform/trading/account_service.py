@@ -62,6 +62,8 @@ class PaperAccountService:
         user_id: int | None = None,
         is_default: bool = False,
         is_active: bool = True,
+        exchange_code: str | None = None,
+        broker_code: str | None = None,
     ) -> PaperAccount:
         if not account_name.strip():
             raise PaperAccountError(
@@ -82,8 +84,37 @@ class PaperAccountService:
                 user_id=user_id,
                 is_default=is_default,
                 is_active=is_active,
+                exchange_code=(
+                    str(exchange_code).strip().upper() if exchange_code else None
+                ),
+                broker_code=(
+                    str(broker_code).strip().upper() if broker_code else None
+                ),
             )
         )
+
+    def apply_cash_delta(
+        self,
+        *,
+        account_id: int,
+        delta: Decimal,
+    ) -> PaperAccount:
+        """수수료·세금 등 체결 원가 조정. 포지션은 바꾸지 않는다."""
+
+        if delta == ZERO:
+            account = self._repository.get_account(account_id)
+            if account is None:
+                raise LookupError(f"Paper account not found: {account_id}")
+            return account
+
+        account = self._repository.get_account(account_id)
+        if account is None:
+            raise LookupError(f"Paper account not found: {account_id}")
+        next_cash = (account.available_cash + delta).quantize(Decimal("0.01"))
+        if next_cash < ZERO:
+            raise PaperAccountError("available_cash is insufficient")
+        account.available_cash = next_cash
+        return self._repository.save_account(account)
 
     def apply_fill(
         self,

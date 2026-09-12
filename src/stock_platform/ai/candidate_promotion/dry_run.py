@@ -120,12 +120,16 @@ class AICandidatePromotionDryRunService:
             json.dumps(payload, sort_keys=True, default=str).encode()
         ).hexdigest()[:64]
 
+        # JSONB flush는 default=str 없는 json.dumps를 쓰므로 Decimal 등을 제거한다
+        def _jsonable(value: Any) -> Any:
+            return json.loads(json.dumps(value, default=str))
+
         return {
-            "candidate_run_preview_jsonb": run_preview,
-            "candidate_result_preview_jsonb": result_preview,
-            "conflict_summary_jsonb": conflict,
-            "validation_summary_jsonb": validation_summary,
-            "side_effect_summary_jsonb": side_effect,
+            "candidate_run_preview_jsonb": _jsonable(run_preview),
+            "candidate_result_preview_jsonb": _jsonable(result_preview),
+            "conflict_summary_jsonb": _jsonable(conflict),
+            "validation_summary_jsonb": _jsonable(validation_summary),
+            "side_effect_summary_jsonb": _jsonable(side_effect),
             "score": score_payload,
             "result_hash": result_hash,
             "allowed": bool(validation_summary.get("allowed")),

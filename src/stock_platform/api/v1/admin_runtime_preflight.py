@@ -22,11 +22,14 @@ router = APIRouter(
 
 @router.get("/preflight")
 def admin_runtime_preflight(
-    mode: str = Query(default="LIVE_ON", description="LIVE_ON | SCHEDULER_RUN"),
+    mode: str = Query(
+        default="LIVE_ON",
+        description="LIVE_ON | ARM_ON | ORDER | SCHEDULER_RUN",
+    ),
     user_broker_account_id: int | None = Query(
         default=None,
         ge=1,
-        description="지정 시 해당 UPBIT UBA만 검사 (타 계좌 영향 없음)",
+        description="지정 시 해당 UBA만 검사 (UPBIT/KIWOOM dispatch)",
     ),
     session: Session = Depends(get_db_session),
     _: AuthenticatedUser = Depends(require_admin),
@@ -34,9 +37,26 @@ def admin_runtime_preflight(
     """조회 전용 Pre-flight. DB 변경·실주문 없음."""
 
     normalized = str(mode or "LIVE_ON").upper()
-    if normalized not in {"LIVE_ON", "SCHEDULER_RUN"}:
+    if normalized not in {"LIVE_ON", "ARM_ON", "ORDER", "SCHEDULER_RUN"}:
         normalized = "LIVE_ON"
     svc = RuntimePreflightService(session)
+    if normalized in {"ARM_ON", "ORDER"} and user_broker_account_id is None:
+        return sanitize_preflight_payload(
+            {
+                "mode": normalized,
+                "overall": "BLOCKED",
+                "overall_status": "BLOCKED",
+                "live_on_allowed": False,
+                "blockers": [
+                    {
+                        "code": "UBA",
+                        "message": "ARM_ON/ORDER 는 user_broker_account_id 필수",
+                        "status": "FAIL",
+                    }
+                ],
+                "checks": [],
+            }
+        )
     if user_broker_account_id is not None:
         report = svc.run_for_uba(
             user_broker_account_id=int(user_broker_account_id),

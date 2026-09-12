@@ -70,7 +70,7 @@ def build_candidate_run_preview(
             "evaluated_count": 1,
             "skipped_count": 0,
             "selected_count": 1,
-            "minimum_score": Decimal("0"),
+            "minimum_score": "0",
             "require_all_rules": False,
             "status_code": "COMPLETED",
             "promotion_request_id": promotion_request_id,

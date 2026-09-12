@@ -215,6 +215,19 @@ class MockAIProvider(AIProvider):
                     },
                     ensure_ascii=False,
                 )
+            elif "stock candidate assessment" in joined.lower():
+                # STOCK_CANDIDATE_ASSESSMENT_BASE는 additionalProperties=false(strict) 출력 스키마를 기대한다.
+                # mock_provider가 스키마를 깨지 않도록 최소 required 필드만 반환한다.
+                content = json.dumps(
+                    {
+                        "schema_version": "1.0",
+                        "task_type": "STOCK_CANDIDATE_ANALYSIS",
+                        "confidence": 0.5,
+                        "reasoning_summary": "Mock candidate assessment (reference only)",
+                        "result": {},
+                    },
+                    ensure_ascii=False,
+                )
             elif "STRATEGY_DRAFT" in joined:
                 content = json.dumps(
                     {

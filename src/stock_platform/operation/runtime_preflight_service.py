@@ -19,7 +19,7 @@ from stock_platform.common.settings import get_settings
 from stock_platform.operation.db_pool_monitor import measure_db_latency_ms
 from stock_platform.operation.health_service import check_database
 
-PreflightMode = Literal["LIVE_ON", "SCHEDULER_RUN"]
+PreflightMode = Literal["LIVE_ON", "SCHEDULER_RUN", "ARM_ON", "ORDER"]
 CheckStatus = str  # PASS | WARN | FAIL | NOT_APPLICABLE
 
 PREFLIGHT_TTL_SECONDS = 60
@@ -164,13 +164,19 @@ def _check_broker(session: Session) -> dict[str, Any]:
                 remediation="Broker 연결·헬스 상태를 복구한 뒤 재검사하세요.",
                 detail=detail,
             )
+        # global mock + kiwoom live: SYSTEM/unscoped 경로만 FAIL (UBA execution 분리)
         if settings.kiwoom_live_order_enabled and settings.kiwoom_use_mock:
             return _item(
                 code="BROKER",
                 name="Broker",
-                status="FAIL",
-                message="LIVE + Mock 동시 활성 충돌",
-                remediation="kiwoom_use_mock 또는 live flag 중 하나를 해제하세요.",
+                status="WARN",
+                message=(
+                    "KIWOOM global mock=true (shared market) — "
+                    "UBA execution은 credential is_mock 기준"
+                ),
+                remediation=(
+                    "SYSTEM_SHARED 경로는 mock 유지. UBA LIVE는 native preflight로 검증."
+                ),
                 detail=detail,
             )
         return _item(
@@ -1133,7 +1139,7 @@ class RuntimePreflightService:
         mode: PreflightMode = "LIVE_ON",
         owner_user_id: int | None = None,
     ) -> dict[str, Any]:
-        """특정 UPBIT UBA 만 검사 — 타 계좌(Kiwoom/Paper) 상태는 영향 없음."""
+        """UBA 단위 Pre-flight. UPBIT 기존 경로 · KIWOOM 은 K_ONLY 서비스."""
         from stock_platform.broker.credential_vault_service import (
             BrokerCredentialVaultService,
         )
@@ -1214,8 +1220,21 @@ class RuntimePreflightService:
         if owner_user_id is not None and int(uba.user_id) != int(owner_user_id):
             return _fail_closed("OWNERSHIP", "UBA ownership mismatch")
         broker = str(uba.broker_code or "").upper()
+        if broker == "KIWOOM":
+            from stock_platform.broker.kiwoom.live_preflight_service import (
+                KiwoomLivePreflightService,
+            )
+
+            return KiwoomLivePreflightService(self._session).run(
+                user_broker_account_id=uba_id,
+                mode=str(mode),
+                owner_user_id=owner_user_id,
+            )
         if broker != "UPBIT":
-            return _fail_closed("BROKER", f"broker_code={broker} is not UPBIT")
+            return _fail_closed(
+                "BROKER",
+                f"broker_code={broker} is not supported",
+            )
 
         settings = get_settings()
         account_kind = "LIVE"

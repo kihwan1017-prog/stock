@@ -1,0 +1,198 @@
+{
+  "step": "M7-0",
+  "mode": "PRECHECK_ONLY",
+  "baseline_commit": "de16a45",
+  "verdict": "LEGACY_REDIRECT_CLEANUP_DESIGN_READY",
+  "production_mutation": 0,
+  "totals": {
+    "admin_pages": 60,
+    "user_pages": 36,
+    "redirect_pages": 12,
+    "redirect_chains": 0
+  },
+  "classification_counts": {
+    "KEEP_CANONICAL": 83,
+    "KEEP_REDIRECT": 3,
+    "DEPRECATE_REDIRECT": 9,
+    "DETAIL_ONLY": 1,
+    "HIDDEN_ACTIVE": 0,
+    "REMOVE_CANDIDATE": 0,
+    "REVIEW_REQUIRED": 0
+  },
+  "routes": [
+    {
+      "path": "/admin",
+      "class": "KEEP_REDIRECT",
+      "target": "/admin/dashboard"
+    },
+    {
+      "path": "/admin/data",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/admin/monitoring"
+    },
+    {
+      "path": "/admin/market",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/admin/monitoring"
+    },
+    {
+      "path": "/admin/positions",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/admin/portfolio"
+    },
+    {
+      "path": "/admin/settings",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/admin/env-settings"
+    },
+    {
+      "path": "/user",
+      "class": "KEEP_REDIRECT",
+      "target": "/user/dashboard"
+    },
+    {
+      "path": "/user/account",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/user/accounts"
+    },
+    {
+      "path": "/user/market",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/user/markets/stocks"
+    },
+    {
+      "path": "/user/trades",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/user/orders"
+    },
+    {
+      "path": "/user/strategies/auto",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/user/auto-trading"
+    },
+    {
+      "path": "/user/orders/paper",
+      "class": "DEPRECATE_REDIRECT",
+      "target": "/user/orders"
+    },
+    {
+      "path": "/user/candidates/llm",
+      "class": "KEEP_REDIRECT",
+      "target": "/user/ai",
+      "menu": true
+    },
+    {
+      "path": "/user/ai",
+      "class": "DETAIL_ONLY",
+      "kind": "active_page"
+    },
+    {
+      "path": "/admin/strategy-requests",
+      "class": "KEEP_CANONICAL",
+      "m3b": true
+    },
+    {
+      "path": "/admin/strategy-drafts",
+      "class": "KEEP_CANONICAL",
+      "m3b": true
+    },
+    {
+      "path": "/admin/portfolio-validations",
+      "class": "KEEP_CANONICAL",
+      "m3b": true
+    },
+    {
+      "path": "/user/strategy-requests",
+      "class": "KEEP_CANONICAL",
+      "m3b": true
+    },
+    {
+      "path": "/user/strategy-drafts",
+      "class": "KEEP_CANONICAL",
+      "m3b": true
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/admin",
+      "target": "/admin/dashboard"
+    },
+    {
+      "source": "/admin/data",
+      "target": "/admin/monitoring"
+    },
+    {
+      "source": "/admin/market",
+      "target": "/admin/monitoring"
+    },
+    {
+      "source": "/admin/positions",
+      "target": "/admin/portfolio"
+    },
+    {
+      "source": "/admin/settings",
+      "target": "/admin/env-settings"
+    },
+    {
+      "source": "/user",
+      "target": "/user/dashboard"
+    },
+    {
+      "source": "/user/account",
+      "target": "/user/accounts"
+    },
+    {
+      "source": "/user/market",
+      "target": "/user/markets/stocks"
+    },
+    {
+      "source": "/user/trades",
+      "target": "/user/orders"
+    },
+    {
+      "source": "/user/strategies/auto",
+      "target": "/user/auto-trading"
+    },
+    {
+      "source": "/user/orders/paper",
+      "target": "/user/orders"
+    },
+    {
+      "source": "/user/candidates/llm",
+      "target": "/user/ai"
+    }
+  ],
+  "hidden_active": [],
+  "orphan_candidates": [],
+  "remove_candidates": [],
+  "redirect_chains": [],
+  "permission_impacts": [
+    {
+      "note": "AuthGuard layouts unchanged; no menu:* dedicated to alias paths; menu normalize llm→ai is label-only"
+    }
+  ],
+  "external_compatibility": "UNKNOWN_EXTERNAL_COMPATIBILITY for DEPRECATE_REDIRECT",
+  "implementation_waves": [
+    {
+      "id": "M7-A",
+      "scope": "Optional menu normalize candidatesLlm → userRoutes.ai; keep llm redirect page",
+      "risk": "LOW"
+    },
+    {
+      "id": "M7-B",
+      "scope": "Document DEPRECATE_REDIRECT sunset list",
+      "risk": "LOW"
+    },
+    {
+      "id": "M7-C",
+      "scope": "Orphan remove — SKIP (0 candidates)",
+      "risk": "N/A"
+    },
+    {
+      "id": "M7-D",
+      "scope": "Redirect/menu regression tests",
+      "risk": "LOW"
+    }
+  ],
+  "next_step_exactly_one": "M7-A — Optional menu normalize candidates/llm → /user/ai (keep redirect)"
+}

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -167,9 +167,14 @@ def test_resume_requires_reason_and_correlation() -> None:
 def test_resume_blocked_when_active_conflicts() -> None:
     session = MagicMock()
     svc = BrokerRecoveryConflictService(session)
-    uba = SimpleNamespace(is_active=True)
-    session.get.return_value = uba
-    svc.count_active_for_uba = MagicMock(return_value=1)  # type: ignore[method-assign]
+    session.get.return_value = SimpleNamespace(
+        is_active=True,
+        broker_code="UPBIT",
+        connection_status="CONNECTED",
+        live_order_enabled=False,
+        live_armed=False,
+    )
+    svc.count_active_for_uba = MagicMock(return_value=1)
     with pytest.raises(RecoveryConflictError) as exc:
         svc.resume_account(
             58,
@@ -183,10 +188,15 @@ def test_resume_blocked_when_active_conflicts() -> None:
 def test_resume_blocked_when_kill_switch() -> None:
     session = MagicMock()
     svc = BrokerRecoveryConflictService(session)
-    uba = SimpleNamespace(is_active=True)
-    session.get.return_value = uba
-    svc.count_active_for_uba = MagicMock(return_value=0)  # type: ignore[method-assign]
-    svc.count_blocking_orders_for_uba = MagicMock(  # type: ignore[method-assign]
+    session.get.return_value = SimpleNamespace(
+        is_active=True,
+        broker_code="UPBIT",
+        connection_status="CONNECTED",
+        live_order_enabled=False,
+        live_armed=False,
+    )
+    svc.count_active_for_uba = MagicMock(return_value=0)
+    svc.count_blocking_orders_for_uba = MagicMock(
         return_value={
             "db_open": 0,
             "submission_unknown": 0,
@@ -194,16 +204,11 @@ def test_resume_blocked_when_kill_switch() -> None:
             "replace_pending": 0,
         }
     )
-
-    class _Vault:
-        def assert_live_order_allowed(self, *_a, **_k):
-            return None
-
-    import stock_platform.broker.recovery_conflict_service as mod
-
-    original = mod.BrokerCredentialVaultService
-    mod.BrokerCredentialVaultService = lambda _s: _Vault()  # type: ignore[misc,assignment]
-    try:
+    with patch(
+        "stock_platform.broker.recovery_conflict_service."
+        "BrokerCredentialVaultService.assert_live_order_allowed",
+        return_value=None,
+    ):
         with pytest.raises(RecoveryConflictError) as exc:
             svc.resume_account(
                 58,
@@ -212,17 +217,21 @@ def test_resume_blocked_when_kill_switch() -> None:
                 correlation_id="corr-1",
                 kill_switch_active=True,
             )
-        assert exc.value.code == "kill_switch_active"
-    finally:
-        mod.BrokerCredentialVaultService = original
+    assert exc.value.code == "kill_switch_active"
 
 
 def test_resume_blocked_when_db_open_orders() -> None:
     session = MagicMock()
     svc = BrokerRecoveryConflictService(session)
-    session.get.return_value = SimpleNamespace(is_active=True)
-    svc.count_active_for_uba = MagicMock(return_value=0)  # type: ignore[method-assign]
-    svc.count_blocking_orders_for_uba = MagicMock(  # type: ignore[method-assign]
+    session.get.return_value = SimpleNamespace(
+        is_active=True,
+        broker_code="UPBIT",
+        connection_status="CONNECTED",
+        live_order_enabled=False,
+        live_armed=False,
+    )
+    svc.count_active_for_uba = MagicMock(return_value=0)
+    svc.count_blocking_orders_for_uba = MagicMock(
         return_value={
             "db_open": 2,
             "submission_unknown": 0,

@@ -60,6 +60,7 @@ class UserAccountView:
     updated_at: datetime | None
     last_synced_at: datetime | None = None
     live_order_enabled: bool = False
+    live_armed: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -77,6 +78,7 @@ class UserAccountView:
             "updated_at": self.updated_at,
             "last_synced_at": self.last_synced_at,
             "live_order_enabled": self.live_order_enabled,
+            "live_armed": self.live_armed,
         }
 
 
@@ -118,6 +120,7 @@ def broker_to_view(row: UserBrokerAccount) -> UserAccountView:
         live_order_enabled=bool(
             getattr(row, "live_order_enabled", False)
         ),
+        live_armed=bool(getattr(row, "live_armed", False)),
     )
 
 

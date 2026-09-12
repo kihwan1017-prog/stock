@@ -363,16 +363,40 @@ async def refresh_uba_snapshot(
                 user_broker_account_id=uba_id,
             ).synchronize(user_broker_account_id=uba_id)
         else:
-            from stock_platform.broker.kiwoom.account_factory import (
-                build_kiwoom_account_client,
+            from stock_platform.broker.credential_adapter_factory import (
+                build_kiwoom_account_client_for_uba,
+            )
+            from stock_platform.broker.credential_vault_service import (
+                BrokerCredentialVaultError,
             )
             from stock_platform.broker.kiwoom.account_sync_service import (
                 KiwoomAccountSyncService,
             )
 
+            try:
+                account_client, _account_number = (
+                    build_kiwoom_account_client_for_uba(session, uba_id)
+                )
+            except BrokerCredentialVaultError as exc:
+                session.rollback()
+                audit.record(
+                    event_type="SNAPSHOT_BINDING_FAILED",
+                    actor=_actor(admin),
+                    detail={
+                        "uba_id": uba_id,
+                        "error": exc.code,
+                        "reason": body.reason[:200],
+                    },
+                )
+                session.commit()
+                raise HTTPException(
+                    status_code=400,
+                    detail={"code": exc.code, "message": exc.message},
+                ) from exc
+
             result = await KiwoomAccountSyncService(
                 session=session,
-                account_client=build_kiwoom_account_client(),
+                account_client=account_client,
                 user_broker_account_id=uba_id,
             ).synchronize(user_broker_account_id=uba_id)
     except Exception as exc:  # noqa: BLE001

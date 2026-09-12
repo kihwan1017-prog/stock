@@ -166,6 +166,21 @@ def evaluate_rules(
     ]
 
 
+KPI_FAIL_BOUND_RULES = (
+    "MINIMUM_TRADE_COUNT",
+    "MINIMUM_SHARPE_RATIO",
+    "MAXIMUM_DRAWDOWN",
+    "MINIMUM_PROFIT_FACTOR",
+)
+
+
+def kpi_fail_bounds_pass(rules: list[QualityRuleResult]) -> bool:
+    """Walk-Forward WARNING과 무관하게, KPI FAIL 경계만 본다."""
+
+    kpi = [r for r in rules if r.rule_name in KPI_FAIL_BOUND_RULES]
+    return bool(kpi) and all(r.status != "FAIL" for r in kpi)
+
+
 def determine_recommendation(rules: list[QualityRuleResult]) -> str:
     """하나라도 FAIL이면 REJECT, WARNING만 있으면 MANUAL_REVIEW, 전부
     PASS면 APPROVE(Fail Closed — WARNING을 임의로 무시하고 APPROVE로

@@ -61,10 +61,17 @@ class LiveOrderDryRunService:
         amount = (qty * px) if px is not None else Decimal("0")
         blocked: list[str] = []
 
-        config = evaluate_live_flag_consistency()
+        config = evaluate_live_flag_consistency(
+            broker_code=broker_code,
+            session=self._session,
+            user_broker_account_id=user_broker_account_id,
+        )
         if config.code in {
             "LIVE_MOCK_CONFLICT",
             "LIVE_FLAG_MISMATCH_KIWOOM",
+            "GLOBAL_LIVE_OFF",
+            "UPBIT_LIVE_OFF",
+            "UPBIT_MOCK_LIVE_CONFLICT",
         }:
             blocked.append(config.code)
 

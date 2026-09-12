@@ -122,12 +122,26 @@ def test_local_startup_ok_without_admin_key() -> None:
 
 
 @pytest.mark.unit
-def test_live_mock_conflict_rejected() -> None:
+def test_kiwoom_live_shared_mock_startup_accepted() -> None:
+    """Option D: KIWOOM LIVE + shared MOCK 은 기동 허용."""
+
     settings = _isolated(
+        global_live_order_enabled=True,
         kiwoom_live_order_enabled=True,
         kiwoom_use_mock=True,
     )
-    with pytest.raises(ValueError, match="KIWOOM_LIVE"):
+    settings.validate_startup()
+
+
+@pytest.mark.unit
+def test_upbit_live_mock_startup_rejected() -> None:
+    """UPBIT LIVE + MOCK 은 기존 fail-closed 유지."""
+
+    settings = _isolated(
+        upbit_live_order_enabled=True,
+        upbit_use_mock=True,
+    )
+    with pytest.raises(ValueError, match="UPBIT_LIVE"):
         settings.validate_startup()
 
 

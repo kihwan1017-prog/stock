@@ -49,6 +49,37 @@ def pytest_configure(config: pytest.Config) -> None:
     os.environ["SLACK_ENABLED"] = "false"
     os.environ["DISCORD_ENABLED"] = "false"
 
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """integration 테스트는 전용 TEST DB가 있을 때만 실행한다.
+
+    STOCK_PLATFORM_TEST_DATABASE_URL 이 없거나 production DATABASE_URL 과
+    같으면 PostgreSQL integration 을 skip 한다. production TradingOrder/
+    Outbox 오염을 막기 위한 fail-closed 이다.
+    """
+
+    test_url = (os.environ.get("STOCK_PLATFORM_TEST_DATABASE_URL") or "").strip()
+    prod_url = (os.environ.get("DATABASE_URL") or "").strip()
+    env_file = (os.environ.get("STOCK_PLATFORM_ENV_FILE") or "").strip()
+    allow = test_url and (not prod_url or test_url != prod_url)
+    if allow:
+        os.environ["DATABASE_URL"] = test_url
+        return
+
+    skip_marker = pytest.mark.skip(
+        reason=(
+            "STOCK_PLATFORM_TEST_DATABASE_URL required and must differ "
+            "from production DATABASE_URL (test isolation)"
+        )
+    )
+    for item in items:
+        if item.get_closest_marker("integration"):
+            item.add_marker(skip_marker)
+    # env 파일이 production 을 가리켜도 unit 테스트는 Settings 캐시만 쓴다.
+    _ = env_file
+
 @pytest.fixture(autouse=True)
 def _clear_settings_cache_between_tests() -> None:
     """테스트 간 Settings / DB engine 캐시 누수 방지."""

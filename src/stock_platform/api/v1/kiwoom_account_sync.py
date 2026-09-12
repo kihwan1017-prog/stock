@@ -8,8 +8,12 @@ from stock_platform.broker.account_repository import (
     BrokerAccountSnapshotRepository,
     BrokerSnapshotBindingError,
 )
-from stock_platform.broker.kiwoom.account_factory import (
-    build_kiwoom_account_client,
+from stock_platform.broker.credential_adapter_factory import (
+    build_kiwoom_account_client_for_uba,
+    build_kiwoom_pending_order_client_for_uba,
+)
+from stock_platform.broker.credential_vault_service import (
+    BrokerCredentialVaultError,
 )
 from stock_platform.broker.kiwoom.account_sync_service import (
     KiwoomAccountSyncService,
@@ -34,9 +38,12 @@ async def synchronize_kiwoom_account(
     """UBA에 바인딩된 Kiwoom Snapshot 동기화 — 관리자 전용."""
 
     try:
+        account_client, _account_number = build_kiwoom_account_client_for_uba(
+            session, user_broker_account_id
+        )
         result = await KiwoomAccountSyncService(
             session=session,
-            account_client=build_kiwoom_account_client(),
+            account_client=account_client,
             user_broker_account_id=user_broker_account_id,
         ).synchronize(user_broker_account_id=user_broker_account_id)
         if isinstance(result, dict):
@@ -54,6 +61,12 @@ async def synchronize_kiwoom_account(
                 ):
                     result.pop(key, None)
         return result
+    except BrokerCredentialVaultError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": exc.code, "message": exc.message},
+        ) from exc
     except (ValueError, RuntimeError, BrokerSnapshotBindingError) as exc:
         session.rollback()
         raise HTTPException(

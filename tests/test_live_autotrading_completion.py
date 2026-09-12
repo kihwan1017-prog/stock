@@ -86,6 +86,38 @@ def test_live_config_apply_and_revert(monkeypatch: pytest.MonkeyPatch) -> None:
         clear_settings_cache()
 
 
+def test_live_config_accepts_operator_unlock_override(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UPBIT_LIVE_ORDER_ENABLED", "true")
+    monkeypatch.setenv("KIWOOM_LIVE_ORDER_ENABLED", "false")
+    monkeypatch.setenv("REALTIME_LIVE_UNLOCK_TOKEN", "")
+    monkeypatch.setenv("REALTIME_LIVE_USER_BROKER_ACCOUNT_ID", "0")
+    monkeypatch.setenv("REALTIME_PAPER_ACCOUNT_ID", "1")
+    from stock_platform.common.settings import clear_settings_cache
+
+    clear_settings_cache()
+    prev_cfg = realtime_execution_runner._config
+    prev_safe = realtime_safety_guard._config
+    try:
+        blocked = apply_realtime_live_execution_config(
+            user_broker_account_id=1380
+        )
+        assert blocked["applied"] is False
+        applied = apply_realtime_live_execution_config(
+            user_broker_account_id=1380,
+            unlock_token="OPERATOR-UNLOCK",
+        )
+        assert applied["applied"] is True
+        assert realtime_execution_runner._config.mode == RealtimeExecutionMode.LIVE
+        assert realtime_execution_runner._config.user_broker_account_id == 1380
+        assert realtime_safety_guard._config.live_unlock_token == "OPERATOR-UNLOCK"
+    finally:
+        realtime_execution_runner._config = prev_cfg
+        realtime_safety_guard._config = prev_safe
+        clear_settings_cache()
+
+
 def test_upbit_fill_ledger_hook_invoked() -> None:
     from stock_platform.broker.upbit.fill_sync_service import UpbitFillSyncService
 

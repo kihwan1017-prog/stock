@@ -210,6 +210,9 @@ def test_fix_worker_allows_with_one_shot_without_live_arm() -> None:
         patch(
             "stock_platform.order.live_safety_audit.emit_live_safety_audit"
         ),
+        patch(
+            "stock_platform.order.outbox_dispatch_safety.assert_live_outbox_account_runtime_gates"
+        ),
     ):
         TG.return_value.require_active.return_value = object()
         ARM.return_value.expire_if_needed.return_value = False

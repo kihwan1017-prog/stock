@@ -481,6 +481,19 @@ def test_structured_validation_failure_blocked(session) -> None:
     assert exc_info.value.code == "STRUCTURED_VALIDATION_FAILED"
 
 
+def test_mock_provider_without_generation_run_is_manual(session) -> None:
+    """llm_provider=mock 이고 Generation Run이 없으면 수동 Draft로 승인한다."""
+    request = _create_approved_request(session, result_id=session.info["result_ids"][0])
+    draft = _create_manual_draft(
+        session, request["strategy_request_id"], llm_provider="mock"
+    )
+    approval = StrategyDraftApprovalService(session).approve(
+        draft["draft_id"], actor="admin:7", reason="mock는 수동 Draft"
+    )
+    assert approval["status"] == "APPROVED"
+    assert approval["strategy_definition_id"] is not None
+
+
 def test_manual_draft_approval_success(session) -> None:
     request = _create_approved_request(session, result_id=session.info["result_ids"][0])
     draft = _create_manual_draft(session, request["strategy_request_id"])

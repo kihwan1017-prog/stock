@@ -90,6 +90,8 @@ def test_runtime_bridge_parses_ma_payload() -> None:
     assert cfg.long_window == 20
     assert cfg.stop_loss_ratio == Decimal("0.03")
     assert cfg.take_profit_ratio == Decimal("0.06")
+    assert cfg.timeframe == ""
+    assert cfg.cooldown_bars is None
 
 
 def test_ma_evaluator_emits_buy_and_sell() -> None:

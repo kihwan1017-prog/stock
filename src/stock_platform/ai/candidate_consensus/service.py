@@ -648,6 +648,30 @@ class AIConsensusService:
         row.calculated_at = _now()
         row.lock_version = int(row.lock_version) + 1
 
+        # recommendation queue eligibility는 candidate_consensus.review_decision 컬럼을 직접 검사한다.
+        # 파이프라인에서 override된 ai.analysis_review_decision(=review override 결과)가 존재하는 경우,
+        # consensus.review_decision 컬럼에 동기화해 queue 생성이 진행되도록 한다.
+        try:
+            from stock_platform.ai.review.entities import (
+                AIAnalysisReviewDecisionEntity,
+            )
+
+            decision_row = self._session.scalar(
+                select(AIAnalysisReviewDecisionEntity).where(
+                    AIAnalysisReviewDecisionEntity.analysis_source_type
+                    == "CANDIDATE_CONSENSUS",
+                    AIAnalysisReviewDecisionEntity.source_analysis_id
+                    == consensus_id,
+                )
+            )
+            if decision_row is not None:
+                decided = str(decision_row.decision or "").upper()
+                if decided in {"APPROVED", "APPROVED_WITH_WARNINGS"}:
+                    row.review_decision = decided
+        except Exception:
+            # 리뷰 동기화는 “있으면 반영”의 optional 성격
+            pass
+
         self._history(
             consensus_id,
             action="AI_CONSENSUS_CALCULATED",

@@ -69,6 +69,18 @@ def run_entry_signal_shadow_outcome_tick(
                 )
             )
             result = mature_pending_outcomes(session, limit=500, commit=True)
+            # Entry Gate V2 outcome maturation — same tick, fail-open
+            try:
+                from stock_platform.operation.upbit_opportunity_shadow.entry_gate_v2.service import (
+                    mature_pending_v2_outcomes,
+                )
+
+                if bool(
+                    getattr(settings, "upbit_entry_gate_v2_shadow_enabled", True)
+                ):
+                    mature_pending_v2_outcomes(session, limit=200, commit=True)
+            except Exception:  # noqa: BLE001
+                pass
             updated = int(result.get("matured") or 0) + int(
                 result.get("insufficient") or 0
             )

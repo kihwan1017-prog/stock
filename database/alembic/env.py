@@ -86,6 +86,7 @@ from stock_platform.ai.candidate_consensus import entities as ai_candidate_conse
 from stock_platform.ai.candidate_recommendation_queue import entities as ai_candidate_recommendation_queue_entities  # noqa: F401
 from stock_platform.ai.candidate_promotion import entities as ai_candidate_promotion_entities  # noqa: F401
 from stock_platform.ai.candidate_lifecycle import entities as ai_candidate_lifecycle_entities  # noqa: F401
+from stock_platform.operation.news_intelligence_shadow import entities as news_intelligence_shadow_entities  # noqa: F401
 
 
 config = context.config

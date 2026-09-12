@@ -1017,7 +1017,7 @@ class AICandidatePromotionService:
                 "SELF_APPROVAL_BLOCKED", "requester cannot commit"
             )
 
-        if is_expired(row.expires_at):
+        if is_expired(expires_at=row.expires_at):
             self._transition(
                 row,
                 new_status="EXPIRED",
@@ -1068,6 +1068,13 @@ class AICandidatePromotionService:
         if dry is None or dry.result_hash != final.dry_run_result_hash:
             raise AICandidatePromotionError("STALE", "dry-run hash mismatch")
 
+        # Create/Validate/Dry-run에서 승인한 screener override를 commit에도 유지한다.
+        dry_conflict = dry.conflict_summary_jsonb or {}
+        dry_warnings = list(dry_conflict.get("warnings") or [])
+        allow_screener_override = (
+            "EXISTING_SCREENER_CANDIDATE" in dry_warnings
+            or "ACTIVE_SCREENER_CANDIDATE" in dry_warnings
+        )
         conflict = self._conflict.check(
             queue_id=row.queue_id,
             source_result_hash=row.source_result_hash,
@@ -1075,6 +1082,12 @@ class AICandidatePromotionService:
             exchange_code=row.exchange_code,
             symbol=row.symbol,
             promotion_request_id=promotion_request_id,
+            allow_override=allow_screener_override,
+            override_reason=(
+                "commit honors dry-run EXISTING_SCREENER_CANDIDATE override"
+                if allow_screener_override
+                else None
+            ),
         )
         if conflict.get("has_conflict"):
             raise AICandidatePromotionError(
@@ -1237,7 +1250,7 @@ class AICandidatePromotionService:
         row = self._get_request(promotion_request_id)
         if row.promotion_status in TERMINAL_PROMOTION_STATUSES:
             raise AICandidatePromotionError("INVALID_STATE", "terminal")
-        if not is_expired(row.expires_at):
+        if not is_expired(expires_at=row.expires_at):
             raise AICandidatePromotionError("NOT_EXPIRED", "still active")
         self._transition(
             row,

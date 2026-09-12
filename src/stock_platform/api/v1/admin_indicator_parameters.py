@@ -2,18 +2,25 @@
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from stock_platform.api.deps_admin import AuditLogService, get_audit_service, require_admin
 from stock_platform.database.session import get_db_session
 from stock_platform.indicators.parameter_service import (
+    IndicatorEngineParams,
     IndicatorParameterService,
     IndicatorParameterValidationError,
 )
+
+
+def _engine_params_payload(params: IndicatorEngineParams) -> dict[str, Any]:
+    # slots=True dataclass 는 __dict__ 가 없음 — asdict 사용
+    return asdict(params)
 
 
 router = APIRouter(
@@ -68,8 +75,12 @@ def list_parameters(
         "items": [_row_dict(r) for r in rows],
         "system_defaults": svc.defaults(),
         "resolved_engine_params": {
-            "STOCK": svc.resolve_engine_params(market_type="STOCK").__dict__,
-            "CRYPTO": svc.resolve_engine_params(market_type="CRYPTO").__dict__,
+            "STOCK": _engine_params_payload(
+                svc.resolve_engine_params(market_type="STOCK")
+            ),
+            "CRYPTO": _engine_params_payload(
+                svc.resolve_engine_params(market_type="CRYPTO")
+            ),
         },
     }
 
@@ -123,7 +134,9 @@ def restore_defaults(
     return {
         "deactivated": deactivated,
         "system_defaults": svc.defaults(),
-        "resolved_engine_params": svc.resolve_engine_params().__dict__,
+        "resolved_engine_params": _engine_params_payload(
+            svc.resolve_engine_params()
+        ),
     }
 
 

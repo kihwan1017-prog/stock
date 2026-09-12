@@ -113,3 +113,18 @@ def test_strategy_definition_snapshot_not_confused_with_indicator_params() -> No
     assert pe.IndicatorParameterConfigEntity.__table_args__["schema"] == (
         "market"
     )
+
+
+@pytest.mark.unit
+def test_indicator_engine_params_asdict_for_api() -> None:
+    """slots=True dataclass 는 __dict__ 없음 — Admin list API 는 asdict 필요."""
+    from dataclasses import asdict
+
+    from stock_platform.indicators.parameter_service import IndicatorEngineParams
+
+    params = IndicatorEngineParams()
+    with pytest.raises(AttributeError):
+        _ = params.__dict__
+    payload = asdict(params)
+    assert payload["rsi_period"] == 14
+    assert payload["source"] == "SYSTEM_DEFAULT"

@@ -43,6 +43,7 @@ from stock_platform.ai.strategy_draft_approval.rule_evaluator import (
     IndicatorCache,
     RuleEvaluationError,
     evaluate_group,
+    parse_comparison_indicator_ref,
 )
 from stock_platform.ai.strategy_draft_generation.constants import ALLOWED_OPERATORS
 from stock_platform.ai.strategy_draft_generation.schema import (
@@ -70,7 +71,7 @@ COMPILER_SUPPORTED_POSITION_SIZING_METHODS = frozenset({"FIXED_PERCENT"})
 # PriceDailyRepository/PriceDailyService(일봉) 기반이라 일봉만 지원한다.
 COMPILER_SUPPORTED_TIMEFRAMES = frozenset({"1D"})
 # BacktestService가 실제로 처리하는 시장(한국 주식 일봉 가격 테이블).
-COMPILER_SUPPORTED_MARKET_TYPES = frozenset({"KR_STOCK"})
+COMPILER_SUPPORTED_MARKET_TYPES = frozenset({"KR_STOCK", "CRYPTO"})
 
 
 class BacktestSpecificationError(Exception):
@@ -220,10 +221,11 @@ def _extract_indicator_requirements(
     seen: set[tuple[str, int | None]] = set()
     requirements: list[dict[str, Any]] = []
     for rule in rules:
-        if rule.comparison_target is not None:
+        comparison_ref = parse_comparison_indicator_ref(getattr(rule, "comparison_target", None))
+        if rule.comparison_target is not None and comparison_ref is None:
             unsupported.append(
                 f"UNSUPPORTED_RULE_FIELD: comparison_target={rule.comparison_target}"
-                "(Indicator 간 비교는 지원하지 않습니다 — threshold 고정값 비교만 지원)"
+                "(허용 형식은 SMA:{period} 또는 EMA:{period} 뿐입니다)"
             )
             continue
         if rule.indicator not in COMPILER_SUPPORTED_INDICATORS:
@@ -240,11 +242,15 @@ def _extract_indicator_requirements(
                 f"MISSING_INDICATOR_PERIOD: {rule.indicator} Rule에 lookback이 없습니다."
             )
             continue
-        key = (rule.indicator, rule.lookback)
-        if key in seen:
-            continue
-        seen.add(key)
-        requirements.append({"indicator": rule.indicator, "period": rule.lookback})
+        for indicator_name, indicator_period in (
+            (rule.indicator, rule.lookback),
+            *((comparison_ref,) if comparison_ref is not None else ()),
+        ):
+            key = (indicator_name, indicator_period)
+            if key in seen:
+                continue
+            seen.add(key)
+            requirements.append({"indicator": indicator_name, "period": indicator_period})
     # 결정적 정렬 — dict 삽입 순서에 의존하지 않는다.
     requirements.sort(key=lambda r: (r["indicator"], r["period"] or 0))
     return requirements, unsupported

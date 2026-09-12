@@ -158,6 +158,7 @@ class UpbitOrderRestClient:
         auth_params = params or json_body
         headers = {
             "Accept": "application/json",
+            "Content-Type": "application/json",
             **authorization_header(
                 access_key=self._settings.upbit_access_key,
                 secret_key=self._settings.upbit_secret_key,

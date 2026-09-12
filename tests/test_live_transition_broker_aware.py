@@ -340,6 +340,7 @@ def test_k_kiwoom_validation_regression(monkeypatch) -> None:
 def test_l_expired_activation_require_active_rejects() -> None:
     session = MagicMock()
     expired = SimpleNamespace(
+        live_trading_transition_id=99,
         enabled=True,
         expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
         broker_code="UPBIT",
@@ -350,7 +351,25 @@ def test_l_expired_activation_require_active_rejects() -> None:
         disable_reason=None,
     )
     session.scalars.return_value = [expired]
-    with pytest.raises(PermissionError, match="No active live trading"):
+    session.get.return_value = None
+    with (
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.TradingSchedulerControlService"
+        ),
+        patch(
+            "stock_platform.trading.live_session_expiry.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_session_expiry.emit_live_order_telegram"
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.emit_live_order_telegram"
+        ),
+        pytest.raises(PermissionError, match="No active live trading"),
+    ):
         LiveTradingTransitionGuard(session).require_active(
             broker_code="UPBIT",
             user_broker_account_id=1380,
@@ -448,6 +467,9 @@ def test_o_worker_gate_pass_without_adapter_call(monkeypatch) -> None:
         patch(
             "stock_platform.trading.live_arm_service.LiveArmService"
         ) as ARM,
+        patch(
+            "stock_platform.order.outbox_dispatch_safety.assert_live_outbox_account_runtime_gates"
+        ),
     ):
         ARM.return_value.expire_if_needed.return_value = False
         OrderOutboxWorker._assert_live_dispatch_allowed(

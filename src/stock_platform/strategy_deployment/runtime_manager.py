@@ -54,6 +54,7 @@ class ScopedRuntimeEntry:
     last_error: str | None = None
     last_started_at: datetime | None = None
     last_paused_at: datetime | None = None
+    last_heartbeat_at: datetime | None = None
     updated_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -72,6 +73,11 @@ class ScopedRuntimeEntry:
             "last_paused_at": (
                 self.last_paused_at.isoformat()
                 if self.last_paused_at
+                else None
+            ),
+            "last_heartbeat_at": (
+                self.last_heartbeat_at.isoformat()
+                if self.last_heartbeat_at
                 else None
             ),
             "updated_at": self.updated_at.isoformat(),
@@ -250,6 +256,9 @@ class DynamicStrategyRuntimeManager:
                 status=status,
                 pause_reason=None if start else "reloaded_paused",
                 last_started_at=(
+                    datetime.now(timezone.utc) if start else None
+                ),
+                last_heartbeat_at=(
                     datetime.now(timezone.utc) if start else None
                 ),
             )
@@ -433,6 +442,7 @@ class DynamicStrategyRuntimeManager:
             entry.pause_reason = None
             entry.last_error = None
             entry.last_started_at = datetime.now(timezone.utc)
+            entry.last_heartbeat_at = datetime.now(timezone.utc)
             entry.updated_at = datetime.now(timezone.utc)
             try:
                 from stock_platform.realtime.runtime_bridge import (

@@ -55,6 +55,7 @@ class UpdateStrategyBody(BaseModel):
 
 class CloneStrategyBody(BaseModel):
     name: str | None = Field(default=None, max_length=200)
+    for_user_id: int | None = Field(default=None, gt=0)
 
 
 class LinkStrategyBody(BaseModel):
@@ -255,9 +256,16 @@ def clone_strategy(
     service = StrategyDefinitionService(session)
     try:
         row = service.clone_strategy(
-            user, strategy_id, actor=user.username, name=body.name
+            user,
+            strategy_id,
+            actor=user.username,
+            name=body.name,
+            for_user_id=body.for_user_id,
         )
         session.commit()
+    except StrategyOwnershipError as exc:
+        session.rollback()
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except HTTPException:
         session.rollback()
         raise
@@ -269,6 +277,7 @@ def clone_strategy(
         detail={
             "source_strategy_id": strategy_id,
             "new_strategy_id": int(row.strategy_id),
+            "for_user_id": body.for_user_id,
         },
     )
     session.commit()

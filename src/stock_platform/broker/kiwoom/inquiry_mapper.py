@@ -7,6 +7,7 @@ from stock_platform.broker.kiwoom.inquiry_models import (
     KiwoomExecution,
     KiwoomPendingOrder,
 )
+from stock_platform.broker.kiwoom.price import normalize_kiwoom_price
 
 
 def _decimal(
@@ -69,7 +70,7 @@ class KiwoomInquiryMapper:
             order_price=(
                 None
                 if price_value in (None, "")
-                else _decimal(price_value)
+                else normalize_kiwoom_price(price_value)
             ),
             raw_payload=item,
         )
@@ -97,9 +98,9 @@ class KiwoomInquiryMapper:
                 item.get("cntr_qty")
                 or item.get("execution_quantity")
             ),
-            execution_price=_decimal(
+            execution_price=normalize_kiwoom_price(
                 item.get("cntr_pric")
                 or item.get("execution_price")
-            ),
+            ) or Decimal("0"),
             raw_payload=item,
         )

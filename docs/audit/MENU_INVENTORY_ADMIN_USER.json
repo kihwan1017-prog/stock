@@ -1,0 +1,1907 @@
+{
+  "step": "M1",
+  "mode": "READ_ONLY",
+  "source_of_truth": [
+    "frontend/src/config/menu.tsx",
+    "frontend/src/config/routes.ts",
+    "frontend/src/app/(admin)/admin/**/page.tsx",
+    "frontend/src/app/(user)/user/**/page.tsx",
+    "frontend/src/app/(admin)/layout.tsx",
+    "frontend/src/app/(user)/layout.tsx",
+    "frontend/src/components/layout/AuthGuard.tsx"
+  ],
+  "counts": {
+    "admin_top_level": 10,
+    "admin_menu_leaves": 53,
+    "admin_pages": 60,
+    "user_top_level": 12,
+    "user_menu_leaves": 27,
+    "user_pages": 36,
+    "hidden_routes": 17,
+    "broken_entries": 0,
+    "embedded_features": 9,
+    "duplicate_candidates": 16
+  },
+  "admin": [
+    {
+      "portal": "admin",
+      "menu_group": "Dashboard",
+      "menu_name": "Dashboard",
+      "menu_key": "dashboard",
+      "route": "/admin/dashboard",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/dashboard/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:dashboard",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "관리자 운영 요약/헬스·대시보드 카드"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "회원관리",
+      "menu_name": "회원관리",
+      "menu_key": "members",
+      "route": "/admin/members",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/members/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:members",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "회원 목록·상태 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "회원관리",
+      "menu_name": "권한관리",
+      "menu_key": "roles",
+      "route": "/admin/roles",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/roles/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:roles",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "역할·권한(permission) 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "계좌",
+      "menu_name": "전체 계좌",
+      "menu_key": "accounts",
+      "route": "/admin/accounts",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/accounts/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:accounts",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "전체 브로커/Paper 계좌 목록·운영"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "계좌",
+      "menu_name": "키움 계좌",
+      "menu_key": "accounts-kiwoom",
+      "route": "/admin/kiwoom",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/kiwoom/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:kiwoom",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "키움 계좌 설정·토큰·동기화"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "계좌",
+      "menu_name": "업비트 계좌",
+      "menu_key": "accounts-upbit",
+      "route": "/admin/upbit",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/upbit/page.tsx",
+      "component": [
+        "AdminUpbitLiveUbaPanel",
+        "UpbitOpportunityScannerPanel",
+        "UpbitNewsCombinedShadowPanel",
+        "UpbitNewsNoticeCollectorPanel",
+        "UpbitAmbiguousOrdersPanel",
+        "AdminPageShell"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:upbit",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "업비트 UBA/잔고/Scanner/Shadow/News/Ambiguous 통합 운영"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "시장 데이터",
+      "menu_name": "시스템 모니터링",
+      "menu_key": "monitoring",
+      "route": "/admin/monitoring",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/monitoring/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:monitoring",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "시스템 모니터링 개요·알림"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "시장 데이터",
+      "menu_name": "뉴스관리",
+      "menu_key": "news",
+      "route": "/admin/news",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/news/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:news",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "일반 뉴스 수집/조회(관리)"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "시장 데이터",
+      "menu_name": "공시관리",
+      "menu_key": "disclosures",
+      "route": "/admin/disclosures",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/disclosures/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:disclosures",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "공시 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "시장 데이터",
+      "menu_name": "업비트 시세",
+      "menu_key": "upbit-market",
+      "route": "/admin/upbit/markets",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/upbit/markets/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:upbit",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "업비트 마켓/시세 조회"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "시장 데이터",
+      "menu_name": "기술지표 관리",
+      "menu_key": "indicators",
+      "route": "/admin/indicators",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/indicators/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": null,
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "기술지표 정의·배치 잡 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "후보·LLM 관리",
+      "menu_key": "ai",
+      "route": "/admin/ai",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "AI 후보·LLM 허브"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Provider 관리",
+      "menu_key": "ai-providers",
+      "route": "/admin/ai/providers",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/providers/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "AI Provider 설정"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Prompt 관리",
+      "menu_key": "ai-prompts",
+      "route": "/admin/ai/prompts",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/prompts/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Prompt 버전 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Output Schema 관리",
+      "menu_key": "ai-schemas",
+      "route": "/admin/ai/schemas",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/schemas/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Output Schema 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Policy 관리",
+      "menu_key": "ai-policies",
+      "route": "/admin/ai/policies",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/policies/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "AI Policy 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Execution 관리",
+      "menu_key": "ai-executions",
+      "route": "/admin/ai/executions",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/executions/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "AI Execution 이력"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "문서 분석",
+      "menu_key": "ai-document-analyses",
+      "route": "/admin/ai/document-analyses",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/document-analyses/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "문서 분석 결과"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "시장·차트 분석",
+      "menu_key": "ai-market-analyses",
+      "route": "/admin/ai/market-analyses",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/market-analyses/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "시장·차트 AI 분석"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Human Review",
+      "menu_key": "ai-reviews",
+      "route": "/admin/ai/reviews",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/reviews/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Human Review 큐"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Evaluation Dataset",
+      "menu_key": "ai-evaluation-datasets",
+      "route": "/admin/ai/evaluation-datasets",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/evaluation-datasets/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "평가 데이터셋"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Benchmark/Scorecard",
+      "menu_key": "ai-benchmarks",
+      "route": "/admin/ai/benchmarks",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/benchmarks/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "벤치마크/스코어카드"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "후보 평가 초안",
+      "menu_key": "ai-candidate-assessments",
+      "route": "/admin/ai/candidate-assessments",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/candidate-assessments/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "후보 평가 초안"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Multi-AI 합의 초안",
+      "menu_key": "ai-candidate-consensuses",
+      "route": "/admin/ai/candidate-consensuses",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/candidate-consensuses/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Multi-AI 합의 초안"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "후보 추천 검토 큐",
+      "menu_key": "ai-candidate-recommendation-queues",
+      "route": "/admin/ai/candidate-recommendation-queues",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/candidate-recommendation-queues/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "후보 추천 검토 큐"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Candidate Promotion Gateway",
+      "menu_key": "ai-candidate-promotions",
+      "route": "/admin/ai/candidate-promotions",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/candidate-promotions/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Candidate Promotion Gateway"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "Candidate Lifecycle",
+      "menu_key": "ai-candidate-lifecycle",
+      "route": "/admin/ai/candidate-lifecycle",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ai/candidate-lifecycle/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ai",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Candidate Lifecycle 상태"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "전략관리",
+      "menu_key": "strategies",
+      "route": "/admin/strategies",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/strategies/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:strategies",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "전략 정의/배포 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "전략·후보",
+      "menu_name": "백테스트",
+      "menu_key": "backtests",
+      "route": "/admin/backtests",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/backtests/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:backtests",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "백테스트 실행·결과"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "거래",
+      "menu_name": "자동매매관리",
+      "menu_key": "trading",
+      "route": "/admin/trading",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/trading/page.tsx",
+      "component": [
+        "AdminRuntimePanel",
+        "AdminRealtimeHubPanel",
+        "AdminPageShell"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:trading",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Realtime Strategy/Execution/Runtime/Hub 제어"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "거래",
+      "menu_name": "주문관리",
+      "menu_key": "orders",
+      "route": "/admin/orders",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/orders/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:orders",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "주문·Outbox 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "거래",
+      "menu_name": "거래내역",
+      "menu_key": "trades",
+      "route": "/admin/trades",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/trades/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:trades",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "체결/거래내역"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "거래",
+      "menu_name": "잔고·손익",
+      "menu_key": "portfolio",
+      "route": "/admin/portfolio",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/portfolio/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:portfolio",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "잔고·포지션·손익"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "리스크 관리",
+      "menu_key": "risk",
+      "route": "/admin/risk",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/risk/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:risk",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "리스크 한도·Kill Switch 등"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "업비트 소액 LIVE 검증",
+      "menu_key": "live-validation-upbit",
+      "route": "/admin/live-validation/upbit",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/live-validation/upbit/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:risk",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "업비트 소액 LIVE 검증(운영)"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "운영센터",
+      "menu_key": "operations",
+      "route": "/admin/operations",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/operations/page.tsx",
+      "component": [
+        "OPERATION_CENTER_TILES",
+        "UnimplementedApiPanel"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:scheduler",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "운영센터 타일·상태 허브"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "Pre-flight Check",
+      "menu_key": "operations-preflight",
+      "route": "/admin/operations/preflight",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/operations/preflight/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:scheduler",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "LIVE ON 전 Pre-flight Check"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "통합 모니터링",
+      "menu_key": "operations-dashboard",
+      "route": "/admin/operations-dashboard",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/operations-dashboard/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:scheduler",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "통합 운영 모니터링 대시보드"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "스케줄러 관리",
+      "menu_key": "scheduler",
+      "route": "/admin/scheduler",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/scheduler/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:scheduler",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "스케줄러 잡 제어"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "배치 관리",
+      "menu_key": "batch",
+      "route": "/admin/batch",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/batch/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:batch",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "배치 잡 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "리스크·운영",
+      "menu_name": "장애 복구",
+      "menu_key": "recovery",
+      "route": "/admin/recovery",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/recovery/page.tsx",
+      "component": [
+        "RecoveryConflictPanel",
+        "RecoverySchedulerPanel"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": null,
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "장애 복구/Conflict/Scheduler 패널"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "알림",
+      "menu_name": "알림 관리",
+      "menu_key": "notifications",
+      "route": "/admin/notifications",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/notifications/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:notifications",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "알림 이벤트/구독 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "알림",
+      "menu_name": "Telegram 운영",
+      "menu_key": "telegram",
+      "route": "/admin/telegram",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/telegram/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:notifications",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Telegram 알림 운영"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "시장 데이터",
+      "menu_name": "시스템 모니터링",
+      "menu_key": "system-monitoring",
+      "route": "/admin/monitoring",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/monitoring/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:monitoring",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "시스템 모니터링 개요·알림"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "시스템 설정",
+      "menu_key": "system-settings",
+      "route": "/admin/system-settings",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/system-settings/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:system_settings",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "시스템 설정 편집"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "환경설정",
+      "menu_key": "env-settings",
+      "route": "/admin/env-settings",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/env-settings/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:env_settings",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "환경설정(SettingsEditor)"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "로그 조회",
+      "menu_key": "logs",
+      "route": "/admin/logs",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/logs/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:logs",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Audit 로그 조회"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "DB 관리",
+      "menu_key": "db",
+      "route": "/admin/db",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/db/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:db",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "DB 상태/관리 도구"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "API 관리",
+      "menu_key": "api",
+      "route": "/admin/api",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/api/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:api",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "API 카탈로그/관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "Ollama 관리",
+      "menu_key": "ollama",
+      "route": "/admin/ollama",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/ollama/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:ollama",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "Ollama 모델/상태 관리"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "문서 CMS",
+      "menu_key": "docs",
+      "route": "/admin/docs",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/docs/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:docs",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "문서 CMS"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "운영관리",
+      "menu_name": "매뉴얼",
+      "menu_key": "docs-manual",
+      "route": "/admin/docs/manual",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/docs/manual/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": "menu:docs",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "운영 매뉴얼 뷰어"
+    },
+    {
+      "portal": "admin",
+      "menu_group": "내 정보",
+      "menu_name": "내 정보",
+      "menu_key": "profile",
+      "route": "/admin/profile",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/profile/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "ADMIN_ONLY",
+      "required_permission": null,
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "관리자 프로필"
+    }
+  ],
+  "user": [
+    {
+      "portal": "user",
+      "menu_group": "대시보드",
+      "menu_name": "대시보드",
+      "menu_key": "dashboard",
+      "route": "/user/dashboard",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/dashboard/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "사용자 대시보드"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 계좌",
+      "menu_name": "전체 계좌",
+      "menu_key": "accounts-all",
+      "route": "/user/accounts",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/accounts/page.tsx",
+      "component": [
+        "AccountsView"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 계좌 전체(AccountsView)"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 계좌",
+      "menu_name": "키움 계좌",
+      "menu_key": "accounts-kiwoom",
+      "route": "/user/accounts/kiwoom",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/accounts/kiwoom/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 키움 계좌/자격증명"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 계좌",
+      "menu_name": "업비트 계좌",
+      "menu_key": "accounts-upbit",
+      "route": "/user/accounts/upbit",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/accounts/upbit/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 업비트 계좌/자격증명"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 계좌",
+      "menu_name": "Paper 계좌",
+      "menu_key": "accounts-paper",
+      "route": "/user/accounts/paper",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/accounts/paper/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 Paper 계좌"
+    },
+    {
+      "portal": "user",
+      "menu_group": "시장 정보",
+      "menu_name": "주식",
+      "menu_key": "markets-stocks",
+      "route": "/user/markets/stocks",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/markets/stocks/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "주식 시장 탐색"
+    },
+    {
+      "portal": "user",
+      "menu_group": "시장 정보",
+      "menu_name": "암호화폐",
+      "menu_key": "markets-crypto",
+      "route": "/user/markets/crypto",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/markets/crypto/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "암호화폐 시장 탐색"
+    },
+    {
+      "portal": "user",
+      "menu_group": "시장 정보",
+      "menu_name": "관심종목",
+      "menu_key": "watchlist",
+      "route": "/user/watchlist",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/watchlist/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "관심종목"
+    },
+    {
+      "portal": "user",
+      "menu_group": "시장 정보",
+      "menu_name": "뉴스",
+      "menu_key": "news",
+      "route": "/user/news",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/news/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "뉴스(사용자)"
+    },
+    {
+      "portal": "user",
+      "menu_group": "시장 정보",
+      "menu_name": "공시",
+      "menu_key": "disclosures",
+      "route": "/user/disclosures",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/disclosures/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "공시(사용자)"
+    },
+    {
+      "portal": "user",
+      "menu_group": "매매 후보",
+      "menu_name": "주식 후보",
+      "menu_key": "candidates-stocks",
+      "route": "/user/candidates/stocks",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/candidates/stocks/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "주식 매매 후보"
+    },
+    {
+      "portal": "user",
+      "menu_group": "매매 후보",
+      "menu_name": "업비트 후보",
+      "menu_key": "candidates-crypto",
+      "route": "/user/candidates/crypto",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/candidates/crypto/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "업비트 매매 후보"
+    },
+    {
+      "portal": "user",
+      "menu_group": "매매 후보",
+      "menu_name": "LLM 분석",
+      "menu_key": "candidates-llm",
+      "route": "/user/candidates/llm",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/candidates/llm/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "LEGACY",
+      "purpose": "LLM 분석 → /user/ai 리다이렉트"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 전략",
+      "menu_name": "전략",
+      "menu_key": "strategies",
+      "route": "/user/strategies",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/strategies/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 전략"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 전략",
+      "menu_name": "자동매매",
+      "menu_key": "auto-trading",
+      "route": "/user/auto-trading",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/auto-trading/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "자동매매(사용자)"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 전략",
+      "menu_name": "백테스트",
+      "menu_key": "backtests",
+      "route": "/user/backtests",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/backtests/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 백테스트"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 주문·체결",
+      "menu_name": "매매(주문 실행)",
+      "menu_key": "trading",
+      "route": "/user/trading",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/trading/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "수동 주문 실행"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 주문·체결",
+      "menu_name": "주문·체결 내역",
+      "menu_key": "orders",
+      "route": "/user/orders",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/orders/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "주문·체결 내역"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 주문·체결",
+      "menu_name": "키움 주문·체결",
+      "menu_key": "orders-kiwoom",
+      "route": "/user/orders/kiwoom",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/orders/kiwoom/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "키움 주문·체결"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 주문·체결",
+      "menu_name": "업비트 주문·체결",
+      "menu_key": "orders-upbit",
+      "route": "/user/orders/upbit",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/orders/upbit/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "업비트 주문·체결"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 잔고·손익",
+      "menu_name": "내 잔고·손익",
+      "menu_key": "portfolio",
+      "route": "/user/portfolio",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/portfolio/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 잔고·손익"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 리스크",
+      "menu_name": "내 리스크",
+      "menu_key": "risk",
+      "route": "/user/risk",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/risk/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 리스크"
+    },
+    {
+      "portal": "user",
+      "menu_group": "업비트 LIVE 검증",
+      "menu_name": "업비트 LIVE 검증",
+      "menu_key": "live-validation-upbit",
+      "route": "/user/live-validation/upbit",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/live-validation/upbit/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "업비트 LIVE 검증(사용자 읽기)"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 리포트",
+      "menu_name": "내 리포트",
+      "menu_key": "reports",
+      "route": "/user/reports",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/reports/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "내 리포트"
+    },
+    {
+      "portal": "user",
+      "menu_group": "알림",
+      "menu_name": "알림",
+      "menu_key": "notifications",
+      "route": "/user/notifications",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/notifications/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "알림"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 정보",
+      "menu_name": "프로필",
+      "menu_key": "profile",
+      "route": "/user/profile",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/profile/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "프로필"
+    },
+    {
+      "portal": "user",
+      "menu_group": "내 정보",
+      "menu_name": "설정",
+      "menu_key": "settings",
+      "route": "/user/settings",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/settings/page.tsx",
+      "component": [
+        "page default export"
+      ],
+      "role": "USER_OWNER",
+      "required_permission": null,
+      "min_access": "user",
+      "visible": true,
+      "enabled": true,
+      "usage_status": "ACTIVE",
+      "purpose": "설정"
+    }
+  ],
+  "hidden_routes": [
+    {
+      "portal": "admin",
+      "route": "/admin/data",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "adminRoutes.monitoring",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/data/page.tsx",
+      "purpose": "hidden admin route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin/market",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "adminRoutes.monitoring",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/market/page.tsx",
+      "purpose": "hidden admin route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin/portfolio-validations",
+      "classification": "HIDDEN_OPERATION_ROUTE",
+      "redirect_expr": null,
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/portfolio-validations/page.tsx",
+      "purpose": "Portfolio Validation(사이드바 미노출)",
+      "usage_status": "ACTIVE"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin/positions",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "adminRoutes.portfolio",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/positions/page.tsx",
+      "purpose": "hidden admin route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin/settings",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "adminRoutes.envSettings",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/settings/page.tsx",
+      "purpose": "hidden admin route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin/strategy-drafts",
+      "classification": "HIDDEN_OPERATION_ROUTE",
+      "redirect_expr": null,
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/strategy-drafts/page.tsx",
+      "purpose": "Strategy Draft 관리(사이드바 미노출)",
+      "usage_status": "ACTIVE"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin/strategy-requests",
+      "classification": "HIDDEN_OPERATION_ROUTE",
+      "redirect_expr": null,
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/strategy-requests/page.tsx",
+      "purpose": "Strategy Request 승인 게이트(사이드바 미노출)",
+      "usage_status": "ACTIVE"
+    },
+    {
+      "portal": "user",
+      "route": "/user/account",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "userRoutes.accounts",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/account/page.tsx",
+      "purpose": "hidden user route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "user",
+      "route": "/user/ai",
+      "classification": "DETAIL_ROUTE",
+      "redirect_expr": null,
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/ai/page.tsx",
+      "purpose": "AI 추천·LLM 분석(메뉴 미노출, 리다이렉트 타깃)",
+      "usage_status": "ACTIVE"
+    },
+    {
+      "portal": "user",
+      "route": "/user/market",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "userRoutes.marketsStocks",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/market/page.tsx",
+      "purpose": "hidden user route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "user",
+      "route": "/user/orders/paper",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "userRoutes.orders",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/orders/paper/page.tsx",
+      "purpose": "Paper 주문 → /user/orders 리다이렉트",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "user",
+      "route": "/user/strategies/auto",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "userRoutes.autoTrading",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/strategies/auto/page.tsx",
+      "purpose": "hidden user route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "user",
+      "route": "/user/strategy-drafts",
+      "classification": "HIDDEN_OPERATION_ROUTE",
+      "redirect_expr": null,
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/strategy-drafts/page.tsx",
+      "purpose": "내 Strategy Draft(사이드바 미노출)",
+      "usage_status": "ACTIVE"
+    },
+    {
+      "portal": "user",
+      "route": "/user/strategy-requests",
+      "classification": "HIDDEN_OPERATION_ROUTE",
+      "redirect_expr": null,
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/strategy-requests/page.tsx",
+      "purpose": "내 Strategy Request(사이드바 미노출)",
+      "usage_status": "ACTIVE"
+    },
+    {
+      "portal": "user",
+      "route": "/user/trades",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "userRoutes.orders",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/trades/page.tsx",
+      "purpose": "hidden user route",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "admin",
+      "route": "/admin",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "adminRoutes.dashboard",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(admin)/admin/page.tsx",
+      "purpose": "admin root redirect to dashboard",
+      "usage_status": "LEGACY"
+    },
+    {
+      "portal": "user",
+      "route": "/user",
+      "classification": "LEGACY_ROUTE",
+      "redirect_expr": "userRoutes.dashboard",
+      "page_file": "D:/Projects/stock-platform/frontend/src/app/(user)/user/page.tsx",
+      "purpose": "user root redirect to dashboard",
+      "usage_status": "LEGACY"
+    }
+  ],
+  "embedded_features": [
+    {
+      "parent_route": "/admin/upbit",
+      "feature": "UBA Live / Auto Trading readiness",
+      "component": "AdminUpbitLiveUbaPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "UBA binding·readiness·LIVE 안전 상태"
+    },
+    {
+      "parent_route": "/admin/upbit",
+      "feature": "Opportunity Scanner + Technical Shadow",
+      "component": "UpbitOpportunityScannerPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Scanner run/status + Shadow evaluate/cohort"
+    },
+    {
+      "parent_route": "/admin/upbit",
+      "feature": "News Combined Shadow A/B",
+      "component": "UpbitNewsCombinedShadowPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "N6/N7/N10 experiment observation"
+    },
+    {
+      "parent_route": "/admin/upbit",
+      "feature": "News Collector / N4 / N5",
+      "component": "UpbitNewsNoticeCollectorPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Notice/Crypto collect, mapping, AI analysis, signals"
+    },
+    {
+      "parent_route": "/admin/upbit",
+      "feature": "Ambiguous Orders",
+      "component": "UpbitAmbiguousOrdersPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Upbit ambiguous order resolver ops"
+    },
+    {
+      "parent_route": "/admin/trading",
+      "feature": "Strategy Runtime",
+      "component": "AdminRuntimePanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Scoped runtime status/control"
+    },
+    {
+      "parent_route": "/admin/trading",
+      "feature": "Realtime Hub",
+      "component": "AdminRealtimeHubPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Realtime hub connections/subscriptions"
+    },
+    {
+      "parent_route": "/admin/recovery",
+      "feature": "Recovery Conflict / Scheduler",
+      "component": "RecoveryConflictPanel,RecoverySchedulerPanel",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Recovery conflict resolution UI"
+    },
+    {
+      "parent_route": "/admin/operations",
+      "feature": "Operation Center tiles",
+      "component": "OPERATION_CENTER_TILES",
+      "type": "EMBEDDED_FEATURE",
+      "purpose": "Ops hub linking to specialized screens"
+    }
+  ],
+  "duplicate_candidates": [
+    {
+      "id": "DUP_ACCOUNTS",
+      "pair": [
+        "/admin/accounts|/admin/kiwoom|/admin/upbit",
+        "/user/accounts*"
+      ],
+      "reason": "계좌 조회/자격증명 — Admin 전역 vs User 소유 scope",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_STRATEGIES",
+      "pair": [
+        "/admin/strategies",
+        "/user/strategies"
+      ],
+      "reason": "전략 관리 vs 내 전략",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_ORDERS",
+      "pair": [
+        "/admin/orders|/admin/trades",
+        "/user/orders*|/user/trading"
+      ],
+      "reason": "주문/체결 운영 vs 사용자 주문",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_PORTFOLIO",
+      "pair": [
+        "/admin/portfolio",
+        "/user/portfolio"
+      ],
+      "reason": "잔고·손익",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_RISK",
+      "pair": [
+        "/admin/risk",
+        "/user/risk"
+      ],
+      "reason": "리스크 화면",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_LIVE_VALIDATION",
+      "pair": [
+        "/admin/live-validation/upbit",
+        "/user/live-validation/upbit"
+      ],
+      "reason": "업비트 LIVE 검증 Admin 운영 vs User 읽기",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_NEWS",
+      "pair": [
+        "/admin/news",
+        "/user/news"
+      ],
+      "reason": "뉴스 관리 vs 사용자 뉴스 (+ Upbit embedded news ops)",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_BACKTESTS",
+      "pair": [
+        "/admin/backtests",
+        "/user/backtests"
+      ],
+      "reason": "백테스트",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_NOTIFICATIONS",
+      "pair": [
+        "/admin/notifications|/admin/telegram",
+        "/user/notifications"
+      ],
+      "reason": "알림 운영 vs 수신",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_AUTO_TRADING",
+      "pair": [
+        "/admin/trading",
+        "/user/auto-trading"
+      ],
+      "reason": "자동매매 Runtime 제어 vs 사용자 자동매매",
+      "type": "ADMIN_USER"
+    },
+    {
+      "id": "DUP_ADMIN_MONITORING",
+      "pair": [
+        "/admin/monitoring (시장 데이터)",
+        "/admin/monitoring (운영관리)"
+      ],
+      "reason": "동일 route가 사이드바에 2회 노출",
+      "type": "ADMIN_INTERNAL"
+    },
+    {
+      "id": "DUP_ADMIN_OPS_SURFACES",
+      "pair": [
+        "/admin/operations",
+        "/admin/operations-dashboard",
+        "/admin/monitoring",
+        "/admin/scheduler"
+      ],
+      "reason": "운영/모니터링/스케줄러 표면 분산",
+      "type": "ADMIN_INTERNAL"
+    },
+    {
+      "id": "DUP_ADMIN_NEWS_SURFACES",
+      "pair": [
+        "/admin/news",
+        "/admin/upbit#NewsPanels"
+      ],
+      "reason": "일반 뉴스관리 vs Upbit News pipeline embedded",
+      "type": "ADMIN_INTERNAL"
+    },
+    {
+      "id": "DUP_ADMIN_AI_CLUSTER",
+      "pair": [
+        "/admin/ai",
+        "/admin/ai/*",
+        "/admin/ollama"
+      ],
+      "reason": "AI 후보/LLM 세분화 메뉴 다수 + Ollama",
+      "type": "ADMIN_INTERNAL"
+    },
+    {
+      "id": "DUP_USER_CANDIDATES_AI",
+      "pair": [
+        "/user/candidates/llm",
+        "/user/ai"
+      ],
+      "reason": "메뉴 LLM 분석이 /user/ai로 리다이렉트",
+      "type": "USER_INTERNAL"
+    },
+    {
+      "id": "DUP_USER_ORDERS",
+      "pair": [
+        "/user/orders",
+        "/user/orders/kiwoom|/upbit|/paper"
+      ],
+      "reason": "주문 허브 vs 브로커별 주문 화면",
+      "type": "USER_INTERNAL"
+    }
+  ],
+  "broken_entries": [],
+  "permission_notes": [
+    {
+      "note": "Admin layout AuthGuard requiredRoles=['admin'] + enforceMenuPermission",
+      "effect": "ADMIN_ONLY portal"
+    },
+    {
+      "note": "filterMenuByPermissions: admin role bypasses menu permission checks",
+      "effect": "admin sees all enabled menus regardless of menu:* grants"
+    },
+    {
+      "note": "indicators/recovery/profile menu entries lack permission field",
+      "effect": "permission mismatch candidate vs other menu:* gated items"
+    },
+    {
+      "note": "User layout redirects admin-role users to /admin/dashboard",
+      "effect": "USER portal is USER_ONLY in practice for admin accounts"
+    },
+    {
+      "note": "User menus use minAccess=user only; no menu permission strings",
+      "effect": "USER_OWNER / role-tier gating"
+    }
+  ],
+  "core_apis": [
+    {
+      "menu": "/admin/upbit",
+      "apis": [
+        {
+          "method": "GET",
+          "path": "/admin/upbit/...",
+          "purpose": "account status/snapshot"
+        },
+        {
+          "method": "GET/POST",
+          "path": "/admin/upbit/news-collector/*",
+          "purpose": "N2 collector"
+        },
+        {
+          "method": "GET/POST",
+          "path": "/admin/upbit/news-analysis/*",
+          "purpose": "N4 analysis"
+        },
+        {
+          "method": "GET/POST",
+          "path": "/admin/upbit/news-signals/*",
+          "purpose": "N5 signals"
+        },
+        {
+          "method": "GET/POST",
+          "path": "/admin/upbit/opportunity-scanner/*",
+          "purpose": "Scanner/Shadow"
+        },
+        {
+          "method": "GET/POST",
+          "path": "/admin/upbit/news-combined-shadow/*",
+          "purpose": "News A/B experiment"
+        }
+      ]
+    },
+    {
+      "menu": "/admin/trading",
+      "apis": [
+        {
+          "method": "GET/POST",
+          "path": "/admin/realtime/*",
+          "purpose": "strategy/execution start-stop"
+        },
+        {
+          "method": "GET",
+          "path": "/admin/strategy-runtime/*",
+          "purpose": "runtime status"
+        }
+      ]
+    },
+    {
+      "menu": "/admin/operations/preflight",
+      "apis": [
+        {
+          "method": "GET",
+          "path": "/admin/live-ops/preflight*",
+          "purpose": "LIVE readiness preflight"
+        }
+      ]
+    },
+    {
+      "menu": "/admin/logs",
+      "apis": [
+        {
+          "method": "GET",
+          "path": "/admin/audit/events",
+          "purpose": "audit log list"
+        }
+      ]
+    },
+    {
+      "menu": "/user/accounts",
+      "apis": [
+        {
+          "method": "GET/POST",
+          "path": "/user/accounts*|broker credentials",
+          "purpose": "owner-scoped accounts/credentials"
+        }
+      ]
+    }
+  ],
+  "mutations": {
+    "frontend_production": 0,
+    "backend_production": 0,
+    "db": 0,
+    "routes": 0,
+    "commit": false
+  },
+  "verdict": "MENU_INVENTORY_READY"
+}

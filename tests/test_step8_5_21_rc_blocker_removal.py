@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -72,7 +72,24 @@ def test_activation_missing_expires_disables(monkeypatch) -> None:
     )
     session.scalars.return_value = [entity]
     service = LiveTradingTransitionService(session)
-    assert service.get_active() is None
+    with (
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.TradingSchedulerControlService"
+        ),
+        patch(
+            "stock_platform.trading.live_session_expiry.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_session_expiry.emit_live_order_telegram"
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.emit_live_order_telegram"
+        ),
+    ):
+        assert service.get_active() is None
     assert entity.enabled is False
     assert entity.activation_status == "EXPIRED"
 
@@ -89,7 +106,24 @@ def test_activation_expired_disables() -> None:
     )
     session.scalars.return_value = [entity]
     service = LiveTradingTransitionService(session)
-    assert service.get_active() is None
+    with (
+        patch(
+            "stock_platform.trading.trading_scheduler_control_service.TradingSchedulerControlService"
+        ),
+        patch(
+            "stock_platform.trading.live_session_expiry.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_session_expiry.emit_live_order_telegram"
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.emit_live_safety_audit"
+        ),
+        patch(
+            "stock_platform.trading.live_arm_service.emit_live_order_telegram"
+        ),
+    ):
+        assert service.get_active() is None
     assert entity.activation_status == "EXPIRED"
 
 

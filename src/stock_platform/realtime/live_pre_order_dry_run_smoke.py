@@ -419,9 +419,23 @@ async def run_kiwoom_dry_run_smoke(
         from stock_platform.broker.kiwoom.token_cache import KiwoomTokenCache
         from stock_platform.broker.kiwoom.token_client import KiwoomTokenClient
 
-        bases = [settings.kiwoom_base_url]
+        bases = []
+        # 실호가 dry-run: live API를 우선, mock은 보조
         if bool(settings.kiwoom_use_mock):
-            bases.append("https://api.kiwoom.com")
+            bases.extend(
+                ["https://api.kiwoom.com", settings.kiwoom_base_url]
+            )
+        else:
+            bases.append(settings.kiwoom_base_url)
+        # 중복 제거·순서 유지
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for base in bases:
+            b = str(base or "").rstrip("/")
+            if b and b not in seen:
+                seen.add(b)
+                ordered.append(b)
+        bases = ordered
         token = None
         config = None
         last_exc: Exception | None = None
@@ -440,6 +454,7 @@ async def run_kiwoom_dry_run_smoke(
                 break
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
+                report.detail["auth_last_error"] = str(exc)[:240]
         if token is None or config is None:
             raise last_exc or RuntimeError("KIWOOM_AUTH_FAILED")
         report.auth_ok = bool(getattr(token, "token", None))

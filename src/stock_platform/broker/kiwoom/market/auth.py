@@ -63,10 +63,13 @@ class KiwoomTokenManager:
         self,
         settings: Settings | None = None,
         http_client: httpx.AsyncClient | None = None,
+        base_url: str | None = None,
     ) -> None:
         self._settings = settings or get_settings()
         self._http_client = http_client
         self._owns_http_client = http_client is None
+        # collector 전용 host override (process KIWOOM_USE_MOCK 은 유지)
+        self._base_url_override = (base_url or "").rstrip("/") or None
         self._token: KiwoomAccessToken | None = None
         self._lock = asyncio.Lock()
 
@@ -110,7 +113,8 @@ class KiwoomTokenManager:
             raise KiwoomConfigurationError(str(exc)) from exc
 
         client = await self._get_http_client()
-        url = f"{self._settings.kiwoom_base_url}{TOKEN_ENDPOINT}"
+        host = self._base_url_override or self._settings.kiwoom_base_url
+        url = f"{host}{TOKEN_ENDPOINT}"
 
         payload = {
             "grant_type": TOKEN_GRANT_TYPE,

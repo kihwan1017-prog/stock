@@ -558,17 +558,23 @@ async def run_recovery_scheduler_job(
         else:
             broker_filter_arg = broker_filter
 
-        # failed_retry: next_retry_at 도래 + auto_retry 계좌만
-        uba_filter: int | None = None
-        paper_filter: int | None = None
+        # failed_retry: FAILED+due + LIVE/ARM/conflict 등 safety gate
         retry_targets: list[dict[str, Any]] = []
+        retry_skipped: list[dict[str, Any]] = []
         if job_id == "broker_recovery_failed_retry":
-            retry_targets = _list_retry_due_accounts(session)
+            from stock_platform.broker.recovery_scheduler_selector import (
+                list_failed_retry_targets,
+            )
+
+            retry_targets, retry_skipped = list_failed_retry_targets(session)
             if not retry_targets:
                 summary = {
                     "status": "SKIPPED_NO_RETRY_TARGETS",
                     "job_id": job_id,
                     "account_count": 0,
+                    "recovery_count": 0,
+                    "skipped_gate_count": len(retry_skipped),
+                    "recover_all_called": False,
                 }
                 _persist_job_result(session, job, summary, status="SKIPPED")
                 session.commit()
@@ -597,23 +603,11 @@ async def run_recovery_scheduler_job(
                         requested_by=requested_by,
                     )
 
-                # LIVE UBA Credential 사전 필터는 recover 내부 Vault에서 처리
-                # 동시성·jitter: concurrency로 제한, 계좌 시작 시 소량 분산은 recover_all Semaphore
-                result = await broker_recovery_manager.recover_all(
-                    trigger_type=trigger_type,
-                    broker_code=broker_filter_arg,
-                    paper_account_id=paper_filter,
-                    user_broker_account_id=uba_filter,
-                    requested_by=requested_by,
-                    concurrency=int(job.concurrency),
-                    overall_timeout_seconds=float(job.timeout_seconds),
-                )
-                return _summarize_recover_all(
-                    result,
+                # periodic: broker-wide recover_all 금지 · CHECK_ONLY + expired local finalize
+                return await _run_periodic_scoped_job(
                     job_id=job_id,
-                    max_retries=int(job.max_retries),
-                    backoff_base=int(job.backoff_base_seconds),
-                    backoff_max=int(job.backoff_max_seconds),
+                    broker_filter=broker_filter_arg,
+                    trigger_type=trigger_type,
                 )
             except ValueError as exc:
                 # 이미 실행 중
@@ -701,6 +695,8 @@ def _persist_job_result(
             "SKIPPED_TOO_EARLY",
             "SKIPPED_TOO_LATE",
             "SKIPPED_ALREADY_EXECUTED",
+            "CHECK_ONLY",
+            "SKIPPED_NO_RECOVERY_TARGETS",
         }
         else None
     )
@@ -720,6 +716,10 @@ def _persist_job_result(
             "skipped_locked_count",
             "reason_code",
             "message",
+            "recovery_count",
+            "recover_all_called",
+            "local_finalize_count",
+            "mode",
         )
         if k in summary
     }
@@ -898,26 +898,86 @@ def _update_account_retry_state(
 
 
 def _list_retry_due_accounts(session: Session) -> list[dict[str, Any]]:
-    now = _utcnow()
-    stmt = select(BrokerRecoveryAccountStateEntity).where(
-        BrokerRecoveryAccountStateEntity.auto_retry_enabled.is_(True),
-        BrokerRecoveryAccountStateEntity.recovery_status.in_(
-            ("FAILED",)
-        ),
-        BrokerRecoveryAccountStateEntity.next_retry_at.is_not(None),
-        BrokerRecoveryAccountStateEntity.next_retry_at <= now,
+    """하위 호환 — safety gate 적용된 failed_retry 대상만."""
+
+    from stock_platform.broker.recovery_scheduler_selector import (
+        list_failed_retry_targets,
     )
-    rows = list(session.scalars(stmt))
-    return [
-        {
-            "broker_code": r.broker_code,
-            "user_broker_account_id": r.user_broker_account_id,
-            "paper_account_id": r.paper_account_id,
-            "user_id": r.user_id,
-            "retry_count": r.retry_count,
-        }
-        for r in rows
-    ]
+
+    eligible, _skipped = list_failed_retry_targets(session)
+    return eligible
+
+
+async def _run_periodic_scoped_job(
+    *,
+    job_id: str,
+    broker_filter: str | None,
+    trigger_type: str,
+) -> dict[str, Any]:
+    """periodic job: broker-wide recover_all 금지.
+
+    - healthy SUCCESS → SKIP / CHECK_ONLY
+    - expired RUNNING → local finalize only (broker API 0)
+    - FAILED eligible → failed_retry 전담 (여기선 Recovery 0)
+    """
+
+    from stock_platform.broker.recovery_lock import RecoveryAccountLockService
+    from stock_platform.broker.recovery_scheduler_selector import (
+        broker_codes_for_job,
+        summarize_periodic_decisions,
+    )
+
+    session = get_session_factory()()
+    try:
+        decision_summary = summarize_periodic_decisions(
+            session, broker_filter=broker_filter
+        )
+        codes = broker_codes_for_job(broker_filter)
+        finalize = RecoveryAccountLockService(
+            session
+        ).finalize_expired_orphan_states(
+            actor=f"SCHEDULER:{job_id}",
+            broker_codes=codes,
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+    finalized = int(finalize.get("finalized") or 0)
+    return {
+        "status": "CHECK_ONLY",
+        "success": True,
+        "job_id": job_id,
+        "trigger_type": trigger_type,
+        "mode": "CHECK_ONLY",
+        "broker_code": broker_filter,
+        "account_count": 0,
+        "success_count": 0,
+        "failed_count": 0,
+        "skipped_count": int(
+            sum(
+                (decision_summary.get("decision_counts") or {}).values()
+            )
+        ),
+        "manual_review_count": 0,
+        "timeout_count": 0,
+        "skipped_locked_count": 0,
+        "recovery_count": 0,
+        "recover_all_called": False,
+        "local_finalize_count": finalized,
+        "local_finalize": finalize,
+        "decision_counts": decision_summary.get("decision_counts") or {},
+        "message": (
+            "periodic full Recovery disabled; "
+            "healthy accounts CHECK_ONLY; "
+            "expired RUNNING local-finalize only"
+        ),
+        "started_at": _utcnow().isoformat(),
+        "finished_at": _utcnow().isoformat(),
+    }
 
 
 async def _run_failed_retry(
@@ -997,7 +1057,11 @@ async def _run_failed_retry(
         max_retries=max_retries,
         backoff_base=backoff_base,
         backoff_max=backoff_max,
-    )
+    ) | {
+        "recovery_count": len(accounts_out),
+        "recover_all_called": True,
+        "mode": "TARGETED_FAILED_RETRY",
+    }
 
 
 def uba_credential_ready(session: Session, uba_id: int) -> bool:

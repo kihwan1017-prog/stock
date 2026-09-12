@@ -185,14 +185,16 @@ def test_inactive_link_blocks() -> None:
     assert "STRATEGY_LINK_INACTIVE" in out["blockers"]
 
 
-def test_link_activate_requires_approval() -> None:
+def test_link_activate_requires_public_catalog_approval() -> None:
     session = MagicMock()
     uba = _uba(live_approved_at=datetime.now(timezone.utc))
     strategy = SimpleNamespace(
         is_active=True,
         approved_at=None,
         owner_type="USER",
+        visibility="PUBLIC",
         market_type="CRYPTO",
+        deleted_at=None,
     )
     session.get.side_effect = lambda model, pk: (
         uba
@@ -210,6 +212,36 @@ def test_link_activate_requires_approval() -> None:
         )
 
 
+def test_link_activate_private_without_evidence_is_blocked() -> None:
+    session = MagicMock()
+    uba = _uba(live_approved_at=datetime.now(timezone.utc))
+    strategy = SimpleNamespace(
+        strategy_id=17580,
+        is_active=True,
+        approved_at=None,
+        owner_type="USER",
+        visibility="PRIVATE",
+        market_type="CRYPTO",
+        deleted_at=None,
+        source_strategy_id=17483,
+    )
+    session.get.side_effect = lambda model, pk: (
+        uba
+        if "UserBroker" in getattr(model, "__name__", "")
+        else strategy
+    )
+    session.scalar.return_value = None
+    session.scalars.return_value = []
+    with pytest.raises(ValueError, match="STRATEGY_EVIDENCE_NOT_READY"):
+        admin_set_uba_strategy_link_active(
+            session,
+            user_broker_account_id=1380,
+            strategy_id=17580,
+            is_active=True,
+            actor="admin",
+        )
+
+
 def test_link_activate_requires_live_approval() -> None:
     session = MagicMock()
     uba = _uba(live_approved_at=None)
@@ -217,7 +249,9 @@ def test_link_activate_requires_live_approval() -> None:
         is_active=True,
         approved_at=datetime.now(timezone.utc),
         owner_type="USER",
+        visibility="PRIVATE",
         market_type="CRYPTO",
+        deleted_at=None,
     )
     session.get.side_effect = lambda model, pk: (
         uba

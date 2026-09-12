@@ -6,8 +6,15 @@ from stock_platform.broker.account_repository import (
     BrokerAccountSnapshotRepository,
     BrokerSnapshotBindingError,
 )
+from stock_platform.broker.credential_vault_service import (
+    BrokerCredentialVaultError,
+    BrokerCredentialVaultService,
+)
 from stock_platform.broker.kiwoom.account_client import (
     KiwoomAccountClient,
+)
+from stock_platform.broker.kiwoom.account_identity import (
+    build_kiwoom_legacy_adoption_proof,
 )
 from stock_platform.broker.kiwoom.account_mapper import (
     KiwoomAccountMapper,
@@ -49,6 +56,25 @@ class KiwoomAccountSyncService:
             )
         return int(self._uba_id)
 
+    def _vault_account_number(self, uba_id: int) -> str | None:
+        """Credential vault 계좌 — secret 미노출, 번호만."""
+
+        try:
+            resolved = BrokerCredentialVaultService(
+                self._session
+            ).resolve_for_runtime(
+                uba_id,
+                expected_broker="KIWOOM",
+                require_verified=True,
+                touch_last_used=False,
+            )
+        except BrokerCredentialVaultError:
+            return None
+        acct = str(
+            (resolved.payload or {}).get("account_number") or ""
+        ).strip()
+        return acct or None
+
     async def synchronize(
         self, *, user_broker_account_id: int | None = None
     ):
@@ -64,8 +90,16 @@ class KiwoomAccountSyncService:
             deposit_payload=deposit,
             balance_payload=balance,
         )
+        # ownership-proven legacy adopt (RETIRED unbound) — Kiwoom only
+        proof = build_kiwoom_legacy_adoption_proof(
+            target_uba_id=uba_id,
+            broker_account_number=account_number,
+            vault_account_number=self._vault_account_number(uba_id),
+        )
         entity = self._repository.save(
-            result, user_broker_account_id=uba_id
+            result,
+            user_broker_account_id=uba_id,
+            legacy_adoption=proof,
         )
 
         return {

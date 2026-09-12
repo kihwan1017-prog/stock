@@ -307,19 +307,28 @@ class StrategyDefinitionService:
         *,
         actor: str,
         name: str | None = None,
+        for_user_id: int | None = None,
     ) -> StrategyDefinitionEntity:
         source = self.require(strategy_id)
         assert_strategy_readable(user, source)
-        # 공개 또는 본인만 복제
-        # 복제 코드 충돌 방지
+        if for_user_id is not None and not user.is_admin:
+            raise StrategyOwnershipError(
+                "for_user_id 는 관리자만 지정할 수 있습니다."
+            )
+        owner_user_id = (
+            int(for_user_id) if for_user_id is not None else int(user.user_id)
+        )
+        if owner_user_id <= 0:
+            raise StrategyOwnershipError("for_user_id 가 올바르지 않습니다.")
+        # 공개 또는 본인(관리자는 타 사용자 대상 복제)만 복제
         stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
         clone = StrategyDefinitionEntity(
-            strategy_code=f"{source.strategy_code}_COPY_{user.user_id}_{stamp}",
+            strategy_code=f"{source.strategy_code}_COPY_{owner_user_id}_{stamp}",
             name=name or f"{source.name} (복사)",
             description=source.description,
             market_type=source.market_type,
             owner_type="USER",
-            user_id=int(user.user_id),
+            user_id=owner_user_id,
             visibility="PRIVATE",
             is_active=False,
             parameter_payload=dict(source.parameter_payload or {}),
@@ -330,10 +339,131 @@ class StrategyDefinitionService:
             published_by=None,
             published_at=None,
             source_strategy_id=int(source.strategy_id),
+            # 원본 Draft 행을 복제하지 않는다(불변 Snapshot 단일성).
+            # 요청/후보/승인/해시는 출처 추적용으로만 복사한다.
+            source_draft_id=None,
+            strategy_request_id=getattr(source, "strategy_request_id", None),
+            candidate_id=getattr(source, "candidate_id", None),
+            candidate_fingerprint=getattr(source, "candidate_fingerprint", None),
+            approval_id=getattr(source, "approval_id", None),
+            schema_version=getattr(source, "schema_version", None),
+            definition_version=getattr(source, "definition_version", None),
+            definition_hash=getattr(source, "definition_hash", None),
         )
         self._session.add(clone)
         self._session.flush()
         return clone
+
+    def clone_strategy_for_symbol(
+        self,
+        user: AuthenticatedUser,
+        strategy_id: int,
+        *,
+        symbol: str,
+        actor: str,
+        for_user_id: int | None = None,
+        name: str | None = None,
+    ) -> StrategyDefinitionEntity:
+        """심볼 전용 복제. 원본 payload/evidence를 새 심볼 PASS로 상속하지 않는다."""
+
+        from stock_platform.ai.strategy_draft_approval.constants import (
+            DEFINITION_SCHEMA_VERSION,
+        )
+        from stock_platform.strategy_deployment.symbol_payload import (
+            canonical_step12_payload_from_ma_semantics,
+            normalize_upbit_symbol,
+        )
+
+        source = self.require(strategy_id)
+        if str(source.market_type or "").upper() != "CRYPTO":
+            raise StrategyOwnershipError(
+                "symbol clone is CRYPTO/UPBIT template only"
+            )
+        target = normalize_upbit_symbol(symbol)
+        clone = self.clone_strategy(
+            user,
+            strategy_id,
+            actor=actor,
+            name=name or f"UPBIT MA Crossover {target}",
+            for_user_id=for_user_id,
+        )
+        clone.parameter_payload = canonical_step12_payload_from_ma_semantics(
+            source.parameter_payload,
+            symbol=target,
+        )
+        # 신규 심볼은 template semantics만 재사용. XRP/원본 provenance 비상속.
+        clone.strategy_request_id = None
+        clone.candidate_id = None
+        clone.candidate_fingerprint = None
+        clone.approval_id = None
+        clone.definition_hash = None
+        clone.approved_at = None
+        clone.approved_by = None
+        clone.is_active = False
+        clone.schema_version = source.schema_version or DEFINITION_SCHEMA_VERSION
+        if getattr(clone, "definition_version", None) is None:
+            clone.definition_version = 1
+        self._session.flush()
+        return clone
+
+    def evaluate_link_eligibility(
+        self,
+        user: AuthenticatedUser,
+        *,
+        strategy_id: int,
+        user_broker_account_id: int | None,
+        paper_account_id: int | None,
+        account_broker: str,
+    ) -> dict[str, Any]:
+        """계좌 연결 가능 여부만 판정한다. Link 행을 만들지 않는다."""
+
+        strategy = self.require(strategy_id)
+        accessible = True
+        access_reason: str | None = None
+        try:
+            assert_strategy_readable(user, strategy)
+        except HTTPException as exc:
+            accessible = False
+            access_reason = str(exc.detail)
+        market_ok = market_compatible(
+            market_type=strategy.market_type,
+            account_broker=account_broker,
+        )
+        blockers: list[str] = []
+        if not accessible:
+            blockers.append("STRATEGY_NOT_ACCESSIBLE")
+        if not strategy.is_active:
+            blockers.append("STRATEGY_INACTIVE")
+        if (
+            strategy.visibility == "PUBLIC"
+            and strategy.owner_type == "USER"
+            and strategy.approved_at is None
+        ):
+            blockers.append("PUBLIC_USER_UNAPPROVED")
+        if not market_ok:
+            blockers.append("MARKET_BROKER_INCOMPATIBLE")
+        live_eligible = False
+        return {
+            "strategy_id": int(strategy.strategy_id),
+            "owner_user_id": strategy.user_id,
+            "visibility": strategy.visibility,
+            "is_active": bool(strategy.is_active),
+            "approved_at": (
+                strategy.approved_at.isoformat()
+                if strategy.approved_at
+                else None
+            ),
+            "accessible": accessible,
+            "access_reason": access_reason,
+            "market_compatible": market_ok,
+            "broker": account_broker.upper(),
+            "user_broker_account_id": user_broker_account_id,
+            "paper_account_id": paper_account_id,
+            "link_eligible": len(blockers) == 0,
+            "blockers": blockers,
+            "live_eligible": live_eligible,
+            "link_created": False,
+        }
 
     def link_to_account(
         self,

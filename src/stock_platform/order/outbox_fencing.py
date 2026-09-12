@@ -49,6 +49,11 @@ def record_outbox_audit(
                 "secret",
                 "account_number",
                 "payload_json",
+                "access_key",
+                "secret_key",
+                "api_key",
+                "api_secret",
+                "arm_token",
             }
         }
         AuditLogService(session).record(

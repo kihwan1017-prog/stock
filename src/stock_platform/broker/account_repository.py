@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Any
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -14,6 +15,10 @@ from stock_platform.broker.account_models import (
 )
 from stock_platform.broker.snapshot_constants import BrokerSnapshotStatus
 from stock_platform.broker.snapshot_freshness import compute_snapshot_hash
+from stock_platform.broker.snapshot_legacy_adoption import (
+    LegacySnapshotAdoptionRejected,
+    SnapshotLegacyAdoptionProof,
+)
 
 
 class BrokerSnapshotBindingError(ValueError):
@@ -30,8 +35,13 @@ class BrokerAccountSnapshotRepository:
         *,
         user_broker_account_id: int | None = None,
         paper_account_id: int | None = None,
+        legacy_adoption: SnapshotLegacyAdoptionProof | None = None,
     ) -> BrokerAccountSnapshotEntity:
-        """UBA 또는 Paper 중 정확히 하나와 바인딩하여 저장한다."""
+        """UBA 또는 Paper 중 정확히 하나와 바인딩하여 저장한다.
+
+        legacy_adoption: RETIRED+UBA NULL row를 ownership-proven 시에만 adopt.
+        proof 없으면 legacy auto-adopt 하지 않음 (Upbit 등 fail-closed).
+        """
 
         uba_id = user_broker_account_id
         if uba_id is None:
@@ -50,25 +60,79 @@ class BrokerAccountSnapshotRepository:
                 "provide exactly one of user_broker_account_id / paper_account_id"
             )
 
+        if legacy_adoption is not None:
+            if uba_id is None:
+                raise LegacySnapshotAdoptionRejected(
+                    "legacy adoption requires UBA binding"
+                )
+            if int(legacy_adoption.target_uba_id) != int(uba_id):
+                raise LegacySnapshotAdoptionRejected(
+                    "legacy adoption target_uba_id mismatch"
+                )
+            if (
+                str(legacy_adoption.broker_code).upper()
+                != str(result.broker_code).upper()
+            ):
+                raise LegacySnapshotAdoptionRejected(
+                    "legacy adoption broker_code mismatch"
+                )
+
+        broker = str(result.broker_code).upper()
+        adopted_from: BrokerAccountSnapshotEntity | None = None
+
         # UBA 기준 ACTIVE 행 우선 조회 (broker-only latest 금지)
         account: BrokerAccountSnapshotEntity | None = None
         if uba_id is not None:
             account = self._session.scalar(
-                select(BrokerAccountSnapshotEntity).where(
+                select(BrokerAccountSnapshotEntity)
+                .where(
                     BrokerAccountSnapshotEntity.user_broker_account_id
                     == int(uba_id),
                     BrokerAccountSnapshotEntity.snapshot_status
                     == BrokerSnapshotStatus.ACTIVE.value,
                 )
+                .with_for_update()
             )
+            if account is None:
+                # RETIRED same UBA → safe reactivate
+                retired_same = list(
+                    self._session.scalars(
+                        select(BrokerAccountSnapshotEntity)
+                        .where(
+                            BrokerAccountSnapshotEntity.user_broker_account_id
+                            == int(uba_id),
+                            BrokerAccountSnapshotEntity.snapshot_status
+                            == BrokerSnapshotStatus.RETIRED.value,
+                        )
+                        .with_for_update()
+                    )
+                )
+                if len(retired_same) > 1:
+                    raise LegacySnapshotAdoptionRejected(
+                        "ambiguous RETIRED snapshots for same UBA"
+                    )
+                if len(retired_same) == 1:
+                    account = retired_same[0]
+                    adopted_from = account
+
+            if account is None and legacy_adoption is not None:
+                account = self._resolve_legacy_unbound_adopt(
+                    result=result,
+                    proof=legacy_adoption,
+                )
+                if account is not None:
+                    adopted_from = account
+
         if account is None and paper_id is not None:
             account = self._session.scalar(
-                select(BrokerAccountSnapshotEntity).where(
+                select(BrokerAccountSnapshotEntity)
+                .where(
                     BrokerAccountSnapshotEntity.paper_account_id
                     == int(paper_id),
                     BrokerAccountSnapshotEntity.snapshot_status
                     == BrokerSnapshotStatus.ACTIVE.value,
                 )
+                .with_for_update()
             )
 
         now = datetime.now(timezone.utc)
@@ -84,7 +148,7 @@ class BrokerAccountSnapshotRepository:
 
         if account is None:
             account = BrokerAccountSnapshotEntity(
-                broker_code=result.broker_code.upper(),
+                broker_code=broker,
                 account_number=result.account_number,
                 user_broker_account_id=int(uba_id) if uba_id else None,
                 paper_account_id=int(paper_id) if paper_id else None,
@@ -103,7 +167,7 @@ class BrokerAccountSnapshotRepository:
                 account.snapshot_version = int(
                     account.snapshot_version or 1
                 ) + 1
-            account.broker_code = result.broker_code.upper()
+            account.broker_code = broker
             account.account_number = result.account_number
             account.user_broker_account_id = (
                 int(uba_id) if uba_id else None
@@ -119,25 +183,221 @@ class BrokerAccountSnapshotRepository:
         account.total_evaluation_amount = result.total_evaluation_amount
         account.total_profit_loss = result.total_profit_loss
         account.total_return_rate = result.total_return_rate
-        account.raw_data = result.raw_data
+        account.raw_data = self._merge_raw_for_adopt(
+            previous=account.raw_data if adopted_from is not None else None,
+            incoming=result.raw_data,
+            adopted=adopted_from is not None,
+            uba_id=int(uba_id) if uba_id else None,
+            snapshot_id=(
+                int(adopted_from.broker_account_snapshot_id)
+                if adopted_from is not None
+                and getattr(
+                    adopted_from, "broker_account_snapshot_id", None
+                )
+                is not None
+                else None
+            ),
+        )
         account.synchronized_at = snap_time
         account.snapshot_time = snap_time
         account.broker_server_time = result.broker_server_time
         account.snapshot_hash = new_hash
 
-        # 포지션: 동일 바인딩 키로 교체
+        # 포지션: UBA 바인딩 + (proof 시) ownership-proven legacy RETIRED cleanup
+        self._replace_positions(
+            result=result,
+            uba_id=int(uba_id) if uba_id else None,
+            paper_id=int(paper_id) if paper_id else None,
+            legacy_adoption=legacy_adoption,
+            snap_time=snap_time,
+        )
+
+        self._session.commit()
+        self._session.refresh(account)
+        return account
+
+    def _resolve_legacy_unbound_adopt(
+        self,
+        *,
+        result: BrokerAccountSyncResult,
+        proof: SnapshotLegacyAdoptionProof,
+    ) -> BrokerAccountSnapshotEntity | None:
+        """RETIRED + UBA NULL 중 ownership-proven 단일 candidate만 adopt."""
+
+        broker = str(result.broker_code).upper()
+        candidates = list(
+            self._session.scalars(
+                select(BrokerAccountSnapshotEntity)
+                .where(
+                    BrokerAccountSnapshotEntity.broker_code == broker,
+                    BrokerAccountSnapshotEntity.snapshot_status
+                    == BrokerSnapshotStatus.RETIRED.value,
+                    BrokerAccountSnapshotEntity.user_broker_account_id.is_(
+                        None
+                    ),
+                    BrokerAccountSnapshotEntity.paper_account_id.is_(None),
+                )
+                .with_for_update()
+            )
+        )
+        matched = [
+            row
+            for row in candidates
+            if proof.matches_account(str(row.account_number or ""))
+        ]
+        if not matched:
+            return None
+        if len(matched) > 1:
+            raise LegacySnapshotAdoptionRejected(
+                "ambiguous RETIRED unbound snapshots for account identity"
+            )
+
+        # 동일 실계좌 ACTIVE가 다른 UBA에 있으면 fail-closed
+        active_rows = list(
+            self._session.scalars(
+                select(BrokerAccountSnapshotEntity).where(
+                    BrokerAccountSnapshotEntity.broker_code == broker,
+                    BrokerAccountSnapshotEntity.snapshot_status
+                    == BrokerSnapshotStatus.ACTIVE.value,
+                )
+            )
+        )
+        for row in active_rows:
+            if not proof.matches_account(str(row.account_number or "")):
+                continue
+            other_uba = row.user_broker_account_id
+            if other_uba is not None and int(other_uba) != int(
+                proof.target_uba_id
+            ):
+                raise LegacySnapshotAdoptionRejected(
+                    "ACTIVE snapshot bound to different UBA"
+                )
+
+        # RETIRED지만 다른 UBA에 묶인 행
+        retired_bound = list(
+            self._session.scalars(
+                select(BrokerAccountSnapshotEntity).where(
+                    BrokerAccountSnapshotEntity.broker_code == broker,
+                    BrokerAccountSnapshotEntity.snapshot_status
+                    == BrokerSnapshotStatus.RETIRED.value,
+                    BrokerAccountSnapshotEntity.user_broker_account_id.is_not(
+                        None
+                    ),
+                )
+            )
+        )
+        for row in retired_bound:
+            if not proof.matches_account(str(row.account_number or "")):
+                continue
+            if int(row.user_broker_account_id) != int(proof.target_uba_id):
+                raise LegacySnapshotAdoptionRejected(
+                    "RETIRED snapshot bound to different UBA"
+                )
+
+        return matched[0]
+
+    def _merge_raw_for_adopt(
+        self,
+        *,
+        previous: dict[str, Any] | None,
+        incoming: dict[str, Any] | None,
+        adopted: bool,
+        uba_id: int | None,
+        snapshot_id: int | None,
+    ) -> dict[str, Any]:
+        merged = dict(incoming or {})
+        if previous:
+            # retirement provenance 보존
+            if "_retire" in previous and "_retire" not in merged:
+                merged["_retire"] = previous.get("_retire")
+        if adopted:
+            merged["_adopt"] = {
+                "target_uba_id": uba_id,
+                "from_snapshot_id": snapshot_id,
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+        return merged
+
+    def _replace_positions(
+        self,
+        *,
+        result: BrokerAccountSyncResult,
+        uba_id: int | None,
+        paper_id: int | None,
+        legacy_adoption: SnapshotLegacyAdoptionProof | None,
+        snap_time: datetime,
+    ) -> None:
+        broker = str(result.broker_code).upper()
+
         if uba_id is not None:
+            # 1) 현재 UBA bound rows
             self._session.execute(
                 delete(BrokerPositionSnapshotEntity).where(
                     BrokerPositionSnapshotEntity.user_broker_account_id
                     == int(uba_id)
                 )
             )
+            # 2) ownership-proven legacy RETIRED + UBA NULL only
+            if legacy_adoption is not None:
+                legacy_rows = list(
+                    self._session.scalars(
+                        select(BrokerPositionSnapshotEntity)
+                        .where(
+                            BrokerPositionSnapshotEntity.broker_code
+                            == broker,
+                            BrokerPositionSnapshotEntity.user_broker_account_id.is_(
+                                None
+                            ),
+                            BrokerPositionSnapshotEntity.snapshot_status
+                            == BrokerSnapshotStatus.RETIRED.value,
+                        )
+                        .with_for_update()
+                    )
+                )
+                # ACTIVE other-UBA / other-owner rows는 절대 삭제 금지
+                active_foreign = list(
+                    self._session.scalars(
+                        select(BrokerPositionSnapshotEntity).where(
+                            BrokerPositionSnapshotEntity.broker_code
+                            == broker,
+                            BrokerPositionSnapshotEntity.snapshot_status
+                            == BrokerSnapshotStatus.ACTIVE.value,
+                            BrokerPositionSnapshotEntity.user_broker_account_id.is_not(
+                                None
+                            ),
+                        )
+                    )
+                )
+                for row in active_foreign:
+                    if not legacy_adoption.matches_account(
+                        str(row.account_number or "")
+                    ):
+                        continue
+                    if int(row.user_broker_account_id) != int(uba_id):
+                        raise LegacySnapshotAdoptionRejected(
+                            "ACTIVE position bound to different UBA"
+                        )
+
+                delete_ids = [
+                    int(row.broker_position_snapshot_id)
+                    for row in legacy_rows
+                    if legacy_adoption.matches_account(
+                        str(row.account_number or "")
+                    )
+                ]
+                if delete_ids:
+                    self._session.execute(
+                        delete(BrokerPositionSnapshotEntity).where(
+                            BrokerPositionSnapshotEntity.broker_position_snapshot_id.in_(
+                                delete_ids
+                            )
+                        )
+                    )
         else:
+            # Paper / account_number exact replace (기존 계약)
             self._session.execute(
                 delete(BrokerPositionSnapshotEntity).where(
-                    BrokerPositionSnapshotEntity.broker_code
-                    == result.broker_code.upper(),
+                    BrokerPositionSnapshotEntity.broker_code == broker,
                     BrokerPositionSnapshotEntity.account_number
                     == result.account_number,
                 )
@@ -146,7 +406,7 @@ class BrokerAccountSnapshotRepository:
         for item in result.positions:
             self._session.add(
                 BrokerPositionSnapshotEntity(
-                    broker_code=result.broker_code.upper(),
+                    broker_code=broker,
                     account_number=result.account_number,
                     user_broker_account_id=(
                         int(uba_id) if uba_id else None
@@ -167,11 +427,7 @@ class BrokerAccountSnapshotRepository:
                     synchronized_at=snap_time,
                 )
             )
-
-        self._session.commit()
-        self._session.refresh(account)
-        return account
-
+        _ = paper_id  # paper_id는 account 바인딩에서만 사용
     def get_active_by_uba(
         self, user_broker_account_id: int
     ) -> tuple[

@@ -44,6 +44,9 @@ def test_live_dispatch_requires_matching_uba_broker_and_owner() -> None:
         patch(
             "stock_platform.trading.live_arm_service.LiveArmService"
         ) as Arm,
+        patch(
+            "stock_platform.order.outbox_dispatch_safety.assert_live_outbox_account_runtime_gates"
+        ),
     ):
         Guard.return_value.require_active = MagicMock()
         Arm.return_value.expire_if_needed.return_value = False

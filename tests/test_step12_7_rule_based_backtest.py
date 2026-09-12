@@ -335,6 +335,16 @@ def test_comparison_target_unsupported() -> None:
     assert r.error_code == "UNSUPPORTED_RULE_FIELD"
 
 
+def test_sma_cross_sma_comparison_target() -> None:
+    # SMA1=close. index 3에서 단기 SMA가 장기 SMA를 상향 돌파.
+    closes = [Decimal(x) for x in [20, 20, 19, 21]]
+    cache = IndicatorCache(closes)
+    rule = _rule("SMA", "CROSS_ABOVE", 0, 1, comparison_target="SMA:2")
+    r = evaluate_rule(rule, cache=cache, index=3)
+    assert r.error_code is None
+    assert r.matched is True
+
+
 # ---------------------------------------------------------------------------
 # B: Indicator
 # ---------------------------------------------------------------------------

@@ -16,6 +16,9 @@ from stock_platform.operation.upbit_opportunity_shadow.entry_policy_ab import (
 from stock_platform.operation.upbit_opportunity_shadow.entry_b1_forward_validation import (
     summarize_b1_forward_from_shadows,
 )
+from stock_platform.operation.upbit_opportunity_shadow.entry_quality_early_dump_experiment import (
+    summarize_entry_quality_experiment_from_shadows,
+)
 from stock_platform.operation.upbit_opportunity_shadow.constants import (
     SHADOW_STATUS_COMPLETED,
 )
@@ -137,6 +140,9 @@ def compute_shadow_stats(session: Session) -> dict[str, Any]:
         "entry_policy_ab": summarize_entry_ab_from_shadows(completed),
         # B1 forward validation — research fail-open (REAL 미차단)
         "entry_b1_forward_validation": summarize_b1_forward_from_shadows(
+            completed
+        ),
+        "entry_quality_early_dump_experiment": summarize_entry_quality_experiment_from_shadows(
             completed
         ),
     }

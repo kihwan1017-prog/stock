@@ -44,6 +44,19 @@ class ResumeBody(BaseModel):
     correlation_id: str = Field(min_length=1, max_length=128)
 
 
+class ResolveSelectedBody(BaseModel):
+    conflict_ids: list[int] = Field(min_length=1, max_length=200)
+    resolution: str = Field(min_length=1, max_length=60)
+    reason: str = Field(min_length=1, max_length=2000)
+    expected_status: str | None = Field(default=None, max_length=40)
+
+
+class ResolveOneBody(BaseModel):
+    resolution: str = Field(min_length=1, max_length=60)
+    reason: str = Field(min_length=1, max_length=2000)
+    expected_status: str | None = Field(default=None, max_length=40)
+
+
 def _http(exc: RecoveryConflictError) -> HTTPException:
     code = status.HTTP_400_BAD_REQUEST
     if exc.code == "conflict_not_found":
@@ -64,16 +77,30 @@ def _http(exc: RecoveryConflictError) -> HTTPException:
         "submission_unknown",
         "cancel_pending",
         "replace_pending",
+        "resume_blocked",
+        "resolve_ineligible",
+        "bulk_clear_disabled",
+        "execute_disabled",
+        "uba_mismatch",
+        "status_mismatch",
+        "EXECUTED_VOLUME_EXISTS",
+        "REMOTE_ORDER_OPEN",
+        "REMOTE_NOT_CANCEL",
+        "LOCAL_ORDER_LINKED",
+        "DUPLICATE_ACTIVE_UUID",
+        "USE_APPROVE_IMPORT_API",
     }:
         code = status.HTTP_409_CONFLICT
     elif exc.code in {
         "reason_required",
         "correlation_id_required",
+        "invalid_resolution",
+        "note_required",
     }:
         code = status.HTTP_422_UNPROCESSABLE_ENTITY
     detail: dict = {"code": exc.code, "message": exc.message}
     if getattr(exc, "detail", None):
-        # Secret 없이 retry 시각·주문 카운트만
+        # Secret 없이 안전 필드만
         safe = {
             k: v
             for k, v in exc.detail.items()
@@ -86,6 +113,11 @@ def _http(exc: RecoveryConflictError) -> HTTPException:
                 "submission_unknown",
                 "cancel_pending",
                 "replace_pending",
+                "resumable",
+                "blockers",
+                "dry_run",
+                "resume_check",
+                "user_broker_account_id",
             }
         }
         detail.update(safe)
@@ -410,3 +442,299 @@ def resume_uba_trading(
         },
     )
     return result
+
+
+@router.post("/accounts/{uba_id}/clear-conflicts")
+def clear_uba_conflicts(
+    uba_id: int,
+    body: NoteBody,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Deprecated — 일괄 Ignore 사용 중단."""
+    svc = BrokerRecoveryConflictService(session)
+    try:
+        result = svc.clear_active_conflicts_for_uba(
+            uba_id,
+            actor=f"admin:{user.user_id}",
+            note=body.note,
+        )
+        session.commit()
+    except RecoveryConflictError as exc:
+        session.rollback()
+        audit.record(
+            event_type="RECOVERY_ACCOUNT_CLEAR_CONFLICTS_REJECTED",
+            actor=f"admin:{user.user_id}",
+            request_id=getattr(request.state, "request_id", None),
+            detail={
+                "user_broker_account_id": uba_id,
+                "code": exc.code,
+                "message": exc.message,
+            },
+        )
+        raise _http(exc) from exc
+    return result
+
+
+@router.get("/accounts/{uba_id}/resume-check")
+def resume_check_uba(
+    uba_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """Resume 사전 점검 — 조회 전용, 상태 변경 없음."""
+    from stock_platform.broker.recovery_resolution_service import (
+        RecoveryResolutionService,
+    )
+
+    try:
+        kill_active = bool(KillSwitchService(session).is_active())
+    except Exception:  # noqa: BLE001
+        kill_active = True
+    return RecoveryResolutionService(session).resume_check(
+        uba_id,
+        kill_switch_active=kill_active,
+        check_remote_open_orders=True,
+    )
+
+
+@router.get("/accounts/{uba_id}/conflict-summary")
+def conflict_summary_uba(
+    uba_id: int,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    from stock_platform.broker.recovery_resolution_service import (
+        RecoveryResolutionService,
+    )
+
+    return RecoveryResolutionService(session).build_conflict_summary(
+        uba_id
+    )
+
+
+@router.post("/accounts/{uba_id}/conflicts/resolve-dry-run")
+def resolve_conflicts_dry_run(
+    uba_id: int,
+    body: ResolveSelectedBody,
+    session: Session = Depends(get_db_session),
+    _: AuthenticatedUser = Depends(require_admin),
+):
+    """선택 Conflict 처리 dry-run — DB 변경 없음."""
+    from stock_platform.broker.recovery_resolution_service import (
+        RecoveryResolutionService,
+    )
+
+    try:
+        return RecoveryResolutionService(session).dry_run_resolve(
+            uba_id,
+            conflict_ids=body.conflict_ids,
+            resolution=body.resolution,
+            reason=body.reason,
+            expected_status=body.expected_status,
+        )
+    except RecoveryConflictError as exc:
+        raise _http(exc) from exc
+
+
+@router.post("/accounts/{uba_id}/conflicts/resolve-selected")
+def resolve_conflicts_selected(
+    uba_id: int,
+    body: ResolveSelectedBody,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """선택 Conflict Resolution 실행 (feature flag 필요)."""
+    from stock_platform.broker.recovery_resolution_service import (
+        RecoveryResolutionService,
+    )
+    from stock_platform.common.settings import get_settings
+
+    execute_enabled = bool(
+        getattr(
+            get_settings(),
+            "recovery_conflict_resolve_execute_enabled",
+            False,
+        )
+    )
+    actor = f"admin:{user.user_id}"
+    try:
+        result = RecoveryResolutionService(session).resolve_selected(
+            uba_id,
+            conflict_ids=body.conflict_ids,
+            resolution=body.resolution,
+            reason=body.reason,
+            actor=actor,
+            expected_status=body.expected_status,
+            execute_enabled=execute_enabled,
+        )
+        session.commit()
+    except RecoveryConflictError as exc:
+        session.rollback()
+        audit.record(
+            event_type="RECOVERY_CONFLICT_RESOLVE_FAILED",
+            actor=actor,
+            request_id=getattr(request.state, "request_id", None),
+            detail={
+                "uba_id": uba_id,
+                "conflict_ids": body.conflict_ids,
+                "resolution": body.resolution,
+                "code": exc.code,
+                "message": exc.message,
+            },
+        )
+        raise _http(exc) from exc
+
+    for item in result.get("processed") or []:
+        audit.record(
+            event_type="RECOVERY_CONFLICT_RESOLVE",
+            actor=actor,
+            request_id=getattr(request.state, "request_id", None),
+            detail={
+                "action": "resolve_selected",
+                "admin_user_id": user.user_id,
+                "uba_id": uba_id,
+                "conflict_id": item.get("conflict_id"),
+                "previous_status": (item.get("before") or {}).get(
+                    "review_status"
+                ),
+                "new_status": (item.get("after") or {}).get(
+                    "review_status"
+                ),
+                "resolution": body.resolution,
+                "reason": body.reason[:500],
+                "before_snapshot": item.get("before"),
+                "after_snapshot": item.get("after"),
+            },
+        )
+    return result
+
+
+@router.post("/conflicts/{conflict_id}/resolve")
+def resolve_one_conflict(
+    conflict_id: int,
+    body: ResolveOneBody,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    from stock_platform.broker.recovery_resolution_service import (
+        RecoveryResolutionService,
+    )
+    from stock_platform.common.settings import get_settings
+
+    execute_enabled = bool(
+        getattr(
+            get_settings(),
+            "recovery_conflict_resolve_execute_enabled",
+            False,
+        )
+    )
+    actor = f"admin:{user.user_id}"
+    try:
+        result = RecoveryResolutionService(session).resolve_one(
+            conflict_id,
+            resolution=body.resolution,
+            reason=body.reason,
+            actor=actor,
+            expected_status=body.expected_status,
+            execute_enabled=execute_enabled,
+        )
+        session.commit()
+    except RecoveryConflictError as exc:
+        session.rollback()
+        raise _http(exc) from exc
+
+    for item in result.get("processed") or []:
+        audit.record(
+            event_type="RECOVERY_CONFLICT_RESOLVE",
+            actor=actor,
+            request_id=getattr(request.state, "request_id", None),
+            detail={
+                "action": "resolve_one",
+                "admin_user_id": user.user_id,
+                "uba_id": result.get("uba_id"),
+                "conflict_id": item.get("conflict_id"),
+                "previous_status": (item.get("before") or {}).get(
+                    "review_status"
+                ),
+                "new_status": (item.get("after") or {}).get(
+                    "review_status"
+                ),
+                "resolution": body.resolution,
+                "reason": body.reason[:500],
+                "before_snapshot": item.get("before"),
+                "after_snapshot": item.get("after"),
+            },
+        )
+    return result
+
+
+@router.post("/accounts/{uba_id}/unlock")
+def unlock_uba_account(
+    uba_id: int,
+    body: NoteBody,
+    request: Request,
+    user: AuthenticatedUser = Depends(require_admin),
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Risk account_paused 해제 — Unlock Account."""
+    from stock_platform.risk_engine.user_risk_service import (
+        RiskSettingValidationError,
+        UserRiskSettingService,
+    )
+    from stock_platform.trading.account_models import UserBrokerAccount
+
+    uba = session.get(UserBrokerAccount, int(uba_id))
+    if uba is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User broker account not found",
+        )
+    risk_svc = UserRiskSettingService(session)
+    before = risk_svc.snapshot_account(uba_id)
+    try:
+        risk_svc.upsert_account(
+            uba_id,
+            {"account_paused": False},
+            actor=f"admin:{user.user_id}",
+        )
+        session.commit()
+    except RiskSettingValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+    after = risk_svc.snapshot_account(uba_id)
+    audit.record(
+        event_type="RECOVERY_ACCOUNT_UNLOCK",
+        actor=f"admin:{user.user_id}",
+        request_id=getattr(request.state, "request_id", None),
+        detail={
+            "user_broker_account_id": uba_id,
+            "note": body.note[:200],
+            "before_account_paused": (
+                (before or {}).get("account_paused")
+                if isinstance(before, dict)
+                else None
+            ),
+            "after_account_paused": (
+                (after or {}).get("account_paused")
+                if isinstance(after, dict)
+                else None
+            ),
+        },
+    )
+    return {
+        "user_broker_account_id": uba_id,
+        "account_paused": False,
+        "note": body.note,
+    }

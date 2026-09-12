@@ -728,11 +728,54 @@ class BrokerRecoveryManager:
             finally:
                 self._running = False
 
+    async def recover_startup_state_only(
+        self,
+        *,
+        actor: str = "STARTUP",
+    ) -> dict[str, Any]:
+        """Startup 전용 — broker recover_all / adapter 호출 금지.
+
+        TTL 만료 account_state RUNNING orphan 만 local finalize 한다.
+        historical recovery_run RUNNING 행은 건드리지 않는다.
+        """
+
+        started = datetime.now(timezone.utc)
+        session = get_session_factory()()
+        try:
+            summary = RecoveryAccountLockService(
+                session
+            ).finalize_expired_orphan_states(actor=actor)
+            session.commit()
+            result = {
+                "success": True,
+                "trigger_type": "STARTUP_STATE_ONLY",
+                "requested_by": actor,
+                "started_at": started.isoformat(),
+                "finished_at": datetime.now(timezone.utc).isoformat(),
+                "recover_all_called": False,
+                "broker_adapter_calls": 0,
+                "account_count": 0,
+                "accounts": [],
+                "orphan_finalization": summary,
+            }
+            self._last_result = result
+            self._last_error = None
+            return result
+        except Exception as exc:
+            session.rollback()
+            self._last_error = str(exc)
+            raise
+        finally:
+            session.close()
+
     async def recover(self) -> dict[str, Any]:
         """레거시 호환: 키움 시스템 경로 + 통합 계좌 복구.
 
         기존 BrokerRecoveryService(키움 단계)를 먼저 실행한 뒤
         발견된 전 계좌 Adapter 복구를 수행한다.
+
+        NOTE: Application startup 은 ``recover_startup_state_only`` 를 사용한다.
+        본 메서드는 Admin/legacy ``/api/v1/broker/recovery/run`` 등 명시 호출용.
         """
 
         async with self._global_lock:
@@ -790,7 +833,7 @@ class BrokerRecoveryManager:
                 session.close()
                 self._running = False
 
-        # 통합 계좌 복구 (글로벌 락 재진입)
+        # 통합 계좌 복구 (글로벌 락 재진입) — manual/legacy only
         unified = await self.recover_all(
             trigger_type="LEGACY_COMPAT",
             requested_by="broker_recovery_manager.recover",

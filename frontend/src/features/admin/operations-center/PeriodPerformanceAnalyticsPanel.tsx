@@ -171,7 +171,14 @@ export function PeriodPerformanceAnalyticsPanel({
   const fees = summary.periodFees;
   const gross = summary.periodGrossPnl;
   const pf = summary.periodProfitFactor;
-  const symbolRows = extractRows(data.symbol_performance).map((r) => rec(r));
+  // 매수 건수 내림차순 (동점이면 순손익 오름차순으로 안정 정렬)
+  const symbolRows = extractRows(data.symbol_performance)
+    .map((r) => rec(r))
+    .sort((a, b) => {
+      const buyDiff = Number(b.buy_count ?? 0) - Number(a.buy_count ?? 0);
+      if (buyDiff !== 0) return buyDiff;
+      return Number(a.net_pnl ?? 0) - Number(b.net_pnl ?? 0);
+    });
   const totals = rec(data.symbol_performance_totals);
   const recent = extractRows(data.recent_closed_trades).map((r) => rec(r));
   const lowSample = data.low_sample_warning === true;
@@ -207,7 +214,14 @@ export function PeriodPerformanceAnalyticsPanel({
         width: 90,
         render: (v) => (v ? String(v) : "—"),
       },
-      { title: "매수", dataIndex: "buy_count", sorter: (a, b) => Number(a.buy_count) - Number(b.buy_count), width: 64 },
+      {
+        title: "매수",
+        dataIndex: "buy_count",
+        // 기본: 매수 건수 많은 종목부터
+        defaultSortOrder: "descend",
+        sorter: (a, b) => Number(a.buy_count) - Number(b.buy_count),
+        width: 64,
+      },
       { title: "매도", dataIndex: "sell_count", width: 64 },
       { title: "RT", dataIndex: "round_trip_count", width: 56 },
       {
@@ -237,7 +251,6 @@ export function PeriodPerformanceAnalyticsPanel({
       {
         title: "순손익",
         dataIndex: "net_pnl",
-        defaultSortOrder: "ascend",
         sorter: (a, b) => Number(a.net_pnl) - Number(b.net_pnl),
         render: (v) => (
           <span style={{ color: pnlColor(num(v)) }}>{formatKrw(num(v), 0)}</span>

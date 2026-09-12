@@ -55,7 +55,7 @@ def test_build_combines_news_and_disclosures() -> None:
     assert len(result["news"]) == 1
     assert len(result["disclosures"]) == 1
     assert result["metadata"]["symbol"] == "005930"
-    assert result["metadata"]["prompt_version"] == "context-v2"
+    assert result["metadata"]["prompt_version"] == "context-v3"
 
 
 def test_upbit_does_not_query_dart() -> None:

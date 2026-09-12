@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+# reload: UPBIT LIVE execution start contract
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 

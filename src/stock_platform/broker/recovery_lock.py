@@ -200,6 +200,51 @@ class RecoveryAccountLockService:
             )
         )
 
+    def finalize_expired_orphan_states(
+        self,
+        *,
+        actor: str = "STARTUP",
+        now: datetime | None = None,
+        broker_codes: list[str] | None = None,
+    ) -> dict[str, int]:
+        """TTL 만료된 account_state RUNNING orphan 만 local finalize.
+
+        broker API / recover_all / recovery_run 테이블은 건드리지 않는다.
+        trading_paused 는 True 유지 (fail-closed).
+        broker_codes 가 있으면 해당 broker 만 (scheduler periodic scope).
+        """
+
+        current = now or datetime.now(timezone.utc)
+        stmt = select(BrokerRecoveryAccountStateEntity).where(
+            BrokerRecoveryAccountStateEntity.recovery_status == "RUNNING",
+            BrokerRecoveryAccountStateEntity.lock_expires_at.is_not(None),
+            BrokerRecoveryAccountStateEntity.lock_expires_at <= current,
+        )
+        if broker_codes:
+            codes = [str(c).upper() for c in broker_codes if c]
+            if codes:
+                stmt = stmt.where(
+                    BrokerRecoveryAccountStateEntity.broker_code.in_(codes)
+                )
+        rows = list(self._session.scalars(stmt))
+        finalized = 0
+        for row in rows:
+            row.recovery_status = "FAILED"
+            row.trading_paused = True
+            row.lock_holder = None
+            row.lock_expires_at = None
+            row.last_error_summary = (
+                f"orphan_lock_expired:{actor}"
+            )[:500]
+            row.updated_at = current
+            finalized += 1
+        if finalized:
+            self._session.flush()
+        return {
+            "scanned_expired_running": len(rows),
+            "finalized": finalized,
+        }
+
 
 def raise_if_recovery_paused(
     session: Session,

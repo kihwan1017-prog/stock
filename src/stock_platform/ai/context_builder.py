@@ -24,7 +24,7 @@ from stock_platform.screener.run_repository import (
 class CandidateContextBuilder:
     """가격·지표·후보점수·뉴스·공시를 AI 컨텍스트로 결합한다."""
 
-    PROMPT_VERSION = "context-v2"
+    PROMPT_VERSION = "context-v3"
     MAX_NEWS = 8
     MAX_DISCLOSURES = 8
     MAX_CHARS = 6000

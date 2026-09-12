@@ -1,0 +1,18 @@
+{
+  "step": "K-B",
+  "verdict": "KIWOOM_P0_2_READY_WITH_LIMITATIONS",
+  "P0_2_SCOPE_CONFIRMED": true,
+  "KIWOOM_POSITION_WRITE_READY": true,
+  "SHARED_CHANGE_REQUIRED": false,
+  "KIWOOM_LIVE_READY": false,
+  "files": [
+    "src/stock_platform/broker/kiwoom/fill_position_write.py",
+    "src/stock_platform/broker/kiwoom/ws_manager.py",
+    "src/stock_platform/broker/kiwoom/mock_gateway.py",
+    "src/stock_platform/broker/kiwoom/recovery.py",
+    "tests/test_kiwoom_p0_2_position_write.py"
+  ],
+  "next_k_step": "KIWOOM_CREDENTIAL_UBA_ALIGNMENT",
+  "commit": false,
+  "push": false
+}

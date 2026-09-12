@@ -872,7 +872,7 @@ class AIRecommendationQueueService:
                 "INVALID_STATE", f"cannot decide from {row.queue_status}"
             )
 
-        if is_expired(row.expires_at):
+        if is_expired(expires_at=row.expires_at):
             raise AIRecommendationQueueError(
                 "EXPIRED", "만료된 Queue는 승인할 수 없습니다"
             )

@@ -23,6 +23,21 @@ def test_pending_order_mapping():
     assert result.remaining_quantity == Decimal("7")
 
 
+def test_pending_order_price_strips_kiwoom_sign() -> None:
+    result = KiwoomInquiryMapper.pending_order(
+        {
+            "ord_no": "101",
+            "stk_cd": "009240",
+            "ord_qty": "1",
+            "cntr_qty": "0",
+            "oso_qty": "1",
+            "ord_pric": "-40200",
+        }
+    )
+    assert result.order_price == Decimal("40200")
+    assert result.order_quantity == Decimal("1")
+
+
 def test_execution_mapping():
     result = KiwoomInquiryMapper.execution(
         {

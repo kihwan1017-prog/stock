@@ -185,8 +185,11 @@ class RealtimeMarketDataHub:
             exchange_code=exchange,
             price=quote.trade_price,
             volume=quote.trade_volume,
+            bid=quote.bid,
+            ask=quote.ask,
             change_rate=quote.change_rate,
             raw_sequence=None,
+            source_code=quote.source_code,
         )
 
     def status(self) -> dict[str, Any]:
