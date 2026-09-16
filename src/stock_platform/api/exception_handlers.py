@@ -9,8 +9,13 @@ from fastapi.responses import JSONResponse
 
 from stock_platform.ai.ollama_client import OllamaError
 from stock_platform.broker.exceptions import BrokerError
-from stock_platform.brokers.kiwoom.exceptions import KiwoomError
-from stock_platform.brokers.upbit.exceptions import UpbitError
+from stock_platform.broker.kiwoom.market.exceptions import KiwoomError
+from stock_platform.broker.upbit.exceptions import UpbitError
+from stock_platform.common.error_catalog import (
+    ERROR_CATALOG,
+    error_envelope,
+    resolve_error_code,
+)
 from stock_platform.common.exceptions import (
     DomainError,
     sanitize_error_message,
@@ -22,11 +27,49 @@ from stock_platform.news.naver_client import NaverNewsError
 
 logger = logging.getLogger(__name__)
 
+# HTTP status → 카탈로그 코드 (HTTP_* 남발 방지)
+_STATUS_TO_CODE: dict[int, str] = {
+    400: "DOMAIN_ERROR",
+    401: "UNAUTHORIZED",
+    403: "FORBIDDEN",
+    404: "NOT_FOUND",
+    409: "CONFLICT",
+    422: "VALIDATION_ERROR",
+    429: "RATE_LIMITED",
+    500: "INTERNAL_ERROR",
+    502: "EXTERNAL_API_ERROR",
+}
+
 
 def _request_id(request: Request) -> str:
     return request.headers.get(
         "X-Request-ID",
         str(uuid.uuid4()),
+    )
+
+
+def _code_for_status(status_code: int, fallback: str | None = None) -> str:
+    if status_code in _STATUS_TO_CODE:
+        return _STATUS_TO_CODE[status_code]
+    if fallback and fallback in ERROR_CATALOG:
+        return fallback
+    return f"HTTP_{status_code}"
+
+
+def _log_external_failure(
+    *,
+    request: Request,
+    code: str,
+    exc: BaseException,
+) -> None:
+    """외부/브로커 오류는 서버 로그에만 원문(가능하면)을 남긴다."""
+
+    logger.warning(
+        "external_api_error code=%s path=%s exc_type=%s message=%s",
+        code,
+        request.url.path,
+        type(exc).__name__,
+        sanitize_error_message(str(exc)),
     )
 
 
@@ -38,15 +81,21 @@ def _error_response(
     message: str,
     detail: dict | list | str | None = None,
 ) -> JSONResponse:
-    return JSONResponse(
-        status_code=status_code,
-        content={
-            "code": code,
-            "message": sanitize_error_message(message),
-            "detail": detail,
-            "request_id": _request_id(request),
-        },
+    safe_message = sanitize_error_message(message)
+    safe_detail = detail
+    if isinstance(detail, str):
+        safe_detail = sanitize_error_message(detail)
+    # Envelope + 레거시 top-level 필드 병행 (FE 호환)
+    body = error_envelope(
+        code=code,
+        message=safe_message,
+        request_id=_request_id(request),
+        detail=safe_detail,
     )
+    body["code"] = code
+    body["message"] = safe_message
+    body["detail"] = safe_detail
+    return JSONResponse(status_code=status_code, content=body)
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -55,10 +104,11 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: DomainError,
     ) -> JSONResponse:
+        code = resolve_error_code(exc.code, fallback="DOMAIN_ERROR")
         return _error_response(
             request=request,
             status_code=exc.status_code,
-            code=exc.code,
+            code=code,
             message=exc.message,
             detail=exc.detail,
         )
@@ -68,10 +118,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: BrokerError,
     ) -> JSONResponse:
+        code = "BROKER_ERROR"
+        _log_external_failure(request=request, code=code, exc=exc)
         return _error_response(
             request=request,
             status_code=502,
-            code="BROKER_ERROR",
+            code=code,
             message=str(exc),
         )
 
@@ -80,10 +132,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: KiwoomError,
     ) -> JSONResponse:
+        code = "KIWOOM_API_ERROR"
+        _log_external_failure(request=request, code=code, exc=exc)
         return _error_response(
             request=request,
             status_code=502,
-            code="KIWOOM_API_ERROR",
+            code=code,
             message=str(exc),
         )
 
@@ -92,10 +146,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: UpbitError,
     ) -> JSONResponse:
+        code = "UPBIT_API_ERROR"
+        _log_external_failure(request=request, code=code, exc=exc)
         return _error_response(
             request=request,
             status_code=502,
-            code="UPBIT_API_ERROR",
+            code=code,
             message=str(exc),
         )
 
@@ -104,10 +160,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: DartError,
     ) -> JSONResponse:
+        code = "DART_API_ERROR"
+        _log_external_failure(request=request, code=code, exc=exc)
         return _error_response(
             request=request,
             status_code=502,
-            code="DART_API_ERROR",
+            code=code,
             message=str(exc),
         )
 
@@ -116,10 +174,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: OllamaError,
     ) -> JSONResponse:
+        code = "OLLAMA_API_ERROR"
+        _log_external_failure(request=request, code=code, exc=exc)
         return _error_response(
             request=request,
             status_code=502,
-            code="OLLAMA_API_ERROR",
+            code=code,
             message=str(exc),
         )
 
@@ -128,10 +188,12 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: NaverNewsError,
     ) -> JSONResponse:
+        code = "NAVER_API_ERROR"
+        _log_external_failure(request=request, code=code, exc=exc)
         return _error_response(
             request=request,
             status_code=502,
-            code="NAVER_API_ERROR",
+            code=code,
             message=str(exc),
         )
 
@@ -144,7 +206,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             request=request,
             status_code=422,
             code="VALIDATION_ERROR",
-            message="Request validation failed",
+            message=ERROR_CATALOG["VALIDATION_ERROR"]["message"],
             detail=exc.errors(),
         )
 
@@ -157,13 +219,34 @@ def register_exception_handlers(app: FastAPI) -> None:
         if isinstance(detail, str):
             message = detail
             body_detail: dict | list | str | None = None
+            code = _code_for_status(exc.status_code)
+        elif isinstance(detail, dict):
+            body_detail = detail
+            message = str(
+                detail.get("message")
+                or detail.get("error_code")
+                or detail.get("code")
+                or ERROR_CATALOG.get(
+                    _code_for_status(exc.status_code),
+                    {},
+                ).get("message", "HTTP error")
+            )
+            code = str(
+                detail.get("error_code")
+                or detail.get("code")
+                or _code_for_status(exc.status_code)
+            )
         else:
-            message = "HTTP error"
+            message = ERROR_CATALOG.get(
+                _code_for_status(exc.status_code),
+                {},
+            ).get("message", "HTTP error")
             body_detail = detail  # type: ignore[assignment]
+            code = _code_for_status(exc.status_code)
         return _error_response(
             request=request,
             status_code=exc.status_code,
-            code=f"HTTP_{exc.status_code}",
+            code=code,
             message=message,
             detail=body_detail,
         )
@@ -185,7 +268,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             "unhandled_exception",
             extra={"path": str(request.url.path)},
         )
-        message = "Internal server error"
+        message = ERROR_CATALOG["INTERNAL_ERROR"]["message"]
         detail: str | None = None
         if not get_settings().is_production_env:
             detail = sanitize_error_message(str(exc))

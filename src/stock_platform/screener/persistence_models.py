@@ -14,7 +14,8 @@ from stock_platform.database.base import Base
 class CandidateRun(Base):
     __tablename__ = "candidate_run"
     __table_args__ = (
-        UniqueConstraint("exchange_code", "as_of_date", "run_type", name="uq_candidate_run_exchange_date_type"),
+        # DAILY partial unique: migration ad4e5f6a7b8c (uq_candidate_run_daily_exchange_date)
+        # AI_REVIEW_PROMOTION runs may coexist per exchange/date.
         {"schema": "strategy"},
     )
 

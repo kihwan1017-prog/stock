@@ -1,0 +1,449 @@
+{
+  "summary": {
+    "n": 47,
+    "before": {
+      "WOULD_PASS": 13,
+      "WOULD_DEFER": 34,
+      "DEFER_RATE": 0.7234
+    },
+    "after_sim_upsert": {
+      "WOULD_PASS": 47,
+      "WOULD_DEFER": 0,
+      "DEFER_RATE": 0.0
+    },
+    "absent_confirmed_rows": 34,
+    "absent_confirmed_minutes": 503,
+    "db_missing_source_present_rows": 0,
+    "db_missing_source_present_minutes": 0,
+    "source_unavailable_rows": 0,
+    "total_requests_est": 47,
+    "defer_rate_delta": 0.7234,
+    "historical_db_mutation": 0,
+    "note": "after assumes successful upsert of DB_MISSING_SOURCE_PRESENT (dry; no DB write)"
+  },
+  "rows": [
+    {
+      "shadow_id": 22,
+      "symbol": "KRW-ONDO",
+      "before_unresolved": 3,
+      "after_unresolved_sim": 0,
+      "absent": 3,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 1,
+      "symbol": "KRW-VIRTUAL",
+      "before_unresolved": 10,
+      "after_unresolved_sim": 0,
+      "absent": 10,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 2,
+      "symbol": "KRW-SOL",
+      "before_unresolved": 6,
+      "after_unresolved_sim": 0,
+      "absent": 6,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 27,
+      "symbol": "KRW-RE",
+      "before_unresolved": 5,
+      "after_unresolved_sim": 0,
+      "absent": 5,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 41,
+      "symbol": "KRW-XRP",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 5,
+      "symbol": "KRW-ONDO",
+      "before_unresolved": 2,
+      "after_unresolved_sim": 0,
+      "absent": 2,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 43,
+      "symbol": "KRW-CAP",
+      "before_unresolved": 4,
+      "after_unresolved_sim": 0,
+      "absent": 4,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 25,
+      "symbol": "KRW-BTC",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 26,
+      "symbol": "KRW-MOVE",
+      "before_unresolved": 27,
+      "after_unresolved_sim": 0,
+      "absent": 27,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 39,
+      "symbol": "KRW-ETH",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 42,
+      "symbol": "KRW-SOL",
+      "before_unresolved": 2,
+      "after_unresolved_sim": 0,
+      "absent": 2,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 30,
+      "symbol": "KRW-BTC",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 7,
+      "symbol": "KRW-VIRTUAL",
+      "before_unresolved": 5,
+      "after_unresolved_sim": 0,
+      "absent": 5,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 3,
+      "symbol": "KRW-DOGE",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 8,
+      "symbol": "KRW-ELF",
+      "before_unresolved": 24,
+      "after_unresolved_sim": 0,
+      "absent": 24,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 28,
+      "symbol": "KRW-KAITO",
+      "before_unresolved": 5,
+      "after_unresolved_sim": 0,
+      "absent": 5,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 9,
+      "symbol": "KRW-BTC",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 31,
+      "symbol": "KRW-WLD",
+      "before_unresolved": 28,
+      "after_unresolved_sim": 0,
+      "absent": 28,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 40,
+      "symbol": "KRW-BTC",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 36,
+      "symbol": "KRW-ID",
+      "before_unresolved": 22,
+      "after_unresolved_sim": 0,
+      "absent": 22,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 11,
+      "symbol": "KRW-SOL",
+      "before_unresolved": 1,
+      "after_unresolved_sim": 0,
+      "absent": 1,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 12,
+      "symbol": "KRW-KAITO",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 14,
+      "symbol": "KRW-WLD",
+      "before_unresolved": 16,
+      "after_unresolved_sim": 0,
+      "absent": 16,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 13,
+      "symbol": "KRW-MOVE",
+      "before_unresolved": 14,
+      "after_unresolved_sim": 0,
+      "absent": 14,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 15,
+      "symbol": "KRW-HOLO",
+      "before_unresolved": 22,
+      "after_unresolved_sim": 0,
+      "absent": 22,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 37,
+      "symbol": "KRW-MOVE",
+      "before_unresolved": 20,
+      "after_unresolved_sim": 0,
+      "absent": 20,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 20,
+      "symbol": "KRW-VIRTUAL",
+      "before_unresolved": 17,
+      "after_unresolved_sim": 0,
+      "absent": 17,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 45,
+      "symbol": "KRW-RE",
+      "before_unresolved": 14,
+      "after_unresolved_sim": 0,
+      "absent": 14,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 46,
+      "symbol": "KRW-MMT",
+      "before_unresolved": 31,
+      "after_unresolved_sim": 0,
+      "absent": 31,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 16,
+      "symbol": "KRW-RE",
+      "before_unresolved": 15,
+      "after_unresolved_sim": 0,
+      "absent": 15,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 44,
+      "symbol": "KRW-DOS",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 47,
+      "symbol": "KRW-AVNT",
+      "before_unresolved": 8,
+      "after_unresolved_sim": 0,
+      "absent": 8,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 17,
+      "symbol": "KRW-AVNT",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 18,
+      "symbol": "KRW-ID",
+      "before_unresolved": 6,
+      "after_unresolved_sim": 0,
+      "absent": 6,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 48,
+      "symbol": "KRW-HOME",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 19,
+      "symbol": "KRW-RE",
+      "before_unresolved": 8,
+      "after_unresolved_sim": 0,
+      "absent": 8,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 32,
+      "symbol": "KRW-ETH",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 34,
+      "symbol": "KRW-ONDO",
+      "before_unresolved": 34,
+      "after_unresolved_sim": 0,
+      "absent": 34,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 49,
+      "symbol": "KRW-GRVT",
+      "before_unresolved": 37,
+      "after_unresolved_sim": 0,
+      "absent": 37,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 38,
+      "symbol": "KRW-WLD",
+      "before_unresolved": 20,
+      "after_unresolved_sim": 0,
+      "absent": 20,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 21,
+      "symbol": "KRW-ETH",
+      "before_unresolved": 0,
+      "after_unresolved_sim": 0,
+      "absent": 0,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 33,
+      "symbol": "KRW-DOGE",
+      "before_unresolved": 33,
+      "after_unresolved_sim": 0,
+      "absent": 33,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 50,
+      "symbol": "KRW-SHIB",
+      "before_unresolved": 22,
+      "after_unresolved_sim": 0,
+      "absent": 22,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 23,
+      "symbol": "KRW-SOL",
+      "before_unresolved": 3,
+      "after_unresolved_sim": 0,
+      "absent": 3,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 24,
+      "symbol": "KRW-WLD",
+      "before_unresolved": 1,
+      "after_unresolved_sim": 0,
+      "absent": 1,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 29,
+      "symbol": "KRW-RE",
+      "before_unresolved": 14,
+      "after_unresolved_sim": 0,
+      "absent": 14,
+      "db_missing_source_present": 0,
+      "requests": 1
+    },
+    {
+      "shadow_id": 35,
+      "symbol": "KRW-ID",
+      "before_unresolved": 24,
+      "after_unresolved_sim": 0,
+      "absent": 24,
+      "db_missing_source_present": 0,
+      "requests": 1
+    }
+  ]
+}

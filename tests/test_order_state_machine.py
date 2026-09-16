@@ -6,6 +6,7 @@ from stock_platform.order.state_models import InvalidOrderStateTransition
 @pytest.mark.parametrize(('current','target'), [
     (OrderStatus.CREATED, OrderStatus.PENDING),
     (OrderStatus.PENDING, OrderStatus.SENT),
+    (OrderStatus.PENDING, OrderStatus.CANCELLED),
     (OrderStatus.SENT, OrderStatus.ACCEPTED),
     (OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED),
     (OrderStatus.ACCEPTED, OrderStatus.FILLED),
@@ -14,6 +15,10 @@ from stock_platform.order.state_models import InvalidOrderStateTransition
     (OrderStatus.CANCEL_REQUESTED, OrderStatus.CANCELLED),
     (OrderStatus.ACCEPTED, OrderStatus.REPLACE_REQUESTED),
     (OrderStatus.REPLACE_REQUESTED, OrderStatus.REPLACED),
+    # 브로커 증거 기반 FAILED 복구
+    (OrderStatus.FAILED, OrderStatus.FILLED),
+    (OrderStatus.FAILED, OrderStatus.CANCELLED),
+    (OrderStatus.FAILED, OrderStatus.ACCEPTED),
 ])
 def test_valid_transitions(current, target):
     assert OrderStateMachine.can_transition(current, target)

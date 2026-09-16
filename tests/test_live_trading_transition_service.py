@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -9,6 +10,7 @@ from stock_platform.common.settings import get_settings
 
 
 def _configure_live_ready_env(monkeypatch) -> None:
+    monkeypatch.setenv("GLOBAL_LIVE_ORDER_ENABLED", "true")
     monkeypatch.setenv("KIWOOM_USE_MOCK", "false")
     monkeypatch.setenv("KIWOOM_LIVE_ORDER_ENABLED", "true")
     monkeypatch.setenv("KIWOOM_ACCOUNT_NUMBER", "123456")
@@ -32,6 +34,7 @@ def test_validate_blocks_large_order(monkeypatch) -> None:
     service = LiveTradingTransitionService.__new__(
         LiveTradingTransitionService
     )
+    service._session = MagicMock()
 
     plan = service.validate(
         max_order_amount=Decimal("200000"),
@@ -48,6 +51,7 @@ def test_validate_passes_safe_initial_limits(monkeypatch) -> None:
     service = LiveTradingTransitionService.__new__(
         LiveTradingTransitionService
     )
+    service._session = MagicMock()
 
     plan = service.validate(
         max_order_amount=Decimal("10000"),

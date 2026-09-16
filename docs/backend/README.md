@@ -9,6 +9,7 @@ FastAPI 백엔드 API 진입점과 운영·주문·리스크 API 요약을 제�
 | 문서 | 설명 |
 |------|------|
 | [API.md](API.md) | API 요약 표 |
+| [NOTIFICATION_KOREAN_TEMPLATE_PLATFORM.md](NOTIFICATION_KOREAN_TEMPLATE_PLATFORM.md) | 한글 알림 템플릿 플랫폼 (Telegram, no-LLM) |
 | [../manual/API사용매뉴얼.md](../manual/API사용매뉴얼.md) | 전체 엔드포인트·권한·예제 |
 
 상세 스키마: OpenAPI `http://127.0.0.1:8000/docs`  

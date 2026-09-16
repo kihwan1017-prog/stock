@@ -1,0 +1,53 @@
+{
+  "mode": "READ_ONLY_PRECHECK",
+  "date": "2026-08-15",
+  "final_verdict": "PATH_COMPLETENESS_GATE_BLOCKED_BY_SOURCE_RECONCILIATION",
+  "PATH_QUALITY_REUSABLE_FOR_GATE": "YES",
+  "COV_B_CAN_GATE_WITH_CURRENT_COV_A_EVIDENCE": "NO",
+  "COV_B_BLOCKED_BY_COV_C": true,
+  "PATH_GATE_CANDIDATE": "unresolved_missing==0 AND source_unavailable==false",
+  "PATH_GATE_DETERMINISTIC": true,
+  "PATH_GATE_FALSE_DEFER_RISK": "HIGH",
+  "COMPLETED_MUTATION": {
+    "file": "operation/upbit_opportunity_shadow/evaluator.py",
+    "function": "_apply_timeseries",
+    "condition": "evaluated_60m_at is not None AND status==ACTIVE",
+    "gate_insert": "before_COMPLETED_assignment_after_path_quality_detail_write"
+  },
+  "TARGET_FINALIZATION_GATE_KEEP": true,
+  "dry": {
+    "n": 47,
+    "WOULD_PASS": 13,
+    "WOULD_DEFER": 34,
+    "WOULD_DEFER_RATE": 0.7234,
+    "unresolved_eq_0": 13,
+    "unresolved_gt_0": 34,
+    "source_unavailable_count": 0,
+    "source_absent_confirmed_rows": 14,
+    "source_absent_confirmed_total_minutes": 22
+  },
+  "ACTIVE_DETAIL_WRITE_SUPPORTED": true,
+  "SCHEMA_CHANGE_REQUIRED": false,
+  "defer_write_strategy": "OPTION_A_ACTIVE_DETAIL_UPDATE",
+  "AUTOMATIC_RETRY_SUPPORTED": "YES",
+  "INFINITE_DEFER_RISK": true,
+  "recommended_option": "OPTION_C_COV_C_FIRST",
+  "recommended_order": "COV-C then COV-B",
+  "CURRENT_TP": 6.0,
+  "TP_ANALYSIS_STATUS": "FROZEN_PENDING_COVERAGE_REMEDIATION",
+  "OOS": "NOT_STARTED",
+  "news_baseline": {
+    "MATCHED": "2/20",
+    "NO_NEWS": "22/20",
+    "status": "NEWS_AB_SAMPLE_ACCUMULATING"
+  },
+  "mutations": {
+    "production": 0,
+    "db": 0,
+    "trading": 0,
+    "live_arm_scheduler": 0,
+    "commit_push": 0
+  },
+  "next_step_exactly_one": "COV-C — SOURCE ABSENCE / SOFT-SYNC RECONCILIATION",
+  "look_ahead_violation": 0
+}

@@ -1,0 +1,56 @@
+"""Exit Order Recovery Shadow Lab V1 — research constants (REAL policy 불변)."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+LAB_ID = "EXIT_ORDER_RECOVERY_SHADOW_LAB_V1"
+RULE_VERSION = "exit_order_recovery_shadow_v1"
+MARKET_UPBIT = "UPBIT"
+RESEARCH_ONLY_LABEL = "RESEARCH_ONLY"
+
+FEATURE_KEY = "upbit_exit_order_recovery_shadow"
+# seed — get_or_create_feature_epoch가 기존 row 유지 (IMMUTABLE)
+FEATURE_DEPLOY_EPOCH = datetime(2026, 9, 1, 13, 50, 0, tzinfo=timezone.utc)
+FEATURE_DEPLOY_EPOCH_SOURCE = "wrk_20260901_exit_order_recovery_shadow_lab_v1"
+
+VARIANT_R0 = "R0"
+VARIANT_R1 = "R1"
+VARIANT_R2 = "R2"
+VARIANT_R3 = "R3"
+ALL_VARIANTS = (VARIANT_R0, VARIANT_R1, VARIANT_R2, VARIANT_R3)
+SHADOW_ACTION_VARIANTS = (VARIANT_R1, VARIANT_R2, VARIANT_R3)
+
+# R0 = REAL baseline (관측만)
+# R1 = 30m best-bid reprice (shadow only)
+R1_TRIGGER_AGE_SECONDS = 1800.0
+# R2 = 60m best-bid reprice
+R2_TRIGGER_AGE_SECONDS = 3600.0
+# R3 = 60m MARKET fallback
+R3_TRIGGER_AGE_SECONDS = 3600.0
+
+# R4 optional — V1 deferred (complexity)
+R4_INCLUDED = False
+
+COHORT_PRIMARY_FORWARD = "PRIMARY_FORWARD"
+COHORT_HISTORICAL_CONTEXT = "HISTORICAL_CONTEXT_ONLY"
+
+STATUS_ACTIVE = "ACTIVE"
+STATUS_TRIGGERED = "TRIGGERED"
+STATUS_PAIRED = "PAIRED"
+STATUS_UNRESOLVED = "UNRESOLVED"
+
+ACTION_NO_ACTION = "NO_ACTION"
+ACTION_REPRICE_BEST_BID = "REPRICE_BEST_BID"
+ACTION_MARKET_FALLBACK = "MARKET_FALLBACK"
+
+EVIDENCE_HIGH = "HIGH"
+EVIDENCE_MEDIUM = "MEDIUM"
+EVIDENCE_LOW = "LOW"
+
+EARLY_REVIEW_N = 20
+PRIMARY_REVIEW_N = 30
+PROMOTION_REVIEW_N = 50
+
+# Upbit KRW taker fee estimate (research only)
+EST_TAKER_FEE_RATE = 0.0005

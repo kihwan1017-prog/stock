@@ -24,6 +24,11 @@ def test_require_admin_rejects_when_key_empty(monkeypatch) -> None:
 
 def test_ensure_admin_api_key_required_in_production() -> None:
     settings = Settings(
+        _env_file=None,
+        db_host="localhost",
+        db_name="stock_platform",
+        db_user="stock_app",
+        db_password="test",
         app_env="production",
         admin_api_key="",
         jwt_secret="test-secret-at-least-32-chars-long!!",
@@ -34,6 +39,11 @@ def test_ensure_admin_api_key_required_in_production() -> None:
 
 def test_ensure_admin_api_key_optional_in_local() -> None:
     settings = Settings(
+        _env_file=None,
+        db_host="localhost",
+        db_name="stock_platform",
+        db_user="stock_app",
+        db_password="test",
         app_env="local",
         admin_api_key="",
         jwt_secret="test-secret-at-least-32-chars-long!!",

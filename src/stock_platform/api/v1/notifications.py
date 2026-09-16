@@ -26,18 +26,18 @@ router = APIRouter(
 
 class NotificationTestRequest(BaseModel):
     title: str = Field(
-        default="Stock Platform 테스트 알림",
+        default="🧪 알림 전송 테스트",
         min_length=1,
         max_length=200,
     )
     message: str = Field(
-        default="Telegram과 Slack 알림 연결 테스트입니다.",
+        default="이 메시지는 테스트용입니다. 실주문이 아닙니다.",
         min_length=1,
         max_length=1000,
     )
     detail: dict = {}
     event_type: str = Field(
-        default=NotificationEventType.SYSTEM_START.value,
+        default=NotificationEventType.TEST_NOTIFICATION.value,
         min_length=1,
         max_length=64,
     )

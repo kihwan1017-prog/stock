@@ -10,7 +10,7 @@ from stock_platform.ai.ollama_client import OllamaClient
 from stock_platform.ai.orchestration_service import (
     CandidateAnalysisOrchestrator,
 )
-from stock_platform.brokers.upbit.client import (
+from stock_platform.broker.upbit.market.client import (
     UpbitQuotationClient,
 )
 from stock_platform.collectors.upbit.batch_daily_sync_service import (
@@ -24,6 +24,19 @@ from stock_platform.collectors.upbit.instrument_sync_service import (
 )
 from stock_platform.collectors.upbit.sync_service import (
     UpbitDailySyncService,
+)
+from stock_platform.collectors.kiwoom.client_factory import (
+    build_kiwoom_market_data_client,
+)
+from stock_platform.collectors.kiwoom.daily_batch_sync_service import (
+    KiwoomDailyBatchSyncService,
+    SCREENER_LOOKBACK_DAYS,
+)
+from stock_platform.collectors.kiwoom.daily_collector import (
+    KiwoomDailyCollector,
+)
+from stock_platform.collectors.kiwoom.sync_service import (
+    KiwoomDailySyncService,
 )
 from stock_platform.common.settings import get_settings
 from stock_platform.markets.repository import (
@@ -52,19 +65,32 @@ class SchedulerHandlers:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        settings = get_settings()
+        # Admin 수동 실행 시 payload 비어 있으면 스케줄러 기본값 사용
+        as_of_raw = payload.get("as_of_date") or date.today().isoformat()
+        # 수동 실행(빈 payload): minimum_score 미지정 시 0
+        # (KRX 종목 1개·저점수여도 후보가 생기도록 — 스케줄러는 값을 명시 전달)
+        if "minimum_score" in payload:
+            minimum_score = Decimal(str(payload["minimum_score"]))
+        else:
+            minimum_score = Decimal("0")
         service = CandidateRunService(self._session)
 
         run = service.execute_and_save(
             exchange_code=str(
-                payload.get("exchange_code", "KRX")
+                payload.get(
+                    "exchange_code",
+                    settings.scheduler_exchange_code,
+                )
             ).upper(),
-            as_of_date=date.fromisoformat(
-                str(payload["as_of_date"])
+            as_of_date=date.fromisoformat(str(as_of_raw)),
+            limit=int(
+                payload.get(
+                    "limit",
+                    settings.scheduler_candidate_limit,
+                )
             ),
-            limit=int(payload.get("limit", 10)),
-            minimum_score=Decimal(
-                str(payload.get("minimum_score", 0))
-            ),
+            minimum_score=minimum_score,
             require_all_rules=bool(
                 payload.get(
                     "require_all_rules",
@@ -103,10 +129,15 @@ class SchedulerHandlers:
                 exchange_code=str(
                     payload.get(
                         "exchange_code",
-                        "KRX",
+                        settings.scheduler_exchange_code,
                     )
                 ).upper(),
-                limit=int(payload.get("limit", 10)),
+                limit=int(
+                    payload.get(
+                        "limit",
+                        settings.scheduler_ai_limit,
+                    )
+                ),
                 news_limit=int(
                     payload.get("news_limit", 20)
                 ),
@@ -118,6 +149,19 @@ class SchedulerHandlers:
                 ),
                 lookback_days=int(
                     payload.get("lookback_days", 90)
+                ),
+                # 수동 빈 payload: 낮은 기준 (스케줄러는 settings 값 명시)
+                minimum_ai_score=float(
+                    payload.get(
+                        "minimum_ai_score",
+                        0,
+                    )
+                ),
+                minimum_confidence=float(
+                    payload.get(
+                        "minimum_confidence",
+                        0,
+                    )
                 ),
             )
 
@@ -139,20 +183,39 @@ class SchedulerHandlers:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        settings = get_settings()
         service = CandidatePositionPlanService(
             self._session
         )
 
         result = service.create_plans(
             exchange_code=str(
-                payload.get("exchange_code", "KRX")
+                payload.get(
+                    "exchange_code",
+                    settings.scheduler_exchange_code,
+                )
             ).upper(),
-            policy_id=int(payload["policy_id"]),
+            policy_id=int(
+                payload.get(
+                    "policy_id",
+                    settings.scheduler_policy_id,
+                )
+            ),
             portfolio_value=Decimal(
-                str(payload["portfolio_value"])
+                str(
+                    payload.get(
+                        "portfolio_value",
+                        settings.scheduler_portfolio_value,
+                    )
+                )
             ),
             available_cash=Decimal(
-                str(payload["available_cash"])
+                str(
+                    payload.get(
+                        "available_cash",
+                        settings.scheduler_available_cash,
+                    )
+                )
             ),
             current_position_count=int(
                 payload.get(
@@ -160,12 +223,17 @@ class SchedulerHandlers:
                     0,
                 )
             ),
-            limit=int(payload.get("limit", 5)),
+            limit=int(
+                payload.get(
+                    "limit",
+                    settings.scheduler_position_limit,
+                )
+            ),
             minimum_ai_score=Decimal(
                 str(
                     payload.get(
                         "minimum_ai_score",
-                        0,
+                        settings.scheduler_minimum_ai_score,
                     )
                 )
             ),
@@ -173,7 +241,7 @@ class SchedulerHandlers:
                 str(
                     payload.get(
                         "minimum_confidence",
-                        0,
+                        settings.scheduler_minimum_confidence,
                     )
                 )
             ),
@@ -282,13 +350,15 @@ class SchedulerHandlers:
         )
 
         symbol_limit = payload.get("symbol_limit")
+        today = date.today()
+        # 수동 실행 기본: 최근 1년
+        start_raw = payload.get("start_date") or (
+            today.replace(year=today.year - 1)
+        ).isoformat()
+        end_raw = payload.get("end_date") or today.isoformat()
         result = pipeline.compute_batch(
-            start_date=date.fromisoformat(
-                str(payload["start_date"])
-            ),
-            end_date=date.fromisoformat(
-                str(payload["end_date"])
-            ),
+            start_date=date.fromisoformat(str(start_raw)),
+            end_date=date.fromisoformat(str(end_raw)),
             exchange_code=(
                 str(payload["exchange_code"]).upper()
                 if payload.get("exchange_code")
@@ -300,5 +370,58 @@ class SchedulerHandlers:
                 else None
             ),
         )
+        return result.to_dict()
+
+    async def run_kiwoom_krx_daily_sync(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """KRX 활성 종목 일봉 배치 동기화."""
+
+        instrument_service = InstrumentService(
+            InstrumentRepository(self._session)
+        )
+        price_service = PriceDailyService(
+            PriceDailyRepository(self._session),
+            instrument_service=instrument_service,
+        )
+
+        start_date = (
+            date.fromisoformat(str(payload["start_date"]))
+            if payload.get("start_date")
+            else None
+        )
+        end_date = (
+            date.fromisoformat(str(payload["end_date"]))
+            if payload.get("end_date")
+            else None
+        )
+        symbol_limit = payload.get("symbol_limit")
+
+        async with build_kiwoom_market_data_client(
+            use_real_rest=bool(payload.get("use_real_rest", True)),
+        ) as client:
+            result = await KiwoomDailyBatchSyncService(
+                daily_sync=KiwoomDailySyncService(
+                    collector=KiwoomDailyCollector(client),
+                    price_service=price_service,
+                    instrument_service=instrument_service,
+                ),
+                instrument_service=instrument_service,
+            ).sync(
+                start_date=start_date,
+                end_date=end_date,
+                lookback_days=int(
+                    payload.get("lookback_days", SCREENER_LOOKBACK_DAYS)
+                ),
+                resume=bool(payload.get("resume", True)),
+                symbol_limit=(
+                    int(symbol_limit) if symbol_limit is not None else None
+                ),
+                batch_size=int(payload.get("batch_size", 20)),
+                delay_seconds=float(payload.get("delay_seconds", 0.2)),
+                max_retries=int(payload.get("max_retries", 2)),
+            )
+
         return result.to_dict()
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 # JWT + API Key 통합 보호 (기존 import 경로 유지)
 from stock_platform.auth.deps import require_admin  # noqa: F401
+from stock_platform.common.json_safe import to_jsonable
 from stock_platform.common.security_mask import redact_mapping
 from stock_platform.database.session import get_db_session
 from stock_platform.operation.audit_models import AuditEvent
@@ -45,8 +46,14 @@ class AuditLogService:
         client_order_id: str | None = None,
         symbol: str | None = None,
         detail: dict[str, Any] | None = None,
+        auto_commit: bool = True,
     ) -> AuditEvent:
-        safe_detail = redact_mapping(dict(detail or {}))
+        """`auto_commit=True`(기본값)는 기존 모든 호출부와 동일하게 즉시
+        commit한다. 핵심 Domain Transaction의 일부로 Audit을 원자적으로
+        묶어야 하는 호출부만 `auto_commit=False`를 명시하고, 최상위
+        Application Service에서 정확히 한 번 commit/rollback한다."""
+        # Decimal 등 JSONB 비호환 타입을 str로 보존한 뒤 Secret 마스킹
+        safe_detail = redact_mapping(to_jsonable(dict(detail or {})))
         return self._repository.create(
             event_type=event_type,
             actor=actor,
@@ -59,6 +66,7 @@ class AuditLogService:
             symbol=symbol,
             detail=safe_detail,
             created_at=datetime.now(timezone.utc),
+            auto_commit=auto_commit,
         )
 
 

@@ -18,7 +18,8 @@ class RiskDashboardPositionSummary:
 @dataclass(frozen=True, slots=True)
 class RiskDashboardSnapshot:
     generated_at: datetime
-    account_number: str
+    user_broker_account_id: int | None
+    masked_account_ref: str | None
     kill_switch: dict[str, Any]
     daily_loss: dict[str, Any]
     broker: dict[str, Any]

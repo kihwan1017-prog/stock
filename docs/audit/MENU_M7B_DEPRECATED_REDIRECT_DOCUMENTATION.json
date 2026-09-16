@@ -1,0 +1,170 @@
+{
+  "step": "M7-B",
+  "mode": "DOCUMENTATION_READ_ONLY",
+  "baseline_commit": "d1d0634",
+  "verdict": "LEGACY_REDIRECT_DEPRECATION_DOCUMENTED",
+  "production_mutation": 0,
+  "principle": "DEPRECATE_REDIRECT != DELETE_ROUTE",
+  "totals": {
+    "total_redirect": 12,
+    "KEEP_REDIRECT": 3,
+    "DEPRECATE_REDIRECT": 9,
+    "verified_redirect_target": 12,
+    "redirect_chain": 0,
+    "canonical_page_missing": 0,
+    "legacy_menu_exposure": 0,
+    "internal_navigation_legacy_refs": 0,
+    "REVIEW_REQUIRED": 0,
+    "REMOVE_CANDIDATE": 0,
+    "MENU_NORMALIZATION_REQUIRED": 0
+  },
+  "keep_redirect": [
+    {
+      "legacy_route": "/admin",
+      "canonical_route": "/admin/dashboard",
+      "classification": "KEEP_REDIRECT"
+    },
+    {
+      "legacy_route": "/user",
+      "canonical_route": "/user/dashboard",
+      "classification": "KEEP_REDIRECT"
+    },
+    {
+      "legacy_route": "/user/candidates/llm",
+      "canonical_route": "/user/ai",
+      "classification": "KEEP_REDIRECT",
+      "note": "M7-A menu points to /user/ai; redirect page retained"
+    }
+  ],
+  "deprecate_redirect": [
+    {
+      "legacy_route": "/admin/data",
+      "canonical_route": "/admin/monitoring",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/admin/market",
+      "canonical_route": "/admin/monitoring",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/admin/positions",
+      "canonical_route": "/admin/portfolio",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/admin/settings",
+      "canonical_route": "/admin/env-settings",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/user/account",
+      "canonical_route": "/user/accounts",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/user/market",
+      "canonical_route": "/user/markets/stocks",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/user/trades",
+      "canonical_route": "/user/orders",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/user/strategies/auto",
+      "canonical_route": "/user/auto-trading",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    },
+    {
+      "legacy_route": "/user/orders/paper",
+      "canonical_route": "/user/orders",
+      "classification": "DEPRECATE_REDIRECT",
+      "legacy_page_exists": true,
+      "canonical_page_exists": true,
+      "redirect_target_verified": true,
+      "redirect_chain": false,
+      "menu_exposure": 0,
+      "permission_impact": "none",
+      "removal_status": "RETAIN_FOR_COMPATIBILITY",
+      "removal_blocker": "UNKNOWN_EXTERNAL_COMPATIBILITY"
+    }
+  ],
+  "constants_note": {
+    "adminRoutes_alias_already_canonical": ["data", "market", "positions", "settings"],
+    "user_legacy_path_constants": ["strategiesAuto", "ordersPaper", "legacyUserRoutes"],
+    "breadcrumb_titles_retained": true
+  },
+  "remove_gate": {
+    "result": "FAIL",
+    "reason": "UNKNOWN_EXTERNAL_COMPATIBILITY",
+    "REMOVE_CANDIDATE": 0
+  },
+  "next_step_exactly_one": "M7-F — LEGACY / REDIRECT FINAL REGRESSION AUDIT",
+  "m7c": "SKIP (orphan_candidates=0)"
+}

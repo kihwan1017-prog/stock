@@ -14,8 +14,8 @@ SRC_PATH = PROJECT_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from stock_platform.brokers.kiwoom.auth import KiwoomTokenManager
-from stock_platform.brokers.kiwoom.client import KiwoomRestClient
+from stock_platform.broker.kiwoom.market.auth import KiwoomTokenManager
+from stock_platform.broker.kiwoom.market.client import KiwoomRestClient
 from stock_platform.collectors.kiwoom.daily_collector import (
     KiwoomDailyCollector,
 )

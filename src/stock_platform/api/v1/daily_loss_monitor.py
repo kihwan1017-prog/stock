@@ -66,7 +66,6 @@ async def check_daily_loss_now():
 @router.post("/reset")
 def reset_daily_loss_monitor(
     request: DailyLossResetRequest,
-    account_number: str = Query(min_length=1),
     session: Session = Depends(get_db_session),
 ):
     return DailyLossMonitor(
@@ -76,6 +75,83 @@ def reset_daily_loss_monitor(
         actor=request.actor,
         reason=request.reason,
     )
+
+
+@router.get("/strategy-owned")
+def get_strategy_owned_daily_pnl(
+    user_broker_account_id: int = Query(..., ge=1),
+    strategy_id: int = Query(..., ge=1),
+    deployment_id: int | None = Query(default=None),
+    broker_code: str = Query(default="KIWOOM"),
+    session: Session = Depends(get_db_session),
+):
+    """Account Safety vs Strategy-owned Daily PnL 분리 조회."""
+
+    from decimal import Decimal
+
+    from stock_platform.risk_engine.daily_loss_entities import (
+        AccountDailyLossEntity,
+    )
+    from stock_platform.risk_engine.resolved_policy import (
+        ResolvedRiskPolicyResolver,
+    )
+    from stock_platform.risk_engine.strategy_owned_risk_service import (
+        StrategyOwnedRiskService,
+    )
+    from sqlalchemy import select
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    policy = ResolvedRiskPolicyResolver(session).resolve(
+        user_id=None,
+        user_broker_account_id=user_broker_account_id,
+    )
+    limit = Decimal(str(policy.daily_max_loss_amount))
+    svc = StrategyOwnedRiskService(session)
+    strategy = svc.compute_and_persist(
+        user_broker_account_id=user_broker_account_id,
+        broker_code=broker_code,
+        strategy_id=strategy_id,
+        deployment_id=deployment_id,
+        loss_limit=limit,
+    )
+    hard_block, hard_detail = svc.account_hard_safety_blocks_entry(
+        user_broker_account_id=user_broker_account_id,
+    )
+    today = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    account_row = session.scalar(
+        select(AccountDailyLossEntity).where(
+            AccountDailyLossEntity.user_broker_account_id
+            == user_broker_account_id,
+            AccountDailyLossEntity.trading_date == today,
+        )
+    )
+    session.commit()
+    return {
+        "account_safety": {
+            "current_loss_amount": (
+                str(account_row.current_loss_amount)
+                if account_row is not None
+                else None
+            ),
+            "status_code": (
+                account_row.status_code if account_row is not None else None
+            ),
+            "hard_safety_blocks_entry": hard_block,
+            "hard_safety_detail": hard_detail,
+            "note": (
+                "Account MTM drawdown is telemetry; "
+                "Strategy ENTRY uses strategy-owned PnL"
+            ),
+        },
+        "strategy_autotrading": strategy.to_dict(),
+        "strategy_daily_loss_limit": str(limit),
+        "strategy_entry_gate": (
+            "BLOCK"
+            if hard_block or strategy.current_loss_amount >= limit
+            else "PASS"
+        ),
+    }
 
 
 @router.get("/events")

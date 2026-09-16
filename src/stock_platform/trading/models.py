@@ -7,7 +7,9 @@ from enum import StrEnum
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    ForeignKey,
     Identity,
+    Integer,
     Numeric,
     String,
     Text,
@@ -52,8 +54,25 @@ class PaperOrder(Base):
         primary_key=True,
     )
 
+    # 멀티계좌 격리 — paper_account FK (P0)
+    account_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.paper_account.account_id",
+            ondelete="RESTRICT",
+            name="fk_paper_order_account",
+        ),
+        nullable=False,
+        index=True,
+    )
+
     position_plan_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "strategy.position_plan.position_plan_id",
+            ondelete="SET NULL",
+            name="fk_paper_order_position_plan",
+        ),
         nullable=True,
     )
 
@@ -108,6 +127,16 @@ class PaperOrder(Base):
         Text,
         nullable=True,
     )
+
+    # 전략 Provenance (nullable — 미식별은 NULL)
+    strategy_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    strategy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    runtime_scope_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    account_strategy_link_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True
+    )
+    user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -16,6 +16,7 @@ def test_create_paper_adapter():
 def test_create_live_adapter_requires_session_and_flag(
     monkeypatch,
 ):
+    monkeypatch.setenv("GLOBAL_LIVE_ORDER_ENABLED", "false")
     monkeypatch.setenv("KIWOOM_LIVE_ORDER_ENABLED", "false")
     from stock_platform.common.settings import get_settings
 
@@ -31,9 +32,28 @@ def test_create_live_adapter_requires_session_and_flag(
         get_settings.cache_clear()
 
 
-def test_create_unknown_live_broker_raises():
-    with pytest.raises(ValueError):
-        BrokerAdapterFactory.create(
-            BrokerEnvironment.LIVE,
-            "UNKNOWN",
-        )
+def test_create_unknown_live_broker_raises(monkeypatch):
+    monkeypatch.setenv("GLOBAL_LIVE_ORDER_ENABLED", "true")
+    monkeypatch.setenv("KIWOOM_LIVE_ORDER_ENABLED", "true")
+    monkeypatch.setenv("KIWOOM_USE_MOCK", "false")
+    from stock_platform.common.settings import get_settings
+    from stock_platform.broker.live_transition_guard import (
+        LiveTradingTransitionGuard,
+    )
+
+    get_settings.cache_clear()
+    try:
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                LiveTradingTransitionGuard,
+                "require_active",
+                lambda self: None,
+            )
+            with pytest.raises(ValueError):
+                BrokerAdapterFactory.create(
+                    BrokerEnvironment.LIVE,
+                    "UNKNOWN",
+                    session=object(),
+                )
+    finally:
+        get_settings.cache_clear()

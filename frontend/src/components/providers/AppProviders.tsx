@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { AntdProvider } from "@/components/providers/AntdProvider";
 import { QueryProvider } from "@/components/providers/QueryProvider";
+import { MobileBootRecoveryGate } from "@/features/mobile/MobileBootRecoveryGate";
 
 interface AppProvidersProps {
   children: ReactNode;
@@ -12,7 +13,10 @@ interface AppProvidersProps {
 export function AppProviders({ children }: AppProvidersProps) {
   return (
     <QueryProvider>
-      <AntdProvider>{children}</AntdProvider>
+      <AntdProvider>
+        <MobileBootRecoveryGate />
+        {children}
+      </AntdProvider>
     </QueryProvider>
   );
 }

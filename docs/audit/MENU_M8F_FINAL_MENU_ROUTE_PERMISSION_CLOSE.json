@@ -1,0 +1,50 @@
+{
+  "step": "M8-F",
+  "mode": "FINAL_CLOSE_AUDIT_ONLY",
+  "head": "f18d02f",
+  "branch": "release/v1.1.0",
+  "origin_ahead": 10,
+  "verdict": "MENU_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS",
+  "MENU_CONSOLIDATION_CLOSE": true,
+  "close_flags": {
+    "M3": "CLOSED",
+    "M4": "CLOSED",
+    "M5": "CLOSED",
+    "M6": "CLOSED",
+    "M7": "CLOSED",
+    "M8": "CLOSED"
+  },
+  "final_approved_baseline": {
+    "admin_top": 11,
+    "admin_leaf": 55,
+    "user_top": 12,
+    "user_leaf": 29,
+    "admin_pages": 60,
+    "user_pages": 36,
+    "KEEP_CANONICAL": 84,
+    "KEEP_REDIRECT": 3,
+    "DEPRECATE_REDIRECT": 9
+  },
+  "integrity": {
+    "duplicate_href": 0,
+    "duplicate_key": 0,
+    "broken_href": 0,
+    "orphan": 0,
+    "unclassified": 0,
+    "permission_mismatch": 0,
+    "authguard_issues": 0,
+    "live_panel_mount": 1,
+    "duplicate_live_mutation": 0,
+    "risk_live_mutation": 0
+  },
+  "m6": { "utils": 7, "order_keys": 7, "sr_keys": 4, "unexpected_cross_domain": 0 },
+  "m7": { "redirects": 12, "KEEP": 3, "DEPRECATE": 9, "REMOVE": 0, "chain": 0 },
+  "tests": {
+    "PASS": 66,
+    "FAIL_PREEXISTING_WIP": 1,
+    "FAIL_FINAL_REGRESSION": 0
+  },
+  "risk": { "BLOCKER": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 1 },
+  "production_mutation": 0,
+  "next_step_exactly_one": "Return to trading-system roadmap monitoring: Technical VALID cohort 50 / News A-B sample milestone"
+}

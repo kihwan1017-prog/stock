@@ -27,7 +27,7 @@ class KillSwitchEntity(Base):
         primary_key=True,
     )
     scope_code: Mapped[str] = mapped_column(
-        String(30),
+        String(40),
         nullable=False,
         unique=True,
         server_default=text("'GLOBAL'"),
@@ -75,7 +75,7 @@ class KillSwitchHistoryEntity(Base):
         primary_key=True,
     )
     scope_code: Mapped[str] = mapped_column(
-        String(30),
+        String(40),
         nullable=False,
     )
     action_code: Mapped[str] = mapped_column(

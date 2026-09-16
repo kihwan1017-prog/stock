@@ -1,4 +1,4 @@
-"""Order Outbox 스케줄러 싱글톤 — PAPER 어댑터 기본."""
+"""Order Outbox 스케줄러 싱글톤 — 기본 Paper, payload로 라우팅."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from stock_platform.order.outbox_worker import (
 
 
 def build_order_outbox_scheduler() -> OrderOutboxScheduler:
-    # 기본은 Paper. 실거래는 KIWOOM_LIVE + transition 가드 경로에서만.
+    # 기본 fallback은 Paper. payload.broker_code/environment 로 라우팅.
     return OrderOutboxScheduler(
         worker=OrderOutboxWorker(
             session_factory=get_session_factory(),

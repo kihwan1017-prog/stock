@@ -1,0 +1,101 @@
+{
+  "mode": "READ_ONLY_DESIGN_ONLY",
+  "date": "2026-08-15",
+  "baseline": {
+    "final_prior": "MIXED_MARKET_AND_DATA",
+    "FULL_N": 47,
+    "HIGH_COVERAGE_N": 28,
+    "LOW_COVERAGE_N": 19,
+    "COVERAGE_IMPACT": "HIGH",
+    "CURRENT_TP": 6.0,
+    "POLICY": "KEEP_6_AND_FIX_DATA_FIRST"
+  },
+  "design_verdict": "REMEDIATION_DESIGN_READY",
+  "recommended_option": "OPTION_E",
+  "realtime_first_slice": "OPTION_D",
+  "historical_remediation": "BACKFILL_AND_COMPARE",
+  "REALTIME_SCHEMA_CHANGE_REQUIRED": "NO",
+  "pipeline_stages": [
+    "UpbitQuotationClient.list_minute_candles",
+    "UpbitMinuteCollector.collect",
+    "CandleMinuteService.save_many",
+    "market.candle_minute",
+    "ensure_shadow_minute_bars",
+    "resolve_missing_target_minutes",
+    "observe_windows / compute_mfe_mae / compute_tp_sl"
+  ],
+  "source_contract": {
+    "endpoint": "/v1/candles/minutes/{unit}",
+    "max_count": 200,
+    "range_filter": "inclusive start_at..end_at",
+    "pagination": "backward cursor via to=",
+    "max_pages": 100,
+    "missing_minutes": "not synthesized"
+  },
+  "persistence_contract": {
+    "table": "market.candle_minute",
+    "pk": ["instrument_id", "timeframe", "candle_at"],
+    "upsert": "ON CONFLICT DO UPDATE",
+    "retention_purge": "NOT_FOUND"
+  },
+  "sync_contract": {
+    "global_periodic_minute_sync": "NOT_FOUND",
+    "shadow_evaluator_triggered": true,
+    "interval_seconds_default": 180,
+    "shadow_sync_resume": false,
+    "failure_handling": "log_and_continue"
+  },
+  "low_coverage_classification_summary": {
+    "PERSISTENCE_MISSING": "CONFIRMED",
+    "SYMBOL_NO_TRADE": "POSSIBLE",
+    "SYNC_NOT_RUN": "POSSIBLE",
+    "SYNC_LATE": "POSSIBLE",
+    "EVALUATOR_QUERY_RANGE": "POSSIBLE",
+    "PAGINATION_GAP": "POSSIBLE",
+    "RATE_LIMIT_INTERRUPTION": "POSSIBLE",
+    "SOURCE_NOT_RETURNED": "POSSIBLE",
+    "FETCH_RANGE_GAP": "POSSIBLE",
+    "UNKNOWN": "residual_after_api_compare"
+  },
+  "NO_TRADE_DISTINGUISHABLE": "PARTIAL",
+  "COVERAGE_METRIC_SEMANTICS": "OVERSTATES_MISSING",
+  "BOUNDARY_DEFECT": "NOT_FOUND",
+  "PAGINATION_DEFECT": "NOT_APPLICABLE_FOR_60M_ALONE_POSSIBLE_UNDER_LOAD",
+  "API_LIMIT_DEFECT": "POSSIBLE",
+  "RATE_LIMIT_DEFECT": "POSSIBLE",
+  "EVALUATOR_BEFORE_CANDLE_COMPLETE": "YES",
+  "COMPLETED_REEVALUATION": "MANUAL",
+  "EXISTING_COVERAGE_GATE": "NONE",
+  "options": {
+    "A": "completeness_check_plus_defer",
+    "B": "sync_overlap_lookback_reliability",
+    "C": "post_completed_reeval_gated",
+    "D": "A_plus_B",
+    "E": "A_plus_B_plus_C_phased"
+  },
+  "critical_asymmetry": "target_window_FINAL_via_last_known_absent_does_not_imply_full_path_bar_completeness_for_MFE_TPSL",
+  "quality_metrics_storage": "audit_and_evaluation_detail_first_no_schema_required",
+  "acceptance_gate_numeric_thresholds": "NOT_RATIFIED_THIS_STEP",
+  "TP_CANDIDATE_ANALYSIS": "FROZEN",
+  "OOS": "NOT_STARTED",
+  "news_baseline": {
+    "MATCHED": "2/20",
+    "NO_NEWS": "22/20",
+    "status": "NEWS_AB_SAMPLE_ACCUMULATING"
+  },
+  "mutations": {
+    "production": 0,
+    "db": 0,
+    "trading_order": 0,
+    "outbox": 0,
+    "create_order": 0,
+    "post_orders": 0,
+    "live_arm_scheduler": 0,
+    "commit_push": 0,
+    "migration": 0,
+    "candle_backfill": 0
+  },
+  "implementation_waves": ["COV-A", "COV-B", "COV-C", "COV-D", "COV-E"],
+  "next_step_exactly_one": "TECHNICAL BAR COVERAGE REMEDIATION IMPLEMENTATION PRECHECK",
+  "look_ahead_violation": 0
+}

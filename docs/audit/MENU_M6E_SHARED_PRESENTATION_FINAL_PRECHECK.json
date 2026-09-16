@@ -1,0 +1,95 @@
+{
+  "step": "M6-E0",
+  "mode": "PRECHECK_ONLY",
+  "baseline_commit": "a3612c0",
+  "verdict": "SHARED_COMPONENT_CONSOLIDATION_COMPLETE_WITH_LIMITATIONS",
+  "production_mutation": 0,
+  "m6e_implement": "NO_SKIP",
+  "m6_close_possible": true,
+  "m6_close_requires": "M6-F_FINAL_REGRESSION_AUDIT",
+  "domains_surveyed": 13,
+  "classifications": {
+    "Account": "KEEP_SEPARATE",
+    "Portfolio": "NO_ACTION",
+    "Risk": "ALREADY_SHARED_PLUS_KEEP_KILL",
+    "Notification": "KEEP_SEPARATE",
+    "Backtest": "KEEP_SEPARATE",
+    "Candidate": "HIGH_COUPLING_REJECT",
+    "LIVE_Validation": "KEEP_SEPARATE",
+    "Orders": "ALREADY_SHARED",
+    "Strategy_Request": "ALREADY_SHARED",
+    "Strategy_Draft": "ALREADY_SHARED_SKIP_COLUMNS",
+    "Profile": "ALREADY_SHARED",
+    "Strategy_catalog": "KEEP_SEPARATE",
+    "Upbit_Hub_Recovery_Runtime": "HIGH_COUPLING_REJECT"
+  },
+  "tally": {
+    "ALREADY_SHARED": 5,
+    "SHARE_SMALL_FORMATTER_remaining": 0,
+    "SHARE_SMALL_PRESENTATION_remaining": 0,
+    "KEEP_SEPARATE": 6,
+    "NO_ACTION": 2,
+    "HIGH_COUPLING_REJECT": 3
+  },
+  "m6e_candidates": [],
+  "rejected_optional_candidates": [
+    {
+      "id": "credential_status_chips",
+      "reason": "adjacent_to_credential_LIVE_CONTROL"
+    },
+    {
+      "id": "live_validation_run_columns",
+      "reason": "schema_drift_and_execute_adjacency_LOW_benefit"
+    },
+    {
+      "id": "request_detail_summary",
+      "reason": "layout_diverge_M6C_list_enough"
+    },
+    {
+      "id": "user_local_money_formatters",
+      "reason": "not_admin_user_consolidation"
+    }
+  ],
+  "shared_inventory": {
+    "utils_helpers": 7,
+    "order_read_keys": 7,
+    "strategy_request_read_keys": 4,
+    "column_modules": 2,
+    "shared_hooks_m6": 0,
+    "mega_components_m6": 0,
+    "capability_props_m6": 0,
+    "admin_dataHelpers_shim": "retained"
+  },
+  "cross_imports": {
+    "user_to_admin_utils": 0,
+    "user_to_admin_features": 0,
+    "admin_to_user_product": "ProfileWorkspace_only_intentional",
+    "circular": 0
+  },
+  "consumers": {
+    "orderReadColumns": 3,
+    "strategyRequestReadColumns": 2
+  },
+  "scorecard": {
+    "route_merge": 0,
+    "api_merge": 0,
+    "permission_merge": 0,
+    "user_admin_utils_imports_removed": "13_to_0"
+  },
+  "regressions": {
+    "m6a": "ok",
+    "m6b": "untouched",
+    "m6c": "untouched",
+    "m6d_skip": true,
+    "m5_hub": "untouched",
+    "m4_live_accounts": "not_reopened"
+  },
+  "trading_safety": {
+    "TradingOrder_delta": 0,
+    "Outbox_delta": 0,
+    "create_order_delta": 0,
+    "POST_orders_delta": 0,
+    "scanner_news_policy_delta": 0
+  },
+  "next_step_exactly_one": "M6-F — FINAL REGRESSION / M6 CLOSE"
+}

@@ -17,7 +17,7 @@ import { AppSidebar } from "@/components/layout/AppSidebar";
 describe("AppSidebar", () => {
   it("renders dashboard menu item", () => {
     render(<AppSidebar collapsed={false} />);
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("대시보드")).toBeInTheDocument();
     expect(screen.getByText("KIKI AI Trading Platform")).toBeInTheDocument();
     expect(screen.getByText("Admin Console")).toBeInTheDocument();
   });

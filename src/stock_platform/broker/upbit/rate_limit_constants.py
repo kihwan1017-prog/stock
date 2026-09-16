@@ -1,0 +1,51 @@
+"""STEP 8-5-8 — Upbit Rate Limit / Retry 공통 상수."""
+
+from __future__ import annotations
+
+from enum import StrEnum
+
+
+class UpbitEndpointGroup(StrEnum):
+    DEFAULT = "default"
+    MARKET = "market"
+    ORDER = "order"
+    ACCOUNT = "account"
+
+
+class UpbitOperationType(StrEnum):
+    PUBLIC_MARKET_DATA = "PUBLIC_MARKET_DATA"
+    PRIVATE_ACCOUNT_READ = "PRIVATE_ACCOUNT_READ"
+    ORDER_CREATE = "ORDER_CREATE"
+    ORDER_TEST = "ORDER_TEST"
+    ORDER_CANCEL = "ORDER_CANCEL"
+    ORDER_QUERY = "ORDER_QUERY"
+    EXECUTION_QUERY = "EXECUTION_QUERY"
+    RECOVERY_QUERY = "RECOVERY_QUERY"
+    CREDENTIAL_VERIFY = "CREDENTIAL_VERIFY"
+
+
+class UpbitRetryDecision(StrEnum):
+    RETRY = "RETRY"
+    DO_NOT_RETRY = "DO_NOT_RETRY"
+    REFRESH_REMOTE_STATE = "REFRESH_REMOTE_STATE"
+    PAUSE_ACCOUNT = "PAUSE_ACCOUNT"
+    REQUIRE_MANUAL_REVIEW = "REQUIRE_MANUAL_REVIEW"
+    DEFER_UNTIL = "DEFER_UNTIL"
+
+
+class UpbitRateLimitStatus(StrEnum):
+    OK = "OK"
+    COOLDOWN = "COOLDOWN"
+    BLOCKED_418 = "BLOCKED_418"
+    DEFERRED = "DEFERRED"
+
+
+class UpbitRecoveryStatus(StrEnum):
+    DEFERRED_RATE_LIMIT = "DEFERRED_RATE_LIMIT"
+    SKIPPED_COOLDOWN = "SKIPPED_COOLDOWN"
+    BLOCKED_UPBIT_418 = "BLOCKED_UPBIT_418"
+    RETRY_SCHEDULED = "RETRY_SCHEDULED"
+
+
+SCOPE_PUBLIC = "PUBLIC"
+SCOPE_UBA = "UBA"

@@ -1,4 +1,6 @@
-from stock_platform.brokers.kiwoom.client import (
+"""호환 래퍼 — canonical: stock_platform.broker.kiwoom.market"""
+
+from stock_platform.broker.kiwoom.market.client import (
     KiwoomResponse,
     KiwoomRestClient,
 )

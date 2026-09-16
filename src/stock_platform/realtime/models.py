@@ -30,6 +30,8 @@ class RealtimeQuote:
     event_time: datetime
     received_at: datetime
     source_code: str
+    bid: Decimal | None = None
+    ask: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)

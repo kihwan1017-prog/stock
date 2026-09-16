@@ -83,7 +83,7 @@ def test_production_signup_forbidden(monkeypatch) -> None:
         )
     assert response.status_code == 403
     body = response.json()
-    assert body.get("code") == "HTTP_403"
+    assert body.get("code") == "FORBIDDEN"
     _clear_settings_cache()
 
 

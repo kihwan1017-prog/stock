@@ -9,6 +9,7 @@ from fastapi import (
     HTTPException,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from stock_platform.database.session import get_db_session
 router = APIRouter(
     prefix="/api/v1/backtest-grid",
     tags=["Backtest Grid"],
+    dependencies=[Depends(require_admin)],
 )
 
 

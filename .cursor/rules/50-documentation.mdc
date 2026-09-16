@@ -1,0 +1,40 @@
+---
+description: Documentation — Canonical vs Historical, no silent delete
+alwaysApply: true
+---
+
+# 50 — Documentation
+
+공통 SoT: [AGENTS.md](../../AGENTS.md)  
+폴더 구조: [documentation-structure.mdc](documentation-structure.mdc)
+
+## Canonical (SoT)
+
+- `docs/CURRENT_WORK.md` — 현재 작업만
+- `docs/PROJECT_IMPLEMENTATION_STATUS.md` — 구현 현황
+- `docs/STEP_MASTER_STATUS.md` — STEP 상태
+- `docs/ROADMAP.md` — 잔여 작업
+- `docs/DECISION_LOG.md` — 장기 결정
+
+완료보고·과거 STEP README는 **Historical** — SoT를 대체하지 않음.
+
+## STEP 완료 시 필수 갱신
+
+CURRENT_WORK · IMPLEMENTATION_STATUS · STEP_MASTER · ROADMAP
+
+## 보존
+
+- 삭제 전 Archive 우선. 사용자 승인 없는 삭제·이동 금지.
+- 상대 링크 유지. 신규 제품 MD는 `docs/<domain>/`.
+- 완료보고 예정 경로: `docs/archive/completion-reports/`
+
+## Before creating a new Markdown file
+
+1. Prefer updating existing canonical docs (`docs/ARCHITECTURE|AUTO_TRADING|OPERATIONS|DEVELOPMENT|DATABASE|TROUBLESHOOTING.md`).
+2. Do **not** create per-task report Markdown at repo root.
+3. Store detailed work history in `operation.ai_development_work_history`.
+4. Store runtime evidence in `.run/` only (JSON preferred).
+5. Archive obsolete one-time docs under `docs/archive/`.
+6. Never create root-level AUDIT/RESULT/VERIFY markdown unless explicitly requested.
+
+상세: [docs/DEVELOPMENT.md](../../docs/DEVELOPMENT.md)

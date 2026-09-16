@@ -61,12 +61,17 @@ class AdminDashboardSummaryService:
     async def build(
         self,
         *,
-        account_id: int = 1,
+        account_id: int | None = None,
         market_code: str = "KRX",
         mode_code: str = "PAPER",
         recent_limit: int = 10,
     ) -> dict[str, Any]:
-        if account_id <= 0:
+        resolved_account_id = (
+            account_id
+            if account_id is not None
+            else self._settings.realtime_paper_account_id
+        )
+        if resolved_account_id <= 0:
             raise ValueError("account_id must be > 0")
         if recent_limit < 1 or recent_limit > 100:
             raise ValueError(
@@ -76,7 +81,7 @@ class AdminDashboardSummaryService:
         health = await self._health.build()
         components = health.get("components") or {}
 
-        kpis = self._build_kpis(account_id=account_id)
+        kpis = self._build_kpis(account_id=resolved_account_id)
         kill = self._kill_switch_dict()
         scheduler = self._scheduler_dict(
             health_component=components.get("scheduler")
@@ -97,7 +102,7 @@ class AdminDashboardSummaryService:
 
         return {
             "generated_at": datetime.now(timezone.utc),
-            "account_id": account_id,
+            "account_id": resolved_account_id,
             "market_code": market_code.upper(),
             "mode_code": mode_code.upper(),
             "kpis": kpis,

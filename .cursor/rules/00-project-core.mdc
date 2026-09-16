@@ -1,0 +1,27 @@
+---
+description: Project core — AGENTS.md first, scope, completion gates
+alwaysApply: true
+---
+
+# 00 — Project Core
+
+**우선:** 저장소 루트 [AGENTS.md](../../AGENTS.md). 충돌 시 AGENTS.md가 Cursor Rule보다 우선한다.
+
+## 작업 시작
+
+1. [docs/CURRENT_WORK.md](../../docs/CURRENT_WORK.md) — 승인된 범위·금지 확인
+2. [docs/PROJECT_IMPLEMENTATION_STATUS.md](../../docs/PROJECT_IMPLEMENTATION_STATUS.md)
+3. [docs/STEP_MASTER_STATUS.md](../../docs/STEP_MASTER_STATUS.md) — STEP 네임스페이스 혼용 금지
+
+## 원칙
+
+- **실제 소스 > 문서 > 완료보고.** PASS 보고만으로 자동매매 완료 판정 금지.
+- 작업 범위를 넘는 리팩터·정리·삭제 금지.
+- 워킹트리만의 기능은 `WORKTREE_IMPLEMENTED_UNCOMMITTED` — 배포/운영 완료로 쓰지 않음.
+- Branch `release/v1.1.0` · 커밋 baseline `3554ef8` · 미커밋 WIP 주의.
+
+## 완료 Gate
+
+구현 → 테스트 증거 → Canonical 문서 4종 갱신(CURRENT_WORK, IMPLEMENTATION_STATUS, STEP_MASTER, ROADMAP) → 완료보고 → 사용자 승인.
+
+상세 워크플로: [docs/AI_DEVELOPMENT_WORKFLOW.md](../../docs/AI_DEVELOPMENT_WORKFLOW.md)

@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from stock_platform.api.deps_admin import require_admin
-from stock_platform.brokers.kiwoom.auth import KiwoomTokenManager
-from stock_platform.brokers.kiwoom.exceptions import KiwoomError
+from stock_platform.broker.kiwoom.market.auth import KiwoomTokenManager
+from stock_platform.broker.kiwoom.market.exceptions import KiwoomError
 from stock_platform.common.settings import get_settings
 
 

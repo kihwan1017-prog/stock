@@ -16,7 +16,10 @@ from stock_platform.risk_engine.position_limit_rule import (
 
 
 class FakeRepository:
-    def get(self, **kwargs):
+    def get_by_uba(self, **kwargs):
+        return None
+
+    def get_by_paper(self, **kwargs):
         return None
 
 
@@ -26,7 +29,8 @@ def test_blocks_projected_position_amount() -> None:
     )
     rule._repository = FakeRepository()
     rule._broker_code = "KIWOOM"
-    rule._account_number = "123"
+    rule._uba_id = 10
+    rule._paper_id = None
     rule._default_policy = PositionLimitPolicy(
         max_symbol_quantity=Decimal("100"),
         max_symbol_amount=Decimal("500000"),
@@ -64,7 +68,8 @@ def test_sell_always_reduces_exposure() -> None:
     )
     rule._repository = FakeRepository()
     rule._broker_code = "KIWOOM"
-    rule._account_number = "123"
+    rule._uba_id = 10
+    rule._paper_id = None
     rule._default_policy = PositionLimitPolicy()
 
     result = rule.evaluate(

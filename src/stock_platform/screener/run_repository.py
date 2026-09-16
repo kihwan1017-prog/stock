@@ -79,10 +79,23 @@ class CandidateRunRepository:
         self._session.refresh(run)
         return run
 
-    def get_latest_run(self, *, exchange_code: str) -> CandidateRun | None:
+    def get_latest_run(
+        self,
+        *,
+        exchange_code: str,
+        run_type: str = "DAILY",
+    ) -> CandidateRun | None:
+        """최신 Candidate Run 조회.
+
+        기본 run_type=DAILY — AI_REVIEW_PROMOTION Run이 Screener/AI 파이프라인을
+        오염시키지 않도록 분리한다 (STEP 11-12 Side Effect Guard).
+        """
         return self._session.scalar(
             select(CandidateRun)
-            .where(CandidateRun.exchange_code == exchange_code)
+            .where(
+                CandidateRun.exchange_code == exchange_code,
+                CandidateRun.run_type == run_type,
+            )
             .order_by(CandidateRun.as_of_date.desc(), CandidateRun.run_id.desc())
             .limit(1)
         )

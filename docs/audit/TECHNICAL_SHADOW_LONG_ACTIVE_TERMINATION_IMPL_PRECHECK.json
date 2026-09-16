@@ -1,0 +1,85 @@
+{
+  "step": "U-TERM-A0",
+  "title": "SHADOW_LONG_ACTIVE_TERMINATION_IMPLEMENTATION_PRECHECK",
+  "mode": "READ_ONLY",
+  "date": "2026-08-16",
+  "HEAD": "3bbf0cd",
+  "verdict": "TERMINATION_IMPLEMENTATION_READY_TARGET_ONLY",
+  "design_basis": "TECHNICAL_SHADOW_LONG_ACTIVE_TERMINATION_DESIGN",
+  "insertion": {
+    "TERMINATION_INSERTION_FUNCTION": "UpbitOpportunityShadowEvaluator._apply_timeseries",
+    "TERMINATION_INSERTION_LOCATION": "after _compute_payload + path_quality; after path_pass branch entry; before evaluated_60m_at/COMPLETED write",
+    "BEFORE_COMPLETION_WRITE": true,
+    "AFTER_RECONCILIATION": true
+  },
+  "predicate_inputs": {
+    "status": "AVAILABLE",
+    "maturity_60m": "DERIVABLE",
+    "target_status_60m": "AVAILABLE",
+    "source_absence_confirmed": "AVAILABLE",
+    "reconcile_result": "AVAILABLE",
+    "unresolved_missing": "AVAILABLE",
+    "source_unavailable": "AVAILABLE",
+    "nearest_prior_at": "DERIVABLE",
+    "prior_lag_seconds": "DERIVABLE",
+    "fallback_limit": "AVAILABLE",
+    "grace_start": "MISSING_WRITE_REQUIRED",
+    "evaluator_interval": "AVAILABLE"
+  },
+  "grace": {
+    "GRACE_START_SEMANTICS": "first_blocked_at in evaluation_detail; bootstrap preexisting to target_candle_end(60m)",
+    "FIRST_BLOCKED_AT_WRITE_REQUIRED": true,
+    "GRACE_FORMULA": "first_blocked_at + 3 * evaluator_interval_seconds (default 540)"
+  },
+  "SOURCE_UNAVAILABLE_MAX_AGE_IMPLEMENT_READY": false,
+  "terminal_reason_this_step": "TARGET_PERMANENTLY_UNRESOLVABLE",
+  "cancelled_write_contract_min": [
+    "status=CANCELLED",
+    "evaluation_detail.termination.{version,reason,terminated_at,target_window,target_at,nearest_prior_at,prior_lag_seconds,fallback_limit_seconds,first_blocked_at,last_checked_at}"
+  ],
+  "forbidden_writes": [
+    "evaluated_60m_at",
+    "return_*",
+    "mfe_pct",
+    "mae_pct",
+    "tp_hit",
+    "sl_hit",
+    "completed_at"
+  ],
+  "isolation": {
+    "COMPLETED": "PASS",
+    "STRICT_VALID": "PASS",
+    "cohort_n": "PASS",
+    "REVIEW_READY": "PASS",
+    "TP_analysis": "PASS",
+    "candidate_analysis": "PASS"
+  },
+  "shadow_52_dry": {
+    "SHADOW_52_WOULD_TERMINATE": true,
+    "status_ACTIVE": true,
+    "w60_MISSING_ABSENT_CONFIRMED": true,
+    "source_unavailable": false,
+    "unresolved_missing": 0,
+    "prior_lag_seconds": 360,
+    "fallback_limit_seconds": 180,
+    "grace_elapsed_bootstrap": true,
+    "db_update": false
+  },
+  "production_files": [
+    "src/stock_platform/operation/upbit_opportunity_shadow/evaluator.py",
+    "src/stock_platform/operation/upbit_opportunity_shadow/termination.py"
+  ],
+  "test_file": "tests/test_upbit_shadow_long_active_termination.py",
+  "exclude_files": ["path_quality.py", "API", "FE", "stats"],
+  "schema_required": false,
+  "migration_required": false,
+  "COVERAGE_REOPEN": false,
+  "TP_REOPEN": false,
+  "next_u_step": "SHADOW LONG_ACTIVE TERMINATION IMPLEMENTATION (TARGET_ONLY)",
+  "safety": {
+    "production_mutation": 0,
+    "db_mutation": 0,
+    "commit": false,
+    "push": false
+  }
+}

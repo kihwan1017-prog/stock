@@ -7,6 +7,7 @@ import { useState } from "react";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { MarketCalendarPanel } from "@/features/admin/market/MarketCalendarPanel";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
@@ -32,7 +33,17 @@ export default function AdminSchedulerPage() {
       message.success("잡 실행 요청 완료");
       void qc.invalidateQueries({ queryKey: queryKeys.admin.jobHistory() });
     },
-    onError: (e) => message.error(toApiError(e).message),
+    onError: (e) => {
+      const err = toApiError(e);
+      if (err.message.toLowerCase().includes("timeout")) {
+        message.error(
+          "요청 시간 초과 — AI/동기화 잡은 서버에서 계속 실행 중일 수 있습니다. history를 확인하세요.",
+        );
+        void qc.invalidateQueries({ queryKey: queryKeys.admin.jobHistory() });
+        return;
+      }
+      message.error(err.message);
+    },
   });
   const runNow = useMutation({
     mutationFn: (name: string) => adminApi.runSchedulerNow(name),
@@ -49,7 +60,7 @@ export default function AdminSchedulerPage() {
   return (
     <AdminPageShell
       title="Scheduler 관리"
-      description="jobs · jobs/history · scheduler-admin/run-now"
+      description="jobs · jobs/history · scheduler-admin/run-now (AI 잡은 최대 ~3분 대기)"
       extra={
         <Space>
           <Input
@@ -78,6 +89,7 @@ export default function AdminSchedulerPage() {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <MarketCalendarPanel />
         <AdminDataTable
           title="GET /jobs"
           loading={jobs.isLoading}

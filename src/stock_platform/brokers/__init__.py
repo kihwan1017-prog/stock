@@ -1,5 +1,6 @@
-"""Broker quotation / market-data REST clients (Kiwoom·Upbit).
+"""시세 REST 호환 패키지 (STEP6).
 
-주문·계좌·WS 본선은 `stock_platform.broker` 를 사용한다.
-STEP56: 병합 없이 역할만 분리·문서화.
+구현은 `stock_platform.broker.*.market` 으로 이전했다.
+기존 `from stock_platform.brokers...` import 는 이 래퍼를 통해
+**동일 클래스 객체**를 가리킨다 (예외 isinstance 유지).
 """

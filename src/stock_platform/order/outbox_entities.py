@@ -32,6 +32,15 @@ class OrderOutbox(Base):
             "ix_order_outbox_order_id",
             "order_id",
         ),
+        Index(
+            "ix_order_outbox_ambiguous",
+            "status_code",
+            "ambiguous_at",
+        ),
+        Index(
+            "ix_order_outbox_client_order",
+            "client_order_id",
+        ),
         {"schema": "trading"},
     )
 
@@ -106,3 +115,33 @@ class OrderOutbox(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    # STEP 8-5-22 fencing
+    fencing_token: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    dispatch_intent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    request_hash: Mapped[str | None] = mapped_column(String(64))
+    client_order_id: Mapped[str | None] = mapped_column(String(100))
+    ambiguous_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    confirmation_status: Mapped[str | None] = mapped_column(String(40))
+    confirmation_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    manual_review_reason: Mapped[str | None] = mapped_column(Text)
+    broker_code: Mapped[str | None] = mapped_column(String(30))
+    user_broker_account_id: Mapped[int | None] = mapped_column(BigInteger)
+    correlation_id: Mapped[str | None] = mapped_column(String(64))

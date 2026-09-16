@@ -7,6 +7,7 @@ from fastapi import (
     HTTPException,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,7 @@ from stock_platform.performance.walk_forward_service import (
 router = APIRouter(
     prefix="/api/v1/walk-forward-performance",
     tags=["Walk Forward Performance"],
+    dependencies=[Depends(require_admin)],
 )
 
 

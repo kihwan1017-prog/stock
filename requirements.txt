@@ -14,7 +14,9 @@ python-multipart
 orjson
 pytest
 pytest-asyncio
+pytest-cov
 APScheduler
 websockets
 PyJWT==2.10.1
 bcrypt==4.3.0
+cryptography==44.0.2

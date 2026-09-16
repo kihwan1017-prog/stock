@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy import (
     BigInteger,
     DateTime,
+    ForeignKey,
     Identity,
     Numeric,
     String,
@@ -55,6 +56,11 @@ class StrategySelectionRunEntity(Base):
     )
     selected_performance_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_performance_run.strategy_performance_run_id",
+            ondelete="RESTRICT",
+            name="fk_selection_run_performance",
+        ),
         nullable=False,
     )
     confidence_score: Mapped[Decimal] = mapped_column(

@@ -49,17 +49,18 @@ def test_secret_view_is_masked() -> None:
 
 
 @pytest.mark.unit
-def test_validate_trading_cross_rule() -> None:
+def test_validate_trading_cross_kiwoom_option_d_accepted() -> None:
+    """Kiwoom catalog LIVE + shared MOCK 은 Option D 에서 저장 허용."""
+
     service = AppSettingService(
         MagicMock(), settings=MagicMock()
     )
-    with pytest.raises(SettingError, match="함께 사용"):
-        service._validate_trading_cross(
-            {
-                "kiwoom_use_mock": "true",
-                "kiwoom_live_order_enabled": "true",
-            }
-        )
+    service._validate_trading_cross(
+        {
+            "kiwoom_use_mock": "true",
+            "kiwoom_live_order_enabled": "true",
+        }
+    )
 
 
 @pytest.mark.unit
@@ -70,6 +71,44 @@ def test_ollama_url_validation() -> None:
     definition = DEFINITION_BY_KEY["ollama_base_url"]
     with pytest.raises(SettingError, match="http"):
         service._validate(definition, "ftp://bad")
+
+
+@pytest.mark.unit
+def test_role_model_catalog_keys_present() -> None:
+    """역할 모델이 AI 설정 카탈로그에 등록되어 저장 경로를 재사용한다."""
+
+    for key in (
+        "analysis_llm_model",
+        "trading_llm_model",
+        "teacher_llm_model",
+        "ollama_model",
+    ):
+        assert key in DEFINITION_BY_KEY
+        assert DEFINITION_BY_KEY[key].category == "ai"
+
+
+@pytest.mark.unit
+def test_role_model_fallback_semantics_match_settings() -> None:
+    """코드 SoT: ANALYSIS/TRADING은 하드코딩 기본, Teacher는 ollama_model."""
+
+    class _S:
+        analysis_llm_model = ""
+        trading_llm_model = ""
+        teacher_llm_model = ""
+        ollama_model = "qwen3.5:4b"
+
+        @property
+        def resolved_analysis_llm_model(self) -> str:
+            return (self.analysis_llm_model or "").strip() or "qwen3:1.7b"
+
+        @property
+        def resolved_trading_llm_model(self) -> str:
+            return (self.trading_llm_model or "").strip() or "qwen3.5:2b"
+
+    s = _S()
+    assert s.resolved_analysis_llm_model == "qwen3:1.7b"
+    assert s.resolved_trading_llm_model == "qwen3.5:2b"
+    assert (s.teacher_llm_model or "").strip() or s.ollama_model == "qwen3.5:4b"
 
 
 def test_settings_routes_registered() -> None:

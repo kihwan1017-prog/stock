@@ -13,6 +13,7 @@ from stock_platform.database.session import (
     get_db_session,
 )
 from stock_platform.api.deps_admin import require_admin
+from stock_platform.auth.deps import require_authenticated
 from stock_platform.strategy_deployment.models import (
     StrategyDeploymentMode,
     StrategyDeploymentRequest,
@@ -28,7 +29,6 @@ from stock_platform.strategy_deployment.service import (
 router = APIRouter(
     prefix="/api/v1/strategy-deployments",
     tags=["Strategy Deployments"],
-    dependencies=[Depends(require_admin)],
 )
 
 
@@ -78,6 +78,7 @@ class StrategyDeploymentUpdateRequest(BaseModel):
 @router.post("")
 def deploy_strategy(
     request: StrategyDeploymentCreateRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -118,6 +119,7 @@ def deploy_strategy(
 def stop_strategy_deployment(
     deployment_id: int,
     request: StrategyDeploymentStopRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -144,6 +146,7 @@ def stop_strategy_deployment(
 def update_strategy_deployment(
     deployment_id: int,
     request: StrategyDeploymentUpdateRequest,
+    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     """전략 파라미터 수정 = 신규 PAPER 배포로 교체·활성화."""
@@ -178,8 +181,10 @@ def get_active_strategy_deployment(
         StrategyDeploymentMode.PAPER
     ),
     symbol: str | None = None,
+    _: str = Depends(require_authenticated),
     session: Session = Depends(get_db_session),
 ):
+    # 활성 배포 조회는 로그인 사용자(또는 Admin Key)에게 허용
     return StrategyDeploymentRepository(
         session
     ).get_active(

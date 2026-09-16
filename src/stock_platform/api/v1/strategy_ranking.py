@@ -3,6 +3,7 @@ from fastapi import (
     Depends,
     Query,
 )
+from stock_platform.api.deps_admin import require_admin
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import (
@@ -19,6 +20,7 @@ from stock_platform.performance.summary_service import (
 router = APIRouter(
     prefix="/api/v1/strategy-ranking",
     tags=["Strategy Ranking"],
+    dependencies=[Depends(require_admin)],
 )
 
 

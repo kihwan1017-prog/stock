@@ -11,12 +11,6 @@ from stock_platform.broker.kiwoom.account_factory import (
 from stock_platform.broker.kiwoom.account_sync_service import (
     KiwoomAccountSyncService,
 )
-from stock_platform.broker.kiwoom.pending_factory import (
-    build_kiwoom_pending_order_client,
-)
-from stock_platform.broker.kiwoom.pending_service import (
-    KiwoomPendingOrderService,
-)
 from stock_platform.broker.kiwoom.ws_manager import (
     kiwoom_order_websocket_manager,
 )
@@ -185,11 +179,10 @@ class BrokerRecoveryService:
     async def _sync_pending_orders(
         self,
     ) -> dict[str, Any]:
-        return await KiwoomPendingOrderService(
-            session=self._session,
-            client=build_kiwoom_pending_order_client(),
-        ).synchronize(
-            account_number=self._account_number
+        # 레거시 RecoveryService — UBA 없이 account_number만 있는 경로 차단
+        raise PermissionError(
+            "Legacy BrokerRecoveryService pending sync requires "
+            "UnifiedRecoveryRuntime with user_broker_account_id"
         )
 
     async def _start_order_websocket(

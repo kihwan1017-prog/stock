@@ -1,0 +1,122 @@
+{
+  "step": "M5-D0",
+  "title": "Upbit A/B Experiment Tab Precheck",
+  "mode": "PRECHECK_DESIGN_ONLY",
+  "date": "2026-08-15",
+  "baseline_commit": "ffaa247cdc447206842872a306d53d227a10b58a",
+  "verdict": "AB_EXPERIMENT_TAB_KEEP_AS_IS",
+  "recommended_option": "A_KEEP_AS_IS",
+  "component_split_needed": false,
+  "reorder_needed": false,
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "panel": {
+    "path": "frontend/src/features/admin/upbit/UpbitNewsCombinedShadowPanel.tsx",
+    "total_loc": 271,
+    "jsx_loc": 188,
+    "useState": 0,
+    "useEffect": 0,
+    "useQuery": 3,
+    "useMutation": 2,
+    "onclick_handlers": 3,
+    "api_functions_used": 5,
+    "get_count": 3,
+    "mutation_count": 2,
+    "tables": 2,
+    "json_cards": 1,
+    "major_blocks": 6,
+    "practical_complexity": "LOW_MEDIUM"
+  },
+  "apis_used": [
+    "getUpbitCombinedShadowStatus",
+    "getUpbitCombinedShadowRecent",
+    "getUpbitCombinedShadowStats",
+    "runUpbitCombinedShadow",
+    "evaluateUpbitCombinedShadow"
+  ],
+  "apis_unused_in_panel": ["getUpbitCombinedShadowDiagnostics"],
+  "mutations": [
+    {
+      "ui": "Experiment Run",
+      "class": "EXPERIMENT_MUTATION",
+      "endpoint": "POST /admin/upbit/combined-shadow/run",
+      "affects_scanner": false,
+      "affects_control_shadow": false,
+      "affects_cohort": false,
+      "affects_gate": false,
+      "affects_trading_order_outbox": false
+    },
+    {
+      "ui": "Evaluate Pending",
+      "class": "EXPERIMENT_MUTATION",
+      "endpoint": "POST /admin/upbit/combined-shadow/evaluate",
+      "affects_scanner": false,
+      "affects_control_shadow": false,
+      "affects_cohort": false,
+      "affects_gate": false,
+      "affects_trading_order_outbox": false
+    }
+  ],
+  "trading_mutation_count": 0,
+  "control_mutation_count": 0,
+  "inventory": {
+    "experiment_status": true,
+    "sample_accumulation": true,
+    "matched_no_news_excluded": true,
+    "combined_rows": true,
+    "experimental_score": true,
+    "experimental_decision": true,
+    "rank_delta": true,
+    "evaluation_horizons": "r60_only_in_ui",
+    "mfe_mae": true,
+    "coverage_overlap": true,
+    "latency_backlog": true,
+    "milestone": true,
+    "run_evaluate_actions": true,
+    "provenance_dedicated_table": false
+  },
+  "current_ui_order": [
+    "title_blurb",
+    "pipeline_env_tags",
+    "latency_coverage_tags",
+    "experiment_sample_decision_tags",
+    "warnings",
+    "actions",
+    "matched_examples_table",
+    "recent_rows_table",
+    "stats_json"
+  ],
+  "sample_readonly_db": {
+    "matched_completed": 2,
+    "no_news_completed": 22,
+    "no_news_active": 7,
+    "excluded_completed": 4,
+    "targets": {"matched": 20, "no_news": 20},
+    "milestone_status": "NEWS_AB_SAMPLE_ACCUMULATING"
+  },
+  "options": {
+    "A_KEEP_AS_IS": {"recommended": true},
+    "B_SECTION_REORGANIZE": {"recommended": false, "note": "optional tag grouping only"},
+    "C_COMPONENT_SPLIT": {"recommended": false},
+    "D_DETAIL_ROUTE": {"recommended": false, "forbidden_now": true}
+  },
+  "changes_required": {
+    "backend_api": false,
+    "route": false,
+    "permission": false
+  },
+  "regressions": {
+    "m5a_tabs": "ok",
+    "m5b_technical": "untouched",
+    "m5c_news": "untouched",
+    "m4c_live_canonical": "/admin/accounts",
+    "m4c2_risk_live_mut": 0
+  },
+  "wip_protection": "NewsCollector rowKey and other dirty files untouched",
+  "documents": [
+    "docs/audit/MENU_M5D_AB_EXPERIMENT_TAB_PRECHECK.md",
+    "docs/audit/MENU_M5D_AB_EXPERIMENT_TAB_PRECHECK.json"
+  ],
+  "next_step_exactly_one": "M5-E0 — Ops/Reconciliation tab structure PRECHECK (M5-D implementation skipped per KEEP_AS_IS)"
+}

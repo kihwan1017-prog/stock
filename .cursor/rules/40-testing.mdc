@@ -1,0 +1,16 @@
+---
+description: Testing layers — no broker live, evidence required
+globs: tests/**/*;frontend/**/*.{test,spec}.{ts,tsx}
+alwaysApply: false
+---
+
+# 40 — Testing
+
+공통 SoT: [AGENTS.md](../../AGENTS.md) · 상세: [docs/AI_TEST_RULE.md](../../docs/AI_TEST_RULE.md)
+
+- 계층: Unit / Service / API / PostgreSQL integration / Concurrency / Frontend / E2E를 구분 보고.
+- 기본: `pytest -m "not external and not live and not live_ai"`.
+- **실제 Broker 호출 금지** (명시 LIVE smoke 승인 시만 `live` 마커).
+- SQLite만으로 DB·Migration 완료 금지.
+- 테스트 증거 없는 완료 판정 금지. 실패는 은폐하지 말고 보고.
+- Paper E2E와 LIVE Smoke를 분리. LIVE를 Paper 통과로 대체하지 않음.

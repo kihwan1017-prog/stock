@@ -18,3 +18,4 @@ class KillSwitchState:
     activated_at: datetime | None
     deactivated_by: str | None
     deactivated_at: datetime | None
+    exchange_scope: tuple[str, ...] = ()

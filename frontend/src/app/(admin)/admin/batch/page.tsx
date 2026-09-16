@@ -6,6 +6,8 @@ import { Space } from "antd";
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { AccountSettlementsPanel } from "@/features/admin/settlement/AccountSettlementsPanel";
+import { BrokerSnapshotsPanel } from "@/features/admin/settlement/BrokerSnapshotsPanel";
 import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -29,8 +31,10 @@ export default function AdminBatchPage() {
     : extractRows(jobs.data);
 
   return (
-    <AdminPageShell title="배치 관리" description="jobs · pipelines/latest · daily-reports">
+    <AdminPageShell title="배치 관리" description="jobs · pipelines · settlements · snapshots">
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <BrokerSnapshotsPanel />
+        <AccountSettlementsPanel />
         <AdminDataTable
           title="등록 Job (GET /jobs)"
           loading={jobs.isLoading}

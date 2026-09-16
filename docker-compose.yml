@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: stock_app
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_DB: stock_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stock_app -d stock_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: local
+      JWT_DEV_AUTO_SECRET: "true"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: stock_platform
+      DB_USER: stock_app
+      DB_PASSWORD: change-me
+      ADMIN_API_KEY: local-admin-key
+      CORS_ALLOW_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

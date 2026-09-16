@@ -211,7 +211,10 @@ def get_backup_tool_status(
         except Exception as exc:
             dump_version = f"version check failed: {exc}"
 
-    backup_dir = Path(r"E:\StockTrading\backups")
+    backup_dir = Path(settings.backup_dir)
+    if not backup_dir.is_absolute():
+        backup_dir = _project_root() / backup_dir
+
     return {
         "pg_dump_path": pg_dump,
         "pg_restore_path": pg_restore,
@@ -220,6 +223,8 @@ def get_backup_tool_status(
         "tools_ready": bool(pg_dump and pg_restore),
         "recommended_backup_dir": str(backup_dir),
         "backup_dir_exists": backup_dir.exists(),
+        "rto_minutes_target": 60,
+        "rpo_minutes_target": 15,
         "database": {
             "host": settings.db_host,
             "port": settings.db_port,
@@ -227,13 +232,82 @@ def get_backup_tool_status(
         },
         "manual": "docs/manual/백업복구매뉴얼.md",
         "example_command": (
-            "pg_dump -h $env:DB_HOST -p $env:DB_PORT "
-            "-U $env:DB_USER -d $env:DB_NAME -Fc "
-            "-f E:\\StockTrading\\backups\\stock.dump"
+            f"pg_dump -h $env:DB_HOST -p $env:DB_PORT "
+            f"-U $env:DB_USER -d $env:DB_NAME -Fc "
+            f"-f {backup_dir / 'stock.dump'}"
         ),
         "restore_note": (
-            "웹 Restore는 제공하지 않습니다. "
-            "pg_restore --clean --if-exists 를 CLI로 실행하세요."
+            "웹 Restore는 의도적으로 제공하지 않습니다(파괴적). "
+            "pg_restore --clean --if-exists 를 CLI로 실행하세요. "
+            "RTO 목표 60분 / RPO 15분."
         ),
         "checked_at": datetime.now(timezone.utc),
+    }
+
+
+@router.post("/backup/dump")
+def create_backup_dump(
+    _: AuthenticatedUser = Depends(
+        require_permission("ops:execute")
+    ),
+):
+    """pg_dump 실행 — 관리자 전용. Restore는 CLI만."""
+
+    settings = get_settings()
+    pg_dump = shutil.which("pg_dump")
+    if not pg_dump:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="pg_dump 를 PATH에서 찾을 수 없습니다.",
+        )
+
+    backup_dir = Path(settings.backup_dir)
+    if not backup_dir.is_absolute():
+        backup_dir = _project_root() / backup_dir
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_file = backup_dir / f"stock_platform_{stamp}.dump"
+
+    env = {
+        **dict(**{k: v for k, v in __import__("os").environ.items()}),
+        "PGPASSWORD": settings.db_password,
+    }
+    completed = subprocess.run(
+        [
+            pg_dump,
+            "-h",
+            settings.db_host,
+            "-p",
+            str(settings.db_port),
+            "-U",
+            settings.db_user,
+            "-d",
+            settings.db_name,
+            "-Fc",
+            "-f",
+            str(out_file),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=600,
+        check=False,
+        env=env,
+    )
+    if completed.returncode != 0:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                completed.stderr.strip()
+                or completed.stdout.strip()
+                or "pg_dump failed"
+            ),
+        )
+    return {
+        "ok": True,
+        "path": str(out_file),
+        "size_bytes": out_file.stat().st_size if out_file.exists() else 0,
+        "rto_minutes_target": 60,
+        "rpo_minutes_target": 15,
+        "created_at": datetime.now(timezone.utc),
     }

@@ -8,6 +8,9 @@ from stock_platform.trading.models import (
     OrderType,
     PaperOrder,
 )
+from stock_platform.trading.order_strategy_provenance import (
+    OrderStrategyProvenance,
+)
 
 
 ZERO = Decimal("0")
@@ -23,6 +26,7 @@ class PaperOrderEngine:
     def create_order(
         self,
         *,
+        account_id: int,
         exchange_code: str,
         symbol: str,
         side: OrderSide,
@@ -30,7 +34,12 @@ class PaperOrderEngine:
         quantity: Decimal,
         price: Decimal | None,
         position_plan_id: int | None = None,
+        provenance: OrderStrategyProvenance | None = None,
     ) -> PaperOrder:
+        if account_id <= 0:
+            raise PaperOrderValidationError(
+                "account_id must be greater than zero"
+            )
         if quantity <= ZERO:
             raise PaperOrderValidationError(
                 "quantity must be greater than zero"
@@ -44,7 +53,9 @@ class PaperOrderEngine:
                 "price is required for LIMIT order"
             )
 
+        prov = (provenance or OrderStrategyProvenance()).as_column_kwargs()
         return PaperOrder(
+            account_id=account_id,
             position_plan_id=position_plan_id,
             exchange_code=exchange_code.upper(),
             symbol=symbol.upper(),
@@ -56,6 +67,7 @@ class PaperOrderEngine:
             filled_quantity=ZERO,
             average_fill_price=None,
             rejection_reason=None,
+            **prov,
         )
 
     def accept(self, order: PaperOrder) -> PaperOrder:

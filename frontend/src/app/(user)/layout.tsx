@@ -1,40 +1,35 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useMemo } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-import { AuthGuard } from "@/components/layout/AuthGuard";
-import { MainLayout } from "@/components/layout/MainLayout";
-import { filterUserMenuByRoles, userMenuItems } from "@/config/menu";
-import { userRoutes } from "@/config/routes";
+import { AppLoading } from "@/components/common/AppLoading";
+import { adminRoutes, authRoutes } from "@/config/routes";
 import { useAuth } from "@/features/auth/hooks/useAuth";
-import { requiredRolesForUserPath } from "@/features/auth/utils/roles";
+import { canAccessAdminPortal } from "@/features/auth/utils/roles";
 
+/**
+ * USER portal 폐지 — Single Admin Operator는 Admin 콘솔만 사용.
+ * 비관리자는 forbidden.
+ */
 export default function UserLayout({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
-  const { user } = useAuth();
+  const router = useRouter();
+  const { user, authenticated, hydrated } = useAuth();
 
-  const menuItems = useMemo(
-    () => filterUserMenuByRoles(userMenuItems, user?.roles ?? []),
-    [user?.roles],
-  );
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!authenticated) {
+      router.replace(authRoutes.login);
+      return;
+    }
+    if (canAccessAdminPortal(user?.roles)) {
+      router.replace(adminRoutes.dashboard);
+      return;
+    }
+    router.replace(authRoutes.forbidden);
+  }, [hydrated, authenticated, user?.roles, router]);
 
-  const requiredRoles = requiredRolesForUserPath(pathname);
-
-  return (
-    <AuthGuard
-      requiredRoles={requiredRoles}
-      forbiddenRedirect={userRoutes.dashboard}
-    >
-      <MainLayout
-        menuItems={menuItems}
-        brandLabel="KIKI Trade"
-        footerLabel="User Web · v0.1"
-        tradingLabel="자동매매 상태: API 연동"
-      >
-        {children}
-      </MainLayout>
-    </AuthGuard>
-  );
+  void children;
+  return <AppLoading fullScreen tip="운영 콘솔로 이동 중..." />;
 }

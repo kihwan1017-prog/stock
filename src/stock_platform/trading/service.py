@@ -7,6 +7,9 @@ from stock_platform.trading.models import (
     OrderType,
     PaperOrder,
 )
+from stock_platform.trading.order_strategy_provenance import (
+    OrderStrategyProvenance,
+)
 from stock_platform.trading.paper_engine import (
     PaperOrderEngine,
 )
@@ -27,6 +30,7 @@ class PaperOrderService:
     def create(
         self,
         *,
+        account_id: int,
         exchange_code: str,
         symbol: str,
         side: OrderSide,
@@ -35,8 +39,10 @@ class PaperOrderService:
         price: Decimal | None,
         position_plan_id: int | None = None,
         auto_accept: bool = True,
+        provenance: OrderStrategyProvenance | None = None,
     ) -> PaperOrder:
         order = self._engine.create_order(
+            account_id=account_id,
             exchange_code=exchange_code,
             symbol=symbol,
             side=side,
@@ -44,6 +50,7 @@ class PaperOrderService:
             quantity=quantity,
             price=price,
             position_plan_id=position_plan_id,
+            provenance=provenance,
         )
 
         if auto_accept:

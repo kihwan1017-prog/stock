@@ -1,0 +1,87 @@
+{
+  "step": "M6-B0",
+  "title": "Order READ-ONLY Shared Columns Precheck",
+  "mode": "READ_ONLY_PRECHECK",
+  "date": "2026-08-15",
+  "baseline_m6a": "239550d425553a66807af61318b448e153aedc1a",
+  "verdict": "ORDER_READ_COLUMNS_SHARE_RECOMMENDED",
+  "recommended_option": "C_SHARE_COMMON_READ_COLUMNS",
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "admin_routes": [
+    "/admin/orders",
+    "/admin/trades"
+  ],
+  "user_routes": [
+    "/user/orders",
+    "/user/orders/kiwoom",
+    "/user/orders/upbit"
+  ],
+  "primary_pair": {
+    "admin": "/admin/orders",
+    "user": "/user/orders",
+    "admin_page": "frontend/src/app/(admin)/admin/orders/page.tsx",
+    "user_page": "frontend/src/app/(user)/user/orders/page.tsx",
+    "user_broker_component": "frontend/src/features/user/orders/BrokerOrdersView.tsx"
+  },
+  "column_counts": {
+    "admin_total": 10,
+    "admin_read": 8,
+    "user_read": 8,
+    "exact_common": 7,
+    "semantic_common": 7,
+    "admin_only_read": 1,
+    "user_only_read": 1,
+    "mutation_action": 2,
+    "common_read_ratio": 0.875,
+    "common_read_ratio_formula": "exact_common / min(admin_read, user_read)"
+  },
+  "column_matrix": [
+    {"dataIndex": "order_id", "class": "COMMON_READ"},
+    {"dataIndex": "broker_code", "class": "ADMIN_ONLY_READ"},
+    {"dataIndex": "exchange_code", "class": "COMMON_READ"},
+    {"dataIndex": "symbol", "class": "COMMON_READ"},
+    {"dataIndex": "side_code", "class": "COMMON_READ"},
+    {"dataIndex": "status_code", "class": "COMMON_READ", "note": "BrokerOrdersView has USER-specific rich renderer"},
+    {"dataIndex": "order_quantity", "class": "COMMON_READ"},
+    {"dataIndex": "order_price", "class": "COMMON_READ"},
+    {"dataIndex": "created_at", "class": "USER_ONLY_READ"},
+    {"title": "취소/resolve/retire", "class": "ADMIN_MUTATION"},
+    {"title": "상세", "class": "ADMIN_MUTATION"}
+  ],
+  "common_columns": [
+    "order_id",
+    "exchange_code",
+    "symbol",
+    "side_code",
+    "status_code",
+    "order_quantity",
+    "order_price"
+  ],
+  "admin_only_columns": ["broker_code"],
+  "user_only_columns": ["created_at"],
+  "mutation_columns": ["cancel/resolve/retire", "detail"],
+  "api_shape": "MOSTLY_SAME_SCHEMA",
+  "api_notes": {
+    "endpoint": "GET /orders",
+    "admin_client": "adminApi.listOrders → JsonValue/extractRows",
+    "user_client": "userApi.listOrders → TradeOrder[]",
+    "scope": "DIFFERENT_SCOPE_SAME_PATH"
+  },
+  "row_type_compatibility": "STRUCTURALLY_COMPATIBLE",
+  "existing_shared_order_ui": [],
+  "m6a_reuse": ["cell for nullish display"],
+  "formatter_candidates": ["formatOrderDateTime", "optional broker status label map (user-only override preferred)"],
+  "capability_prop_risk": "HIGH_IF_FACTORY_WITH_ACTIONS",
+  "options": [
+    {"id": "A_KEEP_SEPARATE", "recommended": false},
+    {"id": "B_SHARE_FORMATTERS_ONLY", "recommended": false, "note": "low benefit for plain columns"},
+    {"id": "C_SHARE_COMMON_READ_COLUMNS", "recommended": true},
+    {"id": "D_COLUMN_FACTORY_WITH_CAPABILITIES", "recommended": false}
+  ],
+  "filter_share": false,
+  "query_hook_share": false,
+  "owner_isolation_impact": 0,
+  "next_step_exactly_one": "M6-B — Implement COMMON_READ order columns (RO only)"
+}

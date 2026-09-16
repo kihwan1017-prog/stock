@@ -43,3 +43,33 @@ def test_maps_account_and_positions() -> None:
     assert len(result.positions) == 1
     assert result.positions[0].symbol == "005930"
     assert result.positions[0].quantity == Decimal("10")
+
+
+def test_maps_signed_current_price_without_flipping_pnl() -> None:
+    result = KiwoomAccountMapper.map(
+        account_number="1234567890",
+        deposit_payload={"entr": "1", "ord_alow_amt": "1"},
+        balance_payload={
+            "tot_evlt_pl": "-5000",
+            "tot_prft_rt": "-1.5",
+            "acnt_evlt_remn_indv_tot": [
+                {
+                    "stk_cd": "009240",
+                    "stk_nm": "한샘",
+                    "rmnd_qty": "1",
+                    "pur_pric": "-40000",
+                    "cur_prc": "-40200",
+                    "evltv_prft": "-200",
+                    "prft_rt": "-0.5",
+                }
+            ],
+        },
+    )
+    pos = result.positions[0]
+    assert pos.current_price == Decimal("40200")
+    assert pos.average_purchase_price == Decimal("40000")
+    assert pos.quantity == Decimal("1")
+    assert pos.profit_loss == Decimal("-200")
+    assert pos.return_rate == Decimal("-0.5")
+    assert result.total_profit_loss == Decimal("-5000")
+

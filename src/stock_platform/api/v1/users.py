@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
+from stock_platform.api.deps_admin import AuditLogService
 from stock_platform.auth.deps import (
     AuthenticatedUser,
     require_permission,
@@ -268,3 +269,91 @@ def reset_user_password(
         user=_member_response(view),
         temporary_password=temporary,
     )
+
+
+@router.post("/{user_id}/unlock", response_model=MemberResponse)
+def unlock_user(
+    user_id: int,
+    actor: AuthenticatedUser = Depends(require_permission("users:write")),
+    session: Session = Depends(get_db_session),
+    service: UserAdminService = Depends(get_user_admin_service),
+):
+    """계정 잠금 해제."""
+
+    try:
+        view = service.unlock_member(user_id)
+        AuditLogService(session).record(
+            event_type="USER_UNLOCK",
+            actor=actor.username,
+            detail={"target_user_id": user_id},
+        )
+        session.commit()
+    except AuthError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return _member_response(view)
+
+
+@router.post("/{user_id}/force-logout")
+def force_logout_user(
+    user_id: int,
+    actor: AuthenticatedUser = Depends(require_permission("users:write")),
+    session: Session = Depends(get_db_session),
+    service: UserAdminService = Depends(get_user_admin_service),
+):
+    """대상 사용자 전체 세션 강제 종료."""
+
+    try:
+        result = service.force_logout_member(user_id)
+        AuditLogService(session).record(
+            event_type="USER_FORCE_LOGOUT",
+            actor=actor.username,
+            detail={"target_user_id": user_id, **result},
+        )
+        session.commit()
+    except AuthError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    return result
+
+
+@router.get("/{user_id}/sessions")
+def list_user_sessions(
+    user_id: int,
+    _: AuthenticatedUser = Depends(require_permission("users:read")),
+    service: UserAdminService = Depends(get_user_admin_service),
+):
+    try:
+        items = service.list_member_sessions(user_id)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/{user_id}/accounts")
+def list_user_broker_accounts(
+    user_id: int,
+    _: AuthenticatedUser = Depends(require_permission("users:read")),
+    service: UserAdminService = Depends(get_user_admin_service),
+):
+    """
+    회원 계좌 연결 상태 (키움/업비트/Paper).
+    Secret·계좌번호 원문은 포함하지 않는다.
+    """
+
+    try:
+        return service.list_member_accounts(user_id)
+    except AuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc

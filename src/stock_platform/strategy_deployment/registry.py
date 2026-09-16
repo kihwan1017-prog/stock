@@ -22,6 +22,7 @@ class StrategyFactoryRegistry:
 
     def __init__(self) -> None:
         self._factories: dict[str, StrategyFactory] = {}
+        self._default_factory: StrategyFactory | None = None
 
     def register(
         self,
@@ -56,6 +57,11 @@ class StrategyFactoryRegistry:
 
         self._factories[normalized] = factory
 
+    def set_default_factory(self, factory: StrategyFactory) -> None:
+        """미등록 strategy_code용 폴백 팩토리."""
+
+        self._default_factory = factory
+
     def create(
         self,
         *,
@@ -64,7 +70,8 @@ class StrategyFactoryRegistry:
     ) -> RealtimeStrategyProtocol:
         normalized = strategy_code.strip().upper()
         factory = self._factories.get(normalized)
-
+        if factory is None:
+            factory = self._default_factory
         if factory is None:
             raise LookupError(
                 f"Realtime strategy factory not registered: {normalized}"

@@ -166,23 +166,74 @@ class RiskManagementEngine:
         self,
         request: ExitEvaluationRequest,
     ) -> ExitDecision:
+        """청산 우선순위: SL > MAX_HOLD > TRAILING > TP > RELATIVE_LOSS."""
+
         self._validate_exit_request(request)
 
-        if request.current_price <= request.stop_loss_price:
+        # 1) STOP_LOSS
+        if (
+            request.stop_loss_price is not None
+            and request.current_price <= request.stop_loss_price
+        ):
             return ExitDecision(
                 should_exit=True,
                 reason="STOP_LOSS",
                 trigger_price=request.stop_loss_price,
             )
 
-        if request.current_price >= request.take_profit_price:
+        # 2) MAX_HOLD_TIME
+        if (
+            request.max_hold_seconds is not None
+            and request.holding_seconds is not None
+            and int(request.holding_seconds) >= int(request.max_hold_seconds)
+        ):
+            return ExitDecision(
+                should_exit=True,
+                reason="MAX_HOLD_TIME",
+                trigger_price=request.current_price,
+            )
+
+        # 3) TRAILING_STOP — activation(+profit) 후 peak drawdown
+        if request.trailing_stop_ratio is not None:
+            armed = bool(request.trailing_armed)
+            if not armed and request.trailing_activation_ratio is not None:
+                if request.entry_price > ZERO:
+                    peak_gain = (
+                        (request.highest_price - request.entry_price)
+                        / request.entry_price
+                    )
+                    armed = peak_gain >= request.trailing_activation_ratio
+            elif not armed and request.trailing_activation_ratio is None:
+                # 레거시: peak > entry 이면 armed
+                armed = request.highest_price > request.entry_price
+
+            if armed and request.highest_price > request.entry_price:
+                trailing_trigger = (
+                    request.highest_price
+                    * (ONE - request.trailing_stop_ratio)
+                ).quantize(
+                    Decimal("0.00000001"),
+                    rounding=ROUND_DOWN,
+                )
+                if request.current_price <= trailing_trigger:
+                    return ExitDecision(
+                        should_exit=True,
+                        reason="TRAILING_STOP",
+                        trigger_price=trailing_trigger,
+                    )
+
+        # 4) TAKE_PROFIT
+        if (
+            request.take_profit_price is not None
+            and request.current_price >= request.take_profit_price
+        ):
             return ExitDecision(
                 should_exit=True,
                 reason="TAKE_PROFIT",
                 trigger_price=request.take_profit_price,
             )
 
-        # 기존 SL/TP와 별도로 상대 손실 비율을 유지·검사한다.
+        # 5) RELATIVE_LOSS (legacy)
         if request.relative_loss_ratio is not None:
             loss_ratio = (
                 (request.entry_price - request.current_price)
@@ -193,25 +244,6 @@ class RiskManagementEngine:
                     should_exit=True,
                     reason="RELATIVE_LOSS",
                     trigger_price=request.current_price,
-                )
-
-        if request.trailing_stop_ratio is not None:
-            trailing_trigger = (
-                request.highest_price
-                * (ONE - request.trailing_stop_ratio)
-            ).quantize(
-                Decimal("0.00000001"),
-                rounding=ROUND_DOWN,
-            )
-
-            if (
-                request.highest_price > request.entry_price
-                and request.current_price <= trailing_trigger
-            ):
-                return ExitDecision(
-                    should_exit=True,
-                    reason="TRAILING_STOP",
-                    trigger_price=trailing_trigger,
                 )
 
         return ExitDecision(
@@ -386,8 +418,6 @@ class RiskManagementEngine:
             "entry_price": request.entry_price,
             "current_price": request.current_price,
             "highest_price": request.highest_price,
-            "stop_loss_price": request.stop_loss_price,
-            "take_profit_price": request.take_profit_price,
         }
 
         for field_name, value in price_fields.items():
@@ -401,15 +431,25 @@ class RiskManagementEngine:
                 "highest_price must not be below entry_price",
             )
 
-        if request.stop_loss_price >= request.entry_price:
-            raise RiskValidationError(
-                "stop_loss_price must be below entry_price",
-            )
+        if request.stop_loss_price is not None:
+            if request.stop_loss_price <= ZERO:
+                raise RiskValidationError(
+                    "stop_loss_price must be greater than zero",
+                )
+            if request.stop_loss_price >= request.entry_price:
+                raise RiskValidationError(
+                    "stop_loss_price must be below entry_price",
+                )
 
-        if request.take_profit_price <= request.entry_price:
-            raise RiskValidationError(
-                "take_profit_price must be above entry_price",
-            )
+        if request.take_profit_price is not None:
+            if request.take_profit_price <= ZERO:
+                raise RiskValidationError(
+                    "take_profit_price must be greater than zero",
+                )
+            if request.take_profit_price <= request.entry_price:
+                raise RiskValidationError(
+                    "take_profit_price must be above entry_price",
+                )
 
         if request.trailing_stop_ratio is not None:
             if (

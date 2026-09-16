@@ -96,9 +96,13 @@ class UpbitRealtimeClient:
         self._reconnect_max_seconds = reconnect_max_seconds
         self._stop_event = asyncio.Event()
         self._connected = False
+        self._connecting = False
         self._last_error: str | None = None
         self._received_count = 0
+        self._reconnect_count = 0
         self._last_received_at: datetime | None = None
+        self._last_connect_attempt: datetime | None = None
+        self._last_disconnect_at: datetime | None = None
 
     async def run_forever(self) -> None:
         retry_seconds = 1.0
@@ -108,13 +112,20 @@ class UpbitRealtimeClient:
                 await self._run_once()
                 retry_seconds = 1.0
             except asyncio.CancelledError:
+                self._connected = False
+                self._connecting = False
+                self._last_disconnect_at = datetime.now(timezone.utc)
                 raise
             except Exception as exc:
                 self._connected = False
+                self._connecting = False
+                self._last_disconnect_at = datetime.now(timezone.utc)
                 self._last_error = str(exc)
+                self._reconnect_count += 1
                 logger.exception(
                     "upbit_realtime_connection_failed",
                     retry_seconds=retry_seconds,
+                    reconnect_count=self._reconnect_count,
                 )
 
                 try:
@@ -131,56 +142,65 @@ class UpbitRealtimeClient:
                 )
 
     async def _run_once(self) -> None:
-        async with websockets.connect(
-            self._websocket_url,
-            ping_interval=self._ping_interval_seconds,
-            ping_timeout=10,
-            close_timeout=5,
-            max_queue=2048,
-        ) as websocket:
-            request: list[dict[str, Any]] = [
-                {"ticket": str(uuid.uuid4())}
-            ]
-            for channel in self._channels:
-                request.append(
-                    {
-                        "type": channel,
-                        "codes": self._symbols,
-                        "is_only_realtime": True,
-                    }
-                )
-            request.append({"format": "DEFAULT"})
-
-            await websocket.send(
-                json.dumps(request, ensure_ascii=False)
-            )
-            self._connected = True
-            self._last_error = None
-
-            logger.info(
-                "upbit_realtime_connected",
-                symbols=self._symbols,
-                channels=self._channels,
-            )
-
-            while not self._stop_event.is_set():
-                try:
-                    raw_message = await asyncio.wait_for(
-                        websocket.recv(),
-                        timeout=90,
+        self._connecting = True
+        self._last_connect_attempt = datetime.now(timezone.utc)
+        try:
+            async with websockets.connect(
+                self._websocket_url,
+                ping_interval=self._ping_interval_seconds,
+                ping_timeout=10,
+                close_timeout=5,
+                open_timeout=15,
+                max_queue=2048,
+            ) as websocket:
+                request: list[dict[str, Any]] = [
+                    {"ticket": str(uuid.uuid4())}
+                ]
+                for channel in self._channels:
+                    request.append(
+                        {
+                            "type": channel,
+                            "codes": self._symbols,
+                            "is_only_realtime": True,
+                        }
                     )
-                except TimeoutError:
-                    await websocket.ping()
-                    continue
-                except ConnectionClosed:
-                    break
+                request.append({"format": "DEFAULT"})
 
-                payload = self._decode_message(raw_message)
-                await self._dispatch(payload)
-                self._received_count += 1
-                self._last_received_at = datetime.now(timezone.utc)
+                await websocket.send(
+                    json.dumps(request, ensure_ascii=False)
+                )
+                self._connected = True
+                self._connecting = False
+                self._last_error = None
 
-        self._connected = False
+                logger.info(
+                    "upbit_realtime_connected",
+                    symbols=self._symbols,
+                    channels=self._channels,
+                )
+
+                while not self._stop_event.is_set():
+                    try:
+                        raw_message = await asyncio.wait_for(
+                            websocket.recv(),
+                            timeout=90,
+                        )
+                    except TimeoutError:
+                        await websocket.ping()
+                        continue
+                    except ConnectionClosed:
+                        break
+
+                    payload = self._decode_message(raw_message)
+                    await self._dispatch(payload)
+                    self._received_count += 1
+                    self._last_received_at = datetime.now(timezone.utc)
+        finally:
+            was_connected = self._connected
+            self._connected = False
+            self._connecting = False
+            if was_connected:
+                self._last_disconnect_at = datetime.now(timezone.utc)
 
     async def _dispatch(self, payload: dict[str, Any]) -> None:
         event_type = str(payload.get("type", "")).lower()
@@ -215,12 +235,26 @@ class UpbitRealtimeClient:
         return {
             "exchange_code": "UPBIT",
             "connected": self._connected,
+            "connecting": self._connecting,
+            "running": self._connected or self._connecting,
             "symbols": self._symbols,
             "channels": self._channels,
+            "websocket_url": self._websocket_url,
             "received_count": self._received_count,
+            "reconnect_count": self._reconnect_count,
             "last_received_at": (
                 self._last_received_at.isoformat()
                 if self._last_received_at
+                else None
+            ),
+            "last_connect_attempt": (
+                self._last_connect_attempt.isoformat()
+                if self._last_connect_attempt
+                else None
+            ),
+            "last_disconnect_at": (
+                self._last_disconnect_at.isoformat()
+                if self._last_disconnect_at
                 else None
             ),
             "last_error": self._last_error,

@@ -1,3 +1,5 @@
+"""레거시 /strategy-runtime — Scope Registry 상태·전체 Reload만 유지."""
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -21,30 +23,32 @@ router = APIRouter(
 
 @router.post("/reload")
 async def reload_strategy_runtime(
-    market_code: str = Query(
-        default="KRX",
-        min_length=1,
-    ),
-    symbol: str | None = Query(default=None),
     force: bool = Query(default=False),
+    scope_key: str | None = Query(default=None),
+    strategy_id: int | None = Query(default=None),
+    # 하위 호환: market_code 기본 KRX 단일 로드는 제거됨
+    market_code: str | None = Query(default=None),
+    symbol: str | None = Query(default=None),
 ):
+    _ = (market_code, symbol)
     try:
-        return await (
-            dynamic_strategy_runtime_manager.reload(
-                market_code=market_code,
-                symbol=symbol,
-                force=force,
+        if scope_key:
+            return await dynamic_strategy_runtime_manager.reload(
+                scope_key=scope_key, force=force
             )
+        if strategy_id is not None:
+            return await dynamic_strategy_runtime_manager.reload(
+                strategy_id=strategy_id, force=force
+            )
+        return await dynamic_strategy_runtime_manager.reload_all_scopes(
+            force=force
         )
     except LookupError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
-    except (
-        ValueError,
-        TypeError,
-    ) as exc:
+    except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -52,9 +56,11 @@ async def reload_strategy_runtime(
 
 
 @router.post("/clear")
-async def clear_strategy_runtime():
-    await dynamic_strategy_runtime_manager.clear()
-    return {"cleared": True}
+async def clear_strategy_runtime(
+    scope_key: str | None = Query(default=None),
+):
+    await dynamic_strategy_runtime_manager.clear(scope_key=scope_key)
+    return {"cleared": True, "scope_key": scope_key}
 
 
 @router.get("/status")

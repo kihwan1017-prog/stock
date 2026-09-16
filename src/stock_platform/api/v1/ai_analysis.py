@@ -7,8 +7,10 @@ from fastapi import (
     Depends,
     HTTPException,
     Query,
+    Request,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -19,6 +21,7 @@ from stock_platform.ai.ollama_client import (
     OllamaClient,
     OllamaError,
 )
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.common.settings import get_settings
 from stock_platform.database.session import get_db_session
 
@@ -26,6 +29,7 @@ from stock_platform.database.session import get_db_session
 router = APIRouter(
     prefix="/api/v1/ai-analysis",
     tags=["AI Analysis"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -232,8 +236,16 @@ async def reproduce_ai_analysis(
 async def execute_ai_analysis(
     exchange_code: str,
     request: CandidateAnalysisRequest,
+    http_request: Request,
     session: Session = Depends(get_db_session),
 ):
+    # 고비용 AI 분석 — IP당 분당 10회
+    enforce_rate_limit(
+        http_request,
+        scope="ai_analysis",
+        limit=10,
+        window_seconds=60,
+    )
     settings = get_settings()
     contexts: dict[str, dict[str, Any]] = {
         symbol.upper(): context.model_dump()

@@ -23,10 +23,9 @@ class DailyReportJob:
         self,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        report_raw = payload.get("report_date") or date.today().isoformat()
         report = self._service.generate(
-            report_date=date.fromisoformat(
-                str(payload["report_date"])
-            ),
+            report_date=date.fromisoformat(str(report_raw)),
             exchange_code=str(
                 payload.get("exchange_code", "KRX")
             ),

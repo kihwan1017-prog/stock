@@ -1,0 +1,17 @@
+#!/usr/bin/env python
+"""Entry: python scripts/run_operation_rehearsal.py [options]"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
+
+from stock_platform.operations.rehearsal.cli import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
 from stock_platform.api.deps_admin import require_admin
+from stock_platform.common.settings import get_settings
 from stock_platform.operation.operations_dashboard_service import (
     OperationsDashboardService,
 )
@@ -25,7 +26,7 @@ router = APIRouter(
 
 @router.get("")
 async def get_system_dashboard(
-    account_id: int = Query(default=1, gt=0),
+    account_id: int | None = Query(default=None, gt=0),
     exchange_code: str = Query(default="KRX"),
     recent_limit: int = Query(
         default=20,
@@ -34,11 +35,16 @@ async def get_system_dashboard(
     ),
     session: Session = Depends(get_db_session),
 ):
+    resolved_account_id = (
+        account_id
+        if account_id is not None
+        else get_settings().realtime_paper_account_id
+    )
     try:
         return await OperationsDashboardService(
             session
         ).build(
-            account_id=account_id,
+            account_id=resolved_account_id,
             exchange_code=exchange_code,
             recent_limit=recent_limit,
         )

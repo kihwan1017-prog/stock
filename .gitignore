@@ -24,6 +24,9 @@ secrets/
 # Logs
 *.log
 logs/
+# /admin/logs 라우트는 로그 산출물이 아님
+!frontend/src/app/(admin)/admin/logs/
+!frontend/src/app/(admin)/admin/logs/**
 
 # Test and cache
 .pytest_cache/
@@ -52,3 +55,23 @@ openclaw-workspace-state.json
 USER.md
 MEMORY.md
 memory/
+
+# Runtime evidence / probes (not product docs)
+.run/*
+!.run/README.md
+
+# Generated / editor leftovers
+*.bak
+*.tmp
+*.old
+*.backup
+.ruff_cache/
+.next/
+coverage/
+
+# Test run artifacts
+frontend/test-results/
+frontend/playwright-report/
+
+# One-off verification logs (do not commit)
+tmp_*_88a.txt

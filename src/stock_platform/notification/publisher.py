@@ -90,9 +90,38 @@ class NotificationPublisher:
             event_type=event_type,
             title=title,
         )
+        # STEP71 — user_id가 있으면 Notification Center Inbox 경유
+        self._try_inbox_dispatch(event)
         if dispatch:
             self._schedule_dispatch(event)
         return event
+
+    def _try_inbox_dispatch(self, event: PublishedNotification) -> None:
+        detail = event.detail or {}
+        if detail.get("user_id") is None and not detail.get("user_ids"):
+            return
+        try:
+            from stock_platform.database.session import get_session_factory
+            from stock_platform.notification.inbox_service import (
+                NotificationDispatcher,
+            )
+
+            session = get_session_factory()()
+            try:
+                NotificationDispatcher(session).dispatch_published(
+                    event_type=event.event_type,
+                    title=event.title,
+                    message=event.message,
+                    detail=detail,
+                )
+            finally:
+                session.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "notification_inbox_dispatch_failed",
+                event_type=event.event_type,
+                error=str(exc),
+            )
 
     async def publish_async(
         self,

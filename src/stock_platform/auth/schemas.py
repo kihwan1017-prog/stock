@@ -74,11 +74,18 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str = Field(min_length=1)
+    # cookie 모드에서는 body 생략 가능
+    refresh_token: str | None = Field(default=None, min_length=1)
 
 
 class LogoutRequest(BaseModel):
     refresh_token: str | None = None
+
+
+class GoogleCompleteRequest(BaseModel):
+    """Google OAuth FE handoff 일회성 코드."""
+
+    code: str = Field(min_length=16, max_length=128)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -93,6 +100,10 @@ class AuthUserResponse(BaseModel):
     display_name: str | None = None
     roles: list[str]
     permissions: list[str] = Field(default_factory=list)
+    user_status: str = "ACTIVE"
+    password_change_required: bool = False
+    default_route: str = "/user/dashboard"
+    onboarding_completed: bool = False
 
 
 class TokenResponse(BaseModel):
@@ -101,6 +112,8 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: AuthUserResponse
+    # 편의용 — 인가 판정은 DB RBAC 재검증 사용
+    default_route: str = "/user/dashboard"
 
 
 class AvailabilityResponse(BaseModel):
@@ -114,7 +127,7 @@ class MemberCreateRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     email: str | None = Field(default=None, max_length=255)
     display_name: str | None = Field(default=None, max_length=100)
-    roles: list[str] = Field(default_factory=lambda: ["viewer"])
+    roles: list[str] = Field(default_factory=lambda: ["user"])
     is_active: bool = True
 
     @field_validator("email")
@@ -183,6 +196,13 @@ class MemberResponse(BaseModel):
     updated_at: datetime
     password_changed_at: datetime
     deleted_at: datetime | None = None
+    user_status: str = "ACTIVE"
+    password_change_required: bool = False
+    failed_login_count: int = 0
+    locked_until: datetime | None = None
+    last_login_at: datetime | None = None
+    last_login_ip: str | None = None
+    onboarding_completed: bool = False
 
 
 class MemberListResponse(BaseModel):

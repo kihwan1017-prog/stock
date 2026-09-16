@@ -14,6 +14,9 @@ from stock_platform.order.models import (
 from stock_platform.order.repository import (
     TradingOrderRepository,
 )
+from stock_platform.order.trading_guards import (
+    require_kill_switch_allows_order,
+)
 
 
 class OrderCancelReplaceService:
@@ -35,6 +38,8 @@ class OrderCancelReplaceService:
         quantity: Decimal | None = None,
         actor: str = "ORDER_CANCEL_SERVICE",
     ):
+        """취소는 Kill Switch 활성 시에도 허용한다 (리스크 축소)."""
+
         entity = self._require_order(order_id)
 
         if not entity.broker_order_id:
@@ -101,6 +106,14 @@ class OrderCancelReplaceService:
     ):
         entity = self._require_order(order_id)
 
+        # 정정은 신규 노출 가능 → Kill Switch 검사
+        require_kill_switch_allows_order(
+            self._repository.session,
+            side=str(entity.side_code),
+            allow_sell=True,
+            exchange_code=str(entity.exchange_code),
+        )
+
         if not entity.broker_order_id:
             raise ValueError(
                 "broker_order_id is missing"
@@ -122,6 +135,23 @@ class OrderCancelReplaceService:
                     entity.client_order_id
                 ),
                 account_id=entity.account_id,
+                user_broker_account_id=(
+                    entity.user_broker_account_id
+                ),
+                broker_code=entity.broker_code,
+                account_type=str(
+                    (entity.metadata_payload or {}).get(
+                        "environment"
+                    )
+                    or "PAPER"
+                ).upper(),
+                external_account_ref=None,
+                credential_ref=(
+                    f"USER_BROKER_ACCOUNT:{entity.user_broker_account_id}"
+                    if entity.user_broker_account_id
+                    else None
+                ),
+                uses_system_shared_credential=False,
                 exchange_code=(
                     entity.exchange_code
                 ),
@@ -144,9 +174,14 @@ class OrderCancelReplaceService:
         entity = self._require_order(order_id)
 
         if result.accepted:
+            filled = Decimal(str(entity.filled_quantity or 0))
             entity.order_quantity = quantity
             entity.order_price = price
-            entity.remaining_quantity = quantity
+            # 부분체결 후 정정: remaining = 신규수량 - 기체결
+            entity.remaining_quantity = max(
+                Decimal("0"),
+                quantity - filled,
+            )
             return self._repository.change_status(
                 entity=entity,
                 new_status=OrderStatus.REPLACED,

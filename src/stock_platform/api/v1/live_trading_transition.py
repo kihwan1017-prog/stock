@@ -17,12 +17,15 @@ from stock_platform.api.deps_admin import (
 from stock_platform.broker.live_transition_service import (
     LiveTradingTransitionService,
 )
+from stock_platform.common.settings import LIVE_ACTIVATION_TTL_HOURS_MAX
 from stock_platform.database.session import get_db_session
 
 
 router = APIRouter(
     prefix="/api/v1/broker/live-transition",
     tags=["Live Trading Transition"],
+    # Live 전환 검증/승인 전부 admin 전용
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -30,6 +33,9 @@ class ValidateTransitionRequest(BaseModel):
     max_order_amount: Decimal = Field(gt=0)
     max_daily_loss: Decimal = Field(gt=0)
     paper_validation_approved: bool = False
+    scope: str = Field(default="BROKER", max_length=40)
+    broker_code: str | None = Field(default=None, max_length=30)
+    user_broker_account_id: int | None = None
 
 
 class RequestTransitionRequest(
@@ -50,6 +56,13 @@ class ApproveTransitionRequest(BaseModel):
         min_length=1,
         max_length=100,
     )
+    reason: str | None = Field(default=None, max_length=500)
+    ttl_hours: int | None = Field(
+        default=None, ge=1, le=LIVE_ACTIVATION_TTL_HOURS_MAX
+    )
+    scope: str | None = Field(default=None, max_length=40)
+    broker_code: str | None = Field(default=None, max_length=30)
+    user_broker_account_id: int | None = None
 
 
 class DisableTransitionRequest(BaseModel):
@@ -63,6 +76,7 @@ class DisableTransitionRequest(BaseModel):
 def validate_live_transition(
     request: ValidateTransitionRequest,
     session: Session = Depends(get_db_session),
+    # require_admin은 라우터 dependencies로 적용
 ):
     return LiveTradingTransitionService(
         session
@@ -72,13 +86,15 @@ def validate_live_transition(
         paper_validation_approved=(
             request.paper_validation_approved
         ),
+        scope=request.scope,
+        broker_code=request.broker_code,
+        user_broker_account_id=request.user_broker_account_id,
     )
 
 
 @router.post("/request")
 def request_live_transition(
     request: RequestTransitionRequest,
-    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
 ):
@@ -91,6 +107,9 @@ def request_live_transition(
         paper_validation_approved=(
             request.paper_validation_approved
         ),
+        scope=request.scope,
+        broker_code=request.broker_code,
+        user_broker_account_id=request.user_broker_account_id,
     )
     audit.record(
         event_type="LIVE_TRANSITION_REQUEST",
@@ -108,7 +127,6 @@ def request_live_transition(
 def approve_live_transition(
     transition_id: int,
     request: ApproveTransitionRequest,
-    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
 ):
@@ -119,6 +137,11 @@ def approve_live_transition(
             transition_id=transition_id,
             approved_by=request.approved_by,
             approval_phrase=request.approval_phrase,
+            reason=request.reason,
+            ttl_hours=request.ttl_hours,
+            scope=request.scope,
+            broker_code=request.broker_code,
+            user_broker_account_id=request.user_broker_account_id,
         )
     except LookupError as exc:
         raise HTTPException(
@@ -143,7 +166,6 @@ def approve_live_transition(
 def disable_live_transition(
     transition_id: int,
     request: DisableTransitionRequest,
-    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
     audit: AuditLogService = Depends(get_audit_service),
 ):
@@ -171,6 +193,50 @@ def disable_live_transition(
     return result
 
 
+class LiveDryRunRequest(BaseModel):
+    user_id: int = Field(ge=1)
+    user_broker_account_id: int = Field(ge=1)
+    symbol: str = Field(min_length=1, max_length=30)
+    side: str = Field(min_length=1, max_length=10)
+    quantity: Decimal = Field(gt=0)
+    price: Decimal | None = Field(default=None, gt=0)
+    broker_code: str = Field(default="KIWOOM", max_length=30)
+
+
+@router.post("/dry-run")
+def live_order_dry_run(
+    request: LiveDryRunRequest,
+    session: Session = Depends(get_db_session),
+    audit: AuditLogService = Depends(get_audit_service),
+):
+    """Broker API 미호출 — LIVE 주문 흐름 Dry Run."""
+
+    from stock_platform.broker.live_order_dry_run import (
+        LiveOrderDryRunService,
+    )
+
+    result = LiveOrderDryRunService(session).run(
+        user_id=request.user_id,
+        user_broker_account_id=request.user_broker_account_id,
+        symbol=request.symbol,
+        side=request.side,
+        quantity=request.quantity,
+        price=request.price,
+        broker_code=request.broker_code,
+    )
+    audit.record(
+        event_type="LIVE_ORDER_DRY_RUN",
+        actor="ADMIN",
+        detail={
+            "allowed": result.allowed,
+            "blocked_by": result.blocked_by,
+            "broker_endpoint_called": result.broker_endpoint_called,
+            "uba": request.user_broker_account_id,
+        },
+    )
+    return result.to_dict()
+
+
 @router.get("/active")
 def get_active_live_transition(
     session: Session = Depends(get_db_session),
@@ -184,7 +250,6 @@ def get_active_live_transition(
 def list_live_transition_history(
     limit: int = 20,
     offset: int = 0,
-    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     rows = LiveTradingTransitionService(

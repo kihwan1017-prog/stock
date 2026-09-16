@@ -65,6 +65,38 @@ class TradingExecutionRepository:
         self._session.flush()
         return entity
 
+    def create_raw(
+        self,
+        *,
+        order_id: int,
+        broker_code: str,
+        broker_order_id: str,
+        broker_execution_id: str,
+        symbol: str,
+        side_code: str | None,
+        execution_price,
+        execution_quantity,
+        executed_at,
+        raw_json: dict,
+    ) -> TradingExecution:
+        """브로커 공통 Execution insert (Upbit trade 등)."""
+
+        entity = TradingExecution(
+            order_id=order_id,
+            broker_code=str(broker_code).upper(),
+            broker_order_id=str(broker_order_id),
+            broker_execution_id=str(broker_execution_id),
+            symbol=str(symbol),
+            side_code=side_code,
+            execution_price=execution_price,
+            execution_quantity=execution_quantity,
+            executed_at=executed_at,
+            raw_json=raw_json or {},
+        )
+        self._session.add(entity)
+        self._session.flush()
+        return entity
+
     def list_by_order_id(
         self,
         order_id: int,

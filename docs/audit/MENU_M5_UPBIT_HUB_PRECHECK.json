@@ -1,0 +1,337 @@
+{
+  "step": "M5-0",
+  "title": "Upbit Hub Consolidation Precheck",
+  "mode": "PRECHECK_DESIGN_ONLY",
+  "date": "2026-08-15",
+  "verdict": "UPBIT_HUB_DESIGN_READY_WITH_LIMITATIONS",
+  "production_mutation": 0,
+  "commit": false,
+  "push": false,
+  "route": "/admin/upbit",
+  "page": "frontend/src/app/(admin)/admin/upbit/page.tsx",
+  "hub_role": "UPBIT research and ops hub; LIVE/ARM/Scheduler CONTROL canonical on /admin/accounts; Hub holds READ summary + scanner/shadow/news/ambiguous",
+  "mounted_feature_panels": 5,
+  "components": [
+    {
+      "component": "UpbitLiveStatusReadSummary",
+      "lines": 194,
+      "purpose": "LIVE/ARM/Scheduler READ summary + accounts/recovery links",
+      "category": ["ACCOUNT_STATUS"],
+      "control_class": "READ_ONLY",
+      "read": ["UBA LIVE/ARM/paused/credential", "live-ops readiness", "trading scheduler status"],
+      "mutations": [],
+      "apis_get": [
+        "listAdminBrokerAccounts",
+        "getAdminLiveOpsReadiness",
+        "getTradingSchedulerStatus"
+      ],
+      "scheduler_related": "status_read_only",
+      "technical_scanner": false,
+      "shadow": false,
+      "news_pipeline": false,
+      "trading": false,
+      "duplicate": "STATUS_VS_CONTROL vs /admin/accounts AdminUpbitLiveUbaPanel"
+    },
+    {
+      "component": "UpbitOpportunityScannerPanel",
+      "lines": 219,
+      "purpose": "SHADOW_ONLY Opportunity Scanner + Paper Shadow + Cohort",
+      "category": ["TECHNICAL_SCANNER", "TECHNICAL_SHADOW", "TECHNICAL_COHORT"],
+      "control_class": "LOW_RISK_MUTATION",
+      "read": [
+        "scanner status",
+        "shadow evaluator scheduler",
+        "top candidates",
+        "active/completed shadows",
+        "cohort stats JSON"
+      ],
+      "mutations": [
+        "runUpbitOpportunityScanner",
+        "evaluateUpbitOpportunityShadows"
+      ],
+      "apis_get": ["getUpbitOpportunityScannerStatus"],
+      "scheduler_related": "evaluator_status_read",
+      "technical_scanner": true,
+      "shadow": true,
+      "news_pipeline": false,
+      "trading": false,
+      "trading_order_create": false,
+      "duplicate": "DIFFERENT_SCOPE exclusive to /admin/upbit"
+    },
+    {
+      "component": "UpbitNewsCombinedShadowPanel",
+      "lines": 271,
+      "purpose": "N6 Combined Technical+News Shadow experiment",
+      "category": ["NEWS_AB_EXPERIMENT"],
+      "control_class": "LOW_RISK_MUTATION",
+      "read": [
+        "pipeline env tags",
+        "experiment aggregates",
+        "NEWS_MATCHED examples",
+        "recent experiment rows",
+        "stats"
+      ],
+      "mutations": [
+        "runUpbitCombinedShadow",
+        "evaluateUpbitCombinedShadow"
+      ],
+      "apis_get": [
+        "getUpbitCombinedShadowStatus",
+        "getUpbitCombinedShadowRecent",
+        "getUpbitCombinedShadowStats"
+      ],
+      "scheduler_related": false,
+      "technical_scanner": false,
+      "shadow": "observes_control_shadow_only",
+      "news_pipeline": true,
+      "trading": false,
+      "mount_order_issue": "mounted_before_N2_N5_collector"
+    },
+    {
+      "component": "UpbitNewsNoticeCollectorPanel",
+      "lines": 390,
+      "purpose": "N2 Collector + N3 Mapping + N4 AI + N5 Signal in one panel",
+      "category": [
+        "NEWS_COLLECTION",
+        "NEWS_MAPPING",
+        "NEWS_AI",
+        "NEWS_SIGNAL"
+      ],
+      "control_class": "LOW_RISK_MUTATION",
+      "read": [
+        "recent notices+mapped symbols",
+        "AI analysis recent",
+        "news signals recent",
+        "collector/mapping/AI/signal status stats"
+      ],
+      "mutations": [
+        "runUpbitNewsCollector",
+        "runUpbitNewsSymbolMapping",
+        "runUpbitNewsAnalysis",
+        "runUpbitNewsSignals"
+      ],
+      "apis_get": [
+        "getUpbitNewsCollectorStatus",
+        "getUpbitNewsCollectorRecent",
+        "getUpbitNewsAnalysisStatus",
+        "getUpbitNewsAnalysisRecent",
+        "getUpbitNewsSignalsStatus",
+        "getUpbitNewsSignalsRecent",
+        "getUpbitNewsSignalsStats"
+      ],
+      "coupling": "N2_TO_N5_SINGLE_COMPONENT",
+      "trading": false,
+      "signal_informational_only": true
+    },
+    {
+      "component": "AdminUpbitPage_inline_ops",
+      "lines": 296,
+      "purpose": "Account status JSON, rate limits, snapshot, header broker ops",
+      "category": ["ACCOUNT_STATUS", "SYSTEM_STATUS", "ORDER_RECONCILIATION"],
+      "control_class": "MIXED_LOW_RISK_AND_OPERATIONAL",
+      "read": [
+        "getUpbitAccountStatus",
+        "getUpbitAccountSnapshot",
+        "getUpbitRateLimits"
+      ],
+      "mutations": [
+        "testUpbitAccountConnection",
+        "syncUpbitAccount",
+        "reconcileUpbitOrders",
+        "recheckUpbitRateLimits"
+      ],
+      "trading_order_create": false
+    },
+    {
+      "component": "UpbitAmbiguousOrdersPanel",
+      "lines": 491,
+      "purpose": "Ambiguous reconciliation + remote lookup resolver; resubmit prep only",
+      "category": ["ORDER_RECONCILIATION"],
+      "control_class": "OPERATIONAL_CONTROL",
+      "read": [
+        "listUpbitAmbiguousOrders",
+        "getUpbitAmbiguousHealth",
+        "getUpbitAmbiguousResolverStatus",
+        "listUpbitAmbiguousResolverRuns"
+      ],
+      "mutations": [
+        "runUpbitAmbiguousResolverNow",
+        "retryUpbitAmbiguousLookup",
+        "releaseUpbitAmbiguousStaleClaim",
+        "lookupUpbitAmbiguousOrder",
+        "markUpbitAmbiguousManualReview",
+        "approveUpbitAmbiguousResubmit",
+        "rejectUpbitAmbiguousResubmit"
+      ],
+      "trading_order_create": false,
+      "auto_resubmit_send": false
+    }
+  ],
+  "counts": {
+    "feature_panel_mounts": 5,
+    "read_only_panels": 1,
+    "mutation_handlers_total": 19,
+    "trading_control_mutations": 0,
+    "live_arm_scheduler_mutations_on_upbit": 0
+  },
+  "pipelines": {
+    "news": {
+      "stages": [
+        {"id": "N2", "ui": "UpbitNewsNoticeCollectorPanel"},
+        {"id": "N3", "ui": "UpbitNewsNoticeCollectorPanel"},
+        {"id": "N4", "ui": "UpbitNewsNoticeCollectorPanel"},
+        {"id": "N5", "ui": "UpbitNewsNoticeCollectorPanel"},
+        {"id": "N6", "ui": "UpbitNewsCombinedShadowPanel"}
+      ],
+      "over_merged": true,
+      "mount_order_inverted": true
+    },
+    "technical": {
+      "stages": [
+        {"id": "Scanner", "ui": "UpbitOpportunityScannerPanel"},
+        {"id": "MarketAI", "ui": null, "note": "no dedicated panel; candidate recommendation fields only"},
+        {"id": "Shadow", "ui": "UpbitOpportunityScannerPanel"},
+        {"id": "Cohort", "ui": "UpbitOpportunityScannerPanel"},
+        {"id": "MilestoneReview", "ui": null, "note": "no dedicated Hub UI"}
+      ],
+      "separate_from_news_logically": true
+    }
+  },
+  "duplicates": {
+    "TRUE_DUPLICATE": [],
+    "SUMMARY_VS_DETAIL": [
+      "upbit account snapshot/status vs accounts UBA panel detail"
+    ],
+    "STATUS_VS_CONTROL": [
+      "UpbitLiveStatusReadSummary vs AdminUpbitLiveUbaPanel on /admin/accounts"
+    ],
+    "CROSS_DOMAIN_REFERENCE": [
+      "risk LIVE status tags",
+      "operations-dashboard possible cross-links",
+      "recovery link from LiveSummary"
+    ],
+    "DIFFERENT_SCOPE": [
+      "/admin/news generic KRX news",
+      "/admin/orders",
+      "/admin/trading",
+      "/admin/monitoring",
+      "/admin/upbit/markets"
+    ]
+  },
+  "canonical_ownership": {
+    "live_arm_scheduler_control": "/admin/accounts",
+    "live_read_summary_upbit": "/admin/upbit",
+    "kill_risk": "/admin/risk",
+    "recovery": "/admin/recovery",
+    "upbit_scanner_shadow_news_ambiguous_ui": "/admin/upbit",
+    "generic_news": "/admin/news",
+    "runtime_control": "/admin/trading"
+  },
+  "m4c_regression": {
+    "AdminUpbitLiveUbaPanel_mount_count": 1,
+    "canonical": "/admin/accounts",
+    "upbit_live_mutation": 0,
+    "upbit_arm_mutation": 0,
+    "upbit_scheduler_mutation": 0,
+    "result": "PASS"
+  },
+  "m4c2_regression": {
+    "risk_live_arm_scheduler_mutation": 0,
+    "result": "PASS"
+  },
+  "options": {
+    "A": {
+      "name": "single page section reorder",
+      "score_summary": "low complexity, weak discoverability for long stack"
+    },
+    "B": {
+      "name": "same route internal Tabs",
+      "recommended": true,
+      "score_summary": "best balance: discoverability, zero new routes/permissions, low regression"
+    },
+    "C": {
+      "name": "overview + detail routes",
+      "score_summary": "high extensibility, higher route/permission/regression cost — defer"
+    }
+  },
+  "recommended_option": "B",
+  "recommended_target_tree": {
+    "route": "/admin/upbit",
+    "tabs": [
+      "Overview",
+      "Technical",
+      "News Pipeline",
+      "A/B Experiment",
+      "Ops / Reconciliation"
+    ],
+    "notes": [
+      "Do not invent Market AI or Milestone panels",
+      "LIVE CONTROL stays on /admin/accounts via CROSS_LINK",
+      "Reorder Combined after Collector"
+    ]
+  },
+  "disposition": {
+    "KEEP": [
+      "UpbitLiveStatusReadSummary",
+      "UpbitOpportunityScannerPanel",
+      "UpbitNewsNoticeCollectorPanel",
+      "UpbitNewsCombinedShadowPanel",
+      "UpbitAmbiguousOrdersPanel",
+      "page broker ops blocks"
+    ],
+    "MERGE_UI": [],
+    "MOVE_SECTION": [
+      "Scanner -> Technical tab",
+      "NoticeCollector -> News Pipeline tab",
+      "CombinedShadow -> A/B tab after Collector",
+      "Ambiguous + page ops -> Ops/Reconciliation tab"
+    ],
+    "DETAIL_ONLY": [
+      "Milestone/Review (audit docs only; no Hub UI today)"
+    ],
+    "CROSS_LINK": [
+      "/admin/accounts for LIVE/ARM",
+      "/admin/recovery",
+      "/admin/news (different scope)"
+    ],
+    "DEPRECATE_CANDIDATE": [],
+    "REMOVE_CANDIDATE": []
+  },
+  "component_top5_by_lines": [
+    {"lines": 491, "file": "UpbitAmbiguousOrdersPanel.tsx"},
+    {"lines": 390, "file": "UpbitNewsNoticeCollectorPanel.tsx"},
+    {"lines": 296, "file": "upbit/page.tsx"},
+    {"lines": 271, "file": "UpbitNewsCombinedShadowPanel.tsx"},
+    {"lines": 219, "file": "UpbitOpportunityScannerPanel.tsx"}
+  ],
+  "coupling_issues": [
+    "NoticeCollector owns N2-N5",
+    "OpportunityScanner owns Scanner+Shadow+Cohort",
+    "page hosts broker ops + all panels",
+    "Combined mounted before Collector"
+  ],
+  "backend_api_change_required": false,
+  "permission_change_required": false,
+  "route_change_required_for_m5": false,
+  "permission_current": {
+    "menu": "menu:upbit",
+    "layout": "AuthGuard requiredRoles=[admin] enforceMenuPermission"
+  },
+  "impacts": {
+    "technical_shadow_policy": "none_this_step",
+    "news_ab_policy": "none_this_step",
+    "trading_order_outbox": "none_this_step"
+  },
+  "waves": [
+    {"id": "M5-A", "scope": "Tab shell + Overview + mount reorder only"},
+    {"id": "M5-B", "scope": "Technical tab"},
+    {"id": "M5-C", "scope": "News Pipeline tab"},
+    {"id": "M5-D", "scope": "A/B Experiment tab"},
+    {"id": "M5-E", "scope": "Ops/Reconciliation tab"}
+  ],
+  "next_step_exactly_one": "M5-A — Upbit Hub Tab shell + Overview reorder (UI only, API mutation behavior unchanged)",
+  "documents": [
+    "docs/audit/MENU_M5_UPBIT_HUB_PRECHECK.md",
+    "docs/audit/MENU_M5_UPBIT_HUB_PRECHECK.json"
+  ]
+}

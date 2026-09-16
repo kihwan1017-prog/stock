@@ -31,6 +31,7 @@ interface BackendTokenResponse {
   refresh_token: string;
   token_type: string;
   expires_in: number;
+  default_route?: string;
   user: {
     id: string;
     username: string;
@@ -38,6 +39,10 @@ interface BackendTokenResponse {
     display_name?: string | null;
     roles: string[];
     permissions?: string[];
+    user_status?: string;
+    password_change_required?: boolean;
+    default_route?: string;
+    onboarding_completed?: boolean;
   };
 }
 
@@ -49,6 +54,10 @@ function mapUser(raw: BackendTokenResponse["user"]): AuthUser {
     displayName: raw.display_name ?? undefined,
     roles: raw.roles ?? [],
     permissions: raw.permissions ?? [],
+    userStatus: raw.user_status,
+    passwordChangeRequired: raw.password_change_required,
+    defaultRoute: raw.default_route,
+    onboardingCompleted: raw.onboarding_completed,
   };
 }
 
@@ -57,6 +66,7 @@ function mapLogin(raw: BackendTokenResponse): LoginResponse {
     accessToken: raw.access_token,
     refreshToken: raw.refresh_token,
     expiresIn: raw.expires_in,
+    defaultRoute: raw.default_route ?? raw.user?.default_route,
     user: mapUser(raw.user),
   };
 }
@@ -68,6 +78,36 @@ export async function loginWithCredentials(
     username: payload.username,
     password: payload.password,
   });
+  return mapLogin(data);
+}
+
+/** Google OAuth 시작 URL (same-origin rewrite → backend) */
+export function googleLoginStartUrl(next?: string | null): string {
+  const prefix = env.API_PREFIX.replace(/\/$/, "");
+  const qs =
+    next && next.startsWith("/")
+      ? `?next=${encodeURIComponent(next)}`
+      : "";
+  return `${env.API_BASE_URL}${prefix}/auth/google/login${qs}`;
+}
+
+export async function fetchGoogleOAuthStatus(): Promise<{
+  enabled: boolean;
+  provider: string;
+}> {
+  const { data } = await apiClient.get<{ enabled: boolean; provider: string }>(
+    "/auth/google/status",
+  );
+  return data;
+}
+
+export async function completeGoogleLogin(
+  code: string,
+): Promise<LoginResponse> {
+  const { data } = await apiClient.post<BackendTokenResponse>(
+    "/auth/google/complete",
+    { code },
+  );
   return mapLogin(data);
 }
 
@@ -126,7 +166,27 @@ export async function fetchCurrentUser(): Promise<AuthUser> {
     display_name?: string | null;
     roles: string[];
     permissions?: string[];
+    user_status?: string;
+    password_change_required?: boolean;
+    default_route?: string;
+    onboarding_completed?: boolean;
   }>("/auth/me");
+  return mapUser(data);
+}
+
+export async function completeOnboarding(): Promise<AuthUser> {
+  const { data } = await apiClient.post<{
+    id: string;
+    username: string;
+    email?: string | null;
+    display_name?: string | null;
+    roles: string[];
+    permissions?: string[];
+    user_status?: string;
+    password_change_required?: boolean;
+    default_route?: string;
+    onboarding_completed?: boolean;
+  }>("/auth/onboarding/complete");
   return mapUser(data);
 }
 

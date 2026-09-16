@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { asRecord } from "@/features/admin/utils/dataHelpers";
+import { asRecord } from "@/shared/utils/dataHelpers";
 import * as userApi from "@/features/user/api/userApi";
 import { queryKeys } from "@/lib/query/queryKeys";
 

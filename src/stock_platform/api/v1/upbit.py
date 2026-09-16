@@ -7,10 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from stock_platform.brokers.upbit.client import (
+from stock_platform.api.deps_admin import require_admin
+from stock_platform.broker.upbit.market.client import (
     UpbitQuotationClient,
 )
-from stock_platform.brokers.upbit.exceptions import UpbitError
+from stock_platform.broker.upbit.exceptions import UpbitError
 from stock_platform.collectors.upbit.batch_daily_sync_service import (
     UpbitKrwDailyBatchResult,
     UpbitKrwDailyBatchSyncService,
@@ -58,6 +59,7 @@ from stock_platform.operation.job_service import (
 router = APIRouter(
     prefix="/api/v1/upbit",
     tags=["Upbit"],
+    dependencies=[Depends(require_admin)],
 )
 
 

@@ -1,0 +1,315 @@
+"""STEP 8-5-9 — Scope Signal → 기존 Signal Bus / 가드."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any
+
+import structlog
+
+from stock_platform.realtime.strategy_models import (
+    RealtimeSignal,
+    RealtimeSignalAction,
+)
+from stock_platform.realtime.strategy_signal import StrategySignal
+
+
+logger = structlog.get_logger(__name__)
+
+# fingerprint 단기 중복 차단 (프로세스 메모리)
+_RECENT_FINGERPRINTS: dict[str, datetime] = {}
+_MAX_FINGERPRINTS = 5000
+
+
+def strategy_signal_to_realtime(signal: StrategySignal) -> RealtimeSignal:
+    action = RealtimeSignalAction.HOLD
+    if signal.signal_type == "BUY":
+        action = RealtimeSignalAction.BUY
+    elif signal.signal_type in {"SELL", "EXIT"}:
+        action = RealtimeSignalAction.SELL
+
+    short = signal.metadata.get("short_average")
+    long = signal.metadata.get("long_average")
+    exchange = (
+        signal.metadata.get("exchange_code")
+        or signal.broker_code
+    )
+    return RealtimeSignal(
+        exchange_code=str(exchange).upper(),
+        symbol=signal.symbol,
+        action=action,
+        signal_price=signal.reference_price,
+        short_average=Decimal(short) if short else None,
+        long_average=Decimal(long) if long else None,
+        change_rate=None,
+        reason_code=signal.reason_code,
+        generated_at=signal.generated_at,
+        signal_id=signal.signal_id,
+        fingerprint=signal.fingerprint,
+        scope_key=signal.scope_key,
+        user_id=signal.user_id,
+        account_kind=signal.account_kind,
+        account_id=signal.account_id,
+        strategy_id=signal.strategy_id,
+        strategy_version=signal.strategy_version,
+        broker_code=signal.broker_code,
+        market_type=signal.market_type,
+        user_broker_account_id=(
+            int(signal.account_id)
+            if str(signal.account_kind or "").upper() == "USER_BROKER"
+            and signal.account_id is not None
+            else None
+        ),
+        source_code=(
+            str(signal.metadata.get("source_code") or "").strip() or None
+        ),
+        execution_trace_id=(
+            str(signal.metadata.get("execution_trace_id") or "").strip() or None
+        ),
+        candidate_selection_id=_int_or_none(signal.metadata.get("candidate_selection_id")),
+        candidate_id=_int_or_none(signal.metadata.get("candidate_id")),
+        waiting_id=_int_or_none(signal.metadata.get("waiting_id")),
+        lifecycle_kind=(
+            str(signal.metadata.get("lifecycle_kind") or "").strip() or None
+        ),
+    )
+
+
+def _int_or_none(value: object) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fingerprint_seen(fingerprint: str) -> bool:
+    now = datetime.now(timezone.utc)
+    # 만료 정리
+    expired = [
+        k
+        for k, ts in _RECENT_FINGERPRINTS.items()
+        if (now - ts).total_seconds() > 300
+    ]
+    for k in expired:
+        _RECENT_FINGERPRINTS.pop(k, None)
+    if fingerprint in _RECENT_FINGERPRINTS:
+        return True
+    if len(_RECENT_FINGERPRINTS) >= _MAX_FINGERPRINTS:
+        _RECENT_FINGERPRINTS.clear()
+    _RECENT_FINGERPRINTS[fingerprint] = now
+    return False
+
+
+async def publish_scoped_signal(signal: StrategySignal) -> dict[str, Any]:
+    """가드 후 Signal Bus publish. Scope 없는 신호는 차단."""
+
+    if not (signal.scope_key or "").strip():
+        logger.warning(
+            "realtime_scope_less_signal_blocked",
+            symbol=signal.symbol,
+        )
+        out = {"published": False, "reason": "SCOPE_REQUIRED"}
+        _trace_publish_outcome(signal, out)
+        return out
+
+    if _fingerprint_seen(signal.fingerprint):
+        logger.info(
+            "realtime_duplicate_signal_blocked",
+            scope_key=signal.scope_key[:40],
+            fingerprint=signal.fingerprint,
+        )
+        out = {"published": False, "reason": "DUPLICATE_FINGERPRINT"}
+        _trace_publish_outcome(signal, out)
+        return out
+
+    # Recovery / Calendar / Rate Limit 가드
+    if not _guards_allow(signal):
+        out = {"published": False, "reason": "GUARD_BLOCKED"}
+        _trace_publish_outcome(signal, out)
+        return out
+
+    from stock_platform.realtime.runtime import realtime_signal_bus
+
+    rt = strategy_signal_to_realtime(signal)
+    await realtime_signal_bus.publish(rt)
+
+    # KIWOOM Dual LLM SHADOW — REAL path와 독립 (fail-open background)
+    try:
+        from stock_platform.operation.kiwoom_dual_llm.entry_shadow import (
+            schedule_kiwoom_entry_shadow,
+        )
+
+        schedule_kiwoom_entry_shadow(signal)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "kiwoom_dual_llm_shadow_hook_failed_open",
+            error=type(exc).__name__,
+        )
+
+    out = {
+        "published": True,
+        "signal_id": signal.signal_id,
+        "scope_key": signal.scope_key,
+    }
+    _trace_publish_outcome(signal, out)
+    return out
+
+
+def _trace_publish_outcome(
+    signal: StrategySignal, outcome: dict[str, Any]
+) -> None:
+    """BUY entry provenance가 있으면 publish 성공/실패를 durable trace로 남긴다."""
+
+    meta = getattr(signal, "metadata", None) or {}
+    if not isinstance(meta, dict):
+        return
+    trace_id = meta.get("execution_trace_id")
+    if not trace_id:
+        return
+    if str(getattr(signal, "signal_type", "") or "").upper() != "BUY":
+        return
+    uba = getattr(signal, "account_id", None)
+    if uba is None:
+        return
+    try:
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.operation.upbit_entry_execution_trace.constants import (
+            DECISION_PASS,
+            DECISION_REJECT,
+            STAGE_SIGNAL_PUBLISHED,
+            STAGE_SIGNAL_PUBLISH_FAILED,
+        )
+        from stock_platform.operation.upbit_entry_execution_trace.service import (
+            append_stage_fail_open,
+        )
+
+        published = bool(outcome.get("published"))
+        session = get_session_factory()()
+        try:
+            append_stage_fail_open(
+                session,
+                execution_trace_id=str(trace_id),
+                user_broker_account_id=int(uba),
+                symbol=str(signal.symbol or "").upper(),
+                stage=(
+                    STAGE_SIGNAL_PUBLISHED
+                    if published
+                    else STAGE_SIGNAL_PUBLISH_FAILED
+                ),
+                decision=DECISION_PASS if published else DECISION_REJECT,
+                reason_code=(
+                    None
+                    if published
+                    else str(outcome.get("reason") or "PUBLISH_FAILED")[:80]
+                ),
+                selection_id=_int_or_none(meta.get("selection_id") or meta.get("candidate_selection_id")),
+                candidate_id=_int_or_none(meta.get("candidate_id")),
+                waiting_id=_int_or_none(meta.get("waiting_id")),
+                strategy_id=getattr(signal, "strategy_id", None),
+                lifecycle_kind=str(meta.get("lifecycle_kind") or "INITIAL"),
+                signal_id=getattr(signal, "signal_id", None),
+                detail={"publish": dict(outcome)},
+                commit=True,
+            )
+            session.commit()
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        return
+
+
+def _guards_allow(signal: StrategySignal) -> bool:
+    """계좌 Pause / Kill / Calendar / Upbit cooldown 간단 확인."""
+
+    try:
+        from stock_platform.database.session import get_session_factory
+        from stock_platform.broker.recovery_lock import (
+            RecoveryAccountLockService,
+        )
+
+        session = get_session_factory()()
+        try:
+            lock = RecoveryAccountLockService(session)
+            paused = False
+            if signal.account_kind == "PAPER":
+                paused = lock.is_trading_paused(
+                    paper_account_id=signal.account_id,
+                    broker_code=signal.broker_code,
+                )
+            else:
+                paused = lock.is_trading_paused(
+                    user_broker_account_id=signal.account_id,
+                    broker_code=signal.broker_code,
+                )
+            if paused:
+                return False
+        finally:
+            session.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+    # KRX Calendar — STOCK LIVE만 Fail Closed (MOCK은 결정적 시세 허용)
+    if (
+        signal.market_type.upper() in {"STOCK", "KRX", "KOSPI", "KOSDAQ"}
+        and signal.broker_code.upper() == "KIWOOM"
+    ):
+        try:
+            from stock_platform.common.settings import get_settings
+
+            settings = get_settings()
+            is_live = bool(
+                getattr(settings, "kiwoom_live_order_enabled", False)
+            ) and not bool(getattr(settings, "kiwoom_use_mock", True))
+            if is_live:
+                from stock_platform.operation.calendar_service import (
+                    TradingCalendarService,
+                )
+                from stock_platform.database.session import get_session_factory
+                from datetime import date
+
+                session = get_session_factory()()
+                try:
+                    svc = TradingCalendarService(session)
+                    decision = svc.evaluate(
+                        exchange_code="KRX",
+                        calendar_date=date.today(),
+                    )
+                    if not getattr(decision, "live_allowed", True):
+                        return False
+                finally:
+                    session.close()
+        except Exception:  # noqa: BLE001
+            # Calendar 장애 시 LIVE 신호 차단(보수적) — MOCK은 통과
+            from stock_platform.common.settings import get_settings
+
+            settings = get_settings()
+            if bool(getattr(settings, "kiwoom_live_order_enabled", False)) and not bool(
+                getattr(settings, "kiwoom_use_mock", True)
+            ):
+                return False
+
+    # Upbit Rate Limit — UBA cooldown/418
+    if signal.broker_code.upper() == "UPBIT" and signal.account_kind != "PAPER":
+        try:
+            from stock_platform.broker.upbit.rate_limit_coordinator import (
+                get_upbit_rate_limit_coordinator,
+            )
+
+            ok, reason, _ = get_upbit_rate_limit_coordinator().check_allowed(
+                user_broker_account_id=signal.account_id,
+                endpoint_group="order",
+            )
+            if not ok:
+                return False
+            _ = reason
+        except Exception:  # noqa: BLE001
+            pass
+
+    return True
+
+
+def reset_signal_dedup_for_tests() -> None:
+    _RECENT_FINGERPRINTS.clear()

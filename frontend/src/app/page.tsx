@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { Button, Card, Flex, Space, Typography } from "antd";
 
-import { adminRoutes, userRoutes } from "@/config/routes";
+import { authRoutes } from "@/config/routes";
 import { env } from "@/config/env";
 
 export default function PortalPage() {
@@ -24,29 +24,19 @@ export default function PortalPage() {
             {env.APP_NAME}
           </Typography.Title>
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            투자자용 User Web과 관리자 Admin을 선택하세요. 회원가입 후 로그인하거나,
-            기존 계정으로 로그인하세요.
+            플랫폼 로그인은 하나입니다. 로그인 후 DB 권한에 따라 사용자 또는 관리자
+            화면으로 이동합니다. 키움·업비트 API 인증은 「내 계좌」에서 연결합니다.
           </Typography.Paragraph>
           <Flex gap={12} wrap>
-            <Link href={`${userRoutes.login}?portal=user&next=${encodeURIComponent(userRoutes.dashboard)}`}>
+            <Link href={authRoutes.login}>
               <Button type="primary" size="large">
-                User 로그인
+                로그인
               </Button>
             </Link>
-            <Link
-              href={`${adminRoutes.login}?portal=admin&next=${encodeURIComponent(adminRoutes.dashboard)}`}
-            >
-              <Button size="large">Admin 로그인</Button>
-            </Link>
-            <Link href="/signup">
+            <Link href={authRoutes.signup}>
               <Button size="large">회원가입</Button>
             </Link>
           </Flex>
-          <Typography.Text type="secondary">
-            이미 세션이 있으면{" "}
-            <Link href={userRoutes.dashboard}>/user/dashboard</Link> ·{" "}
-            <Link href={adminRoutes.dashboard}>/admin/dashboard</Link>
-          </Typography.Text>
         </Space>
       </Card>
     </Flex>

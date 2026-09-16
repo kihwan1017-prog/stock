@@ -2,15 +2,17 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from stock_platform.broker.account_models import (
     BrokerAccountSnapshotEntity,
-    BrokerPositionSnapshotEntity,
 )
 from stock_platform.risk_engine.models import (
     RiskAccountState,
+)
+from stock_platform.trading.account_identity import (
+    AccountIdentityError,
+    AccountIdentityErrorCode,
 )
 
 
@@ -18,45 +20,130 @@ ZERO = Decimal("0")
 
 
 class RiskAccountStateService:
-    """브로커 계좌 스냅샷을 Risk Engine 입력 상태로 변환한다."""
+    """브로커/Paper 계좌 상태를 Risk Engine 입력으로 변환한다."""
 
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def load(
+    def load_by_uba(
         self,
         *,
-        broker_code: str,
-        account_number: str,
+        user_broker_account_id: int,
+        exchange_code: str,
+        symbol: str,
+        strategy_id: int | None = None,
+        deployment_id: int | None = None,
+    ) -> RiskAccountState:
+        """ACTIVE Snapshot by UBA. strategy_id 있으면 strategy-owned 일손익."""
+
+        from stock_platform.broker.account_repository import (
+            BrokerAccountSnapshotRepository,
+        )
+
+        account, positions = BrokerAccountSnapshotRepository(
+            self._session
+        ).get_active_by_uba(int(user_broker_account_id))
+        if account is None:
+            raise LookupError(
+                "Broker account snapshot not found for UBA"
+            )
+        return self._to_state(
+            account=account,
+            positions=positions,
+            exchange_code=exchange_code,
+            symbol=symbol,
+            strategy_id=strategy_id,
+            deployment_id=deployment_id,
+        )
+
+    def load_by_paper_account(
+        self,
+        *,
+        paper_account_id: int,
         exchange_code: str,
         symbol: str,
     ) -> RiskAccountState:
-        account = self._session.scalar(
-            select(BrokerAccountSnapshotEntity).where(
-                BrokerAccountSnapshotEntity.broker_code
-                == broker_code.upper(),
-                BrokerAccountSnapshotEntity.account_number
-                == account_number,
-            )
+        """PaperAccount + PaperPosition 기준 상태."""
+
+        from sqlalchemy import select
+
+        from stock_platform.trading.account_models import (
+            PaperAccount,
+            PaperPosition,
         )
 
-        if account is None:
+        paper = self._session.get(PaperAccount, int(paper_account_id))
+        if paper is None:
             raise LookupError(
-                "Broker account snapshot not found"
+                f"Paper account not found: {paper_account_id}"
             )
-
         positions = list(
             self._session.scalars(
-                select(BrokerPositionSnapshotEntity).where(
-                    BrokerPositionSnapshotEntity.broker_code
-                    == broker_code.upper(),
-                    BrokerPositionSnapshotEntity.account_number
-                    == account_number,
-                    BrokerPositionSnapshotEntity.quantity > 0,
+                select(PaperPosition).where(
+                    PaperPosition.account_id == int(paper_account_id),
+                    PaperPosition.quantity > 0,
                 )
             )
         )
+        symbol_position = next(
+            (
+                item
+                for item in positions
+                if str(getattr(item, "exchange_code", "")).upper()
+                == exchange_code.upper()
+                and str(item.symbol).upper() == symbol.upper()
+            ),
+            None,
+        )
+        invested = sum(
+            (
+                Decimal(item.quantity)
+                * Decimal(item.average_entry_price)
+                for item in positions
+            ),
+            ZERO,
+        )
+        cash = Decimal(paper.available_cash)
+        return RiskAccountState(
+            cash_balance=cash,
+            total_asset_value=cash + invested,
+            invested_amount=invested,
+            daily_realized_profit_loss=Decimal(
+                paper.realized_profit_loss or ZERO
+            ),
+            daily_unrealized_profit_loss=ZERO,
+            open_position_count=len(positions),
+            symbol_position_quantity=(
+                Decimal(symbol_position.quantity)
+                if symbol_position is not None
+                else ZERO
+            ),
+        )
 
+    def load(self, **kwargs):  # noqa: ANN003
+        """제거됨 — load_by_uba / load_by_paper_account 사용."""
+
+        raise AccountIdentityError(
+            AccountIdentityErrorCode.LEGACY_ACCOUNT_NUMBER_ONLY,
+            "RiskAccountStateService.load(account_number=...) removed; "
+            "use load_by_uba or load_by_paper_account",
+        )
+
+    def _to_state(
+        self,
+        *,
+        account: BrokerAccountSnapshotEntity,
+        positions: list,
+        exchange_code: str,
+        symbol: str,
+        strategy_id: int | None = None,
+        deployment_id: int | None = None,
+    ) -> RiskAccountState:
+        positions = [
+            item
+            for item in positions
+            if Decimal(item.quantity) > 0
+        ]
         symbol_position = next(
             (
                 item
@@ -76,18 +163,48 @@ class RiskAccountStateService:
             ZERO,
         )
 
-        unrealized_profit_loss = sum(
-            (
-                Decimal(item.profit_loss)
-                for item in positions
-            ),
-            ZERO,
-        )
-
         total_asset_value = (
             Decimal(account.deposit_amount)
             + invested_amount
         )
+
+        daily_realized = ZERO
+        daily_unrealized = ZERO
+        uba_id = getattr(account, "user_broker_account_id", None)
+        if uba_id is not None and strategy_id is not None:
+            try:
+                from stock_platform.risk_engine.strategy_owned_risk_service import (
+                    StrategyOwnedRiskService,
+                )
+
+                snap = StrategyOwnedRiskService(self._session).compute_and_persist(
+                    user_broker_account_id=int(uba_id),
+                    broker_code=str(getattr(account, "broker_code", "") or ""),
+                    strategy_id=int(strategy_id),
+                    deployment_id=deployment_id,
+                    loss_limit=None,
+                )
+                daily_realized = Decimal(str(snap.realized_pnl))
+                daily_unrealized = Decimal(str(snap.unrealized_pnl))
+            except Exception:  # noqa: BLE001
+                daily_realized = ZERO
+                daily_unrealized = ZERO
+        elif uba_id is not None:
+            try:
+                from stock_platform.risk_engine.uba_daily_loss_service import (
+                    UbaDailyLossService,
+                )
+
+                breakdown = UbaDailyLossService(self._session).diagnose(
+                    user_broker_account_id=int(uba_id),
+                    loss_limit=Decimal("0"),
+                )
+                daily_pnl = Decimal(str(breakdown.current_daily_pnl))
+                daily_realized = daily_pnl
+                daily_unrealized = ZERO
+            except Exception:  # noqa: BLE001
+                daily_realized = ZERO
+                daily_unrealized = ZERO
 
         return RiskAccountState(
             cash_balance=Decimal(
@@ -95,12 +212,8 @@ class RiskAccountStateService:
             ),
             total_asset_value=total_asset_value,
             invested_amount=invested_amount,
-            daily_realized_profit_loss=Decimal(
-                account.total_profit_loss
-            ),
-            daily_unrealized_profit_loss=(
-                unrealized_profit_loss
-            ),
+            daily_realized_profit_loss=daily_realized,
+            daily_unrealized_profit_loss=daily_unrealized,
             open_position_count=len(positions),
             symbol_position_quantity=(
                 Decimal(symbol_position.quantity)

@@ -3,7 +3,8 @@
 ## 일일 점검 순서
 
 첫날이면 [PAPER_DAY1_CHECKLIST.md](PAPER_DAY1_CHECKLIST.md)를 먼저 보세요.  
-문서 목차: [README.md](README.md)
+문서 목차: [README.md](README.md)  
+UBA1380 24x7 세션 갱신: [UPBIT_UBA1380_24X7_SESSION_RENEWAL.md](UPBIT_UBA1380_24X7_SESSION_RENEWAL.md) (수동, AUTO RE-ARM 없음).
 
 1. `GET /health` — 전체 컴포넌트 상태 확인
 2. `GET /api/v1/system/dashboard` — 후보/AI/포지션/리스크 통합 확인

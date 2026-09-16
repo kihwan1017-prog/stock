@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
+    ForeignKey,
     Identity,
     Integer,
     Numeric,
@@ -47,6 +48,26 @@ class StrategyPerformanceRunEntity(Base):
     strategy_code: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
+    )
+    # STEP8-3
+    strategy_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_definition.strategy_id",
+            ondelete="SET NULL",
+            name="fk_strategy_performance_run_definition",
+        ),
+        nullable=True,
+    )
+    requested_by_user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "auth.user.user_id",
+            ondelete="SET NULL",
+            name="fk_strategy_performance_run_user",
+        ),
+        nullable=True,
+        index=True,
     )
     run_type: Mapped[str] = mapped_column(
         String(30),
@@ -119,6 +140,11 @@ class StrategyPerformanceMetricEntity(Base):
     )
     strategy_performance_run_id: Mapped[int] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_performance_run.strategy_performance_run_id",
+            ondelete="CASCADE",
+            name="fk_performance_metric_run",
+        ),
         nullable=False,
     )
     initial_capital: Mapped[Decimal] = mapped_column(

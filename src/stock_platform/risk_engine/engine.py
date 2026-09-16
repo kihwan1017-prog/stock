@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from stock_platform.risk_engine.account_ownership import (
+    validate_account_ownership,
+)
 from stock_platform.risk_engine.models import (
     RiskAccountState,
     RiskDecisionLevel,
@@ -10,15 +13,20 @@ from stock_platform.risk_engine.models import (
     RiskPolicy,
 )
 from stock_platform.risk_engine.rules import (
+    AccountTradingPermissionRule,
     AvailableCashRule,
     BrokerHealthRule,
     DailyLossRule,
+    DailyMaxOrderAmountRule,
+    DuplicateBuyRule,
     EmergencyStopRule,
     MarketDataFreshnessRule,
     MaximumInvestmentRatioRule,
     MaximumOpenPositionsRule,
     MaximumOrderAmountRule,
     MaximumOrderQuantityRule,
+    MaxPositionAmountRule,
+    MaxTotalInvestmentAmountRule,
     RiskRule,
     SellQuantityRule,
     TradingTimeRule,
@@ -31,11 +39,16 @@ class RealtimeRiskEngine:
         rules: list[RiskRule] | None = None,
     ) -> None:
         self._rules = rules or [
+            AccountTradingPermissionRule(),
             EmergencyStopRule(),
             TradingTimeRule(),
             MarketDataFreshnessRule(),
             BrokerHealthRule(),
             MaximumOrderAmountRule(),
+            DailyMaxOrderAmountRule(),
+            MaxTotalInvestmentAmountRule(),
+            MaxPositionAmountRule(),
+            DuplicateBuyRule(),
             MaximumOrderQuantityRule(),
             AvailableCashRule(),
             MaximumOpenPositionsRule(),
@@ -96,10 +109,12 @@ class RealtimeRiskEngine:
                 "price must be greater than zero"
             )
 
-        if order.account_id <= 0:
-            raise ValueError(
-                "account_id must be greater than zero"
-            )
+        # Paper/LIVE XOR — None에 수치 비교 금지
+        validate_account_ownership(
+            account_id=order.account_id,
+            user_broker_account_id=order.user_broker_account_id,
+            environment=order.environment,
+        )
 
         if not order.exchange_code.strip():
             raise ValueError(

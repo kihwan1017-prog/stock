@@ -11,6 +11,8 @@ _SENSITIVE_KEY_FRAGMENTS = (
     "authorization",
     "api_key",
     "apikey",
+    "app_key",
+    "access_key",
     "client_secret",
     "bot_token",
     "refresh",
@@ -18,6 +20,9 @@ _SENSITIVE_KEY_FRAGMENTS = (
     "set-cookie",
     "jwt",
     "private_key",
+    "credential",
+    "encrypted_payload",
+    "nonce_b64",
 )
 
 
@@ -45,7 +50,36 @@ def mask_email(value: str | None) -> str:
     local, _, domain = value.partition("@")
     if not local:
         return "***@" + domain
-    return local[0] + "***@" + domain
+    if len(local) == 1:
+        return local + "***@" + domain
+    return local[:2] + "***@" + domain
+
+
+def mask_ip(value: str | None) -> str:
+    """IPv4 중간 옥텟 마스킹. IPv6는 앞뒤만 남김."""
+
+    if not value:
+        return ""
+    text = str(value).strip()
+    if "." in text and ":" not in text:
+        parts = text.split(".")
+        if len(parts) == 4:
+            return f"{parts[0]}.***.***.{parts[3]}"
+        return "***"
+    if ":" in text:
+        if len(text) <= 8:
+            return "***"
+        return text[:4] + "***" + text[-4:]
+    return "***"
+
+
+def mask_chat_id(value: str | None) -> str:
+    if not value:
+        return ""
+    text = str(value).strip()
+    if len(text) <= 4:
+        return "***"
+    return text[:3] + "***" + text[-3:]
 
 
 def redact_mapping(data: Any, *, depth: int = 0) -> Any:

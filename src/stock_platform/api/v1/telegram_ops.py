@@ -58,11 +58,29 @@ class TelegramCommandTestRequest(BaseModel):
 def get_telegram_ops_status(
     _: str = Depends(require_admin),
 ):
+    from stock_platform.notification.telegram_policy import (
+        build_telegram_routing_status,
+    )
+
     return {
         "settings": NotificationSettings.from_env().to_dict(),
         "poller": telegram_ops_poller.status(),
         "notification_service": notification_service.status(),
+        "market_routing": build_telegram_routing_status(),
     }
+
+
+@router.get("/status")
+def get_telegram_market_status(
+    _: str = Depends(require_admin),
+):
+    """시장별 Telegram destination / ANALYSIS suppression 상태 (secret 없음)."""
+
+    from stock_platform.notification.telegram_policy import (
+        build_telegram_routing_status,
+    )
+
+    return build_telegram_routing_status()
 
 
 @router.post("/webhook")
@@ -84,14 +102,18 @@ async def telegram_webhook(
         window_seconds=60,
     )
     expected = get_settings().telegram_webhook_secret.strip()
-    if expected:
-        import secrets
+    # KI-SEC-15 — Secret 미설정 시 Fail Closed (검증 스킵 금지)
+    if not expected:
+        return {
+            "ok": False,
+            "handled": False,
+            "error": "webhook_secret_required",
+        }
+    import secrets
 
-        provided = (x_telegram_bot_api_secret_token or "").strip()
-        if not provided or not secrets.compare_digest(
-            provided, expected
-        ):
-            return {"ok": False, "handled": False, "error": "forbidden"}
+    provided = (x_telegram_bot_api_secret_token or "").strip()
+    if not provided or not secrets.compare_digest(provided, expected):
+        return {"ok": False, "handled": False, "error": "forbidden"}
 
     message = update.message or {}
     text = message.get("text") or ""

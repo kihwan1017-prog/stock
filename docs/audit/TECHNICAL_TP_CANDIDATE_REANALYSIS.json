@@ -1,0 +1,1053 @@
+{
+  "step": "TECHNICAL_TP_CANDIDATE_REANALYSIS",
+  "mode": "READ_ONLY_ANALYSIS",
+  "date": "2026-08-15",
+  "HEAD": "5c6ad67",
+  "discovery_cutoff": "2026-08-14T23:25:40.424000+00:00",
+  "max_shadow_id": 51,
+  "baseline_tp_pct": 6.0,
+  "candidate_set_pct": [
+    2.0,
+    3.0,
+    4.0
+  ],
+  "sl_pct": 3.0,
+  "evaluator_policy": "SAME_CANDLE_SL_CONSERVATIVE",
+  "candle_source": "market.candle_minute DB only (no sync, no synthetic)",
+  "fee_slippage": false,
+  "look_ahead_violation": 0,
+  "raw_coverage_exclusion_applied": false,
+  "SAMPLE_RECONCILIATION": "PASS",
+  "counts": {
+    "DISCOVERY_COMPLETED": 50,
+    "DISCOVERY_STRICT_VALID": 47,
+    "PAIRED_VALID_N": 47,
+    "excluded_strict_n": 3
+  },
+  "excluded_from_strict": [
+    {
+      "shadow_id": 6,
+      "symbol": "KRW-EDGE",
+      "exclusion_reason": "RETURN_WINDOW_MISSING:5,15"
+    },
+    {
+      "shadow_id": 4,
+      "symbol": "KRW-ID",
+      "exclusion_reason": "RETURN_WINDOW_MISSING:5"
+    },
+    {
+      "shadow_id": 10,
+      "symbol": "KRW-LSK",
+      "exclusion_reason": "RETURN_WINDOW_MISSING:30"
+    }
+  ],
+  "post_discovery_pre_cov": [
+    {
+      "shadow_id": 51,
+      "symbol": "KRW-ONG",
+      "completed_at": "2026-08-14T23:25:40.424807+00:00",
+      "used_for_selection": false
+    }
+  ],
+  "summaries": {
+    "2.0": {
+      "tp_pct": 2.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": -0.0487,
+        "median": 0.0,
+        "positive_rate": 0.4468,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 2.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_hit_count": 7,
+      "tp_hit_rate": 0.1489,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 37,
+      "timeout_rate": 0.7872,
+      "same_candle_ambiguous_n": 0,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    },
+    "3.0": {
+      "tp_pct": 3.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": 0.0331,
+        "median": 0.0,
+        "positive_rate": 0.4468,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 3.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_hit_count": 5,
+      "tp_hit_rate": 0.1064,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 39,
+      "timeout_rate": 0.8298,
+      "same_candle_ambiguous_n": 0,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    },
+    "4.0": {
+      "tp_pct": 4.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": -0.0007,
+        "median": 0.0,
+        "positive_rate": 0.4255,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 4.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_hit_count": 2,
+      "tp_hit_rate": 0.0426,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 42,
+      "timeout_rate": 0.8936,
+      "same_candle_ambiguous_n": 0,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    },
+    "6.0": {
+      "tp_pct": 6.0,
+      "paired_n": 47,
+      "exit_return": {
+        "n": 47,
+        "mean": 0.0629,
+        "median": 0.0,
+        "positive_rate": 0.4255,
+        "loss_rate": 0.4255,
+        "min": -3.0,
+        "max": 6.0
+      },
+      "mfe": {
+        "n": 47,
+        "mean": 0.7757,
+        "median": 0.211,
+        "positive_rate": 0.7872,
+        "loss_rate": 0.1489,
+        "min": -2.473,
+        "max": 10.0939
+      },
+      "mae": {
+        "n": 47,
+        "mean": -0.68,
+        "median": -0.6689,
+        "positive_rate": 0.0638,
+        "loss_rate": 0.9362,
+        "min": -3.2895,
+        "max": 8.4507
+      },
+      "tp_hit_count": 1,
+      "tp_hit_rate": 0.0213,
+      "sl_exit_count": 3,
+      "sl_exit_rate": 0.0638,
+      "timeout_count": 43,
+      "timeout_rate": 0.9149,
+      "same_candle_ambiguous_n": 0,
+      "missing_bars_rows": 0,
+      "invalid_rows": 0
+    }
+  },
+  "deltas_vs_6": {
+    "2.0": {
+      "paired_delta_mean": -0.1116,
+      "paired_delta_median": 0.0,
+      "delta_mean_return": -0.1116,
+      "delta_median_return": 0.0,
+      "delta_positive_rate": 0.0213,
+      "delta_loss_rate": 0.0,
+      "delta_tp_hit_rate": 0.1276,
+      "candidate_better_row_count": 4,
+      "baseline_better_row_count": 3,
+      "equal_row_count": 40
+    },
+    "3.0": {
+      "paired_delta_mean": -0.0298,
+      "paired_delta_median": 0.0,
+      "delta_mean_return": -0.0298,
+      "delta_median_return": 0.0,
+      "delta_positive_rate": 0.0213,
+      "delta_loss_rate": 0.0,
+      "delta_tp_hit_rate": 0.0851,
+      "candidate_better_row_count": 2,
+      "baseline_better_row_count": 3,
+      "equal_row_count": 42
+    },
+    "4.0": {
+      "paired_delta_mean": -0.0636,
+      "paired_delta_median": 0.0,
+      "delta_mean_return": -0.0636,
+      "delta_median_return": 0.0,
+      "delta_positive_rate": 0.0,
+      "delta_loss_rate": 0.0,
+      "delta_tp_hit_rate": 0.0213,
+      "candidate_better_row_count": 0,
+      "baseline_better_row_count": 2,
+      "equal_row_count": 45
+    }
+  },
+  "concentration": {
+    "2.0": {
+      "by_symbol": [
+        {
+          "symbol": "KRW-GRVT",
+          "n": 1,
+          "sum_delta": -4.0,
+          "mean_delta": -4.0,
+          "abs_share": 0.3439
+        },
+        {
+          "symbol": "KRW-HOLO",
+          "n": 1,
+          "sum_delta": -2.9896,
+          "mean_delta": -2.9896,
+          "abs_share": 0.257
+        },
+        {
+          "symbol": "KRW-AVNT",
+          "n": 2,
+          "sum_delta": 0.6308,
+          "mean_delta": 0.3154,
+          "abs_share": 0.0542
+        },
+        {
+          "symbol": "KRW-WLD",
+          "n": 4,
+          "sum_delta": 0.5626,
+          "mean_delta": 0.1407,
+          "abs_share": 0.0484
+        },
+        {
+          "symbol": "KRW-KAITO",
+          "n": 2,
+          "sum_delta": 0.5517,
+          "mean_delta": 0.2759,
+          "abs_share": 0.0474
+        },
+        {
+          "symbol": "KRW-VIRTUAL",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-SOL",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-DOGE",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-ONDO",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-ELF",
+          "n": 1,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-BTC",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-MOVE",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        }
+      ],
+      "top_symbol": {
+        "symbol": "KRW-GRVT",
+        "n": 1,
+        "sum_delta": -4.0,
+        "mean_delta": -4.0,
+        "abs_share": 0.3439
+      },
+      "leave_one_symbol_out": [
+        {
+          "drop_symbol": "KRW-AVNT",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.1306,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-BTC",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.122,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-CAP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOGE",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.1165,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOS",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ELF",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ETH",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-GRVT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0271,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOLO",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.049,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOME",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ID",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-KAITO",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.1288,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MMT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MOVE",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ONDO",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-RE",
+          "remaining_n": 42,
+          "paired_delta_mean": -0.1249,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SHIB",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SOL",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.122,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-VIRTUAL",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.1192,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-WLD",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.135,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-XRP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.114,
+          "sign_flip_vs_overall": false
+        }
+      ],
+      "any_sign_flip": false,
+      "concentration_level": "MEDIUM",
+      "loso_robustness": "ROBUST",
+      "overall_paired_delta_mean": -0.1116
+    },
+    "3.0": {
+      "by_symbol": [
+        {
+          "symbol": "KRW-GRVT",
+          "n": 1,
+          "sum_delta": -3.0,
+          "mean_delta": -3.0,
+          "abs_share": 0.3166
+        },
+        {
+          "symbol": "KRW-KAITO",
+          "n": 2,
+          "sum_delta": 2.5517,
+          "mean_delta": 1.2759,
+          "abs_share": 0.2693
+        },
+        {
+          "symbol": "KRW-HOLO",
+          "n": 1,
+          "sum_delta": -1.9896,
+          "mean_delta": -1.9896,
+          "abs_share": 0.2099
+        },
+        {
+          "symbol": "KRW-AVNT",
+          "n": 2,
+          "sum_delta": 1.0392,
+          "mean_delta": 0.5196,
+          "abs_share": 0.1097
+        },
+        {
+          "symbol": "KRW-VIRTUAL",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-SOL",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-DOGE",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-ONDO",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-ELF",
+          "n": 1,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-BTC",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-MOVE",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-WLD",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        }
+      ],
+      "top_symbol": {
+        "symbol": "KRW-GRVT",
+        "n": 1,
+        "sum_delta": -3.0,
+        "mean_delta": -3.0,
+        "abs_share": 0.3166
+      },
+      "leave_one_symbol_out": [
+        {
+          "drop_symbol": "KRW-AVNT",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0542,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-BTC",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0325,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-CAP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOGE",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0311,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOS",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ELF",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ETH",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-GRVT",
+          "remaining_n": 46,
+          "paired_delta_mean": 0.0348,
+          "sign_flip_vs_overall": true
+        },
+        {
+          "drop_symbol": "KRW-HOLO",
+          "remaining_n": 46,
+          "paired_delta_mean": 0.0128,
+          "sign_flip_vs_overall": true
+        },
+        {
+          "drop_symbol": "KRW-HOME",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ID",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-KAITO",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0878,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MMT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MOVE",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ONDO",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-RE",
+          "remaining_n": 42,
+          "paired_delta_mean": -0.0333,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SHIB",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SOL",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0325,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-VIRTUAL",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0318,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-WLD",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0325,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-XRP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0304,
+          "sign_flip_vs_overall": false
+        }
+      ],
+      "any_sign_flip": true,
+      "concentration_level": "HIGH",
+      "loso_robustness": "INCONCLUSIVE",
+      "overall_paired_delta_mean": -0.0298
+    },
+    "4.0": {
+      "by_symbol": [
+        {
+          "symbol": "KRW-GRVT",
+          "n": 1,
+          "sum_delta": -2.0,
+          "mean_delta": -2.0,
+          "abs_share": 0.669
+        },
+        {
+          "symbol": "KRW-HOLO",
+          "n": 1,
+          "sum_delta": -0.9896,
+          "mean_delta": -0.9896,
+          "abs_share": 0.331
+        },
+        {
+          "symbol": "KRW-VIRTUAL",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-SOL",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-DOGE",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-ONDO",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-ELF",
+          "n": 1,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-BTC",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-KAITO",
+          "n": 2,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-MOVE",
+          "n": 3,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-WLD",
+          "n": 4,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        },
+        {
+          "symbol": "KRW-RE",
+          "n": 5,
+          "sum_delta": 0.0,
+          "mean_delta": 0.0,
+          "abs_share": 0.0
+        }
+      ],
+      "top_symbol": {
+        "symbol": "KRW-GRVT",
+        "n": 1,
+        "sum_delta": -2.0,
+        "mean_delta": -2.0,
+        "abs_share": 0.669
+      },
+      "leave_one_symbol_out": [
+        {
+          "drop_symbol": "KRW-AVNT",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0664,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-BTC",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0695,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-CAP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOGE",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0664,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-DOS",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ELF",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ETH",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-GRVT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0215,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOLO",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.0435,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-HOME",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ID",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-KAITO",
+          "remaining_n": 45,
+          "paired_delta_mean": -0.0664,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MMT",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-MOVE",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-ONDO",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-RE",
+          "remaining_n": 42,
+          "paired_delta_mean": -0.0712,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SHIB",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-SOL",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0695,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-VIRTUAL",
+          "remaining_n": 44,
+          "paired_delta_mean": -0.0679,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-WLD",
+          "remaining_n": 43,
+          "paired_delta_mean": -0.0695,
+          "sign_flip_vs_overall": false
+        },
+        {
+          "drop_symbol": "KRW-XRP",
+          "remaining_n": 46,
+          "paired_delta_mean": -0.065,
+          "sign_flip_vs_overall": false
+        }
+      ],
+      "any_sign_flip": false,
+      "concentration_level": "HIGH",
+      "loso_robustness": "ROBUST",
+      "overall_paired_delta_mean": -0.0636
+    }
+  },
+  "candidate_gates": {
+    "2.0": {
+      "tp_pct": 2.0,
+      "checks": {
+        "A_clear_mean_advantage": false,
+        "B_median_not_worse": true,
+        "C_loss_rate_not_worse": true,
+        "D_mae_downside_ok": true,
+        "E_concentration_not_high_fragile": true,
+        "F_not_tp_hit_only": false,
+        "G_same_candle_ok": true
+      },
+      "passed": false,
+      "fail_reasons": [
+        "A_clear_mean_advantage",
+        "F_not_tp_hit_only"
+      ]
+    },
+    "3.0": {
+      "tp_pct": 3.0,
+      "checks": {
+        "A_clear_mean_advantage": false,
+        "B_median_not_worse": true,
+        "C_loss_rate_not_worse": true,
+        "D_mae_downside_ok": true,
+        "E_concentration_not_high_fragile": false,
+        "F_not_tp_hit_only": false,
+        "G_same_candle_ok": true
+      },
+      "passed": false,
+      "fail_reasons": [
+        "A_clear_mean_advantage",
+        "E_concentration_not_high_fragile",
+        "F_not_tp_hit_only"
+      ]
+    },
+    "4.0": {
+      "tp_pct": 4.0,
+      "checks": {
+        "A_clear_mean_advantage": false,
+        "B_median_not_worse": true,
+        "C_loss_rate_not_worse": true,
+        "D_mae_downside_ok": true,
+        "E_concentration_not_high_fragile": false,
+        "F_not_tp_hit_only": false,
+        "G_same_candle_ok": true
+      },
+      "passed": false,
+      "fail_reasons": [
+        "A_clear_mean_advantage",
+        "E_concentration_not_high_fragile",
+        "F_not_tp_hit_only"
+      ]
+    }
+  },
+  "FINAL_CANDIDATE_DECISION": "FROZEN_CANDIDATE_TP=null",
+  "FROZEN_CANDIDATE_TP": null,
+  "decision_reason": "KEEP_6_SUPERIOR",
+  "POST_COV_ROWS_AVAILABLE": 14,
+  "POST_COV_ROWS_USED_FOR_SELECTION": 0,
+  "OOS_CONTAMINATION": 0,
+  "shadow52_used_for_selection": false,
+  "OOS_CANDIDATE_FREEZE_READY": false,
+  "OOS_START_READY": false,
+  "CURRENT_TP": 6.0,
+  "CURRENT_SL": 3.0,
+  "production_tp_mutation": 0,
+  "db_mutation": 0,
+  "paired_shadow_ids": [
+    1,
+    2,
+    3,
+    5,
+    7,
+    8,
+    9,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50
+  ],
+  "oos_freeze_package_proposal": null
+}

@@ -13,7 +13,7 @@ import {
   Table,
   Typography,
 } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import type { SettingItem } from "@/features/admin/api/adminApi";
@@ -24,9 +24,15 @@ import { queryKeys } from "@/lib/query/queryKeys";
 interface SettingsEditorProps {
   category: string;
   title?: string;
+  /** 역할 모델 전용 UI에서 중복 편집을 피하기 위해 숨길 키 */
+  excludeKeys?: string[];
 }
 
-export function SettingsEditor({ category, title }: SettingsEditorProps) {
+export function SettingsEditor({
+  category,
+  title,
+  excludeKeys,
+}: SettingsEditorProps) {
   const { message } = App.useApp();
   const queryClient = useQueryClient();
   const [form] = Form.useForm();
@@ -37,12 +43,20 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
     queryFn: () => adminApi.listSettings(category),
   });
 
-  const items = useMemo(
-    () => settingsQuery.data ?? [],
-    [settingsQuery.data],
+  const excludeSet = useMemo(
+    () => new Set(excludeKeys ?? []),
+    [excludeKeys],
   );
 
-  useEffect(() => {
+  const items = useMemo(
+    () =>
+      (settingsQuery.data ?? []).filter(
+        (item) => !excludeSet.has(item.key),
+      ),
+    [settingsQuery.data, excludeSet],
+  );
+
+  const initialValues = useMemo(() => {
     const initial: Record<string, unknown> = {};
     for (const item of items) {
       if (item.value_type === "bool") {
@@ -57,8 +71,8 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
         initial[item.key] = item.is_secret ? "" : item.value;
       }
     }
-    form.setFieldsValue(initial);
-  }, [form, items]);
+    return initial;
+  }, [items]);
 
   const saveMut = useMutation({
     mutationFn: (payload: Array<{ key: string; value: unknown }>) =>
@@ -105,7 +119,13 @@ export function SettingsEditor({ category, title }: SettingsEditorProps) {
           {title}
         </Typography.Title>
       ) : null}
-      <Form form={form} layout="vertical" disabled={settingsQuery.isLoading}>
+      <Form
+        key={`${category}-${settingsQuery.dataUpdatedAt}`}
+        form={form}
+        layout="vertical"
+        disabled={settingsQuery.isLoading}
+        initialValues={initialValues}
+      >
         {items.map((item) => (
           <SettingField key={item.key} item={item} />
         ))}

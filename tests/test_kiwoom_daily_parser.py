@@ -16,7 +16,7 @@ def test_parse_official_style_daily_rows() -> None:
                 "high_pric": "+87500",
                 "low_pric": "-85500",
                 "trde_qty": "12,000,000",
-                "trde_prica": "1046400000000",
+                "trde_prica": "1046400",
                 "flu_rt": "1.28",
             }
         ]
@@ -32,7 +32,32 @@ def test_parse_official_style_daily_rows() -> None:
     assert row.low_price == Decimal("85500")
     assert row.close_price == Decimal("87200")
     assert row.volume == Decimal("12000000")
+    assert row.trade_value == Decimal("1046400000000")
     assert row.change_rate == Decimal("1.28")
+
+
+def test_parse_keeps_negative_change_rate() -> None:
+    parser = KiwoomDailyParser()
+    result = parser.parse(
+        {
+            "stk_dt_pole_chart_qry": [
+                {
+                    "dt": "20260818",
+                    "cur_prc": "-40200",
+                    "open_pric": "+40000",
+                    "high_pric": "40500",
+                    "low_pric": "-39900",
+                    "trde_qty": "10",
+                    "flu_rt": "-1.25",
+                }
+            ]
+        }
+    )
+    row = result[0]
+    assert row.close_price == Decimal("40200")
+    assert row.open_price == Decimal("40000")
+    assert row.low_price == Decimal("39900")
+    assert row.change_rate == Decimal("-1.25")
 
 
 def test_parse_discovers_nested_daily_list() -> None:

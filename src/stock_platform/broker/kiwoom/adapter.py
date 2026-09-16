@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from stock_platform.broker.adapter import BrokerAdapter
+from stock_platform.broker.exceptions import (
+    UnsupportedBrokerFeatureError,
+)
 from stock_platform.broker.idempotency import (
     InMemoryIdempotencyStore,
 )
@@ -35,6 +38,9 @@ from stock_platform.broker.models import (
     BrokerOrderRequest,
     BrokerOrderResult,
     BrokerOrderStatus,
+)
+from stock_platform.broker.order_account_context import (
+    require_user_broker_context_for_live,
 )
 
 
@@ -78,18 +84,32 @@ class KiwoomBrokerAdapter(BrokerAdapter):
     def submit_order(
         self,
         request: BrokerOrderRequest,
+        **kwargs,
     ) -> BrokerOrderResult:
         self._assert_live_allowed()
+        # LIVE 사용자 주문은 UBA 필수 — env 계좌를 사용자 계좌로 취급 금지
+        require_user_broker_context_for_live(request)
 
-        payload, _ = self._rest_client.post(
-            path=self.ORDER_PATH,
-            api_id=KiwoomOrderMapper.api_id(
-                request.side
-            ),
-            body=KiwoomOrderMapper.body(request),
-            request_type="ORDER",
+        idempotency_key = str(
+            kwargs.get("idempotency_key")
+            or f"SUBMIT:{request.client_order_id}"
         )
-        return self._to_result(payload)
+
+        def _send() -> BrokerOrderResult:
+            payload, _ = self._rest_client.post(
+                path=self.ORDER_PATH,
+                api_id=KiwoomOrderMapper.api_id(
+                    request.side
+                ),
+                body=KiwoomOrderMapper.body(request),
+                request_type="ORDER",
+            )
+            return self._to_result(payload)
+
+        return self._idempotency.execute_once(
+            key=idempotency_key,
+            operation=_send,
+        )
 
     def cancel_order(
         self,
@@ -124,6 +144,7 @@ class KiwoomBrokerAdapter(BrokerAdapter):
         idempotency_key: str | None = None,
     ) -> BrokerOrderResult:
         self._assert_live_allowed()
+        require_user_broker_context_for_live(request)
 
         if request.price is None:
             raise ValueError(
@@ -157,8 +178,9 @@ class KiwoomBrokerAdapter(BrokerAdapter):
         self,
         broker_order_id: str,
     ) -> BrokerOrderResult:
-        raise NotImplementedError(
-            "Use KiwoomOrderInquiryClient"
+        raise UnsupportedBrokerFeatureError(
+            "KiwoomBrokerAdapter.get_order is not supported; "
+            "use KiwoomOrderInquiryClient"
         )
 
     def _send_cancel(
@@ -198,10 +220,16 @@ class KiwoomBrokerAdapter(BrokerAdapter):
         return self._to_result(payload)
 
     def _assert_live_allowed(self) -> None:
-        if (
-            not self.config.use_mock
-            and not self.config.live_order_enabled
-        ):
+        from stock_platform.common.settings import get_settings
+
+        if self.config.use_mock:
+            return
+        settings = get_settings()
+        if not settings.global_live_order_enabled:
+            raise PermissionError(
+                "Global live order is disabled."
+            )
+        if not self.config.live_order_enabled:
             raise PermissionError(
                 "Live Kiwoom order is disabled."
             )

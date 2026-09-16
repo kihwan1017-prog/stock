@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from sqlalchemy.orm import Session
 
 from stock_platform.database.session import get_db_session
@@ -32,7 +33,9 @@ from stock_platform.markets.service import (
 )
 
 
-router = APIRouter(prefix="/api/v1/market", tags=["market-data"])
+router = APIRouter(prefix="/api/v1/market", tags=["market-data"],
+    dependencies=[Depends(require_admin)],
+)
 
 
 def _instrument_service(session: Session) -> InstrumentService:
@@ -58,13 +61,39 @@ def _candle_service(session: Session) -> CandleMinuteService:
 @router.get("/symbols")
 def list_symbols(
     market: str | None = None,
+    q: str | None = Query(
+        default=None,
+        description="종목코드·이름 검색",
+    ),
     active_only: bool = True,
+    limit: int = Query(default=5000, ge=1, le=5000),
     session: Session = Depends(get_db_session),
 ):
     exchange_code = market.strip().upper() if market else None
+    if q and q.strip():
+        from stock_platform.trading.watchlist_service import WatchlistService
+
+        items = WatchlistService(session).search_symbols(
+            query=q.strip(),
+            market=exchange_code,
+            limit=min(limit, 50),
+        )
+        return [
+            {
+                "market": item["market"],
+                "symbol": item["symbol"],
+                "name": item["name"],
+                "currency": item.get("currency"),
+                "active": True,
+                "asset_type": item.get("asset_type"),
+            }
+            for item in items
+        ]
+
     instruments = _instrument_service(session).list(
         exchange_code=exchange_code,
         active_only=active_only,
+        limit=limit,
     )
     return [
         {

@@ -1,0 +1,65 @@
+{
+  "step": "TECHNICAL_TP_CHANGE_CANDIDATE_REVIEW",
+  "mode": "READ_ONLY_NO_POLICY_APPLY",
+  "head": "4f0df10",
+  "sample": {
+    "COMPLETED": 51,
+    "ACTIVE": 1,
+    "STRICT_VALID": 48,
+    "return_missing": 3,
+    "mismatch": 0
+  },
+  "CURRENT_TP": {
+    "value_pct": 6.0,
+    "provenance": "CONFIG",
+    "source": "settings.upbit_scanner_shadow_tp_pct",
+    "evaluator": "operation/upbit_opportunity_shadow/evaluator.py"
+  },
+  "CANDIDATE_TP": {
+    "type": "band_hypothesis",
+    "band_pct": [2.0, 4.0],
+    "single_value": null,
+    "DELTA": "−4pp…−2pp vs 6% (band only)"
+  },
+  "v2_change_candidate_condition": "MFE>=6% rate == 0 AND MFE>=2% rate > 0",
+  "v2_condition_holds_now": false,
+  "strict_valid_stats": {
+    "n": 48,
+    "tp_hit_count": 1,
+    "tp_hit_rate": 0.0208,
+    "sl_hit_count": 4,
+    "mean_return_60m": 0.0513,
+    "median_return_60m": 0.0,
+    "mean_mfe": 0.6676,
+    "median_mfe": 0.2086,
+    "mean_mae": -0.7939,
+    "median_mae": -0.6866,
+    "mfe_reach": {
+      "ge_1": 11,
+      "ge_1_5": 9,
+      "ge_2": 7,
+      "ge_3": 5,
+      "ge_4": 2,
+      "ge_6": 1
+    }
+  },
+  "MISSING_DATA_BIAS": "LOW",
+  "OPERATIONS_SAMPLE_READY": true,
+  "STRICT_ANALYSIS_READY": true,
+  "NO_EXPLICIT_STRICT_MINIMUM": true,
+  "CONCENTRATION_RISK": "MEDIUM",
+  "OOS": "IN_SAMPLE_ONLY",
+  "SL": "REVIEW_LATER",
+  "Top_N": "KEEP",
+  "cooldown": "KEEP",
+  "FINAL_TP_DECISION": "CHANGE_CANDIDATE_NEEDS_OOS_VALIDATION",
+  "TP_APPLY_READY": false,
+  "news_baseline": {
+    "MATCHED": "2/20",
+    "NO_NEWS": "22/20",
+    "status": "NEWS_AB_SAMPLE_ACCUMULATING"
+  },
+  "production_mutation": 0,
+  "db_mutation": 0,
+  "next_step_exactly_one": "TECHNICAL TP OOS VALIDATION DESIGN"
+}

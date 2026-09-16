@@ -100,6 +100,7 @@ class RealtimePaperOrderExecutor:
         )
 
         order = self._order_service.create(
+            account_id=self._config.account_id,
             exchange_code=signal.exchange_code,
             symbol=signal.symbol,
             side=side,

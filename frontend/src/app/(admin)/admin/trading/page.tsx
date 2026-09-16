@@ -2,10 +2,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { App, Button, Space } from "antd";
+import Link from "next/link";
+
+import { adminRoutes } from "@/config/routes";
 
 import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
+import { AdminRuntimePanel } from "@/features/admin/runtime/AdminRuntimePanel";
+import { AdminRealtimeHubPanel } from "@/features/admin/realtime/AdminRealtimeHubPanel";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -71,8 +76,8 @@ export default function AdminTradingPage() {
 
   return (
     <AdminPageShell
-      title="자동매매관리"
-      description="realtime-strategy · realtime-execution · realtime-sessions · strategy-runtime"
+      title="자동매매 Runtime"
+      description="Scope Runtime과 Realtime Hub를 제어합니다. 주문·Outbox 관리는 /admin/orders 입니다."
       extra={
         <Space wrap>
           <Button type="primary" loading={startStrategy.isPending} onClick={() => startStrategy.mutate()}>
@@ -87,12 +92,17 @@ export default function AdminTradingPage() {
           <Button danger loading={stopExec.isPending} onClick={() => stopExec.mutate()}>
             체결 Stop
           </Button>
+          <Link href={adminRoutes.orders}>주문·Outbox</Link>
+          <Link href={adminRoutes.operationsPreflight}>Pre-flight</Link>
+          <Link href={adminRoutes.operationsDashboard}>거래 운영 현황</Link>
         </Space>
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <AdminRuntimePanel />
+        <AdminRealtimeHubPanel />
         <AdminJsonCard
-          title="GET /realtime-strategy/status"
+          title="GET /realtime-strategy/status (deprecated → Hub)"
           loading={strategy.isLoading}
           error={strategy.error ? toApiError(strategy.error) : null}
           data={strategy.data}
@@ -110,7 +120,7 @@ export default function AdminTradingPage() {
           data={sessions.data}
         />
         <AdminJsonCard
-          title="GET /strategy-runtime/status"
+          title="GET /strategy-runtime/status (scoped registry)"
           loading={runtime.isLoading}
           error={runtime.error ? toApiError(runtime.error) : null}
           data={runtime.data}

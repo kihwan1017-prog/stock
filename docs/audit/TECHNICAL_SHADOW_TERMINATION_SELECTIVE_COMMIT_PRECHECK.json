@@ -1,0 +1,15 @@
+{
+  "step": "U-TERM-C0",
+  "verdict": "UPBIT_TERMINATION_SELECTIVE_COMMIT_READY",
+  "HEAD": "3bbf0cd",
+  "EVALUATOR_FULL_FILE_SAFE": true,
+  "HUNK_SPLIT_REQUIRED": false,
+  "U_DEPENDENCY_CLOSURE": "PASS",
+  "prior_lag_null": "PROVENANCE_GAP",
+  "shadow70": "EXPECTED",
+  "focused_tests": "PASS",
+  "commit_message": "fix(technical): terminate permanently unresolved shadows",
+  "next_u_step": "UPBIT TERMINATION SELECTIVE COMMIT",
+  "commit": false,
+  "push": false
+}

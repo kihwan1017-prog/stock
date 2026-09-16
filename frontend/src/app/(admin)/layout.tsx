@@ -10,6 +10,7 @@ import {
   filterMenuByPermissions,
 } from "@/config/menu";
 import { userRoutes } from "@/config/routes";
+import { StrategyCandidateWorkspaceChrome } from "@/features/admin/strategy-candidate/StrategyCandidateWorkspaceChrome";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
@@ -27,7 +28,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   return (
     <AuthGuard
-      requiredRoles={["admin", "operator"]}
+      requiredRoles={["admin"]}
       enforceMenuPermission
       forbiddenRedirect={userRoutes.dashboard}
     >
@@ -37,7 +38,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         footerLabel="Admin Console"
         tradingLabel="Admin"
       >
-        {children}
+        <StrategyCandidateWorkspaceChrome>
+          {children}
+        </StrategyCandidateWorkspaceChrome>
       </MainLayout>
     </AuthGuard>
   );

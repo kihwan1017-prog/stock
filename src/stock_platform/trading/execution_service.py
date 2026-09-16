@@ -83,6 +83,11 @@ class PaperExecutionService:
             raise LookupError(
                 f"Paper order not found: {order_id}"
             )
+        # 주문과 계좌가 일치해야 체결 반영 (교차 계좌 방지)
+        if int(order.account_id) != int(account_id):
+            raise ValueError(
+                "order.account_id does not match account_id"
+            )
 
         account = self._account_repository.get_account(
             account_id
@@ -111,6 +116,9 @@ class PaperExecutionService:
                 order_id=order.order_id,
             )
         except Exception:
+            # nested savepoint 안이면 전체 트랜잭션을 깨지 않는다
+            if self._session.in_nested_transaction():
+                raise
             self._session.rollback()
             raise
 

@@ -155,7 +155,7 @@ class PriceDaily(Base):
         BigInteger,
         ForeignKey(
             "market.instrument.instrument_id",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_price_daily_instrument_id_instrument",
         ),
         primary_key=True,
@@ -277,7 +277,7 @@ class CandleMinute(Base):
         BigInteger,
         ForeignKey(
             "market.instrument.instrument_id",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_candle_minute_instrument_id",
         ),
         primary_key=True,
@@ -340,7 +340,7 @@ class QuoteSnapshot(Base):
         BigInteger,
         ForeignKey(
             "market.instrument.instrument_id",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_quote_snapshot_instrument_id",
         ),
         primary_key=True,
@@ -387,7 +387,7 @@ class TradeTick(Base):
         BigInteger,
         ForeignKey(
             "market.instrument.instrument_id",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_trade_tick_instrument_id",
         ),
         primary_key=True,
@@ -433,7 +433,7 @@ class OrderbookSnapshot(Base):
         BigInteger,
         ForeignKey(
             "market.instrument.instrument_id",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_orderbook_snapshot_instrument_id",
         ),
         nullable=False,
@@ -479,7 +479,7 @@ class IndicatorDaily(Base):
         BigInteger,
         ForeignKey(
             "market.instrument.instrument_id",
-            ondelete="CASCADE",
+            ondelete="RESTRICT",
             name="fk_indicator_daily_instrument_id",
         ),
         primary_key=True,

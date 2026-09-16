@@ -9,6 +9,8 @@ import {
   InputNumber,
   Select,
   Space,
+  Table,
+  Tag,
   Typography,
 } from "antd";
 import { useMemo, useState } from "react";
@@ -17,7 +19,7 @@ import * as adminApi from "@/features/admin/api/adminApi";
 import { AdminDataTable, AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { PermissionButton } from "@/features/auth/components/PermissionButton";
-import { cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
 
@@ -35,6 +37,60 @@ export default function AdminStrategiesPage() {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [paramJson, setParamJson] = useState("{}");
+
+  const definitions = useQuery({
+    queryKey: queryKeys.admin.strategyDefinitions(),
+    queryFn: () => adminApi.listAdminStrategies({ limit: 100 }),
+  });
+
+  const invalidateDefs = () => {
+    void qc.invalidateQueries({
+      queryKey: queryKeys.admin.strategyDefinitions(),
+    });
+  };
+
+  const approveMut = useMutation({
+    mutationFn: adminApi.approveAdminStrategy,
+    onSuccess: () => {
+      message.success("승인 완료");
+      invalidateDefs();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+  const publishMut = useMutation({
+    mutationFn: adminApi.publishAdminStrategy,
+    onSuccess: () => {
+      message.success("공개 완료");
+      invalidateDefs();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+  const unpublishMut = useMutation({
+    mutationFn: adminApi.unpublishAdminStrategy,
+    onSuccess: () => {
+      message.success("비공개 완료");
+      invalidateDefs();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+  const deactivateMut = useMutation({
+    mutationFn: adminApi.deactivateAdminStrategy,
+    onSuccess: () => {
+      message.success("비활성화 완료");
+      invalidateDefs();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+  const createDefMut = useMutation({
+    mutationFn: adminApi.createAdminStrategy,
+    onSuccess: () => {
+      message.success("SYSTEM 전략 생성");
+      invalidateDefs();
+    },
+    onError: (e) => message.error(toApiError(e).message),
+  });
+
+  const defRows = extractRows(definitions.data);
 
   const active = useQuery({
     queryKey: queryKeys.admin.activeDeployment("KRX"),
@@ -190,6 +246,137 @@ export default function AdminStrategiesPage() {
       }
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
+        <Card title="전략 소유권 · 승인 · 공개 (STEP 8-3)" size="small">
+          <Form
+            layout="inline"
+            style={{ marginBottom: 12 }}
+            onFinish={(v) =>
+              createDefMut.mutate({
+                strategy_code: v.strategy_code,
+                name: v.name,
+                market_type: v.market_type || "STOCK",
+                visibility: "PUBLIC",
+                is_active: true,
+              })
+            }
+            initialValues={{ market_type: "STOCK" }}
+          >
+            <Form.Item
+              name="strategy_code"
+              label="코드"
+              rules={[{ required: true }]}
+            >
+              <Input />
+            </Form.Item>
+            <Form.Item name="name" label="이름" rules={[{ required: true }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="market_type" label="시장">
+              <Select
+                style={{ width: 110 }}
+                options={[
+                  { value: "STOCK", label: "STOCK" },
+                  { value: "CRYPTO", label: "CRYPTO" },
+                  { value: "ALL", label: "ALL" },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item>
+              <PermissionButton
+                permission="trading:write"
+                htmlType="submit"
+                loading={createDefMut.isPending}
+                disabled={createDefMut.isPending}
+              >
+                SYSTEM 전략 생성
+              </PermissionButton>
+            </Form.Item>
+          </Form>
+          <Table
+            size="small"
+            loading={definitions.isLoading}
+            pagination={{ pageSize: 8 }}
+            rowKey={(r) => String(asRecord(r)?.strategy_id ?? "row")}
+            dataSource={defRows}
+            columns={[
+              { title: "ID", dataIndex: "strategy_id", width: 70, render: cell },
+              { title: "코드", dataIndex: "strategy_code", render: cell },
+              { title: "이름", dataIndex: "name", render: cell },
+              { title: "소유자", dataIndex: "user_id", width: 80, render: cell },
+              {
+                title: "owner",
+                dataIndex: "owner_type",
+                width: 90,
+                render: cell,
+              },
+              {
+                title: "공개",
+                dataIndex: "visibility",
+                width: 90,
+                render: cell,
+              },
+              {
+                title: "활성",
+                dataIndex: "is_active",
+                width: 70,
+                render: (v: unknown) =>
+                  v ? <Tag color="success">Y</Tag> : <Tag>N</Tag>,
+              },
+              {
+                title: "승인",
+                dataIndex: "approved_by",
+                width: 100,
+                render: cell,
+              },
+              {
+                title: "작업",
+                key: "ops",
+                width: 320,
+                render: (_: unknown, row: Record<string, unknown>) => {
+                  const id = Number(row.strategy_id);
+                  return (
+                    <Space wrap size={4}>
+                      <PermissionButton
+                        permission="trading:write"
+                        size="small"
+                        loading={approveMut.isPending}
+                        onClick={() => approveMut.mutate(id)}
+                      >
+                        승인
+                      </PermissionButton>
+                      <PermissionButton
+                        permission="trading:write"
+                        size="small"
+                        loading={publishMut.isPending}
+                        onClick={() => publishMut.mutate(id)}
+                      >
+                        공개
+                      </PermissionButton>
+                      <PermissionButton
+                        permission="trading:write"
+                        size="small"
+                        loading={unpublishMut.isPending}
+                        onClick={() => unpublishMut.mutate(id)}
+                      >
+                        비공개
+                      </PermissionButton>
+                      <PermissionButton
+                        permission="trading:write"
+                        size="small"
+                        danger
+                        loading={deactivateMut.isPending}
+                        onClick={() => deactivateMut.mutate(id)}
+                      >
+                        비활성
+                      </PermissionButton>
+                    </Space>
+                  );
+                },
+              },
+            ]}
+          />
+        </Card>
+
         <Card title="전략 등록 + 배포 + 활성화" size="small">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
             performance run 생성 후 PAPER 배포(즉시 ACTIVE). LIVE 배포는 서버에서 거부됩니다.

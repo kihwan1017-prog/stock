@@ -9,9 +9,6 @@ from sqlalchemy.orm import Session
 
 from stock_platform.auth.deps import require_admin
 from stock_platform.database.session import get_db_session
-from stock_platform.operation.audit_repository import (
-    AuditEventRepository,
-)
 from stock_platform.operation.monitoring_snapshot import (
     build_monitoring_overview,
     evaluate_alert_rules,
@@ -51,20 +48,61 @@ def monitoring_alerts(
 ) -> dict[str, Any]:
     """Audit 에 저장된 MONITORING_ALERT 최근 목록."""
 
-    repo = AuditEventRepository(session)
-    # event_type 정확 매칭만 지원 → prefix 수동 필터
-    recent = repo.list_recent(limit=min(limit * 3, 200))
-    items = [
-        {
-            "audit_event_id": row.audit_event_id,
-            "event_type": row.event_type,
-            "actor": row.actor,
-            "detail": row.detail,
-            "created_at": row.created_at,
-        }
-        for row in recent
-        if str(row.event_type).startswith("MONITORING_ALERT")
-    ][:limit]
+    from sqlalchemy import select
+
+    from stock_platform.operation.audit_models import AuditEvent
+
+    # prefix 필터를 SQL로 — 최근 N건 중 알림이 밀려 누락되는 경우 방지
+    rows = list(
+        session.scalars(
+            select(AuditEvent)
+            .where(AuditEvent.event_type.like("MONITORING_ALERT%"))
+            .order_by(AuditEvent.created_at.desc())
+            .limit(max(1, min(limit, 200)))
+        )
+    )
+    items = []
+    for row in rows:
+        detail = row.detail if isinstance(row.detail, dict) else {}
+        user_title = None
+        user_message = None
+        try:
+            from stock_platform.notification.user_facing_alerts import (
+                build_user_facing_copy,
+            )
+
+            raw_title = str(
+                (detail or {}).get("title")
+                or (detail or {}).get("message")
+                or row.event_type
+                or ""
+            )
+            raw_message = str(
+                (detail or {}).get("message")
+                or (detail or {}).get("body")
+                or ""
+            )
+            user_title, user_message, _enriched = build_user_facing_copy(
+                event_type="MONITORING_ALERT",
+                title=raw_title,
+                message=raw_message,
+                detail=detail,
+            )
+        except Exception:  # noqa: BLE001
+            user_title = None
+            user_message = None
+        items.append(
+            {
+                "audit_event_id": row.audit_event_id,
+                "event_type": row.event_type,
+                "actor": row.actor,
+                "detail": row.detail,
+                "created_at": row.created_at,
+                "user_title": user_title,
+                "user_message": user_message,
+                "raw_detail_available": True,
+            }
+        )
     return {"items": items, "limit": limit}
 
 

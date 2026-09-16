@@ -1,0 +1,149 @@
+{
+  "step": "TECHNICAL_TP_ANALYSIS_REOPEN_PRECHECK",
+  "mode": "READ_ONLY_PRECHECK",
+  "date": "2026-08-15",
+  "HEAD": "5c6ad67",
+  "runtime": "5c6ad67",
+  "health": "UP",
+  "verdict": "TP_ANALYSIS_FREEZE_RELEASE_READY",
+  "TP_ANALYSIS_FREEZE_RELEASE_READY": true,
+  "freeze_checklist": {
+    "coverage_remediation_closed": "PASS",
+    "historical_integrity_intact": "PASS",
+    "historical_math_delta_0": "PASS",
+    "unresolved_historical_0": "PASS",
+    "source_unavailable_historical_0": "PASS",
+    "post_cov_pass_evidence": "PASS",
+    "cov_anomaly_0": "PASS",
+    "tp_sl_policy_unchanged": "PASS",
+    "oos_not_started": "PASS",
+    "look_ahead_safe_design": "PASS"
+  },
+  "ORIGINAL_TP_ANALYSIS_VALID": "PARTIAL",
+  "original_tp": {
+    "verdict": "CANDIDATE_EVIDENCE_INSUFFICIENT",
+    "operational": "KEEP_6",
+    "FROZEN_CANDIDATE_TP": null,
+    "paired_n": 47,
+    "means_cited_only": {
+      "tp_2": -0.0487,
+      "tp_3": 0.0331,
+      "tp_4": -0.0007,
+      "tp_6": 0.0629
+    },
+    "recomputed_this_step": false
+  },
+  "dataset_groups": {
+    "DISCOVERY_FIXED": {
+      "count": 50,
+      "strict_valid": 47,
+      "unique_symbols": 23,
+      "path_quality_v2_on_row": 0,
+      "non_strict_ids": [4, 6, 10],
+      "non_strict_reason": "missing_window_returns"
+    },
+    "POST_DISCOVERY_PRE_COV": {
+      "count": 1,
+      "strict_valid": 1,
+      "ids": [51],
+      "symbols": ["KRW-ONG"],
+      "path_quality_v2_on_row": 0
+    },
+    "POST_COV": {
+      "count": 11,
+      "strict_valid": 10,
+      "ids": [53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63],
+      "unique_symbols": 11,
+      "path_quality_v2_on_row": 11,
+      "non_strict_ids": [53],
+      "non_strict_reason": "missing_return_5m_pct"
+    },
+    "EXCLUDED": {
+      "count": 1,
+      "ids": [52],
+      "reasons": ["LONG_ACTIVE_TARGET_BLOCKED"]
+    }
+  },
+  "symbol_concentration_discovery_strict": {
+    "level": "MEDIUM",
+    "top": {"KRW-RE": 5, "KRW-BTC": 4, "KRW-SOL": 4, "KRW-WLD": 4}
+  },
+  "provenance_completeness": {
+    "discovery_on_row_v2": "ABSENT_BUT_COV_D_RECONSTRUCTABLE",
+    "post_cov_v2": "COMPLETE",
+    "HISTORICAL_DATA_INTEGRITY": "INTACT"
+  },
+  "PROPOSED_NEW_DISCOVERY_CUTOFF": {
+    "rule": "shadow_id<=51 AND completed_at<=2026-08-14T23:25:40.424Z AND status=COMPLETED",
+    "note": "keep ORIGINAL; do not persist to DB/policy in this STEP"
+  },
+  "LOOK_AHEAD_SAFE_REANALYSIS_DESIGN": true,
+  "post_cov_handling": {
+    "option_A": "expand discovery through 58",
+    "option_B": "keep discovery fixed; 53+ OOS/future reserve",
+    "option_C": "partial expand",
+    "recommended": "B"
+  },
+  "candidate_search_judgment": "TP_CANDIDATE_REANALYSIS_RECOMMENDED",
+  "metrics": {
+    "primary": "paired_counterfactual_exit_return_pct",
+    "guards": [
+      "median_return",
+      "loss_rate",
+      "MFE",
+      "MAE",
+      "TP_hit",
+      "SL_exit",
+      "timeout",
+      "symbol_concentration",
+      "same_candle_ambiguity",
+      "path_quality_provenance"
+    ],
+    "fee_slippage": false,
+    "fee_slippage_change_proposed": false
+  },
+  "OOS_DESIGN_READY": false,
+  "OOS_START_READY": false,
+  "SHADOW_52_EXCLUDED_FROM_TP_ANALYSIS": true,
+  "policy": {
+    "CURRENT_TP": 6.0,
+    "CURRENT_SL": 3.0,
+    "TP_ANALYSIS": "FROZEN_PENDING_COVERAGE_REMEDIATION",
+    "status_changed_this_step": false,
+    "OOS": "NOT_STARTED"
+  },
+  "runtime_snapshot": {
+    "total": 63,
+    "ACTIVE": 1,
+    "COMPLETED": 62,
+    "completed_v2": 11,
+    "baseline_at_closeout": {"total": 58, "COMPLETED": 57, "v2": 6},
+    "note": "59-63 natural POST_COV growth; READ classify only"
+  },
+  "News": {
+    "MATCHED_completed": 3,
+    "NO_NEWS_completed": 28,
+    "NO_NEWS_active": 10,
+    "EXCLUDED": 5,
+    "milestone": "ACCUMULATING",
+    "used_in_tp_analysis": false
+  },
+  "safety": {
+    "trading_order_n": 241,
+    "outbox_n": 52,
+    "LIVE": false,
+    "execution_running": false,
+    "outbox_worker": false
+  },
+  "mutations": {
+    "production_code": 0,
+    "db": 0,
+    "tp_recompute": 0,
+    "tp_sl_config": 0,
+    "candidate_freeze": 0,
+    "oos_start": 0,
+    "commit": false,
+    "push": false
+  },
+  "next_step": "TECHNICAL TP CANDIDATE REANALYSIS"
+}

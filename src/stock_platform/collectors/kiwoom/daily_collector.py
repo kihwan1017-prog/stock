@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Final
+from zoneinfo import ZoneInfo
 
 import structlog
 
-from stock_platform.brokers.kiwoom.client import KiwoomRestClient
+from stock_platform.broker.kiwoom.market.client import KiwoomRestClient
 from stock_platform.collectors.kiwoom.dto import DailyPriceDTO
 from stock_platform.collectors.kiwoom.pagination import ContinuationState
 from stock_platform.collectors.kiwoom.parser import KiwoomDailyParser
@@ -91,8 +92,12 @@ class KiwoomDailyCollector:
                 break
 
             oldest_date: date | None = None
+            today = datetime.now(ZoneInfo("Asia/Seoul")).date()
 
             for row in page_rows:
+                # 미래 일자·중복(같은 날짜 마지막 값)은 저장하지 않는다
+                if row.trade_date > today:
+                    continue
                 if oldest_date is None or row.trade_date < oldest_date:
                     oldest_date = row.trade_date
 

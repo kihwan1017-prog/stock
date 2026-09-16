@@ -22,11 +22,14 @@ class StrategyApprovalScheduler:
         return self._scheduler
 
     def configure(self) -> None:
+        settings = get_settings()
         self._scheduler.add_job(
             self.run_after_market,
             trigger=CronTrigger(
+                day_of_week="mon-fri",
                 hour=16,
                 minute=10,
+                timezone=settings.scheduler_timezone,
             ),
             id="strategy_approval_after_market",
             replace_existing=True,

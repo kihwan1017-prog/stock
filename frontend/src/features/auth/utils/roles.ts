@@ -1,51 +1,73 @@
-import { adminRoutes, userRoutes } from "@/config/routes";
+import { adminRoutes, authRoutes } from "@/config/routes";
 import type { AuthUser } from "@/features/auth/types/auth";
 
-/** Backend 시드 역할 */
+/** Backend 시드 역할 — ADMIN / USER 두 개만 */
 export const ROLE_ADMIN = "admin";
-export const ROLE_OPERATOR = "operator";
-export const ROLE_VIEWER = "viewer";
+export const ROLE_USER = "user";
 
-/**
- * 제품 스펙의 trader — Backend에는 operator로 시드됨.
- * JWT에 trader가 오면 동일 티어로 인정 (향후 시드 대비).
- */
-export const ROLE_TRADER_ALIASES = [ROLE_OPERATOR, "trader"] as const;
+/** 레거시 Role → 정식 코드 */
+const ROLE_ALIASES: Record<string, string> = {
+  viewer: ROLE_USER,
+  operator: ROLE_ADMIN,
+  trader: ROLE_USER,
+};
 
-export type ProductRole = "viewer" | "trader" | "admin";
+export type ProductRole = "user" | "admin";
+
+export function normalizeRoleCode(role: string): string {
+  const cleaned = role.trim().toLowerCase();
+  return ROLE_ALIASES[cleaned] ?? cleaned;
+}
 
 export function normalizeRoles(roles: string[] | undefined | null): string[] {
-  return (roles ?? []).map((role) => role.trim().toLowerCase()).filter(Boolean);
+  const unique: string[] = [];
+  for (const role of roles ?? []) {
+    const normalized = normalizeRoleCode(role);
+    if (normalized && !unique.includes(normalized)) {
+      unique.push(normalized);
+    }
+  }
+  return unique;
 }
 
 export function isAdminRole(roles: string[] | undefined | null): boolean {
   return normalizeRoles(roles).includes(ROLE_ADMIN);
 }
 
-/** trader 티어: operator | trader | admin */
+/** @deprecated STEP2 — admin/user만 사용. admin이면 true */
 export function isTraderRole(roles: string[] | undefined | null): boolean {
-  const normalized = normalizeRoles(roles);
-  if (normalized.includes(ROLE_ADMIN)) return true;
-  return ROLE_TRADER_ALIASES.some((code) => normalized.includes(code));
+  return isAdminRole(roles);
 }
 
-/** Admin 콘솔 진입: admin | operator (viewer 제외) */
+/** Admin 콘솔 진입: admin만 */
 export function canAccessAdminPortal(
+  roles: string[] | undefined | null,
+): boolean {
+  return isAdminRole(roles);
+}
+
+/** ADMIN 또는 USER 중 하나라도 있으면 True */
+export function hasValidAppRole(
   roles: string[] | undefined | null,
 ): boolean {
   const normalized = normalizeRoles(roles);
   return (
-    normalized.includes(ROLE_ADMIN) || normalized.includes(ROLE_OPERATOR)
+    normalized.includes(ROLE_ADMIN) || normalized.includes(ROLE_USER)
   );
 }
 
-/** UI 표시용 — operator는 trader로 표기 */
+/** Role별 홈 — Single Admin Operator: admin 콘솔만 */
+export function roleHomePath(roles: string[] | undefined | null): string {
+  return canAccessAdminPortal(roles)
+    ? adminRoutes.dashboard
+    : authRoutes.forbidden;
+}
+
+/** UI 표시용 */
 export function displayRoleLabel(roleCode: string): string {
-  const code = roleCode.trim().toLowerCase();
-  if (code === ROLE_OPERATOR) return "trader (operator)";
-  if (code === "trader") return "trader";
+  const code = normalizeRoleCode(roleCode);
   if (code === ROLE_ADMIN) return "admin";
-  if (code === ROLE_VIEWER) return "viewer";
+  if (code === ROLE_USER) return "user";
   return roleCode;
 }
 
@@ -53,61 +75,99 @@ export function displayRoleLabel(roleCode: string): string {
 export function primaryProductRole(
   roles: string[] | undefined | null,
 ): ProductRole {
-  if (isAdminRole(roles)) return "admin";
-  if (isTraderRole(roles)) return "trader";
-  return "viewer";
+  return isAdminRole(roles) ? "admin" : "user";
 }
 
 /**
  * User 메뉴 최소 접근 티어.
- * viewer < trader < admin
+ * user < admin
  */
-export type UserMenuAccess = "viewer" | "trader" | "admin";
+export type UserMenuAccess = "user" | "admin";
 
 export function meetsUserMenuAccess(
   roles: string[] | undefined | null,
-  minAccess: UserMenuAccess = "viewer",
+  minAccess: UserMenuAccess = "user",
 ): boolean {
-  if (minAccess === "viewer") return true;
-  if (minAccess === "trader") return isTraderRole(roles);
+  if (minAccess === "user") return true;
   return isAdminRole(roles);
 }
 
-/** 매매·자동매매·전략 실행 등 trader 이상 경로 */
-const TRADER_USER_PATH_PREFIXES = [
-  userRoutes.trading,
-  userRoutes.autoTrading,
-  userRoutes.strategies,
-  userRoutes.backtests,
-];
+/**
+ * User 경로 역할 게이트.
+ * 본인 매매·전략은 USER도 접근 가능 — 경로 단위 역할 제한 없음.
+ * 화면 내부 admin 전용 액션은 canAccessAdminPortal로 게이팅.
+ */
+const ADMIN_ONLY_USER_PATH_PREFIXES: string[] = [];
 
 export function requiredRolesForUserPath(
   pathname: string,
 ): string[] | undefined {
-  const needsTrader = TRADER_USER_PATH_PREFIXES.some(
+  const needsAdmin = ADMIN_ONLY_USER_PATH_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
-  if (!needsTrader) return undefined;
-  return [ROLE_ADMIN, ROLE_OPERATOR, "trader"];
+  if (!needsAdmin) return undefined;
+  return [ROLE_ADMIN];
+}
+
+const AUTH_LOOP_PATHS = new Set([
+  authRoutes.login,
+  authRoutes.signup,
+  "/login",
+  "/signup",
+]);
+
+function isSafeInternalPath(path: string | null | undefined): path is string {
+  return Boolean(path && path.startsWith("/") && !path.startsWith("//"));
 }
 
 /**
  * 로그인 후 이동 경로.
- * viewer가 Admin URL을 요청하면 User 대시보드로 보낸다.
+ * 우선순위: 비밀번호 변경 → 온보딩 → next(권한 검증) → defaultRoute(권한 검증) → Role 홈
  */
 export function resolvePostLoginPath(
-  user: Pick<AuthUser, "roles">,
+  user: Pick<
+    AuthUser,
+    "roles" | "defaultRoute" | "passwordChangeRequired" | "onboardingCompleted"
+  >,
   requestedPath?: string | null,
 ): string {
-  const path =
-    requestedPath && requestedPath.startsWith("/") ? requestedPath : null;
-  const wantsAdmin = Boolean(path?.startsWith("/admin"));
-
-  if (wantsAdmin && !canAccessAdminPortal(user.roles)) {
-    return userRoutes.dashboard;
+  if (user.passwordChangeRequired) {
+    return authRoutes.changePassword;
   }
-  if (path) return path;
-  return canAccessAdminPortal(user.roles)
-    ? adminRoutes.dashboard
-    : userRoutes.dashboard;
+  if (user.onboardingCompleted === false) {
+    return authRoutes.onboarding;
+  }
+
+  if (!hasValidAppRole(user.roles)) {
+    return authRoutes.forbidden;
+  }
+
+  const home = roleHomePath(user.roles);
+  const path = isSafeInternalPath(requestedPath) ? requestedPath : null;
+
+  if (path) {
+    if (AUTH_LOOP_PATHS.has(path)) {
+      return home;
+    }
+    if (path.startsWith("/admin") && !canAccessAdminPortal(user.roles)) {
+      return authRoutes.forbidden;
+    }
+    return path;
+  }
+
+  if (isSafeInternalPath(user.defaultRoute)) {
+    const defaultRoute = user.defaultRoute;
+    if (AUTH_LOOP_PATHS.has(defaultRoute) || defaultRoute === "/forbidden") {
+      return home;
+    }
+    if (
+      defaultRoute.startsWith("/admin") &&
+      !canAccessAdminPortal(user.roles)
+    ) {
+      return home;
+    }
+    return defaultRoute;
+  }
+
+  return home;
 }

@@ -1,39 +1,43 @@
 from __future__ import annotations
 
-from stock_platform.strategy_deployment.registry import (
-    strategy_factory_registry,
-)
+from typing import Any
+
+
+class ParameterStrategyStub:
+    """팩토리 미등록 전략용 스텁. Realtime Consumer는 MA Evaluator를 사용한다."""
+
+    def __init__(self, parameter_payload: dict[str, Any] | None = None) -> None:
+        self.parameter_payload = dict(parameter_payload or {})
+
+    def evaluate(self, *args: Any, **kwargs: Any) -> None:
+        return None
 
 
 def configure_default_strategy_registry() -> None:
     """
-    실제 프로젝트 전략 클래스에 맞게 factory를 등록한다.
+    기본 전략 팩토리 등록.
 
-    아래 예시는 구조만 제공합니다. 존재하지 않는 클래스를
-    자동 import하지 않아 서버 시작 오류를 방지합니다.
+    존재하지 않는 전략 클래스를 import하지 않는다.
+    미등록 strategy_code는 ParameterStrategyStub으로 로드되어
+    Scoped Runtime bootstrap이 LookupError로 전체 실패하지 않게 한다.
     """
 
-    # 예:
-    #
-    # from stock_platform.strategy.ma_cross import MaCrossStrategy
-    #
-    # strategy_factory_registry.replace(
-    #     "MA_CROSS_V1",
-    #     lambda params: MaCrossStrategy(
-    #         short_window=int(params["short_window"]),
-    #         long_window=int(params["long_window"]),
-    #     ),
-    # )
-    #
-    # from stock_platform.strategy.rsi import RsiStrategy
-    #
-    # strategy_factory_registry.replace(
-    #     "RSI_V1",
-    #     lambda params: RsiStrategy(
-    #         period=int(params.get("period", 14)),
-    #         oversold=float(params.get("oversold", 30)),
-    #         overbought=float(params.get("overbought", 70)),
-    #     ),
-    # )
+    from stock_platform.strategy_deployment.registry import (
+        strategy_factory_registry,
+    )
 
-    return None
+    def _factory(params: dict[str, Any]) -> ParameterStrategyStub:
+        return ParameterStrategyStub(params)
+
+    # 문서/테스트에서 자주 쓰는 코드 + 기본 폴백
+    for code in (
+        "MA_CROSS_V1",
+        "MOVING_AVERAGE_V1",
+        "MOVING_AVERAGE",
+        "DEFAULT",
+        "PAPER_MA",
+        "RSI_V1",
+    ):
+        strategy_factory_registry.replace(code, _factory)
+
+    strategy_factory_registry.set_default_factory(_factory)

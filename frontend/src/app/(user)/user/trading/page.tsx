@@ -22,7 +22,7 @@ import {
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { userRoutes } from "@/config/routes";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";
@@ -139,8 +139,10 @@ export default function UserTradingPage() {
   });
 
   const paperOrdersQuery = useQuery({
-    queryKey: [...queryKeys.user.paperOrders(), "trading"],
-    queryFn: () => userApi.listPaperOrders(),
+    queryKey: [...queryKeys.user.paperOrders(), "trading", { account_id: accountId }],
+    queryFn: () =>
+      userApi.listPaperOrders({ account_id: accountId as number }),
+    enabled: accountId != null,
     refetchInterval: 5_000,
   });
 
@@ -157,8 +159,17 @@ export default function UserTradingPage() {
   });
 
   const executionsQuery = useQuery({
-    queryKey: [...queryKeys.user.executions(), "trading", { limit: 30 }],
-    queryFn: () => userApi.listExecutions({ limit: 30 }),
+    queryKey: [
+      ...queryKeys.user.executions(),
+      "trading",
+      { limit: 30, account_id: accountId },
+    ],
+    queryFn: () =>
+      userApi.listExecutions({
+        limit: 30,
+        account_id: accountId as number,
+      }),
+    enabled: accountId != null,
     refetchInterval: 5_000,
   });
 
@@ -333,6 +344,9 @@ export default function UserTradingPage() {
       description="종목검색 · 현재가 · 매수/매도 · 취소 · 미체결 · 체결 · STEP44"
       extra={
         <Space wrap>
+          <Button size="small">
+            <Link href={userRoutes.liveValidationUpbit}>업비트 LIVE 검증</Link>
+          </Button>
           <Button size="small">
             <Link href={userRoutes.portfolio}>포트폴리오</Link>
           </Button>

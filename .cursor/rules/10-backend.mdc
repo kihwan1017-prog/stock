@@ -1,0 +1,17 @@
+---
+description: Backend FastAPI — session, scope, broker isolation
+globs: src/stock_platform/**/*.py
+alwaysApply: false
+---
+
+# 10 — Backend
+
+공통 SoT: [AGENTS.md](../../AGENTS.md) · 상세: [docs/AI_CODING_RULE.md](../../docs/AI_CODING_RULE.md)
+
+- **Router:** HTTP·권한·DTO. 비즈니스 로직은 Service/Domain.
+- **Session/Transaction:** 소유권을 명확히. 커밋·롤백 경계를 숨기지 않음.
+- **AuthZ:** ADMIN/USER 분리. `user_id` · UBA · Paper `account_id` · Strategy ownership 강제.
+- **Error/Audit:** 도메인 예외 → API 매핑. 민감 주문·LIVE 이벤트는 audit.
+- **Async:** Broker/IO는 격리. Outbox·Scheduler 경로를 우회한 직접 실주문 금지.
+- **Broker:** Adapter/Factory만. Realtime 경로에 `broker_code` 하드코딩 금지 (P0-1).
+- LIVE/주문 실행은 [90-trading-safety](90-trading-safety.mdc) 준수.

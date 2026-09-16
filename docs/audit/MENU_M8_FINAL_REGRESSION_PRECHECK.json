@@ -1,0 +1,83 @@
+{
+  "step": "M8-0",
+  "mode": "READ_ONLY_FINAL_AUDIT",
+  "head": "f18d02f",
+  "branch": "release/v1.1.0",
+  "origin_ahead": 10,
+  "M7_CLOSE": true,
+  "verdict": "FINAL_IA_REGRESSION_AUDIT_READY_WITH_LIMITATIONS",
+  "production_mutation": 0,
+  "ia_baseline": {
+    "status": "CURRENT_APPROVED_IA",
+    "admin_top_level": 11,
+    "admin_leaf": 55,
+    "user_top_level": 12,
+    "user_leaf": 29,
+    "m2_target_not_used_as_pass_bar": true
+  },
+  "pages": {
+    "admin": 60,
+    "user": 36
+  },
+  "route_classes": {
+    "KEEP_CANONICAL": 84,
+    "KEEP_REDIRECT": 3,
+    "DEPRECATE_REDIRECT": 9,
+    "DETAIL_ONLY": 0,
+    "HIDDEN_ACTIVE": 0,
+    "ORPHAN": 0,
+    "BROKEN": 0,
+    "REMOVE_CANDIDATE": 0,
+    "unclassified": 0
+  },
+  "menu_integrity": {
+    "broken_href": 0,
+    "duplicate_href": 0,
+    "monitoring_sidebar": 1,
+    "llm_href": "/user/ai"
+  },
+  "live_control": {
+    "AdminUpbitLiveUbaPanel_mounts": 1,
+    "canonical": "/admin/accounts",
+    "upbit_live_mutation": 0,
+    "risk_live_arm_mutation": 0
+  },
+  "upbit_hub_tabs": 5,
+  "m6": {
+    "shared_utils": 7,
+    "order_keys": 7,
+    "strategy_request_keys": 4,
+    "user_to_admin_dataHelpers": 0,
+    "admin_shim_retained": true
+  },
+  "m7_redirect": {
+    "total": 12,
+    "KEEP": 3,
+    "DEPRECATE": 9,
+    "chain": 0,
+    "REMOVE_CANDIDATE": 0
+  },
+  "permission": {
+    "mismatch": 0,
+    "intentional_no_menu_permission_admin": 6,
+    "review_required": 0
+  },
+  "authguard_issues": 0,
+  "cross_domain_unexpected": 0,
+  "tests": {
+    "focused_pass": 66,
+    "focused_fail_preexisting_wip": 1,
+    "eslint_menu": "PASS",
+    "tsc_m8_new": 0,
+    "tsc_preexisting_wip": 3
+  },
+  "risk_buckets": {
+    "BLOCKER": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 1,
+    "DEFERRED_WIP": 1,
+    "INFORMATIONAL": 2
+  },
+  "next_step_exactly_one": "M8-F — FINAL MENU / ROUTE / PERMISSION REGRESSION CLOSE"
+}

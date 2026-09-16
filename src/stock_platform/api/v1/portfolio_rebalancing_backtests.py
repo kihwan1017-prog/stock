@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,7 @@ from stock_platform.database.session import get_db_session
 router = APIRouter(
     prefix="/api/v1/portfolio-rebalancing-backtests",
     tags=["Portfolio Rebalancing Backtests"],
+    dependencies=[Depends(require_admin)],
 )
 
 

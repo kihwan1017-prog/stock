@@ -3,17 +3,20 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from stock_platform.auth.account_ownership import (
+    assert_active_broker_account_for_trading,
     assert_paper_account_access,
+    require_live_broker_account_id,
 )
 from stock_platform.auth.deps import (
     AuthenticatedUser,
     require_permission,
 )
+from stock_platform.common.rate_limit import enforce_rate_limit
 from stock_platform.database.session import get_db_session
 from stock_platform.order.execution_service import (
     OrderExecutionCommand,
@@ -34,8 +37,12 @@ router = APIRouter(
 
 class SubmitOrderRequest(BaseModel):
     account_id: int = Field(gt=0)
+    # STEP8-1 — LIVE 키움·업비트 필수
+    user_broker_account_id: int | None = Field(default=None, gt=0)
     broker_code: str = "KIWOOM"
     exchange_code: str
+    # PAPER(기본) | LIVE
+    environment: str = "PAPER"
     symbol: str
     side: OrderSide
     order_type: OrderType = OrderType.LIMIT
@@ -45,6 +52,7 @@ class SubmitOrderRequest(BaseModel):
     time_in_force: OrderTimeInForce = OrderTimeInForce.DAY
     strategy_code: str | None = None
     strategy_deployment_id: int | None = None
+    strategy_id: int | None = Field(default=None, gt=0)
     portfolio_id: int | None = None
     position_id: int | None = None
     client_order_id: str | None = None
@@ -60,6 +68,7 @@ class SubmitOrderRequest(BaseModel):
 @router.post("/submit")
 def submit_order(
     request: SubmitOrderRequest,
+    http_request: Request,
     user: AuthenticatedUser = Depends(
         require_permission("trading:write")
     ),
@@ -67,9 +76,37 @@ def submit_order(
 ):
     """Admin/API 주문 단일 진입점 — Risk + Kill Switch 필수 (우회 불가)."""
 
+    enforce_rate_limit(
+        http_request,
+        scope="order_execution_submit",
+        limit=60,
+        window_seconds=60,
+    )
+    # Paper 원장 계좌 소유권 (기존 account_id)
     assert_paper_account_access(
         user, request.account_id, session
     )
+
+    environment = (request.environment or "PAPER").upper()
+    broker_code = (request.broker_code or "KIWOOM").upper()
+    require_live_broker_account_id(
+        environment=environment,
+        broker_code=broker_code,
+        user_broker_account_id=request.user_broker_account_id,
+    )
+
+    uba = None
+    external_account_ref = None
+    owner_user_id = int(user.user_id)
+    if request.user_broker_account_id is not None:
+        uba = assert_active_broker_account_for_trading(
+            user,
+            int(request.user_broker_account_id),
+            session,
+            expected_broker_code=broker_code,
+        )
+        external_account_ref = uba.masked_account_number
+        owner_user_id = int(uba.user_id)
 
     if request.quantity is None and request.order_amount is None:
         raise HTTPException(
@@ -81,8 +118,14 @@ def submit_order(
         result = OrderExecutionService(session).submit(
             OrderExecutionCommand(
                 account_id=request.account_id,
-                broker_code=request.broker_code,
+                user_broker_account_id=(
+                    None
+                    if uba is None
+                    else int(uba.user_broker_account_id)
+                ),
+                broker_code=broker_code,
                 exchange_code=request.exchange_code,
+                environment=environment,
                 symbol=request.symbol,
                 side=request.side,
                 order_type=request.order_type,
@@ -94,11 +137,30 @@ def submit_order(
                 strategy_deployment_id=(
                     request.strategy_deployment_id
                 ),
+                strategy_id=(
+                    int(request.strategy_id)
+                    if request.strategy_id is not None
+                    else (
+                        int(request.metadata_payload["strategy_id"])
+                        if isinstance(request.metadata_payload, dict)
+                        and request.metadata_payload.get("strategy_id")
+                        is not None
+                        else None
+                    )
+                ),
                 portfolio_id=request.portfolio_id,
                 position_id=request.position_id,
                 client_order_id=request.client_order_id,
                 idempotency_key=request.idempotency_key,
                 account_number=request.account_number,
+                external_account_ref=external_account_ref,
+                owner_user_id=owner_user_id,
+                # LIVE UBA: 리스크/ARM 주체는 계좌 소유자. actor는 호출자(admin)로 유지.
+                user_id=owner_user_id,
+                order_source="MANUAL",
+                is_risk_reducing=(
+                    request.side.value.upper() == "SELL"
+                ),
                 portfolio_value=request.portfolio_value,
                 available_cash=request.available_cash,
                 current_position_count=(
@@ -132,5 +194,8 @@ def submit_order(
         "quantity": result.quantity,
         "price": result.price,
         "position_plan": result.position_plan,
+        "user_broker_account_id": (
+            None if uba is None else int(uba.user_broker_account_id)
+        ),
         "http_status": status_code,
     }

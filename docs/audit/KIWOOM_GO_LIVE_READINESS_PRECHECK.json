@@ -1,0 +1,76 @@
+{
+  "step": "K-G0",
+  "title": "KIWOOM_GO_LIVE_READINESS_PRECHECK",
+  "mode": "READ_ONLY",
+  "date": "2026-08-16",
+  "HEAD": "3bbf0cd",
+  "verdict": "KIWOOM_LIVE_BLOCKED",
+  "inventory": {
+    "adapter": "IMPLEMENTED",
+    "rest_token": "IMPLEMENTED",
+    "credential_vault": "IMPLEMENTED",
+    "uba_account": "IMPLEMENTED",
+    "balance_positions": "PARTIAL",
+    "orders": "IMPLEMENTED",
+    "executions": "PARTIAL",
+    "recovery": "PARTIAL",
+    "paper": "PARTIAL",
+    "preflight": "PARTIAL",
+    "risk_kill": "IMPLEMENTED"
+  },
+  "uba_kiwoom": [
+    {"uba": 1338, "connection_status": "DISCONNECTED", "live": false, "armed": false},
+    {"uba": 1349, "connection_status": "DISCONNECTED", "live": false, "armed": false},
+    {"uba": 1381, "connection_status": "CONNECTED", "live": false, "armed": false}
+  ],
+  "kiwoom_linked_credentials_active": 0,
+  "risk_settings_rows_for_kiwoom_ubas": 0,
+  "readiness": {
+    "KIWOOM_ACCOUNT_READY": "READY_WITH_LIMITATIONS",
+    "KIWOOM_CREDENTIAL_READY": "NO",
+    "KIWOOM_CONNECTION_READY": "READY_WITH_LIMITATIONS",
+    "KIWOOM_PAPER_READY": "NO",
+    "KIWOOM_RISK_READY": "YES",
+    "KIWOOM_RECOVERY_READY": "READY_WITH_LIMITATIONS",
+    "KIWOOM_PREFLIGHT_READY": "NO",
+    "KIWOOM_RUNTIME_READY": "READY_WITH_LIMITATIONS",
+    "KIWOOM_ORDER_PATH_READY": "READY_WITH_LIMITATIONS",
+    "KIWOOM_LIVE_READY": "NO"
+  },
+  "blockers": [
+    "P0-2_POSITION_WRITE_OPEN",
+    "KIWOOM_CREDENTIAL_LINKED_COUNT_0",
+    "LIVE_NOT_APPROVED_FLAGS_OFF"
+  ],
+  "high": [
+    "PREFLIGHT_UPBIT_CENTRIC",
+    "KIWOOM_AMBIGUOUS_RESOLVER_MISSING",
+    "P0-1_DEFAULT_KIWOOM_FALLBACK"
+  ],
+  "medium": [
+    "CREDENTIAL_CONNECTION_DRIFT",
+    "RISK_SETTINGS_ROWS_MISSING",
+    "P0-5_PAPER_AUTO_FILL"
+  ],
+  "low": ["FE_COSMETIC", "USE_MOCK_DEFAULT"],
+  "waves": ["K-A_account_credential", "K-B_P0-2_position_write", "K-C_preflight_recovery", "K-D_paper", "K-E_live_readiness_after_approval"],
+  "next_k_step": "KIWOOM_P0-2_LIVE_POSITION_WRITE",
+  "parallel": {
+    "K_ONLY": ["P0-2_position_write", "kiwoom_preflight", "kiwoom_ambiguous"],
+    "SHARED": ["P0-1_broker_resolve", "TradingOrder_Outbox_schema", "runtime_gates_change"],
+    "SAFE_PARALLEL": ["krx_calendar_verify", "P0-5_paper_flags"],
+    "U_CONFLICT": ["shared_live_ops_endpoint_rewrite", "mixed_u_k_commit"]
+  },
+  "safety": {
+    "trading_order_n": 241,
+    "outbox_n": 52,
+    "upbit_live": false,
+    "kiwoom_live": false,
+    "kiwoom_use_mock": true,
+    "outbox_scheduler_running": false,
+    "production_mutation": 0,
+    "db_mutation": 0,
+    "commit": false,
+    "push": false
+  }
+}

@@ -64,8 +64,13 @@ class CandidateAnalysisOrchestrator:
         )
         if not candidate_rows:
             raise LookupError(
-                f"Candidate results are empty: "
-                f"run_id={candidate_run.run_id}"
+                "Candidate results are empty: "
+                f"run_id={candidate_run.run_id}, "
+                f"exchange={normalized_exchange}, "
+                f"selected_count={candidate_run.selected_count}. "
+                "candidate_screening을 다시 실행하세요 "
+                "(수동 실행은 minimum_score=0 기본, "
+                "또는 exchange_code=UPBIT)."
             )
 
         # 규칙 상위 10 → AI 최종 limit(기본 5)

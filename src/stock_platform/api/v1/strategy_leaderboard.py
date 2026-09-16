@@ -7,6 +7,7 @@ from fastapi import (
     Query,
     status,
 )
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -27,6 +28,7 @@ from stock_platform.performance.leaderboard_trend_service import (
 router = APIRouter(
     prefix="/api/v1/strategy-leaderboard",
     tags=["Strategy Leaderboard"],
+    dependencies=[Depends(require_admin)],
 )
 
 

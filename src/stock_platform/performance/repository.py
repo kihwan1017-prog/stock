@@ -33,6 +33,8 @@ class StrategyPerformanceRepository:
         period_start_date: date,
         period_end_date: date,
         parameter_payload: dict[str, Any],
+        strategy_id: int | None = None,
+        requested_by_user_id: int | None = None,
     ) -> StrategyPerformanceRunEntity:
         if period_start_date > period_end_date:
             raise ValueError(
@@ -53,6 +55,8 @@ class StrategyPerformanceRepository:
             period_end_date=period_end_date,
             parameter_hash=parameter_hash,
             parameter_payload=parameter_payload,
+            strategy_id=strategy_id,
+            requested_by_user_id=requested_by_user_id,
         )
         self._session.add(entity)
         self._session.commit()
@@ -185,3 +189,36 @@ class StrategyPerformanceRepository:
         return hashlib.sha256(
             raw.encode("utf-8")
         ).hexdigest()
+
+    def find_latest_matching(
+        self,
+        *,
+        strategy_code: str,
+        run_type: PerformanceRunType,
+        market_code: str,
+        symbol: str | None,
+        period_start_date: date,
+        period_end_date: date,
+        parameter_payload: dict[str, Any],
+    ) -> StrategyPerformanceRunEntity | None:
+        """동일 정체성(해시)의 최신 run — replay 중복 방지."""
+
+        parameter_hash = self._parameter_hash(parameter_payload)
+        statement = (
+            select(StrategyPerformanceRunEntity)
+            .where(
+                StrategyPerformanceRunEntity.strategy_code == strategy_code,
+                StrategyPerformanceRunEntity.run_type == run_type.value,
+                StrategyPerformanceRunEntity.market_code == market_code,
+                StrategyPerformanceRunEntity.symbol == symbol,
+                StrategyPerformanceRunEntity.period_start_date
+                == period_start_date,
+                StrategyPerformanceRunEntity.period_end_date
+                == period_end_date,
+                StrategyPerformanceRunEntity.parameter_hash == parameter_hash,
+            )
+            .order_by(
+                StrategyPerformanceRunEntity.strategy_performance_run_id.desc()
+            )
+        )
+        return self._session.scalar(statement)

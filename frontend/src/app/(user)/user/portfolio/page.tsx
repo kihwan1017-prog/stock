@@ -17,7 +17,7 @@ import {
 import Link from "next/link";
 import { useMemo } from "react";
 
-import { asRecord, cell, extractRows } from "@/features/admin/utils/dataHelpers";
+import { asRecord, cell, extractRows } from "@/shared/utils/dataHelpers";
 import { userRoutes } from "@/config/routes";
 import { UserPageShell } from "@/features/user/components/UserPageShell";
 import { useMyPaperAccountId } from "@/features/user/hooks/useMyPaperAccountId";
@@ -26,9 +26,9 @@ import {
   computeReturnRate,
 } from "@/features/user/portfolio/holdingMetrics";
 import * as userApi from "@/features/user/api/userApi";
+import { PortfolioAssetHistorySection } from "@/features/user/portfolio/PortfolioAssetHistorySection";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
-import { UnimplementedNotice } from "@/shared/components/UnimplementedNotice";
 
 
 const CHART_COLORS = [
@@ -70,19 +70,6 @@ function pnlColor(value: unknown): string | undefined {
   return num < 0 ? "#cf1322" : "#3f8600";
 }
 
-function tableRowKey(row: Record<string, unknown>, fields: string[]): string {
-  for (const field of fields) {
-    const value = row[field];
-    if (value !== null && value !== undefined && value !== "") {
-      return String(value);
-    }
-  }
-  try {
-    return JSON.stringify(row);
-  } catch {
-    return "unknown-row";
-  }
-}
 
 function toNumber(value: unknown): number {
   const num = Number(value);
@@ -226,13 +213,24 @@ export default function UserPortfolioPage() {
   });
 
   const executionsQuery = useQuery({
-    queryKey: [...queryKeys.user.executions(), "portfolio", { limit: 30 }],
-    queryFn: () => userApi.listExecutions({ limit: 30 }),
+    queryKey: [
+      ...queryKeys.user.executions(),
+      "portfolio",
+      { limit: 30, account_id: accountId },
+    ],
+    queryFn: () =>
+      userApi.listExecutions({
+        limit: 30,
+        account_id: accountId as number,
+      }),
+    enabled: accountId != null,
   });
 
   const paperOrdersQuery = useQuery({
-    queryKey: [...queryKeys.user.paperOrders(), "portfolio"],
-    queryFn: userApi.listPaperOrders,
+    queryKey: [...queryKeys.user.paperOrders(), "portfolio", { account_id: accountId }],
+    queryFn: () =>
+      userApi.listPaperOrders({ account_id: accountId as number }),
+    enabled: accountId != null,
   });
 
   const rawPositions = useMemo(() => {
@@ -347,7 +345,8 @@ export default function UserPortfolioPage() {
 
   const tradeRows =
     paperOrderRows.length > 0
-      ? paperOrderRows.slice(0, 30).map((row) => ({
+      ? paperOrderRows.slice(0, 30).map((row, index) => ({
+          key: `paper:${String(row.paper_order_id ?? row.order_id ?? index)}:${String(row.created_at ?? row.updated_at ?? index)}`,
           source: "paper",
           id: row.paper_order_id ?? row.order_id,
           symbol: row.symbol,
@@ -358,7 +357,8 @@ export default function UserPortfolioPage() {
           at: row.created_at ?? row.updated_at,
         }))
       : [
-          ...orderRows.slice(0, 15).map((row) => ({
+          ...orderRows.slice(0, 15).map((row, index) => ({
+            key: `order:${String(row.order_id ?? index)}:${String(row.created_at ?? index)}`,
             source: "order",
             id: row.order_id,
             symbol: row.symbol,
@@ -368,7 +368,8 @@ export default function UserPortfolioPage() {
             status: row.status_code,
             at: row.created_at,
           })),
-          ...executionRows.slice(0, 15).map((row) => ({
+          ...executionRows.slice(0, 15).map((row, index) => ({
+            key: `execution:${String(row.execution_id ?? row.trading_execution_id ?? index)}:${String(row.executed_at ?? row.created_at ?? index)}`,
             source: "execution",
             id: row.execution_id ?? row.trading_execution_id,
             symbol: row.symbol,
@@ -396,7 +397,7 @@ export default function UserPortfolioPage() {
             <Link href={userRoutes.trading}>매매</Link>
           </Button>
           <Button size="small">
-            <Link href={userRoutes.trades}>거래내역</Link>
+            <Link href={userRoutes.orders}>거래내역</Link>
           </Button>
         </Space>
       }
@@ -639,12 +640,7 @@ export default function UserPortfolioPage() {
             <Table
               size="small"
               pagination={{ pageSize: 10 }}
-              rowKey={(row) =>
-                tableRowKey(
-                  row as unknown as Record<string, unknown>,
-                  ["source", "id", "symbol", "at"],
-                )
-              }
+              rowKey="key"
               dataSource={tradeRows}
               locale={{ emptyText: "거래내역 없음" }}
               columns={[
@@ -687,26 +683,8 @@ export default function UserPortfolioPage() {
           )}
         </Card>
 
-        {/* 자산 변화 차트 — API 없음 */}
-        <Card
-          title="자산 변화 차트"
-          size="small"
-          extra={
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              TODO
-            </Typography.Text>
-          }
-        >
-          {/* TODO: GET /api/v1/paper-accounts/{id}/equity-history — NAV/총자산 시계열 */}
-          <UnimplementedNotice
-            feature="자산 변화 차트"
-            reason="일별 총자산(equity/NAV) 히스토리 API가 Backend에 없습니다. 추가 후 라인 차트를 연결합니다. (백테스트 equity_curve는 포트폴리오 실계좌와 무관하여 사용하지 않습니다.)"
-            relatedApis={[
-              "TODO: GET /api/v1/paper-accounts/{id}/equity-history",
-              "참고(미사용): GET /api/v1/backtest-runs/{id} equity_curve",
-            ]}
-          />
-        </Card>
+        {/* STEP66 — 자산 변화 차트 */}
+        <PortfolioAssetHistorySection accountId={accountId} />
       </Space>
     </UserPageShell>
   );

@@ -36,7 +36,7 @@ export default function AdminSystemSettingsPage() {
           },
           {
             key: "risk",
-            label: "Risk",
+            label: "리스크",
             children: (
               <Card size="small">
                 <SettingsEditor category="risk" />

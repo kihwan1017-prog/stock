@@ -1,0 +1,31 @@
+# -*- coding: utf-8 -*-
+"""Historical exit recovery — detect-only constants."""
+
+from __future__ import annotations
+
+MODE_DETECT_ONLY = "DETECT_ONLY"
+PROPOSED_ACTION_CREATE_INTENT = "CREATE_RECOVERED_EXIT_INTENT"
+# 실제 복구 시 Durable Exit Intent 초기 상태 (이번 WRK에서는 INSERT 금지)
+PROPOSED_INTENT_STATUS = "CONFIRMED"
+EXIT_REASON_MA_DEAD_CROSS = "MA_DEAD_CROSS"
+
+# upbit_exit_intent.ACTIVE_STATUSES 미러 (무거운 패키지 import 회피)
+ACTIVE_EXIT_INTENT_STATUSES = frozenset(
+    {
+        "CONFIRMED",
+        "ORDER_PENDING",
+        "COOLDOWN",
+        "REVALIDATING",
+        "BLOCKED",
+    }
+)
+
+VALID_HISTORICAL_EXIT_REASONS = frozenset({EXIT_REASON_MA_DEAD_CROSS})
+
+OWNERSHIP_AUTO = "STRATEGY_OWNED"
+OWNERSHIP_MANUAL = "MANUAL"
+OWNERSHIP_UNKNOWN = "UNKNOWN"
+
+CANCELLED_STATUSES = frozenset({"CANCELLED", "CANCELED"})
+OPEN_BINDING_STATUS = "OPEN"
+DEFAULT_EXIT_MIN_MA_SEPARATION_PCT = 0.03

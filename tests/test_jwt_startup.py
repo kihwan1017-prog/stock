@@ -37,8 +37,8 @@ def test_prod_requires_jwt_secret() -> None:
         settings.validate_startup()
     message = str(exc.value)
     assert "JWT_SECRET 환경변수가 없습니다" in message
-    assert r"E:\StockTrading\secrets\stock-platform.env" in message
     assert "JWT_ALGORITHM=HS256" in message
+    assert "JWT_SECRET_KEY" in message
 
 
 @pytest.mark.unit

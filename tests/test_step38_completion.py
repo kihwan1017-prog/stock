@@ -195,10 +195,9 @@ def test_execution_sync_normalizes_pending_to_fill() -> None:
 
 
 def test_exit_monitor_submits_stop_loss(monkeypatch) -> None:
-    monitor = PositionExitMonitorService.__new__(
-        PositionExitMonitorService
-    )
-    monitor._risk_engine = RiskManagementEngine()
+    session = MagicMock()
+    session.get.return_value = SimpleNamespace(user_id=1)
+    monitor = PositionExitMonitorService(session)
     fake_execution = MagicMock()
     fake_execution.submit.return_value = SimpleNamespace(
         allowed=True,
@@ -225,3 +224,4 @@ def test_exit_monitor_submits_stop_loss(monkeypatch) -> None:
     assert actions[0].submitted is True
     assert actions[0].reason == "STOP_LOSS"
     fake_execution.submit.assert_called_once()
+    session.get.assert_called()

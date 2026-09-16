@@ -10,7 +10,6 @@ from sqlalchemy import (
     Identity,
     String,
     Text,
-    UniqueConstraint,
     func,
     text,
 )
@@ -22,16 +21,8 @@ from stock_platform.database.base import Base
 
 class StrategyDeploymentEntity(Base):
     __tablename__ = "strategy_deployment"
-    __table_args__ = (
-        UniqueConstraint(
-            "market_code",
-            "symbol",
-            "mode_code",
-            "status_code",
-            name="uq_strategy_deployment_active_scope",
-        ),
-        {"schema": "trading"},
-    )
+    # ACTIVE unique는 partial index (SYSTEM/USER 분리) — 테이블 UniqueConstraint 없음
+    __table_args__ = ({"schema": "trading"},)
 
     strategy_deployment_id: Mapped[int] = mapped_column(
         BigInteger,
@@ -42,9 +33,19 @@ class StrategyDeploymentEntity(Base):
         String(100),
         nullable=False,
     )
-    strategy_performance_run_id: Mapped[int] = mapped_column(
+    # § STEP12-19 — STEP12-x AI Strategy 파이프라인(Backtest/Quality Gate
+    # 근거 체계)으로 생성되는 Deployment는 이 컬럼이 가리키는 STEP7-x류
+    # "Performance Run" 개념과 무관하므로 NULL을 허용한다(기존
+    # PaperStrategyDeploymentService의 호출부는 계속 값을 채워 넣으므로
+    # 하위 호환에 영향 없음).
+    strategy_performance_run_id: Mapped[int | None] = mapped_column(
         BigInteger,
-        nullable=False,
+        ForeignKey(
+            "trading.strategy_performance_run.strategy_performance_run_id",
+            ondelete="RESTRICT",
+            name="fk_strategy_deployment_performance_run",
+        ),
+        nullable=True,
     )
     market_code: Mapped[str] = mapped_column(
         String(30),
@@ -73,6 +74,35 @@ class StrategyDeploymentEntity(Base):
         String(100),
         nullable=False,
     )
+    # STEP8-3 소유권
+    strategy_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "trading.strategy_definition.strategy_id",
+            ondelete="SET NULL",
+            name="fk_strategy_deployment_definition",
+        ),
+        nullable=True,
+    )
+    owner_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'SYSTEM'"),
+    )
+    user_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "auth.user.user_id",
+            ondelete="RESTRICT",
+            name="fk_strategy_deployment_user",
+        ),
+        nullable=True,
+    )
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        server_default=text("'PUBLIC'"),
+    )
     activated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
@@ -83,6 +113,11 @@ class StrategyDeploymentEntity(Base):
     )
     replaced_by_deployment_id: Mapped[int | None] = mapped_column(
         BigInteger,
+        ForeignKey(
+            "trading.strategy_deployment.strategy_deployment_id",
+            ondelete="SET NULL",
+            name="fk_strategy_deployment_replaced_by",
+        ),
         nullable=True,
     )
     error_message: Mapped[str | None] = mapped_column(

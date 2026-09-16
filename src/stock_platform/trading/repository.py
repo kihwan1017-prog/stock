@@ -22,10 +22,14 @@ class PaperOrderRepository:
     def list_recent(
         self,
         *,
+        account_id: int | None = None,
         exchange_code: str | None = None,
         limit: int = 100,
     ) -> list[PaperOrder]:
         stmt = select(PaperOrder)
+
+        if account_id is not None:
+            stmt = stmt.where(PaperOrder.account_id == int(account_id))
 
         if exchange_code:
             stmt = stmt.where(

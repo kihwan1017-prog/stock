@@ -46,7 +46,8 @@ def _safe(exc: Exception) -> str:
 
 def _broker_monitoring() -> dict[str, Any]:
     settings = get_settings()
-    payload: dict[str, Any] = {
+    kiwoom: dict[str, Any] = {
+        "broker_code": "KIWOOM",
         "use_mock": settings.kiwoom_use_mock,
         "live_order_enabled": settings.kiwoom_live_order_enabled,
         "account_configured": bool(
@@ -86,7 +87,7 @@ def _broker_monitoring() -> dict[str, Any]:
         ws = kiwoom_order_websocket_manager.status()
         recovery = broker_recovery_manager.status()
         connected = bool(ws.get("connected"))
-        payload.update(
+        kiwoom.update(
             {
                 "broker_connected": connected,
                 "websocket": ws,
@@ -94,19 +95,124 @@ def _broker_monitoring() -> dict[str, Any]:
                 or ws.get("last_pong_at")
                 or ws.get("connected_at"),
                 "recovery": recovery,
-                "status": "UP" if connected or settings.kiwoom_use_mock else "DOWN",
+                "status": (
+                    "UP"
+                    if connected or settings.kiwoom_use_mock
+                    else "DOWN"
+                ),
             }
         )
-        # mock이면 WS 없이도 UP 취급
         if settings.kiwoom_use_mock:
-            payload["status"] = "UP"
-            payload["broker_connected"] = payload.get(
+            kiwoom["status"] = "UP"
+            kiwoom["broker_connected"] = kiwoom.get(
                 "broker_connected", True
             )
     except Exception as exc:
-        payload["status"] = "UNKNOWN"
-        payload["message"] = _safe(exc)
+        kiwoom["status"] = "UNKNOWN"
+        kiwoom["message"] = _safe(exc)
+
+    upbit: dict[str, Any] = {
+        "broker_code": "UPBIT",
+        "use_mock": settings.upbit_use_mock,
+        "live_order_enabled": settings.upbit_live_order_enabled,
+        "global_live_order_enabled": (
+            settings.global_live_order_enabled
+        ),
+        "credentials_configured": bool(
+            settings.upbit_access_key.strip()
+            and settings.upbit_secret_key.strip()
+        ),
+        "account_ref": settings.upbit_account_ref,
+        "order_api_status": (
+            "MOCK"
+            if settings.upbit_use_mock
+            else (
+                "LIVE"
+                if settings.upbit_live_order_enabled
+                else "REST_ONLY"
+            )
+        ),
+        "status": (
+            "UP"
+            if settings.upbit_use_mock
+            or (
+                settings.upbit_access_key.strip()
+                and settings.upbit_secret_key.strip()
+            )
+            else "DOWN"
+        ),
+    }
+    try:
+        from stock_platform.broker.upbit.rate_limit_coordinator import (
+            get_upbit_rate_limit_coordinator,
+        )
+
+        rl = get_upbit_rate_limit_coordinator().health_summary()
+        upbit["rate_limit"] = {
+            "cooldown_account_groups": rl.get(
+                "cooldown_account_groups", 0
+            ),
+            "blocked_418_account_groups": rl.get(
+                "blocked_418_account_groups", 0
+            ),
+            "longest_until": rl.get("longest_until"),
+            "last_rate_limit_at": rl.get("last_rate_limit_at"),
+        }
+        if int(rl.get("blocked_418_account_groups") or 0) > 0:
+            upbit["status"] = "DEGRADED"
+        elif int(rl.get("cooldown_account_groups") or 0) > 0:
+            upbit["status"] = (
+                "DEGRADED"
+                if upbit.get("status") == "UP"
+                else upbit.get("status")
+            )
+    except Exception as exc:  # noqa: BLE001
+        upbit["rate_limit"] = {"error": _safe(exc)}
+
+    # 하위 호환: 기존 필드는 키움 기준 유지
+    payload: dict[str, Any] = {
+        **kiwoom,
+        "kiwoom": kiwoom,
+        "upbit": upbit,
+        "brokers": [kiwoom, upbit],
+        "overall_status": (
+            "UP"
+            if kiwoom.get("status") == "UP"
+            and upbit.get("status") == "UP"
+            else (
+                "DEGRADED"
+                if kiwoom.get("status") == "UP"
+                or upbit.get("status") == "UP"
+                else "DOWN"
+            )
+        ),
+    }
     return payload
+
+
+def _realtime_hub_monitoring() -> dict[str, Any]:
+    """STEP 8-5-9 — Realtime Hub 요약 (계좌·종목 상세 비노출)."""
+
+    try:
+        from stock_platform.realtime.market_data_hub import (
+            get_realtime_market_data_hub,
+        )
+
+        hub = get_realtime_market_data_hub()
+        health = hub.health_summary()
+        return {
+            "hub_status": health.get("hub_status"),
+            "reconnect_count": health.get("reconnect_count", 0),
+            "active_subscriptions": health.get(
+                "active_subscriptions", 0
+            ),
+            "active_scopes": health.get("active_scopes", 0),
+            "warming_up_scopes": health.get("warming_up_scopes", 0),
+            "last_event_at": health.get("last_event_at"),
+            "last_error": health.get("last_error"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"hub_status": "UNKNOWN", "error": _safe(exc)}
 
 
 def _probe_scheduler_object(obj: Any) -> dict[str, Any]:
@@ -280,12 +386,23 @@ def _scheduler_monitoring() -> dict[str, Any]:
     overall = "UP"
     if failure_total > 0:
         overall = "DEGRADED"
-    if not settings.scheduler_enabled:
+    # lifecycle cron 게이트 (AutomaticScheduler의 scheduler_enabled와 분리)
+    if not settings.lifecycle_scheduler_enabled:
         overall = "DISABLED"
 
     return {
         "status": overall,
         "scheduler_enabled": settings.scheduler_enabled,
+        "lifecycle_scheduler_enabled": (
+            settings.lifecycle_scheduler_enabled
+        ),
+        "scheduler_leader_lock_enabled": (
+            settings.scheduler_leader_lock_enabled
+        ),
+        "automatic_scheduler_note": (
+            "Separate worker: scripts/run_scheduler.py "
+            "(gated by SCHEDULER_ENABLED)"
+        ),
         "failure_count": failure_total,
         "schedulers": items,
     }
@@ -660,6 +777,33 @@ def evaluate_alert_rules(
                 "broker_connected": broker.get("broker_connected"),
             },
         )
+        # STEP 8-8 — LIVE OFF / ARM clear / Scheduler pause (자동 LIVE ON 금지)
+        try:
+            from stock_platform.database.session import get_session_factory
+            from stock_platform.trading.broker_disconnect_protector import (
+                BrokerDisconnectProtector,
+            )
+
+            broker_code = str(
+                broker.get("broker_code")
+                or broker.get("primary_broker")
+                or "KIWOOM"
+            )
+            session = get_session_factory()()
+            try:
+                BrokerDisconnectProtector(session).on_broker_down(
+                    broker_code=broker_code,
+                    actor="MONITORING_SNAPSHOT",
+                    detail={
+                        "broker_connected": broker.get("broker_connected"),
+                        "source": "monitoring_snapshot",
+                    },
+                )
+                session.commit()
+            finally:
+                session.close()
+        except Exception:
+            pass
 
     sched = snapshot.get("scheduler") or {}
     if int(sched.get("failure_count") or 0) > 0:
@@ -783,6 +927,7 @@ async def build_monitoring_overview(
         "risk": _risk_monitoring(session),
         "resources": build_resource_monitoring(),
         "exception_rate": exception_rate_tracker.snapshot(),
+        "realtime": _realtime_hub_monitoring(),
     }
 
     alerts: list[dict[str, Any]] = []

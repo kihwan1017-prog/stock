@@ -12,6 +12,7 @@ def test_account_state_sync_orchestrates_account_and_pending() -> None:
         synchronize=AsyncMock(
             return_value={
                 "account_number": "12345678",
+                "user_broker_account_id": 9,
                 "deposit_amount": "1000000",
                 "available_order_amount": "900000",
                 "total_profit_loss": "12000",
@@ -23,7 +24,7 @@ def test_account_state_sync_orchestrates_account_and_pending() -> None:
         synchronize=AsyncMock(
             return_value={
                 "broker_code": "KIWOOM",
-                "account_number": "12345678",
+                "user_broker_account_id": 9,
                 "pending_order_count": 2,
             }
         )
@@ -34,7 +35,9 @@ def test_account_state_sync_orchestrates_account_and_pending() -> None:
         account_sync_service=account_sync,
         pending_order_service=pending_sync,
     )
-    result = asyncio.run(service.synchronize())
+    result = asyncio.run(
+        service.synchronize(user_broker_account_id=9)
+    )
 
     assert result.account["account_number"] == "12345678"
     assert result.account["evaluation_profit_loss"] == "12000"
@@ -42,4 +45,6 @@ def test_account_state_sync_orchestrates_account_and_pending() -> None:
     assert result.account["realized_profit_loss_supported"] is False
     assert result.pending_orders["pending_order_count"] == 2
     assert "deposit_amount" in result.fields
-    pending_sync.synchronize.assert_awaited_once_with("12345678")
+    pending_sync.synchronize.assert_awaited_once()
+    kwargs = pending_sync.synchronize.await_args.kwargs
+    assert kwargs["user_broker_account_id"] == 9

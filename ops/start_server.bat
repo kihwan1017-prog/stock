@@ -41,10 +41,7 @@ echo [start] host=%API_HOST% port=%API_PORT%
 echo [start] stdout -^> %OUT_LOG%
 echo [start] stderr -^> %ERR_LOG%
 
-start "stock-platform-api" /MIN cmd /c ^
-  "cd /d \"%PROJECT_ROOT%\" && set PYTHONPATH=%PYTHONPATH% && \"%VENV_UVICORN%\" stock_platform.api.main:app --host %API_HOST% --port %API_PORT% --app-dir src 1>>\"%OUT_LOG%\" 2>>\"%ERR_LOG%\""
-
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_wait_and_write_pid.ps1" -Port %API_PORT% -PidFile "%PID_FILE%" -TimeoutSec 20
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0_start_api.ps1" -ProjectRoot "%PROJECT_ROOT%" -VenvUvicorn "%VENV_UVICORN%" -PythonPath "%PYTHONPATH%" -ApiHost %API_HOST% -ApiPort %API_PORT% -OutLog "%OUT_LOG%" -ErrLog "%ERR_LOG%" -PidFile "%PID_FILE%" -TimeoutSec 60
 if errorlevel 1 (
   echo [ERROR] start failed. Check log: %ERR_LOG%
   exit /b 3

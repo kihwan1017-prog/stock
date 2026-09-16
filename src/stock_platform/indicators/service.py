@@ -28,6 +28,7 @@ class IndicatorService:
         symbol: str,
         start_date: date,
         end_date: date,
+        engine_params: object | None = None,
     ) -> list[DailyIndicator]:
         if start_date > end_date:
             raise ValueError(
@@ -57,7 +58,7 @@ class IndicatorService:
             for item in prices
         ]
 
-        indicators = self._engine.calculate(bars)
+        indicators = self._engine.calculate(bars, params=engine_params)
 
         return [
             item

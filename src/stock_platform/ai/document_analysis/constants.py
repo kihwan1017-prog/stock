@@ -1,0 +1,48 @@
+"""STEP 11-6 — Document analysis constants (안전 상한)."""
+
+from __future__ import annotations
+
+DOCUMENT_TYPES = frozenset({"NEWS", "DISCLOSURE"})
+
+ANALYSIS_STATUS = frozenset(
+    {
+        "DRAFT_ANALYSIS",
+        "QUEUED",
+        "RUNNING",
+        "VALIDATED_ANALYSIS",
+        "VALIDATED_WITH_WARNINGS",
+        "BLOCKED",
+        "INVALID",
+        "FAILED",
+        "CANCELLED",
+        "SUPERSEDED",
+    }
+)
+
+DATA_CLASSIFICATIONS = frozenset(
+    {"PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"}
+)
+
+# Chunking 상한 (Map-Reduce 무제한 금지)
+MAX_DOCUMENT_CHARS = 40_000
+MAX_CHUNK_CHARS = 8_000
+MAX_CHUNKS = 4
+MAX_TOTAL_TOKENS = 16_000
+CHUNK_OVERLAP_CHARS = 200
+
+# Batch 상한 (코드 고정)
+MAX_BATCH_MOCK = 100
+MAX_BATCH_EXTERNAL = 10
+HARD_BATCH_CAP = 100
+
+# Idempotency / engine
+ANALYSIS_ENGINE_VERSION = "11.6.0"
+
+REFERENCE_DISCLAIMER = (
+    "AI 분석 결과는 참고용이며 매매 신호 또는 주문 지시가 아닙니다."
+)
+
+NEWS_DELIMITER_OPEN = "<UNTRUSTED_NEWS_DOCUMENT>"
+NEWS_DELIMITER_CLOSE = "</UNTRUSTED_NEWS_DOCUMENT>"
+DISCLOSURE_DELIMITER_OPEN = "<UNTRUSTED_DISCLOSURE_DOCUMENT>"
+DISCLOSURE_DELIMITER_CLOSE = "</UNTRUSTED_DISCLOSURE_DOCUMENT>"

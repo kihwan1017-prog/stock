@@ -5,7 +5,7 @@ from typing import Any
 
 import structlog
 
-from stock_platform.brokers.upbit.client import UpbitQuotationClient
+from stock_platform.broker.upbit.market.client import UpbitQuotationClient
 from stock_platform.markets.service import InstrumentService
 
 

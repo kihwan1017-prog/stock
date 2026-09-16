@@ -1,0 +1,335 @@
+"""STEP 8-8 — 체결 후 Position/Cash 검증."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from stock_platform.order.live_safety_audit import (
+    CASH_MISMATCH,
+    POSITION_MISMATCH,
+    emit_live_order_telegram,
+    emit_live_safety_audit,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class PostFillVerifyResult:
+    ok: bool
+    reason_code: str
+    detail: dict[str, Any]
+
+
+class PostFillBalanceVerifier:
+    """Broker 잔고/포지션과 DB 비교. 불일치 시 Kill Switch."""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def verify(
+        self,
+        *,
+        user_broker_account_id: int,
+        user_id: int | None,
+        broker_code: str,
+        broker_positions: list[dict[str, Any]] | None,
+        broker_cash: Decimal | None,
+        db_positions: list[dict[str, Any]] | None,
+        db_cash: Decimal | None,
+        tolerance: Decimal = Decimal("0.01"),
+        actor: str = "POST_FILL_VERIFY",
+        activate_kill_on_mismatch: bool = True,
+    ) -> PostFillVerifyResult:
+        detail: dict[str, Any] = {
+            "user_broker_account_id": int(user_broker_account_id),
+            "broker_code": broker_code.upper(),
+        }
+
+        if broker_positions is not None and db_positions is not None:
+            broker_map = {
+                str(p.get("symbol", "")).upper(): Decimal(
+                    str(p.get("quantity") or 0)
+                )
+                for p in broker_positions
+            }
+            db_map = {
+                str(p.get("symbol", "")).upper(): Decimal(
+                    str(p.get("quantity") or 0)
+                )
+                for p in db_positions
+                if str(p.get("symbol", "")).strip()
+            }
+            # expected가 비어 있지 않으면 주문 범위(expected symbols)만 비교.
+            # 포트폴리오 동시 보유 중 broker-only 타종목을 db_qty=0 오탐으로 kill 하지 않음.
+            # (해당 종목은 자기 post-fill row에서 검증)
+            if db_map:
+                symbols = set(db_map.keys())
+            else:
+                symbols = set(broker_map) | set(db_map)
+            # expected payload에서 ownership 메타 보존
+            expected_meta = {
+                str(p.get("symbol", "")).upper(): p
+                for p in (db_positions or [])
+                if str(p.get("symbol", "")).strip()
+            }
+            for sym in symbols:
+                bq = broker_map.get(sym, Decimal("0"))
+                dq = db_map.get(sym, Decimal("0"))
+                diff = bq - dq
+                meta = expected_meta.get(sym) or {}
+                operand = {
+                    "symbol": sym,
+                    "broker_qty": str(bq),
+                    "db_qty": str(dq),
+                    "expected_auto_qty": str(dq),
+                    "actual_broker_total_qty": str(bq),
+                    "difference": str(diff),
+                    "tolerance": str(tolerance),
+                    "compare_scope": (
+                        "EXPECTED_SYMBOLS" if db_map else "FULL_UNION"
+                    ),
+                    "ownership_source": meta.get("source"),
+                    "binding_breakdown": meta.get("bindings"),
+                }
+                # AUTO expected와 broker exact match
+                if abs(diff) <= tolerance:
+                    continue
+                # broker > AUTO expected: manual/unknown excess — AUTO post-fill
+                # false mismatch 방지 (manual 보호 심볼 또는 excess만 존재)
+                if diff > tolerance:
+                    currency = sym.split("-", 1)[-1] if "-" in sym else sym
+                    manual_protected = currency in {
+                        "BTC",
+                        "ETH",
+                        "DOGE",
+                        "SKY",
+                    }
+                    operand["manual_attributed_qty"] = (
+                        str(diff) if manual_protected else "0"
+                    )
+                    operand["unknown_qty"] = (
+                        "0" if manual_protected else str(diff)
+                    )
+                    if manual_protected:
+                        # manual excess만 있고 AUTO qty는 broker에 포함됨
+                        operand["compare_result"] = "PASS_MANUAL_EXCESS"
+                        detail.setdefault("manual_excess_passes", []).append(
+                            operand
+                        )
+                        continue
+                    # unknown excess — still mismatch (fail closed)
+                    detail.update(operand)
+                    detail["compare_result"] = "FAIL_UNKNOWN_EXCESS"
+                    self._on_mismatch(
+                        event_type=POSITION_MISMATCH,
+                        user_id=user_id,
+                        account_id=user_broker_account_id,
+                        detail=detail,
+                        actor=actor,
+                        activate_kill=activate_kill_on_mismatch,
+                    )
+                    return PostFillVerifyResult(
+                        ok=False,
+                        reason_code="POSITION_MISMATCH",
+                        detail=detail,
+                    )
+                # broker < expected AUTO — true shortfall
+                detail.update(operand)
+                detail["manual_attributed_qty"] = "0"
+                detail["unknown_qty"] = "0"
+                detail["compare_result"] = "FAIL_BROKER_SHORTFALL"
+                self._on_mismatch(
+                    event_type=POSITION_MISMATCH,
+                    user_id=user_id,
+                    account_id=user_broker_account_id,
+                    detail=detail,
+                    actor=actor,
+                    activate_kill=activate_kill_on_mismatch,
+                )
+                return PostFillVerifyResult(
+                    ok=False,
+                    reason_code="POSITION_MISMATCH",
+                    detail=detail,
+                )
+
+        if broker_cash is not None and db_cash is not None:
+            if abs(Decimal(str(broker_cash)) - Decimal(str(db_cash))) > tolerance:
+                detail.update(
+                    {
+                        "broker_cash": str(broker_cash),
+                        "db_cash": str(db_cash),
+                    }
+                )
+                self._on_mismatch(
+                    event_type=CASH_MISMATCH,
+                    user_id=user_id,
+                    account_id=user_broker_account_id,
+                    detail=detail,
+                    actor=actor,
+                    activate_kill=activate_kill_on_mismatch,
+                )
+                return PostFillVerifyResult(
+                    ok=False,
+                    reason_code="CASH_MISMATCH",
+                    detail=detail,
+                )
+
+        return PostFillVerifyResult(
+            ok=True, reason_code="VERIFY_OK", detail=detail
+        )
+
+    def _on_mismatch(
+        self,
+        *,
+        event_type: str,
+        user_id: int | None,
+        account_id: int,
+        detail: dict[str, Any],
+        actor: str,
+        activate_kill: bool,
+    ) -> None:
+        emit_live_safety_audit(
+            self._session,
+            event_type=event_type,
+            actor=actor,
+            run_id=None,
+            user_id=user_id,
+            account_id=account_id,
+            strategy_id=None,
+            detail=detail,
+            commit=False,
+        )
+        emit_live_order_telegram(
+            event_type=event_type,
+            title=f"LIVE {event_type}",
+            message=f"{event_type} on UBA {account_id}",
+            detail=detail,
+        )
+        if activate_kill:
+            try:
+                from stock_platform.risk_engine.kill_switch_service import (
+                    KillSwitchService,
+                )
+                from stock_platform.trading.account_identity import (
+                    uba_kill_switch_scope,
+                )
+
+                # 단일 UBA post-fill 실패 → UBA scoped kill (GLOBAL 금지)
+                KillSwitchService(self._session).activate_scope(
+                    scope_code=uba_kill_switch_scope(int(account_id)),
+                    actor=actor,
+                    reason=event_type,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from stock_platform.trading.live_arm_service import (
+                    LiveArmService,
+                )
+
+                LiveArmService(self._session).disarm(
+                    account_id,
+                    actor=actor,
+                    reason=event_type,
+                    turn_live_off=True,
+                )
+            except Exception:  # noqa: BLE001
+                pass
+            self._pause_uba_runtimes(
+                account_id=int(account_id),
+                actor=actor,
+                reason=event_type,
+            )
+
+    def _pause_uba_runtimes(
+        self,
+        *,
+        account_id: int,
+        actor: str,
+        reason: str,
+    ) -> None:
+        """해당 UBA runtime만 pause — GLOBAL pause_all 금지."""
+
+        try:
+            emit_live_safety_audit(
+                self._session,
+                event_type="SCHEDULER_PAUSE",
+                actor=actor,
+                run_id=None,
+                user_id=None,
+                account_id=int(account_id),
+                strategy_id=None,
+                detail={
+                    "reason": reason,
+                    "scope": "UBA",
+                    "user_broker_account_id": int(account_id),
+                },
+                commit=False,
+            )
+            import asyncio
+
+            from stock_platform.strategy_deployment.runtime_manager import (
+                dynamic_strategy_runtime_manager,
+            )
+
+            coro = dynamic_strategy_runtime_manager.pause_account_runtimes(
+                user_broker_account_id=int(account_id),
+                reason=reason,
+            )
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(coro)
+            except RuntimeError:
+                asyncio.run(coro)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _pause_scheduler(self, *, actor: str, reason: str) -> None:
+        """legacy — GLOBAL pause 경로 보존(명시 GLOBAL 호출용). 신규 post-fill은 _pause_uba_runtimes."""
+
+        try:
+            from stock_platform.common.settings import get_settings
+
+            settings = get_settings()
+            if hasattr(settings, "scheduler_enabled"):
+                # 런타임 플래그 — 영속 설정 덮어쓰기 대신 감사만
+                pass
+            emit_live_safety_audit(
+                self._session,
+                event_type="SCHEDULER_PAUSE",
+                actor=actor,
+                run_id=None,
+                user_id=None,
+                account_id=None,
+                strategy_id=None,
+                detail={"reason": reason},
+                commit=False,
+            )
+            emit_live_order_telegram(
+                event_type="SCHEDULER_PAUSE",
+                title="Scheduler Pause",
+                message=f"Scheduler pause requested ({reason})",
+                detail={"reason": reason, "actor": actor},
+            )
+            try:
+                import asyncio
+
+                from stock_platform.strategy_deployment.runtime_manager import (
+                    dynamic_strategy_runtime_manager,
+                )
+
+                coro = dynamic_strategy_runtime_manager.pause_all(
+                    reason=reason
+                )
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(coro)
+                except RuntimeError:
+                    asyncio.run(coro)
+            except Exception:  # noqa: BLE001
+                pass
+        except Exception:  # noqa: BLE001
+            pass

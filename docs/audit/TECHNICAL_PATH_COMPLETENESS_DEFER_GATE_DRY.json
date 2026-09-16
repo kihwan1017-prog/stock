@@ -1,0 +1,16 @@
+{
+  "summary": {
+    "n": 47,
+    "source": "TECHNICAL_COV_C_SOURCE_RECONCILE_DRY.json after_unresolved_sim + path_completeness_pass",
+    "historical_db_mutation": 0,
+    "WOULD_PASS": 47,
+    "WOULD_DEFER": 0,
+    "DEFER_RATE": 0.0,
+    "note": "COV-B gate applied to COV-C post-reconcile evidence; no COMPLETED row UPDATE"
+  },
+  "before_reconcile_reference": {
+    "WOULD_PASS": 13,
+    "WOULD_DEFER": 34,
+    "DEFER_RATE": 0.7234
+  }
+}

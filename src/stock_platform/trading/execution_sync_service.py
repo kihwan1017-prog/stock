@@ -79,18 +79,19 @@ class ExecutionSyncService:
                 order_status=order.status_code,
             )
 
+        # 누적 체결량은 이벤트 수량 합산 (remaining은 이벤트를 신뢰하지 않음)
         order.filled_quantity = (
             Decimal(str(order.filled_quantity))
             + event.execution_quantity
         )
-        if event.remaining_quantity is not None:
-            order.remaining_quantity = event.remaining_quantity
-        else:
-            order.remaining_quantity = max(
-                Decimal("0"),
-                Decimal(str(order.order_quantity))
-                - Decimal(str(order.filled_quantity)),
-            )
+        order_qty = Decimal(str(order.order_quantity))
+        if order.filled_quantity > order_qty:
+            order.filled_quantity = order_qty
+        # 순서 역전 방어: remaining은 항상 order_qty - filled 로 재계산
+        order.remaining_quantity = max(
+            Decimal("0"),
+            order_qty - Decimal(str(order.filled_quantity)),
+        )
 
         if order.average_fill_price is None:
             order.average_fill_price = event.execution_price
@@ -132,6 +133,54 @@ class ExecutionSyncService:
             commit=False,
         )
         self._session.commit()
+
+        # P0 LIVE Ledger — 기존 BrokerPositionSnapshot에 fill-driven 반영
+        try:
+            from stock_platform.broker.live_fill_ledger_service import (
+                LiveFillLedgerService,
+            )
+
+            LiveFillLedgerService(self._session).apply_execution(
+                order=order,
+                event=event,
+                actor=actor,
+            )
+            self._session.commit()
+        except Exception:  # noqa: BLE001
+            # 원장 실패가 체결 반영을 롤백하지 않음
+            try:
+                self._session.rollback()
+            except Exception:  # noqa: BLE001
+                pass
+
+        # STEP 8-8 — LIVE 체결 후 Position 검증 (불일치 시 Kill Switch)
+        # Recovery/Reconcile 경로: 이미 broker SoT 확정 후 지연 반영이므로
+        # post-fill TTL/Kill 유발 금지 (GLOBAL kill 오염 방지)
+        actor_u = str(actor or "").upper()
+        skip_post_fill = any(
+            token in actor_u
+            for token in (
+                "RECOVERY",
+                "RECONCILE",
+                "KA10076",
+                "OPEN_ORDER_FILL",
+            )
+        )
+        if new_status == OrderStatus.FILLED and not skip_post_fill:
+            try:
+                from stock_platform.order.post_fill_runner import (
+                    PostFillVerifyRunner,
+                )
+
+                PostFillVerifyRunner(self._session).verify_after_order_fill(
+                    order=order,
+                    execution_id=getattr(execution, "execution_id", None),
+                    actor=actor,
+                )
+                self._session.commit()
+            except Exception:  # noqa: BLE001
+                # 검증 인프라 오류가 체결 반영을 롤백하지 않도록 Fail-safe
+                pass
 
         return ExecutionSyncResult(
             duplicate=False,
@@ -175,6 +224,16 @@ class ExecutionSyncService:
             status = OrderStatus.SENT
 
         if status == OrderStatus.SENT:
+            self._orders.change_status(
+                entity=order,
+                new_status=OrderStatus.ACCEPTED,
+                actor=actor,
+                reason_code="EXECUTION_NORMALIZE",
+                commit=False,
+            )
+            return
+
+        if status == OrderStatus.SUBMITTING:
             self._orders.change_status(
                 entity=order,
                 new_status=OrderStatus.ACCEPTED,

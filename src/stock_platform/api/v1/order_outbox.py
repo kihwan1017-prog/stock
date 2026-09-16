@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import (
@@ -79,6 +79,10 @@ def list_outbox(
     ]
 
 
+class RetryOutboxRequest(BaseModel):
+    outbox_id: int
+
+
 @router.post("/retry")
 def retry_outbox(
     request: RetryOutboxRequest,
@@ -88,16 +92,147 @@ def retry_outbox(
     session: Session = Depends(get_db_session),
 ):
     try:
-        entity = OrderOutboxRepository(
-            session
-        ).retry_failed(
+        entity = OrderOutboxRepository(session).retry_failed(
             outbox_id=request.outbox_id
         )
         session.commit()
         session.refresh(entity)
         return entity
     except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+
+
+@router.get("/ambiguous")
+def list_ambiguous_outbox(
+    limit: int = Query(default=100, ge=1, le=500),
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
+    session: Session = Depends(get_db_session),
+) -> list[dict[str, Any]]:
+    rows = OrderOutboxRepository(session).list_by_status(
+        status="AMBIGUOUS", limit=limit
+    )
+    return [
+        {
+            "outbox_id": row.outbox_id,
+            "order_id": row.order_id,
+            "status_code": row.status_code,
+            "fencing_token": row.fencing_token,
+            "client_order_id": row.client_order_id,
+            "dispatch_intent_at": row.dispatch_intent_at,
+            "ambiguous_at": row.ambiguous_at,
+            "confirmation_status": row.confirmation_status,
+            "last_error": row.last_error,
+            "broker_code": row.broker_code,
+            "user_broker_account_id": row.user_broker_account_id,
+        }
+        for row in rows
+    ]
+
+
+@router.get("/{outbox_id}")
+def get_outbox_detail(
+    outbox_id: int,
+    _: AuthenticatedUser = Depends(
+        require_permission("trading:read")
+    ),
+    session: Session = Depends(get_db_session),
+) -> dict[str, Any]:
+    row = OrderOutboxRepository(session).get(outbox_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Outbox not found")
+    return {
+        "outbox_id": row.outbox_id,
+        "order_id": row.order_id,
+        "event_type": row.event_type,
+        "status_code": row.status_code,
+        "fencing_token": row.fencing_token,
+        "lease_expires_at": row.lease_expires_at,
+        "dispatch_intent_at": row.dispatch_intent_at,
+        "request_hash": row.request_hash,
+        "client_order_id": row.client_order_id,
+        "ambiguous_at": row.ambiguous_at,
+        "confirmation_status": row.confirmation_status,
+        "manual_review_reason": row.manual_review_reason,
+        "retry_count": row.retry_count,
+        "last_error": row.last_error,
+        "broker_code": row.broker_code,
+        "user_broker_account_id": row.user_broker_account_id,
+        "correlation_id": row.correlation_id,
+    }
+
+
+class ConfirmAbsentRequest(BaseModel):
+    outbox_id: int
+    reason: str
+
+
+@router.post("/confirm-absent")
+def confirm_order_absent(
+    request: ConfirmAbsentRequest,
+    user: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
+    session: Session = Depends(get_db_session),
+):
+    """Broker에 주문 없음 확인 — 이후 approve-retry 가능."""
+
+    repo = OrderOutboxRepository(session)
+    entity = repo.get(request.outbox_id)
+    if entity is None:
+        raise HTTPException(status_code=404, detail="Outbox not found")
+    if entity.status_code != "AMBIGUOUS":
         raise HTTPException(
-            status_code=404,
-            detail=str(exc),
-        ) from exc
+            status_code=400,
+            detail="Only AMBIGUOUS outbox can be confirmed absent",
+        )
+    entity.confirmation_status = "ORDER_ABSENT_CONFIRMED"
+    entity.confirmation_checked_at = datetime.now(timezone.utc)
+    entity.manual_review_reason = request.reason[:500]
+    from stock_platform.order.outbox_fencing import record_outbox_audit
+
+    record_outbox_audit(
+        session,
+        event_type="OUTBOX_BROKER_CONFIRMATION_SUCCEEDED",
+        detail={
+            "outbox_id": request.outbox_id,
+            "result": "ORDER_ABSENT_CONFIRMED",
+        },
+        actor=getattr(user, "username", None) or "ADMIN",
+    )
+    session.commit()
+    return {"ok": True, "outbox_id": request.outbox_id}
+
+
+class ApproveRetryRequest(BaseModel):
+    outbox_id: int
+    reason: str
+
+
+@router.post("/approve-retry")
+def approve_outbox_retry(
+    request: ApproveRetryRequest,
+    user: AuthenticatedUser = Depends(
+        require_permission("trading:write")
+    ),
+    session: Session = Depends(get_db_session),
+):
+    try:
+        entity = OrderOutboxRepository(session).approve_manual_retry(
+            outbox_id=request.outbox_id,
+            reason=request.reason,
+            actor=getattr(user, "username", None) or "ADMIN",
+        )
+        session.commit()
+        session.refresh(entity)
+        return {
+            "outbox_id": entity.outbox_id,
+            "status_code": entity.status_code,
+        }
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc

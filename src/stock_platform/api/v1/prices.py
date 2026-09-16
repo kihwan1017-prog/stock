@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from stock_platform.markets.service import (
 router = APIRouter(
     prefix="/api/v1/prices",
     tags=["Market Prices"],
+    dependencies=[Depends(require_admin)],
 )
 
 

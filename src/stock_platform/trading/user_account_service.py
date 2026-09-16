@@ -1,0 +1,720 @@
+"""회원 계좌(Paper + Broker 연결) 서비스 — STEP65."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any, Literal
+
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from stock_platform.trading.account_masking import (
+    hash_account_ref,
+    mask_account_number,
+)
+from stock_platform.trading.account_models import (
+    PaperAccount,
+    UserBrokerAccount,
+)
+from stock_platform.trading.account_repository import (
+    PaperAccountRepository,
+)
+from stock_platform.trading.account_service import (
+    PaperAccountError,
+    PaperAccountService,
+)
+
+
+AccountType = Literal["PAPER", "KIWOOM", "UPBIT"]
+ConnectionStatus = Literal[
+    "CONNECTED",
+    "DISCONNECTED",
+    "PENDING",
+    "ERROR",
+]
+
+_BROKER_TYPES: frozenset[str] = frozenset({"KIWOOM", "UPBIT"})
+_DEFAULT_PAPER_CASH = Decimal("10000000")
+
+
+class UserAccountError(ValueError):
+    """도메인 오류 — Router에서 4xx로 변환."""
+
+
+@dataclass(frozen=True, slots=True)
+class UserAccountView:
+    account_id: int
+    user_id: int
+    account_type: str
+    broker_code: str
+    account_name: str
+    masked_account_number: str | None
+    currency_code: str
+    is_default: bool
+    is_active: bool
+    connection_status: str
+    created_at: datetime | None
+    updated_at: datetime | None
+    last_synced_at: datetime | None = None
+    live_order_enabled: bool = False
+    live_armed: bool = False
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "account_id": self.account_id,
+            "user_id": self.user_id,
+            "account_type": self.account_type,
+            "broker_code": self.broker_code,
+            "account_name": self.account_name,
+            "masked_account_number": self.masked_account_number,
+            "currency_code": self.currency_code,
+            "is_default": self.is_default,
+            "is_active": self.is_active,
+            "connection_status": self.connection_status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "last_synced_at": self.last_synced_at,
+            "live_order_enabled": self.live_order_enabled,
+            "live_armed": self.live_armed,
+        }
+
+
+def paper_to_view(account: PaperAccount) -> UserAccountView:
+    return UserAccountView(
+        account_id=int(account.account_id),
+        user_id=int(account.user_id or 0),
+        account_type="PAPER",
+        broker_code="PAPER",
+        account_name=account.account_name,
+        masked_account_number=None,
+        currency_code=account.currency_code,
+        is_default=bool(account.is_default),
+        is_active=bool(account.is_active),
+        connection_status=(
+            "CONNECTED" if account.is_active else "DISCONNECTED"
+        ),
+        created_at=account.created_at,
+        updated_at=account.updated_at,
+        last_synced_at=None,
+    )
+
+
+def broker_to_view(row: UserBrokerAccount) -> UserAccountView:
+    return UserAccountView(
+        account_id=int(row.user_broker_account_id),
+        user_id=int(row.user_id),
+        account_type=row.broker_code.upper(),
+        broker_code=row.broker_code.upper(),
+        account_name=row.account_alias,
+        masked_account_number=row.masked_account_number,
+        currency_code=row.currency_code,
+        is_default=bool(row.is_default),
+        is_active=bool(row.is_active),
+        connection_status=row.connection_status,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        last_synced_at=row.last_synced_at,
+        live_order_enabled=bool(
+            getattr(row, "live_order_enabled", False)
+        ),
+        live_armed=bool(getattr(row, "live_armed", False)),
+    )
+
+
+class UserAccountService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+        self._paper_repo = PaperAccountRepository(session)
+        self._paper_service = PaperAccountService(self._paper_repo)
+
+    def list_accounts(
+        self,
+        user_id: int,
+        *,
+        default_only: bool = False,
+        include_inactive: bool = False,
+    ) -> list[UserAccountView]:
+        paper_rows = self._list_paper(
+            user_id,
+            default_only=default_only,
+            include_inactive=include_inactive,
+        )
+        broker_rows = self._list_broker(
+            user_id,
+            default_only=default_only,
+            include_inactive=include_inactive,
+        )
+        views = [paper_to_view(r) for r in paper_rows] + [
+            broker_to_view(r) for r in broker_rows
+        ]
+        views.sort(
+            key=lambda v: (
+                not v.is_default,
+                v.account_type,
+                v.account_id,
+            )
+        )
+        return views
+
+    def get_account(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+    ) -> UserAccountView:
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        if isinstance(resolved, PaperAccount):
+            return paper_to_view(resolved)
+        return broker_to_view(resolved)
+
+    def create_account(
+        self,
+        user_id: int,
+        *,
+        account_type: str,
+        account_name: str | None = None,
+        initial_cash: Decimal | None = None,
+        currency_code: str = "KRW",
+        account_number: str | None = None,
+        is_default: bool = False,
+        auto_commit: bool = True,
+    ) -> UserAccountView:
+        kind = (account_type or "").strip().upper()
+        if kind == "PAPER":
+            return self._create_paper(
+                user_id,
+                account_name=account_name,
+                initial_cash=initial_cash,
+                currency_code=currency_code,
+                is_default=is_default,
+            )
+        if kind in _BROKER_TYPES:
+            return self._create_broker(
+                user_id,
+                broker_code=kind,
+                account_alias=account_name,
+                account_number=account_number,
+                currency_code=currency_code,
+                is_default=is_default,
+                auto_commit=auto_commit,
+            )
+        raise UserAccountError(
+            f"지원하지 않는 account_type: {account_type}"
+        )
+
+    def update_account(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+        account_name: str | None = None,
+        is_active: bool | None = None,
+    ) -> UserAccountView:
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        if isinstance(resolved, PaperAccount):
+            if account_name is not None:
+                name = account_name.strip()
+                if not name:
+                    raise UserAccountError("account_name is required")
+                resolved.account_name = name
+            if is_active is not None:
+                resolved.is_active = is_active
+                if not is_active:
+                    resolved.is_default = False
+            self._session.commit()
+            self._session.refresh(resolved)
+            return paper_to_view(resolved)
+
+        # STEP 2-5-1 — 삭제된 Broker 계좌는 일반 수정 경로로 되살릴 수 없음
+        # (재연결은 create_account revive 흐름을 통해서만 허용)
+        if resolved.deleted_at is not None:
+            raise UserAccountError("삭제된 Broker 계좌입니다. 재연결을 이용하세요.")
+        if account_name is not None:
+            alias = account_name.strip()
+            if not alias:
+                raise UserAccountError("account_name is required")
+            resolved.account_alias = alias
+        if is_active is not None:
+            resolved.is_active = is_active
+            if not is_active:
+                resolved.is_default = False
+                resolved.connection_status = "DISCONNECTED"
+        self._session.commit()
+        self._session.refresh(resolved)
+        return broker_to_view(resolved)
+
+    def delete_account(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+    ) -> dict[str, Any]:
+        """
+        Paper: 비활성(소프트 삭제). Broker: 연결 행 삭제(실계좌 자체 삭제 아님).
+        """
+
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        if isinstance(resolved, PaperAccount):
+            if resolved.deleted_at is not None:
+                raise UserAccountError("이미 삭제된 Paper 계좌입니다.")
+            if resolved.is_default:
+                raise UserAccountError(
+                    "기본 Paper 계좌는 삭제할 수 없습니다. "
+                    "다른 계좌를 기본으로 지정한 뒤 다시 시도하세요."
+                )
+            # Soft Delete (deleted_at) — Hard Delete 금지
+            has_history = self._paper_repo.has_order_or_trade_history(
+                int(resolved.account_id)
+            )
+            self._paper_repo.soft_delete_account(resolved)
+            self._session.commit()
+            return {
+                "deleted": True,
+                "account_type": "PAPER",
+                "account_id": int(resolved.account_id),
+                "mode": "soft_delete",
+                "has_trading_history": has_history,
+                "hard_delete_allowed": False,
+            }
+
+        # STEP 2-5-1 — Hard Delete → Soft Delete 전환
+        if resolved.deleted_at is not None:
+            raise UserAccountError("이미 삭제된 Broker 계좌입니다.")
+
+        broker_id = int(resolved.user_broker_account_id)
+        now = datetime.now(timezone.utc)
+        resolved.deleted_at = now
+        resolved.is_active = False
+        resolved.is_default = False
+        resolved.connection_status = "DISCONNECTED"
+        resolved.live_order_enabled = False
+        resolved.live_armed = False
+        resolved.arm_token_hash = None
+        resolved.arm_expires_at = None
+        resolved.arm_armed_by = None
+        resolved.arm_armed_at = None
+        resolved.updated_at = now
+        self._session.flush()
+
+        # Credential Vault — CASCADE가 더 이상 발동하지 않으므로 명시적 revoke.
+        # revoke()가 내부에서 commit()하므로, 위에서 flush()한 UBA 변경도
+        # 이 트랜잭션 안에서 함께 커밋된다(사실상 단일 트랜잭션 효과).
+        # revoke 실패 시 전체 rollback하여 "계좌는 삭제, Credential은 활성"
+        # 상태가 남지 않도록 한다.
+        try:
+            from stock_platform.broker.credential_vault_service import (
+                BrokerCredentialVaultService,
+            )
+
+            BrokerCredentialVaultService(self._session).revoke(
+                user_broker_account_id=broker_id,
+                owner_user_id=None,
+                actor="ACCOUNT_DELETE",
+                admin=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._session.rollback()
+            raise UserAccountError(
+                "Broker 계좌 삭제 중 Credential revoke에 실패했습니다."
+            ) from exc
+
+        return {
+            "deleted": True,
+            "account_type": "BROKER",
+            "account_id": broker_id,
+            "mode": "unlink",
+            "deletion_mode": "soft_delete",
+            "hard_delete_allowed": False,
+            "message": "플랫폼 연결 정보만 제거했습니다. 실계좌는 삭제되지 않습니다.",
+        }
+
+    def set_default(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+    ) -> UserAccountView:
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        if isinstance(resolved, PaperAccount):
+            if not resolved.is_active:
+                raise UserAccountError("비활성 계좌는 기본으로 지정할 수 없습니다.")
+            self._clear_paper_defaults(user_id)
+            resolved.is_default = True
+            self._session.commit()
+            self._session.refresh(resolved)
+            return paper_to_view(resolved)
+
+        if not resolved.is_active:
+            raise UserAccountError("비활성 계좌는 기본으로 지정할 수 없습니다.")
+        self._clear_broker_defaults(user_id, resolved.broker_code)
+        resolved.is_default = True
+        self._session.commit()
+        self._session.refresh(resolved)
+        return broker_to_view(resolved)
+
+    def connect(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+    ) -> UserAccountView:
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        if isinstance(resolved, PaperAccount):
+            resolved.is_active = True
+            self._session.commit()
+            self._session.refresh(resolved)
+            return paper_to_view(resolved)
+        # STEP 2-5-1 — 삭제된 Broker 계좌는 connect()로 되살릴 수 없음
+        # (재연결은 create_account revive 흐름을 통해서만 허용)
+        if resolved.deleted_at is not None:
+            raise UserAccountError("삭제된 Broker 계좌입니다. 재연결을 이용하세요.")
+        resolved.is_active = True
+        resolved.connection_status = "CONNECTED"
+        self._session.commit()
+        self._session.refresh(resolved)
+        return broker_to_view(resolved)
+
+    def disconnect(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+    ) -> UserAccountView:
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        if isinstance(resolved, PaperAccount):
+            if resolved.is_default:
+                raise UserAccountError(
+                    "기본 Paper 계좌는 연결 해제할 수 없습니다."
+                )
+            resolved.is_active = False
+            resolved.is_default = False
+            self._session.commit()
+            self._session.refresh(resolved)
+            return paper_to_view(resolved)
+        resolved.connection_status = "DISCONNECTED"
+        resolved.is_default = False
+        self._session.commit()
+        self._session.refresh(resolved)
+        return broker_to_view(resolved)
+
+    def sync(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None = None,
+    ) -> UserAccountView:
+        """
+        Paper: 메타 갱신만.
+        Broker: last_synced_at 갱신.
+        키움 실동기화는 서버 공용 credential 사용 — 별도 admin sync 참고.
+        """
+
+        resolved = self._resolve_owned(
+            user_id, account_id, account_type=account_type
+        )
+        now = datetime.now(timezone.utc)
+        if isinstance(resolved, PaperAccount):
+            resolved.updated_at = now
+            self._session.commit()
+            self._session.refresh(resolved)
+            return paper_to_view(resolved)
+        # STEP 2-5-1 — 삭제된 Broker 계좌는 동기화 대상에서 제외
+        if resolved.deleted_at is not None:
+            raise UserAccountError("삭제된 Broker 계좌입니다.")
+        resolved.last_synced_at = now
+        resolved.connection_status = "CONNECTED"
+        resolved.updated_at = now
+        self._session.commit()
+        self._session.refresh(resolved)
+        return broker_to_view(resolved)
+
+    def ensure_default_paper(self, user_id: int) -> UserAccountView:
+        """기본 Paper 없으면 lazy 생성 (중복은 DB unique로 방지)."""
+
+        existing = self._paper_repo.get_primary_for_user(user_id)
+        if existing is not None:
+            if not existing.is_default:
+                try:
+                    self._clear_paper_defaults(user_id)
+                    existing.is_default = True
+                    self._session.commit()
+                    self._session.refresh(existing)
+                except IntegrityError as exc:
+                    self._session.rollback()
+                    raise UserAccountError(
+                        "기본 Paper 계좌 설정에 실패했습니다."
+                    ) from exc
+            return paper_to_view(existing)
+
+        try:
+            created = self._paper_service.create_account(
+                account_name=f"user-{user_id}-default",
+                initial_cash=_DEFAULT_PAPER_CASH,
+                currency_code="KRW",
+                user_id=user_id,
+                is_default=True,
+            )
+        except PaperAccountError as exc:
+            # 동시 생성 레이스 — 재조회
+            existing = self._paper_repo.get_primary_for_user(user_id)
+            if existing is not None:
+                return paper_to_view(existing)
+            raise UserAccountError(str(exc)) from exc
+        except IntegrityError as exc:
+            self._session.rollback()
+            existing = self._paper_repo.get_primary_for_user(user_id)
+            if existing is not None:
+                return paper_to_view(existing)
+            raise UserAccountError(
+                "기본 Paper 계좌 생성에 실패했습니다."
+            ) from exc
+        return paper_to_view(created)
+
+    def _create_paper(
+        self,
+        user_id: int,
+        *,
+        account_name: str | None,
+        initial_cash: Decimal | None,
+        currency_code: str,
+        is_default: bool,
+    ) -> UserAccountView:
+        name = (account_name or "").strip() or f"user-{user_id}-paper"
+        cash = initial_cash if initial_cash is not None else _DEFAULT_PAPER_CASH
+        make_default = is_default or (
+            self._paper_repo.get_primary_for_user(user_id) is None
+        )
+        if make_default:
+            self._clear_paper_defaults(user_id)
+        try:
+            account = self._paper_service.create_account(
+                account_name=name,
+                initial_cash=cash,
+                currency_code=currency_code,
+                user_id=user_id,
+                is_default=make_default,
+            )
+        except PaperAccountError as exc:
+            raise UserAccountError(str(exc)) from exc
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise UserAccountError(
+                "Paper 계좌 생성에 실패했습니다 (이름 또는 기본 계좌 중복)."
+            ) from exc
+        return paper_to_view(account)
+
+    def _create_broker(
+        self,
+        user_id: int,
+        *,
+        broker_code: str,
+        account_alias: str | None,
+        account_number: str | None,
+        currency_code: str,
+        is_default: bool,
+        auto_commit: bool = True,
+    ) -> UserAccountView:
+        if not account_number or not account_number.strip():
+            raise UserAccountError(
+                "Broker 계좌 연결에는 account_number 가 필요합니다."
+            )
+        alias = (account_alias or "").strip() or f"{broker_code} 계좌"
+        try:
+            ref_hash = hash_account_ref(account_number)
+            masked = mask_account_number(account_number)
+        except ValueError as exc:
+            raise UserAccountError(str(exc)) from exc
+
+        make_default = is_default
+        if make_default:
+            self._clear_broker_defaults(user_id, broker_code)
+
+        # STEP 2-5-1 — 재연결 Revive: 동일 (user_id, broker_code,
+        # account_ref_hash) 조합의 기존 행(활성/삭제 불문)을 먼저 조회한다.
+        existing = self._session.scalar(
+            select(UserBrokerAccount).where(
+                UserBrokerAccount.user_id == user_id,
+                UserBrokerAccount.broker_code == broker_code,
+                UserBrokerAccount.account_ref_hash == ref_hash,
+            )
+        )
+        if existing is not None and existing.deleted_at is None:
+            raise UserAccountError("이미 연결된 Broker 계좌입니다.")
+
+        if existing is not None:
+            # 삭제된 행 revive — 새 행을 만들지 않고 기존 행을 재사용.
+            # 폐기된 Credential은 여기서 재활성화하지 않는다(사용자 재등록 필요).
+            row = existing
+            row.account_alias = alias
+            row.masked_account_number = masked
+            row.currency_code = (currency_code or "KRW").upper()
+            row.is_default = make_default
+            row.is_active = True
+            row.connection_status = "PENDING"
+            row.live_order_enabled = False
+            row.live_armed = False
+            row.arm_token_hash = None
+            row.arm_expires_at = None
+            row.arm_armed_by = None
+            row.arm_armed_at = None
+            row.deleted_at = None
+            row.updated_at = datetime.now(timezone.utc)
+            try:
+                if auto_commit:
+                    self._session.commit()
+                else:
+                    self._session.flush()
+                self._session.refresh(row)
+            except IntegrityError as exc:
+                self._session.rollback()
+                raise UserAccountError(
+                    "이미 연결된 Broker 계좌입니다."
+                ) from exc
+            return broker_to_view(row)
+
+        row = UserBrokerAccount(
+            user_id=user_id,
+            broker_code=broker_code,
+            account_alias=alias,
+            account_ref_hash=ref_hash,
+            masked_account_number=masked,
+            currency_code=(currency_code or "KRW").upper(),
+            is_default=make_default,
+            is_active=True,
+            connection_status="PENDING",
+        )
+        self._session.add(row)
+        try:
+            if auto_commit:
+                self._session.commit()
+            else:
+                self._session.flush()
+            self._session.refresh(row)
+        except IntegrityError as exc:
+            self._session.rollback()
+            raise UserAccountError(
+                # 동시 재연결 레이스 안전망 — 부분 유니크 인덱스 위반
+                "이미 연결된 Broker 계좌입니다."
+            ) from exc
+        return broker_to_view(row)
+
+    def _list_paper(
+        self,
+        user_id: int,
+        *,
+        default_only: bool,
+        include_inactive: bool,
+    ) -> list[PaperAccount]:
+        stmt = select(PaperAccount).where(PaperAccount.user_id == user_id)
+        # Soft-deleted 계좌는 목록에서 항상 제외
+        stmt = stmt.where(PaperAccount.deleted_at.is_(None))
+        if not include_inactive:
+            stmt = stmt.where(PaperAccount.is_active.is_(True))
+        if default_only:
+            stmt = stmt.where(PaperAccount.is_default.is_(True))
+        stmt = stmt.order_by(
+            PaperAccount.is_default.desc(),
+            PaperAccount.account_id.asc(),
+        )
+        return list(self._session.scalars(stmt))
+
+    def _list_broker(
+        self,
+        user_id: int,
+        *,
+        default_only: bool,
+        include_inactive: bool,
+    ) -> list[UserBrokerAccount]:
+        stmt = select(UserBrokerAccount).where(
+            UserBrokerAccount.user_id == user_id
+        )
+        # STEP 2-5-1 — Soft-deleted 계좌는 목록에서 항상 제외
+        # (include_inactive는 "삭제되지 않았지만 비활성"만 포함 여부를 제어)
+        stmt = stmt.where(UserBrokerAccount.deleted_at.is_(None))
+        if not include_inactive:
+            stmt = stmt.where(UserBrokerAccount.is_active.is_(True))
+        if default_only:
+            stmt = stmt.where(UserBrokerAccount.is_default.is_(True))
+        stmt = stmt.order_by(
+            UserBrokerAccount.is_default.desc(),
+            UserBrokerAccount.user_broker_account_id.asc(),
+        )
+        return list(self._session.scalars(stmt))
+
+    def _resolve_owned(
+        self,
+        user_id: int,
+        account_id: int,
+        *,
+        account_type: str | None,
+    ) -> PaperAccount | UserBrokerAccount:
+        kind = (account_type or "").strip().upper() or None
+        if kind is None or kind == "PAPER":
+            paper = self._paper_repo.get_account(account_id)
+            if paper is not None:
+                if (
+                    paper.user_id is not None
+                    and int(paper.user_id) == int(user_id)
+                ):
+                    return paper
+                raise UserAccountError("계좌를 찾을 수 없습니다.")
+
+        if kind is None or kind in _BROKER_TYPES:
+            broker = self._session.get(UserBrokerAccount, account_id)
+            if (
+                broker is not None
+                and int(broker.user_id) == int(user_id)
+                and (kind is None or broker.broker_code.upper() == kind)
+            ):
+                return broker
+            if kind in _BROKER_TYPES:
+                raise UserAccountError("계좌를 찾을 수 없습니다.")
+
+        raise UserAccountError("계좌를 찾을 수 없습니다.")
+
+    def _clear_paper_defaults(self, user_id: int) -> None:
+        self._session.execute(
+            update(PaperAccount)
+            .where(
+                PaperAccount.user_id == user_id,
+                PaperAccount.is_default.is_(True),
+            )
+            .values(is_default=False)
+        )
+        self._session.flush()
+
+    def _clear_broker_defaults(
+        self, user_id: int, broker_code: str
+    ) -> None:
+        self._session.execute(
+            update(UserBrokerAccount)
+            .where(
+                UserBrokerAccount.user_id == user_id,
+                UserBrokerAccount.broker_code == broker_code.upper(),
+                UserBrokerAccount.is_default.is_(True),
+            )
+            .values(is_default=False)
+        )
+        self._session.flush()

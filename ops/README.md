@@ -14,6 +14,7 @@ Docker 없이 수동·NSSM 운영을 지원합니다.
 | `deploy_check.bat` | 배포 점검 |
 | `install_nssm_service.ps1` | Windows Service 등록 |
 | `env.production.example` | 운영 env 템플릿 |
+| `generate_broker_vault_key.ps1` | STEP 8-5-2 Broker Vault Master Key 생성 (원문 미출력) |
 
 문서: [../INSTALL.md](../INSTALL.md) · [../OPERATIONS.md](../OPERATIONS.md) · [NSSM_SERVICE.md](NSSM_SERVICE.md)
 

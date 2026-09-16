@@ -25,12 +25,47 @@ function toAntdItems(items: AppMenuItem[]): MenuProps["items"] {
           children: toAntdItems(item.children),
         };
       }
+      // path가 같아도 key는 고유해야 함 (예: monitoring / data → 동일 /admin/monitoring)
       return {
-        key: item.path ?? item.key,
+        key: item.key,
         icon: item.icon,
         label: item.label,
       };
     });
+}
+
+/** leaf path 또는 Workspace matchPaths로 현재 경로 매칭 */
+function menuItemMatchesPath(item: AppMenuItem, pathname: string): boolean {
+  const paths = [
+    ...(item.path ? [item.path] : []),
+    ...((item.matchPaths as readonly string[] | undefined) ?? []),
+  ];
+  for (const path of paths) {
+    if (pathname === path) return true;
+    // /admin/ai 는 하위 /admin/ai/* 를 먹지 않음
+    if (path === "/admin/ai") continue;
+    if (pathname.startsWith(`${path}/`)) return true;
+  }
+  return false;
+}
+
+function matchPathLength(item: AppMenuItem, pathname: string): number {
+  const paths = [
+    ...(item.path ? [item.path] : []),
+    ...((item.matchPaths as readonly string[] | undefined) ?? []),
+  ];
+  let max = 0;
+  for (const path of paths) {
+    if (pathname === path) {
+      max = Math.max(max, path.length);
+      continue;
+    }
+    if (path === "/admin/ai") continue;
+    if (pathname.startsWith(`${path}/`)) {
+      max = Math.max(max, path.length);
+    }
+  }
+  return max;
 }
 
 export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
@@ -42,24 +77,24 @@ export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
   const flat = useMemo(() => flattenMenuItems(items), [items]);
 
   const selectedKeys = useMemo(() => {
-    const matched = flat
-      .filter((item) => item.path)
-      .sort((a, b) => (b.path?.length ?? 0) - (a.path?.length ?? 0))
-      .find(
-        (item) =>
-          pathname === item.path || pathname.startsWith(`${item.path}/`),
-      );
-    return matched?.path ? [matched.path] : [];
+    const matches = flat.filter((item) => menuItemMatchesPath(item, pathname));
+    if (!matches.length) {
+      return [];
+    }
+    const maxLen = Math.max(
+      ...matches.map((item) => matchPathLength(item, pathname)),
+    );
+    return matches
+      .filter((item) => matchPathLength(item, pathname) === maxLen)
+      .map((item) => item.key);
   }, [flat, pathname]);
 
   const openKeys = useMemo(() => {
     const keys: string[] = [];
     for (const group of items) {
       if (!group.children?.length) continue;
-      const hit = group.children.some(
-        (child) =>
-          child.path &&
-          (pathname === child.path || pathname.startsWith(`${child.path}/`)),
+      const hit = group.children.some((child) =>
+        menuItemMatchesPath(child, pathname),
       );
       if (hit) keys.push(group.key);
     }
@@ -73,8 +108,9 @@ export function SidebarMenu({ items = adminMenuItems }: SidebarMenuProps) {
       defaultOpenKeys={openKeys}
       items={menuItems}
       onClick={({ key }) => {
-        if (key.startsWith("/")) {
-          router.push(key);
+        const target = flat.find((item) => item.key === key);
+        if (target?.path) {
+          router.push(target.path);
           setMobileMenuOpen(false);
         }
       }}

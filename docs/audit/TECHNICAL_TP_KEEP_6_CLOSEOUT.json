@@ -1,0 +1,100 @@
+{
+  "step": "TECHNICAL_TP_KEEP_6_CLOSEOUT",
+  "mode": "CLOSEOUT_READ_ONLY",
+  "date": "2026-08-16",
+  "HEAD": "5c6ad67",
+  "runtime": "5c6ad67",
+  "health": "UP",
+  "FINAL_DECISION": "KEEP_6_SUPERIOR",
+  "KEEP_6_CONFIRMED": true,
+  "TP_ANALYSIS_FINAL_STATUS": "CLOSED_KEEP_6",
+  "TP_ANALYSIS_PRIOR": "FROZEN_PENDING_COVERAGE_REMEDIATION",
+  "CURRENT_TP": 6.0,
+  "CURRENT_SL": 3.0,
+  "production_tp_write": 0,
+  "production_sl_write": 0,
+  "db_runtime_status_column_created": false,
+  "discovery": {
+    "DISCOVERY_COMPLETED": 50,
+    "DISCOVERY_STRICT_VALID": 47,
+    "PAIRED_VALID_N": 47,
+    "SAMPLE_RECONCILIATION": "PASS"
+  },
+  "paired_means": {
+    "tp_2": -0.0487,
+    "tp_3": 0.0331,
+    "tp_4": -0.0007,
+    "tp_6": 0.0629
+  },
+  "deltas_vs_6": {
+    "tp_2": -0.1116,
+    "tp_3": -0.0298,
+    "tp_4": -0.0636
+  },
+  "candidate_gates": {
+    "tp_2": "FAIL",
+    "tp_3": "FAIL",
+    "tp_4": "FAIL"
+  },
+  "FROZEN_CANDIDATE_TP": null,
+  "TP_HIT_ONLY_OPTIMIZATION": "REJECTED",
+  "coverage": {
+    "COVERAGE_REMEDIATION_CLOSE": true,
+    "HISTORICAL_DATA_INTEGRITY": "INTACT",
+    "HISTORICAL_APPLY_REQUIRED": false,
+    "HISTORICAL_DB_REWRITE_REQUIRED": false,
+    "raw_coverage_reclass": "SOURCE_ABSENT"
+  },
+  "OOS": "NOT_STARTED",
+  "OOS_CANDIDATE_FREEZE_READY": false,
+  "OOS_START_READY": false,
+  "POST_COV_ROWS_USED_FOR_SELECTION": 0,
+  "OOS_CONTAMINATION": 0,
+  "POST_COV_ROLE": "FUTURE_RESERVE",
+  "reopen_policy": "NO_AUTO_REOPEN_WITHOUT_SEPARATE_APPROVED_BASIS",
+  "SHADOW_52_FOLLOWUP_REQUIRED": true,
+  "SHADOW_52_NOTE": "LONG_ACTIVE_TARGET_BLOCKED — not a TP closeout blocker; no mutation this STEP",
+  "News": {
+    "MATCHED_completed": 3,
+    "NO_NEWS_completed": 30,
+    "NO_NEWS_active": 10,
+    "EXCLUDED": 5,
+    "milestone": "ACCUMULATING",
+    "used_in_tp_closeout": false
+  },
+  "safety": {
+    "trading_order_n": 241,
+    "outbox_n": 52,
+    "LIVE": false,
+    "execution_running": false,
+    "outbox_worker": false,
+    "trading_order_mutation": 0,
+    "outbox_mutation": 0,
+    "create_order": 0
+  },
+  "mutations": {
+    "production_code": 0,
+    "db": 0,
+    "tp_config": 0,
+    "sl_config": 0,
+    "historical_apply": 0,
+    "live_arm_scheduler": 0,
+    "commit": false,
+    "push": false
+  },
+  "selective_commit_candidates_for_next_precheck": [
+    "docs/audit/TECHNICAL_COV_D0_HISTORICAL_COMPARE_PRECHECK.md|.json",
+    "docs/audit/TECHNICAL_COV_D_CLOSEOUT_NO_HISTORICAL_APPLY.md|.json",
+    "docs/audit/TECHNICAL_TP_ANALYSIS_REOPEN_PRECHECK.md|.json",
+    "docs/audit/TECHNICAL_TP_CANDIDATE_REANALYSIS.md|.json",
+    "docs/audit/TECHNICAL_TP_KEEP_6_CLOSEOUT.md|.json",
+    "docs/CURRENT_WORK.md",
+    "docs/PROJECT_IMPLEMENTATION_STATUS.md",
+    "docs/STEP_MASTER_STATUS.md",
+    "docs/ROADMAP.md",
+    "docs/audit/README.md",
+    "scripts/technical_cov_d0_historical_compare_dry.py",
+    "scripts/technical_tp_candidate_reanalysis.py"
+  ],
+  "next_step": "TECHNICAL COVERAGE + TP CLOSEOUT SELECTIVE COMMIT PRECHECK"
+}

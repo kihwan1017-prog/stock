@@ -4,13 +4,22 @@ from sqlalchemy.orm import Session
 
 from stock_platform.broker.account_repository import (
     BrokerAccountSnapshotRepository,
+    BrokerSnapshotBindingError,
+)
+from stock_platform.broker.credential_vault_service import (
+    BrokerCredentialVaultError,
+    BrokerCredentialVaultService,
 )
 from stock_platform.broker.kiwoom.account_client import (
     KiwoomAccountClient,
 )
+from stock_platform.broker.kiwoom.account_identity import (
+    build_kiwoom_legacy_adoption_proof,
+)
 from stock_platform.broker.kiwoom.account_mapper import (
     KiwoomAccountMapper,
 )
+from stock_platform.trading.account_models import UserBrokerAccount
 
 
 class KiwoomAccountSyncService:
@@ -19,16 +28,60 @@ class KiwoomAccountSyncService:
         *,
         session: Session,
         account_client: KiwoomAccountClient,
+        user_broker_account_id: int | None = None,
     ) -> None:
+        self._session = session
         self._client = account_client
-        self._repository = (
-            BrokerAccountSnapshotRepository(session)
+        self._uba_id = (
+            int(user_broker_account_id)
+            if user_broker_account_id is not None
+            else None
         )
+        self._repository = BrokerAccountSnapshotRepository(session)
 
-    async def synchronize(self):
-        account_number = (
-            await self._client.get_account_number()
-        )
+    def _resolve_uba_id(self, account_number: str) -> int:
+        # STEP 8-5-18 — UBA 필수 (해시 휴리스틱 폴백 제거)
+        if self._uba_id is None:
+            raise BrokerSnapshotBindingError(
+                "KIWOOM sync requires user_broker_account_id"
+            )
+        uba = self._session.get(UserBrokerAccount, self._uba_id)
+        if uba is None:
+            raise BrokerSnapshotBindingError(
+                f"UBA not found: {self._uba_id}"
+            )
+        if str(uba.broker_code).upper() != "KIWOOM":
+            raise BrokerSnapshotBindingError(
+                "UBA broker_code must be KIWOOM"
+            )
+        return int(self._uba_id)
+
+    def _vault_account_number(self, uba_id: int) -> str | None:
+        """Credential vault 계좌 — secret 미노출, 번호만."""
+
+        try:
+            resolved = BrokerCredentialVaultService(
+                self._session
+            ).resolve_for_runtime(
+                uba_id,
+                expected_broker="KIWOOM",
+                require_verified=True,
+                touch_last_used=False,
+            )
+        except BrokerCredentialVaultError:
+            return None
+        acct = str(
+            (resolved.payload or {}).get("account_number") or ""
+        ).strip()
+        return acct or None
+
+    async def synchronize(
+        self, *, user_broker_account_id: int | None = None
+    ):
+        if user_broker_account_id is not None:
+            self._uba_id = int(user_broker_account_id)
+        account_number = await self._client.get_account_number()
+        uba_id = self._resolve_uba_id(account_number)
         deposit = await self._client.get_deposit_detail()
         balance = await self._client.get_account_balance()
 
@@ -37,12 +90,23 @@ class KiwoomAccountSyncService:
             deposit_payload=deposit,
             balance_payload=balance,
         )
-        entity = self._repository.save(result)
+        # ownership-proven legacy adopt (RETIRED unbound) — Kiwoom only
+        proof = build_kiwoom_legacy_adoption_proof(
+            target_uba_id=uba_id,
+            broker_account_number=account_number,
+            vault_account_number=self._vault_account_number(uba_id),
+        )
+        entity = self._repository.save(
+            result,
+            user_broker_account_id=uba_id,
+            legacy_adoption=proof,
+        )
 
         return {
             "broker_account_snapshot_id": (
                 entity.broker_account_snapshot_id
             ),
+            "user_broker_account_id": uba_id,
             "broker_code": result.broker_code,
             "account_number": result.account_number,
             "deposit_amount": result.deposit_amount,
@@ -57,4 +121,7 @@ class KiwoomAccountSyncService:
             ),
             "position_count": len(result.positions),
             "synchronized_at": result.synchronized_at,
+            "snapshot_generation": int(entity.snapshot_generation),
+            "snapshot_hash": entity.snapshot_hash,
+            "snapshot_status": entity.snapshot_status,
         }

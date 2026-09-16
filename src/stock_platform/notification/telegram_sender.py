@@ -55,16 +55,23 @@ class TelegramNotificationSender(NotificationSender):
             )
 
         if not self._bot_token or not self._chat_id:
-            self._failed_count += 1
-            self._last_error = (
-                "Telegram bot token or chat ID is missing"
-            )
-            return NotificationChannelResult(
-                channel=self.channel,
-                status=NotificationSendStatus.FAILED,
-                message=self._last_error,
-                sent_at=now,
-            )
+            # per-message chat override 가능 (시장별 routing)
+            override = ""
+            if isinstance(notification.detail, dict):
+                override = str(
+                    notification.detail.get("telegram_chat_id") or ""
+                ).strip()
+            if not self._bot_token or not (self._chat_id or override):
+                self._failed_count += 1
+                self._last_error = (
+                    "Telegram bot token or chat ID is missing"
+                )
+                return NotificationChannelResult(
+                    channel=self.channel,
+                    status=NotificationSendStatus.FAILED,
+                    message=self._last_error,
+                    sent_at=now,
+                )
 
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(
@@ -72,13 +79,20 @@ class TelegramNotificationSender(NotificationSender):
         )
 
         try:
+            chat_id = self._chat_id
+            if isinstance(notification.detail, dict):
+                override = str(
+                    notification.detail.get("telegram_chat_id") or ""
+                ).strip()
+                if override:
+                    chat_id = override
             response = await client.post(
                 (
                     "https://api.telegram.org/bot"
                     f"{self._bot_token}/sendMessage"
                 ),
                 json={
-                    "chat_id": self._chat_id,
+                    "chat_id": chat_id,
                     "text": self._format_message(
                         notification
                     ),
@@ -86,7 +100,19 @@ class TelegramNotificationSender(NotificationSender):
                     "disable_web_page_preview": True,
                 },
             )
-            response.raise_for_status()
+            if response.status_code >= 400:
+                # 403 등 — JSON description을 보존 (토큰은 호출측에서 마스킹)
+                detail = "Telegram API error"
+                try:
+                    body = response.json()
+                    if isinstance(body, dict) and body.get("description"):
+                        detail = str(body["description"])
+                    else:
+                        detail = f"HTTP {response.status_code}"
+                except Exception:  # noqa: BLE001
+                    detail = f"HTTP {response.status_code}"
+                raise RuntimeError(detail)
+
             payload = response.json()
 
             if not payload.get("ok"):
@@ -141,15 +167,23 @@ class TelegramNotificationSender(NotificationSender):
     def _format_message(
         notification: NotificationMessage,
     ) -> str:
-        detail_text = json.dumps(
-            notification.detail,
-            ensure_ascii=False,
-            indent=2,
-            default=str,
-        )
-
-        return (
-            f"<b>🚨 {html.escape(notification.title)}</b>\n\n"
-            f"{html.escape(notification.message)}\n\n"
-            f"<pre>{html.escape(detail_text)}</pre>"
-        )
+        title = notification.rendered_title or notification.title
+        body = notification.rendered_body or notification.message
+        parts = [
+            f"<b>{html.escape(title)}</b>",
+            "",
+            html.escape(body),
+        ]
+        if notification.include_raw_json:
+            detail_text = json.dumps(
+                notification.original_payload
+                if notification.original_payload is not None
+                else notification.detail,
+                ensure_ascii=False,
+                indent=2,
+                default=str,
+            )
+            parts.extend(
+                ["", f"<pre>{html.escape(detail_text)}</pre>"]
+            )
+        return "\n".join(parts)

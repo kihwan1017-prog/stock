@@ -1,0 +1,134 @@
+{
+  "step": "M6-D0",
+  "mode": "PRECHECK_ONLY",
+  "baseline_commit": "a3612c0",
+  "verdict": "STRATEGY_DRAFT_FORMATTER_ALREADY_SHARED_SUFFICIENT",
+  "production_mutation": 0,
+  "m6d_implement": "NO_SKIP",
+  "routes": {
+    "admin": "/admin/strategy-drafts",
+    "admin_page": "frontend/src/app/(admin)/admin/strategy-drafts/page.tsx",
+    "user": "/user/strategy-drafts",
+    "user_page": "frontend/src/app/(user)/user/strategy-drafts/page.tsx"
+  },
+  "page_metrics": {
+    "admin": {
+      "loc": 5202,
+      "useState_approx": 66,
+      "useEffect": 0,
+      "useQuery": 54,
+      "useMutation": 30,
+      "tables": 26,
+      "drawers": 5,
+      "modals": 5,
+      "descriptions_occurrences": 144,
+      "primary_list_read_columns": 6
+    },
+    "user": {
+      "loc": 142,
+      "useState": 1,
+      "useEffect": 0,
+      "useQuery": 2,
+      "useMutation": 0,
+      "tables": 1,
+      "drawers": 1,
+      "modals": 0,
+      "descriptions_items": 7,
+      "primary_list_read_columns": 5
+    }
+  },
+  "roles": {
+    "admin": "STEP12_DRAFT_HUB_GLOBAL",
+    "user": "OWNER_SCOPED_READ_ONLY"
+  },
+  "column_matrix_primary_list": [
+    {
+      "dataIndex": "draft_id",
+      "class": "ADMIN_ONLY",
+      "admin": true,
+      "user_list": false
+    },
+    {
+      "dataIndex": "label",
+      "class": "EXACT_COMMON",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "strategy_request_id",
+      "class": "EXACT_COMMON",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "status",
+      "class": "EXACT_COMMON",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "title",
+      "class": "EXACT_COMMON",
+      "admin": true,
+      "user": true
+    },
+    {
+      "dataIndex": "created_at",
+      "class": "EXACT_COMMON",
+      "admin": true,
+      "user": true
+    }
+  ],
+  "exact_common_count": 5,
+  "semantic_common_count": 5,
+  "admin_read_count": 6,
+  "user_read_count": 5,
+  "common_read_ratio": 1.0,
+  "status_color": {
+    "STRATEGY_DRAFT_STATUS_COLOR_shared": true,
+    "local_duplicate_map": false,
+    "m6a_reuse": true
+  },
+  "detail_overlap_class": "SIMILAR_FIELDS_DIFFERENT_LAYOUT",
+  "history_overlap": "ADMIN_ONLY_WITH_ACTOR",
+  "api_overlap_class": "DIFFERENT_ENDPOINT_SAME_DOMAIN",
+  "row_type_compatibility": "STRUCTURALLY_COMPATIBLE",
+  "capability_prop_risk": "HIGH_IF_FULL_HUB_SHARE",
+  "options": {
+    "A": "KEEP_AS_IS_ACCEPTABLE",
+    "B": "FORMATTER_ALREADY_SHARED_SUFFICIENT_RECOMMENDED",
+    "C": "SHARE_COMMON_READ_COLUMNS_LOW_VALUE",
+    "D": "SMALL_HELPER_MARGINAL",
+    "E": "FULL_COMPONENT_REJECT"
+  },
+  "recommended_option": "OPTION_B",
+  "shared_candidates": [],
+  "keep_separate": [
+    "admin_draft_hub_container",
+    "approve_reject_create_archive_generate",
+    "history_actor",
+    "comparison_attempts_backtest_panels",
+    "user_ro_drawer",
+    "query_hooks",
+    "routes",
+    "permissions",
+    "backend"
+  ],
+  "cross_imports": {
+    "user_to_admin": 0,
+    "admin_to_user": 0
+  },
+  "regressions": {
+    "m5_hub": "untouched",
+    "m6a_shim_status_color": "ok",
+    "m6b_orders": "untouched",
+    "m6c_strategy_requests": "untouched"
+  },
+  "trading_safety": {
+    "TradingOrder_delta": 0,
+    "Outbox_delta": 0,
+    "create_order_delta": 0,
+    "POST_orders_delta": 0
+  },
+  "next_step_exactly_one": "M6-E0 — Optional shared presentation final PRECHECK"
+}

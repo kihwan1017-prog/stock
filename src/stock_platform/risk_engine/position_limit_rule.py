@@ -23,17 +23,21 @@ ZERO = Decimal("0")
 
 
 class DatabasePositionLimitRule:
+    """STEP 8-5-19 — UBA/Paper 기준 Position Limit 평가."""
+
     def __init__(
         self,
         session: Session,
         *,
         broker_code: str,
-        account_number: str,
         default_policy: PositionLimitPolicy,
+        user_broker_account_id: int | None = None,
+        paper_account_id: int | None = None,
     ) -> None:
         self._repository = PositionLimitRepository(session)
         self._broker_code = broker_code
-        self._account_number = account_number
+        self._uba_id = user_broker_account_id
+        self._paper_id = paper_account_id
         self._default_policy = default_policy
 
     def evaluate(
@@ -49,12 +53,20 @@ class DatabasePositionLimitRule:
                 message="SELL reduces position exposure",
             )
 
-        entity = self._repository.get(
-            broker_code=self._broker_code,
-            account_number=self._account_number,
-            exchange_code=order.exchange_code,
-            symbol=order.symbol,
-        )
+        entity = None
+        if self._uba_id is not None:
+            entity = self._repository.get_by_uba(
+                user_broker_account_id=int(self._uba_id),
+                exchange_code=order.exchange_code,
+                symbol=order.symbol,
+                broker_code=self._broker_code,
+            )
+        elif self._paper_id is not None:
+            entity = self._repository.get_by_paper(
+                paper_account_id=int(self._paper_id),
+                exchange_code=order.exchange_code,
+                symbol=order.symbol,
+            )
 
         max_quantity = (
             Decimal(entity.max_quantity)
@@ -86,13 +98,10 @@ class DatabasePositionLimitRule:
         )
 
         blocked: list[str] = []
-
         if projected_quantity > max_quantity:
             blocked.append("quantity")
-
         if projected_amount > max_amount:
             blocked.append("amount")
-
         if projected_weight > max_weight:
             blocked.append("weight")
 
@@ -106,17 +115,11 @@ class DatabasePositionLimitRule:
                     + " limit"
                 ),
                 detail={
-                    "projected_quantity": str(
-                        projected_quantity
-                    ),
+                    "projected_quantity": str(projected_quantity),
                     "max_quantity": str(max_quantity),
-                    "projected_amount": str(
-                        projected_amount
-                    ),
+                    "projected_amount": str(projected_amount),
                     "max_amount": str(max_amount),
-                    "projected_weight": str(
-                        projected_weight
-                    ),
+                    "projected_weight": str(projected_weight),
                     "max_weight": str(max_weight),
                 },
             )
@@ -126,14 +129,8 @@ class DatabasePositionLimitRule:
             level=RiskDecisionLevel.PASS,
             message="Projected symbol position is within limits",
             detail={
-                "projected_quantity": str(
-                    projected_quantity
-                ),
-                "projected_amount": str(
-                    projected_amount
-                ),
-                "projected_weight": str(
-                    projected_weight
-                ),
+                "projected_quantity": str(projected_quantity),
+                "projected_amount": str(projected_amount),
+                "projected_weight": str(projected_weight),
             },
         )

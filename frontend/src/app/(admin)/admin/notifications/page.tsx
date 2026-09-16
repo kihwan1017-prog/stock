@@ -5,12 +5,11 @@ import { App, Button, Space, Table, Tag, Typography } from "antd";
 import Link from "next/link";
 
 import * as adminApi from "@/features/admin/api/adminApi";
-import {
-  AdminJsonCard,
-  UnimplementedApiPanel,
-} from "@/features/admin/components/AdminPanels";
+import { AdminJsonCard } from "@/features/admin/components/AdminPanels";
 import { AdminPageShell } from "@/features/admin/components/AdminPageShell";
 import { NOTIFICATION_EVENT_CATALOG } from "@/features/admin/notifications/opsCatalog";
+import { MessageTemplatesPanel } from "@/features/admin/notifications/MessageTemplatesPanel";
+import { TradingAlertPreferencesPanel } from "@/features/admin/notifications/TradingAlertPreferencesPanel";
 import { adminRoutes } from "@/config/routes";
 import { toApiError } from "@/lib/api/apiError";
 import { queryKeys } from "@/lib/query/queryKeys";
@@ -38,7 +37,7 @@ export default function AdminNotificationsPage() {
   return (
     <AdminPageShell
       title="알림 관리"
-      description="notification/status · notification/test — Telegram 운영은 Telegram 페이지"
+      description="자동매매에서 받을 알림을 선택합니다. 알림을 꺼도 자동매매와 분석 기능은 계속 실행됩니다."
       extra={
         <Space wrap>
           <Button
@@ -54,9 +53,13 @@ export default function AdminNotificationsPage() {
     >
       <Space orientation="vertical" size={16} style={{ width: "100%" }}>
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-          Discord 채널 UI는 다루지 않습니다. Telegram Bot·이벤트·운영 명령은{" "}
-          <Link href={adminRoutes.telegram}>Telegram 운영</Link>을 사용하세요.
+          알림 설정은 수신(Telegram 등)만 제어합니다. EVENT_TYPE·자동매매·AI·후보
+          분석 로직은 그대로 동작합니다.
         </Typography.Paragraph>
+
+        <TradingAlertPreferencesPanel />
+
+        <MessageTemplatesPanel />
 
         <AdminJsonCard
           title="GET /notification/status"
@@ -92,19 +95,6 @@ export default function AdminNotificationsPage() {
                 </Tag>
               ),
             },
-          ]}
-        />
-
-        <UnimplementedApiPanel
-          feature="알림 채널 설정 CRUD"
-          reason="알림 채널 등록/수정/삭제 API가 Backend에 없습니다. 상태 조회·테스트만 가능합니다."
-          expectedApis={[
-            "GET/POST/PUT/DELETE /api/v1/notification/channels",
-          ]}
-          relatedApis={[
-            "GET /api/v1/notification/status",
-            "POST /api/v1/notification/test",
-            "/admin/telegram",
           ]}
         />
       </Space>

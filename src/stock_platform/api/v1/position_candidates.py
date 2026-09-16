@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -15,6 +16,7 @@ from stock_platform.risk.allocation_service import (
 router = APIRouter(
     prefix="/api/v1/position-candidates",
     tags=["Position Candidates"],
+    dependencies=[Depends(require_admin)],
 )
 
 

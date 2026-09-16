@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
+from functools import lru_cache
 
 from fastapi import APIRouter, Response
-
 from stock_platform.common.settings import get_settings
 from stock_platform.operation.db_pool_monitor import (
     measure_db_latency_ms,
@@ -29,6 +29,28 @@ async def health_live():
         "status": "UP",
         "check": "live",
         "uptime_seconds": identity["uptime_seconds"],
+        "promotion_load_proof": _promotion_load_proof(),
+    }
+
+
+@lru_cache(maxsize=1)
+def _promotion_load_proof() -> dict:
+    """프로세스당 1회 — inspect.getsource 반복 비용 제거."""
+
+    import inspect
+
+    import stock_platform.ai.candidate_promotion.eligibility as eligibility
+    from stock_platform.ai.candidate_recommendation_queue.expiration import is_expired
+
+    validate_source = inspect.getsource(
+        eligibility.AICandidatePromotionEligibilityService.validate_queue
+    )
+    return {
+        "eligibility_file": eligibility.__file__,
+        "is_expired_signature": str(inspect.signature(is_expired)),
+        "caller_keyword": "is_expired(expires_at=queue.expires_at)"
+        in validate_source,
+        "caller_positional": "is_expired(queue.expires_at)" in validate_source,
     }
 
 
@@ -48,6 +70,20 @@ async def health_ready(response: Response):
     if error:
         payload["database"]["message"] = error
         response.status_code = 503
+    return payload
+
+
+@router.get("/ops")
+async def health_ops():
+    """운영 Health — Runtime/Scheduler/Recovery/Outbox/WS 등."""
+
+    from stock_platform.operation.release_operation_readiness import (
+        build_operation_health,
+        get_last_startup_validation,
+    )
+
+    payload = build_operation_health()
+    payload["startup_validation"] = get_last_startup_validation()
     return payload
 
 
@@ -75,4 +111,21 @@ async def health():
         if error:
             payload["components"]["database"]["message"] = "unavailable"
         return payload
-    return await SystemHealthService().build()
+    base = await SystemHealthService().build()
+    try:
+        from stock_platform.operation.release_operation_readiness import (
+            build_operation_health,
+        )
+
+        ops = build_operation_health()
+        comps = dict(base.get("components") or {})
+        for key, value in (ops.get("components") or {}).items():
+            comps.setdefault(key, value)
+        base["components"] = comps
+        base["operation_health"] = {
+            "status": ops.get("status"),
+            "checked_at": ops.get("checked_at"),
+        }
+    except Exception:  # noqa: BLE001
+        pass
+    return base

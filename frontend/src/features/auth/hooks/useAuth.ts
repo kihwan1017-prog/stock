@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 
 import {
   loginWithCredentials,
@@ -16,7 +16,6 @@ import { authRoutes, userRoutes } from "@/config/routes";
 
 export function useAuth() {
   const router = useRouter();
-  const pathname = usePathname();
   const accessToken = useAuthStore((state) => state.accessToken);
   const user = useAuthStore((state) => state.user);
   const authenticated = useAuthStore((state) => state.authenticated);
@@ -28,17 +27,18 @@ export function useAuth() {
   const login = useCallback(
     async (payload: LoginRequest, redirectTo?: string) => {
       const response = await loginWithCredentials(payload);
+      const user = {
+        ...response.user,
+        defaultRoute: response.defaultRoute ?? response.user.defaultRoute,
+      };
       setSession(
         response.accessToken,
-        response.user,
+        user,
         response.refreshToken,
         payload.rememberMe ?? false,
       );
       persistRefreshToken(response.refreshToken);
-      const destination = resolvePostLoginPath(
-        response.user,
-        redirectTo ?? null,
-      );
+      const destination = resolvePostLoginPath(user, redirectTo ?? null);
       router.replace(destination);
     },
     [router, setSession],
@@ -60,14 +60,13 @@ export function useAuth() {
   );
 
   const logout = useCallback(async () => {
-    const portal = pathname?.startsWith("/user") ? "user" : "admin";
     try {
       await logoutRemote();
     } finally {
       clearSession();
-      router.replace(`${authRoutes.login}?portal=${portal}`);
+      router.replace(authRoutes.login);
     }
-  }, [clearSession, pathname, router]);
+  }, [clearSession, router]);
 
   return {
     accessToken,

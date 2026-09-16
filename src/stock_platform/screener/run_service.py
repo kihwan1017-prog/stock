@@ -43,8 +43,16 @@ class CandidateRunService:
             candidates=result.selected,
         )
 
-    def get_latest(self, *, exchange_code: str) -> tuple[CandidateRun, list[CandidateResult]] | None:
-        run = self._repository.get_latest_run(exchange_code=exchange_code.upper())
+    def get_latest(
+        self,
+        *,
+        exchange_code: str,
+        run_type: str = "DAILY",
+    ) -> tuple[CandidateRun, list[CandidateResult]] | None:
+        run = self._repository.get_latest_run(
+            exchange_code=exchange_code.upper(),
+            run_type=run_type,
+        )
         if run is None:
             return None
         return run, self._repository.get_results(run.run_id)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -18,6 +19,7 @@ from stock_platform.operation.calendar_service import (
 router = APIRouter(
     prefix="/api/v1/trading-calendar",
     tags=["Trading Calendar"],
+    dependencies=[Depends(require_admin)],
 )
 
 

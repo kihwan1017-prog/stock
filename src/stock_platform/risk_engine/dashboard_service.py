@@ -6,10 +6,6 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from stock_platform.broker.account_models import (
-    BrokerAccountSnapshotEntity,
-    BrokerPositionSnapshotEntity,
-)
 from stock_platform.broker.kiwoom.ws_manager import (
     kiwoom_order_websocket_manager,
 )
@@ -51,14 +47,9 @@ class RiskDashboardService:
     def build(
         self,
         *,
-        account_number: str,
+        user_broker_account_id: int | None = None,
         recent_limit: int = 50,
     ) -> RiskDashboardSnapshot:
-        if not account_number.strip():
-            raise ValueError(
-                "account_number must not be empty"
-            )
-
         if recent_limit < 1 or recent_limit > 200:
             raise ValueError(
                 "recent_limit must be between 1 and 200"
@@ -68,9 +59,13 @@ class RiskDashboardService:
             self._session
         ).get_state()
 
-        position = self._position_summary(
-            account_number=account_number
-        )
+        position = None
+        masked_ref = None
+        if user_broker_account_id is not None:
+            position = self._position_summary_by_uba(
+                user_broker_account_id=int(user_broker_account_id)
+            )
+            masked_ref = f"UBA:{int(user_broker_account_id)}"
 
         daily_loss_status = (
             daily_loss_monitor_manager.status()
@@ -85,7 +80,10 @@ class RiskDashboardService:
                 "event_type": item.event_type,
                 "event_level": item.event_level,
                 "broker_code": item.broker_code,
-                "account_number": item.account_number,
+                "user_broker_account_id": item.user_broker_account_id,
+                "paper_account_id": item.paper_account_id,
+                "masked_account_ref": item.masked_account_ref,
+                "correlation_id": item.correlation_id,
                 "current_loss_amount": str(
                     item.current_loss_amount
                 ),
@@ -120,7 +118,8 @@ class RiskDashboardService:
 
         return RiskDashboardSnapshot(
             generated_at=datetime.now(timezone.utc),
-            account_number=account_number,
+            user_broker_account_id=user_broker_account_id,
+            masked_account_ref=masked_ref,
             kill_switch={
                 "status": kill_switch.status.value,
                 "reason": kill_switch.reason,
@@ -183,41 +182,30 @@ class RiskDashboardService:
             recent_events=recent_events,
         )
 
-    def _position_summary(
+    def _position_summary_by_uba(
         self,
         *,
-        account_number: str,
+        user_broker_account_id: int,
     ) -> RiskDashboardPositionSummary | None:
-        account = self._session.scalar(
-            select(BrokerAccountSnapshotEntity).where(
-                BrokerAccountSnapshotEntity.broker_code
-                == "KIWOOM",
-                BrokerAccountSnapshotEntity.account_number
-                == account_number,
-            )
+        from stock_platform.broker.account_repository import (
+            BrokerAccountSnapshotRepository,
+        )
+        from stock_platform.broker.snapshot_constants import (
+            BrokerSnapshotStatus,
         )
 
+        account, positions = BrokerAccountSnapshotRepository(
+            self._session
+        ).get_active_by_uba(int(user_broker_account_id))
         if account is None:
             return None
-
-        positions = list(
-            self._session.scalars(
-                select(
-                    BrokerPositionSnapshotEntity
-                ).where(
-                    BrokerPositionSnapshotEntity
-                    .broker_code
-                    == "KIWOOM",
-                    BrokerPositionSnapshotEntity
-                    .account_number
-                    == account_number,
-                    BrokerPositionSnapshotEntity
-                    .quantity
-                    > 0,
-                )
-            )
-        )
-
+        positions = [
+            item
+            for item in positions
+            if Decimal(item.quantity) > 0
+            and item.snapshot_status
+            == BrokerSnapshotStatus.ACTIVE.value
+        ]
         invested_amount = sum(
             (
                 Decimal(item.evaluation_amount)

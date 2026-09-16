@@ -3,15 +3,20 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const login = vi.fn();
+const hydrateFromStorage = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
-  useSearchParams: () => new URLSearchParams("portal=admin"),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock("@/features/auth/hooks/useAuth", () => ({
   useAuth: () => ({
     login,
+    authenticated: false,
+    hydrated: true,
+    user: null,
+    hydrateFromStorage,
   }),
 }));
 
@@ -27,6 +32,7 @@ import { LoginForm } from "@/features/auth/components/LoginForm";
 describe("LoginForm", () => {
   beforeEach(() => {
     login.mockReset();
+    hydrateFromStorage.mockReset();
   });
 
   it("submits username and password", async () => {
@@ -44,7 +50,7 @@ describe("LoginForm", () => {
         password: "SecurePass1!",
         rememberMe: true,
       },
-      "/admin/dashboard",
+      undefined,
     );
   });
 });

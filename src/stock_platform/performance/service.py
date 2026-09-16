@@ -31,6 +31,8 @@ class StrategyPerformanceService:
         period_start_date: date,
         period_end_date: date,
         parameter_payload: dict[str, Any],
+        strategy_id: int | None = None,
+        requested_by_user_id: int | None = None,
     ):
         if not strategy_code.strip():
             raise ValueError(
@@ -49,6 +51,8 @@ class StrategyPerformanceService:
             period_start_date=period_start_date,
             period_end_date=period_end_date,
             parameter_payload=parameter_payload,
+            strategy_id=strategy_id,
+            requested_by_user_id=requested_by_user_id,
         )
 
     def complete_run(

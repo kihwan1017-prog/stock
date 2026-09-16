@@ -1,22 +1,20 @@
+"""STEP 8-5-9 — 레거시 RealtimeStrategyRunner 호환 래퍼.
+
+전역 MA State는 제거되었다.
+start/stop/status는 Shared Hub + Scope Consumer Registry만 사용한다.
+"""
+
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import structlog
 
 from stock_platform.realtime.bus import RealtimeQuoteBus
-from stock_platform.realtime.signal_bus import (
-    RealtimeSignalBus,
-)
-from stock_platform.realtime.strategy import (
-    RealtimeMovingAverageStrategy,
-)
+from stock_platform.realtime.signal_bus import RealtimeSignalBus
 from stock_platform.realtime.strategy_models import (
     RealtimePositionState,
-    RealtimeSignal,
-    RealtimeSignalAction,
     RealtimeStrategyConfig,
 )
 
@@ -26,7 +24,12 @@ ZERO = Decimal("0")
 
 
 class RealtimeStrategyRunner:
-    """실시간 시세 버스를 구독하여 전략을 실행한다."""
+    """
+    Deprecated 전역 Runner 파사드.
+
+    실제 전략 평가는 Scope별 MovingAverageStrategyEvaluator가 수행한다.
+    Scope 없는 단독 MA 루프는 더 이상 기동하지 않는다.
+    """
 
     def __init__(
         self,
@@ -37,95 +40,61 @@ class RealtimeStrategyRunner:
     ) -> None:
         self._quote_bus = quote_bus
         self._signal_bus = signal_bus
-        self._strategy = RealtimeMovingAverageStrategy(
-            config
-        )
-        self._positions: dict[
-            str,
-            RealtimePositionState,
-        ] = {}
-        self._last_signal_at: dict[
-            str,
-            datetime,
-        ] = {}
-        self._task: asyncio.Task | None = None
-        self._running = False
-        self._processed_count = 0
-        self._published_count = 0
-        self._last_error: str | None = None
+        self._config = config or RealtimeStrategyConfig()
+        # 레거시 포지션 API 호환용 (Scope별이 아님 — 조회만)
+        self._positions: dict[str, RealtimePositionState] = {}
+        self._deprecated = True
 
     async def start(self) -> dict:
-        if self._task is not None:
-            return {
-                "already_running": True,
-                **self.status(),
-            }
+        """Hub dispatch 루프 시작 — 전역 MA 루프는 기동하지 않음."""
 
-        self._task = asyncio.create_task(
-            self.run_forever(),
-            name="realtime-strategy-runner",
+        from stock_platform.realtime.market_data_hub import (
+            get_realtime_market_data_hub,
         )
-        return self.status()
+
+        hub = get_realtime_market_data_hub()
+        hub.set_quote_bus(self._quote_bus)
+        result = await hub.start_dispatch()
+        logger.warning(
+            "realtime_strategy_runner_start_deprecated",
+            message=(
+                "Global MA runner removed (STEP 8-5-9). "
+                "Using RealtimeMarketDataHub + Scope Registry."
+            ),
+        )
+        return {
+            "deprecated": True,
+            "mode": "SCOPE_REGISTRY_HUB",
+            "message": (
+                "Global realtime_strategy_runner MA loop removed. "
+                "Register scoped consumers via Runtime Registry."
+            ),
+            **result,
+            **self.status(),
+        }
 
     async def run_forever(self) -> None:
-        self._running = True
+        # 레거시 호출 호환 — Hub dispatch에 위임
+        await self.start()
+        from stock_platform.realtime.market_data_hub import (
+            get_realtime_market_data_hub,
+        )
 
-        try:
-            async for quote in self._quote_bus.subscribe():
-                try:
-                    self._processed_count += 1
-                    key = self._key(
-                        quote.exchange_code,
-                        quote.symbol,
-                    )
-                    position = self._positions.get(
-                        key,
-                        RealtimePositionState(
-                            quantity=ZERO,
-                            average_entry_price=None,
-                        ),
-                    )
-
-                    signal = self._strategy.evaluate(
-                        quote=quote,
-                        position=position,
-                    )
-
-                    if signal.action == (
-                        RealtimeSignalAction.HOLD
-                    ):
-                        continue
-
-                    if self._is_in_cooldown(signal):
-                        continue
-
-                    self._last_signal_at[key] = (
-                        signal.generated_at
-                    )
-                    self._published_count += 1
-                    await self._signal_bus.publish(signal)
-
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    self._last_error = str(exc)
-                    logger.exception(
-                        "realtime_strategy_evaluation_failed",
-                    )
-        finally:
-            self._running = False
+        hub = get_realtime_market_data_hub()
+        task = hub._task
+        if task is not None:
+            await task
 
     async def stop(self) -> None:
-        if self._task is None:
-            return
-
-        self._task.cancel()
-        try:
-            await self._task
-        except asyncio.CancelledError:
-            pass
-        finally:
-            self._task = None
+        # Shared Hub는 Quote→Evaluator 공용 인프라.
+        # 레거시 runner stop이 Hub dispatch를 끄면 시세 경로가 끊긴다.
+        logger.info(
+            "realtime_strategy_runner_stop_deprecated",
+            message=(
+                "Shared RealtimeMarketDataHub dispatch left running "
+                "(do not stop hub from deprecated runner)"
+            ),
+        )
 
     def set_position(
         self,
@@ -136,108 +105,46 @@ class RealtimeStrategyRunner:
         average_entry_price: Decimal | None,
     ) -> RealtimePositionState:
         if quantity < ZERO:
-            raise ValueError(
-                "quantity must not be negative"
-            )
-
-        if (
-            quantity > ZERO
-            and (
-                average_entry_price is None
-                or average_entry_price <= ZERO
-            )
-        ):
-            raise ValueError(
-                "average_entry_price is required "
-                "for an open position"
-            )
-
+            raise ValueError("quantity must be >= 0")
+        if quantity > ZERO and average_entry_price is None:
+            raise ValueError("average_entry_price required when quantity > 0")
+        key = self._key(exchange_code, symbol)
         state = RealtimePositionState(
             quantity=quantity,
             average_entry_price=average_entry_price,
         )
-        self._positions[
-            self._key(exchange_code, symbol)
-        ] = state
+        self._positions[key] = state
         return state
 
     def get_position(
-        self,
-        *,
-        exchange_code: str,
-        symbol: str,
+        self, *, exchange_code: str, symbol: str
     ) -> RealtimePositionState:
         return self._positions.get(
             self._key(exchange_code, symbol),
-            RealtimePositionState(
-                quantity=ZERO,
-                average_entry_price=None,
-            ),
+            RealtimePositionState(quantity=ZERO, average_entry_price=None),
         )
 
     def status(self) -> dict:
+        from stock_platform.realtime.market_data_hub import (
+            get_realtime_market_data_hub,
+        )
+
+        hub = get_realtime_market_data_hub()
+        hub_status = hub.status()
         return {
-            "running": self._running,
-            "processed_count": self._processed_count,
-            "published_count": self._published_count,
+            "deprecated": True,
+            "mode": "SCOPE_REGISTRY_HUB",
+            "running": hub_status.get("dispatch_running", False),
+            "processed_count": hub_status.get("event_count", 0),
+            "published_count": hub_status.get("signal_published", 0),
+            "last_error": hub_status.get("last_error"),
             "position_count": len(self._positions),
-            "last_error": self._last_error,
-            "signal_subscriber_count": (
-                self._signal_bus.subscriber_count
-            ),
-            "config": {
-                "short_window": (
-                    self._strategy.config.short_window
-                ),
-                "long_window": (
-                    self._strategy.config.long_window
-                ),
-                "minimum_change_rate": str(
-                    self._strategy.config
-                    .minimum_change_rate
-                ),
-                "stop_loss_ratio": str(
-                    self._strategy.config
-                    .stop_loss_ratio
-                ),
-                "take_profit_ratio": str(
-                    self._strategy.config
-                    .take_profit_ratio
-                ),
-                "cooldown_seconds": (
-                    self._strategy.config
-                    .cooldown_seconds
-                ),
-            },
+            "active_scopes": hub_status.get("active_scopes", 0),
+            "running_scopes": hub_status.get("running_scopes", 0),
+            "hub": hub_status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
-    def _is_in_cooldown(
-        self,
-        signal: RealtimeSignal,
-    ) -> bool:
-        key = self._key(
-            signal.exchange_code,
-            signal.symbol,
-        )
-        previous = self._last_signal_at.get(key)
-
-        if previous is None:
-            return False
-
-        seconds = (
-            datetime.now(timezone.utc) - previous
-        ).total_seconds()
-
-        return seconds < (
-            self._strategy.config.cooldown_seconds
-        )
-
     @staticmethod
-    def _key(
-        exchange_code: str,
-        symbol: str,
-    ) -> str:
-        return (
-            f"{exchange_code.upper()}:"
-            f"{symbol.upper()}"
-        )
+    def _key(exchange_code: str, symbol: str) -> str:
+        return f"{exchange_code.upper()}:{symbol.upper()}"

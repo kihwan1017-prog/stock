@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from typing import Any
 
-from stock_platform.common.settings import Settings, get_settings
+from stock_platform.common.settings import (
+    Settings,
+    clear_settings_cache,
+    get_settings,
+)
 from stock_platform.operation.setting_catalog import (
     CATEGORIES,
     DEFINITION_BY_KEY,
@@ -188,6 +193,8 @@ class AppSettingService:
         # trading 교차 규칙
         self._validate_trading_cross(current_map)
         invalidate_setting_cache()
+        # Dual LLM 등 get_settings() 경로가 DB 변경을 즉시 반영하도록 env 동기화
+        self._sync_env_overlay(current_map, changed_keys=[c["key"] for c in changed])
         return changed
 
     def list_history(
@@ -320,21 +327,43 @@ class AppSettingService:
         self,
         current_map: dict[str, str],
     ) -> None:
-        use_mock = parse_value(
+        """Kiwoom LIVE + shared MOCK catalog 조합 허용 (Option D)."""
+
+        # Option D: catalog 는 process SoT 가 아님.
+        # Kiwoom LIVE + shared MOCK 조합은 저장 허용 (주문 게이트는 별도).
+        parse_value(
             current_map.get("kiwoom_use_mock", "true"),
             "bool",
         )
-        live = parse_value(
+        parse_value(
             current_map.get(
                 "kiwoom_live_order_enabled", "false"
             ),
             "bool",
         )
-        if live and use_mock:
-            raise SettingError(
-                "kiwoom_live_order_enabled=true 와 "
-                "kiwoom_use_mock=true 는 함께 사용할 수 없습니다."
-            )
+
+    def _sync_env_overlay(
+        self,
+        current_map: dict[str, str],
+        *,
+        changed_keys: list[str],
+    ) -> None:
+        """변경된 env_attr 설정을 프로세스 env에 반영 후 Settings 캐시 무효화.
+
+        Dual LLM runtime은 get_settings()를 쓰므로 DB만 바꾸면 반영되지 않는다.
+        """
+
+        for key in changed_keys:
+            definition = DEFINITION_BY_KEY.get(key)
+            if definition is None or not definition.env_attr:
+                continue
+            value = current_map.get(key)
+            if value is None:
+                continue
+            # pydantic-settings: ANALYSIS_LLM_MODEL 등 대문자 env
+            os.environ[definition.env_attr.upper()] = str(value)
+        if changed_keys:
+            clear_settings_cache()
 
     def _to_view(
         self,

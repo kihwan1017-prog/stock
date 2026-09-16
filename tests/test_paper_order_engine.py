@@ -14,6 +14,7 @@ def test_create_and_fill_market_order() -> None:
     engine = PaperOrderEngine()
 
     order = engine.create_order(
+        account_id=1,
         exchange_code="KRX",
         symbol="005930",
         side=OrderSide.BUY,
@@ -51,6 +52,7 @@ def test_cancel_order() -> None:
     engine = PaperOrderEngine()
 
     order = engine.create_order(
+        account_id=1,
         exchange_code="UPBIT",
         symbol="KRW-BTC",
         side=OrderSide.BUY,

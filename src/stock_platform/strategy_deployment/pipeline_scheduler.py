@@ -25,11 +25,14 @@ class StrategyDeploymentPipelineScheduler:
         return self._scheduler
 
     def configure(self) -> None:
+        settings = get_settings()
         self._scheduler.add_job(
             self.run_after_market,
             trigger=CronTrigger(
+                day_of_week="mon-fri",
                 hour=16,
                 minute=20,
+                timezone=settings.scheduler_timezone,
             ),
             id="strategy_deployment_pipeline",
             replace_existing=True,

@@ -60,13 +60,20 @@ class DiscordNotificationSender(NotificationSender):
         client = self._client or httpx.AsyncClient(
             timeout=self._timeout_seconds
         )
-        content = (
-            f"**{notification.title}**\n"
-            f"{notification.message}\n"
-            f"```json\n"
-            f"{json.dumps(notification.detail, ensure_ascii=False, default=str)[:1500]}"
-            f"\n```"
-        )
+        title = notification.rendered_title or notification.title
+        body = notification.rendered_body or notification.message
+        content = f"**{title}**\n{body}"
+        if notification.include_raw_json:
+            payload = (
+                notification.original_payload
+                if notification.original_payload is not None
+                else notification.detail
+            )
+            content += (
+                f"\n```json\n"
+                f"{json.dumps(payload, ensure_ascii=False, default=str)[:1500]}"
+                f"\n```"
+            )
         try:
             response = await client.post(
                 self._webhook_url,

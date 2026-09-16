@@ -1,0 +1,651 @@
+"""STEP 8-3 — 전략 소유권·접근 검사."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import HTTPException, status
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
+
+from stock_platform.auth.account_ownership import (
+    assert_broker_account_access,
+    assert_paper_account_access,
+)
+from stock_platform.auth.deps import AuthenticatedUser
+from stock_platform.strategy_deployment.definition_entities import (
+    AccountStrategyLinkEntity,
+    StrategyDefinitionEntity,
+)
+
+
+class StrategyOwnershipError(ValueError):
+    """도메인 검증 오류."""
+
+
+_STOCK_MARKETS = frozenset({"KRX", "KOSPI", "KOSDAQ", "STOCK", "PAPER"})
+_CRYPTO_MARKETS = frozenset({"UPBIT", "CRYPTO", "KRW", "BTC", "PAPER_CRYPTO"})
+
+
+def market_compatible(*, market_type: str, account_broker: str) -> bool:
+    """주식/암호화폐 전략·계좌 호환성."""
+
+    mt = (market_type or "STOCK").upper()
+    broker = (account_broker or "").upper()
+    if mt == "ALL":
+        return True
+    if mt == "STOCK":
+        return broker in {
+            "KIWOOM",
+            "PAPER",
+            "PAPER_STOCK",
+            "KRX",
+        } or broker in _STOCK_MARKETS
+    if mt == "CRYPTO":
+        return broker in {"UPBIT", "PAPER_CRYPTO"} or broker in {
+            "UPBIT",
+            "CRYPTO",
+            "PAPER_CRYPTO",
+        }
+    return False
+
+
+def assert_strategy_readable(
+    user: AuthenticatedUser,
+    strategy: StrategyDefinitionEntity,
+) -> None:
+    """조회: 본인 개인 OR 공개(활성·미삭제)."""
+
+    if strategy.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+    if user.is_admin:
+        return
+    if (
+        strategy.owner_type == "USER"
+        and strategy.user_id is not None
+        and int(strategy.user_id) == int(user.user_id)
+    ):
+        return
+    if (
+        strategy.visibility == "PUBLIC"
+        and bool(strategy.is_active)
+    ):
+        return
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="해당 전략에 대한 권한이 없습니다.",
+    )
+
+
+def assert_strategy_not_draft_derived(strategy: StrategyDefinitionEntity) -> None:
+    """STEP12-3 — AI Strategy Draft 승인으로 생성된 행은 불변이다.
+
+    관리자 포함 누구도 STEP8-3의 범용 수정/승인/공개/활성 API로 직접
+    고칠 수 없다(수정이 필요하면 새 Draft/새 승인/새 Definition을
+    생성해야 한다 — 승인 후 불변 정책). 관리자 최종 승인(REVOKE)만
+    ai.strategy_draft_approval 도메인을 통해 is_active를 끌 수 있다.
+    """
+    # getattr 방어: 기존 STEP8-3 테스트가 SimpleNamespace 등 경량 fake로
+    # 이 함수를 호출하는 경우 신규 컬럼이 없을 수 있다 — 없으면 "AI Draft
+    # 유래가 아님"으로 안전하게 간주한다.
+    if getattr(strategy, "source_draft_id", None) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "AI Draft 승인으로 생성된 Strategy Definition은 불변입니다. "
+                "수정하려면 새 Draft 승인으로 새 Definition을 생성하세요."
+            ),
+        )
+
+
+def assert_strategy_writable(
+    user: AuthenticatedUser,
+    strategy: StrategyDefinitionEntity,
+) -> None:
+    """수정·삭제: 본인 USER 개인 전략만 (공개 원본·SYSTEM 불가)."""
+
+    if strategy.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Strategy not found",
+        )
+    assert_strategy_not_draft_derived(strategy)
+    if user.is_admin:
+        return
+    if strategy.owner_type != "USER":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="시스템·공개 전략 원본은 수정할 수 없습니다.",
+        )
+    if strategy.visibility == "PUBLIC":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="공개 전략 원본은 수정할 수 없습니다. 복제 후 사용하세요.",
+        )
+    if int(strategy.user_id or 0) != int(user.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="본인 전략만 수정·삭제할 수 있습니다.",
+        )
+
+
+def user_visible_filter(user: AuthenticatedUser):
+    """목록용 SQL 조건: 본인 OR 공개."""
+
+    return or_(
+        StrategyDefinitionEntity.user_id == int(user.user_id),
+        StrategyDefinitionEntity.visibility == "PUBLIC",
+    )
+
+
+class StrategyDefinitionService:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get(self, strategy_id: int) -> StrategyDefinitionEntity | None:
+        return self._session.get(StrategyDefinitionEntity, strategy_id)
+
+    def require(
+        self, strategy_id: int
+    ) -> StrategyDefinitionEntity:
+        row = self.get(strategy_id)
+        if row is None or row.deleted_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Strategy not found",
+            )
+        return row
+
+    def list_for_user(
+        self,
+        user: AuthenticatedUser,
+        *,
+        scope: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[StrategyDefinitionEntity]:
+        stmt = select(StrategyDefinitionEntity).where(
+            StrategyDefinitionEntity.deleted_at.is_(None)
+        )
+        if not user.is_admin:
+            stmt = stmt.where(user_visible_filter(user))
+            # 공개는 활성만, 본인 비활성 개인 전략은 조회 가능
+            stmt = stmt.where(
+                or_(
+                    StrategyDefinitionEntity.user_id == int(user.user_id),
+                    StrategyDefinitionEntity.is_active.is_(True),
+                )
+            )
+        scope_key = (scope or "").strip().upper()
+        if scope_key == "MINE":
+            stmt = stmt.where(
+                StrategyDefinitionEntity.owner_type == "USER",
+                StrategyDefinitionEntity.user_id == int(user.user_id),
+            )
+        elif scope_key == "PUBLIC":
+            stmt = stmt.where(
+                StrategyDefinitionEntity.visibility == "PUBLIC",
+                StrategyDefinitionEntity.is_active.is_(True),
+            )
+        return list(
+            self._session.scalars(
+                stmt.order_by(
+                    StrategyDefinitionEntity.strategy_id.desc()
+                )
+                .offset(offset)
+                .limit(limit)
+            )
+        )
+
+    def create_user_strategy(
+        self,
+        user: AuthenticatedUser,
+        *,
+        strategy_code: str,
+        name: str,
+        description: str | None,
+        market_type: str,
+        parameter_payload: dict[str, Any] | None,
+        actor: str,
+    ) -> StrategyDefinitionEntity:
+        # Body의 user_id/owner_type/visibility 는 신뢰하지 않음
+        code = strategy_code.strip()
+        if not code:
+            raise StrategyOwnershipError("strategy_code required")
+        mt = (market_type or "STOCK").strip().upper()
+        if mt not in {"STOCK", "CRYPTO", "ALL"}:
+            raise StrategyOwnershipError("invalid market_type")
+        row = StrategyDefinitionEntity(
+            strategy_code=code,
+            name=(name or code).strip(),
+            description=description,
+            market_type=mt,
+            owner_type="USER",
+            user_id=int(user.user_id),
+            visibility="PRIVATE",
+            is_active=False,
+            parameter_payload=dict(parameter_payload or {}),
+            created_by=actor,
+            updated_by=actor,
+        )
+        self._session.add(row)
+        self._session.flush()
+        return row
+
+    def update_user_strategy(
+        self,
+        user: AuthenticatedUser,
+        strategy_id: int,
+        *,
+        payload: dict[str, Any],
+        actor: str,
+    ) -> StrategyDefinitionEntity:
+        row = self.require(strategy_id)
+        assert_strategy_writable(user, row)
+        for key in (
+            "name",
+            "description",
+            "market_type",
+            "parameter_payload",
+            "is_active",
+        ):
+            if key in payload and payload[key] is not None:
+                if key == "market_type":
+                    mt = str(payload[key]).upper()
+                    if mt not in {"STOCK", "CRYPTO", "ALL"}:
+                        raise StrategyOwnershipError("invalid market_type")
+                    row.market_type = mt
+                else:
+                    setattr(row, key, payload[key])
+        # 소유·공개 강제 유지
+        row.owner_type = "USER"
+        row.user_id = int(user.user_id) if not user.is_admin else row.user_id
+        if not user.is_admin:
+            row.visibility = "PRIVATE"
+        row.updated_by = actor
+        self._session.flush()
+        return row
+
+    def soft_delete_user_strategy(
+        self,
+        user: AuthenticatedUser,
+        strategy_id: int,
+        *,
+        actor: str,
+    ) -> StrategyDefinitionEntity:
+        row = self.require(strategy_id)
+        assert_strategy_writable(user, row)
+        # 활성 계좌 연결 있으면 차단
+        active_links = self._session.scalar(
+            select(AccountStrategyLinkEntity).where(
+                AccountStrategyLinkEntity.strategy_id == strategy_id,
+                AccountStrategyLinkEntity.is_active.is_(True),
+            ).limit(1)
+        )
+        if active_links is not None:
+            raise StrategyOwnershipError(
+                "활성 계좌 연결이 있어 삭제할 수 없습니다. 연결 해제 후 삭제하세요."
+            )
+        if row.visibility == "PUBLIC" and not user.is_admin:
+            raise StrategyOwnershipError(
+                "공개 전략은 사용자가 삭제할 수 없습니다."
+            )
+        row.is_active = False
+        row.deleted_at = datetime.now(timezone.utc)
+        row.updated_by = actor
+        self._session.flush()
+        return row
+
+    def clone_strategy(
+        self,
+        user: AuthenticatedUser,
+        strategy_id: int,
+        *,
+        actor: str,
+        name: str | None = None,
+        for_user_id: int | None = None,
+    ) -> StrategyDefinitionEntity:
+        source = self.require(strategy_id)
+        assert_strategy_readable(user, source)
+        if for_user_id is not None and not user.is_admin:
+            raise StrategyOwnershipError(
+                "for_user_id 는 관리자만 지정할 수 있습니다."
+            )
+        owner_user_id = (
+            int(for_user_id) if for_user_id is not None else int(user.user_id)
+        )
+        if owner_user_id <= 0:
+            raise StrategyOwnershipError("for_user_id 가 올바르지 않습니다.")
+        # 공개 또는 본인(관리자는 타 사용자 대상 복제)만 복제
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        clone = StrategyDefinitionEntity(
+            strategy_code=f"{source.strategy_code}_COPY_{owner_user_id}_{stamp}",
+            name=name or f"{source.name} (복사)",
+            description=source.description,
+            market_type=source.market_type,
+            owner_type="USER",
+            user_id=owner_user_id,
+            visibility="PRIVATE",
+            is_active=False,
+            parameter_payload=dict(source.parameter_payload or {}),
+            created_by=actor,
+            updated_by=actor,
+            approved_by=None,
+            approved_at=None,
+            published_by=None,
+            published_at=None,
+            source_strategy_id=int(source.strategy_id),
+            # 원본 Draft 행을 복제하지 않는다(불변 Snapshot 단일성).
+            # 요청/후보/승인/해시는 출처 추적용으로만 복사한다.
+            source_draft_id=None,
+            strategy_request_id=getattr(source, "strategy_request_id", None),
+            candidate_id=getattr(source, "candidate_id", None),
+            candidate_fingerprint=getattr(source, "candidate_fingerprint", None),
+            approval_id=getattr(source, "approval_id", None),
+            schema_version=getattr(source, "schema_version", None),
+            definition_version=getattr(source, "definition_version", None),
+            definition_hash=getattr(source, "definition_hash", None),
+        )
+        self._session.add(clone)
+        self._session.flush()
+        return clone
+
+    def clone_strategy_for_symbol(
+        self,
+        user: AuthenticatedUser,
+        strategy_id: int,
+        *,
+        symbol: str,
+        actor: str,
+        for_user_id: int | None = None,
+        name: str | None = None,
+    ) -> StrategyDefinitionEntity:
+        """심볼 전용 복제. 원본 payload/evidence를 새 심볼 PASS로 상속하지 않는다."""
+
+        from stock_platform.ai.strategy_draft_approval.constants import (
+            DEFINITION_SCHEMA_VERSION,
+        )
+        from stock_platform.strategy_deployment.symbol_payload import (
+            canonical_step12_payload_from_ma_semantics,
+            normalize_upbit_symbol,
+        )
+
+        source = self.require(strategy_id)
+        if str(source.market_type or "").upper() != "CRYPTO":
+            raise StrategyOwnershipError(
+                "symbol clone is CRYPTO/UPBIT template only"
+            )
+        target = normalize_upbit_symbol(symbol)
+        clone = self.clone_strategy(
+            user,
+            strategy_id,
+            actor=actor,
+            name=name or f"UPBIT MA Crossover {target}",
+            for_user_id=for_user_id,
+        )
+        clone.parameter_payload = canonical_step12_payload_from_ma_semantics(
+            source.parameter_payload,
+            symbol=target,
+        )
+        # 신규 심볼은 template semantics만 재사용. XRP/원본 provenance 비상속.
+        clone.strategy_request_id = None
+        clone.candidate_id = None
+        clone.candidate_fingerprint = None
+        clone.approval_id = None
+        clone.definition_hash = None
+        clone.approved_at = None
+        clone.approved_by = None
+        clone.is_active = False
+        clone.schema_version = source.schema_version or DEFINITION_SCHEMA_VERSION
+        if getattr(clone, "definition_version", None) is None:
+            clone.definition_version = 1
+        self._session.flush()
+        return clone
+
+    def evaluate_link_eligibility(
+        self,
+        user: AuthenticatedUser,
+        *,
+        strategy_id: int,
+        user_broker_account_id: int | None,
+        paper_account_id: int | None,
+        account_broker: str,
+    ) -> dict[str, Any]:
+        """계좌 연결 가능 여부만 판정한다. Link 행을 만들지 않는다."""
+
+        strategy = self.require(strategy_id)
+        accessible = True
+        access_reason: str | None = None
+        try:
+            assert_strategy_readable(user, strategy)
+        except HTTPException as exc:
+            accessible = False
+            access_reason = str(exc.detail)
+        market_ok = market_compatible(
+            market_type=strategy.market_type,
+            account_broker=account_broker,
+        )
+        blockers: list[str] = []
+        if not accessible:
+            blockers.append("STRATEGY_NOT_ACCESSIBLE")
+        if not strategy.is_active:
+            blockers.append("STRATEGY_INACTIVE")
+        if (
+            strategy.visibility == "PUBLIC"
+            and strategy.owner_type == "USER"
+            and strategy.approved_at is None
+        ):
+            blockers.append("PUBLIC_USER_UNAPPROVED")
+        if not market_ok:
+            blockers.append("MARKET_BROKER_INCOMPATIBLE")
+        live_eligible = False
+        return {
+            "strategy_id": int(strategy.strategy_id),
+            "owner_user_id": strategy.user_id,
+            "visibility": strategy.visibility,
+            "is_active": bool(strategy.is_active),
+            "approved_at": (
+                strategy.approved_at.isoformat()
+                if strategy.approved_at
+                else None
+            ),
+            "accessible": accessible,
+            "access_reason": access_reason,
+            "market_compatible": market_ok,
+            "broker": account_broker.upper(),
+            "user_broker_account_id": user_broker_account_id,
+            "paper_account_id": paper_account_id,
+            "link_eligible": len(blockers) == 0,
+            "blockers": blockers,
+            "live_eligible": live_eligible,
+            "link_created": False,
+        }
+
+    def link_to_account(
+        self,
+        user: AuthenticatedUser,
+        *,
+        strategy_id: int,
+        paper_account_id: int | None,
+        user_broker_account_id: int | None,
+        account_broker: str,
+        actor: str,
+    ) -> AccountStrategyLinkEntity:
+        strategy = self.require(strategy_id)
+        assert_strategy_readable(user, strategy)
+        # 비활성·삭제 전략 연결 차단 (SYSTEM backfill은 is_active=true)
+        if not strategy.is_active:
+            raise StrategyOwnershipError("비활성 전략은 연결할 수 없습니다.")
+        # USER가 PUBLIC으로 올린 미승인 전략 연결 차단
+        if (
+            strategy.visibility == "PUBLIC"
+            and strategy.owner_type == "USER"
+            and strategy.approved_at is None
+        ):
+            raise StrategyOwnershipError(
+                "미승인 공개 전략은 계좌에 연결할 수 없습니다."
+            )
+
+        if not market_compatible(
+            market_type=strategy.market_type,
+            account_broker=account_broker,
+        ):
+            raise StrategyOwnershipError(
+                "전략 시장 유형과 계좌 브로커가 호환되지 않습니다."
+            )
+
+        if paper_account_id is not None:
+            assert_paper_account_access(
+                user, paper_account_id, self._session
+            )
+            uba_id = None
+            pid = paper_account_id
+        elif user_broker_account_id is not None:
+            assert_broker_account_access(
+                user, user_broker_account_id, self._session
+            )
+            pid = None
+            uba_id = user_broker_account_id
+        else:
+            raise StrategyOwnershipError(
+                "paper_account_id 또는 user_broker_account_id 필요"
+            )
+
+        # 전략 접근: 본인 OR PUBLIC (이미 readable)
+        link = AccountStrategyLinkEntity(
+            strategy_id=int(strategy.strategy_id),
+            user_id=int(user.user_id),
+            paper_account_id=pid,
+            user_broker_account_id=uba_id,
+            is_active=True,
+            created_by=actor,
+        )
+        self._session.add(link)
+        self._session.flush()
+        return link
+
+    def unlink(
+        self,
+        user: AuthenticatedUser,
+        *,
+        strategy_id: int,
+        paper_account_id: int | None,
+        user_broker_account_id: int | None,
+    ) -> None:
+        stmt = select(AccountStrategyLinkEntity).where(
+            AccountStrategyLinkEntity.strategy_id == strategy_id,
+            AccountStrategyLinkEntity.user_id == int(user.user_id),
+            AccountStrategyLinkEntity.is_active.is_(True),
+        )
+        if paper_account_id is not None:
+            stmt = stmt.where(
+                AccountStrategyLinkEntity.paper_account_id
+                == paper_account_id
+            )
+        if user_broker_account_id is not None:
+            stmt = stmt.where(
+                AccountStrategyLinkEntity.user_broker_account_id
+                == user_broker_account_id
+            )
+        row = self._session.scalar(stmt.limit(1))
+        if row is None:
+            raise HTTPException(status_code=404, detail="Link not found")
+        row.is_active = False
+        self._session.flush()
+
+    # ---- ADMIN ----
+    def admin_set_visibility(
+        self,
+        strategy_id: int,
+        *,
+        visibility: str,
+        actor: str,
+    ) -> StrategyDefinitionEntity:
+        row = self.require(strategy_id)
+        assert_strategy_not_draft_derived(row)
+        vis = visibility.upper()
+        if vis not in {"PRIVATE", "PUBLIC"}:
+            raise StrategyOwnershipError("invalid visibility")
+        row.visibility = vis
+        if vis == "PUBLIC":
+            row.published_by = actor
+            row.published_at = datetime.now(timezone.utc)
+            row.is_active = True
+        else:
+            row.published_by = None
+            row.published_at = None
+        row.updated_by = actor
+        self._session.flush()
+        return row
+
+    def admin_approve(
+        self,
+        strategy_id: int,
+        *,
+        actor: str,
+        approve: bool,
+    ) -> StrategyDefinitionEntity:
+        row = self.require(strategy_id)
+        assert_strategy_not_draft_derived(row)
+        if approve:
+            row.approved_by = actor
+            row.approved_at = datetime.now(timezone.utc)
+        else:
+            row.approved_by = None
+            row.approved_at = None
+            if row.visibility == "PUBLIC":
+                row.visibility = "PRIVATE"
+        row.updated_by = actor
+        self._session.flush()
+        return row
+
+    def admin_set_active(
+        self,
+        strategy_id: int,
+        *,
+        is_active: bool,
+        actor: str,
+    ) -> StrategyDefinitionEntity:
+        row = self.require(strategy_id)
+        assert_strategy_not_draft_derived(row)
+        row.is_active = is_active
+        row.updated_by = actor
+        self._session.flush()
+        return row
+
+    def as_dict(self, row: StrategyDefinitionEntity) -> dict[str, Any]:
+        return {
+            "strategy_id": int(row.strategy_id),
+            "strategy_code": row.strategy_code,
+            "name": row.name,
+            "description": row.description,
+            "market_type": row.market_type,
+            "owner_type": row.owner_type,
+            "user_id": row.user_id,
+            "visibility": row.visibility,
+            "is_active": bool(row.is_active),
+            "parameter_payload": row.parameter_payload or {},
+            "created_by": row.created_by,
+            "updated_by": row.updated_by,
+            "approved_by": row.approved_by,
+            "approved_at": row.approved_at,
+            "published_by": row.published_by,
+            "published_at": row.published_at,
+            "source_strategy_id": row.source_strategy_id,
+            "source_draft_id": row.source_draft_id,
+            "source_draft_version": row.source_draft_version,
+            "source_draft_revision": row.source_draft_revision,
+            "strategy_request_id": row.strategy_request_id,
+            "candidate_id": row.candidate_id,
+            "candidate_fingerprint": row.candidate_fingerprint,
+            "approval_id": row.approval_id,
+            "schema_version": row.schema_version,
+            "definition_version": row.definition_version,
+            "definition_hash": row.definition_hash,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }

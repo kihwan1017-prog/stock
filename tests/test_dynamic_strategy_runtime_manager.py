@@ -1,30 +1,29 @@
+"""STEP 8-5-5 — DynamicStrategyRuntimeManager (전역 슬롯 제거)."""
+
 import asyncio
-from types import SimpleNamespace
 
 from stock_platform.strategy_deployment.runtime_manager import (
     DynamicStrategyRuntimeManager,
+    RuntimeScopeRequiredError,
 )
-from stock_platform.strategy_deployment.runtime_models import (
-    LoadedStrategyRuntime,
-)
+import pytest
 
 
 def test_status_is_empty_initially() -> None:
     manager = DynamicStrategyRuntimeManager()
-
     status = manager.status()
-
     assert status["loaded"] is False
     assert status["runtime"] is None
+    assert status["global_slot_removed"] is True
 
 
-def test_clear_removes_loaded_strategy() -> None:
+def test_clear_all_scopes() -> None:
     manager = DynamicStrategyRuntimeManager()
-    manager._runtime = SimpleNamespace(
-        deployment_id=1
-    )
-    manager._strategy = object()
-
     asyncio.run(manager.clear())
+    assert manager.status()["scoped_runtime_count"] == 0
 
-    assert manager.status()["loaded"] is False
+
+def test_get_strategy_requires_scope() -> None:
+    manager = DynamicStrategyRuntimeManager()
+    with pytest.raises(RuntimeScopeRequiredError):
+        manager.get_strategy()

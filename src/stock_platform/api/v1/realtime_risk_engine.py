@@ -1,7 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 
 from stock_platform.risk_engine.models import (
@@ -18,6 +19,7 @@ from stock_platform.risk_engine.runtime import (
 router = APIRouter(
     prefix="/api/v1/realtime-risk",
     tags=["Realtime Risk Engine"],
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -60,8 +62,9 @@ def check_realtime_risk(
                 side=request.side,
                 quantity=request.quantity,
                 price=request.price,
-                account_id=request.account_id,
                 requested_at=request.requested_at,
+                account_id=request.account_id,
+                environment="PAPER",
             ),
             account=RiskAccountState(
                 cash_balance=request.cash_balance,

@@ -23,6 +23,8 @@ from stock_platform.strategy_deployment.policy_repository import (
 router = APIRouter(
     prefix="/api/v1/strategy-policy",
     tags=["Strategy Approval Policy"],
+    # 정책 평가/강제배포는 운영 민감 — 라우터 단위 admin 게이트
+    dependencies=[Depends(require_admin)],
 )
 
 
@@ -36,7 +38,7 @@ class EvaluateStrategyPolicyRequest(BaseModel):
         max_length=30,
     )
     requested_by: str = Field(
-        default="operator",
+        default="admin",
         min_length=1,
         max_length=100,
     )
@@ -59,6 +61,7 @@ class StrategyPolicyActionRequest(BaseModel):
 def evaluate_strategy_policy(
     request: EvaluateStrategyPolicyRequest,
     session: Session = Depends(get_db_session),
+    # require_admin은 라우터 dependencies로 적용
 ):
     try:
         return StrategyAutoDeploymentService(
@@ -80,7 +83,6 @@ def evaluate_strategy_policy(
 def force_strategy_deployment(
     approval_run_id: int,
     request: StrategyPolicyActionRequest,
-    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:
@@ -101,7 +103,6 @@ def force_strategy_deployment(
 def reject_strategy_policy(
     approval_run_id: int,
     request: StrategyPolicyActionRequest,
-    _: str = Depends(require_admin),
     session: Session = Depends(get_db_session),
 ):
     try:

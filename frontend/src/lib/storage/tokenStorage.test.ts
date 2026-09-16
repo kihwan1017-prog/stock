@@ -33,4 +33,11 @@ describe("tokenStorage", () => {
     clearToken();
     expect(getToken()).toBeNull();
   });
+
+  it("never writes access token to localStorage", () => {
+    localStorage.clear();
+    setToken("access-token");
+    expect(localStorage.getItem(tokenStorageKey)).toBeNull();
+    expect(sessionStorage.getItem(tokenStorageKey)).toBe("access-token");
+  });
 });

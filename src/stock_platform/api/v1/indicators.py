@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from stock_platform.api.deps_admin import require_admin
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -39,6 +40,7 @@ from stock_platform.operation.job_service import (
 router = APIRouter(
     prefix="/api/v1/indicators",
     tags=["Indicators"],
+    dependencies=[Depends(require_admin)],
 )
 
 

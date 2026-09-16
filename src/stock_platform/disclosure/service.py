@@ -153,14 +153,22 @@ class DartDisclosureService:
         start_date: date,
         end_date: date,
         resume: bool = True,
+        auto_sync_corps: bool = True,
     ) -> DartSyncResult:
         if self._corp_repository is None:
             raise RuntimeError("corp_repository is required")
 
-        corp = self._corp_repository.find_by_stock_code(stock_code)
+        normalized = stock_code.strip().upper()
+        corp = self._corp_repository.find_by_stock_code(normalized)
+        # 법인 마스터가 비어 있으면 한 번 동기화 후 재조회
+        if corp is None and auto_sync_corps:
+            await self.sync_corp_codes()
+            corp = self._corp_repository.find_by_stock_code(normalized)
+
         if corp is None:
             raise LookupError(
-                f"DART corp not found for stock_code={stock_code}"
+                f"DART corp not found for stock_code={normalized}. "
+                "먼저 POST /api/v1/dart/corps/sync 로 법인코드를 동기화하세요."
             )
 
         return await self.sync(

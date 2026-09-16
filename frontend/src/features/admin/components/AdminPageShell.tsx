@@ -13,6 +13,8 @@ interface AdminPageShellProps {
   description?: string;
   extra?: ReactNode;
   children: ReactNode;
+  homeHref?: string;
+  homeLabel?: string;
 }
 
 export function AdminPageShell({
@@ -20,6 +22,8 @@ export function AdminPageShell({
   description,
   extra,
   children,
+  homeHref = "/admin/dashboard",
+  homeLabel = "Admin",
 }: AdminPageShellProps) {
   const pathname = usePathname();
 
@@ -32,7 +36,7 @@ export function AdminPageShell({
       <Breadcrumb
         style={{ marginBottom: 16 }}
         items={[
-          { title: <Link href="/admin/dashboard">Admin</Link> },
+          { title: <Link href={homeHref}>{homeLabel}</Link> },
           { title: getRouteTitle(pathname) || title },
         ]}
       />

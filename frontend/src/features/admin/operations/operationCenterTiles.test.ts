@@ -19,7 +19,19 @@ describe("STEP51 operation center tiles", () => {
         "telegram",
         "ollama",
         "restore",
+        "runtime",
+        "recovery",
+        "risk",
+        "orders",
       ]),
     );
+  });
+
+  it("시스템 모니터링과 거래 운영 현황 타일은 서로 다른 href다", () => {
+    const health = OPERATION_CENTER_TILES.find((tile) => tile.id === "health");
+    const monitor = OPERATION_CENTER_TILES.find((tile) => tile.id === "monitor");
+    expect(health?.href).toBe("/admin/monitoring");
+    expect(monitor?.href).toBe("/admin/operations-dashboard");
+    expect(health?.href).not.toBe(monitor?.href);
   });
 });

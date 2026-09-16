@@ -13,3 +13,6 @@ class OutboxStatus(StrEnum):
     RETRY = "RETRY"
     DONE = "DONE"
     FAILED = "FAILED"
+    # STEP 8-5-22 — Fencing / Ambiguous (자동 재전송 금지)
+    AMBIGUOUS = "AMBIGUOUS"
+    MANUAL_REVIEW = "MANUAL_REVIEW"

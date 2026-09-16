@@ -44,10 +44,16 @@ class RealtimeDashboardService:
     async def build(
         self,
         *,
-        account_id: int = 1,
+        account_id: int | None = None,
         recent_limit: int = 20,
     ) -> RealtimeDashboardSnapshot:
-        if account_id <= 0:
+        # 미지정 시 설정 기본 계좌 (하드코딩 1 제거)
+        resolved_account_id = (
+            account_id
+            if account_id is not None
+            else self._settings.realtime_paper_account_id
+        )
+        if resolved_account_id <= 0:
             raise ValueError(
                 "account_id must be greater than zero"
             )
@@ -78,6 +84,73 @@ class RealtimeDashboardService:
             "execution": (
                 realtime_execution_runner.status()
             ),
+            "auto_start_flags": {
+                "master": bool(
+                    getattr(
+                        self._settings,
+                        "realtime_execution_auto_start_enabled",
+                        False,
+                    )
+                ),
+                "paper": bool(
+                    getattr(
+                        self._settings,
+                        "realtime_paper_auto_start_enabled",
+                        False,
+                    )
+                ),
+                "live": bool(
+                    getattr(
+                        self._settings,
+                        "realtime_live_auto_start_enabled",
+                        False,
+                    )
+                ),
+                "kiwoom_live_order": bool(
+                    getattr(
+                        self._settings,
+                        "kiwoom_live_order_enabled",
+                        False,
+                    )
+                ),
+                "upbit_live_order": bool(
+                    getattr(
+                        self._settings,
+                        "upbit_live_order_enabled",
+                        False,
+                    )
+                ),
+                "paper_outbox_auto_fill": bool(
+                    getattr(
+                        self._settings,
+                        "paper_outbox_auto_fill",
+                        False,
+                    )
+                ),
+                "paper_outbox_worker_enabled": bool(
+                    getattr(
+                        self._settings,
+                        "paper_outbox_worker_enabled",
+                        False,
+                    )
+                ),
+                "paper_fill_recovery_enabled": bool(
+                    getattr(
+                        self._settings,
+                        "paper_fill_recovery_enabled",
+                        False,
+                    )
+                ),
+                "paper_price_feed_enabled": bool(
+                    getattr(
+                        self._settings,
+                        "paper_price_feed_enabled",
+                        False,
+                    )
+                ),
+            },
+            "paper_unattended": self._paper_unattended_status(),
+            "live_autotrading": self._live_autotrading_status(),
             "safety": {
                 "daily_realized_loss": str(
                     realtime_safety_guard
@@ -87,11 +160,11 @@ class RealtimeDashboardService:
         }
 
         account = self._account_summary(
-            account_id=account_id
+            account_id=resolved_account_id
         )
 
         trading = self._trading_summary(
-            account_id=account_id,
+            account_id=resolved_account_id,
             recent_limit=recent_limit,
         )
 
@@ -121,6 +194,210 @@ class RealtimeDashboardService:
                 limit=recent_limit
             ),
         )
+
+    def _live_autotrading_status(self) -> dict[str, Any]:
+        """LIVE Runtime / Order / Recovery / Broker WS 요약."""
+
+        from stock_platform.realtime.execution_models import (
+            RealtimeExecutionMode,
+        )
+        from stock_platform.realtime.live_runtime_control import (
+            live_auto_start_allowed,
+            live_order_flags_ready,
+        )
+
+        mode = str(realtime_execution_runner._config.mode)
+        uba = getattr(
+            realtime_execution_runner._config,
+            "user_broker_account_id",
+            None,
+        )
+        gate = live_auto_start_allowed(allow_live=True)
+        kiwoom_ws: dict[str, Any] = {"running": False}
+        try:
+            from stock_platform.broker.kiwoom.ws_manager import (
+                kiwoom_order_websocket_manager,
+            )
+
+            kiwoom_ws = kiwoom_order_websocket_manager.status()
+        except Exception:  # noqa: BLE001
+            pass
+
+        live_orders = 0
+        live_stalled = 0
+        try:
+            live_orders = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.trading_order
+                        WHERE metadata_payload->>'environment' = 'LIVE'
+                          AND created_at >= NOW() - INTERVAL '1 day'
+                        """
+                    )
+                ).scalar_one()
+            )
+            live_stalled = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.trading_order
+                        WHERE metadata_payload->>'environment' = 'LIVE'
+                          AND status_code IN ('ACCEPTED', 'PENDING', 'SUBMITTING')
+                          AND updated_at < NOW() - INTERVAL '5 minutes'
+                        """
+                    )
+                ).scalar_one()
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        recovery_paused = 0
+        try:
+            recovery_paused = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM operation.broker_recovery_account_state
+                        WHERE trading_paused IS TRUE
+                        """
+                    )
+                ).scalar_one()
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+        return {
+            "execution_mode": mode,
+            "is_live_mode": mode == RealtimeExecutionMode.LIVE.value,
+            "runner_running": bool(
+                realtime_execution_runner.status().get("running")
+            ),
+            "user_broker_account_id": uba,
+            "order_flags_ready": live_order_flags_ready(self._settings),
+            "auto_start_gate": gate,
+            "kiwoom_order_ws": {
+                "running": bool(kiwoom_ws.get("running")),
+                "connected": bool(kiwoom_ws.get("connected")),
+            },
+            "live_orders_24h": live_orders,
+            "live_stalled_orders": live_stalled,
+            "recovery_paused_accounts": recovery_paused,
+            "shadow_mode_enabled": bool(
+                getattr(self._settings, "live_shadow_mode_enabled", False)
+            ),
+            "dry_run_mode_enabled": bool(
+                getattr(self._settings, "live_order_dry_run_enabled", False)
+            ),
+            "upbit": self._upbit_live_ops_slice(),
+            "integrated_lifecycle": self._integrated_lifecycle_slice(),
+        }
+
+    def _integrated_lifecycle_slice(self) -> dict[str, Any]:
+        try:
+            from stock_platform.realtime.integrated_runtime_lifecycle import (
+                lifecycle_monitoring_snapshot,
+            )
+
+            return lifecycle_monitoring_snapshot()
+        except Exception as exc:  # noqa: BLE001
+            return {"error": type(exc).__name__}
+
+    def _upbit_live_ops_slice(self) -> dict[str, Any]:
+        """Upbit 시세 WS·원장·Recovery 요약 (실주문 호출 없음)."""
+
+        quote_ws: dict[str, Any] = {"running": False}
+        try:
+            clients = getattr(realtime_manager, "_clients", {}) or {}
+            upbit_obj = clients.get("UPBIT")
+            upbit = upbit_obj.status() if upbit_obj is not None else {}
+            quote_ws = {
+                "running": bool(upbit_obj),
+                "connected": bool(upbit.get("connected")),
+                "received_count": upbit.get("received_count"),
+                "reconnect_count": upbit.get("reconnect_count"),
+                "last_error": upbit.get("last_error"),
+            }
+        except Exception:  # noqa: BLE001
+            pass
+
+        pipeline: dict[str, Any] = {}
+        try:
+            from stock_platform.trading.upbit_live_pipeline_readiness import (
+                UpbitLivePipelineReadinessService,
+            )
+
+            pipeline = UpbitLivePipelineReadinessService(
+                self._session
+            ).evaluate()
+        except Exception as exc:  # noqa: BLE001
+            pipeline = {"error": type(exc).__name__}
+
+        return {
+            "quote_ws": quote_ws,
+            "pipeline_ops_ready": bool(pipeline.get("ops_ready")),
+            "pipeline_blockers": pipeline.get("blockers") or [],
+            "pipeline_warnings": pipeline.get("warnings") or [],
+            "candidate_path": (
+                (pipeline.get("checks") or {})
+                .get("modes", {})
+                .get("candidate_path")
+            ),
+            "hooks": (pipeline.get("checks") or {}).get("hooks"),
+            "recent_candidates_24h": (
+                (pipeline.get("checks") or {}).get("recent_candidates_24h")
+            ),
+        }
+
+    def _paper_unattended_status(self) -> dict[str, Any]:
+        from stock_platform.order.paper_unattended_runtime import (
+            paper_fill_recovery_scheduler,
+            paper_outbox_worker_runtime,
+        )
+        from stock_platform.realtime.paper_price_feed import paper_price_feed
+
+        pending = 0
+        stalled = 0
+        try:
+            pending = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.order_outbox o
+                        WHERE o.status_code IN ('PENDING', 'RETRY')
+                          AND o.user_broker_account_id IS NULL
+                          AND COALESCE(
+                            o.payload_json->>'environment', 'PAPER'
+                          ) <> 'LIVE'
+                        """
+                    )
+                ).scalar_one()
+            )
+            stalled = int(
+                self._session.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM trading.trading_order t
+                        WHERE t.status_code = 'ACCEPTED'
+                          AND t.user_broker_account_id IS NULL
+                          AND COALESCE(
+                            t.metadata_payload->>'environment', 'PAPER'
+                          ) <> 'LIVE'
+                        """
+                    )
+                ).scalar_one()
+            )
+        except Exception:  # noqa: BLE001
+            self._session.rollback()
+
+        return {
+            "runner": realtime_execution_runner.status(),
+            "outbox_worker": paper_outbox_worker_runtime.status(),
+            "fill_recovery": paper_fill_recovery_scheduler.status(),
+            "price_feed": paper_price_feed.status(),
+            "pending_outbox_count": pending,
+            "stalled_accepted_count": stalled,
+        }
 
     def _database_status(self) -> dict[str, Any]:
         try:

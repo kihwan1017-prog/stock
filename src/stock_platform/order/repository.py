@@ -17,15 +17,33 @@ class TradingOrderRepository:
     def __init__(self, session: Session):
         self.session = session
 
-    def create(self, command: CreateOrderCommand, client_order_id: str, actor: str = "SYSTEM"):
+    def create(
+        self,
+        command: CreateOrderCommand,
+        client_order_id: str,
+        actor: str = "SYSTEM",
+        *,
+        commit: bool = True,
+    ):
+        """주문 생성. commit=False면 Outbox와 동일 트랜잭션에 묶을 수 있다."""
+
         entity = TradingOrderEntity(
             client_order_id=client_order_id,
             account_id=command.account_id,
+            user_broker_account_id=command.user_broker_account_id,
             broker_code=command.broker_code.upper(),
             exchange_code=command.exchange_code.upper(),
             symbol=command.symbol.upper(),
             strategy_code=command.strategy_code,
             strategy_deployment_id=command.strategy_deployment_id,
+            strategy_id=command.strategy_id,
+            strategy_version=command.strategy_version,
+            runtime_scope_hash=command.runtime_scope_hash,
+            account_strategy_link_id=command.account_strategy_link_id,
+            user_id=command.user_id,
+            execution_mode=(
+                (command.execution_mode or "").strip().upper() or None
+            ),
             portfolio_id=command.portfolio_id,
             position_id=command.position_id,
             side_code=command.side.value,
@@ -50,8 +68,10 @@ class TradingOrderRepository:
             actor=actor,
             detail_payload={},
         ))
-        self.session.commit()
-        self.session.refresh(entity)
+        self.session.flush()
+        if commit:
+            self.session.commit()
+            self.session.refresh(entity)
         return entity
 
     def get(self, order_id: int):
@@ -69,15 +89,21 @@ class TradingOrderRepository:
         *,
         broker_code: str,
         broker_order_id: str,
+        user_broker_account_id: int | None = None,
     ):
-        return self.session.scalar(
-            select(TradingOrderEntity).where(
-                TradingOrderEntity.broker_code
-                == broker_code.upper(),
-                TradingOrderEntity.broker_order_id
-                == broker_order_id,
-            )
+        stmt = select(TradingOrderEntity).where(
+            TradingOrderEntity.broker_code
+            == broker_code.upper(),
+            TradingOrderEntity.broker_order_id
+            == broker_order_id,
         )
+        # 계좌 격리: UBA가 있으면 동일 외부번호라도 계좌별로 구분
+        if user_broker_account_id is not None:
+            stmt = stmt.where(
+                TradingOrderEntity.user_broker_account_id
+                == user_broker_account_id
+            )
+        return self.session.scalar(stmt)
 
     def list_stale_open_orders(
         self,
@@ -105,12 +131,31 @@ class TradingOrderRepository:
         )
         return list(self.session.scalars(stmt))
 
-    def list(self, account_id=None, status_code=None, exchange_code=None, symbol=None, limit=100, offset=0):
+    def list(
+        self,
+        account_id=None,
+        status_code=None,
+        exchange_code=None,
+        symbol=None,
+        limit=100,
+        offset=0,
+        broker_code=None,
+        user_broker_account_id=None,
+    ):
         stmt = select(TradingOrderEntity)
         if account_id is not None:
             stmt = stmt.where(TradingOrderEntity.account_id == account_id)
+        if user_broker_account_id is not None:
+            stmt = stmt.where(
+                TradingOrderEntity.user_broker_account_id
+                == user_broker_account_id
+            )
         if status_code:
             stmt = stmt.where(TradingOrderEntity.status_code == status_code.upper())
+        if broker_code:
+            stmt = stmt.where(
+                TradingOrderEntity.broker_code == broker_code.upper()
+            )
         if exchange_code:
             stmt = stmt.where(TradingOrderEntity.exchange_code == exchange_code.upper())
         if symbol:
