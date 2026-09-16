@@ -14,6 +14,14 @@ import os
 import pytest
 
 
+def pytest_sessionstart(session: pytest.Session) -> None:
+    """production DB에 pytest가 쓰기 전에 FAIL FAST. 우회 스위치 없음."""
+
+    from tests.prod_test_guard import guard_pytest_session
+
+    guard_pytest_session()
+
+
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
         "markers",
