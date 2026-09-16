@@ -127,7 +127,19 @@ def migration_at_head(session: Session) -> bool:
         if not head:
             return True
         conn = session.connection()
-        context = MigrationContext.configure(conn)
+        # env.py 와 동일: version table 은 public 이 아니라 operation 스키마
+        try:
+            from database.alembic.bootstrap import ALEMBIC_VERSION_SCHEMA
+        except ImportError:  # uvicorn --app-dir src 등에서 database 패키지 미포함
+            ALEMBIC_VERSION_SCHEMA = "operation"
+
+        context = MigrationContext.configure(
+            conn,
+            opts={
+                "version_table": "alembic_version",
+                "version_table_schema": ALEMBIC_VERSION_SCHEMA,
+            },
+        )
         current = context.get_current_revision()
         return current == head
     except Exception as exc:  # noqa: BLE001
