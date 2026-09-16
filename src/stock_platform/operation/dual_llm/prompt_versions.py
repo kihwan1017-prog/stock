@@ -24,6 +24,7 @@ DUAL_SCHEMA_VERSIONS = frozenset(
 # Market-aware prompts — overwrite 금지, 새 버전만 추가
 ANALYSIS_UPBIT_PROMPT_V1 = "analysis_upbit_prompt_v1"
 TRADING_UPBIT_PROMPT_V1 = "trading_upbit_prompt_v1"
+TRADING_UPBIT_PROMPT_V2 = "trading_upbit_prompt_v2"
 TEACHER_UPBIT_PROMPT_V1 = "teacher_upbit_prompt_v1"
 
 ANALYSIS_KIWOOM_PROMPT_V1 = "analysis_kiwoom_prompt_v1"
@@ -32,7 +33,7 @@ TEACHER_KIWOOM_PROMPT_V1 = "teacher_kiwoom_prompt_v1"
 
 # Backward-compatible aliases (UPBIT legacy names)
 ANALYSIS_PROMPT_VERSION = ANALYSIS_UPBIT_PROMPT_V1
-TRADING_PROMPT_VERSION = TRADING_UPBIT_PROMPT_V1
+TRADING_PROMPT_VERSION = TRADING_UPBIT_PROMPT_V2
 TEACHER_PROMPT_VERSION = TEACHER_UPBIT_PROMPT_V1
 SCHEMA_RAG_V1 = SCHEMA_UPBIT_RAG_V1
 SCHEMA_DUAL_V1 = SCHEMA_UPBIT_DUAL_V1
@@ -52,7 +53,7 @@ def prompt_versions_for(market: str) -> dict[str, str]:
         }
     return {
         "analysis": ANALYSIS_UPBIT_PROMPT_V1,
-        "trading": TRADING_UPBIT_PROMPT_V1,
+        "trading": TRADING_UPBIT_PROMPT_V2,
         "teacher": TEACHER_UPBIT_PROMPT_V1,
     }
 

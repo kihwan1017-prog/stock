@@ -6,7 +6,6 @@ timeout/error 시 호출측이 heuristic을 유지한다.
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -25,6 +24,11 @@ from stock_platform.operation.upbit_market_context.prompt_versions import (
 from stock_platform.operation.upbit_market_context.schemas import (
     LlmContextInput,
     LlmContextOutput,
+)
+from stock_platform.operation.upbit_market_context.trading_decision_contract import (
+    TRADING_SYSTEM_PROMPT_V2,
+    build_trading_decision_payload,
+    build_trading_user_prompt,
 )
 
 TRADING_SCHEMA: dict[str, Any] = {
@@ -59,12 +63,8 @@ TRADING_SCHEMA: dict[str, Any] = {
     ],
 }
 
-SYSTEM_PROMPT = (
-    "당신은 UPBIT TRADING_LLM SHADOW입니다. "
-    "ALLOW|HOLD|REDUCE 보조판단만 합니다. REAL 주문을 만들지 마세요. "
-    "미래 수익률은 모릅니다. Analysis 요약·기술지표·과거 유사 CLEAN 사례만 사용하세요. "
-    "RAG 사례의 과거 결과는 참고 예제일 뿐, 현재 후보의 미래가 아닙니다. JSON만."
-)
+# v2: SHADOW != ALWAYS HOLD. recommendation은 주문 명령이 아님.
+SYSTEM_PROMPT = TRADING_SYSTEM_PROMPT_V2
 
 VALID_REC = frozenset({"ALLOW", "HOLD", "REDUCE"})
 VALID_RISK = frozenset({"LOW", "MEDIUM", "HIGH"})
@@ -107,59 +107,17 @@ def run_trading_llm_shadow(
             "model": cfg.model,
         }
 
-    analysis = analysis_summary or {}
-    # 고정 입력 구조 — 현재 후보 미래 outcome 금지
-    compact = {
-        "candidate": inp.candidate,
-        "technical": {
-            "rsi": (inp.technical or {}).get("rsi14"),
-            "ma_separation_pct": (inp.technical or {}).get("ma_separation_pct"),
-            "volume_ratio": (inp.technical or {}).get("volume_surge"),
-            "pre_entry_return": (inp.returns or {}).get("pre_entry_return_5m")
-            if isinstance(inp.returns, dict)
-            else None,
-            "raw_technical": inp.technical,
-        },
-        "analysis": {
-            "market_state": analysis.get("market_summary") or analysis.get("tone"),
-            "asset_state": analysis.get("asset_summary"),
-            "news_state": analysis.get("news_summary"),
-            "risk_flags": analysis.get("risk_factors"),
-            "confidence": analysis.get("confidence"),
-            "model": analysis.get("model"),
-        },
-        "rag_examples": [
-            {
-                "case_id": e.get("case_id"),
-                "similarity_score": e.get("similarity_score"),
-                "entry_summary": e.get("entry_summary"),
-                "actual_label": e.get("actual_label"),
-                "mfe": e.get("mfe"),
-                "mae": e.get("mae"),
-            }
-            for e in (rag_examples or [])[:5]
-        ],
-        "heuristic_reference": (
-            {
-                "recommendation": heuristic.recommendation,
-                "entry_quality_score": heuristic.entry_quality_score,
-                "risk_flags": heuristic.risk_flags,
-            }
-            if heuristic is not None
-            else None
-        ),
-        "research_only": True,
-        "shadow_only": True,
-        "lookahead_forbidden": True,
-        "current_future_outcome_forbidden": True,
-    }
+    # 고정 입력 구조 — 현재 후보 미래 outcome 금지. SHADOW != ALWAYS HOLD.
+    compact = build_trading_decision_payload(
+        inp,
+        analysis_summary=analysis_summary,
+        heuristic=heuristic,
+        rag_examples=rag_examples,
+    )
     raw = chat_json_sync(
         config=cfg,
         system_prompt=SYSTEM_PROMPT,
-        user_prompt=(
-            "Entry Quality / Early Dump / Fee Churn Risk를 SHADOW로 평가하세요.\n"
-            + json.dumps(compact, ensure_ascii=False, default=str)
-        ),
+        user_prompt=build_trading_user_prompt(compact),
         response_schema=TRADING_SCHEMA,
     )
     record_stat(
