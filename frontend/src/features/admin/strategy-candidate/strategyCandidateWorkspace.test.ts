@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { adminMenuItems, flattenMenuItems, permissionForPath } from "@/config/menu";
+import { adminMenuItems, permissionForPath } from "@/config/menu";
 import { adminRoutes } from "@/config/routes";
 import {
   findStrategyCandidateWorkspace,
@@ -19,15 +19,24 @@ function readRel(rel: string): string {
 
 describe("STRATEGY_CANDIDATE UX consolidation", () => {
   it("사이드바 전략·후보 leaf는 5개 Workspace", () => {
-    const group = adminMenuItems.find((item) => item.key === "strategy-ai");
-    expect(group?.children?.map((c) => c.label)).toEqual([
-      "전략 관리",
-      "후보 관리",
-      "AI 전략 설정",
-      "전략 검증",
-      "고급 관리",
-    ]);
-    expect(group?.children).toHaveLength(5);
+    const analysis = adminMenuItems.find((item) => item.key === "analysis");
+    const strategies = analysis?.children?.find((c) => c.key === "strategies");
+    expect(strategies?.label).toBe("전략·후보");
+    expect(strategies?.matchPaths).toEqual(
+      expect.arrayContaining([
+        adminRoutes.strategyCandidates,
+        adminRoutes.strategyRequests,
+        adminRoutes.strategyDrafts,
+      ]),
+    );
+    const settings = adminMenuItems.find((item) => item.key === "settings");
+    expect(
+      settings?.children?.some((c) => c.key === "ai-config"),
+    ).toBe(true);
+    const advanced = adminMenuItems.find((item) => item.key === "advanced");
+    expect(
+      advanced?.children?.some((c) => c.key === "strategy-validation"),
+    ).toBe(true);
   });
 
   it("구 leaf route는 page를 유지하고 Workspace matchPaths에 포함", () => {
@@ -107,12 +116,11 @@ describe("STRATEGY_CANDIDATE UX consolidation", () => {
       "features/admin/upbit/UpbitAutotradingSettingsWorkspace.tsx",
     );
     expect(ws).toMatch(/UBA별 LIVE Portfolio 운영 정책/);
-    expect(ws).toMatch(/AI 전략 설정/);
-    // 메뉴 변경이 upbit autotrading route를 건드리지 않음
-    const flat = flattenMenuItems(adminMenuItems);
-    expect(flat.find((i) => i.path === adminRoutes.upbitAutotrading)?.label).toBe(
-      "업비트 자동매매 설정",
-    );
+    expect(ws).toMatch(/역할 구분/);
+    const hub = adminMenuItems
+      .find((item) => item.key === "autotrading")
+      ?.children?.find((item) => item.key === "autotrading-upbit");
+    expect(hub?.matchPaths).toContain(adminRoutes.upbitAutotrading);
   });
 
   it("authorization 완화 없음 — User 메뉴는 변경하지 않음", () => {

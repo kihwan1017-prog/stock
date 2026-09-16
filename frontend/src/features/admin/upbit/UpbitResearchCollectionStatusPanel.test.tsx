@@ -2,6 +2,8 @@
  * 연구 데이터 수집 현황 패널 — 렌더·한글·WAITING≠ERROR·null-safe.
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -126,10 +128,8 @@ describe("UpbitResearchCollectionStatusPanel", () => {
   });
 
   it("source embeds Korean labels and WAITING != ERROR", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(
-      path.join(
+    const src = readFileSync(
+      join(
         process.cwd(),
         "src/features/admin/upbit/UpbitResearchCollectionStatusPanel.tsx",
       ),
@@ -153,10 +153,8 @@ describe("UpbitResearchCollectionStatusPanel", () => {
   });
 
   it("workspace uses friendly titles without raw orchestrator jargon", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const ws = fs.readFileSync(
-      path.join(
+    const ws = readFileSync(
+      join(
         process.cwd(),
         "src/features/admin/upbit/UpbitAutotradingSettingsWorkspace.tsx",
       ),
@@ -164,8 +162,8 @@ describe("UpbitResearchCollectionStatusPanel", () => {
     );
     expect(ws).toContain("실계좌 포트폴리오 자동매매 설정");
     expect(ws).not.toContain("PORTFOLIO 자동 Enable · REAL 주문");
-    const one = fs.readFileSync(
-      path.join(
+    const one = readFileSync(
+      join(
         process.cwd(),
         "src/features/admin/autotrading/UpbitOneClickAutotradingControl.tsx",
       ),
@@ -176,10 +174,8 @@ describe("UpbitResearchCollectionStatusPanel", () => {
   });
 
   it("workspace mounts research summary (not full panel) under status cards", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(
-      path.join(
+    const src = readFileSync(
+      join(
         process.cwd(),
         "src/features/admin/upbit/UpbitAutotradingSettingsWorkspace.tsx",
       ),
@@ -196,10 +192,8 @@ describe("UpbitResearchCollectionStatusPanel", () => {
   });
 
   it("adminApi exposes single aggregate endpoint", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(
-      path.join(process.cwd(), "src/features/admin/api/adminApi.ts"),
+    const src = readFileSync(
+      join(process.cwd(), "src/features/admin/api/adminApi.ts"),
       "utf8",
     );
     expect(src).toContain("research/collection-status");

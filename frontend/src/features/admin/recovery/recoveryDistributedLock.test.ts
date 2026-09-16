@@ -16,8 +16,10 @@ describe("RecoveryDistributedLockPanel helpers", () => {
     const names = Object.keys(api);
     expect(names).toContain("listAdminRecoveryLocks");
     expect(names).toContain("getAdminRecoveryLock");
-    expect(names.some((n) => /force.*unlock|unlockRecovery/i.test(n))).toBe(
-      false,
-    );
+    // UBA 계좌 잠금 해제는 라이브 제어 패널이 사용한다. 분산락 force-unlock은 금지.
+    expect(names).toContain("unlockRecoveryAccount");
+    expect(
+      names.some((n) => /forceUnlock|force.*UnlockLock|unlockRecoveryLock/i.test(n)),
+    ).toBe(false);
   });
 });

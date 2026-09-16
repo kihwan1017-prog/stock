@@ -30,9 +30,10 @@ function walkTsxFiles(dir: string, out: string[] = []): string[] {
 }
 
 function assertOrder(src: string, markers: string[]) {
+  const normalized = src.replace(/\r\n/g, "\n");
   let prev = -1;
   for (const marker of markers) {
-    const idx = src.indexOf(marker);
+    const idx = normalized.indexOf(marker);
     expect(idx, `missing: ${marker}`).toBeGreaterThan(-1);
     expect(idx, `order fail: ${marker}`).toBeGreaterThan(prev);
     prev = idx;
@@ -69,8 +70,11 @@ describe("M5-C News Pipeline SECTION_REORGANIZE", () => {
       'title="News Signal stats"',
     ]);
     // Signal action은 Signal section 내부 (heading 이후)
-    const signalHeading = src.indexOf("News Signal\n      </Typography.Title>");
-    const signalAction = src.indexOf("News Signal 표준화", signalHeading);
+    const normalized = src.replace(/\r\n/g, "\n");
+    const signalHeading = normalized.indexOf(
+      "News Signal\n      </Typography.Title>",
+    );
+    const signalAction = normalized.indexOf("News Signal 표준화", signalHeading);
     expect(signalAction).toBeGreaterThan(signalHeading);
   });
 

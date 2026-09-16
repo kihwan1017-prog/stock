@@ -24,6 +24,9 @@ secrets/
 # Logs
 *.log
 logs/
+# /admin/logs 라우트는 로그 산출물이 아님
+!frontend/src/app/(admin)/admin/logs/
+!frontend/src/app/(admin)/admin/logs/**
 
 # Test and cache
 .pytest_cache/

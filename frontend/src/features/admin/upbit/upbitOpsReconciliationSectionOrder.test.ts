@@ -30,9 +30,10 @@ function walkTsxFiles(dir: string, out: string[] = []): string[] {
 }
 
 function assertOrder(src: string, markers: string[]) {
+  const normalized = src.replace(/\r\n/g, "\n");
   let prev = -1;
   for (const marker of markers) {
-    const idx = src.indexOf(marker);
+    const idx = normalized.indexOf(marker);
     expect(idx, `missing: ${marker}`).toBeGreaterThan(-1);
     expect(idx, `order fail: ${marker}`).toBeGreaterThan(prev);
     prev = idx;

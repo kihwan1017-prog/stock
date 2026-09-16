@@ -60,9 +60,10 @@ describe("M5-B Technical SECTION_REORGANIZE", () => {
     expect(src).toContain('title="Active Shadows"');
     expect(src).toContain('title="Completed Shadows"');
     expect(src).toContain('title="Shadow Evaluator Scheduler"');
-    expect(src).toContain('title="Shadow Stats / Cohort"');
+    expect(src).toContain('title="Shadow 통계 / 코호트"');
 
-    assertOrder(src, [
+    const normalized = src.replace(/\r\n/g, "\n");
+    assertOrder(normalized, [
       "Scanner 상태",
       "후보 / AI 분석",
       'title="Last Top Candidates"',
@@ -71,14 +72,14 @@ describe("M5-B Technical SECTION_REORGANIZE", () => {
       "Shadow 평가\n      </Typography.Title>",
       'title="Shadow Evaluator Scheduler"',
       "Cohort 성과",
-      'title="Shadow Stats / Cohort"',
+      'title="Shadow 통계 / 코호트"',
     ]);
   });
 
   it("mutation/API/handler 계약 유지 (split·endpoint 변경 없음)", () => {
     const src = panel();
-    expect(src.match(/useMutation\(/g)?.length ?? 0).toBe(2);
-    expect(src.match(/useQuery\(/g)?.length ?? 0).toBe(1);
+    expect(src.match(/useMutation\(/g)?.length ?? 0).toBe(3);
+    expect(src.match(/useQuery\(/g)?.length ?? 0).toBe(2);
     expect(src.match(/useState\(/g)?.length ?? 0).toBe(0);
     expect(src.match(/useEffect\(/g)?.length ?? 0).toBe(0);
     expect(src).toContain("runUpbitOpportunityScanner");
@@ -157,6 +158,8 @@ describe("M5-B Technical SECTION_REORGANIZE", () => {
 
     const flat = flattenMenuItems(adminMenuItems);
     expect(adminRoutes.upbit).toBe("/admin/upbit");
-    expect(flat.filter((i) => i.path === adminRoutes.upbit)).toHaveLength(1);
+    const accounts = flat.find((i) => i.key === "accounts");
+    expect(accounts?.matchPaths).toContain(adminRoutes.upbit);
+    expect(flat.filter((i) => i.path === adminRoutes.upbit)).toHaveLength(0);
   });
 });

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { AdminAccountLiveControlPanel } from "./AdminAccountLiveControlPanel";
+import { ArmTokenOnceModal } from "./ArmTokenOnceModal";
 import {
   armReissueGuidance,
   formatArmCountdown,
@@ -96,10 +98,8 @@ describe("armTokenOnceReveal helpers", () => {
 });
 
 describe("ArmTokenOnceModal / AdminAccountLiveControlPanel surface", () => {
-  it("exports modal and panel modules", async () => {
-    const modal = await import("./ArmTokenOnceModal");
-    const panel = await import("./AdminAccountLiveControlPanel");
-    expect(typeof modal.ArmTokenOnceModal).toBe("function");
-    expect(typeof panel.AdminAccountLiveControlPanel).toBe("function");
+  it("exports modal and panel modules", () => {
+    expect(typeof ArmTokenOnceModal).toBe("function");
+    expect(typeof AdminAccountLiveControlPanel).toBe("function");
   });
 });

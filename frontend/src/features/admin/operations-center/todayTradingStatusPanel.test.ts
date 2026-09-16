@@ -2,6 +2,8 @@
  * 오늘 거래현황 — profit/loss 표시 규칙 (canonical net 정합).
  */
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /** Backend summary 규칙을 FE에서 재계산하지 않음 — 계약 스모크만. */
@@ -36,10 +38,8 @@ describe("today trading status pnl contract", () => {
   });
 
   it("keeps Recharts Tooltip alias (antd Tooltip collision fix)", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(
-      path.join(
+    const src = readFileSync(
+      join(
         process.cwd(),
         "src/features/admin/operations-center/TodayTradingStatusPanel.tsx",
       ),

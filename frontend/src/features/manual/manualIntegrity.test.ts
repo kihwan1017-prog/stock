@@ -37,18 +37,22 @@ function collectText(): string {
 describe("admin integrated manual", () => {
   it("메뉴에 매뉴얼 경로가 있다", () => {
     const flat = flattenMenuItems(adminMenuItems);
-    const manual = flat.find((item) => item.path === adminRoutes.docsManual);
-    expect(manual?.label).toBe("매뉴얼");
-    expect(manual?.permission).toBe("menu:docs");
+    const docs = flat.find((item) => item.key === "docs");
+    expect(docs?.label).toBe("문서");
+    expect(docs?.permission).toBe("menu:docs");
+    expect(docs?.path).toBe(adminRoutes.docs);
+    expect(docs?.matchPaths).toContain(adminRoutes.docsManual);
   });
 
-  it("문서관리 그룹 아래 문서 CMS와 매뉴얼이 있다", () => {
-    const docsGroup = adminMenuItems
-      .find((item) => item.key === "system")
-      ?.children?.find((item) => item.key === "documents-group");
-    expect(docsGroup?.label).toBe("문서관리");
-    const labels = docsGroup?.children?.map((c) => c.label) ?? [];
-    expect(labels).toEqual(expect.arrayContaining(["문서 CMS", "매뉴얼"]));
+  it("문서 메뉴는 고급 관리 그룹에서 문서·매뉴얼 경로를 함께 담당한다", () => {
+    const advanced = adminMenuItems.find((item) => item.key === "advanced");
+    expect(advanced?.label).toBe("고급 관리");
+    const docs = advanced?.children?.find((item) => item.key === "docs");
+    expect(docs?.label).toBe("문서");
+    expect(docs?.permission).toBe("menu:docs");
+    expect(docs?.matchPaths).toEqual(
+      expect.arrayContaining([adminRoutes.docs, adminRoutes.docsManual]),
+    );
   });
 
   it("사용자/관리자 섹션 route가 실제 routes에 존재한다", () => {

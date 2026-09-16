@@ -29,10 +29,15 @@ describe("STEP 8-11A operations dashboard labels", () => {
   });
 
   it("shows Korean menu label", () => {
-    const flat = flattenMenu(adminMenuItems);
-    const found = flat.find((item) => item.key === "operations-dashboard");
-    expect(found?.path).toBe(adminRoutes.operationsDashboard);
-    expect(found?.label).toContain("거래 운영 현황");
+    const hub = flattenMenu(adminMenuItems).find(
+      (item) => item.key === "autotrading-upbit",
+    );
+    const raw = adminMenuItems
+      .find((item) => item.key === "autotrading")
+      ?.children?.find((item) => item.key === "autotrading-upbit");
+    expect(hub?.label).toBe("업비트");
+    expect(raw?.matchPaths).toContain(adminRoutes.operationsDashboard);
+    expect(OPS_DASHBOARD_LABELS.pageTitle).toContain("거래 운영 현황");
   });
 
   it("UTF-8 Korean tab labels are intact", () => {

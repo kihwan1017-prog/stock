@@ -122,8 +122,10 @@ describe("buildUbaAutoTradingViewModel", () => {
     expect(vm.ops.transitionId).toBe("5");
     expect(vm.ops.startAllForbidden).toBe(true);
     expect(vm.ops.runtimeLifecycle).toBe("READY");
-    expect(vm.checklist.find((c) => c.label === "LIVE")?.result).toBe("BLOCK");
-    expect(vm.checklist.find((c) => c.label === "Market Feed")?.result).toBe(
+    expect(vm.checklist.find((c) => c.label === "실거래(LIVE)")?.result).toBe(
+      "BLOCK",
+    );
+    expect(vm.checklist.find((c) => c.label === "실시간 시세")?.result).toBe(
       "PASS",
     );
     expect(recommendationBadgeColor("HOLD")).toBe("orange");

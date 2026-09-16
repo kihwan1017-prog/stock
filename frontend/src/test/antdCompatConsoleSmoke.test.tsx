@@ -2,6 +2,8 @@
  * Ant Design compatibility console smoke — Research panel + Alert title.
  */
 
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -54,10 +56,8 @@ describe("antd compatibility console smoke", () => {
   });
 
   it("ResearchCollectionStatusPanel has no Alert message or Statistic valueStyle", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const src = fs.readFileSync(
-      path.join(
+    const src = readFileSync(
+      join(
         process.cwd(),
         "src/features/admin/upbit/UpbitResearchCollectionStatusPanel.tsx",
       ),
@@ -92,22 +92,20 @@ describe("antd compatibility console smoke", () => {
   });
 
   it("repo has zero Alert message= and Statistic valueStyle= under src", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
     function walk(dir: string, out: string[] = []): string[] {
-      for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      for (const ent of readdirSync(dir, { withFileTypes: true })) {
         if (ent.name === "node_modules" || ent.name === ".next") continue;
-        const p = path.join(dir, ent.name);
+        const p = join(dir, ent.name);
         if (ent.isDirectory()) walk(p, out);
         else if (ent.name.endsWith(".tsx")) out.push(p);
       }
       return out;
     }
-    const files = walk(path.join(process.cwd(), "src"));
+    const files = walk(join(process.cwd(), "src"));
     const alertOffenders: string[] = [];
     const statisticOffenders: string[] = [];
     for (const file of files) {
-      const text = fs.readFileSync(file, "utf8");
+      const text = readFileSync(file, "utf8");
       for (const b of text.match(/<Alert\b[\s\S]*?>/g) || []) {
         if (/\bmessage=/.test(b)) alertOffenders.push(file);
       }

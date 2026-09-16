@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -251,8 +253,6 @@ describe("adminApi live-transition wrappers", () => {
   });
 
   it("getRuntimePreflight accepts user_broker_account_id", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
     const src = readFileSync(
       join(process.cwd(), "src/features/admin/api/adminApi.ts"),
       "utf8",
@@ -263,8 +263,6 @@ describe("adminApi live-transition wrappers", () => {
 
 describe("AdminAccountLiveControlPanel surface", () => {
   it("A — panel title and KIWOOM list + UBA preflight + no BROKER scope UI", async () => {
-    const { readFileSync } = await import("node:fs");
-    const { join } = await import("node:path");
     const panel = readFileSync(
       join(process.cwd(), "src/features/admin/accounts/AdminAccountLiveControlPanel.tsx"),
       "utf8",

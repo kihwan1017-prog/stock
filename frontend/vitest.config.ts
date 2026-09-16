@@ -4,12 +4,17 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [react()],
+  // jsdom에서 RTL이 production test-utils를 집어 React.act가 사라지지 않게 한다.
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("development"),
+  },
   test: {
     environment: "jsdom",
     globals: true,
     setupFiles: ["./vitest.setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     env: {
+      NODE_ENV: "development",
       NEXT_PUBLIC_APP_NAME: "KIKI AI Trading Platform",
       NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:8000",
       NEXT_PUBLIC_API_PREFIX: "/api/v1",

@@ -124,8 +124,11 @@ describe("M5-A Upbit Hub Tab shell", () => {
   it("route·permission·menu leaf 유지", () => {
     expect(adminRoutes.upbit).toBe("/admin/upbit");
     const flat = flattenMenuItems(adminMenuItems);
-    const upbitItems = flat.filter((item) => item.path === adminRoutes.upbit);
-    expect(upbitItems).toHaveLength(1);
-    expect(upbitItems[0]?.permission).toBe("menu:upbit");
+    const accounts = flat.find((item) => item.key === "accounts");
+    expect(accounts?.matchPaths).toContain(adminRoutes.upbit);
+    expect(accounts?.permission).toBe("menu:accounts");
+    expect(flat.filter((item) => item.path === adminRoutes.upbit)).toHaveLength(
+      0,
+    );
   });
 });

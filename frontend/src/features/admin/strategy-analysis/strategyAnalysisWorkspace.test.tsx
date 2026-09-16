@@ -2,6 +2,8 @@
  * 연구 요약 카드 + 연구 워크스페이스 라우트 계약.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -45,10 +47,8 @@ describe("strategy analysis research workspace", () => {
   });
 
   it("research page exists and reuses status panel", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
-    const page = fs.readFileSync(
-      path.join(process.cwd(), "src/app/(admin)/admin/research/page.tsx"),
+    const page = readFileSync(
+      join(process.cwd(), "src/app/(admin)/admin/research/page.tsx"),
       "utf8",
     );
     expect(page).toContain("UpbitResearchCollectionStatusPanel");
@@ -59,8 +59,6 @@ describe("strategy analysis research workspace", () => {
   });
 
   it("menu hubs have page files", async () => {
-    const fs = await import("node:fs");
-    const path = await import("node:path");
     for (const route of [
       "research",
       "market-analysis",
@@ -69,11 +67,11 @@ describe("strategy analysis research workspace", () => {
       "strategy-candidates",
       "news-disclosures",
     ]) {
-      const p = path.join(
+      const p = join(
         process.cwd(),
         `src/app/(admin)/admin/${route}/page.tsx`,
       );
-      expect(fs.existsSync(p), p).toBe(true);
+      expect(existsSync(p), p).toBe(true);
     }
   });
 });

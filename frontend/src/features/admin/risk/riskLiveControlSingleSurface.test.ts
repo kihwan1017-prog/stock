@@ -42,7 +42,7 @@ describe("M4-C2-APPLY Risk LIVE/ARM single-surface", () => {
     expect(risk).not.toMatch(/pauseTradingScheduler/);
     expect(risk).toMatch(/activateKillSwitch/);
     expect(risk).toMatch(/deactivateKillSwitch/);
-    expect(risk).toMatch(/Kill Switch ON/);
+    expect(risk).toMatch(/긴급 중지\(Kill Switch\) 활성화/);
     expect(risk).toMatch(/adminRoutes\.accounts/);
     expect(risk).toMatch(/계좌 LIVE 제어/);
     expect(risk).toMatch(/live_order_enabled/);
@@ -51,7 +51,11 @@ describe("M4-C2-APPLY Risk LIVE/ARM single-surface", () => {
   });
 
   it("Accounts panel: LIVE/ARM/Scheduler control 유지", () => {
-    const panel = readSrc("features/admin/accounts/AdminUpbitLiveUbaPanel.tsx");
+    const alias = readSrc("features/admin/accounts/AdminUpbitLiveUbaPanel.tsx");
+    expect(alias).toMatch(/AdminAccountLiveControlPanel as AdminUpbitLiveUbaPanel/);
+    const panel = readSrc(
+      "features/admin/accounts/AdminAccountLiveControlPanel.tsx",
+    );
     expect(panel).toMatch(/setAdminLiveOrderEnabled/);
     expect(panel).toMatch(/armAdminLiveOrder/);
     expect(panel).toMatch(/disarmAdminLiveOrder/);
@@ -74,7 +78,7 @@ describe("M4-C2-APPLY Risk LIVE/ARM single-surface", () => {
   it("AdminUpbitLiveUbaPanel mount = 1 (accounts only)", () => {
     const mounts = walkMountFiles().filter((file) => {
       const text = readFileSync(file, "utf8");
-      return /<AdminUpbitLiveUbaPanel\b/.test(text);
+      return /<AdminAccountLiveControlPanel\b/.test(text);
     });
     expect(mounts).toHaveLength(1);
     expect(mounts[0]?.replace(/\\/g, "/")).toContain(
@@ -92,11 +96,15 @@ describe("M4-C2-APPLY Risk LIVE/ARM single-surface", () => {
       seen.add(p);
     }
     expect(dup).toEqual([]);
-    expect(flat.some((i) => i.path === adminRoutes.strategyRequests)).toBe(true);
-    expect(flat.some((i) => i.path === adminRoutes.strategyDrafts)).toBe(true);
-    expect(flat.some((i) => i.path === adminRoutes.portfolioValidations)).toBe(
-      true,
+    const strategies = flat.find((i) => i.key === "strategies");
+    expect(strategies?.matchPaths).toEqual(
+      expect.arrayContaining([
+        adminRoutes.strategyRequests,
+        adminRoutes.strategyDrafts,
+      ]),
     );
+    const validation = flat.find((i) => i.key === "strategy-validation");
+    expect(validation?.matchPaths).toContain(adminRoutes.portfolioValidations);
     expect(existsSync(join(srcRoot, "app/(admin)/admin/risk/page.tsx"))).toBe(
       true,
     );
