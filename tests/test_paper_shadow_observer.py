@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from stock_platform.operation.paper_shadow_observer.dry_pipeline import (
@@ -90,6 +92,26 @@ def test_usdt_quality_is_telemetry_not_hard_block() -> None:
     assert quality["stable_or_pegged_asset"] is True
     assert quality["low_volatility_allow"] is True
     assert quality["blocked_by_hardcode"] is False
+
+
+def test_jsonl_rotation_and_stale_pid(tmp_path, monkeypatch) -> None:
+    from stock_platform.operation.paper_shadow_observer.store import rotate_jsonl_if_needed
+    from stock_platform.operation.paper_shadow_observer.runner import (
+        acquire_pid_file,
+        pid_is_alive,
+    )
+
+    target = tmp_path / "observations.jsonl"
+    target.write_bytes(b"x" * 100)
+    assert rotate_jsonl_if_needed(target, max_bytes=50, keep=2) is True
+    assert (tmp_path / "observations.jsonl.1").is_file()
+    assert pid_is_alive(os.getpid()) is True
+    stale = tmp_path / "obs.pid"
+    stale.write_text("999999", encoding="utf-8")
+    assert acquire_pid_file(stale) is True
+    live = tmp_path / "live.pid"
+    live.write_text(str(os.getpid()), encoding="utf-8")
+    assert acquire_pid_file(live) is False
 
 
 def test_observe_success_never_creates_orders() -> None:

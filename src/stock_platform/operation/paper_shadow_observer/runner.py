@@ -19,6 +19,7 @@ from stock_platform.operation.paper_shadow_observer.public_market import (
 from stock_platform.operation.paper_shadow_observer.store import (
     DEFAULT_DIR,
     append_jsonl,
+    rotate_jsonl_if_needed,
     write_status,
 )
 from stock_platform.operation.upbit_market_context.analysis_llm_service import (
@@ -61,14 +62,41 @@ def _pick_diverse(rows: list[dict[str, Any]], limit: int) -> list[dict[str, Any]
     return picked[:limit]
 
 
-def run_once(*, limit: int = 36) -> list[dict[str, Any]]:
+def pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except (OSError, PermissionError, SystemError):
+        return False
+    except Exception:  # noqa: BLE001
+        return False
+    return True
+
+
+def acquire_pid_file(path: Path = PID_FILE) -> bool:
+    """살아 있는 PID면 False. stale이면 교체."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.is_file():
+        raw = path.read_text(encoding="utf-8").strip()
+        if raw.isdigit() and pid_is_alive(int(raw)):
+            return False
+        path.unlink(missing_ok=True)
+    path.write_text(str(os.getpid()), encoding="utf-8")
+    return True
+
+
+def run_once(*, limit: int = 36, cycle_id: int = 1) -> list[dict[str, Any]]:
     assert_observation_only()
+    rotate_jsonl_if_needed()
     markets = fetch_krw_markets()
     tickers = fetch_public_tickers(markets[:100])
     selected = _pick_diverse(tickers, limit)
     records: list[dict[str, Any]] = []
     for index, row in enumerate(selected, start=1):
         record = observe_one(row, run_analysis=_analysis, run_trading=_trading)
+        record["cycle_id"] = cycle_id
         append_jsonl(record)
         records.append(record)
         write_status({
@@ -101,11 +129,13 @@ def main() -> None:
     os.environ.setdefault("STOCK_PLATFORM_ENV_FILE", r"E:\StockTrading\secrets\stock-platform.env")
     os.environ["SHADOW_OBSERVATION_ONLY"] = "true"
     DEFAULT_DIR.mkdir(parents=True, exist_ok=True)
-    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
+    if not acquire_pid_file():
+        print(json.dumps({"ok": False, "reason": "ALREADY_RUNNING"}, ensure_ascii=False))
+        return
+    totals = {"allow": 0, "hold": 0, "reduce": 0, "fallback": 0}
     try:
         if args.once or args.loop_seconds <= 0:
-            records = run_once(limit=args.limit)
+            records = run_once(limit=args.limit, cycle_id=1)
             write_status({
                 "state": "STOPPED",
                 "last_observation": records[-1]["timestamp"] if records else None,
@@ -119,20 +149,37 @@ def main() -> None:
             print(json.dumps({"observations": len(records), "order_created": 0}, ensure_ascii=False))
             return
         total = 0
+        cycle = 0
         while True:
-            batch = run_once(limit=args.limit)
+            cycle += 1
+            batch = run_once(limit=args.limit, cycle_id=cycle)
             total += len(batch)
+            for rec in batch:
+                key = str(rec.get("trading_recommendation") or "").lower()
+                if key in totals:
+                    totals[key] += 1
+                if rec.get("fallback"):
+                    totals["fallback"] += 1
             write_status({
                 "state": "RUNNING",
                 "last_observation": batch[-1]["timestamp"] if batch else None,
                 "observation_count": total,
+                "cycle_id": cycle,
+                "allow": totals["allow"],
+                "hold": totals["hold"],
+                "reduce": totals["reduce"],
+                "fallback": totals["fallback"],
                 "model": "qwen3.5:4b",
                 "endpoint": "http://192.168.1.10:11434",
+                "order_created": 0,
+                "outbox_created": 0,
             })
             time.sleep(max(30, args.loop_seconds))
     finally:
         if PID_FILE.is_file():
-            PID_FILE.unlink(missing_ok=True)
+            current = PID_FILE.read_text(encoding="utf-8").strip()
+            if current == str(os.getpid()):
+                PID_FILE.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
